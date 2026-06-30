@@ -36,7 +36,7 @@ public sealed class ConsumerServiceSelectorTests
 
         // then
         candidates.Should().NotBeEmpty();
-        candidates.Should().HaveCount(1);
+        candidates.Should().ContainSingle();
 
         var descriptor = candidates[0];
         descriptor.ServiceTypeInfo.Should().Be(typeof(SelectorTestConsumer).GetTypeInfo());
@@ -332,7 +332,7 @@ public sealed class ConsumerServiceSelectorTests
         var candidates = selector.SelectCandidates();
 
         // then
-        candidates.Should().HaveCount(1);
+        candidates.Should().ContainSingle();
         candidates[0].Concurrency.Should().Be(5);
     }
 
@@ -358,7 +358,7 @@ public sealed class ConsumerServiceSelectorTests
         var candidates = selector.SelectCandidates();
 
         // then
-        candidates.Should().HaveCount(1);
+        candidates.Should().ContainSingle();
         candidates[0].Concurrency.Should().Be(1);
     }
 }

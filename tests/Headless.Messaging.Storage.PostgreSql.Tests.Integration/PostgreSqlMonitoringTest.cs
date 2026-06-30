@@ -180,7 +180,7 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
             AbortToken
         );
 
-        page1.Items.Should().HaveCount(1);
+        page1.Items.Should().ContainSingle();
         page1.TotalItems.Should().Be(3);
     }
 
@@ -236,7 +236,7 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
         );
 
         // then
-        result.Items.Should().HaveCount(1);
+        result.Items.Should().ContainSingle();
         result.Items[0].StatusName.Should().Be("Succeeded");
     }
 

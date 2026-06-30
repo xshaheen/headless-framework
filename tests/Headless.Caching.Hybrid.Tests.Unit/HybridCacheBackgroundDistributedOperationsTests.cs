@@ -227,7 +227,7 @@ public sealed class HybridCacheBackgroundDistributedOperationsTests : TestBase
 
         // and — let the background tail run to completion so a swallowed-vs-unobserved difference would surface
         await _WaitUntilAsync(() => new ValueTask<bool>(l2.UpsertAttempts > 0));
-        l2.UpsertAttempts.Should().BeGreaterThan(0, "the background write was attempted against L2");
+        l2.UpsertAttempts.Should().BePositive("the background write was attempted against L2");
     }
 
     [Fact]

@@ -33,9 +33,8 @@ public sealed class SetupApiTenancyTests
         // a HttpContext.Items marker, not by decorating the result handler. Verifying the absence
         // guards against regressing back into the ordering-sensitive design.
         builder
-            .Services.Where(descriptor => descriptor.ServiceType == typeof(IAuthorizationMiddlewareResultHandler))
-            .Should()
-            .BeEmpty();
+            .Services.Should()
+            .NotContain(descriptor => descriptor.ServiceType == typeof(IAuthorizationMiddlewareResultHandler));
 
         var manifest = _GetManifest(builder.Services);
         var seam = manifest.GetSeam(HeadlessAuthorizationTenancyBuilder.Seam);

@@ -367,7 +367,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     }
 
     public async Task<PaginationResult<CronJobOccurrenceEntity<TCronJob>>> GetAllCronJobOccurrencesPaginated(
-        Expression<Func<CronJobOccurrenceEntity<TCronJob>, bool>> predicate,
+        Expression<Func<CronJobOccurrenceEntity<TCronJob>, bool>>? predicate,
         int pageNumber,
         int pageSize,
         CancellationToken cancellationToken = default
@@ -419,7 +419,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     }
 
     public async Task<CronJobOccurrenceEntity<TCronJob>[]> AcquireImmediateCronOccurrencesAsync(
-        Guid[] occurrenceIds,
+        Guid[]? occurrenceIds,
         CancellationToken cancellationToken = default
     )
     {

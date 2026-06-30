@@ -273,7 +273,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     }
 
     private async Task<JobResult<TCronJob>> _UpdateCronJobAsync(
-        TCronJob cronJob,
+        TCronJob? cronJob,
         CancellationToken cancellationToken = default
     )
     {
@@ -411,7 +411,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     }
 
     private async Task<List<TTimeJob>> _AddTimeJobsBatchAsync(
-        List<TTimeJob> entities,
+        List<TTimeJob>? entities,
         CancellationToken cancellationToken = default
     )
     {

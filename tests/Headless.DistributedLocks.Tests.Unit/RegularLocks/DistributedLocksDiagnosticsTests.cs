@@ -118,7 +118,7 @@ public sealed class DistributedLocksDiagnosticsTests : TestBase
         {
             ShouldListenTo = source =>
                 string.Equals(source.Name, "Headless.DistributedLocks", StringComparison.Ordinal),
-            Sample = static (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            Sample = static (ref _) => ActivitySamplingResult.AllData,
             ActivityStopped = activities.Add,
         };
         ActivitySource.AddActivityListener(activityListener);

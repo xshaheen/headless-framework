@@ -96,7 +96,7 @@ public sealed class InternalFunctionContextTests
 
         var updated = context.GetPropsToUpdate();
         updated.Should().Contain(nameof(InternalFunctionContext.Status));
-        updated.Count.Should().Be(1);
+        updated.Should().ContainSingle();
     }
 
     [Fact]

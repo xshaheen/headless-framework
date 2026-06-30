@@ -42,7 +42,7 @@ internal sealed class FusionCacheBenchmarkClient(
     )
     {
         return await cache
-            .GetOrSetAsync<BenchmarkPayload>(
+            .GetOrSetAsync(
                 key,
                 async (_, ct) => await factory(ct).ConfigureAwait(false),
                 MaybeValue<BenchmarkPayload>.None,

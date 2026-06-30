@@ -406,7 +406,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         // then — interval should be capped at max, not negative/overflowed
         var currentInterval = _GetCurrentInterval(sut);
-        currentInterval.Ticks.Should().BeGreaterThan(0, "interval must never overflow to negative");
+        currentInterval.Ticks.Should().BePositive("interval must never overflow to negative");
         currentInterval.Should().Be(TimeSpan.FromSeconds(900));
     }
 

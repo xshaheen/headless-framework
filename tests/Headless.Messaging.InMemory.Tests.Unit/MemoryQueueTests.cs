@@ -299,8 +299,8 @@ public sealed class MemoryQueueTests : TestBase
         await cts.CancelAsync();
 
         // then - both groups should receive the message
-        messages1.Should().HaveCount(1);
-        messages2.Should().HaveCount(1);
+        messages1.Should().ContainSingle();
+        messages2.Should().ContainSingle();
 
         await client1.DisposeAsync();
         await client2.DisposeAsync();
@@ -388,7 +388,7 @@ public sealed class MemoryQueueTests : TestBase
         await cts.CancelAsync();
 
         // then - should only receive one message, not duplicates
-        receivedMessages.Should().HaveCount(1);
+        receivedMessages.Should().ContainSingle();
     }
 
     // -------------------------------------------------------------------------

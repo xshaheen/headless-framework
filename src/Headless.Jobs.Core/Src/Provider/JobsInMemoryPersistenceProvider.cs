@@ -264,7 +264,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     }
 
     public Task<TimeJobEntity[]> AcquireImmediateTimeJobsAsync(
-        Guid[] ids,
+        Guid[]? ids,
         CancellationToken cancellationToken = default
     )
     {
@@ -1320,7 +1320,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     }
 
     public Task<PaginationResult<CronJobOccurrenceEntity<TCronJob>>> GetAllCronJobOccurrencesPaginated(
-        Expression<Func<CronJobOccurrenceEntity<TCronJob>, bool>> predicate,
+        Expression<Func<CronJobOccurrenceEntity<TCronJob>, bool>>? predicate,
         int pageNumber,
         int pageSize,
         CancellationToken cancellationToken = default
@@ -1393,7 +1393,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     }
 
     public Task<CronJobOccurrenceEntity<TCronJob>[]> AcquireImmediateCronOccurrencesAsync(
-        Guid[] occurrenceIds,
+        Guid[]? occurrenceIds,
         CancellationToken cancellationToken = default
     )
     {

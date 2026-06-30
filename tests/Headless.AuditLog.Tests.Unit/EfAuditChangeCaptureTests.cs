@@ -183,7 +183,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             var result = _Capture(sut, db);
 
             // then
-            result.Should().HaveCount(1);
+            result.Should().ContainSingle();
             var entry = result[0];
             entry.Action.Should().Be(AuditActionNames.Created);
             entry.ChangeType.Should().Be(AuditChangeType.Created);
@@ -220,7 +220,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             var result = _Capture(sut, db);
 
             // then
-            result.Should().HaveCount(1);
+            result.Should().ContainSingle();
             var entry = result[0];
             entry.Action.Should().Be(AuditActionNames.Updated);
             entry.ChangeType.Should().Be(AuditChangeType.Updated);
@@ -255,7 +255,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             var result = _Capture(sut, db);
 
             // then
-            result.Should().HaveCount(1);
+            result.Should().ContainSingle();
             var entry = result[0];
             entry.Action.Should().Be(AuditActionNames.Deleted);
             entry.ChangeType.Should().Be(AuditChangeType.Deleted);
@@ -294,7 +294,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             var result = _Capture(sut, db);
 
             // then
-            result.Should().HaveCount(1);
+            result.Should().ContainSingle();
             var entry = result[0];
             entry.ChangedFields.Should().NotContain("LastComputedAt");
             entry.OldValues.Should().NotContainKey("LastComputedAt");
@@ -325,7 +325,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             var result = _Capture(sut, db);
 
             // then
-            result.Should().HaveCount(1);
+            result.Should().ContainSingle();
             var entry = result[0];
             entry.NewValues.Should().ContainKey("Email").WhoseValue.Should().Be("***");
         }
@@ -354,7 +354,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             var result = _Capture(sut, db);
 
             // then
-            result.Should().HaveCount(1);
+            result.Should().ContainSingle();
             var entry = result[0];
             entry.NewValues.Should().NotContainKey("Phone");
         }
@@ -387,7 +387,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             var result = _Capture(sut, db);
 
             // then
-            result.Should().HaveCount(1);
+            result.Should().ContainSingle();
             var entry = result[0];
             // Email uses [AuditSensitive] without explicit strategy, so falls back to global Transform
             entry.NewValues.Should().ContainKey("Email").WhoseValue.Should().Be("[MASKED:Email]");
@@ -453,7 +453,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             var result = _Capture(sut, db);
 
             // then
-            result.Should().HaveCount(1);
+            result.Should().ContainSingle();
             result[0].EntityType.Should().Contain(nameof(Product));
         }
     }
@@ -531,7 +531,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             var result = _Capture(sut, db);
 
             // then
-            result.Should().HaveCount(1);
+            result.Should().ContainSingle();
             result[0].NewValues.Should().NotContainKey("CustomerName");
         }
     }
@@ -593,7 +593,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             var result = _Capture(sut, db);
 
             // then - address update is captured because owner (Customer) is IAuditTracked
-            result.Should().HaveCount(1);
+            result.Should().ContainSingle();
             var addressEntry = result[0];
             addressEntry.EntityType.Should().Contain(nameof(Address));
             addressEntry.EntityId.Should().Be(customerId.ToString());
@@ -627,7 +627,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             var result = _Capture(sut, db);
 
             // then
-            result.Should().HaveCount(1);
+            result.Should().ContainSingle();
             result[0].Action.Should().Be(AuditActionNames.SoftDeleted);
         }
     }
@@ -659,7 +659,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             var result = _Capture(sut, db);
 
             // then
-            result.Should().HaveCount(1);
+            result.Should().ContainSingle();
             result[0].Action.Should().Be(AuditActionNames.Restored);
         }
     }
@@ -691,7 +691,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             var result = _Capture(sut, db);
 
             // then
-            result.Should().HaveCount(1);
+            result.Should().ContainSingle();
             result[0].Action.Should().Be(AuditActionNames.Suspended);
         }
     }
@@ -723,7 +723,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             var result = _Capture(sut, db);
 
             // then
-            result.Should().HaveCount(1);
+            result.Should().ContainSingle();
             result[0].Action.Should().Be(AuditActionNames.Unsuspended);
         }
     }
@@ -805,7 +805,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             var result = _Capture(sut, db);
 
             // then
-            result.Should().HaveCount(1);
+            result.Should().ContainSingle();
             var entry = result[0];
             entry.NewValues.Should().ContainKey("Name");
             entry.NewValues.Should().NotContainKey("DateCreated");
@@ -834,7 +834,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             var result = _Capture(sut, db);
 
             // then
-            result.Should().HaveCount(1);
+            result.Should().ContainSingle();
             result[0].NewValues.Should().ContainKey("DateCreated");
         }
     }
@@ -960,7 +960,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             var result = _Capture(sut, db);
 
             // then
-            result.Should().HaveCount(1);
+            result.Should().ContainSingle();
             result[0].NewValues.Should().ContainKey("Email").WhoseValue.Should().Be("***");
             logger.ReceivedCalls().Should().ContainSingle(call => _IsTransformerWarningLog(call));
         }
@@ -988,7 +988,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             var result = _Capture(sut, db);
 
             // then
-            result.Should().HaveCount(1);
+            result.Should().ContainSingle();
             result[0].EntityId.Should().Be("[\"tenant,a\",\"order,1\"]");
         }
     }
@@ -1018,7 +1018,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             var result = sut.CaptureChanges(mixedEntries, _UserId, _AccountId, _TenantId, _CorrelationId, _Timestamp);
 
             // then - non-EntityEntry objects are silently skipped; valid entry is captured
-            result.Should().HaveCount(1);
+            result.Should().ContainSingle();
             result[0].Action.Should().Be(AuditActionNames.Created);
         }
     }

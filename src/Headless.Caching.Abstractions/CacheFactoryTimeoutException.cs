@@ -2,7 +2,6 @@
 
 using Headless.Checks;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Caching;
 
 /// <summary>Exception thrown when a cache value factory exceeds its configured hard timeout without a fallback.</summary>

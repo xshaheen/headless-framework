@@ -243,7 +243,7 @@ public sealed class BlobsSetupBuilderTests
 
         // then — it throws before appending anything, so the collection is unchanged from the first call
         action.Should().Throw<InvalidOperationException>().WithMessage("*already called on this service collection*");
-        services.Count.Should().Be(descriptorCountAfterFirstCall);
+        services.Should().HaveCount(descriptorCountAfterFirstCall);
     }
 
     [Fact]

@@ -134,8 +134,8 @@ public sealed class IdempotencyRecordSerializationTests
         // Lowercase keys must hit the case-insensitive comparer.
         restored.Headers["content-type"].Should().Equal("application/json");
         restored.Headers["CACHE-CONTROL"].Should().Equal("no-store");
-        restored.Headers.ContainsKey("Content-Type").Should().BeTrue();
-        restored.Headers.ContainsKey("content-TYPE").Should().BeTrue();
+        restored.Headers.Should().ContainKey("Content-Type");
+        restored.Headers.Should().ContainKey("content-TYPE");
     }
 
     [Theory]

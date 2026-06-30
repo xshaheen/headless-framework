@@ -320,7 +320,7 @@ public sealed class MessageTests : TestBase
         };
 
         // then
-        message.Headers.ContainsKey("Test").Should().BeTrue();
-        message.Headers.ContainsKey("test").Should().BeFalse();
+        message.Headers.Should().ContainKey("Test");
+        message.Headers.Should().NotContainKey("test");
     }
 }

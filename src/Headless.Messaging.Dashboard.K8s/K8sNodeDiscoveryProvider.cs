@@ -212,7 +212,7 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache,
 
     private sealed record TagFilterResult(bool HideNode, int FilteredPortIndex, string FilteredPortName);
 
-    private TagFilterResult _FilterNodesByTags(IDictionary<string, string> tags)
+    private TagFilterResult _FilterNodesByTags(IDictionary<string, string>? tags)
     {
         var isNodeHidden = options.ShowOnlyExplicitVisibleNodes;
         var filteredPortIndex = 0; //this the default port index

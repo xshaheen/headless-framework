@@ -110,7 +110,7 @@ public static class SetupMessagingDashboard
     }
 
     private static string _ReplaceBasePath(
-        string htmlContent,
+        string? htmlContent,
         HttpContext httpContext,
         string basePath,
         MessagingDashboardOptionsBuilder config

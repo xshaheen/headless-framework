@@ -97,7 +97,7 @@ public sealed class CaptureStreamTests : TestBase
         capture.Write(data, 0, data.Length);
 
         inner.ToArray().Should().Equal(data);
-        capture.CapturedBytes.Length.Should().Be(5);
+        capture.CapturedBytes.Should().HaveCount(5);
         capture.TruncatedCapture.Should().BeTrue();
     }
 
@@ -185,7 +185,7 @@ public sealed class CaptureStreamTests : TestBase
         capture.Write([5, 6], 0, 2); // beyond cap, inner still gets it
 
         inner.ToArray().Should().Equal(1, 2, 3, 4, 5, 6);
-        capture.CapturedBytes.Length.Should().Be(3);
+        capture.CapturedBytes.Should().HaveCount(3);
         capture.TruncatedCapture.Should().BeTrue();
     }
 

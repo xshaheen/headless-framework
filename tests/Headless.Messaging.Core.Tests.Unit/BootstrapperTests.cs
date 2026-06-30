@@ -105,7 +105,7 @@ public sealed class BootstrapperTests : TestBase
         var act = async () => await bootstrapper.BootstrapAsync(AbortToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("processor boom");
-        startedProcessor.DisposeCount.Should().BeGreaterThan(0);
+        startedProcessor.DisposeCount.Should().BePositive();
         bootstrapper.IsStarted.Should().BeFalse();
     }
 

@@ -89,7 +89,7 @@ internal sealed partial class PostgresAdvisoryLock(bool isShared, TimeProvider t
         }
         catch (Exception exception)
         {
-            await rollBackTransactionTimeoutVariablesIfNeededAsync(acquired: false).ConfigureAwait(false);
+            await rollBackTransactionTimeoutVariablesIfNeededAsync(isAcquired: false).ConfigureAwait(false);
             await _RestoreTimeoutSettingsIfNeededAsync(capturedTimeoutSettings, connection).ConfigureAwait(false);
 
             if (exception is PostgresException postgresException)
@@ -110,8 +110,6 @@ internal sealed partial class PostgresAdvisoryLock(bool isShared, TimeProvider t
                             $"The distributed-lock request failed with SqlState '{postgresException.SqlState}' (deadlock_detected).",
                             exception
                         );
-                    default:
-                        break;
                 }
             }
 
@@ -139,7 +137,7 @@ internal sealed partial class PostgresAdvisoryLock(bool isShared, TimeProvider t
             _ => (bool?)null,
         };
 
-        await rollBackTransactionTimeoutVariablesIfNeededAsync(acquired: acquired == true).ConfigureAwait(false);
+        await rollBackTransactionTimeoutVariablesIfNeededAsync(isAcquired: acquired == true).ConfigureAwait(false);
         await _RestoreTimeoutSettingsIfNeededAsync(capturedTimeoutSettings, connection).ConfigureAwait(false);
 
         return acquired switch
@@ -151,14 +149,14 @@ internal sealed partial class PostgresAdvisoryLock(bool isShared, TimeProvider t
             ),
         };
 
-        async ValueTask rollBackTransactionTimeoutVariablesIfNeededAsync(bool acquired)
+        async ValueTask rollBackTransactionTimeoutVariablesIfNeededAsync(bool isAcquired)
         {
             if (
                 savePointDefined
                 // For a transaction-scoped success we can't roll back the savepoint (it would release the lock). Leaking
                 // the savepoint is fine: an internally-owned transaction cleans it up on disposal, and an externally-owned
                 // transaction must keep it or lose the lock.
-                && !(acquired && _UseTransactionScopedLock(connection))
+                && !(isAcquired && _UseTransactionScopedLock(connection))
             )
             {
                 using var rollBackSavePointCommand = connection.CreateCommand();
@@ -299,7 +297,7 @@ internal sealed partial class PostgresAdvisoryLock(bool isShared, TimeProvider t
     {
         // For internally-owned connections, HasTransaction is authoritative; without one,
         // SET LOCAL cannot escape the acquire command.
-        if (!connection.IsExternallyOwned && !connection.HasTransaction)
+        if (connection is { IsExternallyOwned: false, HasTransaction: false })
         {
             return false;
         }

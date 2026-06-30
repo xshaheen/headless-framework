@@ -168,7 +168,7 @@ public sealed class ReflectionHelperTests
         // AnnotatedClass itself has no SampleAttribute; Tagged has one. No duplication possible here.
         var results = member.GetAttributesOfMemberOrDeclaringType<SampleAttribute>().ToList();
 
-        results.Should().HaveCount(1);
+        results.Should().ContainSingle();
     }
 
     // ----- Test support types -----

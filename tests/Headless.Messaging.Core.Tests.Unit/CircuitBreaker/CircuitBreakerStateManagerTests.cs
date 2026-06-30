@@ -434,7 +434,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         halfOpenTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         var escalationBefore = sut.GetSnapshot(_Group)!.EscalationLevel;
-        escalationBefore.Should().BeGreaterThan(0);
+        escalationBefore.Should().BePositive();
 
         // Close via non-transient failure × 3 — should NOT reset escalation
         for (var i = 0; i < 3; i++)

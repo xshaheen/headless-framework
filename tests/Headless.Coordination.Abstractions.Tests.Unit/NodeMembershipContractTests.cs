@@ -58,7 +58,7 @@ public sealed class NodeMembershipContractTests : TestBase
 
         // then
         events.Should().AllSatisfy(@event => @event.Identity.Should().Be(identity));
-        events.Select(static @event => @event.GetType()).Should().OnlyHaveUniqueItems();
+        events.Should().OnlyHaveUniqueItems(static @event => @event.GetType());
     }
 
     [Fact]

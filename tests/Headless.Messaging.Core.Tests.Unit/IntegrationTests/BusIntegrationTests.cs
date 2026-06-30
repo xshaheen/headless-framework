@@ -66,7 +66,7 @@ public sealed class IBusIntegrationTests : TestBase
         await dispatcher.DispatchAsync(context, AbortToken);
 
         // then
-        DirectTestConsumer.ReceivedMessages.Should().HaveCount(1);
+        DirectTestConsumer.ReceivedMessages.Should().ContainSingle();
         DirectTestConsumer.ReceivedMessages.First().Value.Should().Be("direct-dispatch-value");
     }
 
@@ -101,7 +101,7 @@ public sealed class IBusIntegrationTests : TestBase
 
         // then
         received.Should().BeTrue("Consumer should receive the message");
-        DirectTestConsumer.ReceivedMessages.Should().HaveCount(1);
+        DirectTestConsumer.ReceivedMessages.Should().ContainSingle();
         DirectTestConsumer.ReceivedMessages.First().Value.Should().Be("test-value-123");
     }
 
@@ -135,7 +135,7 @@ public sealed class IBusIntegrationTests : TestBase
 
         // then
         received.Should().BeTrue("Message should be delivered via messageName mapping");
-        DirectTestConsumer.ReceivedMessages.Should().HaveCount(1);
+        DirectTestConsumer.ReceivedMessages.Should().ContainSingle();
         DirectTestConsumer.ReceivedMessages.First().Value.Should().Be("mapping-test");
     }
 
@@ -251,7 +251,7 @@ public sealed class IBusIntegrationTests : TestBase
 
         // then
         received.Should().BeTrue("Message should be delivered with custom headers");
-        DirectTestConsumerWithHeaders.ReceivedContexts.Should().HaveCount(1);
+        DirectTestConsumerWithHeaders.ReceivedContexts.Should().ContainSingle();
 
         var ctx = DirectTestConsumerWithHeaders.ReceivedContexts.First();
         ctx.MessageName.Should().Be("header-test-messageName");
@@ -293,7 +293,7 @@ public sealed class IBusIntegrationTests : TestBase
 
         // then
         received.Should().BeTrue("Message should be delivered");
-        DirectTestConsumerWithHeaders.ReceivedContexts.Should().HaveCount(1);
+        DirectTestConsumerWithHeaders.ReceivedContexts.Should().ContainSingle();
 
         var ctx = DirectTestConsumerWithHeaders.ReceivedContexts.First();
         ctx.TenantId.Should().Be("acme");
@@ -330,7 +330,7 @@ public sealed class IBusIntegrationTests : TestBase
 
         // then
         received.Should().BeTrue("Message should be delivered");
-        DirectTestConsumerWithHeaders.ReceivedContexts.Should().HaveCount(1);
+        DirectTestConsumerWithHeaders.ReceivedContexts.Should().ContainSingle();
 
         var ctx = DirectTestConsumerWithHeaders.ReceivedContexts.First();
         ctx.TenantId.Should().BeNull();

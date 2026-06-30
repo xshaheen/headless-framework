@@ -24,7 +24,7 @@ public sealed class ConnectionMonitorTests : TestBase
 
         // then (the active worker runs the monitoring probe against the connection)
         await _DrainUntilAsync(() => fake.ExecuteNonQueryCount > 0);
-        fake.ExecuteNonQueryCount.Should().BeGreaterThan(0);
+        fake.ExecuteNonQueryCount.Should().BePositive();
         handle.ConnectionLostToken.IsCancellationRequested.Should().BeFalse();
     }
 

@@ -21,8 +21,7 @@ public sealed class EmailsSetupBuilderTests
         action
             .Should()
             .Throw<InvalidOperationException>()
-            .Which.Message.Should()
-            .Contain("exactly one default provider")
+            .WithMessage("*exactly one default provider*")
             .And.Contain("UseAzure")
             .And.Contain("UseAwsSes")
             .And.Contain("UseMailkit")

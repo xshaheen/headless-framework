@@ -419,7 +419,7 @@ internal class InternalJobsManager<TTimeJob, TCronJob>(
     }
 
     public async Task ReleaseAcquiredResources(
-        InternalFunctionContext[] resources,
+        InternalFunctionContext[]? resources,
         CancellationToken cancellationToken = default
     )
     {

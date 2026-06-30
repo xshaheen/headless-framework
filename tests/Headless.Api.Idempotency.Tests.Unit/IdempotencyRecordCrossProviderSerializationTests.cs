@@ -77,7 +77,7 @@ public sealed class IdempotencyRecordCrossProviderSerializationTests
 
         restored.Headers["content-type"].Should().Equal("application/json");
         restored.Headers["CACHE-CONTROL"].Should().Equal("no-store");
-        restored.Headers.ContainsKey("content-TYPE").Should().BeTrue();
+        restored.Headers.Should().ContainKey("content-TYPE");
     }
 
     [Fact]

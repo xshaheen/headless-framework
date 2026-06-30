@@ -148,7 +148,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         snapshot.Should().NotBeNull();
         snapshot!.State.Should().Be(CircuitBreakerState.Open);
         snapshot.OpenedAt.Should().NotBeNull();
-        snapshot.EscalationLevel.Should().BeGreaterThan(0);
+        snapshot.EscalationLevel.Should().BePositive();
     }
 
     // -------------------------------------------------------------------------

@@ -34,7 +34,7 @@ public sealed class IConsumeIntegrationTests
         var candidates = selector.SelectCandidates();
 
         // then
-        candidates.Should().HaveCount(1);
+        candidates.Should().ContainSingle();
         var descriptor = candidates[0];
         descriptor.MessageName.Should().Be("orders.placed");
         descriptor.GroupName.Should().Be("order-service");

@@ -325,8 +325,8 @@ public sealed class SitemapUrlsTests : SitemapTestBase
         var streams = await urls.WriteAsync(AbortToken);
 
         streams.Should().HaveCount(2);
-        streams[0].Length.Should().BeGreaterThan(0);
-        streams[1].Length.Should().BeGreaterThan(0);
+        streams[0].Length.Should().BePositive();
+        streams[1].Length.Should().BePositive();
     }
 
     [Fact]
@@ -339,7 +339,7 @@ public sealed class SitemapUrlsTests : SitemapTestBase
 
         var streams = await urls.WriteAsync(AbortToken);
 
-        streams.Should().HaveCount(1);
+        streams.Should().ContainSingle();
     }
 
     #endregion
@@ -377,7 +377,7 @@ public sealed class SitemapUrlsTests : SitemapTestBase
         await foreach (var stream in urls.WriteEachAsync(AbortToken))
         {
             stream.Position.Should().Be(0);
-            stream.Length.Should().BeGreaterThan(0);
+            stream.Length.Should().BePositive();
             count++;
             await stream.DisposeAsync();
         }

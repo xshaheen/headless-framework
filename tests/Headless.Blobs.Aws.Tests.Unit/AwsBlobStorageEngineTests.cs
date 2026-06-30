@@ -239,7 +239,7 @@ public sealed class AwsBlobStorageEngineTests : TestBase
         await sut.CreateContainerAsync(["bucket"]);
 
         // The second call is served from the per-instance cache and issues no further S3 calls.
-        _s3.ReceivedCalls().Count().Should().Be(callsAfterFirst);
+        _s3.ReceivedCalls().Should().HaveCount(callsAfterFirst);
     }
 
     [Fact]

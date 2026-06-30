@@ -88,7 +88,7 @@ public sealed class JobFunctionConcurrencyGateTests
         );
 
         var distinct = semaphores.Distinct().ToArray();
-        distinct.Should().HaveCount(1);
+        distinct.Should().ContainSingle();
         distinct[0]!.CurrentCount.Should().Be(3);
     }
 }

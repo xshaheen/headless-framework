@@ -66,7 +66,7 @@ internal sealed class JobsNotificationHubSender : IJobsNotificationHubSender, ID
         _ = _hubContext.Clients.All.SendAsync("GetActiveThreadsNotification", activeThreads);
     }
 
-    public void UpdateNextOccurrence(object nextOccurrence)
+    public void UpdateNextOccurrence(object? nextOccurrence)
     {
         if (nextOccurrence != null)
         {

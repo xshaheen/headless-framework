@@ -174,7 +174,7 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
 
         var result = sut.GetAllElements();
 
-        result.Should().HaveCount(1);
+        result.Should().ContainSingle();
         var element = result.First();
         element.Name.LocalName.Should().Be("key");
         element.Attribute("id")?.Value.Should().Be("test-123");
@@ -260,7 +260,7 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
 
         // Modern .NET safely ignores external entities - the key is returned
         // but the entity reference is NOT resolved (no file contents leaked)
-        result.Should().HaveCount(1);
+        result.Should().ContainSingle();
         var element = result.First();
         element.Attribute("id")?.Value.Should().Be("malicious");
         // The value should NOT contain /etc/passwd contents - DTD expansion is disabled
@@ -493,7 +493,7 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
 
         foreach (var result in results)
         {
-            result.Should().HaveCount(1);
+            result.Should().ContainSingle();
         }
     }
 

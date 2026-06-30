@@ -986,7 +986,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         await listenTask;
 
         // after resume, polling should have started
-        receiveCount.Should().BeGreaterThan(0);
+        receiveCount.Should().BePositive();
     }
 
     [Fact]

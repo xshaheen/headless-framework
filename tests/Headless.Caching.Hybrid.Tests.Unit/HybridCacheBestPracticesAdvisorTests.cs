@@ -321,14 +321,13 @@ public sealed class HybridCacheBestPracticesAdvisorTests : TestBase
 
         logger
             .Warnings()
-            .Where(e =>
+            .Should()
+            .NotContain(e =>
                 e.Name
                     is "FailSafeMaxDurationNotBeyondDuration"
                         or "FactorySoftTimeoutInertWithoutFailSafe"
                         or "EagerRefreshThresholdTooHigh"
-            )
-            .Should()
-            .BeEmpty();
+            );
     }
 
     // ────────────────────────────────────────────────────────────

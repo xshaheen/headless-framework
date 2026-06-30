@@ -169,7 +169,7 @@ public sealed class PermissionGrantStoreTests : TestBase
         var result = await _sut.IsGrantedAsync([permissionName], _ProviderName, _ProviderKey, AbortToken);
 
         // then
-        result.Should().HaveCount(1);
+        result.Should().ContainSingle();
         result[permissionName].Should().Be(PermissionGrantStatus.Granted);
         await _cache.Received(1).GetAsync(cacheKey, AbortToken);
         await _cache.DidNotReceive().GetAllAsync(Arg.Any<IEnumerable<string>>(), AbortToken);

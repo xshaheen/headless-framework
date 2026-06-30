@@ -21,7 +21,7 @@ public sealed class MessageHeaderTests : TestBase
         var header = new MessageHeader(dictionary);
 
         // then
-        header.Count.Should().Be(2);
+        header.Should().HaveCount(2);
         header["key1"].Should().Be("value1");
         header["key2"].Should().Be("value2");
     }
@@ -45,8 +45,8 @@ public sealed class MessageHeaderTests : TestBase
         var header = new MessageHeader(dictionary);
 
         // when/then
-        header.ContainsKey("existing-key").Should().BeTrue();
-        header.ContainsKey("non-existing-key").Should().BeFalse();
+        header.Should().ContainKey("existing-key");
+        header.Should().NotContainKey("non-existing-key");
     }
 
     [Fact]
@@ -81,7 +81,7 @@ public sealed class MessageHeaderTests : TestBase
         // when/then
         header["MyKey"].Should().Be("value1");
         header["mykey"].Should().Be("value2");
-        header.Count.Should().Be(2);
+        header.Should().HaveCount(2);
     }
 
     [Fact]
@@ -199,8 +199,8 @@ public sealed class MessageHeaderTests : TestBase
         header.RemoveCallback();
 
         // then
-        header.ContainsKey(Headers.CallbackName).Should().BeFalse();
-        header.ContainsKey("other-key").Should().BeTrue();
+        header.Should().NotContainKey(Headers.CallbackName);
+        header.Should().ContainKey("other-key");
     }
 
     [Fact]

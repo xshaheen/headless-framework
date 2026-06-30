@@ -91,7 +91,7 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     /// <param name="schedulerOptionsBuilder">Action that mutates the scheduler options.</param>
     /// <returns>This builder for method chaining.</returns>
     public JobsOptionsBuilder<TTimeJob, TCronJob> ConfigureScheduler(
-        Action<SchedulerOptionsBuilder> schedulerOptionsBuilder
+        Action<SchedulerOptionsBuilder>? schedulerOptionsBuilder
     )
     {
         schedulerOptionsBuilder?.Invoke(SchedulerOptions);
@@ -110,7 +110,7 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     /// </summary>
     /// <param name="configure">Action that mutates the serializer options.</param>
     /// <returns>This builder for method chaining.</returns>
-    public JobsOptionsBuilder<TTimeJob, TCronJob> ConfigureRequestJsonOptions(Action<JsonSerializerOptions> configure)
+    public JobsOptionsBuilder<TTimeJob, TCronJob> ConfigureRequestJsonOptions(Action<JsonSerializerOptions>? configure)
     {
         RequestJsonSerializerOptions ??= new JsonSerializerOptions();
         configure?.Invoke(RequestJsonSerializerOptions);
@@ -159,7 +159,7 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     /// Async factory that receives <c>ITimeJobManager</c> and enqueues initial time jobs.
     /// </param>
     /// <returns>This builder for method chaining.</returns>
-    public JobsOptionsBuilder<TTimeJob, TCronJob> UseJobsSeeder(Func<ITimeJobManager<TTimeJob>, Task> timeSeeder)
+    public JobsOptionsBuilder<TTimeJob, TCronJob> UseJobsSeeder(Func<ITimeJobManager<TTimeJob>, Task>? timeSeeder)
     {
         if (timeSeeder == null)
         {
@@ -183,7 +183,7 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     /// Async factory that receives <c>ICronJobManager</c> and inserts or upserts initial cron job definitions.
     /// </param>
     /// <returns>This builder for method chaining.</returns>
-    public JobsOptionsBuilder<TTimeJob, TCronJob> UseJobsSeeder(Func<ICronJobManager<TCronJob>, Task> cronSeeder)
+    public JobsOptionsBuilder<TTimeJob, TCronJob> UseJobsSeeder(Func<ICronJobManager<TCronJob>, Task>? cronSeeder)
     {
         if (cronSeeder == null)
         {

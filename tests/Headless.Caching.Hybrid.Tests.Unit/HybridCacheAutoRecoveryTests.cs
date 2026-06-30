@@ -533,7 +533,7 @@ public sealed class HybridCacheAutoRecoveryTests : TestBase
         var publishAttempts = publisher.ReceivedCalls().Count();
         _timeProvider.Advance(_Delay);
         await cache.RecoveryQueue.ProcessAsync(AbortToken);
-        publisher.ReceivedCalls().Count().Should().Be(publishAttempts, "the dropped residual must not be retried");
+        publisher.ReceivedCalls().Should().HaveCount(publishAttempts, "the dropped residual must not be retried");
     }
 
     [Fact]

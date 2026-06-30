@@ -150,7 +150,7 @@ public sealed class DashboardOptionsBuilder
     /// customizations from breaking dashboard responses.
     /// </summary>
     /// <param name="configure">Callback to mutate the dashboard <see cref="JsonSerializerOptions"/>.</param>
-    public DashboardOptionsBuilder ConfigureDashboardJsonOptions(Action<JsonSerializerOptions> configure)
+    public DashboardOptionsBuilder ConfigureDashboardJsonOptions(Action<JsonSerializerOptions>? configure)
     {
         DashboardJsonOptions ??= new JsonSerializerOptions();
         configure?.Invoke(DashboardJsonOptions);

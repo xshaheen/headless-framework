@@ -347,7 +347,7 @@ public sealed class DistributedReadWriteLockTests : TestBase
 
         // then
         result.Should().BeNull();
-        storage.WriteReleaseCount.Should().BeGreaterThan(0);
+        storage.WriteReleaseCount.Should().BePositive();
     }
 
     [Fact]

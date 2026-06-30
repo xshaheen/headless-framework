@@ -158,7 +158,7 @@ public sealed class AzureServiceBusOptionsTests
         options.ConfigureCustomProducer<EntityCreated>(cfg => cfg.UseTopic("entity-created"));
 
         // then
-        options.CustomProducers.Should().HaveCount(1);
+        options.CustomProducers.Should().ContainSingle();
         var producer = options.CustomProducers.Single();
         producer.TopicPath.Should().Be("entity-created");
         producer.MessageTypeName.Should().Be(nameof(EntityCreated));

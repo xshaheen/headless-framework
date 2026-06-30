@@ -27,16 +27,16 @@ public sealed class ExponentialBackoffStrategyTests : TestBase
 
         // then - base delays (before jitter) are 1, 2, 4, 8 seconds, ±25%
         decision0.Outcome.Should().Be(RetryDecision.Kind.Continue);
-        decision0.Delay.TotalSeconds.Should().BeGreaterThanOrEqualTo(0.75).And.BeLessThanOrEqualTo(1.25);
+        decision0.Delay.TotalSeconds.Should().BeInRange(0.75, 1.25);
 
         decision1.Outcome.Should().Be(RetryDecision.Kind.Continue);
-        decision1.Delay.TotalSeconds.Should().BeGreaterThanOrEqualTo(1.5).And.BeLessThanOrEqualTo(2.5);
+        decision1.Delay.TotalSeconds.Should().BeInRange(1.5, 2.5);
 
         decision2.Outcome.Should().Be(RetryDecision.Kind.Continue);
-        decision2.Delay.TotalSeconds.Should().BeGreaterThanOrEqualTo(3).And.BeLessThanOrEqualTo(5);
+        decision2.Delay.TotalSeconds.Should().BeInRange(3, 5);
 
         decision3.Outcome.Should().Be(RetryDecision.Kind.Continue);
-        decision3.Delay.TotalSeconds.Should().BeGreaterThanOrEqualTo(6).And.BeLessThanOrEqualTo(10);
+        decision3.Delay.TotalSeconds.Should().BeInRange(6, 10);
     }
 
     [Fact]
@@ -53,7 +53,7 @@ public sealed class ExponentialBackoffStrategyTests : TestBase
         }
 
         // then - delays should vary due to jitter; with ±25% on 10s, values in [7.5, 12.5]
-        delays.Should().AllSatisfy(d => d.Should().BeGreaterThanOrEqualTo(7.5).And.BeLessThanOrEqualTo(12.5));
+        delays.Should().AllSatisfy(d => d.Should().BeInRange(7.5, 12.5));
 
         var distinctDelays = delays.Distinct().ToList();
         distinctDelays.Count.Should().BeGreaterThan(1, "jitter should cause variance in delays");
@@ -146,7 +146,7 @@ public sealed class ExponentialBackoffStrategyTests : TestBase
 
         // then - default initial delay is 1 second with ±25% jitter
         decision.Outcome.Should().Be(RetryDecision.Kind.Continue);
-        decision.Delay.TotalSeconds.Should().BeGreaterThanOrEqualTo(0.75).And.BeLessThanOrEqualTo(1.25);
+        decision.Delay.TotalSeconds.Should().BeInRange(0.75, 1.25);
     }
 
     [Fact]
@@ -161,9 +161,9 @@ public sealed class ExponentialBackoffStrategyTests : TestBase
         var d2 = strategy.Compute(2, 0, _Transient);
 
         // then - with multiplier 3: 1, 3, 9 seconds (±25% jitter)
-        d0.Delay.TotalSeconds.Should().BeGreaterThanOrEqualTo(0.75).And.BeLessThanOrEqualTo(1.25);
-        d1.Delay.TotalSeconds.Should().BeGreaterThanOrEqualTo(2.25).And.BeLessThanOrEqualTo(3.75);
-        d2.Delay.TotalSeconds.Should().BeGreaterThanOrEqualTo(6.75).And.BeLessThanOrEqualTo(11.25);
+        d0.Delay.TotalSeconds.Should().BeInRange(0.75, 1.25);
+        d1.Delay.TotalSeconds.Should().BeInRange(2.25, 3.75);
+        d2.Delay.TotalSeconds.Should().BeInRange(6.75, 11.25);
     }
 
     [Fact]
@@ -177,7 +177,7 @@ public sealed class ExponentialBackoffStrategyTests : TestBase
 
         // then - 2^0 = 1, so delay = initialDelay * 1 = 2 seconds (±25%)
         decision.Outcome.Should().Be(RetryDecision.Kind.Continue);
-        decision.Delay.TotalSeconds.Should().BeGreaterThanOrEqualTo(1.5).And.BeLessThanOrEqualTo(2.5);
+        decision.Delay.TotalSeconds.Should().BeInRange(1.5, 2.5);
     }
 
     [Fact]

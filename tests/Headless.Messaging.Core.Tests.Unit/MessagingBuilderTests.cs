@@ -209,7 +209,7 @@ public sealed class MessagingBuilderTests
             )
             .ToArray();
 
-        descriptors.Should().HaveCount(1);
+        descriptors.Should().ContainSingle();
 
         using var provider = services.BuildServiceProvider();
         var resolved = provider.GetRequiredKeyedService<IDistributedLock>(MessagingKeys.LockProvider);

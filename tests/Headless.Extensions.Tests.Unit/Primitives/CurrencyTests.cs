@@ -184,7 +184,7 @@ public sealed class CurrencyTests
         var currency2 = new Currency(100m, "USD");
 
         // then
-        currency1.CompareTo(currency2).Should().BeGreaterThan(0);
+        currency1.CompareTo(currency2).Should().BePositive();
     }
 
     [Fact]
@@ -195,7 +195,7 @@ public sealed class CurrencyTests
         var currency2 = new Currency(200m, "USD");
 
         // then
-        currency1.CompareTo(currency2).Should().BeLessThan(0);
+        currency1.CompareTo(currency2).Should().BeNegative();
     }
 
     [Fact]
@@ -205,7 +205,7 @@ public sealed class CurrencyTests
         var currency = new Currency(100m, "USD");
 
         // then
-        currency.CompareTo(null).Should().BeGreaterThan(0);
+        currency.CompareTo(null).Should().BePositive();
     }
 
     [Fact]
@@ -216,8 +216,8 @@ public sealed class CurrencyTests
         var usd = new Currency(1m, "USD");
 
         // then - total ordering: code first, so it never throws on a code mismatch
-        eur.CompareTo(usd).Should().BeLessThan(0);
-        usd.CompareTo(eur).Should().BeGreaterThan(0);
+        eur.CompareTo(usd).Should().BeNegative();
+        usd.CompareTo(eur).Should().BePositive();
     }
 
     [Fact]
@@ -228,7 +228,7 @@ public sealed class CurrencyTests
         var large = new Currency(200m, "USD");
 
         // then
-        small.CompareTo(large).Should().BeLessThan(0);
+        small.CompareTo(large).Should().BeNegative();
     }
 
     [Fact]
@@ -252,9 +252,9 @@ public sealed class CurrencyTests
         var currency = new Currency(100m, "USD");
 
         // then
-        currency.CompareTo(50m).Should().BeGreaterThan(0);
+        currency.CompareTo(50m).Should().BePositive();
         currency.CompareTo(100m).Should().Be(0);
-        currency.CompareTo(150m).Should().BeLessThan(0);
+        currency.CompareTo(150m).Should().BeNegative();
     }
 
     [Fact]
@@ -264,7 +264,7 @@ public sealed class CurrencyTests
         var currency = new Currency(100m, "USD");
 
         // then
-        currency.CompareTo((object)50m).Should().BeGreaterThan(0);
+        currency.CompareTo((object)50m).Should().BePositive();
     }
 
     [Fact]
@@ -721,7 +721,7 @@ public sealed class CurrencyTests
 
         // then
         success.Should().BeTrue();
-        charsWritten.Should().BeGreaterThan(0);
+        charsWritten.Should().BePositive();
         destination[..charsWritten].ToString().Should().Be("100USD");
     }
 
@@ -737,7 +737,7 @@ public sealed class CurrencyTests
 
         // then
         success.Should().BeTrue();
-        bytesWritten.Should().BeGreaterThan(0);
+        bytesWritten.Should().BePositive();
     }
 
     #endregion

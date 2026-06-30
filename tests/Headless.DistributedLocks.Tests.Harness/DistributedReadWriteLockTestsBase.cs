@@ -402,7 +402,7 @@ public abstract class DistributedReadWriteLockTestsBase : TestBase
         await AdvanceTimeAsync(TimeSpan.FromSeconds(3), AbortToken);
         await DrainUntilAsync(() => writer.RenewalCount > 0, AbortToken);
 
-        writer.RenewalCount.Should().BeGreaterThan(0);
+        writer.RenewalCount.Should().BePositive();
         (await provider.IsWriteLockedAsync(resource, AbortToken)).Should().BeTrue();
     }
 }

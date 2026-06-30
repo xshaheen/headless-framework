@@ -14,7 +14,7 @@ internal class JobsDispatcher(
 {
     public bool IsEnabled => true;
 
-    public async Task DispatchAsync(InternalFunctionContext[] contexts, CancellationToken cancellationToken = default)
+    public async Task DispatchAsync(InternalFunctionContext[]? contexts, CancellationToken cancellationToken = default)
     {
         if (contexts == null || contexts.Length == 0)
         {

@@ -54,7 +54,7 @@ public readonly struct BrokerAddress : IEquatable<BrokerAddress>
     /// <exception cref="ArgumentException">
     /// Thrown when <paramref name="name"/> contains the reserved '$' separator.
     /// </exception>
-    public BrokerAddress(string name, string? endpoint)
+    public BrokerAddress(string? name, string? endpoint)
     {
         if (name is not null && name.Contains('$', StringComparison.Ordinal))
         {

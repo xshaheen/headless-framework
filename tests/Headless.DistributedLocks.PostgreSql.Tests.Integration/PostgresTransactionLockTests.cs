@@ -25,7 +25,7 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
         {
             await PostgresDistributedLock.AcquireWithTransactionAsync(key, transaction, AbortToken);
 
-            (await _CountAdvisoryLocksAsync(key)).Should().BeGreaterThan(0);
+            (await _CountAdvisoryLocksAsync(key)).Should().BePositive();
 
             await transaction.CommitAsync(AbortToken);
 
@@ -48,7 +48,7 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
         {
             await PostgresDistributedLock.AcquireWithTransactionAsync(key, transaction, AbortToken);
 
-            (await _CountAdvisoryLocksAsync(key)).Should().BeGreaterThan(0);
+            (await _CountAdvisoryLocksAsync(key)).Should().BePositive();
 
             await transaction.RollbackAsync(AbortToken);
 
@@ -216,7 +216,7 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
             var cookie = await strategy.TryAcquireAsync(databaseConnection, resourceName, TimeSpan.Zero, AbortToken);
 
             cookie.Should().NotBeNull();
-            (await _CountAdvisoryLocksAsync(key)).Should().BeGreaterThan(0);
+            (await _CountAdvisoryLocksAsync(key)).Should().BePositive();
         }
 
         (await _CountAdvisoryLocksAsync(key)).Should().Be(0);

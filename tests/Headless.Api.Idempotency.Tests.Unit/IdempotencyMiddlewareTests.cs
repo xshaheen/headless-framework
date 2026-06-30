@@ -1086,7 +1086,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
 
         // then
         nextCalled.Should().BeTrue();
-        context.Response.Headers.ContainsKey(HttpHeaderNames.IdempotentReplayed).Should().BeFalse();
+        context.Response.Headers.Should().NotContainKey(HttpHeaderNames.IdempotentReplayed);
         await cache.DidNotReceive().GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>());
         await cache
             .DidNotReceive()

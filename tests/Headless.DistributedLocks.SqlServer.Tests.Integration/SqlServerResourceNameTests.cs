@@ -70,7 +70,7 @@ public sealed class SqlServerResourceNameTests : TestBase
             + "lock:resource-with-special_chars#$@!";
         var encoded = SqlServerResourceName.Encode(longSpecialResource);
         encoded.Should().StartWith("sha256:");
-        encoded.Length.Should().Be("sha256:".Length + 64);
+        encoded.Should().HaveLength("sha256:".Length + 64);
     }
 
     [Fact]
