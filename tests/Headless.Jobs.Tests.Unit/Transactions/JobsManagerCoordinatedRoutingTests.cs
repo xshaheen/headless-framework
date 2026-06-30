@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
-using System.Diagnostics.CodeAnalysis;
+using Headless.Abstractions;
 using Headless.CommitCoordination;
 using Headless.Jobs;
 using Headless.Jobs.DependencyInjection;
@@ -22,7 +22,7 @@ namespace Tests.Transactions;
 /// </summary>
 public sealed class JobsManagerCoordinatedRoutingTests
 {
-    private const string FunctionName = "routing-test-fn";
+    private const string _FunctionName = "routing-test-fn";
 
     static JobsManagerCoordinatedRoutingTests()
     {
@@ -35,7 +35,7 @@ public sealed class JobsManagerCoordinatedRoutingTests
         JobFunctionProvider.RegisterFunctions(
             new Dictionary<string, (string, JobPriority, JobFunctionDelegate, int)>(StringComparer.Ordinal)
             {
-                [FunctionName] = ("0 0 * * *", JobPriority.LongRunning, (_, _, _) => Task.CompletedTask, 1),
+                [_FunctionName] = ("0 0 * * *", JobPriority.LongRunning, (_, _, _) => Task.CompletedTask, 1),
             }
         );
         JobFunctionProvider.Build();
@@ -399,8 +399,8 @@ public sealed class JobsManagerCoordinatedRoutingTests
         new()
         {
             Id = Guid.NewGuid(),
-            Function = FunctionName,
-            Description = FunctionName,
+            Function = _FunctionName,
+            Description = _FunctionName,
             Request = [],
             ExecutionTime = DateTime.UtcNow.AddHours(1),
         };
@@ -409,8 +409,8 @@ public sealed class JobsManagerCoordinatedRoutingTests
         new()
         {
             Id = Guid.NewGuid(),
-            Function = FunctionName,
-            Description = FunctionName,
+            Function = _FunctionName,
+            Description = _FunctionName,
             Request = [],
             ExecutionTime = DateTime.UtcNow,
         };
@@ -419,8 +419,8 @@ public sealed class JobsManagerCoordinatedRoutingTests
         new()
         {
             Id = Guid.NewGuid(),
-            Function = FunctionName,
-            Description = FunctionName,
+            Function = _FunctionName,
+            Description = _FunctionName,
             // CronScheduleCache parses with IncludingSeconds = true, so the expression has six fields.
             Expression = "0 0 0 * * *",
             Request = [],
@@ -467,6 +467,7 @@ public sealed class JobsManagerCoordinatedRoutingTests
             persistence,
             scheduler,
             TimeProvider.System,
+            new SequentialGuidGenerator(SequentialGuidType.Version7),
             notification,
             new JobsExecutionContext(),
             dispatcher,
@@ -533,14 +534,14 @@ public sealed class JobsManagerCoordinatedRoutingTests
         {
             _onCommit.Add(work);
 
-            return _NoopDisposable.Instance;
+            return NoopDisposable.Instance;
         }
 
         public IDisposable OnRollback(Func<CommitContext, CancellationToken, ValueTask> work)
         {
             _onRollback.Add(work);
 
-            return _NoopDisposable.Instance;
+            return NoopDisposable.Instance;
         }
 
         public TBuffer GetOrAdd<TBuffer>(Func<ICommitCoordinator, TBuffer> factory)
@@ -568,7 +569,7 @@ public sealed class JobsManagerCoordinatedRoutingTests
         {
             var context = new CommitContext
             {
-                Services = _EmptyServiceProvider.Instance,
+                Services = EmptyServiceProvider.Instance,
                 Outcome = CommitOutcome.Committed,
             };
 
@@ -578,17 +579,17 @@ public sealed class JobsManagerCoordinatedRoutingTests
             }
         }
 
-        private sealed class _NoopDisposable : IDisposable
+        private sealed class NoopDisposable : IDisposable
         {
-            public static readonly _NoopDisposable Instance = new();
+            public static readonly NoopDisposable Instance = new();
 
             public void Dispose() { }
         }
     }
 
-    private sealed class _EmptyServiceProvider : IServiceProvider
+    private sealed class EmptyServiceProvider : IServiceProvider
     {
-        public static readonly _EmptyServiceProvider Instance = new();
+        public static readonly EmptyServiceProvider Instance = new();
 
         public object? GetService(Type serviceType) => null;
     }
@@ -599,7 +600,7 @@ public sealed class JobsManagerCoordinatedRoutingTests
         public List<(LogLevel Level, Exception? Exception)> Entries { get; } = [];
 
         public IDisposable BeginScope<TState>(TState state)
-            where TState : notnull => _NullScope.Instance;
+            where TState : notnull => NullScope.Instance;
 
         public bool IsEnabled(LogLevel logLevel) => true;
 
@@ -611,9 +612,9 @@ public sealed class JobsManagerCoordinatedRoutingTests
             Func<TState, Exception?, string> formatter
         ) => Entries.Add((logLevel, exception));
 
-        private sealed class _NullScope : IDisposable
+        private sealed class NullScope : IDisposable
         {
-            public static readonly _NullScope Instance = new();
+            public static readonly NullScope Instance = new();
 
             public void Dispose() { }
         }

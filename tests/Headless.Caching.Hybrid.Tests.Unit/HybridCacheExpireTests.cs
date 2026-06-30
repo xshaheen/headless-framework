@@ -25,7 +25,8 @@ public sealed class HybridCacheExpireTests : TestBase
         var l1 = new InMemoryCache(_timeProvider, l1Options);
 
         var l2Options = new InMemoryCacheOptions { CloneValues = true };
-        var l2 = new InMemoryRemoteCacheAdapter(new InMemoryCache(_timeProvider, l2Options));
+        using var l2Base = new InMemoryCache(_timeProvider, l2Options);
+        var l2 = new InMemoryRemoteCacheAdapter(l2Base);
 
         var publisher = Substitute.For<IBus>();
         publisher
@@ -263,7 +264,7 @@ public sealed class HybridCacheExpireTests : TestBase
         // given — a HybridCache whose L2 starts throwing on writes (degraded mode), wired with auto-recovery
         // so the failing L2 expiration is swallowed + queued instead of bubbling up.
         using var l2 = new TogglableRemoteCache(_timeProvider);
-        var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         var publisher = Substitute.For<IBus>();
         publisher
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
@@ -308,7 +309,7 @@ public sealed class HybridCacheExpireTests : TestBase
     {
         // given — a HybridCache with auto-recovery; the key exists in both tiers
         using var l2 = new TogglableRemoteCache(_timeProvider);
-        var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         var publisher = Substitute.For<IBus>();
         publisher
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())

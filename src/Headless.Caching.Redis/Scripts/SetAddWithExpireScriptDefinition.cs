@@ -2,7 +2,7 @@
 
 using StackExchange.Redis;
 
-namespace Headless.Caching;
+namespace Headless.Caching.Scripts;
 
 /// <summary>
 /// Atomically prunes expired set members, adds/removes members, and re-arms the sorted-set key expiration.

@@ -361,7 +361,7 @@ public sealed class RetryBehaviorTests
         public List<(LogLevel Level, int EventId, string Message)> Entries { get; } = [];
 
         public IDisposable BeginScope<TState>(TState state)
-            where TState : notnull => _NullScope.Instance;
+            where TState : notnull => NullScope.Instance;
 
         public bool IsEnabled(LogLevel logLevel) => true;
 
@@ -373,9 +373,9 @@ public sealed class RetryBehaviorTests
             Func<TState, Exception?, string> formatter
         ) => Entries.Add((logLevel, eventId.Id, formatter(state, exception)));
 
-        private sealed class _NullScope : IDisposable
+        private sealed class NullScope : IDisposable
         {
-            public static readonly _NullScope Instance = new();
+            public static readonly NullScope Instance = new();
 
             public void Dispose() { }
         }

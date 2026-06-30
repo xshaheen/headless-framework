@@ -1,3 +1,4 @@
+using Demo;
 using Demo.Models;
 using Headless.Abstractions;
 using Headless.Api;
@@ -7,7 +8,6 @@ using Headless.Permissions.Grants;
 using Headless.Permissions.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -200,15 +200,3 @@ app.MapDelete(
     .Produces(StatusCodes.Status403Forbidden);
 
 await app.RunAsync();
-
-internal sealed class PermissionsDemoDbContext(
-    DbContextOptions<PermissionsDemoDbContext> options,
-    IOptions<PermissionsStorageOptions> storageOptions
-) : DbContext(options)
-{
-    protected override void OnModelCreating(ModelBuilder modelBuilder)
-    {
-        base.OnModelCreating(modelBuilder);
-        modelBuilder.AddHeadlessPermissions(storageOptions.Value);
-    }
-}

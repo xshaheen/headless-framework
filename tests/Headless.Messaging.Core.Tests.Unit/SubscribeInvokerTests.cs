@@ -9,7 +9,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class SubscribeInvokerTests : TestBase
 {
     [Fact]
@@ -320,7 +319,7 @@ public sealed class SubscribeInvokerTests : TestBase
         // then
         result.CallbackName.Should().Be("callbacks.messageName");
         result.Result.Should().Be(new InvokerResponse("accepted"));
-        result.ResultType.Should().Be(typeof(InvokerResponse));
+        result.ResultType.Should().Be<InvokerResponse>();
     }
 
     [Fact]
@@ -382,7 +381,7 @@ public sealed class SubscribeInvokerTests : TestBase
         // then
         result.CallbackName.Should().BeNull();
         result.Result.Should().Be(new InvokerResponse("accepted"));
-        result.ResultType.Should().Be(typeof(InvokerResponse));
+        result.ResultType.Should().Be<InvokerResponse>();
     }
 
     [Fact]
@@ -414,7 +413,7 @@ public sealed class SubscribeInvokerTests : TestBase
 
         // then
         result.Result.Should().Be(new InvokerResponse("accepted"));
-        result.ResultType.Should().Be(typeof(InvokerResponse));
+        result.ResultType.Should().Be<InvokerResponse>();
         result.CallbackHeader.Should().NotBeNull();
         result.CallbackHeader!["response-key"].Should().Be("response-value");
     }

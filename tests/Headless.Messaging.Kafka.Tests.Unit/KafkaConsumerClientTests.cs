@@ -10,7 +10,6 @@ using Microsoft.Extensions.Options;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class KafkaConsumerClientTests : TestBase
 {
     private readonly IOptions<MessagingKafkaOptions> _options = Options.Create(

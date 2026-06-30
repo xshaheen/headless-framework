@@ -7,7 +7,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Renci.SshNet.Common;
 
-// ReSharper disable AccessToDisposedClosure
 namespace Tests;
 
 [Collection<SshBlobStorageFixture>]

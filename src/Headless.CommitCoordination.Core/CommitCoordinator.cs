@@ -354,7 +354,7 @@ internal sealed partial class CommitCoordinator : ICommitCoordinator
         }
     }
 
-    private IDisposable _AddCallback(
+    private CommitCallbackRegistration _AddCallback(
         Func<CommitContext, CancellationToken, ValueTask> work,
         List<CommitCallbackRegistration> target
     )
@@ -434,6 +434,7 @@ internal sealed partial class CommitCoordinator : ICommitCoordinator
             {
                 switch (buffer)
                 {
+                    // ReSharper disable once SuspiciousTypeConversion.Global
                     case IAsyncDisposable asyncDisposable:
                         await asyncDisposable.DisposeAsync().ConfigureAwait(false);
                         break;
@@ -491,6 +492,7 @@ internal sealed partial class CommitCoordinator : ICommitCoordinator
         Level = LogLevel.Warning,
         Message = "Commit scope already {State}; ignoring {Signal} signal."
     )]
+    // ReSharper disable once InconsistentNaming
     private static partial void LogIgnoredRacingSignal(
         ILogger logger,
         CommitCoordinatorState state,
@@ -498,5 +500,6 @@ internal sealed partial class CommitCoordinator : ICommitCoordinator
     );
 
     [LoggerMessage(EventId = 2, Level = LogLevel.Error, Message = "A commit coordination background drain faulted.")]
+    // ReSharper disable once InconsistentNaming
     private static partial void LogBackgroundDrainFaulted(ILogger logger, Exception? exception);
 }

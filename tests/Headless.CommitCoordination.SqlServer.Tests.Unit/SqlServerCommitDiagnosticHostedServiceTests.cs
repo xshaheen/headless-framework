@@ -42,7 +42,8 @@ public sealed class SqlServerCommitDiagnosticHostedServiceTests
     {
         var probe = new RecordingProbe(SqlServerCommitDiagnosticProbeResult.Failure("should not run"));
         var state = new SqlServerCommitDiagnosticProbeState();
-        var service = _CreateService(
+
+        await using var service = _CreateService(
             probe,
             state,
             new SqlServerCommitCoordinationOptions { DiagnosticProbeMode = SqlServerCommitDiagnosticProbeMode.Disabled }
@@ -63,7 +64,7 @@ public sealed class SqlServerCommitDiagnosticHostedServiceTests
             SqlServerCommitDiagnosticProbeResult.Failure("SQL diagnostics unavailable.", failure)
         );
         var state = new SqlServerCommitDiagnosticProbeState();
-        var service = _CreateService(probe, state, new SqlServerCommitCoordinationOptions());
+        await using var service = _CreateService(probe, state, new SqlServerCommitCoordinationOptions());
 
         await service.StartAsync(TestContext.Current.CancellationToken);
         await service.StopAsync(TestContext.Current.CancellationToken);
@@ -77,11 +78,14 @@ public sealed class SqlServerCommitDiagnosticHostedServiceTests
     public async Task should_fail_startup_when_probe_fails_in_strict_mode()
     {
         var failure = new InvalidOperationException("payload shape changed");
+
         var probe = new RecordingProbe(
             SqlServerCommitDiagnosticProbeResult.Failure("SQL diagnostics unavailable.", failure)
         );
+
         var state = new SqlServerCommitDiagnosticProbeState();
-        var service = _CreateService(
+
+        await using var service = _CreateService(
             probe,
             state,
             new SqlServerCommitCoordinationOptions { DiagnosticProbeMode = SqlServerCommitDiagnosticProbeMode.Strict }
@@ -103,7 +107,7 @@ public sealed class SqlServerCommitDiagnosticHostedServiceTests
     {
         var probe = new RecordingProbe(SqlServerCommitDiagnosticProbeResult.Success("ok"));
         var state = new SqlServerCommitDiagnosticProbeState();
-        var service = _CreateService(probe, state, new SqlServerCommitCoordinationOptions());
+        await using var service = _CreateService(probe, state, new SqlServerCommitCoordinationOptions());
 
         await service.StartAsync(TestContext.Current.CancellationToken);
         await service.StopAsync(TestContext.Current.CancellationToken);
@@ -127,7 +131,8 @@ public sealed class SqlServerCommitDiagnosticHostedServiceTests
             source,
             NullLogger<SqlServerCommitDiagnosticObserver>.Instance
         );
-        var listenerObserver = new SqlServerCommitDiagnosticListenerObserver(observer);
+
+        using var listenerObserver = new SqlServerCommitDiagnosticListenerObserver(observer);
 
         return new SqlServerCommitDiagnosticHostedService(
             listenerObserver,

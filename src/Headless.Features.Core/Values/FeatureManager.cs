@@ -103,7 +103,7 @@ public sealed class FeatureManager(
 
         var feature =
             await definitionManager.FindAsync(name, cancellationToken).ConfigureAwait(false)
-            ?? throw new ConflictException(await errorsDescriptor.FeatureIsNotDefined(name).ConfigureAwait(false));
+            ?? throw new ConflictException(errorsDescriptor.FeatureIsNotDefined(name));
 
         var providers = valueProviderManager
             .ValueProviders.SkipWhile(p => !string.Equals(p.Name, providerName, StringComparison.Ordinal))
@@ -111,9 +111,7 @@ public sealed class FeatureManager(
 
         if (providers.Count == 0)
         {
-            throw new ConflictException(
-                await errorsDescriptor.FeatureProviderNotDefined(name, providerName).ConfigureAwait(false)
-            );
+            throw new ConflictException(errorsDescriptor.FeatureProviderNotDefined(name, providerName));
         }
 
         if (providers.Count > 1 && !forceToSet && value is not null)
@@ -147,9 +145,7 @@ public sealed class FeatureManager(
         {
             if (provider is not IFeatureValueProvider p)
             {
-                throw new ConflictException(
-                    await errorsDescriptor.ProviderIsReadonly(providerName).ConfigureAwait(false)
-                );
+                throw new ConflictException(errorsDescriptor.ProviderIsReadonly(providerName));
             }
 
             if (value is null)
@@ -192,9 +188,7 @@ public sealed class FeatureManager(
         {
             var feature =
                 await definitionManager.FindAsync(featureNameValue.Name, cancellationToken).ConfigureAwait(false)
-                ?? throw new ConflictException(
-                    await errorsDescriptor.FeatureIsNotDefined(featureNameValue.Name).ConfigureAwait(false)
-                );
+                ?? throw new ConflictException(errorsDescriptor.FeatureIsNotDefined(featureNameValue.Name));
 
             foreach (var provider in writableProviders)
             {
@@ -220,7 +214,7 @@ public sealed class FeatureManager(
 
         var definition =
             await definitionManager.FindAsync(name, cancellationToken).ConfigureAwait(false)
-            ?? throw new ConflictException(await errorsDescriptor.FeatureIsNotDefined(name).ConfigureAwait(false));
+            ?? throw new ConflictException(errorsDescriptor.FeatureIsNotDefined(name));
 
         IEnumerable<IFeatureValueReadProvider> providers = valueProviderManager.ValueProviders;
 

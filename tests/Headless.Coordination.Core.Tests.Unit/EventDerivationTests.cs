@@ -2,7 +2,6 @@
 
 using Headless.Coordination;
 using Headless.Testing.Tests;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 
@@ -19,7 +18,7 @@ public sealed class EventDerivationTests : TestBase
         store.EnqueueSnapshot(_Snapshot(node, NodeLivenessState.Alive));
         store.EnqueueSnapshot(_Snapshot(node, NodeLivenessState.Alive));
         var source = new MembershipEventSource(NullLogger<MembershipEventSource>.Instance);
-        var sut = _CreateHeartbeatService(store, source);
+        using var sut = _CreateHeartbeatService(store, source);
         using var watcherCts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
         await using var watcher = source.WatchAsync(watcherCts.Token).GetAsyncEnumerator(watcherCts.Token);
 
@@ -44,7 +43,7 @@ public sealed class EventDerivationTests : TestBase
         store.EnqueueSnapshot(_Snapshot(node, NodeLivenessState.Alive));
         store.EnqueueSnapshot(_Snapshot(node, NodeLivenessState.Dead));
         var source = new MembershipEventSource(NullLogger<MembershipEventSource>.Instance);
-        var sut = _CreateHeartbeatService(store, source);
+        using var sut = _CreateHeartbeatService(store, source);
         using var watcherCts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
         await using var watcher = source.WatchAsync(watcherCts.Token).GetAsyncEnumerator(watcherCts.Token);
 
@@ -75,7 +74,7 @@ public sealed class EventDerivationTests : TestBase
         store.EnqueueSnapshot(_Snapshot(oldIdentity, NodeLivenessState.Alive));
         store.EnqueueSnapshot(_Snapshot(newIdentity, NodeLivenessState.Alive));
         var source = new MembershipEventSource(NullLogger<MembershipEventSource>.Instance);
-        var sut = _CreateHeartbeatService(store, source);
+        using var sut = _CreateHeartbeatService(store, source);
         await using var watcher = source.WatchAsync(AbortToken).GetAsyncEnumerator(AbortToken);
 
         // when
@@ -100,7 +99,7 @@ public sealed class EventDerivationTests : TestBase
         var store = new FakeMembershipStore();
         store.EnqueueSnapshot(_Snapshot(node, NodeLivenessState.Alive));
         var source = new MembershipEventSource(NullLogger<MembershipEventSource>.Instance);
-        var sut = _CreateHeartbeatService(store, source);
+        using var sut = _CreateHeartbeatService(store, source);
         using var watcherCts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
         await using var watcher = source.WatchAsync(watcherCts.Token).GetAsyncEnumerator(watcherCts.Token);
         await sut.RunOnceAsync(AbortToken);

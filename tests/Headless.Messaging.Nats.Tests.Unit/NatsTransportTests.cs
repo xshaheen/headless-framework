@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
-using Headless.Messaging.Messages;
 using Headless.Messaging.Nats;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
@@ -51,7 +50,6 @@ public sealed class NatsTransportTests : TestBase
         await using var transport = new NatsTransport(_logger, _pool);
 
         // ReSharper disable once DisposeOnUsingVariable
-        // ReSharper disable once AccessToDisposedClosure
         var act = async () => await transport.DisposeAsync();
 
         await act.Should().NotThrowAsync();

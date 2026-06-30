@@ -6,7 +6,6 @@ using Headless.EntityFramework;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Tests.Fixture;
-using Tests.Fixtures;
 
 namespace Tests;
 
@@ -103,12 +102,10 @@ public sealed class HeadlessDbContextFactoryTests(HeadlessDbContextTestFixture f
         // other scoped state) is released; otherwise we leak a scope per failed CreateDbContext.
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSingleton<Headless.Abstractions.IClock>(fixture.Clock);
-        services.AddSingleton<Headless.Abstractions.ICurrentTenant>(fixture.CurrentTenant);
-        services.AddSingleton<Headless.Abstractions.ICurrentUser>(fixture.CurrentUser);
-        services.AddSingleton<Headless.Abstractions.IGuidGenerator>(
-            new Headless.Abstractions.SequentialGuidGenerator(Headless.Abstractions.SequentialGuidType.Version7)
-        );
+        services.AddSingleton<IClock>(fixture.Clock);
+        services.AddSingleton<ICurrentTenant>(fixture.CurrentTenant);
+        services.AddSingleton<ICurrentUser>(fixture.CurrentUser);
+        services.AddSingleton<IGuidGenerator>(new SequentialGuidGenerator(SequentialGuidType.Version7));
         services.AddScoped<ScopeProbe>();
         services.AddHeadlessDbContext<ThrowingDbContext>(options => options.UseNpgsql(fixture.SqlConnectionString));
 
@@ -140,12 +137,10 @@ public sealed class HeadlessDbContextFactoryTests(HeadlessDbContextTestFixture f
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSingleton<Headless.Abstractions.IClock>(fixture.Clock);
-        services.AddSingleton<Headless.Abstractions.ICurrentTenant>(fixture.CurrentTenant);
-        services.AddSingleton<Headless.Abstractions.ICurrentUser>(fixture.CurrentUser);
-        services.AddSingleton<Headless.Abstractions.IGuidGenerator>(
-            new Headless.Abstractions.SequentialGuidGenerator(Headless.Abstractions.SequentialGuidType.Version7)
-        );
+        services.AddSingleton<IClock>(fixture.Clock);
+        services.AddSingleton<ICurrentTenant>(fixture.CurrentTenant);
+        services.AddSingleton<ICurrentUser>(fixture.CurrentUser);
+        services.AddSingleton<IGuidGenerator>(new SequentialGuidGenerator(SequentialGuidType.Version7));
         services.AddHeadlessDbContext<FactoryTestDbContext>(options => options.UseNpgsql(fixture.SqlConnectionString));
         configure?.Invoke(services);
 

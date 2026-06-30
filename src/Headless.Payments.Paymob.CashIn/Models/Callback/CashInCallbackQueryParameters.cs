@@ -49,7 +49,7 @@ public sealed class CashInCallbackQueryParameters
     public required bool IsRefunded { get; init; }
 
     [JsonPropertyName("is_3d_secure")]
-    public required bool Is3dSecure { get; init; }
+    public required bool Is3DSecure { get; init; }
 
     [JsonPropertyName("integration_id")]
     public required long IntegrationId { get; init; }
@@ -152,7 +152,7 @@ public sealed class CashInCallbackQueryParameters
             + toString(HasParentTransaction)
             + Id.ToString(CultureInfo.InvariantCulture)
             + IntegrationId.ToString(CultureInfo.InvariantCulture)
-            + toString(Is3dSecure)
+            + toString(Is3DSecure)
             + toString(IsAuth)
             + toString(IsCapture)
             + toString(IsRefunded)

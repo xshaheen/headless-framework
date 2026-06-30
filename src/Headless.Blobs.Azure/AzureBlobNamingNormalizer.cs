@@ -43,17 +43,7 @@ public sealed partial class AzureBlobNamingNormalizer : IBlobNamingNormalizer
             containerName = _EndWithDash().Replace(containerName, string.Empty);
 
             // Container names must be from 3 through 63 characters long.
-            if (containerName.Length < 3)
-            {
-                var length = containerName.Length;
-
-                for (var i = 0; i < 3 - length; i++)
-                {
-                    containerName += "0";
-                }
-            }
-
-            return containerName;
+            return containerName.Length >= 3 ? containerName : containerName.PadRight(3, '0');
         }
     }
 

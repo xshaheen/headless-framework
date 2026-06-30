@@ -2,7 +2,9 @@
 
 using Headless.Abstractions;
 using Headless.Exceptions;
+using Headless.Primitives;
 using Headless.Settings.Models;
+using Headless.Settings.Resources;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Settings.Helpers;
@@ -27,6 +29,7 @@ public interface ISettingEncryptionService
 /// <summary>Default implementation of <see cref="ISettingEncryptionService"/> backed by <see cref="IStringEncryptionService"/>.</summary>
 public sealed class SettingEncryptionService(
     IStringEncryptionService stringEncryptionService,
+    ISettingErrorsDescriptor errorsDescriptor,
     ILogger<SettingEncryptionService> logger
 ) : ISettingEncryptionService
 {
@@ -67,7 +70,7 @@ public sealed class SettingEncryptionService(
         {
             logger.LogFailedToDecryptSettingValue(e, settingDefinition.Name);
 
-            throw new ConflictException($"Failed to decrypt setting '{settingDefinition.Name}'.", e);
+            throw new ConflictException(errorsDescriptor.DecryptionFailed(settingDefinition.Name));
         }
     }
 }

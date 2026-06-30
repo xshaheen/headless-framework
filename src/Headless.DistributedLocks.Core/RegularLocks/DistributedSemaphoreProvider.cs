@@ -551,6 +551,9 @@ internal sealed class DistributedSemaphoreProvider(
 
     void ICanReceiveLockReleased.OnLockReleased(DistributedLockReleased message)
     {
+        // _autoResetEvents is a ConcurrentDictionary (self-synchronizing). _resetEventLock guards the compound
+        // refcount invariant (count-check+create / decrement+conditional-remove), not this lock-free read fast path.
+        // ReSharper disable once InconsistentlySynchronizedField
         if (_autoResetEvents.TryGetValue(message.Resource, out var autoResetEvent))
         {
             autoResetEvent.Target.Set();

@@ -64,7 +64,7 @@ public sealed class NatsPostgreSqlFixture : MessagingStackFixtureBase
         public async ValueTask InitializeAsync()
         {
             await _container.StartAsync();
-            await GetConnectionAsync();
+            await _GetConnectionAsync();
         }
 
         public async ValueTask DisposeAsync()
@@ -79,7 +79,7 @@ public sealed class NatsPostgreSqlFixture : MessagingStackFixtureBase
 
         public async Task EnsureStreamAsync(string streamName, string subjectWildcard)
         {
-            var js = new NatsJSContext(await GetConnectionAsync());
+            var js = new NatsJSContext(await _GetConnectionAsync());
 
             try
             {
@@ -98,7 +98,7 @@ public sealed class NatsPostgreSqlFixture : MessagingStackFixtureBase
             }
         }
 
-        private async Task<NatsConnection> GetConnectionAsync()
+        private async Task<NatsConnection> _GetConnectionAsync()
         {
             if (_connection is not null)
             {

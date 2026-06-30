@@ -8,7 +8,6 @@ using Headless.Core;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 
-// ReSharper disable AccessToDisposedClosure
 namespace Tests;
 
 /// <summary>

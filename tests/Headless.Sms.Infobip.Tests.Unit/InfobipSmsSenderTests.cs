@@ -3,7 +3,6 @@
 using System.Net;
 using Headless.Sms;
 using Headless.Sms.Infobip;
-using Headless.Sms.Testing;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using WireMock.RequestBuilders;
@@ -34,7 +33,7 @@ public sealed class InfobipSmsSenderTests : IClassFixture<SmsWireMockFixture>
         _fixture.Reset();
     }
 
-    private InfobipSmsSender CreateSender(string? basePath = null)
+    private InfobipSmsSender _CreateSender(string? basePath = null)
     {
         var options = Options.Create(
             new InfobipSmsOptions
@@ -61,7 +60,7 @@ public sealed class InfobipSmsSenderTests : IClassFixture<SmsWireMockFixture>
                     .WithBody(_SuccessBody)
             );
 
-        var result = await CreateSender().SendAsync(SmsRequests.Single());
+        var result = await _CreateSender().SendAsync(SmsRequests.Single());
 
         result.Success.Should().BeTrue();
         result.ProviderMessageId.Should().Be("bulk-1");
@@ -80,7 +79,7 @@ public sealed class InfobipSmsSenderTests : IClassFixture<SmsWireMockFixture>
                     .WithBody("""{"requestError":{"serviceException":{"messageId":"BAD_REQUEST","text":"invalid"}}}""")
             );
 
-        var result = await CreateSender().SendAsync(SmsRequests.Single());
+        var result = await _CreateSender().SendAsync(SmsRequests.Single());
 
         result.Success.Should().BeFalse();
     }
@@ -88,7 +87,7 @@ public sealed class InfobipSmsSenderTests : IClassFixture<SmsWireMockFixture>
     [Fact]
     public async Task should_return_transient_failure_on_transport_fault()
     {
-        var result = await CreateSender(basePath: "http://localhost:1").SendAsync(SmsRequests.Single());
+        var result = await _CreateSender(basePath: "http://localhost:1").SendAsync(SmsRequests.Single());
 
         result.Success.Should().BeFalse();
         result.FailureKind.Should().Be(SmsFailureKind.Transient);

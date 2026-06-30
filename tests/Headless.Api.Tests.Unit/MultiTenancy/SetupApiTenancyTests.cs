@@ -4,7 +4,6 @@ using Headless.Api;
 using Headless.Api.MultiTenancy;
 using Headless.MultiTenancy;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 

@@ -1,13 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
-using System.Text;
 using Amazon.SimpleEmailV2;
 using Amazon.SimpleEmailV2.Model;
 using Headless.Emails;
 using Headless.Emails.Aws;
 using Microsoft.Extensions.Logging.Abstractions;
-using NSubstitute;
 
 namespace Tests;
 

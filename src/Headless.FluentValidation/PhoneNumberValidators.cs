@@ -3,6 +3,7 @@
 using FluentValidation.Resources;
 using FluentValidation.Results;
 using Headless.Primitives;
+using Headless.Validators;
 using PhoneNumbers;
 using DataAnnotationsPhoneAttribute = System.ComponentModel.DataAnnotations.PhoneAttribute;
 
@@ -178,6 +179,99 @@ public static class PhoneNumberValidators
                 }
             );
         }
+
+        /// <summary>
+        /// Validates a local number is a possible <b>mobile</b> number for the country code resolved at
+        /// validation time via <paramref name="countryCodeFunc"/> (for example 20 for Egypt). Unlike
+        /// <see cref="PhoneNumber"/>, this rejects landline / fixed-line numbers.
+        /// Passes <see langword="null"/> and whitespace-only values through without failure.
+        /// </summary>
+        /// <param name="countryCodeFunc">A function that extracts the numeric country code from the root object.</param>
+        /// <returns>The rule builder options for chaining.</returns>
+        public IRuleBuilderOptionsConditions<T, string> MobilePhoneNumber(Func<T, int> countryCodeFunc)
+        {
+            return builder.Custom(
+                (number, context) =>
+                {
+                    if (string.IsNullOrWhiteSpace(number))
+                    {
+                        return;
+                    }
+
+                    var countryCode = countryCodeFunc(context.InstanceToValidate);
+
+                    if (!MobilePhoneNumberValidator.IsValid(number, countryCode))
+                    {
+                        _AddPhoneFailure(
+                            context,
+                            number,
+                            FluentValidatorErrorDescriber.PhoneNumbers.InvalidMobileNumber()
+                        );
+                    }
+                }
+            );
+        }
+
+        /// <summary>
+        /// Validates a local number is a possible <b>mobile</b> number for the ISO 3166-1 alpha-2 region
+        /// code resolved at validation time via <paramref name="regionCodeFunc"/> (for example
+        /// <c>"EG"</c>). Unlike <see cref="PhoneNumber"/>, this rejects landline / fixed-line numbers.
+        /// Passes <see langword="null"/> and whitespace-only values through without failure.
+        /// </summary>
+        /// <param name="regionCodeFunc">A function that extracts the region code from the root object.</param>
+        /// <returns>The rule builder options for chaining.</returns>
+        public IRuleBuilderOptionsConditions<T, string> MobilePhoneNumber(Func<T, string> regionCodeFunc)
+        {
+            return builder.Custom(
+                (number, context) =>
+                {
+                    if (string.IsNullOrWhiteSpace(number))
+                    {
+                        return;
+                    }
+
+                    var regionCode = regionCodeFunc(context.InstanceToValidate);
+
+                    if (!MobilePhoneNumberValidator.IsValid(number, regionCode))
+                    {
+                        _AddPhoneFailure(
+                            context,
+                            number,
+                            FluentValidatorErrorDescriber.PhoneNumbers.InvalidMobileNumber()
+                        );
+                    }
+                }
+            );
+        }
+
+        /// <summary>
+        /// Validates an E.164-style international number (must start with <c>+</c>) is a possible
+        /// <b>mobile</b> number. Unlike <see cref="InternationalPhoneNumber"/>, this rejects landline /
+        /// fixed-line numbers. Passes <see langword="null"/> and whitespace-only values through without failure.
+        /// </summary>
+        /// <returns>The rule builder options for chaining.</returns>
+        public IRuleBuilderOptionsConditions<T, string> InternationalMobileNumber()
+        {
+            return builder.Custom(
+                (number, context) =>
+                {
+                    if (string.IsNullOrWhiteSpace(number))
+                    {
+                        return;
+                    }
+
+                    // The out-overload throws when the value does not start with '+', so guard first to
+                    // keep malformed input a validation failure rather than an unhandled 500.
+                    if (!number.StartsWith('+') || !MobilePhoneNumberValidator.IsValid(number, out _))
+                    {
+                        _AddPhoneFailure(
+                            context,
+                            number,
+                            FluentValidatorErrorDescriber.PhoneNumbers.InvalidMobileNumber()
+                        );
+                    }
+                }
+            );
+        }
     }
-#nullable restore
 }

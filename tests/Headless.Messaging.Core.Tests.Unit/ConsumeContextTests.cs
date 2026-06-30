@@ -11,14 +11,14 @@ public sealed class ConsumeContextTests
     {
         // given
         var context = _CreateContext();
-        ResponseContract response = new ConcreteResponse("accepted");
+        IResponseContract response = new ConcreteResponse("accepted");
 
         // when
-        context.SetResponse<ResponseContract>(response);
+        context.SetResponse<IResponseContract>(response);
 
         // then
         context.Response.Should().BeSameAs(response);
-        context.ResponseType.Should().Be(typeof(ResponseContract));
+        context.ResponseType.Should().Be<IResponseContract>();
     }
 
     [Fact]
@@ -41,11 +41,11 @@ public sealed class ConsumeContextTests
 
         // when
         context.SetResponse(new ConcreteResponse("initial"));
-        context.SetResponse<ResponseContract>(response);
+        context.SetResponse<IResponseContract>(response);
 
         // then
         context.Response.Should().BeSameAs(response);
-        context.ResponseType.Should().Be(typeof(ResponseContract));
+        context.ResponseType.Should().Be<IResponseContract>();
     }
 
     [Fact]
@@ -59,7 +59,7 @@ public sealed class ConsumeContextTests
 
         // then
         context.Response.Should().BeNull();
-        context.ResponseType.Should().Be(typeof(ConcreteResponse));
+        context.ResponseType.Should().Be<ConcreteResponse>();
     }
 
     [Fact]
@@ -155,7 +155,7 @@ public sealed class ConsumeContextTests
             IntentType = IntentType.Bus,
         };
 
-    private interface ResponseContract;
+    private interface IResponseContract;
 
-    private sealed record ConcreteResponse(string Status) : ResponseContract;
+    private sealed record ConcreteResponse(string Status) : IResponseContract;
 }

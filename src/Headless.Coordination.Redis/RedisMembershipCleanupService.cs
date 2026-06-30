@@ -41,5 +41,6 @@ internal sealed partial class RedisMembershipCleanupService(
         Level = LogLevel.Error,
         Message = "Redis coordination cleanup tick failed; retrying on the next interval."
     )]
+    // ReSharper disable once InconsistentNaming
     private static partial void LogCleanupFailed(ILogger logger, Exception exception);
 }

@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
-using System.Net.Http;
 using Headless.Captcha;
 using Headless.Testing.Tests;
 
@@ -26,7 +25,8 @@ public abstract class CaptchaVerifierConformanceTests<TFixture> : TestBase, ICla
     [Fact]
     public async Task valid_token_returns_success_with_common_fields()
     {
-        var stub = new StubSiteVerifyHandler().EnqueueJson(HttpStatusCode.OK, _fixture.SuccessResponseBody);
+        using var stubSiteVerifyHandler = new StubSiteVerifyHandler();
+        var stub = stubSiteVerifyHandler.EnqueueJson(HttpStatusCode.OK, _fixture.SuccessResponseBody);
         var verifier = _fixture.CreateVerifier(stub);
 
         var result = await verifier.VerifyAsync(new CaptchaVerifyRequest { Response = "valid-token" }, AbortToken);
@@ -39,7 +39,8 @@ public abstract class CaptchaVerifierConformanceTests<TFixture> : TestBase, ICla
     [Fact]
     public async Task rejected_token_returns_failure_with_error_codes()
     {
-        var stub = new StubSiteVerifyHandler().EnqueueJson(HttpStatusCode.OK, _fixture.RejectedResponseBody);
+        using var stubSiteVerifyHandler = new StubSiteVerifyHandler();
+        var stub = stubSiteVerifyHandler.EnqueueJson(HttpStatusCode.OK, _fixture.RejectedResponseBody);
         var verifier = _fixture.CreateVerifier(stub);
 
         var result = await verifier.VerifyAsync(new CaptchaVerifyRequest { Response = "rejected-token" }, AbortToken);
@@ -52,7 +53,8 @@ public abstract class CaptchaVerifierConformanceTests<TFixture> : TestBase, ICla
     public async Task non_success_http_status_throws_http_request_exception()
     {
         // 400 is not retried by the standard resilience handler, so the failure surfaces immediately.
-        var stub = new StubSiteVerifyHandler().EnqueueJson(HttpStatusCode.BadRequest, "{}");
+        using var stubSiteVerifyHandler = new StubSiteVerifyHandler();
+        var stub = stubSiteVerifyHandler.EnqueueJson(HttpStatusCode.BadRequest, "{}");
         var verifier = _fixture.CreateVerifier(stub);
 
         var act = async () => await verifier.VerifyAsync(new CaptchaVerifyRequest { Response = "token" }, AbortToken);
@@ -63,7 +65,8 @@ public abstract class CaptchaVerifierConformanceTests<TFixture> : TestBase, ICla
     [Fact]
     public async Task null_json_body_throws_invalid_operation()
     {
-        var stub = new StubSiteVerifyHandler().EnqueueJson(HttpStatusCode.OK, "null");
+        using var stubSiteVerifyHandler = new StubSiteVerifyHandler();
+        var stub = stubSiteVerifyHandler.EnqueueJson(HttpStatusCode.OK, "null");
         var verifier = _fixture.CreateVerifier(stub);
 
         var act = async () => await verifier.VerifyAsync(new CaptchaVerifyRequest { Response = "token" }, AbortToken);
@@ -77,7 +80,8 @@ public abstract class CaptchaVerifierConformanceTests<TFixture> : TestBase, ICla
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
-        var stub = new StubSiteVerifyHandler().EnqueueJson(HttpStatusCode.OK, _fixture.SuccessResponseBody);
+        using var stubSiteVerifyHandler = new StubSiteVerifyHandler();
+        var stub = stubSiteVerifyHandler.EnqueueJson(HttpStatusCode.OK, _fixture.SuccessResponseBody);
         var verifier = _fixture.CreateVerifier(stub);
 
         var act = async () => await verifier.VerifyAsync(new CaptchaVerifyRequest { Response = "token" }, cts.Token);
@@ -91,7 +95,8 @@ public abstract class CaptchaVerifierConformanceTests<TFixture> : TestBase, ICla
     {
         // A non-JSON HTTP 200 (e.g. an HTML error page) must surface as InvalidOperationException, not a raw
         // JsonException — callers only need to handle the documented exception contract.
-        var stub = new StubSiteVerifyHandler().EnqueueJson(HttpStatusCode.OK, "<html>oops</html>");
+        using var stubSiteVerifyHandler = new StubSiteVerifyHandler();
+        var stub = stubSiteVerifyHandler.EnqueueJson(HttpStatusCode.OK, "<html>oops</html>");
         var verifier = _fixture.CreateVerifier(stub);
 
         var act = async () => await verifier.VerifyAsync(new CaptchaVerifyRequest { Response = "token" }, AbortToken);

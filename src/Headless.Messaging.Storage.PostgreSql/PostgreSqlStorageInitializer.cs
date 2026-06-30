@@ -264,11 +264,9 @@ internal sealed class PostgreSqlStorageInitializer(
             LIMIT 1;
             """;
 
-        await using var probeCommand = new NpgsqlCommand(probeSql, connection)
-        {
-            CommandTimeout = (int)
-                Math.Min(Math.Ceiling(messagingOptions.Value.CommandTimeout.TotalSeconds), int.MaxValue),
-        };
+        await using var probeCommand = new NpgsqlCommand(probeSql, connection);
+        probeCommand.CommandTimeout = (int)
+            Math.Min(Math.Ceiling(messagingOptions.Value.CommandTimeout.TotalSeconds), int.MaxValue);
         probeCommand.Parameters.Add(new NpgsqlParameter("@IndexName", indexName));
         probeCommand.Parameters.Add(new NpgsqlParameter("@Schema", postgreSqlOptions.Value.Schema));
 

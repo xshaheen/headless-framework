@@ -12,8 +12,8 @@ public sealed class TrackedCommitScopeTests
     {
         // The SqlServer helper signals explicitly after the diagnostic already claimed the scope: the redundant
         // signal no-ops on the latch and must not tear down the owned DI scope under the winner's drain.
-        var ownedScope = new FakeServiceScope();
-        var tracked = _CreateTrackedScope(ownedScope);
+        using var ownedScope = new FakeServiceScope();
+        await using var tracked = _CreateTrackedScope(ownedScope);
 
         var drainEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var releaseDrain = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -56,7 +56,7 @@ public sealed class TrackedCommitScopeTests
     {
         // Sync Dispose of an un-signalled scope offloads the rollback drain to the background; the drain (not the
         // disposing frame) owns the DI scope it resolves rollback callbacks from.
-        var ownedScope = new FakeServiceScope();
+        using var ownedScope = new FakeServiceScope();
         var tracked = _CreateTrackedScope(ownedScope);
 
         var drainFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -83,6 +83,7 @@ public sealed class TrackedCommitScopeTests
         );
 
 #pragma warning disable VSTHRD103 // the synchronous Dispose path (offloaded drain) is the behavior under test
+        // ReSharper disable once MethodHasAsyncOverload
         tracked.Dispose();
 #pragma warning restore VSTHRD103
 
@@ -98,7 +99,7 @@ public sealed class TrackedCommitScopeTests
     {
         // A DisposeAsync racing an in-flight claiming SignalAsync must not leak the owned scope: the dispose path
         // sees the started signal and defers; the claiming signal disposes after its drain.
-        var ownedScope = new FakeServiceScope();
+        using var ownedScope = new FakeServiceScope();
         var tracked = _CreateTrackedScope(ownedScope);
 
         var drainEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

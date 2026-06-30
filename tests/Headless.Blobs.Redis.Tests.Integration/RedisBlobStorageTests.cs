@@ -1,11 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Abstractions;
 using Headless.Blobs;
 using Headless.Blobs.Redis;
 using Headless.Serializer;
 using Microsoft.Extensions.Options;
 
-// ReSharper disable AccessToDisposedClosure
 namespace Tests;
 
 [Collection<RedisBlobStorageFixture>]
@@ -20,7 +20,7 @@ public sealed class RedisBlobStorageTests(RedisBlobStorageFixture fixture) : Blo
             optionsWrapper,
             new SystemJsonSerializer(),
             new CrossOsNamingNormalizer(),
-            TimeProvider.System
+            new Clock(TimeProvider.System)
         );
     }
 
@@ -267,7 +267,7 @@ public sealed class RedisBlobStorageTests(RedisBlobStorageFixture fixture) : Blo
             optionsWrapper,
             new SystemJsonSerializer(),
             new CrossOsNamingNormalizer(),
-            TimeProvider.System
+            new Clock(TimeProvider.System)
         );
 
         var largeData = new byte[200]; // Exceeds 100 byte limit
@@ -298,7 +298,7 @@ public sealed class RedisBlobStorageTests(RedisBlobStorageFixture fixture) : Blo
             optionsWrapper,
             new SystemJsonSerializer(),
             new CrossOsNamingNormalizer(),
-            TimeProvider.System
+            new Clock(TimeProvider.System)
         );
 
         var data = new byte[500]; // Within limit
@@ -329,7 +329,7 @@ public sealed class RedisBlobStorageTests(RedisBlobStorageFixture fixture) : Blo
             optionsWrapper,
             new SystemJsonSerializer(),
             new CrossOsNamingNormalizer(),
-            TimeProvider.System
+            new Clock(TimeProvider.System)
         );
 
         var data = new byte[1000];

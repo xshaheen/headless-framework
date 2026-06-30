@@ -2,7 +2,6 @@ using Headless.Jobs;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class JobFunctionConcurrencyGateTests
 {
     private readonly JobFunctionConcurrencyGate _sut = new();

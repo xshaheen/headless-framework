@@ -31,6 +31,12 @@ public sealed class TotpTokenProviderTests : TestBase
         _sut = new TotpTokenProvider<TestUser>(generator, options);
     }
 
+    protected override ValueTask DisposeAsyncCore()
+    {
+        _userManager.Dispose();
+        return base.DisposeAsyncCore();
+    }
+
     [Fact]
     public async Task should_generate_6_digit_code()
     {

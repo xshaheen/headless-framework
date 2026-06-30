@@ -4,7 +4,6 @@ using System.Data;
 using Headless.Settings.Entities;
 using Headless.Settings.Repositories;
 using Microsoft.Data.SqlClient;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Settings.SqlServer;
@@ -17,7 +16,7 @@ namespace Headless.Settings.SqlServer;
 internal sealed class SqlServerSettingValueRecordRepository(
     IOptions<SqlServerSettingsOptions> providerOptions,
     IOptions<SettingsStorageOptions> storageOptions,
-    IServiceProvider services
+    TimeProvider timeProvider
 ) : ISettingValueRecordRepository
 {
     /// <summary>Comma-separated column list used in SELECT queries for setting value records.</summary>
@@ -130,7 +129,7 @@ internal sealed class SqlServerSettingValueRecordRepository(
 
         // Preserve caller-supplied DateCreated when present (mirrors the EF path); only stamp from
         // the TimeProvider when the caller left it at default.
-        var dateCreated = setting.DateCreated == default ? _TimeProvider().GetUtcNow() : setting.DateCreated;
+        var dateCreated = setting.DateCreated == default ? timeProvider.GetUtcNow() : setting.DateCreated;
 
         return _ExecuteAsync(
             sql,
@@ -154,7 +153,7 @@ internal sealed class SqlServerSettingValueRecordRepository(
         // the TimeProvider when the caller left it null/default.
         var dateUpdated =
             setting.DateUpdated is null || setting.DateUpdated == default(DateTimeOffset)
-                ? _TimeProvider().GetUtcNow()
+                ? timeProvider.GetUtcNow()
                 : setting.DateUpdated.Value;
 
         await _ExecuteAsync(
@@ -236,9 +235,6 @@ internal sealed class SqlServerSettingValueRecordRepository(
 
     /// <summary>Returns <see cref="SqlServerSettingsOptions.CommandTimeout"/> expressed in whole seconds for use as <c>CommandTimeout</c>.</summary>
     private int _CommandTimeout() => (int)providerOptions.Value.CommandTimeout.TotalSeconds;
-
-    /// <summary>Resolves the registered <see cref="TimeProvider"/>, falling back to <see cref="TimeProvider.System"/> when not registered.</summary>
-    private TimeProvider _TimeProvider() => services.GetService<TimeProvider>() ?? TimeProvider.System;
 
     /// <summary>Builds a structured <c>@Ids</c> TVP parameter containing the supplied <paramref name="ids"/>, typed as <c>HeadlessSettingsIdList</c>.</summary>
     private SqlParameter _BuildIdListTvpParameter(IEnumerable<Guid> ids)

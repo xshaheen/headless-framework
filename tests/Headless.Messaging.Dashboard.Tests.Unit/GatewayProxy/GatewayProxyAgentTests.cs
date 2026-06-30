@@ -63,7 +63,7 @@ public sealed class GatewayProxyAgentTests : TestBase
         discoveryProvider.GetNode("node1", null).Returns(Task.FromResult<Node?>(node));
 
         var responseMessage = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("OK") };
-        var httpMessageHandler = new MockHttpMessageHandler(responseMessage);
+        using var httpMessageHandler = new MockHttpMessageHandler(responseMessage);
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
         httpClientFactory.CreateClient("GatewayProxy").Returns(new HttpClient(httpMessageHandler));
 
@@ -134,7 +134,7 @@ public sealed class GatewayProxyAgentTests : TestBase
         var discoveryProvider = Substitute.For<INodeDiscoveryProvider>();
         discoveryProvider.GetNode("node1", null, Arg.Any<CancellationToken>()).Returns(Task.FromResult<Node?>(node));
 
-        var httpMessageHandler = new MockHttpMessageHandler(new HttpRequestException("Connection failed"));
+        using var httpMessageHandler = new MockHttpMessageHandler(new HttpRequestException("Connection failed"));
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
         httpClientFactory.CreateClient("GatewayProxy").Returns(new HttpClient(httpMessageHandler));
 

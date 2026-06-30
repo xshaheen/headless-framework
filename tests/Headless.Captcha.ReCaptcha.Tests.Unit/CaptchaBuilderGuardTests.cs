@@ -8,7 +8,7 @@ namespace Tests;
 /// <summary>Guard / sentinel paths on <see cref="HeadlessCaptchaSetupBuilder"/> and <c>AddHeadlessCaptcha</c>.</summary>
 public sealed class CaptchaBuilderGuardTests
 {
-    private static readonly Action<ReCaptchaOptions> _validOptions = options =>
+    private static readonly Action<ReCaptchaOptions> _ValidOptions = options =>
     {
         options.SiteKey = "k";
         options.SiteSecret = "s";
@@ -22,8 +22,8 @@ public sealed class CaptchaBuilderGuardTests
         Action act = () =>
             services.AddHeadlessCaptcha(builder =>
             {
-                builder.UseReCaptchaV3(_validOptions);
-                builder.UseReCaptchaV3(_validOptions); // second default — same or different type
+                builder.UseReCaptchaV3(_ValidOptions);
+                builder.UseReCaptchaV3(_ValidOptions); // second default — same or different type
             });
 
         act.Should().Throw<InvalidOperationException>().WithMessage("*at most one default*");
@@ -37,8 +37,8 @@ public sealed class CaptchaBuilderGuardTests
         Action act = () =>
             services.AddHeadlessCaptcha(builder =>
             {
-                builder.UseReCaptchaV3(_validOptions);
-                builder.UseReCaptchaV2(_validOptions); // v2 as second default
+                builder.UseReCaptchaV3(_ValidOptions);
+                builder.UseReCaptchaV2(_ValidOptions); // v2 as second default
             });
 
         act.Should().Throw<InvalidOperationException>().WithMessage("*at most one default*");
@@ -51,7 +51,7 @@ public sealed class CaptchaBuilderGuardTests
 
         // Any name that starts with "Headless.Captcha:" is reserved.
         Action act = () =>
-            services.AddHeadlessCaptcha(builder => builder.UseReCaptchaV3("Headless.Captcha:Whatever", _validOptions));
+            services.AddHeadlessCaptcha(builder => builder.UseReCaptchaV3("Headless.Captcha:Whatever", _ValidOptions));
 
         act.Should().Throw<ArgumentException>().WithMessage("*reserved*");
     }
@@ -64,8 +64,8 @@ public sealed class CaptchaBuilderGuardTests
         Action act = () =>
             services.AddHeadlessCaptcha(builder =>
             {
-                builder.UseReCaptchaV3("my-provider", _validOptions);
-                builder.UseReCaptchaV3("my-provider", _validOptions); // same name again
+                builder.UseReCaptchaV3("my-provider", _ValidOptions);
+                builder.UseReCaptchaV3("my-provider", _ValidOptions); // same name again
             });
 
         act.Should().Throw<InvalidOperationException>().WithMessage("*already*");
@@ -90,10 +90,10 @@ public sealed class CaptchaBuilderGuardTests
         var services = new ServiceCollection();
 
         // First call succeeds.
-        services.AddHeadlessCaptcha(builder => builder.UseReCaptchaV3(_validOptions));
+        services.AddHeadlessCaptcha(builder => builder.UseReCaptchaV3(_ValidOptions));
 
         // Second call on the same collection must be rejected by the sentinel.
-        Action act = () => services.AddHeadlessCaptcha(builder => builder.UseReCaptchaV3(_validOptions));
+        Action act = () => services.AddHeadlessCaptcha(builder => builder.UseReCaptchaV3(_ValidOptions));
 
         act.Should().Throw<InvalidOperationException>().WithMessage("*AddHeadlessCaptcha was already called*");
     }

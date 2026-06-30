@@ -5,7 +5,6 @@ using Amazon.SQS;
 using Amazon.SQS.Model;
 using Headless.Messaging;
 using Headless.Messaging.Aws;
-using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
@@ -15,7 +14,6 @@ using SqsMessage = Amazon.SQS.Model.Message;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class AmazonSqsConsumerClientTests : TestBase
 {
     private static IOptions<AmazonSqsOptions> _CreateOptions() =>

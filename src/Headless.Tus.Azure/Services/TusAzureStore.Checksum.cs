@@ -283,6 +283,7 @@ internal static partial class TusAzureStoreChecksumLog
         Level = LogLevel.Warning,
         Message = "Checksum verification failed for file {FileId} using algorithm {Algorithm}. Expected: {Expected}, Calculated: {Calculated}."
     )]
+    // ReSharper disable once InconsistentNaming
     private static partial void ChecksumVerificationFailedCore(
         this ILogger logger,
         string fileId,

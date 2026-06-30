@@ -14,15 +14,9 @@ public sealed class NullableStringToGuidJsonConverter : JsonConverter<Guid?>
     {
         if (reader.TokenType is JsonTokenType.String)
         {
-            var guidString = reader.GetString();
-            ReadOnlySpan<string> formats = ["N", "D", "B", "P", "X"];
-
-            foreach (var format in formats)
+            if (GuidFormats.TryParseAny(reader.GetString(), out var parsedGuid))
             {
-                if (Guid.TryParseExact(guidString, format, out var parsedGuid))
-                {
-                    return parsedGuid;
-                }
+                return parsedGuid;
             }
         }
 

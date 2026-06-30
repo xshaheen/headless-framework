@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
-using Headless.Messaging.Messages;
 using Headless.Messaging.RabbitMq;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
@@ -12,7 +11,6 @@ using Headers = Headless.Messaging.Headers;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class RabbitMqBasicConsumerTests : TestBase
 {
     private readonly IChannel _channel = Substitute.For<IChannel>();

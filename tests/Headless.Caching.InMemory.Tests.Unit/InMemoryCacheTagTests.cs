@@ -48,7 +48,7 @@ public sealed class InMemoryCacheTagTests : TestBase
         // SeedRemoveMarker is a documented no-op for the in-process cache (its FlushAsync wipes physically, so there
         // is no logical remove-generation marker to seed). Even a future-dated seed must not invalidate any entry.
         _timeProvider.Advance(TimeSpan.FromMilliseconds(10));
-        ((ISeedableTagMarkerCache)cache).SeedRemoveMarker(_timeProvider.GetUtcNow());
+        cache.SeedRemoveMarker(_timeProvider.GetUtcNow());
 
         var value = await cache.GetAsync<string>("key", AbortToken);
         value.HasValue.Should().BeTrue();

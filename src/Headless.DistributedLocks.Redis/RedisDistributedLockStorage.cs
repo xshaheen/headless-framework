@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.DistributedLocks.Redis.Scripts;
 using Headless.Redis;
 using Microsoft.Extensions.DependencyInjection;
 using StackExchange.Redis;

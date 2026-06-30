@@ -2,7 +2,6 @@
 
 using Headless.Messaging;
 using Headless.Messaging.Exceptions;
-using Headless.Messaging.Messages;
 using Headless.Messaging.Nats;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -259,7 +258,6 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
         var messageCount = 0;
         client.OnMessageCallback = (_, _) =>
         {
-            // ReSharper disable once AccessToModifiedClosure
             Interlocked.Increment(ref messageCount);
             messageReceived.TrySetResult();
             return Task.CompletedTask;

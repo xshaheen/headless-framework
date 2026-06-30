@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 using Headless.Redis;
 using StackExchange.Redis;
 
-namespace Headless.DistributedLocks.Redis;
+namespace Headless.DistributedLocks.Redis.Scripts;
 
 /// <summary>Atomically extends a distributed semaphore slot when the holder is still present.</summary>
 internal sealed class TryExtendSemaphoreScriptDefinition : RedisScriptDefinition

@@ -1,9 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging.CircuitBreaker;
-using Headless.Messaging.Configuration;
 using Headless.Testing.Tests;
-using Microsoft.Extensions.Options;
 
 namespace Tests.CircuitBreaker;
 

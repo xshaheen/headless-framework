@@ -30,7 +30,7 @@ internal static class DbConnectionExtensions
             command.CommandText = sql;
             if (commandTimeout.HasValue)
             {
-                command.CommandTimeout = (int)commandTimeout.Value.TotalSeconds;
+                command.CommandTimeout = (int)Math.Min(Math.Ceiling(commandTimeout.Value.TotalSeconds), int.MaxValue);
             }
             command.Parameters.AddRange(sqlParams);
 
@@ -63,7 +63,7 @@ internal static class DbConnectionExtensions
             command.CommandText = sql;
             if (commandTimeout.HasValue)
             {
-                command.CommandTimeout = (int)commandTimeout.Value.TotalSeconds;
+                command.CommandTimeout = (int)Math.Min(Math.Ceiling(commandTimeout.Value.TotalSeconds), int.MaxValue);
             }
             command.Parameters.AddRange(sqlParams);
 
@@ -102,7 +102,7 @@ internal static class DbConnectionExtensions
             command.CommandText = sql;
             if (commandTimeout.HasValue)
             {
-                command.CommandTimeout = (int)commandTimeout.Value.TotalSeconds;
+                command.CommandTimeout = (int)Math.Min(Math.Ceiling(commandTimeout.Value.TotalSeconds), int.MaxValue);
             }
             command.Parameters.AddRange(sqlParams);
 

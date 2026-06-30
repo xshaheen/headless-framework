@@ -221,7 +221,6 @@ public sealed class IdempotencyEndToEndTests : TestBase
 
         async Task<HttpResponseMessage> postForTenant(string tenant)
         {
-            // ReSharper disable once AccessToDisposedClosure
             return await _Post(
                 client,
                 "/echo",
@@ -393,7 +392,6 @@ public sealed class IdempotencyEndToEndTests : TestBase
                     return;
                 }
 
-                // ReSharper disable once AccessToModifiedClosure
                 var cache = cacheRef;
                 if (cache is null)
                 {

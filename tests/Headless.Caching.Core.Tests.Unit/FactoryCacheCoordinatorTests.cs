@@ -58,13 +58,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         // when
         var act = async () =>
             await _CreateCoordinator()
-                .GetOrAddAsync<string>(
-                    _store,
-                    "soft-timeout-validation",
-                    _FactoryReturns("fresh"),
-                    options,
-                    AbortToken
-                );
+                .GetOrAddAsync(_store, "soft-timeout-validation", _FactoryReturns("fresh"), options, AbortToken);
 
         // then
         await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
@@ -81,13 +75,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         // when
         var act = async () =>
             await _CreateCoordinator()
-                .GetOrAddAsync<string>(
-                    _store,
-                    "hard-timeout-validation",
-                    _FactoryReturns("fresh"),
-                    options,
-                    AbortToken
-                );
+                .GetOrAddAsync(_store, "hard-timeout-validation", _FactoryReturns("fresh"), options, AbortToken);
 
         // then
         await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
@@ -104,13 +92,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         // when
         var act = async () =>
             await _CreateCoordinator()
-                .GetOrAddAsync<string>(
-                    _store,
-                    "background-ceiling-validation",
-                    _FactoryReturns("fresh"),
-                    options,
-                    AbortToken
-                );
+                .GetOrAddAsync(_store, "background-ceiling-validation", _FactoryReturns("fresh"), options, AbortToken);
 
         // then
         await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
@@ -128,13 +110,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         // when
         var act = async () =>
             await _CreateCoordinator()
-                .GetOrAddAsync<string>(
-                    _store,
-                    "timeout-order-validation",
-                    _FactoryReturns("fresh"),
-                    options,
-                    AbortToken
-                );
+                .GetOrAddAsync(_store, "timeout-order-validation", _FactoryReturns("fresh"), options, AbortToken);
 
         // then
         await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
@@ -152,7 +128,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
 
         // when
         var result = await _CreateCoordinator()
-            .GetOrAddAsync<string>(_store, Faker.Random.AlphaNumeric(8), _FactoryReturns("fresh"), options, AbortToken);
+            .GetOrAddAsync(_store, Faker.Random.AlphaNumeric(8), _FactoryReturns("fresh"), options, AbortToken);
 
         // then
         result.Value.Should().Be("fresh");
@@ -166,7 +142,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
 
         // when
         var result = await _CreateCoordinator()
-            .GetOrAddAsync<string>(_store, Faker.Random.AlphaNumeric(8), _FactoryReturns("fresh"), options, AbortToken);
+            .GetOrAddAsync(_store, Faker.Random.AlphaNumeric(8), _FactoryReturns("fresh"), options, AbortToken);
 
         // then
         result.Value.Should().Be("fresh");
@@ -378,7 +354,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var lockProvider = new FakeCacheFactoryLockProvider();
         var coordinator = new FactoryCacheCoordinator(
             _timeProvider,
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<FactoryCacheCoordinator>.Instance,
+            NullLogger<FactoryCacheCoordinator>.Instance,
             lockProvider
         );
         var factoryCalls = 0;
@@ -919,7 +895,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var coordinator = _CreateCoordinator();
 
-        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        async ValueTask<string?> factory(CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref factoryCalls);
             await gate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -927,8 +903,8 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         }
 
         // when
-        var first = coordinator.GetOrAddAsync(_store, key, Factory, _CreateOptions(), AbortToken).AsTask();
-        var second = coordinator.GetOrAddAsync(_store, key, Factory, _CreateOptions(), AbortToken).AsTask();
+        var first = coordinator.GetOrAddAsync(_store, key, factory, _CreateOptions(), AbortToken).AsTask();
+        var second = coordinator.GetOrAddAsync(_store, key, factory, _CreateOptions(), AbortToken).AsTask();
         gate.SetResult();
         var results = await Task.WhenAll(first, second);
 
@@ -959,14 +935,14 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
             backgroundFactoryCeiling: TimeSpan.FromSeconds(5)
         );
 
-        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        async ValueTask<string?> factory(CancellationToken cancellationToken)
         {
             factoryStarted.SetResult();
             return await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
 
         // when
-        var resultTask = coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken).AsTask();
+        var resultTask = coordinator.GetOrAddAsync(_store, key, factory, options, AbortToken).AsTask();
         await factoryStarted.Task;
         await timeoutRegistered.Task;
         _timeProvider.Advance(TimeSpan.FromSeconds(1));
@@ -1003,7 +979,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
             backgroundFactoryCeiling: TimeSpan.FromSeconds(5)
         );
 
-        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        async ValueTask<string?> factory(CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref factoryCalls);
             factoryStarted.SetResult();
@@ -1011,13 +987,13 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         }
 
         // when
-        var first = coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken).AsTask();
+        var first = coordinator.GetOrAddAsync(_store, key, factory, options, AbortToken).AsTask();
         await factoryStarted.Task;
         await timeoutRegistered.Task;
         _timeProvider.Advance(TimeSpan.FromSeconds(1));
         (await first).IsStale.Should().BeTrue();
 
-        var second = coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken).AsTask();
+        var second = coordinator.GetOrAddAsync(_store, key, factory, options, AbortToken).AsTask();
         factoryGate.SetResult("fresh");
         await backgroundFinished.Task;
         var secondResult = await second;
@@ -1052,7 +1028,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
             backgroundFactoryCeiling: TimeSpan.FromSeconds(5)
         );
 
-        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        async ValueTask<string?> factory(CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref factoryCalls);
             factoryStarted.SetResult();
@@ -1061,7 +1037,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         }
 
         // when
-        var first = coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken).AsTask();
+        var first = coordinator.GetOrAddAsync(_store, key, factory, options, AbortToken).AsTask();
         await factoryStarted.Task;
         await timeoutRegistered.Task;
         _timeProvider.Advance(TimeSpan.FromSeconds(1));
@@ -1069,7 +1045,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         factoryGate.SetResult();
         await backgroundFinished.Task;
 
-        var throttled = await coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken);
+        var throttled = await coordinator.GetOrAddAsync(_store, key, factory, options, AbortToken);
 
         // then
         throttled.Value.Should().Be("stale");
@@ -1087,7 +1063,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var coordinator = _CreateCoordinator();
         var timeoutRegistered = _WaitForFactoryTimeoutRegistered(coordinator);
 
-        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        async ValueTask<string?> factory(CancellationToken cancellationToken)
         {
             factoryStarted.SetResult();
             await Task.Delay(Timeout.InfiniteTimeSpan, _timeProvider, cancellationToken).ConfigureAwait(false);
@@ -1095,7 +1071,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         }
 
         // when
-        var resultTask = coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken).AsTask();
+        var resultTask = coordinator.GetOrAddAsync(_store, key, factory, options, AbortToken).AsTask();
         await factoryStarted.Task;
         await timeoutRegistered;
         _timeProvider.Advance(TimeSpan.FromSeconds(1));
@@ -1119,7 +1095,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var coordinator = _CreateCoordinator();
         var timeoutRegistered = _WaitForFactoryTimeoutRegistered(coordinator);
 
-        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        async ValueTask<string?> factory(CancellationToken cancellationToken)
         {
             factoryStarted.SetResult();
             await Task.Delay(Timeout.InfiniteTimeSpan, _timeProvider, cancellationToken).ConfigureAwait(false);
@@ -1127,7 +1103,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         }
 
         // when
-        var resultTask = coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken).AsTask();
+        var resultTask = coordinator.GetOrAddAsync(_store, key, factory, options, AbortToken).AsTask();
         await factoryStarted.Task;
         await timeoutRegistered;
         _timeProvider.Advance(TimeSpan.FromSeconds(1));
@@ -1147,14 +1123,14 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var factoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
         var options = _CreateOptions(factorySoftTimeout: TimeSpan.FromSeconds(1));
 
-        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        async ValueTask<string?> factory(CancellationToken cancellationToken)
         {
             factoryStarted.SetResult();
             return await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
 
         // when
-        var resultTask = _CreateCoordinator().GetOrAddAsync(_store, key, Factory, options, AbortToken).AsTask();
+        var resultTask = _CreateCoordinator().GetOrAddAsync(_store, key, factory, options, AbortToken).AsTask();
         await factoryStarted.Task;
         _timeProvider.Advance(TimeSpan.FromSeconds(1));
 
@@ -1185,7 +1161,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         );
         using var cts = new CancellationTokenSource();
 
-        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        async ValueTask<string?> factory(CancellationToken cancellationToken)
         {
             factoryStarted.SetResult();
             await Task.Delay(Timeout.InfiniteTimeSpan, _timeProvider, cancellationToken).ConfigureAwait(false);
@@ -1193,7 +1169,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         }
 
         // when
-        var resultTask = coordinator.GetOrAddAsync(_store, key, Factory, options, cts.Token).AsTask();
+        var resultTask = coordinator.GetOrAddAsync(_store, key, factory, options, cts.Token).AsTask();
         await factoryStarted.Task;
         await cts.CancelAsync();
         var act = async () => await resultTask;
@@ -1226,14 +1202,14 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         );
         using var cts = new CancellationTokenSource();
 
-        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        async ValueTask<string?> factory(CancellationToken cancellationToken)
         {
             factoryStarted.SetResult();
             return await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
 
         // when
-        var resultTask = coordinator.GetOrAddAsync(_store, key, Factory, options, cts.Token).AsTask();
+        var resultTask = coordinator.GetOrAddAsync(_store, key, factory, options, cts.Token).AsTask();
         await factoryStarted.Task;
         await timeoutRegistered.Task;
         _timeProvider.Advance(TimeSpan.FromSeconds(1));
@@ -1270,14 +1246,14 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
             backgroundFactoryCeiling: TimeSpan.FromSeconds(3)
         );
 
-        async ValueTask<string?> FactoryA(CancellationToken cancellationToken)
+        async ValueTask<string?> factoryA(CancellationToken cancellationToken)
         {
             factoryStarted.SetResult();
             return await abandonedFactoryGate.Task.ConfigureAwait(false);
         }
 
         // when
-        var first = coordinator.GetOrAddAsync(_store, key, FactoryA, options, AbortToken).AsTask();
+        var first = coordinator.GetOrAddAsync(_store, key, factoryA, options, AbortToken).AsTask();
         await factoryStarted.Task;
         await timeoutRegistered;
         _timeProvider.Advance(TimeSpan.FromSeconds(1));
@@ -1312,8 +1288,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
 
         // when
         var act = async () =>
-            await _CreateCoordinator()
-                .GetOrAddAsync<string>(_store, key, _FactoryReturns("fresh"), options, AbortToken);
+            await _CreateCoordinator().GetOrAddAsync(_store, key, _FactoryReturns("fresh"), options, AbortToken);
 
         // then
         await act.Should()
@@ -1341,14 +1316,14 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
             backgroundFactoryCeiling: TimeSpan.FromSeconds(3)
         );
 
-        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        async ValueTask<string?> factory(CancellationToken cancellationToken)
         {
             factoryStarted.SetResult();
             return await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
 
         // when
-        var first = coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken).AsTask();
+        var first = coordinator.GetOrAddAsync(_store, key, factory, options, AbortToken).AsTask();
         await factoryStarted.Task;
         await timeoutRegistered;
         _timeProvider.Advance(TimeSpan.FromSeconds(1)); // soft timeout -> stale + detached background factory
@@ -1385,7 +1360,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
             backgroundFactoryCeiling: TimeSpan.FromSeconds(3)
         );
 
-        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        async ValueTask<string?> factory(CancellationToken cancellationToken)
         {
             factoryStarted.SetResult();
             // Ignore cancellation: the factory keeps running past the ceiling, then faults.
@@ -1393,7 +1368,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         }
 
         // when
-        var first = coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken).AsTask();
+        var first = coordinator.GetOrAddAsync(_store, key, factory, options, AbortToken).AsTask();
         await factoryStarted.Task;
         await timeoutRegistered;
         _timeProvider.Advance(TimeSpan.FromSeconds(1)); // soft timeout -> stale + detached background factory
@@ -1438,7 +1413,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         );
         var options = _CreateOptions(isFailSafeEnabled: false, factoryHardTimeout: TimeSpan.FromSeconds(1));
 
-        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        async ValueTask<string?> factory(CancellationToken cancellationToken)
         {
             factoryStarted.SetResult();
             // Ignore cancellation: the factory keeps running past the hard timeout, then faults.
@@ -1446,7 +1421,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         }
 
         // when
-        var resultTask = coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken).AsTask();
+        var resultTask = coordinator.GetOrAddAsync(_store, key, factory, options, AbortToken).AsTask();
         await factoryStarted.Task;
         await timeoutRegistered;
         _timeProvider.Advance(TimeSpan.FromSeconds(1)); // hard timeout -> factory abandoned, throws (cold cache)
@@ -1518,13 +1493,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         // when
         var act = async () =>
             await _CreateCoordinator()
-                .GetOrAddAsync<string>(
-                    _store,
-                    "lock-timeout-validation",
-                    _FactoryReturns("fresh"),
-                    options,
-                    AbortToken
-                );
+                .GetOrAddAsync(_store, "lock-timeout-validation", _FactoryReturns("fresh"), options, AbortToken);
 
         // then
         await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
@@ -1551,23 +1520,23 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
             backgroundFactoryCeiling: TimeSpan.FromSeconds(5)
         );
 
-        async ValueTask<string?> FirstFactory(CancellationToken cancellationToken)
+        async ValueTask<string?> firstFactory(CancellationToken cancellationToken)
         {
             firstFactoryStarted.SetResult();
             return await firstFactoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        ValueTask<string?> SecondFactory(CancellationToken _)
+        ValueTask<string?> secondFactory(CancellationToken _)
         {
             secondFactoryCalls++;
             return ValueTask.FromResult<string?>("second");
         }
 
         // when
-        var first = coordinator.GetOrAddAsync(_store, key, FirstFactory, options, AbortToken).AsTask();
+        var first = coordinator.GetOrAddAsync(_store, key, firstFactory, options, AbortToken).AsTask();
         await firstFactoryStarted.Task;
         await timeoutRegistered;
-        var second = coordinator.GetOrAddAsync(_store, key, SecondFactory, options, AbortToken).AsTask();
+        var second = coordinator.GetOrAddAsync(_store, key, secondFactory, options, AbortToken).AsTask();
         _timeProvider.Advance(TimeSpan.FromSeconds(1));
         var secondResult = await second;
         firstFactoryGate.SetResult("first");
@@ -1592,22 +1561,22 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var secondFactoryCalls = 0;
         var options = _CreateOptions(lockTimeout: TimeSpan.FromSeconds(2));
 
-        async ValueTask<string?> FirstFactory(CancellationToken cancellationToken)
+        async ValueTask<string?> firstFactory(CancellationToken cancellationToken)
         {
             firstFactoryStarted.SetResult();
             return await firstFactoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        ValueTask<string?> SecondFactory(CancellationToken _)
+        ValueTask<string?> secondFactory(CancellationToken _)
         {
             secondFactoryCalls++;
             return ValueTask.FromResult<string?>("second");
         }
 
         // when
-        var first = coordinator.GetOrAddAsync(_store, key, FirstFactory, options, AbortToken).AsTask();
+        var first = coordinator.GetOrAddAsync(_store, key, firstFactory, options, AbortToken).AsTask();
         await firstFactoryStarted.Task;
-        var second = coordinator.GetOrAddAsync(_store, key, SecondFactory, options, AbortToken).AsTask();
+        var second = coordinator.GetOrAddAsync(_store, key, secondFactory, options, AbortToken).AsTask();
         _timeProvider.Advance(TimeSpan.FromSeconds(2));
         var secondResult = await second;
         firstFactoryGate.SetResult("first");
@@ -1642,7 +1611,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
             backgroundFactoryCeiling: TimeSpan.FromSeconds(30)
         );
 
-        async ValueTask<string?> OuterFactory(CancellationToken cancellationToken)
+        async ValueTask<string?> outerFactory(CancellationToken cancellationToken)
         {
             var inner = coordinator
                 .GetOrAddAsync(_store, key, _FactoryReturns("inner"), innerOptions, cancellationToken)
@@ -1653,7 +1622,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         }
 
         // when
-        var result = await coordinator.GetOrAddAsync(_store, key, OuterFactory, outerOptions, AbortToken);
+        var result = await coordinator.GetOrAddAsync(_store, key, outerFactory, outerOptions, AbortToken);
 
         // then
         await innerStarted.Task;
@@ -1835,14 +1804,14 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         // Fail only the gate write; never the factory result-write (which must not be reached here).
         _store.SetEntryCommitOverride = (_, calls) => calls != 1;
 
-        ValueTask<string?> Factory(CancellationToken cancellationToken)
+        ValueTask<string?> factory(CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref factoryCalls);
             return ValueTask.FromResult<string?>("fresh");
         }
 
         // when — the triggering caller returns the still-fresh value; the detached refresh aborts at the gate
-        var result = await coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken);
+        var result = await coordinator.GetOrAddAsync(_store, key, factory, options, AbortToken);
         await backgroundFinished;
 
         // then — the factory never ran, the entry stays fresh with its eager stamp intact, and the gate write
@@ -1858,7 +1827,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         // and — the per-key lock was released: a second eager trigger acquires it and runs its gate write.
         var secondBackgroundFinished = _WaitForBackgroundFinished(coordinator);
         _store.SetEntryCommitOverride = null;
-        var secondResult = await coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken);
+        var secondResult = await coordinator.GetOrAddAsync(_store, key, factory, options, AbortToken);
         await secondBackgroundFinished;
 
         secondResult.Value.Should().Be("old");
@@ -1879,14 +1848,14 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var factoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
         var options = _CreateOptions(duration: TimeSpan.FromMinutes(10), eagerRefreshThreshold: 0.5f);
 
-        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        async ValueTask<string?> factory(CancellationToken cancellationToken)
         {
             factoryStarted.SetResult();
             return await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
 
         // when
-        var result = await coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken);
+        var result = await coordinator.GetOrAddAsync(_store, key, factory, options, AbortToken);
         await factoryStarted.Task;
 
         // then — the gate write cleared the stamp while the old value is still served
@@ -1913,7 +1882,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var factoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
         var options = _CreateOptions(duration: TimeSpan.FromMinutes(10), eagerRefreshThreshold: 0.5f);
 
-        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        async ValueTask<string?> factory(CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref factoryCalls);
             return await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -1923,7 +1892,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var results = await Task.WhenAll(
             Enumerable
                 .Range(0, 10)
-                .Select(_ => coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken).AsTask())
+                .Select(_ => coordinator.GetOrAddAsync(_store, key, factory, options, AbortToken).AsTask())
         );
 
         factoryGate.SetResult("fresh");
@@ -1947,11 +1916,11 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var backgroundFinished = _WaitForBackgroundFinished(coordinator);
         var options = _CreateOptions(duration: TimeSpan.FromMinutes(10), eagerRefreshThreshold: 0.5f);
 
-        static ValueTask<string?> Factory(CancellationToken cancellationToken) =>
+        static ValueTask<string?> factory(CancellationToken cancellationToken) =>
             throw new InvalidOperationException("refresh failed");
 
         // when
-        var result = await coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken);
+        var result = await coordinator.GetOrAddAsync(_store, key, factory, options, AbortToken);
         await backgroundFinished;
 
         // then — the value and expirations are untouched; only the eager stamp was consumed by the gate
@@ -1981,7 +1950,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
             backgroundFactoryCeiling: TimeSpan.FromSeconds(2)
         );
 
-        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        async ValueTask<string?> factory(CancellationToken cancellationToken)
         {
             factoryStarted.SetResult();
             // Ignores cancellation: simulates a non-cooperative factory.
@@ -1989,7 +1958,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         }
 
         // when
-        var result = await coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken);
+        var result = await coordinator.GetOrAddAsync(_store, key, factory, options, AbortToken);
         await factoryStarted.Task;
         await ceilingRegistered;
         _timeProvider.Advance(TimeSpan.FromSeconds(2));
@@ -2015,14 +1984,14 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var factoryCalls = 0;
         var options = _CreateOptions(duration: TimeSpan.FromMinutes(10), eagerRefreshThreshold: 0.5f);
 
-        ValueTask<string?> Factory(CancellationToken cancellationToken)
+        ValueTask<string?> factory(CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref factoryCalls);
             return ValueTask.FromResult<string?>("fresh");
         }
 
         // when
-        var result = await coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken);
+        var result = await coordinator.GetOrAddAsync(_store, key, factory, options, AbortToken);
 
         // then
         result.Value.Should().Be("old");
@@ -2269,7 +2238,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
 
         // when — the conditional factory fails exactly like a simple factory would
         var result = await _CreateCoordinator()
-            .GetOrAddAsync<string>(
+            .GetOrAddAsync(
                 _store,
                 key,
                 (CacheFactoryContext<string> _, CancellationToken _) =>
@@ -2305,7 +2274,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
             backgroundFactoryCeiling: TimeSpan.FromSeconds(5)
         );
 
-        async ValueTask<CacheFactoryResult<string>> Factory(
+        async ValueTask<CacheFactoryResult<string>> factory(
             CacheFactoryContext<string> context,
             CancellationToken cancellationToken
         )
@@ -2316,7 +2285,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         }
 
         // when — the soft timeout serves stale, then the detached factory completes with NotModified
-        var resultTask = coordinator.GetOrAddAsync<string>(_store, key, Factory, options, AbortToken).AsTask();
+        var resultTask = coordinator.GetOrAddAsync<string>(_store, key, factory, options, AbortToken).AsTask();
         await factoryStarted.Task;
         await timeoutRegistered;
         _timeProvider.Advance(TimeSpan.FromSeconds(1));
@@ -2425,14 +2394,14 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var factoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        async ValueTask<string?> factory(CancellationToken cancellationToken)
         {
             factoryStarted.SetResult();
             return await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
 
         // when — another actor removes the key while the factory is running, then the factory completes
-        var resultTask = coordinator.GetOrAddAsync(_store, key, Factory, _CreateOptions(), AbortToken).AsTask();
+        var resultTask = coordinator.GetOrAddAsync(_store, key, factory, _CreateOptions(), AbortToken).AsTask();
         await factoryStarted.Task.WaitAsync(AbortToken);
         _RemoveEntryDirectly(_store, key);
         _store.GetEntry(key).Should().BeNull("the concurrent removal must be visible before the factory lands");
@@ -2456,14 +2425,14 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var factoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        async ValueTask<string?> factory(CancellationToken cancellationToken)
         {
             factoryStarted.SetResult();
             return await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
 
         // when — a concurrent writer replaces the entry mid-factory, then the factory completes
-        var resultTask = coordinator.GetOrAddAsync(_store, key, Factory, _CreateOptions(), AbortToken).AsTask();
+        var resultTask = coordinator.GetOrAddAsync(_store, key, factory, _CreateOptions(), AbortToken).AsTask();
         await factoryStarted.Task.WaitAsync(AbortToken);
         _store.SetEntry(key, "concurrent", now.AddMinutes(5), now.AddMinutes(5));
         factoryGate.SetResult("fresh");
@@ -2489,7 +2458,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var factoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
         var options = _CreateOptions(duration: TimeSpan.FromMinutes(10), eagerRefreshThreshold: 0.5f);
 
-        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        async ValueTask<string?> factory(CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref factoryCalls);
             factoryStarted.TrySetResult();
@@ -2497,7 +2466,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         }
 
         // when — the triggering caller returns the still-fresh value and the eager factory holds the keyed lock
-        var first = await coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken);
+        var first = await coordinator.GetOrAddAsync(_store, key, factory, options, AbortToken);
         await factoryStarted.Task.WaitAsync(AbortToken);
         first.Value.Should().Be("old");
 
@@ -2505,7 +2474,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         _timeProvider.Advance(TimeSpan.FromMinutes(3));
 
         // a normal GetOrAdd caller arrives: it must block on the keyed lock held by the eager refresh
-        var second = coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken).AsTask();
+        var second = coordinator.GetOrAddAsync(_store, key, factory, options, AbortToken).AsTask();
         await Task.Delay(50, AbortToken); // give the joiner real time to park on the lock
         second.IsCompleted.Should().BeFalse("the joiner must wait for the in-flight eager refresh");
 
@@ -2560,7 +2529,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var gate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
         var options = _CreateOptions(duration: TimeSpan.FromMinutes(5));
 
-        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        async ValueTask<string?> factory(CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref factoryCalls);
             return await gate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -2569,7 +2538,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         // when — ~500 concurrent cold callers stampede one key
         var tasks = Enumerable
             .Range(0, 500)
-            .Select(_ => Task.Run(() => coordinator.GetOrAddAsync(store, key, Factory, options, AbortToken).AsTask()))
+            .Select(_ => Task.Run(() => coordinator.GetOrAddAsync(store, key, factory, options, AbortToken).AsTask()))
             .ToArray();
 
         await Task.Delay(100, AbortToken); // let the pack pile up on the keyed lock before the factory completes
@@ -2603,7 +2572,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
 
         // when — the refresh factory succeeds
         var result = await _CreateCoordinator()
-            .GetOrAddAsync<string>(_store, key, _FactoryReturns("fresh"), options, AbortToken);
+            .GetOrAddAsync(_store, key, _FactoryReturns("fresh"), options, AbortToken);
 
         // then — the new value wins; nothing stale is served despite the usable reserve
         result.Value.Should().Be("fresh");
@@ -2666,7 +2635,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
             backgroundFactoryCeiling: TimeSpan.FromSeconds(5)
         );
 
-        async ValueTask<CacheFactoryResult<string>> Factory(
+        async ValueTask<CacheFactoryResult<string>> factory(
             CacheFactoryContext<string> context,
             CancellationToken cancellationToken
         )
@@ -2682,7 +2651,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         }
 
         // when — soft timeout serves stale, then the detached factory completes with adaptive options
-        var resultTask = coordinator.GetOrAddAsync<string>(_store, key, Factory, options, AbortToken).AsTask();
+        var resultTask = coordinator.GetOrAddAsync<string>(_store, key, factory, options, AbortToken).AsTask();
         await factoryStarted.Task;
         await timeoutRegistered;
         _timeProvider.Advance(TimeSpan.FromSeconds(1));
@@ -2716,7 +2685,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
 
         // when — the factory disables fail-safe on its context copy (in a finally) and throws
         var result = await _CreateCoordinator()
-            .GetOrAddAsync<string>(
+            .GetOrAddAsync(
                 _store,
                 key,
                 (CacheFactoryContext<string> context, CancellationToken _) =>
@@ -2757,7 +2726,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var options = _CreateOptions(duration: TimeSpan.FromMinutes(10), eagerRefreshThreshold: 0.5f);
         var cts = new CancellationTokenSource();
 
-        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        async ValueTask<string?> factory(CancellationToken cancellationToken)
         {
             factoryStarted.SetResult();
             return await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -2766,7 +2735,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         try
         {
             // when — the eager refresh starts, then the caller cancels its own token
-            var result = await coordinator.GetOrAddAsync(_store, key, Factory, options, cts.Token);
+            var result = await coordinator.GetOrAddAsync(_store, key, factory, options, cts.Token);
             await factoryStarted.Task;
             await cts.CancelAsync();
             factoryGate.SetResult("fresh");
@@ -2904,7 +2873,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var factoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
         var options = _CreateOptions(isFailSafeEnabled: true, factoryHardTimeout: TimeSpan.FromSeconds(1));
 
-        async ValueTask<string?> IgnoresCancellationFactory(CancellationToken cancellationToken)
+        async ValueTask<string?> ignoresCancellationFactory(CancellationToken cancellationToken)
         {
             factoryStarted.SetResult();
             // Deliberately ignore the cancellation token — factory keeps running past hard timeout
@@ -2913,7 +2882,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
 
         // when — advance past hard timeout, coordinator returns stale
         var resultTask = coordinator
-            .GetOrAddAsync(_store, key, IgnoresCancellationFactory, options, AbortToken)
+            .GetOrAddAsync(_store, key, ignoresCancellationFactory, options, AbortToken)
             .AsTask();
         await factoryStarted.Task;
         await timeoutRegistered;
@@ -2981,7 +2950,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
 
         // restampGate blocks the store write indefinitely so the ceiling can win the race
         var restampGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var gatedStore = new _GatedRestampStore(realStore, restampGate.Task);
+        var gatedStore = new GatedRestampStore(realStore, restampGate.Task);
         realStore.SetEntry(key, "stale", now.AddSeconds(-1), stalePhysicalExpiry);
 
         // Use TimeProvider.System so Task.Delay fires by wall time (avoids FakeTimeProvider advance races).
@@ -3009,7 +2978,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
 
         // Factory waits for its gate, then fails — background completion follows the failure path
         // (not the ceiling-abandoned path) which calls _TryRestampStaleWithCeilingAsync
-        async ValueTask<string?> FailingFactory(CancellationToken cancellationToken)
+        async ValueTask<string?> failingFactory(CancellationToken cancellationToken)
         {
             factoryStarted.SetResult();
             await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -3017,7 +2986,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         }
 
         // when — soft timeout → stale returned, background completion starts
-        var first = coordinator.GetOrAddAsync(gatedStore, key, FailingFactory, options, AbortToken).AsTask();
+        var first = coordinator.GetOrAddAsync(gatedStore, key, failingFactory, options, AbortToken).AsTask();
         await factoryStarted.Task;
         // Wait for soft timeout to fire by real time (50ms ceiling)
         var staleResult = await first;
@@ -3048,7 +3017,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
     // the fake clock AFTER the restamp task is in-flight but BEFORE the ceiling Task.Delay is created.
     // Note: Task.Delay for the second ceiling is created by _TryRestampStaleWithCeilingAsync AFTER
     // restampTask starts, so we yield after RestampStarted to let that registration happen.
-    private sealed class _GatedRestampStore(FakeFactoryCacheStore inner, Task gate) : IFactoryCacheStore
+    private sealed class GatedRestampStore(FakeFactoryCacheStore inner, Task gate) : IFactoryCacheStore
     {
         private readonly TaskCompletionSource _restampStartedTcs = new(
             TaskCreationOptions.RunContinuationsAsynchronously

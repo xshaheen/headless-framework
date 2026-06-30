@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
-using System.Runtime.CompilerServices;
-using Headless.Coordination;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
@@ -1281,12 +1279,12 @@ public abstract class DataStorageTestsBase : TestBase
         var serializer = GetSerializer();
         const int concurrency = 32;
 
-        await _RunFirstInsertStormAsync(group: null);
-        await _RunFirstInsertStormAsync(group: "g1");
+        await runFirstInsertStormAsync(group: null);
+        await runFirstInsertStormAsync(group: "g1");
 
         return;
 
-        async Task _RunFirstInsertStormAsync(string? group)
+        async Task runFirstInsertStormAsync(string? group)
         {
             var messageId = $"first-insert-storm-{group ?? "null"}-{Guid.NewGuid():N}";
             var message = CreateMessage(messageId);
@@ -1373,12 +1371,12 @@ public abstract class DataStorageTestsBase : TestBase
         var storage = GetStorage();
         const int concurrency = 32;
 
-        await _RunStoreReceivedStormAsync(group: null);
-        await _RunStoreReceivedStormAsync(group: "consume-group");
+        await runStoreReceivedStormAsync(group: null);
+        await runStoreReceivedStormAsync(group: "consume-group");
 
         return;
 
-        async Task _RunStoreReceivedStormAsync(string? group)
+        async Task runStoreReceivedStormAsync(string? group)
         {
             var messageId = $"store-received-storm-{group ?? "null"}-{Guid.NewGuid():N}";
             var sharedMessage = CreateMessage(messageId);

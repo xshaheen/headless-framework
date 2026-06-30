@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text;
+using Headless.Abstractions;
 using Headless.Blobs.Internals;
 using Headless.Checks;
 using Headless.Primitives;
@@ -40,7 +41,7 @@ public sealed class RedisBlobStorage : IBlobStorage
 {
     private readonly ILogger _logger;
     private readonly ISerializer _serializer;
-    private readonly TimeProvider _timeProvider;
+    private readonly IClock _clock;
     private readonly RedisBlobStorageOptions _options;
     private readonly ResiliencePipeline _retryPipeline;
     private readonly IBlobNamingNormalizer _normalizer;
@@ -110,18 +111,19 @@ public sealed class RedisBlobStorage : IBlobStorage
         IOptions<RedisBlobStorageOptions> optionsAccessor,
         IJsonSerializer defaultSerializer,
         IBlobNamingNormalizer normalizer,
+        IClock clock,
         TimeProvider? timeProvider = null
     )
     {
         _options = optionsAccessor.Value;
         _logger = _options.LoggerFactory?.CreateLogger(typeof(RedisBlobStorage)) ?? NullLogger.Instance;
         _serializer = _options.Serializer ?? defaultSerializer;
-        _timeProvider = timeProvider ?? TimeProvider.System;
+        _clock = clock;
         _normalizer = normalizer;
 
         var pipelineLogger = _logger;
 
-        _retryPipeline = new ResiliencePipelineBuilder { TimeProvider = _timeProvider }
+        _retryPipeline = new ResiliencePipelineBuilder { TimeProvider = timeProvider ?? TimeProvider.System }
             .AddRetry(
                 new RetryStrategyOptions
                 {
@@ -191,7 +193,7 @@ public sealed class RedisBlobStorage : IBlobStorage
             var blobData = new byte[blobSegment.Count];
             Buffer.BlockCopy(blobSegment.Array!, blobSegment.Offset, blobData, 0, blobSegment.Count);
 
-            var now = _timeProvider.GetUtcNow();
+            var now = _clock.UtcNow;
 
             var blobInfo = new BlobInfo
             {

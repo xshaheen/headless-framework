@@ -127,12 +127,10 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
     {
         // given (listen to the distributed-locks activity source)
         var activities = new List<Activity>();
-        using var listener = new ActivityListener
-        {
-            ShouldListenTo = source => source.Name == "Headless.DistributedLocks",
-            Sample = static (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
-            ActivityStopped = activities.Add,
-        };
+        using var listener = new ActivityListener();
+        listener.ShouldListenTo = source => source.Name == "Headless.DistributedLocks";
+        listener.Sample = static (ref _) => ActivitySamplingResult.AllData;
+        listener.ActivityStopped = activities.Add;
         ActivitySource.AddActivityListener(listener);
 
         var provider = _CreateProvider();
@@ -589,7 +587,7 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            return ValueTask.FromResult<ConnectionScopedLockHandle?>(
+            return ValueTask.FromResult(
                 _grant ? new ConnectionScopedLockHandle(resource, leaseId, ReleaseAsync, CancellationToken.None) : null
             );
         }

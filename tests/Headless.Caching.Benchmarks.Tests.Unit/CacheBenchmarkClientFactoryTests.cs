@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using AwesomeAssertions;
 using Headless.Caching.Benchmarks;
 using Headless.Caching.Benchmarks.Scenarios;
 

@@ -36,7 +36,7 @@ public sealed class CashInKioskPayResponse
     public bool IsRefunded { get; init; }
 
     [JsonPropertyName("is_3d_secure")]
-    public bool Is3dSecure { get; init; }
+    public bool Is3DSecure { get; init; }
 
     [JsonPropertyName("integration_id")]
     public int IntegrationId { get; init; }

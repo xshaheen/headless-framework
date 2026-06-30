@@ -2,14 +2,12 @@
 
 using Headless.Messaging;
 using Headless.Messaging.InMemory;
-using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class InMemoryConsumerClientTests : TestBase
 {
     private readonly MemoryQueue _queue;

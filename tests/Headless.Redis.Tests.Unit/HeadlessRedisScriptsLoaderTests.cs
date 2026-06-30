@@ -2,7 +2,6 @@
 
 using System.Net;
 using System.Security.Cryptography;
-using System.Text;
 using Headless.Redis;
 using StackExchange.Redis;
 

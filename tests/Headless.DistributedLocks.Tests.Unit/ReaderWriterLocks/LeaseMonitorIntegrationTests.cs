@@ -402,8 +402,13 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
     {
         private readonly InMemoryDistributedReadWriteLockStorage _inner = new(TimeProvider.System);
         private TaskCompletionSource _extendGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _extendCalls;
 
-        public int ExtendCalls;
+        public int ExtendCalls
+        {
+            get => _extendCalls;
+            set => _extendCalls = value;
+        }
 
         public bool BlockExtend
         {
@@ -437,7 +442,7 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
             CancellationToken cancellationToken = default
         )
         {
-            Interlocked.Increment(ref ExtendCalls);
+            Interlocked.Increment(ref _extendCalls);
             await _extendGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
             return await _inner.TryExtendReadAsync(resource, leaseId, ttl, cancellationToken).ConfigureAwait(false);
         }

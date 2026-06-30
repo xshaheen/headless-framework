@@ -8,13 +8,13 @@ namespace Tests.Coordination;
 
 public sealed class JobsOwnerIdentityAdapterTests
 {
-    private static NodeIdentity Identity(string node, long incarnation) =>
+    private static NodeIdentity _Identity(string node, long incarnation) =>
         new(new NodeId(node), new NodeIncarnation(incarnation));
 
     [Fact]
     public void should_expose_node_at_incarnation_when_registered()
     {
-        var membership = new FakeNodeMembership { Identity = Identity("node-a", 5) };
+        var membership = new FakeNodeMembership { Identity = _Identity("node-a", 5) };
         var options = new SchedulerOptionsBuilder { NodeId = "machine-x" };
         var adapter = new JobsOwnerIdentityAdapter(membership, options);
 
@@ -47,7 +47,7 @@ public sealed class JobsOwnerIdentityAdapterTests
 
         adapter.TryGetStampOwner(out _).Should().BeFalse();
 
-        membership.Identity = Identity("node-a", 7);
+        membership.Identity = _Identity("node-a", 7);
         adapter.TryGetStampOwner(out var afterRegister).Should().BeTrue();
         afterRegister.Should().Be("node-a@7");
         adapter.DisplayOwner.Should().Be("node-a@7");
@@ -61,7 +61,7 @@ public sealed class JobsOwnerIdentityAdapterTests
     public void should_surface_membership_lost_token_from_substrate()
     {
         using var cts = new CancellationTokenSource();
-        var membership = new FakeNodeMembership { Identity = Identity("node-a", 5), LostToken = cts.Token };
+        var membership = new FakeNodeMembership { Identity = _Identity("node-a", 5), LostToken = cts.Token };
         var options = new SchedulerOptionsBuilder { NodeId = "machine-x" };
         var adapter = new JobsOwnerIdentityAdapter(membership, options);
 

@@ -4,7 +4,6 @@ using Headless.Blobs;
 using Headless.Blobs.Redis;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using NSubstitute;
 using StackExchange.Redis;
 
 namespace Tests;
@@ -16,7 +15,7 @@ namespace Tests;
 /// </summary>
 public sealed class RedisBlobsRegistrationTests
 {
-    private static IConnectionMultiplexer CreateMockMultiplexer() => Substitute.For<IConnectionMultiplexer>();
+    private static IConnectionMultiplexer _CreateMockMultiplexer() => Substitute.For<IConnectionMultiplexer>();
 
     [Fact]
     public async Task default_store_is_injectable_and_named_stores_resolve_via_provider()
@@ -26,14 +25,14 @@ public sealed class RedisBlobsRegistrationTests
         services.AddLogging();
         services.AddHeadlessBlobs(blobs =>
         {
-            blobs.UseRedis(options => options.ConnectionMultiplexer = CreateMockMultiplexer());
+            blobs.UseRedis(options => options.ConnectionMultiplexer = _CreateMockMultiplexer());
             blobs.AddNamed(
                 "cache",
-                instance => instance.UseRedis(options => options.ConnectionMultiplexer = CreateMockMultiplexer())
+                instance => instance.UseRedis(options => options.ConnectionMultiplexer = _CreateMockMultiplexer())
             );
             blobs.AddNamed(
                 "scratch",
-                instance => instance.UseRedis(options => options.ConnectionMultiplexer = CreateMockMultiplexer())
+                instance => instance.UseRedis(options => options.ConnectionMultiplexer = _CreateMockMultiplexer())
             );
         });
         await using var serviceProvider = services.BuildServiceProvider();
@@ -63,11 +62,11 @@ public sealed class RedisBlobsRegistrationTests
         {
             blobs.AddNamed(
                 "cache",
-                instance => instance.UseRedis(options => options.ConnectionMultiplexer = CreateMockMultiplexer())
+                instance => instance.UseRedis(options => options.ConnectionMultiplexer = _CreateMockMultiplexer())
             );
             blobs.AddNamed(
                 "scratch",
-                instance => instance.UseRedis(options => options.ConnectionMultiplexer = CreateMockMultiplexer())
+                instance => instance.UseRedis(options => options.ConnectionMultiplexer = _CreateMockMultiplexer())
             );
         });
         await using var serviceProvider = services.BuildServiceProvider();
@@ -92,10 +91,10 @@ public sealed class RedisBlobsRegistrationTests
         services.AddLogging();
         services.AddHeadlessBlobs(blobs =>
         {
-            blobs.UseRedis(options => options.ConnectionMultiplexer = CreateMockMultiplexer());
+            blobs.UseRedis(options => options.ConnectionMultiplexer = _CreateMockMultiplexer());
             blobs.AddNamed(
                 "cache",
-                instance => instance.UseRedis(options => options.ConnectionMultiplexer = CreateMockMultiplexer())
+                instance => instance.UseRedis(options => options.ConnectionMultiplexer = _CreateMockMultiplexer())
             );
         });
         await using var serviceProvider = services.BuildServiceProvider();
@@ -110,8 +109,8 @@ public sealed class RedisBlobsRegistrationTests
     public async Task named_stores_bind_their_own_connection_multiplexer()
     {
         // given — distinct multiplexers per named store
-        var cacheMultiplexer = CreateMockMultiplexer();
-        var scratchMultiplexer = CreateMockMultiplexer();
+        await using var cacheMultiplexer = _CreateMockMultiplexer();
+        await using var scratchMultiplexer = _CreateMockMultiplexer();
 
         var services = new ServiceCollection();
         services.AddLogging();

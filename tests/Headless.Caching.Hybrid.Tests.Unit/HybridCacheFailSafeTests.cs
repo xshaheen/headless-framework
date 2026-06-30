@@ -7,7 +7,6 @@ using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class HybridCacheFailSafeTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();

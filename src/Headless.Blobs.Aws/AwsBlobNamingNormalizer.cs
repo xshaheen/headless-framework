@@ -55,19 +55,8 @@ public sealed partial class AwsBlobNamingNormalizer : IBlobNamingNormalizer
                 containerName = containerName.Replace(".", string.Empty, StringComparison.Ordinal);
             }
 
-            if (containerName.Length >= 3)
-            {
-                return containerName;
-            }
-
-            var length = containerName.Length;
-
-            for (var i = 0; i < 3 - length; i++)
-            {
-                containerName += "0";
-            }
-
-            return containerName;
+            // Bucket names must be from 3 through 63 characters long.
+            return containerName.Length >= 3 ? containerName : containerName.PadRight(3, '0');
         }
     }
 

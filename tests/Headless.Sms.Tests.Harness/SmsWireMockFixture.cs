@@ -1,9 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Net.Http;
 using WireMock.Server;
 
-namespace Headless.Sms.Testing;
+namespace Tests;
 
 /// <summary>
 /// xUnit class fixture exposing a running <see cref="WireMockServer"/> plus an <see cref="IHttpClientFactory"/>
@@ -13,17 +12,11 @@ namespace Headless.Sms.Testing;
 /// </summary>
 public sealed class SmsWireMockFixture : IDisposable
 {
-    public SmsWireMockFixture()
-    {
-        Server = WireMockServer.Start();
-        HttpClientFactory = new WireMockHttpClientFactory();
-    }
-
     /// <summary>The mock HTTP server.</summary>
-    public WireMockServer Server { get; }
+    public WireMockServer Server { get; } = WireMockServer.Start();
 
     /// <summary>A factory whose clients send absolute-URL requests that reach <see cref="Server"/>.</summary>
-    public IHttpClientFactory HttpClientFactory { get; }
+    public IHttpClientFactory HttpClientFactory { get; } = new WireMockHttpClientFactory();
 
     /// <summary>The base URL of <see cref="Server"/> (no trailing slash).</summary>
     public string BaseUrl => Server.Urls[0];

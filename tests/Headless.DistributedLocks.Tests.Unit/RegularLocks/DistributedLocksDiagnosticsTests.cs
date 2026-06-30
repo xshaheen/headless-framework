@@ -43,26 +43,25 @@ public sealed class DistributedLocksDiagnosticsTests : TestBase
         var resource = Faker.Random.AlphaNumeric(10);
 
         var activities = new ConcurrentBag<Activity>();
-        using var activityListener = new ActivityListener
-        {
-            ShouldListenTo = source => source.Name == "Headless.DistributedLocks",
-            Sample = static (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
-            ActivityStopped = activities.Add,
-        };
+        using var activityListener = new ActivityListener();
+        activityListener.ShouldListenTo = source =>
+            string.Equals(source.Name, "Headless.DistributedLocks", StringComparison.Ordinal);
+        activityListener.Sample = static (ref _) => ActivitySamplingResult.AllData;
+        activityListener.ActivityStopped = activities.Add;
         ActivitySource.AddActivityListener(activityListener);
 
         var lockFailedCount = 0;
         var waitTimeRecorded = 0;
-        using var meterListener = new MeterListener
+        using var meterListener = new MeterListener();
+
+        meterListener.InstrumentPublished = (instrument, listener) =>
         {
-            InstrumentPublished = (instrument, listener) =>
+            if (string.Equals(instrument.Meter.Name, "Headless.DistributedLocks", StringComparison.Ordinal))
             {
-                if (instrument.Meter.Name == "Headless.DistributedLocks")
-                {
-                    listener.EnableMeasurementEvents(instrument);
-                }
-            },
+                listener.EnableMeasurementEvents(instrument);
+            }
         };
+
         meterListener.SetMeasurementEventCallback<int>(
             (instrument, measurement, tags, state) =>
             {
@@ -121,16 +120,16 @@ public sealed class DistributedLocksDiagnosticsTests : TestBase
 
         var lockFailedCount = 0;
         var waitTimeRecorded = 0;
-        using var meterListener = new MeterListener
+        using var meterListener = new MeterListener();
+
+        meterListener.InstrumentPublished = (instrument, listener) =>
         {
-            InstrumentPublished = (instrument, listener) =>
+            if (string.Equals(instrument.Meter.Name, "Headless.DistributedLocks", StringComparison.Ordinal))
             {
-                if (instrument.Meter.Name == "Headless.DistributedLocks")
-                {
-                    listener.EnableMeasurementEvents(instrument);
-                }
-            },
+                listener.EnableMeasurementEvents(instrument);
+            }
         };
+
         meterListener.SetMeasurementEventCallback<int>(
             (instrument, measurement, tags, state) =>
             {

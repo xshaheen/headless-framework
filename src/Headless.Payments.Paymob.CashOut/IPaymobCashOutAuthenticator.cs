@@ -130,7 +130,7 @@ public sealed class PaymobCashOutAuthenticator : IPaymobCashOutAuthenticator, ID
 
         if (!response.IsSuccessStatusCode)
         {
-            await PaymobCashOutException.ThrowAsync(response).ConfigureAwait(false);
+            await PaymobCashOutException.ThrowAsync(response, cancellationToken).ConfigureAwait(false);
         }
 
         var content = (
@@ -171,7 +171,7 @@ public sealed class PaymobCashOutAuthenticator : IPaymobCashOutAuthenticator, ID
 
         if (!response.IsSuccessStatusCode)
         {
-            await PaymobCashOutException.ThrowAsync(response).ConfigureAwait(false);
+            await PaymobCashOutException.ThrowAsync(response, cancellationToken).ConfigureAwait(false);
         }
 
         var content = (

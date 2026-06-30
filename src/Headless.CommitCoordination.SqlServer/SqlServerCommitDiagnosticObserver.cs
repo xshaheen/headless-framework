@@ -212,6 +212,7 @@ internal sealed partial class SqlServerCommitDiagnosticObserver(
         Level = LogLevel.Error,
         Message = "A SQL Server commit coordination signal drain faulted; the relay will recover any uncommitted work."
     )]
+    // ReSharper disable once InconsistentNaming
     private static partial void LogDrainFaulted(ILogger logger, Exception? exception);
 
     [LoggerMessage(
@@ -220,6 +221,7 @@ internal sealed partial class SqlServerCommitDiagnosticObserver(
         Message = "SQL Server commit coordination drains were still pending after {Iterations} shutdown wait iterations; "
             + "abandoning the wait — remaining work is relay-recoverable."
     )]
+    // ReSharper disable once InconsistentNaming
     private static partial void LogDrainsStillPendingAtShutdown(ILogger logger, int iterations);
 
     private sealed class ConcurrentPropertyCache

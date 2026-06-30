@@ -2,11 +2,9 @@
 
 using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
-using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Tests.Helpers;
 
 namespace Tests;

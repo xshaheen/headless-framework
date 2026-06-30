@@ -19,12 +19,12 @@ public interface INodeDiscoveryProvider
 
     /// <summary>
     /// Registers the current node with the discovery backend so that peer dashboards can find it.
-    /// The default implementation throws <see cref="NotImplementedException"/>; override when the
+    /// The default implementation throws <see cref="NotSupportedException"/>; override when the
     /// backend supports self-registration.
     /// </summary>
     Task RegisterNode(CancellationToken cancellationToken = default)
     {
-        throw new NotImplementedException();
+        throw new NotSupportedException();
     }
 
     /// <summary>
@@ -38,10 +38,10 @@ public interface INodeDiscoveryProvider
 
     /// <summary>
     /// Returns all messaging services/nodes within the given namespace.
-    /// The default implementation throws <see cref="NotImplementedException"/>.
+    /// The default implementation throws <see cref="NotSupportedException"/>.
     /// </summary>
     Task<IList<Node>> ListServices(string? ns = null)
     {
-        throw new NotImplementedException();
+        throw new NotSupportedException();
     }
 }

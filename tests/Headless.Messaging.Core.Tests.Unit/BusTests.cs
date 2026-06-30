@@ -7,7 +7,6 @@ using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Serialization;
-using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -617,7 +616,6 @@ public sealed class BusTests : TestBase
         await cts.CancelAsync();
 
         // when
-        // ReSharper disable once AccessToDisposedClosure
         var act = () => publisher.PublishAsync(new TestMessage("test"), cancellationToken: cts.Token);
 
         // then

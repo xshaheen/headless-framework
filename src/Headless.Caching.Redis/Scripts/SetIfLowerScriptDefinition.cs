@@ -2,7 +2,7 @@
 
 using Headless.Redis;
 
-namespace Headless.Caching;
+namespace Headless.Caching.Scripts;
 
 /// <summary>Sets a value only if it's lower than the current value. Creates the key if it doesn't exist.</summary>
 internal sealed class SetIfLowerScriptDefinition : RedisScriptDefinition

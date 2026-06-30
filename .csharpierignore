@@ -1,7 +1,9 @@
 # CI restores NuGet packages into the workspace (.nuget/packages via NUGET_PACKAGES in ci.yml);
 # third-party package content must never gate formatting.
 .nuget/
+.vscode/
 .worktrees/
+.context/
 artifacts/
 
 # CSharpier 1.3.0's XML check produces a different result for this hand-maintained file on

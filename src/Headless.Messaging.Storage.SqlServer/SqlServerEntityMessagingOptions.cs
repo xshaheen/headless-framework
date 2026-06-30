@@ -6,6 +6,7 @@ using Headless.Messaging.Persistence;
 
 namespace Headless.Messaging.Storage.SqlServer;
 
+[PublicAPI]
 public partial class SqlServerEntityFrameworkMessagingOptions
 {
     public const string DefaultSchema = "messaging";
@@ -29,14 +30,11 @@ public partial class SqlServerEntityFrameworkMessagingOptions
         set
         {
             Argument.IsNotNullOrWhiteSpace(value);
-
-            if (!_ValidIdentifier().IsMatch(value))
-            {
-                throw new ArgumentException(
-                    $"Schema name must start with a letter, underscore, @ or # and contain only letters, digits, underscores, @ or # (max {MaxSchemaLength} chars)",
-                    nameof(value)
-                );
-            }
+            Argument.Matches(
+                value,
+                _ValidIdentifier(),
+                $"Schema name must start with a letter, underscore, @ or # and contain only letters, digits, underscores, @ or # (max {MaxSchemaLength} chars)"
+            );
 
             field = value;
         }

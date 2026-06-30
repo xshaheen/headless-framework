@@ -97,7 +97,7 @@ internal sealed partial class PostgresAdvisoryLock : IDbSynchronizationStrategy<
         }
         catch (Exception exception)
         {
-            await _RollBackTransactionTimeoutVariablesIfNeededAsync(acquired: false).ConfigureAwait(false);
+            await rollBackTransactionTimeoutVariablesIfNeededAsync(acquired: false).ConfigureAwait(false);
             await _RestoreTimeoutSettingsIfNeededAsync(capturedTimeoutSettings, connection).ConfigureAwait(false);
 
             if (exception is PostgresException postgresException)
@@ -147,7 +147,7 @@ internal sealed partial class PostgresAdvisoryLock : IDbSynchronizationStrategy<
             _ => (bool?)null,
         };
 
-        await _RollBackTransactionTimeoutVariablesIfNeededAsync(acquired: acquired == true).ConfigureAwait(false);
+        await rollBackTransactionTimeoutVariablesIfNeededAsync(acquired: acquired == true).ConfigureAwait(false);
         await _RestoreTimeoutSettingsIfNeededAsync(capturedTimeoutSettings, connection).ConfigureAwait(false);
 
         return acquired switch
@@ -159,7 +159,7 @@ internal sealed partial class PostgresAdvisoryLock : IDbSynchronizationStrategy<
             ),
         };
 
-        async ValueTask _RollBackTransactionTimeoutVariablesIfNeededAsync(bool acquired)
+        async ValueTask rollBackTransactionTimeoutVariablesIfNeededAsync(bool acquired)
         {
             if (
                 savePointDefined
@@ -285,12 +285,12 @@ internal sealed partial class PostgresAdvisoryLock : IDbSynchronizationStrategy<
             return null;
         }
 
-        var statementTimeout = await _GetCurrentSettingAsync("statement_timeout").ConfigureAwait(false);
-        var lockTimeout = await _GetCurrentSettingAsync("lock_timeout").ConfigureAwait(false);
+        var statementTimeout = await getCurrentSettingAsync("statement_timeout").ConfigureAwait(false);
+        var lockTimeout = await getCurrentSettingAsync("lock_timeout").ConfigureAwait(false);
 
         return new CapturedTimeoutSettings(statementTimeout!, lockTimeout!);
 
-        async ValueTask<string?> _GetCurrentSettingAsync(string settingName)
+        async ValueTask<string?> getCurrentSettingAsync(string settingName)
         {
             using var command = connection.CreateCommand();
             command.SetCommandText($"SELECT current_setting('{settingName}', 'true') AS {settingName};");

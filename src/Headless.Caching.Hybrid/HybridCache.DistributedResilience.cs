@@ -68,7 +68,6 @@ public sealed partial class HybridCache
         // Declare before the try so the finally can always dispose them. Both are assigned inside the try so a
         // synchronous throw from operation() is covered by the finally (no CTS leak).
         CancellationTokenSource? operationCts = null;
-        Task<T>? operationTask = null;
 
         try
         {
@@ -77,7 +76,8 @@ public sealed partial class HybridCache
             operationCts = cancellationToken.CanBeCanceled
                 ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
                 : new CancellationTokenSource();
-            operationTask = operation(operationCts.Token).AsTask();
+
+            var operationTask = operation(operationCts.Token).AsTask();
 
             using var delayCts = new CancellationTokenSource();
             var delayTask = Task.Delay(timeout, _timeProvider, delayCts.Token);
@@ -91,7 +91,7 @@ public sealed partial class HybridCache
                 try
                 {
                     var value = await operationTask.ConfigureAwait(false);
-                    operationCts?.Dispose();
+                    operationCts.Dispose();
                     operationCts = null;
 
                     return DistributedCacheReadResult<T>.Success(value);

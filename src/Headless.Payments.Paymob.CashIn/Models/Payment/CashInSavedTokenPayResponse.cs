@@ -38,7 +38,7 @@ public sealed class CashInSavedTokenPayResponse
     public required string IsRefunded { get; init; }
 
     [JsonPropertyName("is_3d_secure")]
-    public required string Is3dSecure { get; init; }
+    public required string Is3DSecure { get; init; }
 
     [JsonPropertyName("integration_id")]
     public int IntegrationId { get; init; }

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Runtime.InteropServices;
+using Headless.Abstractions;
 using Headless.Checks;
 using Headless.CommitCoordination;
 using Headless.Jobs.Entities;
@@ -17,6 +18,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     IJobPersistenceProvider<TTimeJob, TCronJob> persistenceProvider,
     IJobsHostScheduler jobsHostScheduler,
     TimeProvider timeProvider,
+    IGuidGenerator guidGenerator,
     IJobsNotificationHubSender notificationHubSender,
     JobsExecutionContext executionContext,
     IJobsDispatcher dispatcher,
@@ -94,7 +96,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     {
         if (entity.Id == Guid.Empty)
         {
-            entity.Id = Guid.NewGuid();
+            entity.Id = guidGenerator.Create();
         }
 
         if (JobFunctionProvider.JobFunctions.All(x => x.Key != entity.Function))
@@ -185,7 +187,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     {
         if (entity.Id == Guid.Empty)
         {
-            entity.Id = Guid.NewGuid();
+            entity.Id = guidGenerator.Create();
         }
 
         if (JobFunctionProvider.JobFunctions.All(x => x.Key != entity.Function))
@@ -425,7 +427,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         {
             if (entity.Id == Guid.Empty)
             {
-                entity.Id = Guid.NewGuid();
+                entity.Id = guidGenerator.Create();
             }
 
             if (!jobFunctionsHashSet.Contains(entity.Function))
@@ -530,7 +532,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         {
             if (entity.Id == Guid.Empty)
             {
-                entity.Id = Guid.NewGuid();
+                entity.Id = guidGenerator.Create();
             }
 
             if (JobFunctionProvider.JobFunctions.All(x => x.Key != entity.Function))

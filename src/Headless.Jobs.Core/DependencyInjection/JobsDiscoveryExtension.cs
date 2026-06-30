@@ -7,8 +7,6 @@ namespace Headless.Jobs.DependencyInjection;
 
 public static class JobsDiscoveryExtension
 {
-    private const string _GeneratedClassSuffix = "JobsInstanceFactoryExtensions";
-
     /// <summary>
     /// Forces the specified assemblies to load so their source-generated <c>ModuleInitializer</c>
     /// code runs and registers job functions with <c>JobFunctionProvider</c>.

@@ -154,7 +154,7 @@ internal sealed class NullTimestampL2Adapter<TValue>(TValue value) : IRemoteCach
     public ValueTask<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(
         IEnumerable<string> keys,
         CancellationToken cancellationToken = default
-    ) => new((IDictionary<string, CacheValue<T>>)new Dictionary<string, CacheValue<T>>(StringComparer.Ordinal));
+    ) => new(new Dictionary<string, CacheValue<T>>(StringComparer.Ordinal));
 
     public ValueTask<CacheValueWithExpiration<T>> GetWithExpirationAsync<T>(
         string key,
@@ -164,21 +164,17 @@ internal sealed class NullTimestampL2Adapter<TValue>(TValue value) : IRemoteCach
     public ValueTask<IDictionary<string, CacheValueWithExpiration<T>>> GetAllWithExpirationAsync<T>(
         IEnumerable<string> cacheKeys,
         CancellationToken cancellationToken = default
-    ) =>
-        new(
-            (IDictionary<string, CacheValueWithExpiration<T>>)
-                new Dictionary<string, CacheValueWithExpiration<T>>(StringComparer.Ordinal)
-        );
+    ) => new(new Dictionary<string, CacheValueWithExpiration<T>>(StringComparer.Ordinal));
 
     public ValueTask<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(
         string prefix,
         CancellationToken cancellationToken = default
-    ) => new((IDictionary<string, CacheValue<T>>)new Dictionary<string, CacheValue<T>>(StringComparer.Ordinal));
+    ) => new(new Dictionary<string, CacheValue<T>>(StringComparer.Ordinal));
 
     public ValueTask<IReadOnlyList<string>> GetAllKeysByPrefixAsync(
         string prefix,
         CancellationToken cancellationToken = default
-    ) => new((IReadOnlyList<string>)Array.Empty<string>());
+    ) => new(Array.Empty<string>());
 
     public ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default) => new(0L);
 

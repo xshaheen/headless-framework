@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Serializer;
 using Microsoft.Extensions.Configuration;
@@ -132,6 +133,7 @@ public static class SetupRedisBlob
                 serviceProvider.GetRequiredService<IOptions<RedisBlobStorageOptions>>(),
                 serviceProvider.GetRequiredService<IJsonSerializer>(),
                 new CrossOsNamingNormalizer(),
+                serviceProvider.GetRequiredService<IClock>(),
                 serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System
             ));
 
@@ -161,6 +163,7 @@ public static class SetupRedisBlob
                         ),
                         serviceProvider.GetRequiredService<IJsonSerializer>(),
                         new CrossOsNamingNormalizer(),
+                        serviceProvider.GetRequiredService<IClock>(),
                         serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System
                     )
             );

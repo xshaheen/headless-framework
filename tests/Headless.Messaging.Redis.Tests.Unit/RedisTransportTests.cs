@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
-using Headless.Messaging.Messages;
 using Headless.Messaging.Redis;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
@@ -63,7 +62,6 @@ public sealed class RedisTransportTests : TestBase
         );
 
         // when
-        // ReSharper disable once AccessToDisposedClosure
         var act = async () => await _sut.SendAsync(message, cts.Token);
 
         // then

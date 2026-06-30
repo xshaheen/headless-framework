@@ -106,5 +106,6 @@ public sealed partial class PostgreSqlCommitSignalSource(
         Level = LogLevel.Error,
         Message = "A PostgreSQL commit coordination scope is already attached for provider transaction key {ProviderTransactionKey}."
     )]
+    // ReSharper disable once InconsistentNaming
     private static partial void LogDuplicateScope(ILogger logger, object providerTransactionKey);
 }

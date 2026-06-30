@@ -8,7 +8,6 @@ using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Retry;
 using Headless.Messaging.Serialization;
-using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -20,12 +19,7 @@ namespace Tests;
 
 public sealed class MessageSenderTests : TestBase
 {
-    private static MediumMessage _CreateMediumMessage()
-    {
-        return _CreateMediumMessage(IntentType.Bus);
-    }
-
-    private static MediumMessage _CreateMediumMessage(IntentType intentType)
+    private static MediumMessage _CreateMediumMessage(IntentType intentType = IntentType.Bus)
     {
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {

@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Diagnostics.CodeAnalysis;
 using Foundatio.Caching;
 using Headless.Caching.Benchmarks.Adapters;
 using Headless.Caching.Benchmarks.Infrastructure;
@@ -8,12 +7,10 @@ using Headless.Redis;
 using Headless.Serializer;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.Caching.StackExchangeRedis;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 using ZiggyCreatures.Caching.Fusion;
-using ZiggyCreatures.Caching.Fusion.Serialization.SystemTextJson;
 
 namespace Headless.Caching.Benchmarks;
 
@@ -177,7 +174,7 @@ internal static class CacheBenchmarkClientFactory
         var descriptor = _GetDescriptor(BenchmarkProviderIds.HeadlessRedis);
         var multiplexer = ConnectionMultiplexer.Connect(_GetRequiredRedisConnectionString());
         var scriptsLoader = new HeadlessRedisScriptsLoader(multiplexer);
-        var cache = new Headless.Caching.RedisCache(
+        var cache = new RedisCache(
             new SystemJsonSerializer(),
             TimeProvider.System,
             new RedisCacheOptions
