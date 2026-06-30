@@ -187,7 +187,7 @@ public sealed class RabbitMqBasicConsumer(
         var args = new LogMessageEventArgs
         {
             LogType = MqLogType.ConsumerCancelled,
-            Reason = string.Join(",", consumerTags),
+            Reason = string.Join(',', consumerTags),
         };
 
         logCallback(args);

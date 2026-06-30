@@ -264,8 +264,8 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
         results[0].IsSuccess.Should().BeTrue();
         results[1].IsFailure.Should().BeTrue("a path-traversal blob name must fail without failing the batch");
         results[2].IsSuccess.Should().BeTrue();
-        (await storage.GetBlobContentAsync(container, "good-1.txt")).Should().Be("a");
-        (await storage.GetBlobContentAsync(container, "good-2.txt")).Should().Be("c");
+        (await storage.GetBlobContentAsync(container, "good-1.txt", AbortToken)).Should().Be("a");
+        (await storage.GetBlobContentAsync(container, "good-2.txt", AbortToken)).Should().Be("c");
     }
 
     [Fact]
@@ -276,7 +276,7 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
         await using var storage = GetStorage();
         await ResetAsync(storage);
 
-        await storage.UploadContentAsync([containerName, "sub"], "a.txt", "a");
+        await storage.UploadContentAsync([containerName, "sub"], "a.txt", "a", AbortToken);
         var containerDirectory = Path.Combine(_baseDirectoryPath, containerName);
         Directory.Exists(containerDirectory).Should().BeTrue();
 
@@ -285,7 +285,7 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
         // The container directory itself survives a delete-all (matching the SshNet provider); only its contents go.
         Directory.Exists(containerDirectory).Should().BeTrue();
         Directory.Exists(Path.Combine(containerDirectory, "sub")).Should().BeFalse();
-        (await storage.GetBlobsListAsync(container)).Should().BeEmpty();
+        (await storage.GetBlobsListAsync(container, cancellationToken: AbortToken)).Should().BeEmpty();
     }
 
     [Theory]

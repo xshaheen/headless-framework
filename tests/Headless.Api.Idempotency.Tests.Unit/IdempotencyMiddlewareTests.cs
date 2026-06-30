@@ -137,7 +137,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
 
         context.Response.Body.Position = 0;
         var responseBytes = new byte[context.Response.Body.Length];
-        _ = await context.Response.Body.ReadAsync(responseBytes);
+        _ = await context.Response.Body.ReadAsync(responseBytes, AbortToken);
         responseBytes.Should().Equal(storedBody);
     }
 
@@ -387,7 +387,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
             {
                 nextCalled = true;
                 ctx.Response.StatusCode = 201;
-                return ctx.Response.Body.WriteAsync("def"u8.ToArray()).AsTask();
+                return ctx.Response.Body.WriteAsync("def"u8.ToArray(), AbortToken).AsTask();
             }
         );
 
@@ -1551,12 +1551,12 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
 
         var middleware = CreateMiddleware(cache: cache);
         var context = CreateContext(idempotencyKey: "k1", body: body);
-        context.Response.Headers["Content-Type"] = "text/plain"; // upstream value
+        context.Response.ContentType = "text/plain"; // upstream value
 
         await middleware.InvokeAsync(context, _ => Task.CompletedTask);
 
         // Captured value (application/json) wins; upstream text/plain is cleared.
-        context.Response.Headers["Content-Type"].ToString().Should().Be("application/json");
+        context.Response.ContentType.Should().Be("application/json");
     }
 
     [Fact]

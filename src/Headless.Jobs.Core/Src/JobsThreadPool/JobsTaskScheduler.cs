@@ -1,13 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.Globalization;
+using System.Text;
 using Headless.Checks;
 using Headless.Jobs.Enums;
 
-#pragma warning disable IDE0130 // Namespace intentionally omits the legacy Src folder segment.
 namespace Headless.Jobs.JobsThreadPool;
-
-#pragma warning restore IDE0130
 
 /// <summary>
 /// Elastic work-stealing task scheduler.
@@ -198,7 +197,7 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
             var thread = new Thread(() => _WorkerLoop(workerId))
             {
                 IsBackground = true,
-                Name = FormattableString.Invariant($"Headless.Jobs.Worker-{workerId}"),
+                Name = $"Headless.Jobs.Worker-{workerId.ToString(CultureInfo.InvariantCulture)}",
             };
             thread.Start();
 
@@ -506,11 +505,15 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
 #pragma warning disable CA1024 // This constructs a multi-line diagnostic snapshot, not a cheap property.
     public string GetDiagnostics()
     {
-        var text = "=== Jobs Work-Stealing Scheduler ===\n";
-        text += $"Status: {(_isFrozen ? "FROZEN" : (_disposed ? "DISPOSED" : "ACTIVE"))}\n";
-        text += FormattableString.Invariant($"Workers: {_activeWorkers}/{_maxConcurrency}\n");
-        text += FormattableString.Invariant($"Total Queued (counter): {_totalQueuedTasks}\n\n");
-        text += "Queue Distribution:\n";
+        var builder = new StringBuilder();
+        builder.Append("=== Jobs Work-Stealing Scheduler ===\n");
+        builder.Append(
+            CultureInfo.InvariantCulture,
+            $"Status: {(_isFrozen ? "FROZEN" : (_disposed ? "DISPOSED" : "ACTIVE"))}\n"
+        );
+        builder.Append(CultureInfo.InvariantCulture, $"Workers: {_activeWorkers}/{_maxConcurrency}\n");
+        builder.Append(CultureInfo.InvariantCulture, $"Total Queued (counter): {_totalQueuedTasks}\n\n");
+        builder.Append("Queue Distribution:\n");
 
         var totalInQueues = 0;
         for (var i = 0; i < _maxConcurrency; i++)
@@ -519,28 +522,29 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
             totalInQueues += count;
             if (count > 0)
             {
-                text += FormattableString.Invariant($"  Queue[{i}]: {count} tasks\n");
+                builder.Append(CultureInfo.InvariantCulture, $"  Queue[{i}]: {count} tasks\n");
             }
         }
 
         if (totalInQueues == 0)
         {
-            text += "  All queues empty\n";
+            builder.Append("  All queues empty\n");
         }
         else
         {
-            text += FormattableString.Invariant($"  Total in queues: {totalInQueues}\n");
+            builder.Append(CultureInfo.InvariantCulture, $"  Total in queues: {totalInQueues}\n");
         }
 
         // Discrepancy check
         if (totalInQueues != _totalQueuedTasks)
         {
-            text += FormattableString.Invariant(
+            builder.Append(
+                CultureInfo.InvariantCulture,
                 $"\n⚠️ DISCREPANCY: Counter shows {_totalQueuedTasks} but queues have {totalInQueues} tasks!\n"
             );
         }
 
-        return text;
+        return builder.ToString();
     }
 #pragma warning restore CA1024
 

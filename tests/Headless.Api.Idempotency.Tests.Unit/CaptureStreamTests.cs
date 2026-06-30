@@ -43,7 +43,7 @@ public sealed class CaptureStreamTests : TestBase
         await using var capture = new CaptureStream(inner, _Cap);
         byte[] data = [5, 6, 7];
 
-        await capture.WriteAsync(data.AsMemory());
+        await capture.WriteAsync(data.AsMemory(), AbortToken);
 
         inner.ToArray().Should().Equal(data);
         capture.CapturedBytes.Should().Equal(data);
@@ -170,7 +170,7 @@ public sealed class CaptureStreamTests : TestBase
         var capture = new CaptureStream(inner, _Cap);
         await capture.DisposeAsync();
 
-        var act = async () => await capture.WriteAsync(new byte[] { 1 }.AsMemory());
+        var act = async () => await capture.WriteAsync(new byte[] { 1 }.AsMemory(), AbortToken);
 
         await act.Should().ThrowAsync<ObjectDisposedException>();
     }

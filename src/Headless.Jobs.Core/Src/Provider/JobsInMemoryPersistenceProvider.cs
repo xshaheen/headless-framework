@@ -99,9 +99,11 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         // NOTE: we project to the raw job here and only build the full
         //       TimeJobEntity graph after we successfully acquire the lock.
         var timeJobsToUpdate = _timeJobs
-            .Values.Where(x => x.ExecutionTime != null)
-            .Where(x => x.Status is JobStatus.Idle or JobStatus.Queued)
-            .Where(x => x.ExecutionTime <= fallbackThreshold) // Only tasks older than 1 second
+            .Values.Where(x =>
+                x.ExecutionTime != null
+                && x.Status is JobStatus.Idle or JobStatus.Queued
+                && x.ExecutionTime <= fallbackThreshold
+            ) // Only tasks older than 1 second
             .ToArray();
 
         foreach (var job in timeJobsToUpdate)

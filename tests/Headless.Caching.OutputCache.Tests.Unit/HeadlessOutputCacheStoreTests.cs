@@ -3,6 +3,7 @@
 using System.Buffers;
 using System.IO.Pipelines;
 using Headless.Caching;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 
@@ -12,7 +13,7 @@ namespace Tests;
 /// Unit tests for <c>HeadlessOutputCacheStore</c> translation logic against a mocked <see cref="ICache"/>. Byte
 /// fidelity over a real backend, real TTL/expiry, and real tag eviction are covered by the integration suite.
 /// </summary>
-public sealed class HeadlessOutputCacheStoreTests
+public sealed class HeadlessOutputCacheStoreTests : TestBase
 {
     private const string _Key = "ock:abc";
     private static readonly TimeSpan _ValidFor = TimeSpan.FromMinutes(5);
@@ -312,7 +313,7 @@ public sealed class HeadlessOutputCacheStoreTests
 
     private static async Task<byte[]> _ReadAllAsync(PipeReader reader)
     {
-        var result = await reader.ReadAsync();
+        var result = await reader.ReadAsync(AbortToken);
         var bytes = result.Buffer.ToArray();
         reader.AdvanceTo(result.Buffer.End);
         await reader.CompleteAsync();

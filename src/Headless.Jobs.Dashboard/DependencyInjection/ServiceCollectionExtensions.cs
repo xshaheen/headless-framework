@@ -127,10 +127,7 @@ internal static class ServiceCollectionExtensions
                 config.CustomMiddleware?.Invoke(dashboardApp);
 
                 // Map Minimal API endpoints and SignalR hub
-                dashboardApp.UseEndpoints(endpoints =>
-                {
-                    endpoints.MapDashboardEndpoints<TTimeJob, TCronJob>(config);
-                });
+                dashboardApp.UseEndpoints(endpoints => endpoints.MapDashboardEndpoints<TTimeJob, TCronJob>(config));
 
                 // Execute post-dashboard middleware
                 config.PostDashboardMiddleware?.Invoke(dashboardApp);

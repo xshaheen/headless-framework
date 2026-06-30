@@ -90,7 +90,12 @@ public sealed class CloudflareR2BlobStorageTests : BlobStorageTestsBase
             new R2BlobNamingNormalizer()
         );
 
-        var url = await storage.GetPresignedDownloadUrlAsync(["bucket"], "file.txt", TimeSpan.FromMinutes(5));
+        var url = await storage.GetPresignedDownloadUrlAsync(
+            ["bucket"],
+            "file.txt",
+            TimeSpan.FromMinutes(5),
+            AbortToken
+        );
 
         url.Host.Should().Be("testacc.r2.cloudflarestorage.com");
         url.AbsolutePath.Should().Contain("bucket");
@@ -160,7 +165,7 @@ public sealed class CloudflareR2BlobStorageTests : BlobStorageTestsBase
         var storage = (IPresignedUrlBlobStorage)GetStorage();
         var container = new[] { $"presign-{Guid.NewGuid():N}" };
 
-        using (var stream = new MemoryStream("expiring"u8.ToArray()))
+        await using (var stream = new MemoryStream("expiring"u8.ToArray()))
         {
             await ((IBlobStorage)storage).UploadAsync(container, "file.txt", stream, cancellationToken: AbortToken);
         }

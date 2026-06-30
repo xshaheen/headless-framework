@@ -154,7 +154,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
 
     private static IReadOnlyList<AuditLogEntryData> _Capture(EfAuditChangeCapture sut, TestDbContext db)
     {
-        var entries = db.ChangeTracker.Entries().Select(e => (object)e);
+        var entries = db.ChangeTracker.Entries().Cast<object>();
         return sut.CaptureChanges(entries, _UserId, _AccountId, _TenantId, _CorrelationId, _Timestamp);
     }
 
@@ -210,7 +210,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
                 Phone = "555",
             };
             db.Orders.Add(order);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(AbortToken);
 
             // when
             order.CustomerName = "Bob";
@@ -246,7 +246,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
                 Phone = "555",
             };
             db.Orders.Add(order);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(AbortToken);
 
             // when
             db.Orders.Remove(order);
@@ -282,7 +282,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
                 LastComputedAt = DateTime.UtcNow,
             };
             db.Orders.Add(order);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(AbortToken);
 
             order.CustomerName = "Bob";
             order.LastComputedAt = DateTime.UtcNow.AddMinutes(1);
@@ -582,7 +582,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
                 Address = new Address { Street = "Main", City = "Town" },
             };
             db.Customers.Add(customer);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(AbortToken);
 
             customer.Address.Street = "New St";
             db.ChangeTracker.DetectChanges();
@@ -617,7 +617,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
                 IsDeleted = false,
             };
             db.Orders.Add(order);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(AbortToken);
 
             // when
             order.IsDeleted = true;
@@ -649,7 +649,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
                 IsDeleted = true,
             };
             db.Orders.Add(order);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(AbortToken);
 
             // when
             order.IsDeleted = false;
@@ -681,7 +681,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
                 IsSuspended = false,
             };
             db.Orders.Add(order);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(AbortToken);
 
             // when
             order.IsSuspended = true;
@@ -713,7 +713,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
                 IsSuspended = true,
             };
             db.Orders.Add(order);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(AbortToken);
 
             // when
             order.IsSuspended = false;
@@ -866,7 +866,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
                 }
             );
             _ = _Capture(sut, db);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(AbortToken);
 
             db.Orders.Add(
                 new Order
@@ -911,7 +911,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
                 }
             );
             _ = _Capture(sut, db);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(AbortToken);
 
             db.Orders.Add(
                 new Order
@@ -1013,7 +1013,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             var sut = _CreateSut();
 
             // inject non-EntityEntry objects alongside real entries
-            var validEntries = db.ChangeTracker.Entries().Select(e => (object)e);
+            var validEntries = db.ChangeTracker.Entries().Cast<object>();
             var mixedEntries = validEntries.Concat(["not-an-entity-entry", 42]);
             var result = sut.CaptureChanges(mixedEntries, _UserId, _AccountId, _TenantId, _CorrelationId, _Timestamp);
 
