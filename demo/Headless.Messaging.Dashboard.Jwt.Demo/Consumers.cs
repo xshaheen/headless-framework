@@ -31,7 +31,10 @@ public sealed class OrderNotificationConsumer(ILogger<OrderNotificationConsumer>
         if (Random.Shared.Next(4) == 0)
         {
             throw new InvalidOperationException(
-                $"Notification gateway timeout while sending order confirmation for Order #{context.Message.OrderId} "
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Notification gateway timeout while sending order confirmation for Order #{context.Message.OrderId} "
+                )
                     + $"to customer {context.Message.CustomerName}. The SMTP server at smtp.example.com:587 did not respond within 30 seconds."
             );
         }
@@ -58,8 +61,14 @@ public sealed class PaymentProcessedConsumer(ILogger<PaymentProcessedConsumer> l
             throw new AggregateException(
                 $"Payment reconciliation failed for {context.Message.PaymentId}",
                 new InvalidOperationException(
-                    $"Ledger entry mismatch: expected {context.Message.Amount:C} {context.Message.Currency} "
-                        + $"but settlement reported {context.Message.Amount * 0.99m:C} {context.Message.Currency}. "
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"Ledger entry mismatch: expected {context.Message.Amount:C} {context.Message.Currency} "
+                    )
+                        + string.Create(
+                            CultureInfo.InvariantCulture,
+                            $"but settlement reported {context.Message.Amount * 0.99m:C} {context.Message.Currency}. "
+                        )
                         + "This may indicate a currency conversion rounding error."
                 ),
                 new TimeoutException(

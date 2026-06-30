@@ -263,7 +263,10 @@ public sealed class Url
             // Root excludes the port here because _port is still null at this point.
             var rootWithoutPort = Root;
             _port =
-                _originalString?.OrdinalStartsWith($"{rootWithoutPort}:{uri.Port}", ignoreCase: true) == true
+                _originalString?.OrdinalStartsWith(
+                    string.Create(CultureInfo.InvariantCulture, $"{rootWithoutPort}:{uri.Port}"),
+                    ignoreCase: true
+                ) == true
                     ? uri.Port
                     : null; // don't default Port if not included explicitly
             _pathSegments = [];
@@ -357,10 +360,7 @@ public sealed class Url
         else
         {
             var subpath = segment.ToInvariantString();
-            foreach (var s in ParsePathSegments(subpath))
-            {
-                _pathSegments.Add(s);
-            }
+            _pathSegments.AddRange(ParsePathSegments(subpath));
 
             _trailingSlash = subpath.OrdinalEndsWith("/");
         }

@@ -203,11 +203,14 @@ internal sealed class SqlServerFeatureDefinitionRecordRepository(
             for (var i = 0; i < rowCount; i++)
             {
                 var record = records[offset + i];
-                command.Parameters.AddWithValue($"@Id_{i}", record.Id);
-                command.Parameters.AddWithValue($"@Name_{i}", record.Name);
-                command.Parameters.AddWithValue($"@DisplayName_{i}", record.DisplayName);
+                command.Parameters.AddWithValue(string.Create(CultureInfo.InvariantCulture, $"@Id_{i}"), record.Id);
+                command.Parameters.AddWithValue(string.Create(CultureInfo.InvariantCulture, $"@Name_{i}"), record.Name);
                 command.Parameters.AddWithValue(
-                    $"@ExtraProperties_{i}",
+                    string.Create(CultureInfo.InvariantCulture, $"@DisplayName_{i}"),
+                    record.DisplayName
+                );
+                command.Parameters.AddWithValue(
+                    string.Create(CultureInfo.InvariantCulture, $"@ExtraProperties_{i}"),
                     serializer.SerializeToString(record.ExtraProperties) ?? "{}"
                 );
             }
@@ -234,18 +237,42 @@ internal sealed class SqlServerFeatureDefinitionRecordRepository(
             for (var i = 0; i < rowCount; i++)
             {
                 var record = records[offset + i];
-                command.Parameters.AddWithValue($"@Id_{i}", record.Id);
-                command.Parameters.AddWithValue($"@GroupName_{i}", record.GroupName);
-                command.Parameters.AddWithValue($"@Name_{i}", record.Name);
-                command.Parameters.AddWithValue($"@DisplayName_{i}", record.DisplayName);
-                command.Parameters.AddWithValue($"@ParentName_{i}", (object?)record.ParentName ?? DBNull.Value);
-                command.Parameters.AddWithValue($"@Description_{i}", (object?)record.Description ?? DBNull.Value);
-                command.Parameters.AddWithValue($"@DefaultValue_{i}", (object?)record.DefaultValue ?? DBNull.Value);
-                command.Parameters.AddWithValue($"@IsVisibleToClients_{i}", record.IsVisibleToClients);
-                command.Parameters.AddWithValue($"@IsAvailableToHost_{i}", record.IsAvailableToHost);
-                command.Parameters.AddWithValue($"@Providers_{i}", (object?)record.Providers ?? DBNull.Value);
+                command.Parameters.AddWithValue(string.Create(CultureInfo.InvariantCulture, $"@Id_{i}"), record.Id);
                 command.Parameters.AddWithValue(
-                    $"@ExtraProperties_{i}",
+                    string.Create(CultureInfo.InvariantCulture, $"@GroupName_{i}"),
+                    record.GroupName
+                );
+                command.Parameters.AddWithValue(string.Create(CultureInfo.InvariantCulture, $"@Name_{i}"), record.Name);
+                command.Parameters.AddWithValue(
+                    string.Create(CultureInfo.InvariantCulture, $"@DisplayName_{i}"),
+                    record.DisplayName
+                );
+                command.Parameters.AddWithValue(
+                    string.Create(CultureInfo.InvariantCulture, $"@ParentName_{i}"),
+                    (object?)record.ParentName ?? DBNull.Value
+                );
+                command.Parameters.AddWithValue(
+                    string.Create(CultureInfo.InvariantCulture, $"@Description_{i}"),
+                    (object?)record.Description ?? DBNull.Value
+                );
+                command.Parameters.AddWithValue(
+                    string.Create(CultureInfo.InvariantCulture, $"@DefaultValue_{i}"),
+                    (object?)record.DefaultValue ?? DBNull.Value
+                );
+                command.Parameters.AddWithValue(
+                    string.Create(CultureInfo.InvariantCulture, $"@IsVisibleToClients_{i}"),
+                    record.IsVisibleToClients
+                );
+                command.Parameters.AddWithValue(
+                    string.Create(CultureInfo.InvariantCulture, $"@IsAvailableToHost_{i}"),
+                    record.IsAvailableToHost
+                );
+                command.Parameters.AddWithValue(
+                    string.Create(CultureInfo.InvariantCulture, $"@Providers_{i}"),
+                    (object?)record.Providers ?? DBNull.Value
+                );
+                command.Parameters.AddWithValue(
+                    string.Create(CultureInfo.InvariantCulture, $"@ExtraProperties_{i}"),
                     serializer.SerializeToString(record.ExtraProperties) ?? "{}"
                 );
             }

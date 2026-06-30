@@ -481,7 +481,10 @@ public sealed class DistributedLock(
                 // Prevent unbounded waiters per resource (DoS protection)
                 if (_maxWaitersPerResource is { } max)
                 {
-                    Ensure.True(existing.RefCount < max, $"Maximum waiters per resource ({max}) exceeded");
+                    Ensure.True(
+                        existing.RefCount < max,
+                        string.Create(CultureInfo.InvariantCulture, $"Maximum waiters per resource ({max}) exceeded")
+                    );
                 }
 
                 existing.Increment();
@@ -494,7 +497,10 @@ public sealed class DistributedLock(
             {
                 Ensure.True(
                     _autoResetEvents.Count < maxResources,
-                    $"Maximum concurrent waiting resources ({maxResources}) exceeded"
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"Maximum concurrent waiting resources ({maxResources}) exceeded"
+                    )
                 );
             }
 

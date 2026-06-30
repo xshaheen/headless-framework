@@ -153,7 +153,10 @@ internal sealed class MessageSender : IMessageSender
         if (!Enum.IsDefined(message.IntentType))
         {
             var ex = new InvalidOperationException(
-                $"Stored message {message.StorageId} has unsupported IntentType value '{(short)message.IntentType}'."
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Stored message {message.StorageId} has unsupported IntentType value '{(short)message.IntentType}'."
+                )
             );
             await _MarkUnsupportedIntentFailedAsync(message, ex).ConfigureAwait(false);
             return (null, OperateResult.Failed(ex));

@@ -49,7 +49,10 @@ internal static class CallerInfoHelper
                     if (!string.IsNullOrEmpty(fileName))
                     {
                         var shortFileName = Path.GetFileName(fileName);
-                        return $"{className}.{methodName} ({shortFileName}:{lineNumber})";
+                        return string.Create(
+                            CultureInfo.InvariantCulture,
+                            $"{className}.{methodName} ({shortFileName}:{lineNumber})"
+                        );
                     }
 
                     return $"{className}.{methodName}";

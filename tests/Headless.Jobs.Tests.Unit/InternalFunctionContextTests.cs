@@ -29,8 +29,8 @@ public sealed class InternalFunctionContextTests
                     nameof(InternalFunctionContext.ReleaseLock),
                 }
             );
-        updated.Count.Should().Be(3);
 
+        updated.Should().HaveCount(3);
         context.Status.Should().Be(JobStatus.InProgress);
         context.ElapsedTime.Should().Be(123L);
         context.ReleaseLock.Should().BeTrue();

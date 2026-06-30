@@ -37,7 +37,12 @@ internal sealed class NatsTransport(ILogger<NatsTransport> logger, INatsConnecti
             if (ack.Error is not null)
             {
                 return OperateResult.Failed(
-                    new PublisherSentFailedException($"NATS publish error {ack.Error.Code}: {ack.Error.Description}")
+                    new PublisherSentFailedException(
+                        string.Create(
+                            CultureInfo.InvariantCulture,
+                            $"NATS publish error {ack.Error.Code}: {ack.Error.Description}"
+                        )
+                    )
                 );
             }
 

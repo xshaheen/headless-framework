@@ -84,7 +84,7 @@ public sealed class MessagePublishRequestFactoryMetadataTests
         );
     }
 
-    private interface IOrderEvent { }
+    private interface IOrderEvent;
 
     private sealed record ConcreteOrderEvent(string OrderId) : IOrderEvent;
 }

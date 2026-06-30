@@ -977,7 +977,9 @@ internal sealed class PostgreSqlDataStorage(
         // Use the injected TimeProvider rather than the DB server clock (now()) so InMemory and
         // SQL providers share identical pickup semantics — keeps tests with a fake clock honest
         // and avoids subtle drift between application time and DB time.
-        var sql = $"""
+        var sql = string.Create(
+            CultureInfo.InvariantCulture,
+            $"""
             UPDATE {tableName} SET "LockedUntil" = @NewLease, "Owner" = @Owner
             WHERE "Id" IN (
                 SELECT "Id" FROM {tableName}
@@ -991,7 +993,8 @@ internal sealed class PostgreSqlDataStorage(
                 FOR UPDATE SKIP LOCKED
             )
             RETURNING "Id","Content","IntentType","Retries","Added","NextRetryAt","LockedUntil","Owner";
-            """;
+            """
+        );
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var newLease = now.Add(messagingOptions.Value.RetryPolicy.DispatchTimeout);

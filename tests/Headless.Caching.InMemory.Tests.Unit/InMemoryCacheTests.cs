@@ -25,11 +25,15 @@ public sealed class InMemoryCacheTests : TestBase
         foreach (var item in memory)
         {
             var type = item.GetType();
+#pragma warning disable REFL009 // Reflection targets runtime KeyValuePair entries from ConcurrentDictionary.
             var itemKey = (string)type.GetProperty("Key")!.GetValue(item)!;
+#pragma warning restore REFL009
 
             if (string.Equals(itemKey, key, StringComparison.Ordinal))
             {
+#pragma warning disable REFL009 // Reflection targets runtime KeyValuePair entries from ConcurrentDictionary.
                 var entry = type.GetProperty("Value")!.GetValue(item)!;
+#pragma warning restore REFL009
 
                 return new CacheEntryEnvelope(
                     _GetEntryProperty<DateTime?>(entry, "LogicalExpiresAt"),
@@ -107,7 +111,9 @@ public sealed class InMemoryCacheTests : TestBase
             null,
             -1L,
         ]);
+#pragma warning disable REFL009 // ConcurrentDictionary indexer is reached through runtime reflection.
         memory.GetType().GetProperty("Item")!.SetValue(memory, entry, [key]);
+#pragma warning restore REFL009
     }
 
     private static object _GetMemory(InMemoryCache cache)
@@ -2065,7 +2071,7 @@ public sealed class InMemoryCacheTests : TestBase
             .Select(i =>
                 Task.Run(async () =>
                 {
-                    var key = Faker.Random.AlphaNumeric(20) + i;
+                    var key = Faker.Random.AlphaNumeric(20) + i.ToString(CultureInfo.InvariantCulture);
                     await cache.UpsertAsync(key, Faker.Random.AlphaNumeric(5), TimeSpan.FromMinutes(5));
                 })
             )
@@ -2527,7 +2533,7 @@ public sealed class InMemoryCacheTests : TestBase
         var act = () => _CreateCache(options);
 
         // then
-        act.Should().Throw<ArgumentException>().Which.Message.Should().Contain("SizeCalculator");
+        act.Should().Throw<ArgumentException>().WithMessage("*SizeCalculator*");
     }
 
     [Fact]
@@ -2540,7 +2546,7 @@ public sealed class InMemoryCacheTests : TestBase
         var act = () => _CreateCache(options);
 
         // then
-        act.Should().Throw<ArgumentException>().Which.Message.Should().Contain("SizeCalculator");
+        act.Should().Throw<ArgumentException>().WithMessage("*SizeCalculator*");
     }
 
     [Fact]

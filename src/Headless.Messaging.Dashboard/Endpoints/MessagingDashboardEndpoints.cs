@@ -275,7 +275,7 @@ public static class MessagingDashboardEndpoints
         var ss = await monitoringApi.HourlySucceededJobs(MessageType.Subscribe).ConfigureAwait(false);
         var sf = await monitoringApi.HourlyFailedJobs(MessageType.Subscribe).ConfigureAwait(false);
 
-        var dayHour = ps.Keys.OrderBy(x => x).Select(x => new DateTimeOffset(x).ToUnixTimeSeconds());
+        var dayHour = ps.Keys.Order().Select(x => new DateTimeOffset(x).ToUnixTimeSeconds());
 
         var result = new
         {
@@ -725,8 +725,14 @@ public static class MessagingDashboardEndpoints
 
         var nodes = await discoveryProvider.GetNodes().ConfigureAwait(false);
         var isRegistered = nodes.Any(n =>
-            endpoint.StartsWith($"http://{n.Address}:{n.Port}", StringComparison.OrdinalIgnoreCase)
-            || endpoint.StartsWith($"https://{n.Address}:{n.Port}", StringComparison.OrdinalIgnoreCase)
+            endpoint.StartsWith(
+                string.Create(CultureInfo.InvariantCulture, $"http://{n.Address}:{n.Port}"),
+                StringComparison.OrdinalIgnoreCase
+            )
+            || endpoint.StartsWith(
+                string.Create(CultureInfo.InvariantCulture, $"https://{n.Address}:{n.Port}"),
+                StringComparison.OrdinalIgnoreCase
+            )
         );
 
         if (!isRegistered)

@@ -10,6 +10,9 @@ using Nito.AsyncEx;
 
 namespace Headless.Caching;
 
+#pragma warning disable MA0106 // ConcurrentDictionary delegates intentionally capture mutation result state.
+#pragma warning disable RCS1229 // Several ValueTask members complete synchronously by design.
+
 /// <summary>
 /// Process-local in-memory cache implementing <see cref="IInMemoryCache"/> (the L1 tier), with capacity-capped
 /// LRU eviction, background expiry maintenance, Family-2 logical tag/clear-generation invalidation, fail-safe
@@ -1990,7 +1993,7 @@ public sealed class InMemoryCache
         }
         else
         {
-            var valuesToRemove = value.Where(v => v is not null).Select(v => (object)v!).ToList();
+            var valuesToRemove = value.Where(v => v is not null).Cast<object>().ToList();
             return new ValueTask<long>(_SetRemoveObjectItems(key, valuesToRemove));
         }
     }
@@ -2795,7 +2798,10 @@ public sealed class InMemoryCache
         if (_shouldThrowOnMaxEntrySizeExceeded)
         {
             throw new MaxEntrySizeExceededException(
-                $"Entry size {entrySize} exceeds maximum allowed size of {_maxEntrySize.Value} bytes."
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Entry size {entrySize} exceeds maximum allowed size of {_maxEntrySize.Value} bytes."
+                )
             );
         }
 
@@ -3230,3 +3236,6 @@ file static class ConcurrentDictionaryExtensions
         return false;
     }
 }
+
+#pragma warning restore RCS1229
+#pragma warning restore MA0106

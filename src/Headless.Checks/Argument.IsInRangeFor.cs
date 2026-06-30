@@ -87,7 +87,10 @@ public static partial class Argument
         throw new ArgumentOutOfRangeException(
             paramName,
             message
-                ?? $"The argument {paramName.ToAssertString()} = {index} must be a valid index for a collection of {count} item(s) (Valid range [0, {count - 1}])."
+                ?? string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"The argument {paramName.ToAssertString()} = {index} must be a valid index for a collection of {count} item(s) (Valid range [0, {count - 1}])."
+                )
         );
     }
 }

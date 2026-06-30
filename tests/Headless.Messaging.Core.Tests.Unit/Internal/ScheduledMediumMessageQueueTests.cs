@@ -3,10 +3,11 @@
 using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
+using Headless.Testing.Tests;
 
 namespace Tests.Internal;
 
-public sealed class ScheduledMediumMessageQueueTests
+public sealed class ScheduledMediumMessageQueueTests : TestBase
 {
     [Fact]
     public void unordered_items_should_reflect_all_enqueued_messages_without_removing_them()
@@ -72,7 +73,7 @@ public sealed class ScheduledMediumMessageQueueTests
         var message = _CreateMediumMessage(7);
         queue.Enqueue(message, timeProvider.CurrentTicks + TimeSpan.FromMilliseconds(200).Ticks);
 
-        var enumerator = queue.GetConsumingEnumerable(CancellationToken.None).GetAsyncEnumerator();
+        var enumerator = queue.GetConsumingEnumerable(AbortToken).GetAsyncEnumerator(AbortToken);
 
         // when
         var moveNextTask = enumerator.MoveNextAsync().AsTask();

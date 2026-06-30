@@ -193,7 +193,10 @@ internal static class SqlServerApplicationLock
             ),
             >= 0 => true,
             _ => throw new InvalidOperationException(
-                $"SQL Server returned unexpected sp_getapplock result {result} for distributed lock '{resource}'."
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"SQL Server returned unexpected sp_getapplock result {result} for distributed lock '{resource}'."
+                )
             ),
         };
     }

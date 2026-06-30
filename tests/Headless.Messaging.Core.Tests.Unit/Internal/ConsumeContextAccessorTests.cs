@@ -56,10 +56,11 @@ public sealed class ConsumeContextAccessorTests
     public void should_not_allocate_holder_when_clearing_empty_context()
     {
         // given
-        var accessor = new AsyncLocalConsumeContextAccessor();
-
-        // when
-        accessor.Current = null;
+        var accessor = new AsyncLocalConsumeContextAccessor
+        {
+            // when
+            Current = null,
+        };
 
         // then
         accessor.Current.Should().BeNull();

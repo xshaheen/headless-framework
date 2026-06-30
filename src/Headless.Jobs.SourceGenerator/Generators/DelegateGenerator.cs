@@ -8,6 +8,8 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace Headless.Jobs.SourceGenerator.Generators;
 
+#pragma warning disable MA0028, MA0076 // Generated source snippets are clearer as interpolated template lines.
+
 /// <summary>
 /// Handles generation of delegate code for JobFunction methods.
 /// </summary>
@@ -68,7 +70,6 @@ internal static class DelegateGenerator
         int maxConcurrency,
         string cronExpression,
         string? assemblyName = null,
-        HashSet<string>? classNameConflicts = null,
         HashSet<string>? typeNameConflicts = null
     )
     {
@@ -94,7 +95,6 @@ internal static class DelegateGenerator
             parametersList,
             methodInfo,
             assemblyName,
-            classNameConflicts,
             typeNameConflicts
         );
 
@@ -138,7 +138,6 @@ internal static class DelegateGenerator
         List<string> parametersList,
         MethodParameterInfo methodInfo,
         string? assemblyName = null,
-        HashSet<string>? classNameConflicts = null,
         HashSet<string>? typeNameConflicts = null
     )
     {
@@ -212,3 +211,5 @@ internal static class DelegateGenerator
         return typeNameConflicts.Contains(simpleName) ? fullTypeName : simpleName;
     }
 }
+
+#pragma warning restore MA0028, MA0076

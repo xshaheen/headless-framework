@@ -16,6 +16,7 @@ namespace Headless.DistributedLocks;
 /// events (reset-event ref-counting) keep that lifecycle in their own type — it is not portable here.
 /// All access is serialized on an internal lock; <see cref="Enter"/>/<see cref="Exit"/> must be paired.
 /// </remarks>
+#pragma warning disable MA0182 // Used by sibling distributed-lock projects through the shared namespace.
 internal sealed class WaiterCapRegistry(int? maxConcurrentWaitingResources, int? maxWaitersPerResource)
 {
     private readonly Dictionary<string, int> _waitersByResource = new(StringComparer.Ordinal);
@@ -33,7 +34,13 @@ internal sealed class WaiterCapRegistry(int? maxConcurrentWaitingResources, int?
             {
                 if (maxWaitersPerResource is { } maxPerResource)
                 {
-                    Ensure.True(existing < maxPerResource, $"Maximum waiters per resource ({maxPerResource}) exceeded");
+                    Ensure.True(
+                        existing < maxPerResource,
+                        string.Create(
+                            CultureInfo.InvariantCulture,
+                            $"Maximum waiters per resource ({maxPerResource}) exceeded"
+                        )
+                    );
                 }
 
                 _waitersByResource[resource] = existing + 1;
@@ -45,7 +52,10 @@ internal sealed class WaiterCapRegistry(int? maxConcurrentWaitingResources, int?
             {
                 Ensure.True(
                     _waitersByResource.Count < maxResources,
-                    $"Maximum concurrent waiting resources ({maxResources}) exceeded"
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"Maximum concurrent waiting resources ({maxResources}) exceeded"
+                    )
                 );
             }
 
@@ -74,3 +84,4 @@ internal sealed class WaiterCapRegistry(int? maxConcurrentWaitingResources, int?
         }
     }
 }
+#pragma warning restore MA0182

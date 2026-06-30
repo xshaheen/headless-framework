@@ -130,9 +130,9 @@ public sealed class MessageMetadataRegistryTests
     private static IReadOnlyDictionary<Type, object> _Configs(object config) =>
         new Dictionary<Type, object> { [config.GetType()] = config };
 
-    private interface ITestEvent { }
+    private interface ITestEvent;
 
-    private interface IOtherEvent { }
+    private interface IOtherEvent;
 
     private sealed record TestMessage : ITestEvent, IOtherEvent;
 

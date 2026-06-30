@@ -329,7 +329,10 @@ public sealed class HeadlessTestServer<TProgram>(
                 catch (OperationCanceledException) when (cts.IsCancellationRequested)
                 {
                     throw new TimeoutException(
-                        $"Initializer '{initializer.GetType().Name}' did not complete within {_initializerTimeout.TotalSeconds:F0}s."
+                        string.Create(
+                            CultureInfo.InvariantCulture,
+                            $"Initializer '{initializer.GetType().Name}' did not complete within {_initializerTimeout.TotalSeconds:F0}s."
+                        )
                     );
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
@@ -352,7 +355,12 @@ public sealed class HeadlessTestServer<TProgram>(
                 }
                 catch (OperationCanceledException) when (cts.IsCancellationRequested)
                 {
-                    throw new TimeoutException($"Readiness check timed out after {timeout.TotalSeconds:F0}s.");
+                    throw new TimeoutException(
+                        string.Create(
+                            CultureInfo.InvariantCulture,
+                            $"Readiness check timed out after {timeout.TotalSeconds:F0}s."
+                        )
+                    );
                 }
             }
 

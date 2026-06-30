@@ -97,7 +97,7 @@ public sealed class DemoMessagePublisher(IServiceScopeFactory scopeFactory, ILog
                 await publisher.PublishAsync(
                     new PaymentProcessed
                     {
-                        PaymentId = $"PAY-{_counter:D6}",
+                        PaymentId = string.Create(CultureInfo.InvariantCulture, $"PAY-{_counter:D6}"),
                         OrderId = Random.Shared.Next(1, _counter + 1),
                         Amount = Math.Round((decimal)(Random.Shared.NextDouble() * 500 + 10), 2),
                         Currency = _Currencies[Random.Shared.Next(_Currencies.Length)],
@@ -111,7 +111,7 @@ public sealed class DemoMessagePublisher(IServiceScopeFactory scopeFactory, ILog
                     new UserRegistered
                     {
                         UserId = Guid.NewGuid().ToString()[..8],
-                        Email = $"user{_counter}@example.com",
+                        Email = string.Create(CultureInfo.InvariantCulture, $"user{_counter}@example.com"),
                         Plan = _Plans[Random.Shared.Next(_Plans.Length)],
                     },
                     cancellationToken: ct

@@ -414,7 +414,7 @@ public sealed class MessageObservationStoreTests : TestBase
         public string? Value { get; set; }
     }
 
-    private sealed class DerivedMessage : SimpleMessage { }
+    private sealed class DerivedMessage : SimpleMessage;
 
-    private sealed class OtherMessage { }
+    private sealed class OtherMessage;
 }

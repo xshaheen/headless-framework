@@ -13,6 +13,8 @@ using Microsoft.CodeAnalysis.Text;
 
 namespace Headless.Jobs.SourceGenerator;
 
+#pragma warning disable MA0028, MA0076, RCS1213 // Generated source snippets and retained legacy helpers are clearer as-is.
+
 /// <summary>
 /// Roslyn incremental source generator that discovers methods annotated with
 /// <c>[JobFunction]</c> and emits a per-assembly <c>JobsInstanceFactoryExtensions</c> class
@@ -79,14 +81,13 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
                         compilation,
                         productionContext,
                         compilation.Assembly.Name,
-                        null,
                         typeNameConflicts
                     )
                     .ToList();
 
                 // Extract data once to avoid multiple enumeration
-                var delegateCodes = delegatesWithMetadata.Select(x => x.DelegateCode).ToList();
-                var requestTypes = delegatesWithMetadata.Select(x => x.Item2).ToList();
+                var delegateCodes = delegatesWithMetadata.ConvertAll(x => x.DelegateCode);
+                var requestTypes = delegatesWithMetadata.ConvertAll(x => x.Item2);
 
                 var generatedCode = _GenerateSourceWithFullNamespaces(
                     delegateCodes,
@@ -166,18 +167,14 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
         Compilation compilation,
         SourceProductionContext context,
         string? assemblyName = null,
-        HashSet<string>? classNameConflicts = null,
         HashSet<string>? typeNameConflicts = null
     )
     {
         var usedFunctionNames = new HashSet<string>(StringComparer.Ordinal);
         var validatedClasses = new HashSet<ClassDeclarationSyntax>();
 
-        foreach (var pair in methodPairs)
+        foreach (var (classDeclaration, methodDeclaration) in methodPairs)
         {
-            var classDeclaration = pair.ClassDecl;
-            var methodDeclaration = pair.MethodDecl;
-
             JobFunctionValidator.ValidateClassAndMethod(classDeclaration, methodDeclaration, compilation, context);
 
             var semanticModel = compilation.GetSemanticModel(methodDeclaration.SyntaxTree);
@@ -205,9 +202,11 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
             }
 
             var attributeValues = jobFunctionAttributeData.GetJobFunctionAttributeValues();
+#pragma warning disable MA0045 // Incremental generator transform is synchronous at this point.
             var attributeLocation =
                 jobFunctionAttributeData.ApplicationSyntaxReference?.GetSyntax()?.GetLocation()
                 ?? methodDeclaration.Identifier.GetLocation();
+#pragma warning restore MA0045
 
             // Validate all attribute values
             AttributeValidator.ValidateJobFunctionAttribute(
@@ -233,7 +232,6 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
                 attributeValues.maxConcurrency,
                 attributeValues.cronExpression,
                 assemblyName ?? compilation.Assembly.Name,
-                classNameConflicts,
                 typeNameConflicts
             );
         }
@@ -251,7 +249,6 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
         int maxConcurrency,
         string? cronExpression,
         string assemblyName,
-        HashSet<string>? classNameConflicts = null,
         HashSet<string>? typeNameConflicts = null
     )
     {
@@ -268,7 +265,6 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
             maxConcurrency,
             cronExpression!,
             assemblyName,
-            classNameConflicts,
             typeNameConflicts
         );
 
@@ -758,7 +754,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
         var constructors = classDeclaration.Members.OfType<ConstructorDeclarationSyntax>().ToList();
 
         // First, look for a constructor with JobsConstructor attribute using semantic analysis
-        var jobConstructor = constructors.FirstOrDefault(c =>
+        var jobConstructor = constructors.Find(c =>
         {
             var constructorSymbol = semanticModel.GetDeclaredSymbol(c);
             if (constructorSymbol == null)
@@ -792,8 +788,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
 
         // If no JobsConstructor attribute found, use first public constructor
         var publicConstructor =
-            jobConstructor
-            ?? constructors.FirstOrDefault(c => c.Modifiers.Any(m => m.IsKind(SyntaxKind.PublicKeyword)));
+            jobConstructor ?? constructors.Find(c => c.Modifiers.Any(m => m.IsKind(SyntaxKind.PublicKeyword)));
 
         var isPrimaryConstructor = classDeclaration.ParameterList?.Parameters.Count > 0;
         var parameters = isPrimaryConstructor
@@ -924,3 +919,5 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
 
     // All utility methods moved to SourceGeneratorUtilities class
 }
+
+#pragma warning restore MA0028, MA0076, RCS1213
