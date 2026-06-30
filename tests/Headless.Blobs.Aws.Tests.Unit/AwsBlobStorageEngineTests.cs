@@ -294,8 +294,32 @@ public sealed class AwsBlobStorageEngineTests : TestBase
     }
 
     [Fact]
+    public async Task move_rejects_occupied_destination_without_copying_or_deleting()
+    {
+        // Reject-occupied: when the destination already exists, Move returns false and touches nothing — no copy,
+        // no source delete, so a pre-existing destination can never be lost by a move.
+        _s3.GetObjectMetadataAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new GetObjectMetadataResponse { HttpStatusCode = HttpStatusCode.OK });
+
+        var sut = _CreateSut();
+
+        var moved = await sut.MoveAsync(
+            new BlobLocation("bucket", "source.txt"),
+            new BlobLocation("bucket", "target.txt")
+        );
+
+        moved.Should().BeFalse();
+        await _s3.DidNotReceiveWithAnyArgs().CopyObjectAsync(default!, default);
+        await _s3.DidNotReceiveWithAnyArgs().DeleteObjectAsync(default!, default);
+    }
+
+    [Fact]
     public async Task move_rolls_back_destination_copy_when_source_delete_throws()
     {
+        // Destination reads as absent so the move passes the reject-occupied pre-check and proceeds to copy+delete.
+        _s3.GetObjectMetadataAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new AmazonS3Exception("not found") { StatusCode = HttpStatusCode.NotFound });
+
         _s3.CopyObjectAsync(Arg.Any<CopyObjectRequest>(), Arg.Any<CancellationToken>())
             .Returns(new CopyObjectResponse { HttpStatusCode = HttpStatusCode.OK });
 
