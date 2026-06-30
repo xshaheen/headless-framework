@@ -105,45 +105,20 @@ public sealed class SshBlobStorage(
         Argument.IsNotNullOrWhiteSpace(container);
         Argument.IsNotNull(blobs);
 
-        if (blobs.Count == 0)
-        {
-            return [];
-        }
-
-        // Index results by enumeration position so results[i] describes items[i] (parallel bodies start out of order).
-        var items = blobs as IReadOnlyList<BlobUploadRequest> ?? [.. blobs];
-        var results = new BlobBulkResult[items.Count];
-
-        var parallelOptions = new ParallelOptions
-        {
-            MaxDegreeOfParallelism = options.CurrentValue.MaxConcurrentOperations,
-            CancellationToken = cancellationToken,
-        };
-
-        await Parallel
-            .ForAsync(
-                0,
-                items.Count,
-                parallelOptions,
-                async (i, ct) =>
+        return await BlobStorageHelpers
+            .RunBulkAsync(
+                container,
+                blobs,
+                options.CurrentValue.MaxConcurrentOperations,
+                static blob => blob.Path,
+                async (location, blob, ct) =>
                 {
-                    var blob = items[i];
-
-                    try
-                    {
-                        var location = new BlobLocation(container, blob.Path);
-                        await UploadAsync(location, blob.Stream, blob.Metadata, ct).ConfigureAwait(false);
-                        results[i] = new BlobBulkResult(location, Result<bool, Exception>.Ok(true));
-                    }
-                    catch (Exception e) when (e is not OperationCanceledException)
-                    {
-                        results[i] = new BlobBulkResult(container, blob.Path, Result<bool, Exception>.Fail(e));
-                    }
-                }
+                    await UploadAsync(location, blob.Stream, blob.Metadata, ct).ConfigureAwait(false);
+                    return true;
+                },
+                cancellationToken
             )
             .ConfigureAwait(false);
-
-        return results;
     }
 
     #endregion
@@ -182,47 +157,16 @@ public sealed class SshBlobStorage(
         Argument.IsNotNullOrWhiteSpace(container);
         Argument.IsNotNull(paths);
 
-        if (paths.Count == 0)
-        {
-            return [];
-        }
-
-        // Index results by input position (see BulkUploadAsync) so each entry matches its key in original order.
-        var items = paths as IReadOnlyList<string> ?? [.. paths];
-        var results = new BlobBulkResult[items.Count];
-
-        var parallelOptions = new ParallelOptions
-        {
-            MaxDegreeOfParallelism = options.CurrentValue.MaxConcurrentOperations,
-            CancellationToken = cancellationToken,
-        };
-
-        await Parallel
-            .ForAsync(
-                0,
-                items.Count,
-                parallelOptions,
-                async (i, ct) =>
-                {
-                    var path = items[i];
-
-                    try
-                    {
-                        // Build the location inside the try (validates + resolves through the single seam) so an
-                        // unaddressable key fails that one item without aborting the batch.
-                        var location = new BlobLocation(container, path);
-                        var deleted = await DeleteAsync(location, ct).ConfigureAwait(false);
-                        results[i] = new BlobBulkResult(location, Result<bool, Exception>.Ok(deleted));
-                    }
-                    catch (Exception e) when (e is not OperationCanceledException)
-                    {
-                        results[i] = new BlobBulkResult(container, path, Result<bool, Exception>.Fail(e));
-                    }
-                }
+        return await BlobStorageHelpers
+            .RunBulkAsync(
+                container,
+                paths,
+                options.CurrentValue.MaxConcurrentOperations,
+                static path => path,
+                async (location, _, ct) => await DeleteAsync(location, ct).ConfigureAwait(false),
+                cancellationToken
             )
             .ConfigureAwait(false);
-
-        return results;
     }
 
     public async ValueTask<int> DeleteAllAsync(BlobQuery query, CancellationToken cancellationToken = default)

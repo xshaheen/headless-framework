@@ -3,6 +3,7 @@
 using System.Text;
 using System.Text.RegularExpressions;
 using Headless.Constants;
+using Headless.Primitives;
 
 namespace Headless.Blobs.Internals;
 
@@ -138,6 +139,67 @@ public static class BlobStorageHelpers
                 e
             );
         }
+    }
+
+    /// <summary>
+    /// Runs a per-item bulk operation over <paramref name="items"/> with bounded parallelism, returning one
+    /// <see cref="BlobBulkResult"/> per input indexed to its enumeration position (so <c>results[i]</c> always
+    /// describes <c>items[i]</c> even though the parallel bodies start out of order). For each item it builds the
+    /// validated <see cref="BlobLocation"/> from <paramref name="container"/> + <paramref name="pathSelector"/>, runs
+    /// <paramref name="body"/>, and records <c>Ok(value)</c>; an unaddressable key or any non-cancellation throw fails
+    /// that one item (<c>Fail</c>) without aborting the batch. This is the shared orchestration for the providers'
+    /// <c>BulkUpload</c>/<c>BulkDelete</c> per-item paths.
+    /// </summary>
+    public static async ValueTask<IReadOnlyList<BlobBulkResult>> RunBulkAsync<T>(
+        string container,
+        IReadOnlyCollection<T> items,
+        int maxParallelism,
+        Func<T, string> pathSelector,
+        Func<BlobLocation, T, CancellationToken, ValueTask<bool>> body,
+        CancellationToken cancellationToken
+    )
+    {
+        if (items.Count == 0)
+        {
+            return [];
+        }
+
+        var list = items as IReadOnlyList<T> ?? [.. items];
+        var results = new BlobBulkResult[list.Count];
+
+        var options = new ParallelOptions
+        {
+            MaxDegreeOfParallelism = maxParallelism,
+            CancellationToken = cancellationToken,
+        };
+
+        await Parallel
+            .ForAsync(
+                0,
+                list.Count,
+                options,
+                async (i, ct) =>
+                {
+                    var item = list[i];
+                    var path = pathSelector(item);
+
+                    try
+                    {
+                        // Build the location (validates) inside the body so an unaddressable key (traversal, reserved
+                        // sidecar suffix, etc.) fails that one item only, never the whole batch.
+                        var location = new BlobLocation(container, path);
+                        var value = await body(location, item, ct).ConfigureAwait(false);
+                        results[i] = new BlobBulkResult(location, Result<bool, Exception>.Ok(value));
+                    }
+                    catch (Exception e) when (e is not OperationCanceledException)
+                    {
+                        results[i] = new BlobBulkResult(container, path, Result<bool, Exception>.Fail(e));
+                    }
+                }
+            )
+            .ConfigureAwait(false);
+
+        return results;
     }
 
     /// <summary>Counts successful deletes and throws when a bulk delete returned per-entry failures.</summary>

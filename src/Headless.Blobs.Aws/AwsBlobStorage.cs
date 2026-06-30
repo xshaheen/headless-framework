@@ -117,45 +117,20 @@ public sealed class AwsBlobStorage(
         Argument.IsNotNullOrWhiteSpace(container);
         Argument.IsNotNull(blobs);
 
-        if (blobs.Count == 0)
-        {
-            return [];
-        }
-
-        // Index results by enumeration position so results[i] describes items[i] (parallel bodies start out of order).
-        var items = blobs as IReadOnlyList<BlobUploadRequest> ?? [.. blobs];
-        var results = new BlobBulkResult[items.Count];
-
-        var options = new ParallelOptions
-        {
-            MaxDegreeOfParallelism = _options.MaxBulkParallelism,
-            CancellationToken = cancellationToken,
-        };
-
-        await Parallel
-            .ForAsync(
-                0,
-                items.Count,
-                options,
-                async (i, ct) =>
+        return await BlobStorageHelpers
+            .RunBulkAsync(
+                container,
+                blobs,
+                _options.MaxBulkParallelism,
+                static blob => blob.Path,
+                async (location, blob, ct) =>
                 {
-                    var blob = items[i];
-
-                    try
-                    {
-                        var location = new BlobLocation(container, blob.Path);
-                        await UploadAsync(location, blob.Stream, blob.Metadata, ct).ConfigureAwait(false);
-                        results[i] = new BlobBulkResult(location, Result<bool, Exception>.Ok(true));
-                    }
-                    catch (Exception e) when (e is not OperationCanceledException)
-                    {
-                        results[i] = new BlobBulkResult(container, blob.Path, Result<bool, Exception>.Fail(e));
-                    }
-                }
+                    await UploadAsync(location, blob.Stream, blob.Metadata, ct).ConfigureAwait(false);
+                    return true;
+                },
+                cancellationToken
             )
             .ConfigureAwait(false);
-
-        return results;
     }
 
     #endregion

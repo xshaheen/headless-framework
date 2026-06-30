@@ -123,32 +123,22 @@ public sealed class FileSystemBlobStorage : IBlobStorage
         Argument.IsNotNullOrWhiteSpace(container);
         Argument.IsNotNull(blobs);
 
-        if (blobs.Count == 0)
-        {
-            return [];
-        }
-
-        var results = new List<BlobBulkResult>(blobs.Count);
-
-        foreach (var blob in blobs)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            try
-            {
-                // Build the per-item location inside the try so an unaddressable key (traversal, reserved sidecar
-                // suffix, etc.) becomes a per-item failure instead of aborting the whole batch.
-                var location = new BlobLocation(container, blob.Path);
-                await UploadAsync(location, blob.Stream, blob.Metadata, cancellationToken).ConfigureAwait(false);
-                results.Add(new BlobBulkResult(location, Result<bool, Exception>.Ok(true)));
-            }
-            catch (Exception e) when (e is not OperationCanceledException)
-            {
-                results.Add(new BlobBulkResult(container, blob.Path, Result<bool, Exception>.Fail(e)));
-            }
-        }
-
-        return results;
+        // maxParallelism: 1 keeps the file-system batch effectively sequential (its ops are synchronous) while sharing
+        // the per-item BlobLocation-construct + indexed-result + OCE-filter orchestration with the other providers.
+        return await BlobStorageHelpers
+            .RunBulkAsync(
+                container,
+                blobs,
+                maxParallelism: 1,
+                static blob => blob.Path,
+                async (location, blob, ct) =>
+                {
+                    await UploadAsync(location, blob.Stream, blob.Metadata, ct).ConfigureAwait(false);
+                    return true;
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     #endregion
@@ -164,7 +154,7 @@ public sealed class FileSystemBlobStorage : IBlobStorage
         return ValueTask.FromResult(_DeleteBlobAndSidecar(fullPath));
     }
 
-    public ValueTask<IReadOnlyList<BlobBulkResult>> BulkDeleteAsync(
+    public async ValueTask<IReadOnlyList<BlobBulkResult>> BulkDeleteAsync(
         string container,
         IReadOnlyCollection<string> paths,
         CancellationToken cancellationToken = default
@@ -173,32 +163,23 @@ public sealed class FileSystemBlobStorage : IBlobStorage
         Argument.IsNotNullOrWhiteSpace(container);
         Argument.IsNotNull(paths);
 
-        if (paths.Count == 0)
-        {
-            return ValueTask.FromResult<IReadOnlyList<BlobBulkResult>>([]);
-        }
+        // maxParallelism: 1 keeps the synchronous file-system deletes sequential while sharing the per-item
+        // orchestration (BlobLocation construct + indexed result + OCE filter) with the other providers.
+        return await BlobStorageHelpers
+            .RunBulkAsync(
+                container,
+                paths,
+                maxParallelism: 1,
+                static path => path,
+                (location, _, _) =>
+                {
+                    var (_, _, fullPath) = _ResolveLocation(location);
 
-        var results = new List<BlobBulkResult>(paths.Count);
-
-        foreach (var path in paths)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            try
-            {
-                // Build + resolve inside the try so an unaddressable key fails that one item without aborting the batch.
-                var location = new BlobLocation(container, path);
-                var (_, _, fullPath) = _ResolveLocation(location);
-                var deleted = _DeleteBlobAndSidecar(fullPath);
-                results.Add(new BlobBulkResult(location, Result<bool, Exception>.Ok(deleted)));
-            }
-            catch (Exception e) when (e is not OperationCanceledException)
-            {
-                results.Add(new BlobBulkResult(container, path, Result<bool, Exception>.Fail(e)));
-            }
-        }
-
-        return ValueTask.FromResult<IReadOnlyList<BlobBulkResult>>(results);
+                    return ValueTask.FromResult(_DeleteBlobAndSidecar(fullPath));
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     public ValueTask<int> DeleteAllAsync(BlobQuery query, CancellationToken cancellationToken = default)

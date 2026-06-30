@@ -237,45 +237,20 @@ public sealed class RedisBlobStorage : IBlobStorage
         Argument.IsNotNullOrWhiteSpace(container);
         Argument.IsNotNull(blobs);
 
-        if (blobs.Count == 0)
-        {
-            return [];
-        }
-
-        // Index results by enumeration position so results[i] describes items[i] (parallel bodies start out of order).
-        var items = blobs as IReadOnlyList<BlobUploadRequest> ?? [.. blobs];
-        var results = new BlobBulkResult[items.Count];
-
-        var options = new ParallelOptions
-        {
-            MaxDegreeOfParallelism = _options.MaxBulkParallelism,
-            CancellationToken = cancellationToken,
-        };
-
-        await Parallel
-            .ForAsync(
-                0,
-                items.Count,
-                options,
-                async (i, ct) =>
+        return await BlobStorageHelpers
+            .RunBulkAsync(
+                container,
+                blobs,
+                _options.MaxBulkParallelism,
+                static blob => blob.Path,
+                async (location, blob, ct) =>
                 {
-                    var blob = items[i];
-
-                    try
-                    {
-                        var location = new BlobLocation(container, blob.Path);
-                        await UploadAsync(location, blob.Stream, blob.Metadata, ct).ConfigureAwait(false);
-                        results[i] = new BlobBulkResult(location, Result<bool, Exception>.Ok(true));
-                    }
-                    catch (Exception e) when (e is not OperationCanceledException)
-                    {
-                        results[i] = new BlobBulkResult(container, blob.Path, Result<bool, Exception>.Fail(e));
-                    }
-                }
+                    await UploadAsync(location, blob.Stream, blob.Metadata, ct).ConfigureAwait(false);
+                    return true;
+                },
+                cancellationToken
             )
             .ConfigureAwait(false);
-
-        return results;
     }
 
     #endregion
@@ -325,47 +300,22 @@ public sealed class RedisBlobStorage : IBlobStorage
         Argument.IsNotNullOrWhiteSpace(container);
         Argument.IsNotNull(paths);
 
-        if (paths.Count == 0)
-        {
-            return [];
-        }
-
-        var items = paths as IReadOnlyList<string> ?? [.. paths];
-        var results = new BlobBulkResult[items.Count];
-
-        var options = new ParallelOptions
-        {
-            MaxDegreeOfParallelism = _options.MaxBulkParallelism,
-            CancellationToken = cancellationToken,
-        };
-
-        await Parallel
-            .ForAsync(
-                0,
-                items.Count,
-                options,
-                async (i, ct) =>
+        return await BlobStorageHelpers
+            .RunBulkAsync(
+                container,
+                paths,
+                _options.MaxBulkParallelism,
+                static path => path,
+                async (location, _, ct) =>
                 {
-                    var path = items[i];
+                    // Resolve through the single seam so a bulk delete can never target a raw, un-validated key.
+                    var (blobsHash, infoHash, key) = _Resolve(location);
 
-                    try
-                    {
-                        // Build the location (validates) and resolve it through the single seam so a bulk delete can
-                        // never target a raw, un-validated key. An unaddressable key fails that one item only.
-                        var location = new BlobLocation(container, path);
-                        var (blobsHash, infoHash, key) = _Resolve(location);
-                        var deleted = await _DeleteResolvedAsync(blobsHash, infoHash, key, ct).ConfigureAwait(false);
-                        results[i] = new BlobBulkResult(location, Result<bool, Exception>.Ok(deleted));
-                    }
-                    catch (Exception e) when (e is not OperationCanceledException)
-                    {
-                        results[i] = new BlobBulkResult(container, path, Result<bool, Exception>.Fail(e));
-                    }
-                }
+                    return await _DeleteResolvedAsync(blobsHash, infoHash, key, ct).ConfigureAwait(false);
+                },
+                cancellationToken
             )
             .ConfigureAwait(false);
-
-        return results;
     }
 
     public async ValueTask<int> DeleteAllAsync(BlobQuery query, CancellationToken cancellationToken = default)
