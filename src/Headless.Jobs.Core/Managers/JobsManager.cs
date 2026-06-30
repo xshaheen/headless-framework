@@ -391,7 +391,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
     private InternalFunctionContext[] _BuildImmediateContextsFromNonGeneric(IEnumerable<TimeJobEntity> jobs)
     {
-        return jobs.Select(_BuildContextFromNonGeneric).ToArray();
+        return [.. jobs.Select(_BuildContextFromNonGeneric)];
     }
 
     private InternalFunctionContext _BuildContextFromNonGeneric(TimeJobEntity job)
@@ -406,7 +406,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             ParentId = job.ParentId,
             ExecutionTime = job.ExecutionTime ?? timeProvider.GetUtcNow().UtcDateTime,
             RunCondition = job.RunCondition ?? RunCondition.OnAnyCompletedStatus,
-            TimeJobChildren = job.Children.Select(_BuildContextFromNonGeneric).ToList(),
+            TimeJobChildren = [.. job.Children.Select(_BuildContextFromNonGeneric)],
         };
     }
 
@@ -469,7 +469,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         {
             // Route every entity through the seam in insertion order; defer the batch side effects once (KTD-4/R5).
             await context
-                .Writer.WriteTimeJobsAsync(entities.ToArray(), context.Relational, cancellationToken)
+                .Writer.WriteTimeJobsAsync([.. entities], context.Relational, cancellationToken)
                 .ConfigureAwait(false);
 
             _DeferSideEffects(
@@ -482,8 +482,9 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         }
 
         await persistenceProvider
-            .AddTimeJobs(entities.ToArray(), cancellationToken: cancellationToken)
+            .AddTimeJobs([.. entities], cancellationToken: cancellationToken)
             .ConfigureAwait(false);
+
         await _RunTimeJobsBatchSideEffectsAsync(immediateTickers, earliestForNonImmediate, cancellationToken)
             .ConfigureAwait(false);
 
@@ -504,7 +505,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         if (_dispatcher.IsEnabled && immediateTickers.Count > 0)
         {
             var acquired = await persistenceProvider
-                .AcquireImmediateTimeJobsAsync(immediateTickers.ToArray(), cancellationToken)
+                .AcquireImmediateTimeJobsAsync([.. immediateTickers], cancellationToken)
                 .ConfigureAwait(false);
 
             if (acquired.Length > 0)
@@ -575,7 +576,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         if (coordinated is { } context)
         {
             await context
-                .Writer.WriteCronJobsAsync(validEntities.ToArray(), context.Relational, cancellationToken)
+                .Writer.WriteCronJobsAsync([.. validEntities], context.Relational, cancellationToken)
                 .ConfigureAwait(false);
 
             _DeferSideEffects(
@@ -588,7 +589,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         }
 
         await persistenceProvider
-            .InsertCronJobs(validEntities.ToArray(), cancellationToken: cancellationToken)
+            .InsertCronJobs([.. validEntities], cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
         if (validEntities.Count != 0)
@@ -643,13 +644,13 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
         if (errors.Count != 0)
         {
-            return new JobResult<List<TTimeJob>>(errors.First());
+            return new JobResult<List<TTimeJob>>(errors[0]);
         }
 
         try
         {
             var affectedRows = await persistenceProvider
-                .UpdateTimeJobs(validTickers.ToArray(), cancellationToken: cancellationToken)
+                .UpdateTimeJobs([.. validTickers], cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
 
             if (needsRestart)
@@ -723,13 +724,13 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
         if (errors.Count != 0)
         {
-            return new JobResult<List<TCronJob>>(errors.First());
+            return new JobResult<List<TCronJob>>(errors[0]);
         }
 
         try
         {
             var affectedRows = await persistenceProvider
-                .UpdateCronJobs(validTickers.ToArray(), cancellationToken: cancellationToken)
+                .UpdateCronJobs([.. validTickers], cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
 
             // Update internal functions for those that need it
@@ -764,7 +765,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     )
     {
         var affectedRows = await persistenceProvider
-            .RemoveTimeJobs(ids.ToArray(), cancellationToken: cancellationToken)
+            .RemoveTimeJobs([.. ids], cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
         if (affectedRows > 0 && _executionContext.Functions.Any(x => ids.Contains(x.JobId)))
@@ -781,7 +782,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     )
     {
         var affectedRows = await persistenceProvider
-            .RemoveCronJobs(ids.ToArray(), cancellationToken: cancellationToken)
+            .RemoveCronJobs([.. ids], cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
         if (affectedRows > 0 && _executionContext.Functions.Any(x => ids.Contains(x.ParentId ?? Guid.Empty)))

@@ -164,7 +164,7 @@ public sealed class SqlServerSettingsStorageTests(SqlServerSettingsFixture fixtu
         command.Parameters.AddWithValue("@schema", _Schema);
         command.Parameters.AddWithValue("@table", tableName);
 
-        return (bool)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken));
+        return (bool)await command.ExecuteScalarAsync(TestContext.Current.CancellationToken);
     }
 
     private async Task<bool> _IndexExistsAsync(string tableName, string indexName)
@@ -184,7 +184,7 @@ public sealed class SqlServerSettingsStorageTests(SqlServerSettingsFixture fixtu
         command.Parameters.AddWithValue("@qualifiedTable", $"{_Schema}.{tableName}");
         command.Parameters.AddWithValue("@index", indexName);
 
-        return (bool)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken));
+        return (bool)await command.ExecuteScalarAsync(TestContext.Current.CancellationToken);
     }
 
     private async Task _CreateTablesWithoutIndexesAsync()

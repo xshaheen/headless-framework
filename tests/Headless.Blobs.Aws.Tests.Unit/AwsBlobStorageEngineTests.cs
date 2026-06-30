@@ -160,19 +160,23 @@ public sealed class AwsBlobStorageEngineTests : TestBase
                     new DeleteObjectsResponse
                     {
                         HttpStatusCode = HttpStatusCode.OK,
-                        DeletedObjects = requestedKeys
-                            .Where(k => k.StartsWith("ok-", StringComparison.Ordinal))
-                            .Select(k => new DeletedObject { Key = k })
-                            .ToList(),
-                        DeleteErrors = requestedKeys
-                            .Where(k => k.StartsWith("fail-", StringComparison.Ordinal))
-                            .Select(k => new DeleteError
-                            {
-                                Key = k,
-                                Code = "InternalError",
-                                Message = "transient",
-                            })
-                            .ToList(),
+                        DeletedObjects =
+                        [
+                            .. requestedKeys
+                                .Where(k => k.StartsWith("ok-", StringComparison.Ordinal))
+                                .Select(k => new DeletedObject { Key = k }),
+                        ],
+                        DeleteErrors =
+                        [
+                            .. requestedKeys
+                                .Where(k => k.StartsWith("fail-", StringComparison.Ordinal))
+                                .Select(k => new DeleteError
+                                {
+                                    Key = k,
+                                    Code = "InternalError",
+                                    Message = "transient",
+                                }),
+                        ],
                     }
                 );
             });

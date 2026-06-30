@@ -191,13 +191,13 @@ public sealed class ReCaptchaTagHelperTests
         return provider;
     }
 
-    private static TagHelperContext _NewContext() =>
-        new(new TagHelperAttributeList(), new Dictionary<object, object>(), "test-id");
+    private static TagHelperContext _NewContext()
+    {
+        return new([], new Dictionary<object, object>(), "test-id");
+    }
 
-    private static TagHelperOutput _NewOutput(string tagName) =>
-        new(
-            tagName,
-            new TagHelperAttributeList(),
-            (_, _) => Task.FromResult<TagHelperContent>(new DefaultTagHelperContent())
-        );
+    private static TagHelperOutput _NewOutput(string tagName)
+    {
+        return new(tagName, [], (_, _) => Task.FromResult<TagHelperContent>(new DefaultTagHelperContent()));
+    }
 }

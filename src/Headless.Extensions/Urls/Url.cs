@@ -76,7 +76,7 @@ public sealed class Url
 
             if (!port.HasValue)
             {
-                return userInfo.Length > 0 ? string.Concat(userInfo, "@", host) : host;
+                return userInfo.Length > 0 ? $"{userInfo}@{host}" : host;
             }
 
             // Append the port via the int overload so the nullable port isn't boxed (as string.Concat would).
@@ -577,7 +577,7 @@ public sealed class Url
     /// <returns>The Url object with the query parameter added</returns>
     public Url AppendQueryParam(string name)
     {
-        QueryParams.Add(name, null, false, NullValueHandling.NameOnly);
+        QueryParams.Add(name, value: null, isEncoded: false, NullValueHandling.NameOnly);
         return this;
     }
 
@@ -600,9 +600,9 @@ public sealed class Url
             return AppendQueryParam(s);
         }
 
-        foreach (var kv in values.ToKeyValuePairs())
+        foreach (var (key, value) in values.ToKeyValuePairs())
         {
-            AppendQueryParam(kv.Key, kv.Value, nullValueHandling);
+            AppendQueryParam(key, value, nullValueHandling);
         }
 
         return this;

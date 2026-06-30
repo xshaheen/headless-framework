@@ -58,7 +58,7 @@ internal abstract class DatabaseConnection : IAsyncDisposable
         int monitoringCommandTimeoutSeconds = ConnectionMonitor.DefaultMonitoringCommandTimeoutSeconds
     )
         : this(
-            (Argument.IsNotNull(transaction).Connection)
+            Argument.IsNotNull(transaction).Connection
                 ?? throw new InvalidOperationException(
                     "Cannot execute queries against a transaction that has been disposed."
                 ),

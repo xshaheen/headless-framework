@@ -38,7 +38,6 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 {
     // The registered options template, cloned per coordinated write so the context attaches to the caller's
     // connection while reusing the cached compiled model / internal service provider — no model recompilation.
-    private readonly DbContextOptions<TDbContext> _coordinatedWriteOptions = coordinatedWriteOptions;
 
     // Compiled (DbContextOptions<TDbContext>) constructor delegate — the same constructor EF Core's DbContext pooling
     // requires, so any context usable with the pooled factory works here too. Cached per closed generic so coordinated
@@ -114,10 +113,10 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             );
 
         var reboundRelational = RelationalOptionsExtension
-            .Extract(_coordinatedWriteOptions)
+            .Extract(coordinatedWriteOptions)
             .WithConnection(connection, owned: false);
 
-        var coordinatedOptionsBuilder = new DbContextOptionsBuilder<TDbContext>(_coordinatedWriteOptions);
+        var coordinatedOptionsBuilder = new DbContextOptionsBuilder<TDbContext>(coordinatedWriteOptions);
         ((IDbContextOptionsBuilderInfrastructure)coordinatedOptionsBuilder).AddOrUpdateExtension(reboundRelational);
 
         var dbContext = _CreateContext(coordinatedOptionsBuilder.Options);
@@ -334,7 +333,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ConfigureAwait(false);
         var result = await dbContext
             .Set<TCronJob>()
-            .Where(x => cronJobIds.Contains(x.Id))
+            .Where(x => ((IEnumerable<Guid>)cronJobIds).Contains(x.Id))
             .ExecuteDeleteAsync(cancellationToken)
             .ConfigureAwait(false);
 
@@ -414,7 +413,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ConfigureAwait(false);
         return await dbContext
             .Set<CronJobOccurrenceEntity<TCronJob>>()
-            .Where(x => cronJobOccurrences.Contains(x.Id))
+            .Where(x => ((IEnumerable<Guid>)cronJobOccurrences).Contains(x.Id))
             .ExecuteDeleteAsync(cancellationToken)
             .ConfigureAwait(false);
     }
@@ -424,12 +423,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        if (occurrenceIds == null || occurrenceIds.Length == 0)
-        {
-            return [];
-        }
-
-        if (!OwnerIdentity.TryGetStampOwner(out var owner))
+        if (occurrenceIds == null || occurrenceIds.Length == 0 || !OwnerIdentity.TryGetStampOwner(out var owner))
         {
             return [];
         }
@@ -442,7 +436,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         // Only acquire occurrences that are acquirable (Idle/Queued and not locked by another node)
         var query = dbContext
             .Set<CronJobOccurrenceEntity<TCronJob>>()
-            .Where(x => occurrenceIds.Contains(x.Id))
+            .Where(x => ((IEnumerable<Guid>)occurrenceIds).Contains(x.Id))
             .WhereCanAcquire(owner, now);
 
         // Lock and mark InProgress
@@ -467,7 +461,11 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         return await dbContext
             .Set<CronJobOccurrenceEntity<TCronJob>>()
             .AsNoTracking()
-            .Where(x => occurrenceIds.Contains(x.Id) && x.OwnerId == owner && x.Status == JobStatus.InProgress)
+            .Where(x =>
+                ((IEnumerable<Guid>)occurrenceIds).Contains(x.Id)
+                && x.OwnerId == owner
+                && x.Status == JobStatus.InProgress
+            )
             .Include(x => x.CronJob)
             .ToArrayAsync(cancellationToken)
             .ConfigureAwait(false);

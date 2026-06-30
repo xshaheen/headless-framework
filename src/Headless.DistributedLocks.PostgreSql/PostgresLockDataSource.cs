@@ -16,30 +16,26 @@ namespace Headless.DistributedLocks.PostgreSql;
 /// is injected it is the consumer's object and is never disposed. Consumers inject
 /// <see cref="DataSource"/> directly and must not dispose it.
 /// </remarks>
-internal sealed class PostgresLockDataSource : IAsyncDisposable, IDisposable
+/// <remarks>
+/// Initializes the lock data source, adopting an injected <see cref="NpgsqlDataSource"/> (not owned) or
+/// building one from the configured connection string (owned and disposed on teardown).
+/// </remarks>
+/// <param name="options">
+/// Resolved options. When <see cref="PostgresDistributedLockOptions.DataSource"/> is set, it is
+/// used directly and is not owned; otherwise a new <see cref="NpgsqlDataSource"/> is built from
+/// <see cref="PostgresDistributedLockOptions.ConnectionString"/> and is owned.
+/// </param>
+internal sealed class PostgresLockDataSource(IOptions<PostgresDistributedLockOptions> options)
+    : IAsyncDisposable,
+        IDisposable
 {
-    private readonly bool _owned;
-
-    /// <summary>
-    /// Initializes the lock data source, adopting an injected <see cref="NpgsqlDataSource"/> (not owned) or
-    /// building one from the configured connection string (owned and disposed on teardown).
-    /// </summary>
-    /// <param name="options">
-    /// Resolved options. When <see cref="PostgresDistributedLockOptions.DataSource"/> is set, it is
-    /// used directly and is not owned; otherwise a new <see cref="NpgsqlDataSource"/> is built from
-    /// <see cref="PostgresDistributedLockOptions.ConnectionString"/> and is owned.
-    /// </param>
-    public PostgresLockDataSource(IOptions<PostgresDistributedLockOptions> options)
-    {
-        DataSource = PostgresDataSourceFactory.CreateDataSource(options.Value);
-        _owned = options.Value.DataSource is null;
-    }
+    private readonly bool _owned = options.Value.DataSource is null;
 
     /// <summary>
     /// Gets the shared <see cref="NpgsqlDataSource"/> consumed by the storage, release-signal, and
     /// fencing-token services. Consumers must not dispose this instance.
     /// </summary>
-    public NpgsqlDataSource DataSource { get; }
+    public NpgsqlDataSource DataSource { get; } = PostgresDataSourceFactory.CreateDataSource(options.Value);
 
     /// <summary>
     /// Disposes the owned <see cref="NpgsqlDataSource"/> asynchronously. A no-op when the data source

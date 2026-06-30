@@ -175,10 +175,11 @@ internal sealed class PublishMiddlewarePipeline(
         var trackedTypes = perDirection.GetOrAdd(
             direction,
             (dir, registry) =>
-                registry
-                    .Descriptors.Where(descriptor => descriptor.Direction == dir)
-                    .Select(descriptor => descriptor.MiddlewareType)
-                    .ToHashSet(),
+                [
+                    .. registry
+                        .Descriptors.Where(descriptor => descriptor.Direction == dir)
+                        .Select(descriptor => descriptor.MiddlewareType),
+                ],
             descriptorRegistry!
         );
 
@@ -198,7 +199,7 @@ internal sealed class PublishMiddlewarePipeline(
         var contextParam = Expression.Parameter(typeof(PublishContext), "context");
         var nextParam = Expression.Parameter(typeof(Func<ValueTask>), "next");
         var serviceType = typeof(IPublishMiddleware<>).MakeGenericType(contextType);
-        var invokeMethod = serviceType.GetMethod(nameof(IPublishMiddleware<PublishContext>.InvokeAsync))!;
+        var invokeMethod = serviceType.GetMethod(nameof(IPublishMiddleware<>.InvokeAsync))!;
 
         var body = Expression.Call(
             Expression.Convert(middlewareParam, serviceType),

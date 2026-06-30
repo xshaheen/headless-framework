@@ -27,30 +27,23 @@ namespace Headless.DistributedLocks.SqlServer;
 /// cancels the handle's <c>ConnectionLostToken</c>.
 /// </para>
 /// </remarks>
-internal sealed class SqlServerConnectionScopedLockStorage : IConnectionScopedLockStorage, IAsyncDisposable
+/// <remarks>
+/// Initializes a new instance of <see cref="SqlServerConnectionScopedLockStorage"/> using the
+/// resolved <see cref="SqlServerDistributedLockOptions"/> and the supplied <see cref="TimeProvider"/>.
+/// </remarks>
+/// <param name="options">Resolved options; validated on startup.</param>
+/// <param name="timeProvider">Time provider used for liveness-probe timer scheduling.</param>
+internal sealed class SqlServerConnectionScopedLockStorage(
+    IOptions<SqlServerDistributedLockOptions> options,
+    TimeProvider timeProvider
+) : IConnectionScopedLockStorage, IAsyncDisposable
 {
-    private readonly SqlServerDistributedLockOptions _options;
-    private readonly TimeProvider _timeProvider;
+    private readonly SqlServerDistributedLockOptions _options = options.Value;
     private readonly ConcurrentDictionary<string, HeldLock> _heldByLeaseId = new(StringComparer.Ordinal);
 
     // Set at the top of DisposeAsync so an acquire racing teardown does not register a lock the teardown snapshot of
     // _heldByLeaseId already iterated past (which would leak its connection and applock).
     private volatile bool _disposed;
-
-    /// <summary>
-    /// Initializes a new instance of <see cref="SqlServerConnectionScopedLockStorage"/> using the
-    /// resolved <see cref="SqlServerDistributedLockOptions"/> and the supplied <see cref="TimeProvider"/>.
-    /// </summary>
-    /// <param name="options">Resolved options; validated on startup.</param>
-    /// <param name="timeProvider">Time provider used for liveness-probe timer scheduling.</param>
-    public SqlServerConnectionScopedLockStorage(
-        IOptions<SqlServerDistributedLockOptions> options,
-        TimeProvider timeProvider
-    )
-    {
-        _options = options.Value;
-        _timeProvider = timeProvider;
-    }
 
     /// <inheritdoc/>
     /// <remarks>
@@ -97,7 +90,7 @@ internal sealed class SqlServerConnectionScopedLockStorage : IConnectionScopedLo
                 isShared,
                 connection,
                 _options.CommandTimeout,
-                _timeProvider
+                timeProvider
             );
 
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);

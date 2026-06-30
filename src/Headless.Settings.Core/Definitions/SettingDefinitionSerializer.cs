@@ -101,7 +101,7 @@ public sealed class SettingDefinitionSerializer(IGuidGenerator guidGenerator) : 
     /// <inheritdoc/>
     public List<SettingDefinition> Deserialize(IEnumerable<SettingDefinitionRecord> records)
     {
-        return records.Select(Deserialize).ToList();
+        return [.. records.Select(Deserialize)];
     }
 
     private static string? _SerializeProviders(List<string> providers)

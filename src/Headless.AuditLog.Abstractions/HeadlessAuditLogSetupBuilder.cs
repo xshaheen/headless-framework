@@ -28,7 +28,7 @@ public sealed class HeadlessAuditLogSetupBuilder
     // twice intentionally to layer overrides.
     internal Action<AuditLogOptions>? OptionsConfigurator { get; private set; }
 
-    internal IList<IAuditLogStorageOptionsExtension> Extensions { get; } = new List<IAuditLogStorageOptionsExtension>();
+    internal IList<IAuditLogStorageOptionsExtension> Extensions { get; } = [];
 
     /// <summary>
     /// Configure the cross-cutting <see cref="AuditLogOptions"/> (capture strategy, etc.).

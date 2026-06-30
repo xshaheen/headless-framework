@@ -52,7 +52,7 @@ public sealed class MinimalApiValidatorFilter<TRequest> : IEndpointFilter
 
         // Materialize once: the DI-resolved enumerable is consumed by the emptiness check and the validation
         // loop, so enumerating it twice (Any() + ToList()) would re-run a lazy source.
-        var validatorList = validators as IList<IValidator<TRequest>> ?? validators.ToList();
+        var validatorList = validators.AsIList();
 
         if (validatorList.Count == 0)
         {

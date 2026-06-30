@@ -112,7 +112,7 @@ internal class JobsExecutionTaskHandler(
             if (childrenToSkip.Count > 0)
             {
                 await internalJobsManager
-                    .UpdateSkipTimeJobsWithUnifiedContextAsync(childrenToSkip.ToArray(), cancellationToken)
+                    .UpdateSkipTimeJobsWithUnifiedContextAsync([.. childrenToSkip], cancellationToken)
                     .ConfigureAwait(false);
             }
 

@@ -333,20 +333,15 @@ public sealed class LeaseMonitorTests : TestBase
         return new LeaseMonitor(handle, _timeProvider, LoggerFactory.CreateLogger(nameof(LeaseMonitor)));
     }
 
-    private sealed class BlockingLeaseHandle : LeaseMonitor.ILeaseHandle
+    private sealed class BlockingLeaseHandle(CancellationToken externalAbort) : LeaseMonitor.ILeaseHandle
     {
-        private readonly CancellationToken _externalAbort;
+        private readonly CancellationToken _externalAbort = externalAbort;
         public string Resource => "blocking-resource";
         public string LeaseId => "blocking-lock";
         public TimeSpan LeaseDuration => TimeSpan.FromSeconds(10);
         public TimeSpan MonitoringCadence => TimeSpan.FromSeconds(5);
         public bool IsBlocking { get; private set; }
         public bool ExitedBeforeRelease { get; private set; }
-
-        public BlockingLeaseHandle(CancellationToken externalAbort)
-        {
-            _externalAbort = externalAbort;
-        }
 
         public async Task<LeaseMonitor.LeaseState> RenewOrValidateLeaseAsync(CancellationToken cancellationToken)
         {

@@ -30,7 +30,7 @@ internal sealed class FusionCacheBenchmarkClient(
     public async ValueTask<BenchmarkPayload?> GetAsync(string key, CancellationToken cancellationToken)
     {
         return await cache
-            .GetOrDefaultAsync<BenchmarkPayload?>(key, null, token: cancellationToken)
+            .GetOrDefaultAsync<BenchmarkPayload?>(key, defaultValue: null, token: cancellationToken)
             .ConfigureAwait(false);
     }
 

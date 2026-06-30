@@ -130,7 +130,7 @@ internal sealed class ServiceProviderLocalEventBus(IServiceProvider services) : 
         // IEnumerator allocation). OrderBy is a stable sort but allocates a buffer on every publish, so skip
         // it for the common 0/1-handler case and for multi-handler sets where every handler keeps the default
         // order (registration order wins).
-        var array = handlers as IDomainEventHandler<T>[] ?? handlers.ToArray();
+        var array = handlers as IDomainEventHandler<T>[] ?? [.. handlers];
 
         if (array.Length <= 1)
         {

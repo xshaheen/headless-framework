@@ -15,7 +15,12 @@ namespace Headless.DistributedLocks;
 /// resource strings that map to the same advisory key cannot both believe they hold an exclusive lock on one shared
 /// connection — the colliding acquirer is reported as "already held" and routed to a dedicated connection.
 /// </remarks>
-internal sealed class MultiplexedConnectionLock : IAsyncDisposable
+/// <remarks>
+/// Initializes a multiplexed lock over <paramref name="connection"/>. The connection must not
+/// yet be open; <see cref="TryAcquireAsync{TLockCookie}"/> opens it on the first successful acquire.
+/// </remarks>
+/// <param name="connection">The database connection to multiplex advisory locks on.</param>
+internal sealed class MultiplexedConnectionLock(DatabaseConnection connection) : IAsyncDisposable
 {
     // Limits concurrent use of the connection to one acquire/release at a time. SemaphoreSlim (not Nito.AsyncEx.AsyncLock)
     // because the opportunistic path needs a zero-wait try-acquire, which AsyncLock does not expose.
@@ -24,21 +29,11 @@ internal sealed class MultiplexedConnectionLock : IAsyncDisposable
 #pragma warning restore CA2213
 
     private readonly Dictionary<object, TimeSpan> _heldLockIdentitiesToKeepaliveCadences = [];
-    private readonly DatabaseConnection _connection;
+    private readonly DatabaseConnection _connection = connection;
 
     // We track this explicitly (rather than reading DatabaseConnection.CanExecuteQueries) so we Close() once per Open()
     // and never try to re-open a broken connection.
     private bool _connectionOpened;
-
-    /// <summary>
-    /// Initializes a multiplexed lock over <paramref name="connection"/>. The connection must not
-    /// yet be open; <see cref="TryAcquireAsync{TLockCookie}"/> opens it on the first successful acquire.
-    /// </summary>
-    /// <param name="connection">The database connection to multiplex advisory locks on.</param>
-    public MultiplexedConnectionLock(DatabaseConnection connection)
-    {
-        _connection = connection;
-    }
 
     private bool IsConnectionBrokenNoLock => _connectionOpened && !_connection.CanExecuteQueries;
 
@@ -343,42 +338,28 @@ internal sealed class MultiplexedConnectionLock : IAsyncDisposable
         public bool CanSafelyDispose { get; }
     }
 
-    private sealed class Handle<TLockCookie> : IDistributedLease
+    private sealed class Handle<TLockCookie>(
+        MultiplexedConnectionLock @lock,
+        IDbSynchronizationStrategy<TLockCookie> strategy,
+        string name,
+        object identity,
+        TLockCookie lockCookie
+    ) : IDistributedLease
         where TLockCookie : class
     {
-        private readonly MultiplexedConnectionLock _lock;
-        private readonly IDbSynchronizationStrategy<TLockCookie> _strategy;
-        private readonly object _identity;
-        private TLockCookie? _lockCookie;
+        private TLockCookie? _lockCookie = lockCookie;
         private IDatabaseConnectionMonitoringHandle? _monitoringHandle;
         private int _disposed;
 
-        public Handle(
-            MultiplexedConnectionLock @lock,
-            IDbSynchronizationStrategy<TLockCookie> strategy,
-            string name,
-            object identity,
-            TLockCookie lockCookie
-        )
-        {
-            _lock = @lock;
-            _strategy = strategy;
-            Resource = name;
-            _identity = identity;
-            _lockCookie = lockCookie;
-            LeaseId = Guid.NewGuid().ToString("N");
-            DateAcquired = @lock._connection.TimeProvider.GetUtcNow();
-        }
-
-        public string LeaseId { get; }
+        public string LeaseId { get; } = Guid.NewGuid().ToString("N");
 
         public long? FencingToken => null;
 
-        public string Resource { get; }
+        public string Resource { get; } = name;
 
         public int RenewalCount => 0;
 
-        public DateTimeOffset DateAcquired { get; }
+        public DateTimeOffset DateAcquired { get; } = @lock._connection.TimeProvider.GetUtcNow();
 
         public TimeSpan TimeWaitedForLock => TimeSpan.Zero;
 
@@ -394,7 +375,7 @@ internal sealed class MultiplexedConnectionLock : IAsyncDisposable
                 // so it is safe to ask its monitor for a connection-lost token here.
                 if (Volatile.Read(ref _monitoringHandle) is null)
                 {
-                    var newHandle = _lock._connection.GetConnectionMonitoringHandle();
+                    var newHandle = @lock._connection.GetConnectionMonitoringHandle();
 
                     if (Interlocked.CompareExchange(ref _monitoringHandle, newHandle, comparand: null) is not null)
                     {
@@ -427,12 +408,12 @@ internal sealed class MultiplexedConnectionLock : IAsyncDisposable
                 return;
             }
 
-            Interlocked.Exchange(ref _monitoringHandle, null)?.Dispose();
+            Interlocked.Exchange(ref _monitoringHandle, value: null)?.Dispose();
 
-            var lockCookie = _lockCookie!;
+            var prevLockCookie = _lockCookie!;
             _lockCookie = null;
 
-            await _lock._ReleaseAsync(_strategy, Resource, _identity, lockCookie).ConfigureAwait(false);
+            await @lock._ReleaseAsync(strategy, Resource, identity, prevLockCookie).ConfigureAwait(false);
         }
     }
 }

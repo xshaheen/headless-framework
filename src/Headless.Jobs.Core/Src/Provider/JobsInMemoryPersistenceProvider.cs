@@ -133,7 +133,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     public Task ReleaseAcquiredTimeJobs(Guid[] timeJobIds, CancellationToken cancellationToken = default)
     {
         var now = _timeProvider.GetUtcNow().UtcDateTime;
-        var idsToRelease = timeJobIds.Length == 0 ? _timeJobs.Keys.ToArray() : timeJobIds;
+        var idsToRelease = timeJobIds.Length == 0 ? [.. _timeJobs.Keys] : timeJobIds;
 
         foreach (var id in idsToRelease)
         {
@@ -163,9 +163,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
         // Base query: same filter as EF provider, but over the snapshot
         var baseQuery = _timeJobs
-            .Values.Where(x => x.ExecutionTime != null)
-            .Where(_CanAcquire)
-            .Where(x => x.ExecutionTime >= oneSecondAgo)
+            .Values.Where(x => x.ExecutionTime != null && _CanAcquire(x) && x.ExecutionTime >= oneSecondAgo)
             .ToArray();
 
         // Get minimum execution time
@@ -987,8 +985,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         var fallbackThreshold = now.AddSeconds(-1); // Fallback picks up tasks older than main 1-second window
 
         var occurrencesToUpdate = _cronOccurrences
-            .Values.Where(x => x.Status is JobStatus.Idle or JobStatus.Queued)
-            .Where(x => x.ExecutionTime <= fallbackThreshold) // Only tasks older than 1 second
+            .Values.Where(x => x.Status is JobStatus.Idle or JobStatus.Queued && x.ExecutionTime <= fallbackThreshold) // Only tasks older than 1 second
             .ToArray();
 
         foreach (var occurrence in occurrencesToUpdate)
@@ -1142,7 +1139,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     public Task ReleaseAcquiredCronJobOccurrences(Guid[] occurrenceIds, CancellationToken cancellationToken = default)
     {
         var now = _timeProvider.GetUtcNow().UtcDateTime;
-        var idsToRelease = occurrenceIds.Length == 0 ? _cronOccurrences.Keys.ToArray() : occurrenceIds;
+        var idsToRelease = occurrenceIds.Length == 0 ? [.. _cronOccurrences.Keys] : occurrenceIds;
 
         foreach (var id in idsToRelease)
         {
@@ -1583,7 +1580,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             return [];
         }
 
-        return children.Keys.ToArray();
+        return [.. children.Keys];
     }
 
     private bool _CanAcquire(TTimeJob job)

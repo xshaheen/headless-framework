@@ -23,16 +23,12 @@ internal sealed partial class PostgresAdvisoryLock(bool isShared, TimeProvider t
     // A non-null sentinel returned on success; advisory locks carry no per-acquire release state beyond the key.
     private static readonly object _Cookie = new();
 
-    private readonly bool _isShared = isShared;
-    private readonly bool _allowHashing = allowHashing;
-    private readonly TimeProvider _timeProvider = timeProvider;
-
     /// <summary>Advisory locks do not natively support upgradeable read locks.</summary>
     public bool IsUpgradeable => false;
 
     public object GetHeldLockIdentity(string resourceName)
     {
-        return PostgresAdvisoryLockKey.FromString(resourceName, _allowHashing);
+        return PostgresAdvisoryLockKey.FromString(resourceName, allowHashing);
     }
 
     public async ValueTask<object?> TryAcquireAsync(
@@ -44,7 +40,7 @@ internal sealed partial class PostgresAdvisoryLock(bool isShared, TimeProvider t
     {
         const string savePointName = "headless_distributed_locks_postgres_advisory_lock_acquire";
 
-        var key = PostgresAdvisoryLockKey.FromString(resourceName, _allowHashing);
+        var key = PostgresAdvisoryLockKey.FromString(resourceName, allowHashing);
 
         if (
             connection.IsExternallyOwned
@@ -67,7 +63,7 @@ internal sealed partial class PostgresAdvisoryLock(bool isShared, TimeProvider t
             // wait out the timeout and report failure. This degenerate path is reached only by the externally-owned
             // transaction API, never by the connection-scoped provider (which owns its connections and never
             // re-acquires the same lock on one).
-            await _timeProvider.Delay(timeout, cancellationToken).ConfigureAwait(false);
+            await timeProvider.Delay(timeout, cancellationToken).ConfigureAwait(false);
 
             return null;
         }
@@ -173,7 +169,7 @@ internal sealed partial class PostgresAdvisoryLock(bool isShared, TimeProvider t
     }
 
     public ValueTask ReleaseAsync(DatabaseConnection connection, string resourceName, object lockCookie) =>
-        _ReleaseAsync(connection, PostgresAdvisoryLockKey.FromString(resourceName, _allowHashing), isTry: false);
+        _ReleaseAsync(connection, PostgresAdvisoryLockKey.FromString(resourceName, allowHashing), isTry: false);
 
     private async ValueTask _ReleaseAsync(DatabaseConnection connection, PostgresAdvisoryLockKey key, bool isTry)
     {
@@ -184,7 +180,7 @@ internal sealed partial class PostgresAdvisoryLock(bool isShared, TimeProvider t
 
         using var command = connection.CreateCommand();
         command.SetCommandText(
-            $"SELECT pg_catalog.pg_advisory_unlock{(_isShared ? "_shared" : string.Empty)}({key.AddKeyParameters(command)})"
+            $"SELECT pg_catalog.pg_advisory_unlock{(isShared ? "_shared" : string.Empty)}({key.AddKeyParameters(command)})"
         );
 
         var result = (bool)(await command.ExecuteScalarAsync(CancellationToken.None).ConfigureAwait(false))!;
@@ -256,7 +252,7 @@ internal sealed partial class PostgresAdvisoryLock(bool isShared, TimeProvider t
 
         commandText.Append("_lock");
 
-        if (_isShared)
+        if (isShared)
         {
             commandText.Append("_shared");
         }

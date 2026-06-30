@@ -122,14 +122,14 @@ public partial class InitialJobsOperationalStore : Migration
         migrationBuilder.CreateIndex(
             name: "IX_CronJobOccurrence_Status_ExecutionTime",
             table: "CronJobOccurrences",
-            columns: new[] { "Status", "ExecutionTime" },
+            columns: ["Status", "ExecutionTime"],
             schema: "jobs"
         );
 
         migrationBuilder.CreateIndex(
             name: "UQ_CronJobId_ExecutionTime",
             table: "CronJobOccurrences",
-            columns: new[] { "CronJobId", "ExecutionTime" },
+            columns: ["CronJobId", "ExecutionTime"],
             schema: "jobs",
             unique: true
         );
@@ -144,7 +144,7 @@ public partial class InitialJobsOperationalStore : Migration
         migrationBuilder.CreateIndex(
             name: "IX_Function_Expression",
             table: "CronJobs",
-            columns: new[] { "Function", "Expression" },
+            columns: ["Function", "Expression"],
             schema: "jobs"
         );
 
@@ -158,7 +158,7 @@ public partial class InitialJobsOperationalStore : Migration
         migrationBuilder.CreateIndex(
             name: "IX_TimeJob_Status_ExecutionTime",
             table: "TimeJobs",
-            columns: new[] { "Status", "ExecutionTime" },
+            columns: ["Status", "ExecutionTime"],
             schema: "jobs"
         );
 

@@ -87,7 +87,8 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
             .GetTimeJobs(
                 x =>
                     (x.ExecutionTime != null)
-                    && (x.ExecutionTime.Value.Date >= startDate && x.ExecutionTime.Value.Date <= endDate),
+                    && x.ExecutionTime.Value.Date >= startDate
+                    && x.ExecutionTime.Value.Date <= endDate,
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -143,7 +144,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
 
         var cronJobOccurrences = await _persistenceProvider
             .GetAllCronJobOccurrences(
-                (x => x.CronJobId == id && x.ExecutionTime.Date >= startDate && x.ExecutionTime.Date <= endDate),
+                x => x.CronJobId == id && x.ExecutionTime.Date >= startDate && x.ExecutionTime.Date <= endDate,
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -269,7 +270,8 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
             .GetTimeJobs(
                 x =>
                     (x.ExecutionTime != null)
-                    && (x.ExecutionTime.Value.Date >= startDate && x.ExecutionTime.Value.Date <= endDate),
+                    && x.ExecutionTime.Value.Date >= startDate
+                    && x.ExecutionTime.Value.Date <= endDate,
                 cancellationToken
             )
             .ConfigureAwait(false);

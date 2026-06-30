@@ -137,37 +137,31 @@ public sealed class RabbitMqOptions
     /// <summary>
     /// Encapsulates the arguments for a <c>basic.qos</c> request applied to each consumer channel.
     /// </summary>
-    public class BasicQos
+    /// <remarks>
+    /// Initialises a new <see cref="BasicQos"/> value.
+    /// </remarks>
+    /// <param name="prefetchCount">
+    /// The maximum number of unacknowledged messages the broker may push to the consumer
+    /// before an acknowledgement is received. A value of <c>0</c> means unlimited.
+    /// </param>
+    /// <param name="global">
+    /// When <see langword="false"/> (default), the limit is applied per consumer on the channel.
+    /// When <see langword="true"/>, the limit is shared across all consumers on the channel.
+    /// </param>
+    public class BasicQos(ushort prefetchCount, bool global = false)
     {
-        /// <summary>
-        /// Initialises a new <see cref="BasicQos"/> value.
-        /// </summary>
-        /// <param name="prefetchCount">
-        /// The maximum number of unacknowledged messages the broker may push to the consumer
-        /// before an acknowledgement is received. A value of <c>0</c> means unlimited.
-        /// </param>
-        /// <param name="global">
-        /// When <see langword="false"/> (default), the limit is applied per consumer on the channel.
-        /// When <see langword="true"/>, the limit is shared across all consumers on the channel.
-        /// </param>
-        public BasicQos(ushort prefetchCount, bool global = false)
-        {
-            PrefetchCount = prefetchCount;
-            Global = global;
-        }
-
         /// <summary>
         /// The maximum number of unacknowledged messages the broker delivers before waiting for
         /// an acknowledgement. <c>0</c> means unlimited. Defaults to <c>0</c>.
         /// </summary>
-        public ushort PrefetchCount { get; }
+        public ushort PrefetchCount { get; } = prefetchCount;
 
         /// <summary>
         /// When <see langword="false"/> (default), the prefetch limit is applied independently
         /// to each new consumer on the channel. When <see langword="true"/>, the limit is shared
         /// across all consumers on the same channel.
         /// </summary>
-        public bool Global { get; }
+        public bool Global { get; } = global;
     }
 
     /// <summary>Queue declaration flags applied when RabbitMQ queues are created.</summary>

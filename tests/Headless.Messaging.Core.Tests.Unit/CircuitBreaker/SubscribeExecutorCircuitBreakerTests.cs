@@ -52,7 +52,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
     private static ConsumerExecutorDescriptor _CreateDescriptor()
     {
         var consumeMethod = typeof(IConsume<CbTestMessage>).GetMethod(
-            nameof(IConsume<CbTestMessage>.ConsumeAsync),
+            nameof(IConsume<>.ConsumeAsync),
             BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
             null,
             [typeof(ConsumeContext<CbTestMessage>), typeof(CancellationToken)],

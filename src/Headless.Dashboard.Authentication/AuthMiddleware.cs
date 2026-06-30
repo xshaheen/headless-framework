@@ -10,27 +10,16 @@ namespace Headless.Dashboard.Authentication;
 /// Authentication middleware that only protects API endpoints.
 /// Static files, negotiate, and auth endpoints are excluded.
 /// </summary>
-public sealed class AuthMiddleware
+/// <remarks>Initializes a new instance of <see cref="AuthMiddleware"/>.</remarks>
+/// <param name="next">The next middleware delegate in the ASP.NET Core pipeline.</param>
+/// <param name="logger">The logger used to record authentication failures.</param>
+public sealed class AuthMiddleware(RequestDelegate next, ILogger<AuthMiddleware> logger)
 {
     /// <summary>Key used to store the authenticated username in <see cref="HttpContext.Items"/>.</summary>
     public const string UsernameKey = "auth.username";
 
     /// <summary>Key used to store the authentication flag in <see cref="HttpContext.Items"/>.</summary>
     public const string AuthenticatedKey = "auth.authenticated";
-
-    private readonly RequestDelegate _next;
-    private readonly ILogger<AuthMiddleware> _logger;
-
-    /// <summary>
-    /// Initializes a new instance of <see cref="AuthMiddleware"/>.
-    /// </summary>
-    /// <param name="next">The next middleware delegate in the ASP.NET Core pipeline.</param>
-    /// <param name="logger">The logger used to record authentication failures.</param>
-    public AuthMiddleware(RequestDelegate next, ILogger<AuthMiddleware> logger)
-    {
-        _next = next;
-        _logger = logger;
-    }
 
     /// <summary>
     /// Processes the request, enforcing authentication on <c>/api/</c> endpoints while passing
@@ -54,14 +43,14 @@ public sealed class AuthMiddleware
         // 3. Auth validation endpoint (to avoid circular dependency)
         if (_IsExcludedPath(path))
         {
-            await _next(context);
+            await next(context);
             return;
         }
 
         // Only protect API endpoints
         if (!path.StartsWith("/api/", StringComparison.Ordinal))
         {
-            await _next(context);
+            await next(context);
             return;
         }
 
@@ -76,7 +65,7 @@ public sealed class AuthMiddleware
             // Log path only (no query string) — access_token may be in query params.
             // CR/LF stripped so user-controlled path can't inject forged log entries.
             var safePath = _SanitizeForLog(context.Request.Path.Value);
-            _logger.LogAuthenticationFailed(safePath, authResult.ErrorMessage);
+            logger.LogAuthenticationFailed(safePath, authResult.ErrorMessage);
             context.Response.StatusCode = 401;
             await context.Response.WriteAsync("Unauthorized");
             return;
@@ -86,7 +75,7 @@ public sealed class AuthMiddleware
         context.Items[UsernameKey] = authResult.Username;
         context.Items[AuthenticatedKey] = true;
 
-        await _next(context);
+        await next(context);
     }
 
     private static string _SanitizeForLog(string? value)

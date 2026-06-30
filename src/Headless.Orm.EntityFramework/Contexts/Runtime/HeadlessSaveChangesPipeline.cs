@@ -187,7 +187,7 @@ internal sealed partial class HeadlessSaveChangesPipeline(
     {
         // Single allocation, single ChangeTracker traversal — feeds both _ProcessEntries and the
         // initial audit capture.
-        return context.ChangeTracker.Entries().ToArray();
+        return [.. context.ChangeTracker.Entries()];
     }
 
     private HeadlessSaveEntryContext _ProcessEntries(DbContext context, IReadOnlyList<EntityEntry> entries)

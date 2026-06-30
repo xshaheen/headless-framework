@@ -883,7 +883,7 @@ public sealed class SshBlobStorage(
             page = page.Take(limit.Value);
         }
 
-        return page.ToList();
+        return [.. page];
     }
 
     private static async IAsyncEnumerable<ISftpFile> _SafeListDirectoryAsync(

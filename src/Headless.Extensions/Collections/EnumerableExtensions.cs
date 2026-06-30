@@ -32,7 +32,7 @@ public static partial class EnumerableExtensions
     [JetBrainsPure]
     public static ICollection<T> AsICollection<T>(this IEnumerable<T> source)
     {
-        return source as ICollection<T> ?? source.ToList();
+        return source as ICollection<T> ?? [.. source];
     }
 
     /// <summary>
@@ -47,7 +47,7 @@ public static partial class EnumerableExtensions
     [JetBrainsPure]
     public static List<T> AsIList<T>(this IEnumerable<T> source)
     {
-        return source as List<T> ?? source.ToList();
+        return source as List<T> ?? [.. source];
     }
 
     /// <summary>
@@ -62,7 +62,7 @@ public static partial class EnumerableExtensions
     [JetBrainsPure]
     public static List<T> AsList<T>(this IEnumerable<T> source)
     {
-        return source as List<T> ?? source.ToList();
+        return source as List<T> ?? [.. source];
     }
 
     /// <summary>
@@ -77,7 +77,7 @@ public static partial class EnumerableExtensions
     [JetBrainsPure]
     public static T[] AsArray<T>(this IEnumerable<T> source)
     {
-        return source as T[] ?? source.ToArray();
+        return source as T[] ?? [.. source];
     }
 
     /// <summary>
@@ -291,7 +291,7 @@ public static partial class EnumerableExtensions
     {
         // Pre-size the set when the count is cheaply known to avoid incremental rehashing.
         // Uses the default comparer for TProp, exactly as before.
-        var d = list.TryGetNonEnumeratedCount(out var n) ? new HashSet<TProp>(n) : new HashSet<TProp>();
+        var d = list.TryGetNonEnumeratedCount(out var n) ? new HashSet<TProp>(n) : [];
 
         return list.Any(t => !d.Add(selector(t)));
     }
@@ -307,7 +307,7 @@ public static partial class EnumerableExtensions
         var result = await Argument.IsNotNull(task).ConfigureAwait(false);
 #pragma warning restore VSTHRD003
 
-        return result.ToList();
+        return [.. result];
     }
 
     /// <summary>Awaits a task that produces a sequence and materializes the result into an array.</summary>
@@ -321,7 +321,7 @@ public static partial class EnumerableExtensions
         var result = await Argument.IsNotNull(task).ConfigureAwait(false);
 #pragma warning restore VSTHRD003
 
-        return result.ToArray();
+        return [.. result];
     }
 
     /// <summary>

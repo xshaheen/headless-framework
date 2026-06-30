@@ -210,7 +210,7 @@ public sealed class SqlServerFeaturesStorageTests(SqlServerFeaturesFixture fixtu
         command.Parameters.AddWithValue("@qualifiedTable", $"{_Schema}.{tableName}");
         command.Parameters.AddWithValue("@index", indexName);
 
-        return (bool)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken));
+        return (bool)await command.ExecuteScalarAsync(TestContext.Current.CancellationToken);
     }
 
     private async Task _CreateTablesWithoutIndexesAsync()

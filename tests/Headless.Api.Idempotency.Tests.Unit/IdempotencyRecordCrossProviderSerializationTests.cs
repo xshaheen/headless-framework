@@ -32,7 +32,7 @@ public sealed class IdempotencyRecordCrossProviderSerializationTests
                 ["Cache-Control"] = ["no-store"],
                 ["X-Custom"] = ["a", "b"],
             },
-            Body = Enumerable.Range(0, 256).Select(i => (byte)i).ToArray(),
+            Body = [.. Enumerable.Range(0, 256).Select(i => (byte)i)],
             Fingerprint = [0xDE, 0xAD, 0xBE, 0xEF],
             CreatedAt = new DateTimeOffset(2026, 5, 19, 12, 0, 0, TimeSpan.Zero),
         };

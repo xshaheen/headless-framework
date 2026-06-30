@@ -282,7 +282,7 @@ internal sealed class RedisMembershipStore(
         }
 
         // The read Lua already returns members sorted (table.sort); no C# re-sort is needed.
-        return snapshots.ToArray();
+        return [.. snapshots];
     }
 
     private static NodeIdentity[] _ParseLiveNodes(RedisResult[]? result)

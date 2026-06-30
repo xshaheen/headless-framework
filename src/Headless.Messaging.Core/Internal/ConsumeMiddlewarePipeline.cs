@@ -381,7 +381,7 @@ internal sealed class ConsumeMiddlewarePipeline(
         var contextParam = Expression.Parameter(typeof(ConsumeContext), "context");
         var nextParam = Expression.Parameter(typeof(Func<ValueTask>), "next");
         var serviceType = typeof(IConsumeMiddleware<>).MakeGenericType(contextType);
-        var invokeMethod = serviceType.GetMethod(nameof(IConsumeMiddleware<ConsumeContext>.InvokeAsync))!;
+        var invokeMethod = serviceType.GetMethod(nameof(IConsumeMiddleware<>.InvokeAsync))!;
 
         var body = Expression.Call(
             Expression.Convert(middlewareParam, serviceType),

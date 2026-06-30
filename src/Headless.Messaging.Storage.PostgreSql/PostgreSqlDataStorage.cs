@@ -65,7 +65,6 @@ internal sealed class PostgreSqlDataStorage(
 
     private readonly string _publishedTable = initializer.GetPublishedTableName();
     private readonly string _receivedTable = initializer.GetReceivedTableName();
-    private readonly INodeMembership _nodeMembership = nodeMembership;
 
     /// <summary>
     /// Returns the monitoring API for querying message statistics and dashboard data against this PostgreSQL storage.
@@ -185,7 +184,7 @@ internal sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@LockedUntil", lockedUntil.ToUtcParameterValue()),
             new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar)
             {
-                Value = _nodeMembership.GetOwnerParameterValue(lockedUntil),
+                Value = nodeMembership.GetOwnerParameterValue(lockedUntil),
             },
             new NpgsqlParameter("@OriginalRetries", NpgsqlDbType.Integer)
             {
@@ -789,7 +788,7 @@ internal sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@LockedUntil", lockedUntil.ToUtcParameterValue()),
             new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar)
             {
-                Value = _nodeMembership.GetOwnerParameterValue(lockedUntil),
+                Value = nodeMembership.GetOwnerParameterValue(lockedUntil),
             },
             new NpgsqlParameter("@OriginalRetries", NpgsqlDbType.Integer)
             {
@@ -931,7 +930,7 @@ internal sealed class PostgreSqlDataStorage(
             + "AND (\"LockedUntil\" IS NULL OR \"LockedUntil\" <= @Now) "
             + $"AND {_TerminalRowGuardSimple}";
 
-        var owner = _nodeMembership.GetOwnerTag();
+        var owner = nodeMembership.GetOwnerTag();
         object[] sqlParams =
         [
             new NpgsqlParameter("@Id", message.StorageId),
@@ -1005,7 +1004,7 @@ internal sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@NewLease", newLease),
             new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar)
             {
-                Value = _nodeMembership.GetOwnerTag() ?? (object)DBNull.Value,
+                Value = nodeMembership.GetOwnerTag() ?? (object)DBNull.Value,
             },
         ];
 

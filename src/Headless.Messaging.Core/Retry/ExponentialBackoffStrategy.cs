@@ -20,7 +20,6 @@ public sealed class ExponentialBackoffStrategy(
 {
     private readonly TimeSpan _initialDelay = initialDelay ?? TimeSpan.FromSeconds(1);
     private readonly TimeSpan _maxDelay = maxDelay ?? TimeSpan.FromMinutes(5);
-    private readonly double _backoffMultiplier = backoffMultiplier;
 
     /// <inheritdoc />
     public RetryDecision Compute(int persistedRetryCount, int inlineRetryCount, Exception exception)
@@ -31,7 +30,7 @@ public sealed class ExponentialBackoffStrategy(
         }
 
         // Calculate exponential delay: initialDelay * (backoffMultiplier ^ persistedRetryCount)
-        var exponentialDelay = _initialDelay.TotalMilliseconds * Math.Pow(_backoffMultiplier, persistedRetryCount);
+        var exponentialDelay = _initialDelay.TotalMilliseconds * Math.Pow(backoffMultiplier, persistedRetryCount);
 
         // Cap at max delay
         var delayMs = Math.Min(exponentialDelay, _maxDelay.TotalMilliseconds);

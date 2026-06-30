@@ -22,7 +22,6 @@ public sealed partial class FactoryCacheCoordinator(
     private readonly TimeProvider _timeProvider = Argument.IsNotNull(timeProvider);
     private readonly KeyedAsyncLock _keyedLock = new();
     private readonly ILogger _logger = logger ?? NullLogger<FactoryCacheCoordinator>.Instance;
-    private readonly ICacheFactoryLockProvider? _factoryLockProvider = factoryLockProvider;
     private const int _MaxInertWarningKeys = 1024;
 
     // Re-emit the "cap reached" notice once every this many post-cap suppressed occurrences so the misconfiguration
@@ -104,7 +103,7 @@ public sealed partial class FactoryCacheCoordinator(
         Argument.IsNotNull(factory);
         _ValidateOptions(options);
 
-        if (options.UseDistributedFactoryLock && _factoryLockProvider is null)
+        if (options.UseDistributedFactoryLock && factoryLockProvider is null)
         {
             throw new InvalidOperationException(
                 $"{nameof(CacheEntryOptions)}.{nameof(CacheEntryOptions.UseDistributedFactoryLock)} is enabled for "
@@ -189,7 +188,7 @@ public sealed partial class FactoryCacheCoordinator(
 
                 try
                 {
-                    distributedLease = await _factoryLockProvider!
+                    distributedLease = await factoryLockProvider!
                         .TryAcquireAsync(key, distributedLockTimeout, cancellationToken)
                         .ConfigureAwait(false);
                 }

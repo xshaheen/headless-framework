@@ -123,7 +123,7 @@ public class ConsulNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cac
             var tags = new[] { "Headless", "Messaging", "Client", "Dashboard" };
             if (options.CustomTags is { Length: > 0 })
             {
-                tags = tags.Union(options.CustomTags, StringComparer.Ordinal).ToArray();
+                tags = [.. tags.Union(options.CustomTags, StringComparer.Ordinal)];
             }
 
             using var consul = new ConsulClient(config =>

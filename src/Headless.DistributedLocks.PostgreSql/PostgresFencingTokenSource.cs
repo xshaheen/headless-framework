@@ -25,29 +25,24 @@ namespace Headless.DistributedLocks.PostgreSql;
 /// intentionally ignored because the multiplexing engine may share it with other lock operations.
 /// </para>
 /// </remarks>
-internal sealed class PostgresFencingTokenSource : IFencingTokenSource, IAsyncDisposable
+/// <remarks>
+/// Initializes the fencing-token source over the shared Npgsql data source, taking the command timeout
+/// from the resolved provider options. The backing database sequence is created lazily on first use.
+/// </remarks>
+/// <param name="options">Provider options supplying the command timeout.</param>
+/// <param name="dataSource">
+/// The shared <see cref="NpgsqlDataSource"/> injected by the DI registration. Not disposed here;
+/// disposal is owned by <see cref="PostgresLockDataSource"/>.
+/// </param>
+internal sealed class PostgresFencingTokenSource(
+    IOptions<PostgresDistributedLockOptions> options,
+    NpgsqlDataSource dataSource
+) : IFencingTokenSource, IAsyncDisposable
 {
     private const string _SequenceName = "headless_distributed_locks_fence";
-    private readonly NpgsqlDataSource _dataSource;
-    private readonly TimeSpan _commandTimeout;
+    private readonly TimeSpan _commandTimeout = options.Value.CommandTimeout;
     private readonly SemaphoreSlim _ensureGate = new(1, 1);
     private bool _sequenceEnsured;
-
-    /// <summary>
-    /// Initializes the fencing-token source over the shared Npgsql data source, taking the command timeout
-    /// from the resolved provider options. The backing database sequence is created lazily on first use.
-    /// </summary>
-    /// <param name="options">Provider options supplying the command timeout.</param>
-    /// <param name="dataSource">
-    /// The shared <see cref="NpgsqlDataSource"/> injected by the DI registration. Not disposed here;
-    /// disposal is owned by <see cref="PostgresLockDataSource"/>.
-    /// </param>
-    public PostgresFencingTokenSource(IOptions<PostgresDistributedLockOptions> options, NpgsqlDataSource dataSource)
-    {
-        // The data source is shared and owned by the DI registration; it is never disposed here.
-        _dataSource = dataSource;
-        _commandTimeout = options.Value.CommandTimeout;
-    }
 
     /// <inheritdoc/>
     /// <remarks>
@@ -77,9 +72,10 @@ internal sealed class PostgresFencingTokenSource : IFencingTokenSource, IAsyncDi
         // source, so the optional handle connection is intentionally ignored here.
         _ = connection;
 
-        await using var pooledConnection = await _dataSource
+        await using var pooledConnection = await dataSource
             .OpenConnectionAsync(cancellationToken)
             .ConfigureAwait(false);
+
         await _EnsureSequenceAsync(pooledConnection, cancellationToken).ConfigureAwait(false);
 
         await using var command = pooledConnection.CreateCommand();

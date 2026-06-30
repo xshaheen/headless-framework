@@ -83,7 +83,8 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache,
             var namespaces = await client
                 .ListNamespaceAsync(cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
-            return namespaces.Items.Select(x => x.Name()).ToList();
+
+            return [.. namespaces.Items.Select(x => x.Name())];
         }
 #pragma warning disable ERP022
         catch (Exception)

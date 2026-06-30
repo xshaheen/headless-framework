@@ -202,7 +202,7 @@ public sealed partial class HybridCache
 
         // The hybrid store write fans out to L2 then L1 with the full per-entry metadata (tags included) and
         // publishes the key invalidation itself: every value-write through the composite store broadcasts.
-        await (this).UpsertEntryAsync(key, value, options, _timeProvider, cancellationToken).ConfigureAwait(false);
+        await this.UpsertEntryAsync(key, value, options, _timeProvider, cancellationToken).ConfigureAwait(false);
 
         return true;
     }
@@ -283,7 +283,7 @@ public sealed partial class HybridCache
         }
 
         await _PublishInvalidationAsync(
-                new CacheInvalidationMessage { InstanceId = _instanceId, Keys = value.Keys.ToArray() },
+                new CacheInvalidationMessage { InstanceId = _instanceId, Keys = [.. value.Keys] },
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -1097,7 +1097,7 @@ public sealed partial class HybridCache
         Argument.IsNotNull(value);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var items = value as T[] ?? value.ToArray();
+        var items = value.AsArray();
         var removedCount = await l2Cache
             .SetRemoveAsync(key, items, expiration, cancellationToken)
             .ConfigureAwait(false);

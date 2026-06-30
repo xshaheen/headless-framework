@@ -12,9 +12,7 @@ public sealed class ConsumerRegistryExtensionsTests
     {
         // given — consumer in the group has no provider config of the requested type
         var registry = new ConsumerRegistry();
-        registry.Register(
-            _Metadata("orders", IntentType.Bus, "order.created", providerConfigs: new Dictionary<Type, object>())
-        );
+        registry.Register(_Metadata("orders", IntentType.Bus, "order.created", providerConfigs: []));
 
         // when
         var result = registry.ResolveConsumerConfig<FakeConsumerConfig>("orders", IntentType.Bus);

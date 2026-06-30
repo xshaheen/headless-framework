@@ -63,7 +63,6 @@ internal sealed class SqlServerDataStorage(
 
     private readonly string _publishedTable = initializer.GetPublishedTableName();
     private readonly string _receivedTable = initializer.GetReceivedTableName();
-    private readonly INodeMembership _nodeMembership = nodeMembership;
 
     /// <summary>
     /// Bulk-transitions the specified published messages to <c>Delayed</c> status.
@@ -942,7 +941,7 @@ internal sealed class SqlServerDataStorage(
             + "AND (LockedUntil IS NULL OR LockedUntil <= @Now) "
             + $"AND {_TerminalRowGuardSimple}";
 
-        var owner = _nodeMembership.GetOwnerTag();
+        var owner = nodeMembership.GetOwnerTag();
         object[] sqlParams =
         [
             new SqlParameter("@Id", message.StorageId),
@@ -1146,6 +1145,6 @@ internal sealed class SqlServerDataStorage(
     private SqlParameter _OwnerParameter(string name, DateTime? lockedUntil) =>
         new(name, SqlDbType.NVarChar, options.Value.OwnerColumnMaxLength)
         {
-            Value = _nodeMembership.GetOwnerParameterValue(lockedUntil),
+            Value = nodeMembership.GetOwnerParameterValue(lockedUntil),
         };
 }

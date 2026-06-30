@@ -57,14 +57,14 @@ public sealed class ConsumerRegisterTests : TestBase
         handleType.GetProperty("ConsumerTasks")!.SetValue(handle, new ConcurrentBag<Task>());
 
         var addClient = handleType.GetMethod("AddClientAsync")!;
-        await ((ValueTask)addClient.Invoke(handle, [client])!);
+        await (ValueTask)addClient.Invoke(handle, [client])!;
 
         var resumeGroup = typeof(ConsumerRegister).GetMethod(
             "_ResumeGroupAsync",
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         )!;
 
-        var act = async () => await ((ValueTask)resumeGroup.Invoke(register, [handle])!);
+        var act = async () => await (ValueTask)resumeGroup.Invoke(register, [handle])!;
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("resume failed");
     }

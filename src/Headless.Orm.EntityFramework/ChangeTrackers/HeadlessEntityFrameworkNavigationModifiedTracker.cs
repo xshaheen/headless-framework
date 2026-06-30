@@ -32,7 +32,7 @@ internal sealed class HeadlessEntityFrameworkNavigationModifiedTracker
 
     public List<EntityEntry> GetModifiedEntityEntries()
     {
-        return _trackers.Where(x => x.Value.IsModified).Select(x => x.Value.Entry).ToList();
+        return [.. _trackers.Where(x => x.Value.IsModified).Select(x => x.Value.Entry)];
     }
 
     public HeadlessNavigationEntry? GetNavigationEntry(EntityEntry entry, int navigationEntryIndex)
