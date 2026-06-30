@@ -607,10 +607,15 @@ public sealed class AzureBlobStorage(
         var (container, prefix) = BlobLocationResolver.ResolveQuery(query, normalizer);
         var containerClient = blobServiceClient.GetBlobContainerClient(container);
 
+        // List omits per-object metadata by default; request the Metadata trait only when the caller opts in via
+        // BlobQuery.IncludeMetadata so listings are uniform with the other providers. Without the trait the SDK returns
+        // no metadata, so _ToBlobInfo yields a null Metadata.
+        var traits = query.IncludeMetadata ? BlobTraits.Metadata : BlobTraits.None;
+
         // Request one native Azure page sized to PageSize, resuming from the opaque continuation token when present.
         var pages = containerClient
             .GetBlobsAsync(
-                traits: BlobTraits.Metadata,
+                traits: traits,
                 states: BlobStates.None,
                 prefix: prefix,
                 cancellationToken: cancellationToken

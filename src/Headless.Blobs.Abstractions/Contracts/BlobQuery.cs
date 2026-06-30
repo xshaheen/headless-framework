@@ -31,13 +31,23 @@ public sealed record BlobQuery
     /// <param name="prefix">Optional server-pushed key prefix. <see langword="null"/> or empty lists every blob in the container.</param>
     /// <param name="pageSize">Maximum number of blobs returned per page. Must be positive.</param>
     /// <param name="continuationToken">Opaque token from a previous <see cref="BlobPage"/>, or <see langword="null"/> to start from the first page.</param>
+    /// <param name="includeMetadata">
+    /// When <see langword="true"/>, listings populate <see cref="BlobInfo.Metadata"/> per blob; otherwise (the default)
+    /// listings omit metadata. See <see cref="IncludeMetadata"/>.
+    /// </param>
     /// <exception cref="ArgumentException">
     /// Thrown when <paramref name="container"/> is empty/whitespace, or when <paramref name="container"/> or a non-empty
     /// <paramref name="prefix"/> contains a path-traversal sequence, is absolute, or contains control characters, or
     /// when <paramref name="prefix"/> contains a segment ending in the reserved sidecar-metadata suffix.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="pageSize"/> is not positive.</exception>
-    public BlobQuery(string container, string? prefix = null, int pageSize = 100, string? continuationToken = null)
+    public BlobQuery(
+        string container,
+        string? prefix = null,
+        int pageSize = 100,
+        string? continuationToken = null,
+        bool includeMetadata = false
+    )
     {
         Container = Argument.IsNotNullOrWhiteSpace(container);
         PathValidation.ValidatePathSegment(container);
@@ -62,6 +72,7 @@ public sealed record BlobQuery
 
         Prefix = prefix;
         ContinuationToken = continuationToken;
+        IncludeMetadata = includeMetadata;
     }
 
     /// <summary>The top-level container (bucket/container/root) to enumerate.</summary>
@@ -75,4 +86,12 @@ public sealed record BlobQuery
 
     /// <summary>Opaque continuation token carried over from a previous <see cref="BlobPage"/>, or <see langword="null"/> for the first page.</summary>
     public string? ContinuationToken { get; }
+
+    /// <summary>
+    /// When <see langword="true"/>, listings populate <see cref="BlobInfo.Metadata"/> for each returned blob; otherwise
+    /// (the default) listings return <see langword="null"/> metadata uniformly across providers. Populating metadata in
+    /// a listing may cost an extra per-object round-trip on some backends (an S3/SFTP HEAD or a filesystem sidecar read
+    /// per blob), so it is opt-in. Use <see cref="IBlobStorage.GetBlobInfoAsync"/> for authoritative single-blob metadata.
+    /// </summary>
+    public bool IncludeMetadata { get; }
 }

@@ -558,7 +558,8 @@ public sealed class SshBlobStorage(
                     continue;
                 }
 
-                // List omits per-object metadata (it would cost a sidecar read per file); GetBlobInfoAsync is the
+                // List omits per-object metadata by default (it would cost a sidecar read per file); it is populated
+                // post-trim only when the caller opts in via BlobQuery.IncludeMetadata. GetBlobInfoAsync remains the
                 // authoritative source for Metadata and the sidecar-derived Created timestamp.
                 var item = _ToBlobInfo(file, key, metadata: null);
 
@@ -584,6 +585,29 @@ public sealed class SshBlobStorage(
             {
                 pageWindow.RemoveAt(pageWindow.Count - 1);
                 continuationToken = BlobStorageHelpers.EncodeContinuationToken(pageWindow[^1].BlobKey);
+            }
+
+            // Populate metadata only for the final page entries when the caller opts in: one sidecar read per
+            // returned blob (not per enumerated file), reusing the acquired client. This also recovers the accurate
+            // sidecar-derived Created timestamp that the default null-metadata path falls back to last-write-time for.
+            if (query.IncludeMetadata)
+            {
+                for (var i = 0; i < pageWindow.Count; i++)
+                {
+                    var current = pageWindow[i];
+                    var sidecarPath = _CombinePath(container, current.BlobKey) + BlobStorageHelpers.SidecarSuffix;
+                    var rawMetadata = await _ReadSidecarAsync(client, sidecarPath, cancellationToken)
+                        .ConfigureAwait(false);
+
+                    pageWindow[i] = new BlobInfo
+                    {
+                        BlobKey = current.BlobKey,
+                        Created = _GetCreated(rawMetadata, current.Modified),
+                        Modified = current.Modified,
+                        Size = current.Size,
+                        Metadata = BlobStorageHelpers.ToUserMetadata(rawMetadata),
+                    };
+                }
             }
 
             return new BlobPage(pageWindow, continuationToken);

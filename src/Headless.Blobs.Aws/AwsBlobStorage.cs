@@ -240,26 +240,56 @@ public sealed class AwsBlobStorage(
             }
         }
 
+        // S3 DeleteObjects is idempotent (a missing key reports as deleted), so to honor the cross-provider
+        // not-found => Ok(false) contract we HEAD each key first. Parallelize that pre-check up to MaxBulkParallelism
+        // (mirroring BulkUploadAsync) instead of issuing N sequential HEADs. Each index writes a disjoint slot, so the
+        // bodies need no synchronization; deleteEntries is rebuilt in input order afterward.
+        var keyExists = new bool[batchEntries.Count];
+
+        var existsOptions = new ParallelOptions
+        {
+            MaxDegreeOfParallelism = _options.MaxBulkParallelism,
+            CancellationToken = cancellationToken,
+        };
+
+        await Parallel
+            .ForAsync(
+                0,
+                batchEntries.Count,
+                existsOptions,
+                async (j, ct) =>
+                {
+                    var entry = batchEntries[j];
+
+                    try
+                    {
+                        if (await _ExistsAsync(entry.Bucket, entry.Key, ct).ConfigureAwait(false))
+                        {
+                            keyExists[j] = true;
+                        }
+                        else
+                        {
+                            results[entry.Index] = new BlobBulkResult(
+                                entry.Location,
+                                Result<bool, Exception>.Ok(false)
+                            );
+                        }
+                    }
+                    catch (Exception e) when (e is not OperationCanceledException)
+                    {
+                        results[entry.Index] = new BlobBulkResult(entry.Location, Result<bool, Exception>.Fail(e));
+                    }
+                }
+            )
+            .ConfigureAwait(false);
+
         var deleteEntries = new List<(int Index, BlobLocation Location, string Bucket, string Key)>(batchEntries.Count);
 
-        foreach (var entry in batchEntries)
+        for (var j = 0; j < batchEntries.Count; j++)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            try
+            if (keyExists[j])
             {
-                if (await _ExistsAsync(entry.Bucket, entry.Key, cancellationToken).ConfigureAwait(false))
-                {
-                    deleteEntries.Add(entry);
-                }
-                else
-                {
-                    results[entry.Index] = new BlobBulkResult(entry.Location, Result<bool, Exception>.Ok(false));
-                }
-            }
-            catch (Exception e) when (e is not OperationCanceledException)
-            {
-                results[entry.Index] = new BlobBulkResult(entry.Location, Result<bool, Exception>.Fail(e));
+                deleteEntries.Add(batchEntries[j]);
             }
         }
 
@@ -703,7 +733,67 @@ public sealed class AwsBlobStorage(
         // Pass S3's NextContinuationToken straight through as the opaque BlobPage token; null when not truncated.
         var continuationToken = response.IsTruncated is true ? response.NextContinuationToken : null;
 
+        // ListObjectsV2 cannot return user metadata; populate it with a per-object HEAD only when the caller opts in
+        // via BlobQuery.IncludeMetadata (the documented per-object cost on object stores). The default listing path
+        // issues no HEADs and returns null metadata, uniform with the other providers.
+        if (query.IncludeMetadata && items.Count > 0)
+        {
+            var enriched = await _PopulateListMetadataAsync(bucket, items, cancellationToken).ConfigureAwait(false);
+
+            return new BlobPage(enriched, continuationToken);
+        }
+
         return new BlobPage(items, continuationToken);
+    }
+
+    // HEADs each listed key (parallelized up to MaxBulkParallelism) to attach per-object metadata that ListObjectsV2
+    // omits. Writes into a fresh array at disjoint indices so the parallel bodies need no synchronization; an object
+    // that vanished between the list and the HEAD keeps its null metadata.
+    private async ValueTask<BlobInfo[]> _PopulateListMetadataAsync(
+        string bucket,
+        List<BlobInfo> items,
+        CancellationToken cancellationToken
+    )
+    {
+        var enriched = new BlobInfo[items.Count];
+
+        var options = new ParallelOptions
+        {
+            MaxDegreeOfParallelism = _options.MaxBulkParallelism,
+            CancellationToken = cancellationToken,
+        };
+
+        await Parallel
+            .ForAsync(
+                0,
+                items.Count,
+                options,
+                async (i, ct) =>
+                {
+                    var item = items[i];
+                    var request = new GetObjectMetadataRequest { BucketName = bucket, Key = item.BlobKey };
+
+                    try
+                    {
+                        var response = await s3.GetObjectMetadataAsync(request, ct).ConfigureAwait(false);
+                        enriched[i] = new BlobInfo
+                        {
+                            BlobKey = item.BlobKey,
+                            Created = _GetUploadedDate(response.Metadata),
+                            Modified = item.Modified,
+                            Size = item.Size,
+                            Metadata = BlobStorageHelpers.ToUserMetadata(_ToDictionary(response.Metadata)),
+                        };
+                    }
+                    catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.NotFound)
+                    {
+                        enriched[i] = item;
+                    }
+                }
+            )
+            .ConfigureAwait(false);
+
+        return enriched;
     }
 
     private static BlobInfo _ToBlobInfo(S3Object blob)

@@ -625,10 +625,12 @@ public abstract class BlobStorageTestsBase : TestBase
         info.Metadata!["author"].Should().Be("blake");
         info.Metadata!["category"].Should().Be("report");
 
-        // OpenReadStreamAsync surfaces the stored metadata.
+        // OpenReadStreamAsync surfaces the stored metadata and the full container-relative key as FileName (every
+        // provider returns location.Path, not just the last "doc.txt" segment).
         await using (var download = await storage.OpenReadStreamAsync(location, AbortToken))
         {
             download.Should().NotBeNull();
+            download.FileName.Should().Be("meta/doc.txt");
             download.Metadata.Should().NotBeNull();
             download.Metadata!["author"].Should().Be("blake");
         }
@@ -654,6 +656,31 @@ public abstract class BlobStorageTestsBase : TestBase
         (info2.Metadata is null || info2.Metadata.Count == 0)
             .Should()
             .BeTrue("re-uploading without metadata must not resurrect the deleted sidecar");
+    }
+
+    public virtual async Task list_metadata_is_opt_in()
+    {
+        await using var storage = GetStorage();
+
+        await ResetAsync(storage);
+
+        var metadata = new Dictionary<string, string>(StringComparer.Ordinal) { ["author"] = "blake" };
+
+        await using (var content = new MemoryStream("payload"u8.ToArray()))
+        {
+            await storage.UploadAsync(_Loc("doc.txt"), content, metadata, AbortToken);
+        }
+
+        // A default listing omits per-object metadata uniformly across providers — it is not free on every backend.
+        var defaultList = await storage.GetBlobsListAsync(new BlobQuery(ContainerName));
+        defaultList.Should().ContainSingle();
+        defaultList[0].Metadata.Should().BeNull("listings omit metadata unless BlobQuery.IncludeMetadata is set");
+
+        // Opting in via IncludeMetadata populates it (at the documented per-object cost on some backends).
+        var withMetadata = await storage.GetBlobsListAsync(new BlobQuery(ContainerName, includeMetadata: true));
+        withMetadata.Should().ContainSingle();
+        withMetadata[0].Metadata.Should().NotBeNull();
+        withMetadata[0].Metadata!["author"].Should().Be("blake");
     }
 
     public virtual async Task move_relocates_blob_and_metadata()

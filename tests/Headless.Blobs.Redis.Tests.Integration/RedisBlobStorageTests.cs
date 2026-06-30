@@ -130,6 +130,9 @@ public sealed class RedisBlobStorageTests(RedisBlobStorageFixture fixture) : Blo
         base.metadata_round_trips_and_sidecar_is_hidden();
 
     [Fact]
+    public override Task list_metadata_is_opt_in() => base.list_metadata_is_opt_in();
+
+    [Fact]
     public override Task move_relocates_blob_and_metadata() => base.move_relocates_blob_and_metadata();
 
     #endregion

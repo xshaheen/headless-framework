@@ -273,6 +273,12 @@ public sealed class AzureStorageTests(AzureBlobStorageFixture fixture) : BlobSto
     }
 
     [Fact]
+    public override Task list_metadata_is_opt_in()
+    {
+        return base.list_metadata_is_opt_in();
+    }
+
+    [Fact]
     public override Task move_relocates_blob_and_metadata()
     {
         return base.move_relocates_blob_and_metadata();

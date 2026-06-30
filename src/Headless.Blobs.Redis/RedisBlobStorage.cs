@@ -683,7 +683,7 @@ public sealed class RedisBlobStorage : IBlobStorage
         var (nextCursor, entries) = await _HashScanAsync(infoHash, match, cursor, query.PageSize, cancellationToken)
             .ConfigureAwait(false);
 
-        var items = _ParseBlobInfos(entries);
+        var items = _ParseBlobInfos(entries, query.IncludeMetadata);
 
         var continuationToken = string.Equals(nextCursor, "0", StringComparison.Ordinal) ? null : nextCursor;
 
@@ -744,7 +744,7 @@ public sealed class RedisBlobStorage : IBlobStorage
         return builder.ToString();
     }
 
-    private List<BlobInfo> _ParseBlobInfos(RedisResult[]? entries)
+    private List<BlobInfo> _ParseBlobInfos(RedisResult[]? entries, bool includeMetadata)
     {
         if (entries is null || entries.Length == 0)
         {
@@ -771,6 +771,8 @@ public sealed class RedisBlobStorage : IBlobStorage
             }
 
             // The hash field name is the source of truth for the key (a stored BlobKey can be stale after a move).
+            // List omits per-object metadata by default; surface it only when the caller opts in via
+            // BlobQuery.IncludeMetadata so listings are uniform with the other providers.
             items.Add(
                 new BlobInfo
                 {
@@ -778,7 +780,7 @@ public sealed class RedisBlobStorage : IBlobStorage
                     Created = info.Created,
                     Modified = info.Modified,
                     Size = info.Size,
-                    Metadata = info.Metadata,
+                    Metadata = includeMetadata ? info.Metadata : null,
                 }
             );
         }

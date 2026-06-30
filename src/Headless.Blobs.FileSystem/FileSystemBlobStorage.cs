@@ -432,11 +432,9 @@ public sealed class FileSystemBlobStorage : IBlobStorage
             var fileStream = File.OpenRead(fullPath);
 
 #pragma warning disable CA2000 // Ownership transfers to the returned BlobDownloadResult ([MustDisposeResource]).
-            return new BlobDownloadResult(
-                fileStream,
-                Path.GetFileName(fullPath),
-                BlobStorageHelpers.ToUserMetadata(metadata)
-            );
+            // FileName is the full container-relative key (location.Path), matching AWS/Azure/Redis/SSH — not just the
+            // last path segment.
+            return new BlobDownloadResult(fileStream, location.Path, BlobStorageHelpers.ToUserMetadata(metadata));
 #pragma warning restore CA2000
         }
         catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
@@ -491,9 +489,12 @@ public sealed class FileSystemBlobStorage : IBlobStorage
 
         var startAfterKey = BlobStorageHelpers.DecodeContinuationToken(query.ContinuationToken);
 
-        // Collect content blobs (sidecars excluded), apply the prefix and the start-after-key cursor, then sort by
-        // key so the emulated re-scan paginates a stable lexicographic order across calls.
-        var entries = new List<(string Key, FileInfo Info)>();
+        // Hold at most PageSize+1 entries in a sliding window (mirroring the SFTP provider) so memory stays
+        // O(pageSize) regardless of how many blobs the container holds — a full window signals a further page remains.
+        // Compute the +1 in long space and clamp the initial capacity so PageSize == int.MaxValue ("everything in one
+        // page") cannot overflow the capacity/threshold into a negative value.
+        var windowLimit = (long)query.PageSize + 1;
+        var pageWindow = new List<(string Key, FileInfo Info)>((int)Math.Min(windowLimit, 1024));
 
         foreach (var file in Directory.EnumerateFiles(containerDirectory, "*", SearchOption.AllDirectories))
         {
@@ -523,27 +524,60 @@ public sealed class FileSystemBlobStorage : IBlobStorage
                 continue;
             }
 
-            entries.Add((key, info));
+            if (pageWindow.Count < windowLimit)
+            {
+                pageWindow.Add((key, info));
+                continue;
+            }
+
+            var maxIndex = _IndexOfMaxKey(pageWindow);
+
+            if (string.CompareOrdinal(key, pageWindow[maxIndex].Key) < 0)
+            {
+                pageWindow[maxIndex] = (key, info);
+            }
         }
 
-        entries.Sort(static (a, b) => string.CompareOrdinal(a.Key, b.Key));
+        pageWindow.Sort(static (a, b) => string.CompareOrdinal(a.Key, b.Key));
 
-        var pageCount = Math.Min(entries.Count, query.PageSize);
-        var items = new List<BlobInfo>(pageCount);
+        string? continuationToken = null;
 
-        for (var i = 0; i < pageCount; i++)
+        if (pageWindow.Count > query.PageSize)
         {
-            var (key, info) = entries[i];
-            var metadata = await _ReadSidecarMetadataAsync(info.FullName, cancellationToken).ConfigureAwait(false);
+            pageWindow.RemoveAt(pageWindow.Count - 1);
+            continuationToken = BlobStorageHelpers.EncodeContinuationToken(pageWindow[^1].Key);
+        }
+
+        // List omits per-object metadata by default (it would cost a sidecar read per file); populate it only when the
+        // caller opts in via BlobQuery.IncludeMetadata. Sidecars are read only for the final page entries (not the
+        // ones evicted from the window), and GetBlobInfoAsync remains the authoritative single-blob metadata source.
+        var items = new List<BlobInfo>(pageWindow.Count);
+
+        foreach (var (key, info) in pageWindow)
+        {
+            var metadata = query.IncludeMetadata
+                ? await _ReadSidecarMetadataAsync(info.FullName, cancellationToken).ConfigureAwait(false)
+                : null;
+
             items.Add(_CreateBlobInfo(info, key, metadata));
         }
 
-        // More remain only when the sorted set exceeded the page; the opaque token is the last returned key, so the
-        // next call skips everything up to and including it (a start-after-key cursor).
-        var continuationToken =
-            entries.Count > query.PageSize ? BlobStorageHelpers.EncodeContinuationToken(items[^1].BlobKey) : null;
-
         return new BlobPage(items, continuationToken);
+    }
+
+    private static int _IndexOfMaxKey(List<(string Key, FileInfo Info)> items)
+    {
+        var maxIndex = 0;
+
+        for (var i = 1; i < items.Count; i++)
+        {
+            if (string.CompareOrdinal(items[i].Key, items[maxIndex].Key) > 0)
+            {
+                maxIndex = i;
+            }
+        }
+
+        return maxIndex;
     }
 
     #endregion
