@@ -25,9 +25,10 @@ builder.Services.AddNswagOpenApi();
 
 // Configure authorization policies
 builder.Services.AddAuthentication();
-builder.Services.AddAuthorization(options =>
-{
-    options.AddPolicy(
+
+builder
+    .Services.AddAuthorizationBuilder()
+    .AddPolicy(
         "PermissionsManage",
         policy =>
             policy.RequireAssertion(context =>
@@ -35,7 +36,6 @@ builder.Services.AddAuthorization(options =>
                 && (context.User.IsInRole("Admin") || context.User.IsInRole("PermissionsAdmin"))
             )
     );
-});
 
 var app = builder.Build();
 

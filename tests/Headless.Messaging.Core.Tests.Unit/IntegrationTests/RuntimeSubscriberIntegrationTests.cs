@@ -199,6 +199,7 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
             CancellationToken cancellationToken
         )
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var dependency = services.GetRequiredService<ScopedRuntimeDependency>();
             ScopedDependencyIds.Enqueue(dependency.Id);
             _messageReceived.TrySetResult(context);

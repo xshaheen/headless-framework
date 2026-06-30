@@ -164,7 +164,8 @@ public sealed class EventDerivationTests : TestBase
         var moveNext = watcher.MoveNextAsync();
 
         await watcherCts.CancelAsync();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await moveNext);
+        var act = async () => await moveNext;
+        await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
     private sealed class StaticNodeIdProvider(NodeId nodeId) : INodeIdProvider

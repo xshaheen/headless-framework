@@ -28,8 +28,8 @@ public sealed class NamedHybridCacheTests : TestBase
     {
         // given
         var services = _CreateBaseServices();
-        var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
-        var l2Inner = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+        using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+        using var l2Inner = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
         services.AddKeyedSingleton<ICache>("tenant-l1", l1);
         services.AddKeyedSingleton<ICache>("tenant-l2", new InMemoryRemoteCacheAdapter(l2Inner));
 
@@ -71,8 +71,8 @@ public sealed class NamedHybridCacheTests : TestBase
             .ImplementationInstance.Should()
             .BeAssignableTo<IBus>()
             .Subject;
-        var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
-        var l2Inner = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+        using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+        using var l2Inner = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
         services.AddKeyedSingleton<ICache>("tenant-l1", l1);
         services.AddKeyedSingleton<ICache>("tenant-l2", new InMemoryRemoteCacheAdapter(l2Inner));
 
@@ -110,8 +110,8 @@ public sealed class NamedHybridCacheTests : TestBase
     {
         // given
         var services = _CreateBaseServices();
-        var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
-        var l2Inner = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+        using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+        using var l2Inner = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
         services.AddKeyedSingleton<ICache>("tenant-l1", l1);
         services.AddKeyedSingleton<ICache>("tenant-l2", new InMemoryRemoteCacheAdapter(l2Inner));
 
@@ -167,8 +167,8 @@ public sealed class NamedHybridCacheTests : TestBase
     {
         // given - the options drive tier binding on the default (nameless) path too
         var services = _CreateBaseServices();
-        var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
-        var l2Inner = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+        using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+        using var l2Inner = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
         services.AddKeyedSingleton<ICache>("local-tier", l1);
         services.AddKeyedSingleton<ICache>("remote-tier", new InMemoryRemoteCacheAdapter(l2Inner));
 
@@ -218,7 +218,7 @@ public sealed class NamedHybridCacheTests : TestBase
     {
         // given - "remote-only" is an IRemoteCache, not an IInMemoryCache
         var services = _CreateBaseServices();
-        var l2Inner = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+        using var l2Inner = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
         services.AddKeyedSingleton<ICache>("remote-only", new InMemoryRemoteCacheAdapter(l2Inner));
         services.AddHeadlessCaching(setup =>
         {
@@ -245,20 +245,23 @@ public sealed class NamedHybridCacheTests : TestBase
         // given — named tiers that EACH carry their own (short) defaults, composed under a hybrid with a
         // LONGER default of its own
         var services = _CreateBaseServices();
-        var l1 = new InMemoryCache(
+
+        using var l1 = new InMemoryCache(
             _timeProvider,
             new InMemoryCacheOptions
             {
                 DefaultEntryOptions = new CacheEntryOptions { Duration = TimeSpan.FromMinutes(1) },
             }
         );
-        var l2Inner = new InMemoryCache(
+
+        using var l2Inner = new InMemoryCache(
             _timeProvider,
             new InMemoryCacheOptions
             {
                 DefaultEntryOptions = new CacheEntryOptions { Duration = TimeSpan.FromMinutes(2) },
             }
         );
+
         services.AddKeyedSingleton<ICache>("tenant-l1", l1);
         services.AddKeyedSingleton<ICache>("tenant-l2", new InMemoryRemoteCacheAdapter(l2Inner));
 
@@ -312,14 +315,16 @@ public sealed class NamedHybridCacheTests : TestBase
     {
         // given — the same layered defaults (tiers: 1/2 minutes, hybrid: 10 minutes) and a 30-second per-call
         var services = _CreateBaseServices();
-        var l1 = new InMemoryCache(
+
+        using var l1 = new InMemoryCache(
             _timeProvider,
             new InMemoryCacheOptions
             {
                 DefaultEntryOptions = new CacheEntryOptions { Duration = TimeSpan.FromMinutes(1) },
             }
         );
-        var l2Inner = new InMemoryCache(
+
+        using var l2Inner = new InMemoryCache(
             _timeProvider,
             new InMemoryCacheOptions
             {

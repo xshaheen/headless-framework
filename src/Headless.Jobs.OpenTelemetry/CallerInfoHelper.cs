@@ -15,7 +15,7 @@ internal static class CallerInfoHelper
     {
         try
         {
-            var stackTrace = new StackTrace(true);
+            var stackTrace = new StackTrace(fNeedFileInfo: true);
             var frame = stackTrace.GetFrame(skipFrames);
 
             if (frame != null)
@@ -78,7 +78,7 @@ internal static class CallerInfoHelper
     {
         try
         {
-            var stackTrace = new StackTrace(false);
+            var stackTrace = new StackTrace(fNeedFileInfo: false);
             var frame = stackTrace.GetFrame(skipFrames);
 
             if (frame?.GetMethod() is { } method)

@@ -1229,18 +1229,16 @@ public sealed class HybridCacheTests : TestBase
             .Returns(_ => failPublish ? throw new InvalidOperationException("Publish failed") : Task.CompletedTask);
 
         using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l2Inner = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        var l2 = new InMemoryRemoteCacheAdapter(l2Inner);
 
-        var l2 = new InMemoryRemoteCacheAdapter(
-            new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true })
-        );
-        var cache = new HybridCache(
+        await using var cache = new HybridCache(
             l1,
             l2,
             publisher,
             new HybridCacheOptions { EnableAutoRecovery = true },
             timeProvider: _timeProvider
         );
-        await using var _ = cache;
 
         var key = Faker.Random.AlphaNumeric(10);
         var value = Faker.Random.Int();
@@ -1341,6 +1339,7 @@ public sealed class HybridCacheTests : TestBase
         // given — a node that captures its own factory-write invalidation
         var published = new List<CacheInvalidationMessage>();
         var publisher = Substitute.For<IBus>();
+
         publisher
             .PublishAsync(
                 Arg.Do<CacheInvalidationMessage>(published.Add),
@@ -1350,17 +1349,16 @@ public sealed class HybridCacheTests : TestBase
             .Returns(Task.CompletedTask);
 
         using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
-        var l2 = new InMemoryRemoteCacheAdapter(
-            new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true })
-        );
-        var cache = new HybridCache(
+        using var l2Inner = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        var l2 = new InMemoryRemoteCacheAdapter(l2Inner);
+
+        await using var cache = new HybridCache(
             l1,
             l2,
             publisher,
             new HybridCacheOptions { InstanceId = "instance-1" },
             timeProvider: _timeProvider
         );
-        await using var _ = cache;
 
         var key = Faker.Random.AlphaNumeric(10);
         var value = Faker.Random.Int();
@@ -1654,7 +1652,7 @@ public sealed class HybridCacheTests : TestBase
     public async Task should_degrade_to_partial_l1_result_when_get_all_l2_read_fails_mid_batch()
     {
         // given — L1 holds one of the two requested keys; the L2 batch read for the misses throws
-        var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         var l2 = Substitute.For<IRemoteCache>();
         l2.GetAllWithExpirationAsync<int>(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
             .Returns<IDictionary<string, CacheValueWithExpiration<int>>>(_ =>
@@ -1696,7 +1694,7 @@ public sealed class HybridCacheTests : TestBase
         // given — L1 holds one of the two requested keys; the L2 batch read parks indefinitely (soft timeout fires)
         var timeProvider = TimeProvider.System;
         var softTimeout = TimeSpan.FromMilliseconds(50);
-        var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
         using var l2 = new GatedRemoteCache(timeProvider)
         {
             ReadGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
@@ -1743,7 +1741,7 @@ public sealed class HybridCacheTests : TestBase
         // opposed to the exception arm (LogFailedBulkL2CacheOperation) covered by the mid-batch-throw test above.
         var timeProvider = TimeProvider.System;
         var softTimeout = TimeSpan.FromMilliseconds(50);
-        var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
         using var l2 = new GatedRemoteCache(timeProvider)
         {
             ReadGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
@@ -1799,20 +1797,19 @@ public sealed class HybridCacheTests : TestBase
         {
             ReadGate = new(TaskCreationOptions.RunContinuationsAsynchronously),
         };
-        var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         var publisher = Substitute.For<IBus>();
         publisher
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
 
-        var cache = new HybridCache(
+        await using var cache = new HybridCache(
             l1,
             l2,
             publisher,
             new HybridCacheOptions { EnableAutoRecovery = true },
             timeProvider: _timeProvider
         );
-        await using var _ = cache;
 
         var key = Faker.Random.AlphaNumeric(10);
         var factoryCalls = 0;
@@ -1850,7 +1847,7 @@ public sealed class HybridCacheTests : TestBase
         {
             WriteGate = new(TaskCreationOptions.RunContinuationsAsynchronously),
         };
-        var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         var publisher = Substitute.For<IBus>();
         publisher
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())

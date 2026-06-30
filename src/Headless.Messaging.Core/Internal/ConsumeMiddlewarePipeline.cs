@@ -181,8 +181,8 @@ internal sealed class ConsumeMiddlewarePipeline(
 
         var invoker = _TypedInvokers.GetOrAdd(
             new MiddlewareDispatchKey(middleware.GetType(), context.MessageType),
-            static (_, state) => _CompileTypedInvoker(state.middlewareType, state.contextType),
-            (middlewareType: middleware.GetType(), contextType: context.GetType())
+            static (_, contextType) => _CompileTypedInvoker(contextType),
+            context.GetType()
         );
 
         return invoker(middleware, context, next);
@@ -334,7 +334,7 @@ internal sealed class ConsumeMiddlewarePipeline(
             Expression.Call(
                 typeof(ConsumeMiddlewarePipeline),
                 nameof(_ResolveTimestamp),
-                null,
+                typeArguments: null,
                 headersProperty,
                 addedProperty
             )
@@ -371,7 +371,7 @@ internal sealed class ConsumeMiddlewarePipeline(
         return lambda.CompileFast();
     }
 
-    private static ConsumeMiddlewareInvoker _CompileTypedInvoker(Type middlewareType, Type contextType)
+    private static ConsumeMiddlewareInvoker _CompileTypedInvoker(Type contextType)
     {
         var middlewareParam = Expression.Parameter(typeof(object), "middleware");
         var contextParam = Expression.Parameter(typeof(ConsumeContext), "context");

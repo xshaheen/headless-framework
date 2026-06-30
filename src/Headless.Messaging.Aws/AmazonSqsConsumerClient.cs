@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Security.Cryptography;
 using Amazon.Auth.AccessControlPolicy;
 using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
@@ -50,7 +51,8 @@ internal sealed class AmazonSqsConsumerClient(
 
         if (intentType == IntentType.Queue)
         {
-            await _ConnectAsync(false, true, cancellationToken).ConfigureAwait(false);
+            await _ConnectAsync(initSns: false, initSqs: true, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
 
             var queueUrls = new List<string>();
             foreach (var topic in messageNames)
@@ -67,7 +69,7 @@ internal sealed class AmazonSqsConsumerClient(
             return queueUrls;
         }
 
-        await _ConnectAsync(initSns: true, initSqs: false, cancellationToken).ConfigureAwait(false);
+        await _ConnectAsync(initSns: true, initSqs: false, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         var topicArns = new List<string>();
         foreach (var topic in messageNames)
@@ -94,7 +96,8 @@ internal sealed class AmazonSqsConsumerClient(
 
         if (intentType == IntentType.Queue)
         {
-            await _ConnectAsync(false, true, cancellationToken).ConfigureAwait(false);
+            await _ConnectAsync(initSns: false, initSqs: true, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
             _SetQueueUrls([.. topics]);
             _ready.TrySetResult();
             return;
@@ -112,7 +115,8 @@ internal sealed class AmazonSqsConsumerClient(
 
     public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
-        await _ConnectAsync(intentType == IntentType.Bus, true, cancellationToken).ConfigureAwait(false);
+        await _ConnectAsync(initSns: intentType == IntentType.Bus, initSqs: true, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
 
         if (intentType == IntentType.Bus && _GetQueueUrlsSnapshot().Length == 0)
         {
@@ -250,7 +254,7 @@ internal sealed class AmazonSqsConsumerClient(
         var ceiling = TimeSpan.FromSeconds(30);
         var doubled = TimeSpan.FromTicks(Math.Max(current.Ticks * 2, floor.Ticks));
         var capped = doubled > ceiling ? ceiling : doubled;
-        var jitterMs = Random.Shared.Next(0, (int)Math.Max(1, capped.TotalMilliseconds / 4));
+        var jitterMs = RandomNumberGenerator.GetInt32(0, (int)Math.Max(1, capped.TotalMilliseconds / 4));
         return capped + TimeSpan.FromMilliseconds(jitterMs);
     }
 
@@ -450,7 +454,7 @@ internal sealed class AmazonSqsConsumerClient(
 
     private async Task _GenerateSqsAccessPolicyAsync(IEnumerable<string> topicArns, CancellationToken cancellationToken)
     {
-        await _ConnectAsync(false, true, cancellationToken).ConfigureAwait(false);
+        await _ConnectAsync(initSns: false, initSqs: true, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         var queueAttributes = await _sqsClient!.GetAttributesAsync(_queueUrl).ConfigureAwait(false);
 

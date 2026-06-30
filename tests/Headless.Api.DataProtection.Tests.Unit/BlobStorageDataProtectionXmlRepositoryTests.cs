@@ -177,10 +177,10 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
         result.Should().ContainSingle();
         var element = result.First();
         element.Name.LocalName.Should().Be("key");
-        element.Attribute("id")?.Value.Should().Be("test-123");
-        element.Attribute("version")?.Value.Should().Be("1");
-        element.Element("creationDate")?.Value.Should().Be("2026-01-01T00:00:00Z");
-        element.Element("encryptedKey")?.Value.Should().Be("base64data");
+        element.Attribute("id")?.Value.Should()?.Be("test-123");
+        element.Attribute("version")?.Value.Should()?.Be("1");
+        element.Element("creationDate")?.Value.Should()?.Be("2026-01-01T00:00:00Z");
+        element.Element("encryptedKey")?.Value.Should()?.Be("base64data");
     }
 
     [Fact]
@@ -262,7 +262,7 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
         // but the entity reference is NOT resolved (no file contents leaked)
         result.Should().ContainSingle();
         var element = result.First();
-        element.Attribute("id")?.Value.Should().Be("malicious");
+        element.Attribute("id")?.Value.Should()?.Be("malicious");
         // The value should NOT contain /etc/passwd contents - DTD expansion is disabled
         element.Value.Should().NotContain("root:");
     }

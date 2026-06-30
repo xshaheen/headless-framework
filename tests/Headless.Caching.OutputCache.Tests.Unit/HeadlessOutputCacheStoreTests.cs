@@ -31,7 +31,7 @@ public sealed class HeadlessOutputCacheStoreTests : TestBase
         var store = _CreateStore();
 
         // when
-        var result = await store.GetAsync(_Key, CancellationToken.None);
+        var result = await store.GetAsync(_Key, AbortToken);
 
         // then
         result.Should().BeNull();
@@ -48,7 +48,7 @@ public sealed class HeadlessOutputCacheStoreTests : TestBase
         var store = _CreateStore();
 
         // when
-        var result = await store.GetAsync(_Key, CancellationToken.None);
+        var result = await store.GetAsync(_Key, AbortToken);
 
         // then
         result.Should().BeSameAs(bytes);
@@ -63,7 +63,7 @@ public sealed class HeadlessOutputCacheStoreTests : TestBase
         var store = _CreateStore();
 
         // when
-        await store.SetAsync(_Key, value, tags, _ValidFor, CancellationToken.None);
+        await store.SetAsync(_Key, value, tags, _ValidFor, AbortToken);
 
         // then
         var calls = _UpsertCalls();
@@ -81,8 +81,8 @@ public sealed class HeadlessOutputCacheStoreTests : TestBase
         var store = _CreateStore();
 
         // when
-        await store.SetAsync(_Key, [0x1], tags: null, _ValidFor, CancellationToken.None);
-        await store.SetAsync(_Key, [0x1], tags: [], _ValidFor, CancellationToken.None);
+        await store.SetAsync(_Key, [0x1], tags: null, _ValidFor, AbortToken);
+        await store.SetAsync(_Key, [0x1], tags: [], _ValidFor, AbortToken);
 
         // then — the engine indexes nothing for tagless entries
         var calls = _UpsertCalls();
@@ -97,8 +97,8 @@ public sealed class HeadlessOutputCacheStoreTests : TestBase
         var store = _CreateStore();
 
         // when
-        await store.SetAsync(_Key, [0x1], tags: null, TimeSpan.Zero, CancellationToken.None);
-        await store.SetAsync(_Key, [0x1], tags: null, TimeSpan.FromSeconds(-1), CancellationToken.None);
+        await store.SetAsync(_Key, [0x1], tags: null, TimeSpan.Zero, AbortToken);
+        await store.SetAsync(_Key, [0x1], tags: null, TimeSpan.FromSeconds(-1), AbortToken);
 
         // then
         _UpsertCalls().Should().OnlyContain(c => c.Options.Duration == _options.DefaultExpiration);
@@ -111,7 +111,7 @@ public sealed class HeadlessOutputCacheStoreTests : TestBase
         var store = _CreateStore();
 
         // when
-        await store.EvictByTagAsync("products", CancellationToken.None);
+        await store.EvictByTagAsync("products", AbortToken);
 
         // then
         await _cache.Received(1).RemoveByTagAsync("products", Arg.Any<CancellationToken>());
@@ -127,7 +127,7 @@ public sealed class HeadlessOutputCacheStoreTests : TestBase
         var store = _CreateStore();
 
         // when
-        await store.SetAsync(_Key, sequence, tags, _ValidFor, CancellationToken.None);
+        await store.SetAsync(_Key, sequence, tags, _ValidFor, AbortToken);
 
         // then — the concatenation of every segment is persisted verbatim
         var calls = _UpsertCalls();
@@ -148,7 +148,7 @@ public sealed class HeadlessOutputCacheStoreTests : TestBase
         var store = _CreateStore();
 
         // when
-        var found = await store.TryGetAsync(_Key, pipe.Writer, CancellationToken.None);
+        var found = await store.TryGetAsync(_Key, pipe.Writer, AbortToken);
         await pipe.Writer.CompleteAsync();
 
         // then
@@ -165,7 +165,7 @@ public sealed class HeadlessOutputCacheStoreTests : TestBase
         var store = _CreateStore();
 
         // when
-        var found = await store.TryGetAsync(_Key, pipe.Writer, CancellationToken.None);
+        var found = await store.TryGetAsync(_Key, pipe.Writer, AbortToken);
         await pipe.Writer.CompleteAsync();
 
         // then
@@ -187,8 +187,8 @@ public sealed class HeadlessOutputCacheStoreTests : TestBase
         var pipe = new Pipe();
 
         // when — write via the buffer SetAsync, then read back via the PipeWriter buffer TryGetAsync
-        await store.SetAsync(_Key, sequence, new[] { "products" }, _ValidFor, CancellationToken.None);
-        var found = await store.TryGetAsync(_Key, pipe.Writer, CancellationToken.None);
+        await store.SetAsync(_Key, sequence, new[] { "products" }, _ValidFor, AbortToken);
+        var found = await store.TryGetAsync(_Key, pipe.Writer, AbortToken);
         await pipe.Writer.CompleteAsync();
 
         // then — the IBufferCache branch round-trips the payload verbatim
@@ -205,7 +205,7 @@ public sealed class HeadlessOutputCacheStoreTests : TestBase
         var pipe = new Pipe();
 
         // when
-        var found = await store.TryGetAsync(_Key, pipe.Writer, CancellationToken.None);
+        var found = await store.TryGetAsync(_Key, pipe.Writer, AbortToken);
         await pipe.Writer.CompleteAsync();
 
         // then — the buffer fast path reports a miss and leaves the pipe empty
@@ -221,20 +221,20 @@ public sealed class HeadlessOutputCacheStoreTests : TestBase
 
         // when / then
         await FluentActions
-            .Awaiting(() => store.GetAsync("", CancellationToken.None).AsTask())
+            .Awaiting(() => store.GetAsync("", AbortToken).AsTask())
             .Should()
             .ThrowAsync<ArgumentException>();
         await FluentActions
-            .Awaiting(() => store.SetAsync("", [0x1], null, _ValidFor, CancellationToken.None).AsTask())
+            .Awaiting(() => store.SetAsync("", [0x1], null, _ValidFor, AbortToken).AsTask())
             .Should()
             .ThrowAsync<ArgumentException>();
         await FluentActions
-            .Awaiting(() => store.SetAsync(_Key, null!, null, _ValidFor, CancellationToken.None).AsTask())
+            .Awaiting(() => store.SetAsync(_Key, null!, null, _ValidFor, AbortToken).AsTask())
             .Should()
             .ThrowAsync<ArgumentException>();
 
-        await _cache.DidNotReceiveWithAnyArgs().GetAsync<byte[]>(default!, default);
-        await _cache.DidNotReceiveWithAnyArgs().UpsertEntryAsync<byte[]>(default!, default, default, default);
+        await _cache.DidNotReceiveWithAnyArgs().GetAsync<byte[]>(default!, AbortToken);
+        await _cache.DidNotReceiveWithAnyArgs().UpsertEntryAsync<byte[]>(default!, default, default, AbortToken);
     }
 
     [Fact]
@@ -249,33 +249,27 @@ public sealed class HeadlessOutputCacheStoreTests : TestBase
         await FluentActions
             .Awaiting(() =>
                 store
-                    .SetAsync(
-                        "",
-                        ReadOnlySequence<byte>.Empty,
-                        ReadOnlyMemory<string>.Empty,
-                        _ValidFor,
-                        CancellationToken.None
-                    )
+                    .SetAsync("", ReadOnlySequence<byte>.Empty, ReadOnlyMemory<string>.Empty, _ValidFor, AbortToken)
                     .AsTask()
             )
             .Should()
             .ThrowAsync<ArgumentException>();
         await FluentActions
-            .Awaiting(() => store.TryGetAsync("", pipe.Writer, CancellationToken.None).AsTask())
+            .Awaiting(() => store.TryGetAsync("", pipe.Writer, AbortToken).AsTask())
             .Should()
             .ThrowAsync<ArgumentException>();
         await FluentActions
-            .Awaiting(() => store.TryGetAsync(_Key, null!, CancellationToken.None).AsTask())
+            .Awaiting(() => store.TryGetAsync(_Key, null!, AbortToken).AsTask())
             .Should()
             .ThrowAsync<ArgumentException>();
         await FluentActions
-            .Awaiting(() => store.EvictByTagAsync("", CancellationToken.None).AsTask())
+            .Awaiting(() => store.EvictByTagAsync("", AbortToken).AsTask())
             .Should()
             .ThrowAsync<ArgumentException>();
 
-        await _cache.DidNotReceiveWithAnyArgs().GetAsync<byte[]>(default!, default);
-        await _cache.DidNotReceiveWithAnyArgs().UpsertEntryAsync<byte[]>(default!, default, default, default);
-        await _cache.DidNotReceiveWithAnyArgs().RemoveByTagAsync(default!, default);
+        await _cache.DidNotReceiveWithAnyArgs().GetAsync<byte[]>(default!, AbortToken);
+        await _cache.DidNotReceiveWithAnyArgs().UpsertEntryAsync<byte[]>(default!, default, default, AbortToken);
+        await _cache.DidNotReceiveWithAnyArgs().RemoveByTagAsync(default!, AbortToken);
     }
 
     /// <summary>

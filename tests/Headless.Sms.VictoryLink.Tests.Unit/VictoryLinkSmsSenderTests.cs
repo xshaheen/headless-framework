@@ -3,6 +3,7 @@
 using System.Net;
 using Headless.Sms;
 using Headless.Sms.VictoryLink;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using WireMock.RequestBuilders;
@@ -10,7 +11,7 @@ using WireMock.ResponseBuilders;
 
 namespace Tests;
 
-public sealed class VictoryLinkSmsSenderTests : IClassFixture<SmsWireMockFixture>
+public sealed class VictoryLinkSmsSenderTests : TestBase, IClassFixture<SmsWireMockFixture>
 {
     private readonly SmsWireMockFixture _fixture;
 
@@ -51,8 +52,7 @@ public sealed class VictoryLinkSmsSenderTests : IClassFixture<SmsWireMockFixture
     {
         _StubSend(HttpStatusCode.OK, body);
 
-        var result = await _CreateSender().SendAsync(SmsRequests.Single());
-
+        var result = await _CreateSender().SendAsync(SmsRequests.Single(), AbortToken);
         result.Success.Should().BeTrue();
     }
 
@@ -61,8 +61,7 @@ public sealed class VictoryLinkSmsSenderTests : IClassFixture<SmsWireMockFixture
     {
         _StubSend(HttpStatusCode.OK, "-5");
 
-        var result = await _CreateSender().SendAsync(SmsRequests.Single());
-
+        var result = await _CreateSender().SendAsync(SmsRequests.Single(), AbortToken);
         result.Success.Should().BeFalse();
         result.FailureKind.Should().Be(SmsFailureKind.OutOfCredit);
     }
@@ -72,8 +71,7 @@ public sealed class VictoryLinkSmsSenderTests : IClassFixture<SmsWireMockFixture
     {
         _StubSend(HttpStatusCode.OK, string.Empty);
 
-        var result = await _CreateSender().SendAsync(SmsRequests.Single());
-
+        var result = await _CreateSender().SendAsync(SmsRequests.Single(), AbortToken);
         result.Success.Should().BeFalse();
     }
 
@@ -90,14 +88,14 @@ public sealed class VictoryLinkSmsSenderTests : IClassFixture<SmsWireMockFixture
                 Password = "pass",
             }
         );
+
         var sender = new VictoryLinkSmsSender(
             _fixture.HttpClientFactory,
             options,
             NullLogger<VictoryLinkSmsSender>.Instance
         );
 
-        var result = await sender.SendAsync(SmsRequests.Single());
-
+        var result = await sender.SendAsync(SmsRequests.Single(), AbortToken);
         result.Success.Should().BeFalse();
         result.FailureKind.Should().Be(SmsFailureKind.Transient);
     }
@@ -119,8 +117,7 @@ public sealed class VictoryLinkSmsSenderTests : IClassFixture<SmsWireMockFixture
     {
         _StubSend(HttpStatusCode.OK, "0");
 
-        await _CreateSender().SendAsync(SmsRequests.Single(code: 20, number: "1001234567"));
-
+        await _CreateSender().SendAsync(SmsRequests.Single(code: 20, number: "1001234567"), AbortToken);
         var body = _fixture.Server.LogEntries.Single().RequestMessage?.Body;
         body.Should().Contain("201001234567");
     }

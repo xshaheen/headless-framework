@@ -100,7 +100,8 @@ public abstract class CaptchaVerifierConformanceTests<TFixture>(TFixture fixture
     [Fact]
     public async Task remote_ip_included_only_when_supplied()
     {
-        var withIpStub = new StubSiteVerifyHandler().EnqueueJson(HttpStatusCode.OK, fixture.SuccessResponseBody);
+        using var stub1 = new StubSiteVerifyHandler();
+        var withIpStub = stub1.EnqueueJson(HttpStatusCode.OK, fixture.SuccessResponseBody);
         var withIpVerifier = fixture.CreateVerifier(withIpStub);
         await withIpVerifier.VerifyAsync(
             new CaptchaVerifyRequest { Response = "token", RemoteIp = "203.0.113.5" },
@@ -110,7 +111,8 @@ public abstract class CaptchaVerifierConformanceTests<TFixture>(TFixture fixture
         withIpStub.LastRequestBody.Should().Contain("remoteip");
         withIpStub.LastRequestBody.Should().Contain("203.0.113.5");
 
-        var withoutIpStub = new StubSiteVerifyHandler().EnqueueJson(HttpStatusCode.OK, fixture.SuccessResponseBody);
+        using var stub2 = new StubSiteVerifyHandler();
+        var withoutIpStub = stub2.EnqueueJson(HttpStatusCode.OK, fixture.SuccessResponseBody);
         var withoutIpVerifier = fixture.CreateVerifier(withoutIpStub);
         await withoutIpVerifier.VerifyAsync(new CaptchaVerifyRequest { Response = "token" }, AbortToken);
 

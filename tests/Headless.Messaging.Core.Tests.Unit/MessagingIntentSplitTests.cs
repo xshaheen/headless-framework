@@ -25,8 +25,10 @@ public sealed class MessagingIntentSplitTests : TestBase
     {
         // Persistence rows + on-wire serializations rely on these numeric values. Changing them is
         // a breaking change for any drained inbox/outbox row at-rest. Pin them explicitly.
-        Assert.Equal(0, (int)IntentType.Bus);
-        Assert.Equal(1, (int)IntentType.Queue);
+        ((int)IntentType.Bus)
+            .Should()
+            .Be(0);
+        ((int)IntentType.Queue).Should().Be(1);
     }
 
     [Fact]

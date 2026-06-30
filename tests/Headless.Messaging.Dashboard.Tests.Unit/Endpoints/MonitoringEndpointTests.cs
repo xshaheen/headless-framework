@@ -36,15 +36,15 @@ public sealed class MonitoringEndpointTests : TestBase
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
 
         await using var app = _CreateTestApp(_dataStorage);
-        await app.StartAsync();
+        await app.StartAsync(AbortToken);
         using var client = app.GetTestClient();
 
         // when
-        var response = await client.GetAsync("/api/stats");
+        var response = await client.GetAsync("/api/stats", AbortToken);
 
         // then
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
-        var body = await response.Content.ReadAsStringAsync();
+        var body = await response.Content.ReadAsStringAsync(AbortToken);
         body.Should().Contain("100"); // PublishedSucceeded
         body.Should().Contain("200"); // ReceivedSucceeded
     }
@@ -56,15 +56,15 @@ public sealed class MonitoringEndpointTests : TestBase
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
 
         await using var app = _CreateTestApp(_dataStorage);
-        await app.StartAsync();
+        await app.StartAsync(AbortToken);
         using var client = app.GetTestClient();
 
         // when
-        var response = await client.GetAsync("/api/nodes");
+        var response = await client.GetAsync("/api/nodes", AbortToken);
 
         // then
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
-        var body = await response.Content.ReadAsStringAsync();
+        var body = await response.Content.ReadAsStringAsync(AbortToken);
         body.Should().Be("[]");
     }
 
@@ -92,19 +92,19 @@ public sealed class MonitoringEndpointTests : TestBase
                 Tags = "api",
             },
         };
-        discoveryProvider.GetNodes().Returns(Task.FromResult<IList<Node>>(nodes));
+        discoveryProvider.GetNodes(null, AbortToken).Returns(Task.FromResult<IList<Node>>(nodes));
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
 
         await using var app = _CreateTestApp(_dataStorage, discoveryProvider);
-        await app.StartAsync();
+        await app.StartAsync(AbortToken);
         using var client = app.GetTestClient();
 
         // when
-        var response = await client.GetAsync("/api/nodes");
+        var response = await client.GetAsync("/api/nodes", AbortToken);
 
         // then
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
-        var body = await response.Content.ReadAsStringAsync();
+        var body = await response.Content.ReadAsStringAsync(AbortToken);
         body.Should().Contain("node1");
         body.Should().Contain("node2");
     }
@@ -119,15 +119,15 @@ public sealed class MonitoringEndpointTests : TestBase
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
 
         await using var app = _CreateTestApp(_dataStorage, discoveryProvider);
-        await app.StartAsync();
+        await app.StartAsync(AbortToken);
         using var client = app.GetTestClient();
 
         // when
-        var response = await client.GetAsync("/api/list-ns");
+        var response = await client.GetAsync("/api/list-ns", AbortToken);
 
         // then
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
-        var body = await response.Content.ReadAsStringAsync();
+        var body = await response.Content.ReadAsStringAsync(AbortToken);
         body.Should().Contain("default");
         body.Should().Contain("staging");
     }
@@ -141,11 +141,11 @@ public sealed class MonitoringEndpointTests : TestBase
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
 
         await using var app = _CreateTestApp(_dataStorage, discoveryProvider);
-        await app.StartAsync();
+        await app.StartAsync(AbortToken);
         using var client = app.GetTestClient();
 
         // when
-        var response = await client.GetAsync("/api/list-ns");
+        var response = await client.GetAsync("/api/list-ns", AbortToken);
 
         // then
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.NotFound);
@@ -158,15 +158,15 @@ public sealed class MonitoringEndpointTests : TestBase
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
 
         await using var app = _CreateTestApp(_dataStorage);
-        await app.StartAsync();
+        await app.StartAsync(AbortToken);
         using var client = app.GetTestClient();
 
         // when
-        var response = await client.GetAsync("/api/list-svc/default");
+        var response = await client.GetAsync("/api/list-svc/default", AbortToken);
 
         // then
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
-        var body = await response.Content.ReadAsStringAsync();
+        var body = await response.Content.ReadAsStringAsync(AbortToken);
         body.Should().Be("[]");
     }
 

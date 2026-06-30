@@ -5,6 +5,7 @@ using Headless.CommitCoordination;
 using Headless.CommitCoordination.EntityFramework;
 using Headless.EntityFramework;
 using Headless.Testing.Helpers;
+using Headless.Testing.Tests;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -21,7 +22,7 @@ namespace Tests;
 /// drained as rollback — silent work loss. These tests use NO explicit <c>AddInterceptors</c> call:
 /// they pass only when the framework wires the interceptor itself.
 /// </summary>
-public sealed class CommitCoordinationInterceptorWiringTests
+public sealed class CommitCoordinationInterceptorWiringTests : TestBase
 {
     [Fact]
     public async Task should_drain_on_commit_work_via_framework_wired_interceptor_without_explicit_add_interceptors()
@@ -50,7 +51,8 @@ public sealed class CommitCoordinationInterceptorWiringTests
                 ctx.Set<WiringRow>().Add(new WiringRow { Name = "committed" });
 
                 return ctx.SaveChangesAsync(ct);
-            }
+            },
+            cancellationToken: AbortToken
         );
 
         drained
@@ -88,7 +90,8 @@ public sealed class CommitCoordinationInterceptorWiringTests
                     await ctx.SaveChangesAsync(ct);
 
                     throw new InvalidOperationException("boom");
-                }
+                },
+                cancellationToken: AbortToken
             );
         }
         catch (InvalidOperationException ex)

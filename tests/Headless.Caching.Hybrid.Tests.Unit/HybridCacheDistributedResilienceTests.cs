@@ -17,7 +17,7 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
         // given
         var timeProvider = TimeProvider.System;
         var softTimeout = TimeSpan.FromMilliseconds(50);
-        var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
         using var l2 = new GatedRemoteCache(timeProvider)
         {
             ReadGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
@@ -71,7 +71,7 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
         var timeProvider = TimeProvider.System;
         var softTimeout = TimeSpan.FromMilliseconds(50);
         var hardTimeout = TimeSpan.FromMilliseconds(150);
-        var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
         using var l2 = new GatedRemoteCache(timeProvider)
         {
             ReadGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
@@ -111,10 +111,8 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
         // then
         task.IsCompleted.Should().BeFalse("without a local fallback the L2 read should wait for the hard timeout");
 
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken)
-        );
-        exception.Message.Should().Be("origin unavailable");
+        var act = async () => await task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("origin unavailable");
         factoryCalls.Should().Be(1);
         l2.ReadAttempts.Should()
             .Be(2, "the coordinator performs the normal under-lock re-check before running the factory");
@@ -126,7 +124,7 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
         // given
         var timeProvider = TimeProvider.System;
         var softTimeout = TimeSpan.FromMilliseconds(50);
-        var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
         using var l2 = new GatedRemoteCache(timeProvider)
         {
             ReadGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
@@ -159,7 +157,7 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
     {
         // given
         var circuitDuration = TimeSpan.FromSeconds(5);
-        var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         using var l2 = new TogglableRemoteCache(_timeProvider);
         var cache = _CreateCache(
             l1,
@@ -244,7 +242,7 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
     {
         // given
         var timeProvider = TimeProvider.System;
-        var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
         using var l2 = new GatedRemoteCache(timeProvider) { ReadFault = new InvalidOperationException("l2 read down") };
         var cache = _CreateCache(
             l1,
@@ -283,7 +281,7 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
     {
         // given
         var timeProvider = TimeProvider.System;
-        var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
         using var l2 = new GatedRemoteCache(timeProvider)
         {
             WriteFault = new InvalidOperationException("l2 write down"),
@@ -314,7 +312,7 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
     {
         // given
         var timeProvider = TimeProvider.System;
-        var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
         using var l2 = new GatedRemoteCache(timeProvider);
         var cache = new HybridCache(
             l1,
@@ -338,7 +336,7 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
     {
         // given
         var timeProvider = TimeProvider.System;
-        var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
         using var l2 = new GatedRemoteCache(timeProvider);
         var cache = new HybridCache(
             l1,
@@ -364,7 +362,7 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
         var localExpiration = TimeSpan.FromSeconds(1);
         var duration = TimeSpan.FromSeconds(2);
         var slidingExpiration = TimeSpan.FromMilliseconds(400);
-        var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         using var l2 = new TogglableRemoteCache(_timeProvider);
         var cache = _CreateCache(
             l1,

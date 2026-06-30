@@ -232,7 +232,7 @@ public sealed class HeadlessTenantWriteGuardTests(
     public async Task tenant_write_guard_bypass_should_not_leak_into_unrelated_async_flow()
     {
         // given
-        using var provider = _BuildBypassProvider();
+        await using var provider = _BuildBypassProvider();
         var bypass = provider.GetRequiredService<ITenantWriteGuardBypass>();
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -623,7 +623,9 @@ public sealed class HeadlessTenantWriteGuardTests(
         entity.Name = "sync-changed-by-a";
 
         // when
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
         var act = () => db.SaveChanges();
+#pragma warning restore MA0045
 
         // then
         act.Should().Throw<CrossTenantWriteException>();

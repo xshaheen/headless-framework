@@ -13,7 +13,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Jobs;
 
-internal class JobsExecutionTaskHandler(
+internal sealed class JobsExecutionTaskHandler(
     IServiceProvider serviceProvider,
     TimeProvider timeProvider,
     IJobsInstrumentation jobsInstrumentation,
@@ -176,7 +176,7 @@ internal class JobsExecutionTaskHandler(
             ScheduledFor = context.ExecutionTime,
             // The running job invokes this action during execution (before any exit path disposes the CTS — see the
             // CA2000 note above), so the captured cancellationTokenSource is alive whenever the closure runs.
-            RequestCancelOperationAction = () => cancellationTokenSource.Cancel(),
+            RequestCancelOperationAction = () => _ = cancellationTokenSource.CancelAsync(),
             CronOccurrenceOperations = new CronOccurrenceOperations
             {
                 SkipIfAlreadyRunningAction = () =>
@@ -365,7 +365,7 @@ internal class JobsExecutionTaskHandler(
                 context.JobId,
                 context.FunctionName,
                 stopWatch.ElapsedMilliseconds,
-                true
+                success: true
             );
 
             // Terminal-status write must persist regardless of host-stop/lease-loss (completion fence guards it).
@@ -399,7 +399,7 @@ internal class JobsExecutionTaskHandler(
                 context.JobId,
                 context.FunctionName,
                 stopWatch.ElapsedMilliseconds,
-                false
+                success: false
             );
 
             if (serviceProvider.GetService(typeof(IJobExceptionHandler)) is IJobExceptionHandler handler)
@@ -582,7 +582,7 @@ internal class JobsExecutionTaskHandler(
     private static string _SerializeException(Exception ex)
     {
         var rootException = _GetRootException(ex);
-        var stackTrace = new StackTrace(rootException, true);
+        var stackTrace = new StackTrace(rootException, fNeedFileInfo: true);
         var frame = stackTrace.GetFrame(0);
 
         return JsonSerializer.Serialize(
@@ -614,7 +614,7 @@ internal class JobsExecutionTaskHandler(
 
     private static void _GatherDescendantsToSkip(InternalFunctionContext parent, List<InternalFunctionContext> skipList)
     {
-        if (parent.TimeJobChildren == null || parent.TimeJobChildren.Count == 0)
+        if (parent.TimeJobChildren.Count == 0)
         {
             return;
         }
@@ -628,7 +628,7 @@ internal class JobsExecutionTaskHandler(
         }
     }
 
-    private Task _SafeRecursiveExecution(
+    private async Task _SafeRecursiveExecution(
         InternalFunctionContext context,
         bool isDue,
         CancellationToken cancellationToken = default
@@ -636,19 +636,17 @@ internal class JobsExecutionTaskHandler(
     {
         try
         {
-            return ExecuteTaskAsync(context, isDue, cancellationToken);
+            await ExecuteTaskAsync(context, isDue, cancellationToken).ConfigureAwait(false);
         }
-#pragma warning disable ERP022 // Scheduler must continue running even if task execution throws synchronously.
+#pragma warning disable ERP022 // Scheduler must continue running if task execution throws outside status handling.
         catch (Exception exception)
         {
-            // A synchronous throw (e.g. during scope creation before the first await) leaves the child InProgress
-            // until the stalled-reclaim sweep recovers it per OnNodeDeath. Swallow so the parent scheduler loop
-            // survives, but log at Warning so the otherwise-silent failure is observable (#465).
+            // A throw outside ExecuteTaskAsync's normal status handling leaves the child InProgress until the
+            // stalled-reclaim sweep recovers it per OnNodeDeath. Swallow so the parent scheduler loop survives, but
+            // log at Warning so the otherwise-silent failure is observable (#465).
             logger.LogJobChildExecutionThrewSynchronously(exception, context.JobId, context.FunctionName);
         }
 #pragma warning restore ERP022
-
-        return Task.CompletedTask;
     }
 }
 

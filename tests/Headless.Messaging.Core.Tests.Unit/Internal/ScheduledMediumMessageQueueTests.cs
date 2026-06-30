@@ -43,7 +43,7 @@ public sealed class ScheduledMediumMessageQueueTests : TestBase
         queue.Enqueue(first, dueAt);
         queue.Enqueue(third, dueAt + TimeSpan.FromMilliseconds(10).Ticks);
 
-        var enumerator = queue.GetConsumingEnumerable(CancellationToken.None).GetAsyncEnumerator();
+        var enumerator = queue.GetConsumingEnumerable(AbortToken).GetAsyncEnumerator(AbortToken);
 
         // when
         await enumerator.MoveNextAsync();
@@ -77,14 +77,14 @@ public sealed class ScheduledMediumMessageQueueTests : TestBase
 
         // when
         var moveNextTask = enumerator.MoveNextAsync().AsTask();
-        await Task.Delay(75);
+        await Task.Delay(75, AbortToken);
 
         // then
         moveNextTask.IsCompleted.Should().BeFalse();
 
         // when
         timeProvider.Advance(TimeSpan.FromMilliseconds(250));
-        await moveNextTask.WaitAsync(TimeSpan.FromSeconds(1));
+        await moveNextTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
 
         // then
         enumerator.Current.StorageId.Should().Be(_StorageGuid(7));

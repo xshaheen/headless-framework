@@ -258,9 +258,10 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
     {
         var captured = new List<(LogLevel Level, int Id)>();
         var logger = _CreateCapturingLogger(captured);
-        var publishedLease = new TrackingLock();
-        var receivedLease = new TrackingLock(canObserveLoss: true);
+        await using var publishedLease = new TrackingLock();
+        await using var receivedLease = new TrackingLock(canObserveLoss: true);
         var lockProvider = Substitute.For<IDistributedLock>();
+#pragma warning disable AsyncFixer04 // Substitute setup returns leases owned by this awaited test scope.
         lockProvider
             .TryAcquireAsync(
                 MessagingKeys.PublishRetryResource("v1"),
@@ -275,6 +276,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
                 Arg.Any<CancellationToken>()
             )
             .Returns(Task.FromResult<IDistributedLease?>(receivedLease));
+#pragma warning restore AsyncFixer04
 
         var receivedCallStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var storageBlocker = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

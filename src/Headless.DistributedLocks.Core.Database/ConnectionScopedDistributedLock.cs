@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
+using System.Security.Cryptography;
 using Headless.Abstractions;
 using Headless.Checks;
 using Microsoft.Extensions.Logging;
@@ -68,7 +69,7 @@ public sealed class ConnectionScopedDistributedLock(
     /// <see cref="DistributedLockAcquireOptions.AcquireTimeout"/> is exceeded.
     /// </summary>
     /// <param name="resource">The resource to lock. Must be non-null, non-whitespace, and within the configured max length.</param>
-    /// <param name="acquireOptions">
+    /// <param name="options">
     /// Per-call options (acquire timeout, monitoring mode, release-on-dispose).
     /// <see langword="null"/> applies the defaults set on this instance.
     /// </param>
@@ -80,11 +81,11 @@ public sealed class ConnectionScopedDistributedLock(
     /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled.</exception>
     public Task<IDistributedLease> AcquireAsync(
         string resource,
-        DistributedLockAcquireOptions? acquireOptions = null,
+        DistributedLockAcquireOptions? options = null,
         CancellationToken cancellationToken = default
     )
     {
-        return _AcquireCoreAsync(throwOnTimeout: true, resource, acquireOptions, isShared: false, cancellationToken)!;
+        return _AcquireCoreAsync(throwOnTimeout: true, resource, options, isShared: false, cancellationToken)!;
     }
 
     /// <summary>
@@ -279,7 +280,7 @@ public sealed class ConnectionScopedDistributedLock(
 
                 // Apply jitter so many waiters on the same resource do not wake in lockstep and
                 // stampede the store. Stay within the remaining budget.
-                var jitter = 0.8 + (Random.Shared.NextDouble() * 0.4);
+                var jitter = 0.8 + (_GetRandomUnitDouble() * 0.4);
                 var jittered = TimeSpan.FromMilliseconds(wait.TotalMilliseconds * jitter);
                 wait = jittered < remaining ? jittered : remaining;
 
@@ -480,4 +481,6 @@ public sealed class ConnectionScopedDistributedLock(
 
         return activity;
     }
+
+    private static double _GetRandomUnitDouble() => RandomNumberGenerator.GetInt32(int.MaxValue) / (double)int.MaxValue;
 }

@@ -202,7 +202,9 @@ public sealed class ServiceProviderLocalEventBusTests
         var publisher = _CreatePublisher(services);
 
         // when
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
         var act = () => publisher.Publish(new TestLocalMessage("test"));
+#pragma warning restore MA0045
 
         // then - single exception should be re-thrown directly, not wrapped
         act.Should().Throw<InvalidOperationException>().WithMessage("Single failure");

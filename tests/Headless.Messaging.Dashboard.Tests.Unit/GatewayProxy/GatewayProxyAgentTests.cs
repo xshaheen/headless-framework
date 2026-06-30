@@ -60,14 +60,15 @@ public sealed class GatewayProxyAgentTests : TestBase
         };
 
         var discoveryProvider = Substitute.For<INodeDiscoveryProvider>();
-        discoveryProvider.GetNode("node1", null).Returns(Task.FromResult<Node?>(node));
+        discoveryProvider.GetNode("node1", null, Arg.Any<CancellationToken>()).Returns(Task.FromResult<Node?>(node));
 
         var responseMessage = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("OK") };
         using var httpMessageHandler = new MockHttpMessageHandler(responseMessage);
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
-        httpClientFactory.CreateClient("GatewayProxy").Returns(new HttpClient(httpMessageHandler));
+        using var httpClient = new HttpClient(httpMessageHandler);
+        httpClientFactory.CreateClient("GatewayProxy").Returns(httpClient);
 
-        var agent = _CreateAgent(context, discoveryProvider, httpClientFactory, withConsulOptions: true);
+        var agent = _CreateAgent(context, discoveryProvider, httpClientFactory);
 
         // when
         var result = await agent.Invoke(context);
@@ -84,9 +85,11 @@ public sealed class GatewayProxyAgentTests : TestBase
         context.Request.Headers.Cookie = $"{GatewayProxyAgent.CookieNodeName}=unknown-node";
 
         var discoveryProvider = Substitute.For<INodeDiscoveryProvider>();
-        discoveryProvider.GetNode("unknown-node", null).Returns(Task.FromResult<Node?>(null));
+        discoveryProvider
+            .GetNode("unknown-node", null, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Node?>(null));
 
-        var agent = _CreateAgent(context, discoveryProvider, withConsulOptions: true);
+        var agent = _CreateAgent(context, discoveryProvider);
 
         // when
         var result = await agent.Invoke(context);
@@ -106,7 +109,7 @@ public sealed class GatewayProxyAgentTests : TestBase
         var discoveryProvider = Substitute.For<INodeDiscoveryProvider>();
 
         // Configure consul options with current node name matching the cookie
-        var agent = _CreateAgent(context, discoveryProvider, withConsulOptions: true, nodeName: "current-node");
+        var agent = _CreateAgent(context, discoveryProvider, nodeName: "current-node");
 
         // when
         var result = await agent.Invoke(context);
@@ -136,9 +139,10 @@ public sealed class GatewayProxyAgentTests : TestBase
 
         using var httpMessageHandler = new MockHttpMessageHandler(new HttpRequestException("Connection failed"));
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
-        httpClientFactory.CreateClient("GatewayProxy").Returns(new HttpClient(httpMessageHandler));
+        using var httpClient = new HttpClient(httpMessageHandler);
+        httpClientFactory.CreateClient("GatewayProxy").Returns(httpClient);
 
-        var agent = _CreateAgent(context, discoveryProvider, httpClientFactory, withConsulOptions: true);
+        var agent = _CreateAgent(context, discoveryProvider, httpClientFactory);
 
         // when
         var result = await agent.Invoke(context);
@@ -152,7 +156,7 @@ public sealed class GatewayProxyAgentTests : TestBase
     // service isn't registered. The K8s mode code path expects _consulDiscoveryOptions to be
     // null when Consul options are not configured, but this can never happen with the current
     // initialization approach.
-    // TODO: Update GatewayProxyAgent initialization (e.g. avoid GetRequiredService in field initializers)
+    // Pending: Update GatewayProxyAgent initialization (e.g. avoid GetRequiredService in field initializers)
     //       so that K8s mode (no ConsulDiscoveryOptions registered) can be exercised and tested.
 
     [Fact]
@@ -173,7 +177,6 @@ public sealed class GatewayProxyAgentTests : TestBase
         HttpContext context,
         INodeDiscoveryProvider? discoveryProvider = null,
         IHttpClientFactory? httpClientFactory = null,
-        bool withConsulOptions = false,
         string? nodeName = null
     )
     {
@@ -182,7 +185,13 @@ public sealed class GatewayProxyAgentTests : TestBase
         var requestMapper = Substitute.For<IRequestMapper>();
         requestMapper
             .Map(Arg.Any<HttpRequest>())
-            .Returns(Task.FromResult(new HttpRequestMessage(HttpMethod.Get, "http://example.com")));
+            .Returns(_ =>
+            {
+                var downstreamRequest = new HttpRequestMessage(HttpMethod.Get, "http://example.com");
+                context.Response.RegisterForDispose(downstreamRequest);
+
+                return Task.FromResult(downstreamRequest);
+            });
 
         var services = new ServiceCollection()
             .AddLogging()

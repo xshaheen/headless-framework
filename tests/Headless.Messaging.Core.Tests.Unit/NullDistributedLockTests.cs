@@ -1,10 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.DistributedLocks;
+using Headless.Testing.Tests;
 
 namespace Tests;
 
-public sealed class NullDistributedLockTests
+public sealed class NullDistributedLockTests : TestBase
 {
     [Fact]
     public async Task should_return_non_null_handle_when_TryAcquireAsync_called()
@@ -13,7 +14,7 @@ public sealed class NullDistributedLockTests
         var sut = new NullDistributedLock(TimeProvider.System);
 
         // when
-        var handle = await sut.TryAcquireAsync("test.resource");
+        var handle = await sut.TryAcquireAsync("test.resource", cancellationToken: AbortToken);
 
         // then
         handle.Should().NotBeNull();
@@ -26,11 +27,11 @@ public sealed class NullDistributedLockTests
     {
         // given
         var sut = new NullDistributedLock(TimeProvider.System);
-        var handle = await sut.TryAcquireAsync("test.resource");
+        var handle = await sut.TryAcquireAsync("test.resource", cancellationToken: AbortToken);
         handle.Should().NotBeNull();
 
         // when
-        var renewed = await handle!.RenewAsync(TimeSpan.FromMinutes(1));
+        var renewed = await handle!.RenewAsync(TimeSpan.FromMinutes(1), AbortToken);
 
         // then
         renewed.Should().BeTrue();
@@ -41,14 +42,14 @@ public sealed class NullDistributedLockTests
     {
         // given
         var sut = new NullDistributedLock(TimeProvider.System);
-        var handle = await sut.TryAcquireAsync("test.resource");
+        var handle = await sut.TryAcquireAsync("test.resource", cancellationToken: AbortToken);
         handle.Should().NotBeNull();
         handle!.RenewalCount.Should().Be(0);
 
         // when
-        await handle.RenewAsync(TimeSpan.FromMinutes(1));
-        await handle.RenewAsync(TimeSpan.FromMinutes(1));
-        await handle.RenewAsync(TimeSpan.FromMinutes(1));
+        await handle.RenewAsync(TimeSpan.FromMinutes(1), AbortToken);
+        await handle.RenewAsync(TimeSpan.FromMinutes(1), AbortToken);
+        await handle.RenewAsync(TimeSpan.FromMinutes(1), AbortToken);
 
         // then
         handle.RenewalCount.Should().Be(3);
@@ -59,7 +60,7 @@ public sealed class NullDistributedLockTests
     {
         // given
         var sut = new NullDistributedLock(TimeProvider.System);
-        var handle = await sut.TryAcquireAsync("test.resource");
+        var handle = await sut.TryAcquireAsync("test.resource", cancellationToken: AbortToken);
         handle.Should().NotBeNull();
         handle!.RenewalCount.Should().Be(0);
 
@@ -79,7 +80,7 @@ public sealed class NullDistributedLockTests
     {
         // given
         var sut = new NullDistributedLock(TimeProvider.System);
-        var handle = await sut.TryAcquireAsync("test.resource");
+        var handle = await sut.TryAcquireAsync("test.resource", cancellationToken: AbortToken);
         handle.Should().NotBeNull();
 
         // when / then — disposing repeatedly must not throw
@@ -117,7 +118,8 @@ public sealed class NullDistributedLockTests
         // when
         var handle = await sut.TryAcquireAsync(
             "test.resource",
-            new DistributedLockAcquireOptions { Monitoring = LockMonitoringMode.Monitor }
+            new DistributedLockAcquireOptions { Monitoring = LockMonitoringMode.Monitor },
+            cancellationToken: AbortToken
         );
 
         // then
@@ -140,7 +142,8 @@ public sealed class NullDistributedLockTests
                 {
                     TimeUntilExpires = Timeout.InfiniteTimeSpan,
                     Monitoring = LockMonitoringMode.Monitor,
-                }
+                },
+                cancellationToken: AbortToken
             );
 
         // then
@@ -182,10 +185,10 @@ public sealed class NullDistributedLockTests
     {
         // given
         var sut = new NullDistributedLock(TimeProvider.System);
-        await sut.TryAcquireAsync("test.resource");
+        await sut.TryAcquireAsync("test.resource", cancellationToken: AbortToken);
 
         // when
-        var locks = await sut.ListActiveLocksAsync();
+        var locks = await sut.ListActiveLocksAsync(AbortToken);
 
         // then — null provider never tracks active locks (silent introspection contract)
         locks.Should().NotBeNull();
@@ -197,10 +200,10 @@ public sealed class NullDistributedLockTests
     {
         // given
         var sut = new NullDistributedLock(TimeProvider.System);
-        await sut.TryAcquireAsync("test.resource");
+        await sut.TryAcquireAsync("test.resource", cancellationToken: AbortToken);
 
         // when
-        var count = await sut.GetActiveLocksCountAsync();
+        var count = await sut.GetActiveLocksCountAsync(AbortToken);
 
         // then — null provider never tracks active locks (silent introspection contract)
         count.Should().Be(0L);

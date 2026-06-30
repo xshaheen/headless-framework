@@ -222,7 +222,7 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
         // Remove only if the slot still holds the same item we inspected (a newer bump may have replaced it).
         if (_items.TryRemove(KeyValuePair.Create(key, item)))
         {
-            Volatile.Write(ref _minExpiryItem, null);
+            Volatile.Write(ref _minExpiryItem, value: null);
             _logger.LogAutoRecoveryItemSuperseded(key, item.Kind);
         }
     }
@@ -524,7 +524,7 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
         {
             // Same conservative invalidation as OnSuccessfulL2Operation: no lock held here, so null to force
             // a re-scan on the next queue-full admission rather than comparing against a potentially stale pointer.
-            Volatile.Write(ref _minExpiryItem, null);
+            Volatile.Write(ref _minExpiryItem, value: null);
             _logger.LogAutoRecoveryItemConflicted(pair.Key, pair.Value.Kind);
         }
     }

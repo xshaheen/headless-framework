@@ -204,23 +204,13 @@ public sealed class ConnectionChannelPoolTests : TestBase
         var sut = (IConnectionChannelPool)pool;
 
         // when - force multiple exceptions (up to pool size of 15)
-        var rentTasks = Enumerable
-            .Range(0, 20)
-            .Select(async _ =>
-            {
-                try
-                {
-                    await sut.Rent();
-                }
-                catch
-                {
-                    // expected: all calls should fail due to refused connection
-                }
-            })
-            .ToList();
+        var rentTasks = Enumerable.Range(0, 20).Select(_ => sut.Rent(AbortToken)).ToList();
+        var allRentTasks = Task.WhenAll(rentTasks);
 
         // then - all should complete (with failures) without deadlock within timeout
-        await Task.WhenAll(rentTasks).WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        var completedTask = await Task.WhenAny(allRentTasks, Task.Delay(TimeSpan.FromSeconds(10), AbortToken));
+        completedTask.Should().Be(allRentTasks);
+        await allRentTasks.Invoking(static task => task).Should().ThrowAsync<Exception>();
 
         // Verify pool is still usable
         await sut.Invoking(p => p.Rent()).Should().ThrowAsync<Exception>();
@@ -247,7 +237,7 @@ public sealed class ConnectionChannelPoolTests : TestBase
         {
             for (var i = 0; i < 30; i++)
             {
-                var rented = await sut.Rent();
+                var rented = await sut.Rent(AbortToken);
                 sut.Return(rented);
             }
         };
@@ -255,7 +245,7 @@ public sealed class ConnectionChannelPoolTests : TestBase
         // then - no over-release, and the pool stays usable for one more cycle
         await act.Should().NotThrowAsync();
 
-        var last = await sut.Rent();
+        var last = await sut.Rent(AbortToken);
         sut.Return(last).Should().BeTrue();
     }
 

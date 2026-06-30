@@ -71,13 +71,13 @@ internal sealed class AzureServiceBusConsumerClient(
             allRuleNames.Add(rule.Name);
         }
 
-        var messageNamesList = messageNames.Concat(_asbOptions.SqlFilters?.Select(o => o.Key) ?? []).ToList();
+        var messageNamesList = messageNames.Concat(_asbOptions.SqlFilters.Select(o => o.Key)).ToList();
 
         foreach (var newRule in messageNamesList.Except(allRuleNames, StringComparer.Ordinal))
         {
             var isSqlRule =
                 _asbOptions
-                    .SqlFilters?.FirstOrDefault(o => string.Equals(o.Key, newRule, StringComparison.Ordinal))
+                    .SqlFilters.FirstOrDefault(o => string.Equals(o.Key, newRule, StringComparison.Ordinal))
                     .Value
                 is not null;
 
@@ -86,7 +86,7 @@ internal sealed class AzureServiceBusConsumerClient(
             if (isSqlRule)
             {
                 var sqlExpression = _asbOptions
-                    .SqlFilters?.FirstOrDefault(o => string.Equals(o.Key, newRule, StringComparison.Ordinal))
+                    .SqlFilters.FirstOrDefault(o => string.Equals(o.Key, newRule, StringComparison.Ordinal))
                     .Value;
                 currentRuleToAdd = new SqlRuleFilter(sqlExpression);
             }

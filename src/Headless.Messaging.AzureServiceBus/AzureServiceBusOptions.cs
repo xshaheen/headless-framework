@@ -157,7 +157,7 @@ public class AzureServiceBusOptions
     /// Key: Rule Name , Value: SQL Expression
     /// https://learn.microsoft.com/en-us/azure/service-bus-messaging/service-bus-messaging-sql-filter
     /// </summary>
-    public List<KeyValuePair<string, string>>? SqlFilters { get; set; }
+    public List<KeyValuePair<string, string>> SqlFilters { get; } = [];
 
     internal ICollection<IServiceBusProducerDescriptor> CustomProducers { get; set; } = [];
 

@@ -199,9 +199,10 @@ public sealed class KafkaConsumerClientTests : TestBase
     public async Task should_handle_retriable_error_codes()
     {
         // given
-        var options = Options.Create(
-            new MessagingKafkaOptions { Servers = "localhost:9092", RetriableErrorCodes = [ErrorCode.Local_TimedOut] }
-        );
+        var kafkaOptions = new MessagingKafkaOptions { Servers = "localhost:9092" };
+        kafkaOptions.RetriableErrorCodes.Clear();
+        kafkaOptions.RetriableErrorCodes.Add(ErrorCode.Local_TimedOut);
+        var options = Options.Create(kafkaOptions);
         await using var client = new KafkaConsumerClient("test-group", 1, options, _serviceProvider);
 
         // then - client created successfully

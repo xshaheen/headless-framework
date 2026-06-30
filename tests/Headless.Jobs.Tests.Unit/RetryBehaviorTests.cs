@@ -5,13 +5,14 @@ using Headless.Jobs.Enums;
 using Headless.Jobs.Instrumentation;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Models;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests;
 
-public sealed class RetryBehaviorTests
+public sealed class RetryBehaviorTests : TestBase
 {
     // End-to-end unit tests that call the public ExecuteTaskAsync with a CronJobOccurrence
     // so RunContextFunctionAsync + retry logic is exercised. Tests use short intervals (1..3s).
@@ -24,7 +25,7 @@ public sealed class RetryBehaviorTests
         var (handler, context, _, attempts) = _SetupRetryTestFixture([1, 2, 3], retries: 3);
 
         // when
-        await handler.ExecuteTaskAsync(context, isDue: true);
+        await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
 
         // then - initial + 3 retries = 4 attempts
         attempts.Should().HaveCount(4);
@@ -53,7 +54,7 @@ public sealed class RetryBehaviorTests
         // Use zero intervals for speed
         var (handler, context, _, attempts) = _SetupRetryTestFixture([0, 0], retries: 4);
 
-        await handler.ExecuteTaskAsync(context, isDue: true);
+        await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
 
         // initial + 4 retries = 5 attempts
         attempts.Should().HaveCount(5);
@@ -69,11 +70,11 @@ public sealed class RetryBehaviorTests
         // Use zero intervals for speed; succeed at retry=2
         var (handler, context, _, attempts) = _SetupRetryTestFixture([0, 0, 0, 0], retries: 4, succeedOnRetryCount: 2);
 
-        await handler.ExecuteTaskAsync(context, isDue: true);
+        await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
 
         // Should stop after success on attempt with RetryCount=2 => initial + retry1 + retry2 = 3 attempts
         attempts.Should().HaveCount(3);
-        attempts.Last().RetryCount.Should().Be(2);
+        attempts[^1].RetryCount.Should().Be(2);
     }
 
     [Fact]
@@ -121,7 +122,7 @@ public sealed class RetryBehaviorTests
             CachedDelegate = async (ct, _, _) => await Task.Delay(Timeout.Infinite, ct),
         };
 
-        await handler.ExecuteTaskAsync(context, isDue: true);
+        await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
 
         // #1: a lease-loss cancellation must NOT write a terminal status — the row is left InProgress for the
         // stalled-reclaim/OnNodeDeath sweep. So the job stops, LeaseLost is flagged, and no UpdateTicker write fires.
@@ -176,7 +177,7 @@ public sealed class RetryBehaviorTests
             CachedDelegate = async (ct, _, _) => await Task.Delay(Timeout.Infinite, ct),
         };
 
-        await handler.ExecuteTaskAsync(context, isDue: true);
+        await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
 
         context.LeaseLost.Should().BeTrue();
         await internalManager
@@ -246,7 +247,7 @@ public sealed class RetryBehaviorTests
                 await secondRenewalReached.Task.WaitAsync(TimeSpan.FromSeconds(10), ct),
         };
 
-        await handler.ExecuteTaskAsync(context, isDue: true);
+        await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
 
         context.LeaseLost.Should().BeFalse(); // membership-unknown must NOT trip cancel-on-loss
         context.Status.Should().Be(JobStatus.DueDone);
@@ -299,7 +300,7 @@ public sealed class RetryBehaviorTests
             CachedDelegate = async (ct, _, _) => await Task.Delay(Timeout.Infinite, ct),
         };
 
-        await handler.ExecuteTaskAsync(context, isDue: true);
+        await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
 
         context.LeaseLost.Should().BeTrue(); // bound tripped -> cancel-on-loss, no terminal write
         await internalManager
@@ -351,7 +352,7 @@ public sealed class RetryBehaviorTests
             CachedDelegate = (_, _, _) => Task.CompletedTask, // succeeds immediately
         };
 
-        await handler.ExecuteTaskAsync(context, isDue: true);
+        await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
 
         context.Status.Should().Be(JobStatus.DueDone); // local outcome is success...
         logger.Entries.Should().Contain(e => e.EventId == 3104); // ...but the fenced write is flagged for reconcile

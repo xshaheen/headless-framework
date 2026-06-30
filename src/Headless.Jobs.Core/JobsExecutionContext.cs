@@ -13,7 +13,7 @@ internal interface IJobsOptionsSeeding
     Func<IServiceProvider, Task>? CronSeederAction { get; }
 }
 
-internal class JobsExecutionContext
+internal sealed class JobsExecutionContext
 {
     private long _nextOccurrenceTicks;
     internal Action<IServiceProvider>? ExternalProviderApplicationAction { get; set; }

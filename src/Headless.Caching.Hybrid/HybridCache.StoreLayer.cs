@@ -152,14 +152,15 @@ public sealed partial class HybridCache
         // (the SetEntryAsync forwarder copies the `in` parameter), so the lambda owns immutable state.
         if (cacheOptions.AllowBackgroundDistributedCacheOperations)
         {
-            var localWrite = await _WriteSetEntryToLocalAsync(key, entry, cancellationToken).ConfigureAwait(false);
+            var (localCommitted, localPhysicalStamp) = await _WriteSetEntryToLocalAsync(key, entry, cancellationToken)
+                .ConfigureAwait(false);
 
-            if (!localWrite.Committed)
+            if (!localCommitted)
             {
                 return false;
             }
 
-            _RunDetached(() => _SetEntryL2TailAsync(key, entry, localWrite.PhysicalStamp), key);
+            _RunDetached(() => _SetEntryL2TailAsync(key, entry, localPhysicalStamp), key);
 
             return true;
         }

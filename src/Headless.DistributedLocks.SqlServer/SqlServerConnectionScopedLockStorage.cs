@@ -399,7 +399,7 @@ internal sealed class SqlServerConnectionScopedLockStorage(
         );
         command.CommandText = "SELECT APPLOCK_TEST(N'public', @resource, @lockMode, N'Session');";
         command.Parameters.AddWithValue("resource", encodedResource);
-        command.Parameters.AddWithValue("lockMode", lockMode);
+        command.Parameters.AddWithValue(nameof(lockMode), lockMode);
 
         return Convert.ToInt32(
                 await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false),

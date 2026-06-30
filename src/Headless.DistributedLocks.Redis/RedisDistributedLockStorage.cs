@@ -72,11 +72,18 @@ public sealed class RedisDistributedLockStorage(
         var lockKey = _GetLockKey(key);
         var fenceKey = _GetFenceKey(key);
 
-        var result = await _TryAcquireLockAsync(Db, lockKey, fenceKey, leaseId, ttl, cancellationToken)
+        var (acquired, fencingToken) = await _TryAcquireLockAsync(
+                Db,
+                lockKey,
+                fenceKey,
+                leaseId,
+                ttl,
+                cancellationToken
+            )
             .ConfigureAwait(false);
 
-        return result.Acquired
-            ? new DistributedLockAcquireResult(Acquired: true, result.FencingToken)
+        return acquired
+            ? new DistributedLockAcquireResult(Acquired: true, fencingToken)
             : DistributedLockAcquireResult.Failed;
     }
 

@@ -41,7 +41,7 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
         for (var i = 0; i < 5; i++)
         {
             _timeProvider.Advance(TimeSpan.FromSeconds(1));
-            await _DrainUntilAsync(() => handle.RenewalCount >= i + 1);
+            await _DrainUntilAsync(() => handle.RenewalCount >= i + 1, AbortToken);
         }
 
         // then
@@ -98,7 +98,7 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
         for (var i = 0; i < 5; i++)
         {
             _timeProvider.Advance(TimeSpan.FromSeconds(1));
-            await _DrainUntilAsync(() => handle.RenewalCount >= i + 1);
+            await _DrainUntilAsync(() => handle.RenewalCount >= i + 1, AbortToken);
         }
 
         // then
@@ -136,7 +136,7 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
         for (var i = 0; i < 10 && !handle.LostToken.IsCancellationRequested; i++)
         {
             _timeProvider.Advance(TimeSpan.FromSeconds(1));
-            await _DrainUntilAsync(() => handle.LostToken.IsCancellationRequested);
+            await _DrainUntilAsync(() => handle.LostToken.IsCancellationRequested, AbortToken);
         }
 
         // then
@@ -192,7 +192,7 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
         for (var i = 0; i < 10 && !handle.LostToken.IsCancellationRequested; i++)
         {
             _timeProvider.Advance(TimeSpan.FromSeconds(3));
-            await _DrainUntilAsync(() => handle.LostToken.IsCancellationRequested);
+            await _DrainUntilAsync(() => handle.LostToken.IsCancellationRequested, AbortToken);
         }
 
         // then
@@ -229,7 +229,7 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
         for (var i = 0; i < 10 && !handle.LostToken.IsCancellationRequested; i++)
         {
             _timeProvider.Advance(TimeSpan.FromSeconds(3));
-            await _DrainUntilAsync(() => handle.LostToken.IsCancellationRequested);
+            await _DrainUntilAsync(() => handle.LostToken.IsCancellationRequested, AbortToken);
         }
 
         // then

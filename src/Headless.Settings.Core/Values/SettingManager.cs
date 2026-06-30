@@ -58,8 +58,10 @@ public sealed class SettingManager(
         foreach (var provider in valueProviderManager.Providers.Reverse())
         {
             var supportedDefinitions = settingDefinitions
-                .Where(x => !processedNames.Contains(x.Name))
-                .Where(x => x.Providers.Count == 0 || x.Providers.Contains(provider.Name, StringComparer.Ordinal))
+                .Where(x =>
+                    !processedNames.Contains(x.Name)
+                    && (x.Providers.Count == 0 || x.Providers.Contains(provider.Name, StringComparer.Ordinal))
+                )
                 .ToArray();
 
             var settingValues = await provider

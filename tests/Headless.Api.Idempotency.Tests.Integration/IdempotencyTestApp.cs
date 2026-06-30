@@ -263,10 +263,11 @@ internal static class IdempotencyTestApp
 
         public async Task WaitForReleaseAsync(CancellationToken cancellationToken)
         {
-            using var registration = cancellationToken.Register(
+            await using var registration = cancellationToken.Register(
                 static state => ((TaskCompletionSource)state!).TrySetCanceled(),
                 _release
             );
+
             await _release.Task.ConfigureAwait(false);
         }
 
@@ -337,7 +338,7 @@ internal static class IdempotencyTestApp
             {
                 lock (_sync)
                 {
-                    if (_ownerLockId == leaseId)
+                    if (string.Equals(_ownerLockId, leaseId, StringComparison.Ordinal))
                     {
                         _ownerLockId = string.Empty;
                         _expiresAt = DateTimeOffset.MinValue;
@@ -388,7 +389,7 @@ internal static class IdempotencyTestApp
 
             var lease = timeUntilExpires ?? DefaultTimeUntilExpires;
             var acquireTimeoutEffective = acquireTimeout ?? DefaultAcquireTimeout;
-            var slot = _slots.GetOrAdd(resource, _ => new LockSlot(timeProvider));
+            var slot = _slots.GetOrAdd(resource, static (_, provider) => new LockSlot(provider), timeProvider);
             var deadline = timeProvider.GetUtcNow() + acquireTimeoutEffective;
 
             while (true)

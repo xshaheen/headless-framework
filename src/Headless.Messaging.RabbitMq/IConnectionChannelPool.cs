@@ -244,7 +244,13 @@ public sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable,
         {
             var connection = await GetConnectionAsync().ConfigureAwait(false);
             model = await connection
-                .CreateChannelAsync(new CreateChannelOptions(_isPublishConfirms, false), cancellationToken)
+                .CreateChannelAsync(
+                    new CreateChannelOptions(
+                        publisherConfirmationsEnabled: _isPublishConfirms,
+                        publisherConfirmationTrackingEnabled: false
+                    ),
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
             await model
                 .ExchangeDeclareAsync(

@@ -74,7 +74,7 @@ app.UseStaticFiles();
 
 app.UseRouting();
 
-app.MapGet("/", () => Results.LocalRedirect("/index.html", true));
+app.MapGet("/", () => Results.LocalRedirect("/index.html", permanent: true));
 
 app.MapPost(
     "/security/createToken",

@@ -217,7 +217,7 @@ internal sealed class Bootstrapper(
         lock (_bootstrapLock)
         {
             _isStopping = true;
-            Volatile.Write(ref _isStarted, false);
+            Volatile.Write(ref _isStarted, value: false);
             runtimeCts = _runtimeCts;
             _runtimeCts = null;
             stoppingRegistration = _stoppingRegistration;
@@ -317,7 +317,7 @@ internal sealed class Bootstrapper(
 
     private void _CheckRequirement()
     {
-        var marker =
+        _ =
             serviceProvider.GetService<MessagingMarkerService>()
             ?? throw new InvalidOperationException(
                 "AddHeadlessMessaging() must be added on the service collection.   eg: services.AddHeadlessMessaging(...)"
@@ -325,7 +325,7 @@ internal sealed class Bootstrapper(
 
         _DrainPendingMessageRegistrations();
 
-        var messageQueueMarker =
+        _ =
             serviceProvider.GetService<MessageQueueMarkerService>()
             ?? throw new InvalidOperationException(
                 "Messaging requires a transport provider. Register a native IBusTransport/IQueueTransport "
@@ -484,7 +484,7 @@ internal sealed class Bootstrapper(
 
             _disposed = true;
             _isStopping = true;
-            Volatile.Write(ref _isStarted, false);
+            Volatile.Write(ref _isStarted, value: false);
             runtimeCts = _runtimeCts;
             _runtimeCts = null;
             stoppingRegistration = _stoppingRegistration;
@@ -516,7 +516,7 @@ internal sealed class Bootstrapper(
 
             _disposed = true;
             _isStopping = true;
-            Volatile.Write(ref _isStarted, false);
+            Volatile.Write(ref _isStarted, value: false);
             pendingBootstrap = _bootstrapTask;
             _bootstrapTask = null;
             runtimeCts = _runtimeCts;
@@ -597,7 +597,9 @@ internal sealed class Bootstrapper(
         {
             try
             {
+#pragma warning disable MA0045 // CancellationToken.Register callback must block until processor disposal finishes.
                 item.DisposeAsync().AsTask().GetAwaiter().GetResult();
+#pragma warning restore MA0045
             }
             catch (OperationCanceledException ex)
             {

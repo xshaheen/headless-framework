@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Testing.Tests;
+
 namespace Tests.Core;
 
-public sealed class TimeSpanExtensionsTests
+public sealed class TimeSpanExtensionsTests : TestBase
 {
     [Fact]
     public void clamp_should_return_value_when_within_range()

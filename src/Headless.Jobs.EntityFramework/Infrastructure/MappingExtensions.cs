@@ -113,7 +113,7 @@ internal static class MappingExtensions
     )
         where TCronJob : CronJobEntity, new()
     {
-        var propsToUpdate = functionContext.GetPropsToUpdate();
+        var propsToUpdate = functionContext.PropertiesToUpdate;
 
         // STATUS / SKIPPED
         if (
@@ -177,7 +177,7 @@ internal static class MappingExtensions
     )
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
     {
-        var propsToUpdate = functionContext.GetPropsToUpdate();
+        var propsToUpdate = functionContext.PropertiesToUpdate;
 
         // STATUS / SKIPPED
         if (

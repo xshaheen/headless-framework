@@ -873,7 +873,7 @@ public sealed class InMemoryCache
                     // Type conversion failed - treat as if no current value
                 }
 
-                if (currentValue.HasValue && currentValue.Value < value)
+                if (currentValue < value)
                 {
                     difference = value - currentValue.Value;
                     var computedSize = _CalculateEntrySize(value);
@@ -1057,7 +1057,7 @@ public sealed class InMemoryCache
                     // Type conversion failed - treat as if no current value
                 }
 
-                if (currentValue.HasValue && currentValue.Value > value)
+                if (currentValue > value)
                 {
                     difference = currentValue.Value - value;
                     var computedSize = _CalculateEntrySize(value);
@@ -1399,7 +1399,7 @@ public sealed class InMemoryCache
 
         if (!_memory.TryGetValue(key, out var existingEntry))
         {
-            return new ValueTask<bool>(false);
+            return new ValueTask<bool>(result: false);
         }
 
         var now = _timeProvider.GetUtcNow().UtcDateTime;
@@ -1577,7 +1577,7 @@ public sealed class InMemoryCache
 
         if (!_memory.TryGetValue(key, out var existingEntry))
         {
-            return new ValueTask<bool>(false);
+            return new ValueTask<bool>(result: false);
         }
 
         // Single clock read for the whole hit path; misses above pay none. Mirrors GetAsync.
@@ -1586,7 +1586,7 @@ public sealed class InMemoryCache
         if (existingEntry.IsExpiredAt(now))
         {
             _TryRemoveExpiredEntry(key, existingEntry);
-            return new ValueTask<bool>(false);
+            return new ValueTask<bool>(result: false);
         }
 
         if (existingEntry.IsLogicallyExpiredAt(now))
@@ -1596,14 +1596,14 @@ public sealed class InMemoryCache
                 _TryRemoveExpiredEntry(key, existingEntry);
             }
 
-            return new ValueTask<bool>(false);
+            return new ValueTask<bool>(result: false);
         }
 
         // Logical tag/clear invalidation: a direct read of a tag-invalidated entry is a miss. The physically
         // present reserve is left in place so the coordinator's TryGetEntryAsync can still serve it stale.
         if (_IsTagInvalidated(existingEntry))
         {
-            return new ValueTask<bool>(false);
+            return new ValueTask<bool>(result: false);
         }
 
         try
@@ -1615,17 +1615,17 @@ public sealed class InMemoryCache
             // reads as a miss for the buffer path. Nothing is written.
             if (value is null)
             {
-                return new ValueTask<bool>(false);
+                return new ValueTask<bool>(result: false);
             }
 
             // The single copy: stored array -> caller-provided buffer.
             destination.Write(value);
-            return new ValueTask<bool>(true);
+            return new ValueTask<bool>(result: true);
         }
         catch (Exception ex) when (!_shouldThrowOnSerializationError)
         {
             _logger.LogDeserializationError(ex, string.GetHashCode(key, StringComparison.Ordinal));
-            return new ValueTask<bool>(false);
+            return new ValueTask<bool>(result: false);
         }
     }
 
@@ -1692,7 +1692,7 @@ public sealed class InMemoryCache
 
         if (!_memory.TryRemove(key, out var entry))
         {
-            return new ValueTask<bool>(false);
+            return new ValueTask<bool>(result: false);
         }
 
         Interlocked.Add(ref _currentMemorySize, -entry.Size);
@@ -1709,13 +1709,13 @@ public sealed class InMemoryCache
 
         if (!_memory.TryGetValue(key, out var existingEntry))
         {
-            return new ValueTask<bool>(false);
+            return new ValueTask<bool>(result: false);
         }
 
         if (existingEntry.IsExpired)
         {
             _TryRemoveExpiredEntry(key, existingEntry);
-            return new ValueTask<bool>(false);
+            return new ValueTask<bool>(result: false);
         }
 
         var now = _timeProvider.GetUtcNow().UtcDateTime;
@@ -1740,7 +1740,7 @@ public sealed class InMemoryCache
                 _TrackUpdate(expiredEntry.TrackedExpiresAt);
             }
 
-            return new ValueTask<bool>(true);
+            return new ValueTask<bool>(result: true);
         }
 
         // No reserve to preserve: removing avoids manufacturing a phantom reserve that headless's per-call
@@ -1750,7 +1750,7 @@ public sealed class InMemoryCache
             Interlocked.Add(ref _currentMemorySize, -existingEntry.Size);
         }
 
-        return new ValueTask<bool>(true);
+        return new ValueTask<bool>(result: true);
     }
 
     public async ValueTask<bool> RemoveIfEqualAsync<T>(
@@ -1991,11 +1991,8 @@ public sealed class InMemoryCache
             var stringsToRemove = value.Where(v => v is not null).Select(v => (string)(object)v!).ToList();
             return new ValueTask<long>(_SetRemoveStringItems(key, stringsToRemove));
         }
-        else
-        {
-            var valuesToRemove = value.Where(v => v is not null).Cast<object>().ToList();
-            return new ValueTask<long>(_SetRemoveObjectItems(key, valuesToRemove));
-        }
+        var valuesToRemove = value.Where(v => v is not null).Cast<object>().ToList();
+        return new ValueTask<long>(_SetRemoveObjectItems(key, valuesToRemove));
     }
 
     private long _SetRemoveStringItems(string key, List<string> stringsToRemove)
@@ -2189,7 +2186,7 @@ public sealed class InMemoryCache
         if (_IsTagInvalidated(existingEntry))
         {
             var now = _timeProvider.GetUtcNow().UtcDateTime;
-            logicalExpiresAt = logicalExpiresAt.HasValue && logicalExpiresAt.Value < now ? logicalExpiresAt : now;
+            logicalExpiresAt = logicalExpiresAt < now ? logicalExpiresAt : now;
             slidingExpiration = null;
         }
 
@@ -3237,5 +3234,4 @@ file static class ConcurrentDictionaryExtensions
     }
 }
 
-#pragma warning restore RCS1229
-#pragma warning restore MA0106
+#pragma warning restore RCS1229, MA0106

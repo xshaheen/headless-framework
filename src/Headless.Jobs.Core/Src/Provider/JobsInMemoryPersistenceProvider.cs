@@ -1669,7 +1669,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
     private void _ApplyFunctionContextToTicker(TTimeJob job, InternalFunctionContext context)
     {
-        var propsToUpdate = context.GetPropsToUpdate();
+        var propsToUpdate = context.PropertiesToUpdate;
 
         // STATUS / SKIPPED
         if (propsToUpdate.Contains(nameof(InternalFunctionContext.Status)) && context.Status != JobStatus.Skipped)
@@ -1725,7 +1725,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         InternalFunctionContext context
     )
     {
-        var propsToUpdate = context.GetPropsToUpdate();
+        var propsToUpdate = context.PropertiesToUpdate;
 
         // STATUS / SKIPPED
         if (propsToUpdate.Contains(nameof(InternalFunctionContext.Status)) && context.Status != JobStatus.Skipped)

@@ -355,11 +355,11 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
             {
                 // Cancel on a background thread in case a registered callback hangs or throws.
                 _ = Task.Run(
-                    () =>
+                    async () =>
                     {
                         try
                         {
-                            cancellationTokenSource.Cancel();
+                            await cancellationTokenSource.CancelAsync().ConfigureAwait(false);
                         }
                         finally
                         {
@@ -427,11 +427,11 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
         // Setting the new source before cancelling the old one already avoids the worst of that, but doing the cancel
         // off-thread keeps this method fast and easy to reason about.
         _ = Task.Run(
-            () =>
+            async () =>
             {
                 try
                 {
-                    monitorStateChangedTokenSource.Cancel();
+                    await monitorStateChangedTokenSource.CancelAsync().ConfigureAwait(false);
                 }
                 finally
                 {
@@ -596,7 +596,7 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
 
         public void Dispose()
         {
-            Interlocked.Exchange(ref _monitor, null)?._ReleaseMonitoringHandle(this);
+            Interlocked.Exchange(ref _monitor, value: null)?._ReleaseMonitoringHandle(this);
         }
     }
 

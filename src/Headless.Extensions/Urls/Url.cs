@@ -199,7 +199,8 @@ public sealed class Url
     /// True if Url is absolute and scheme is https or wss.
     /// </summary>
     public bool IsSecureScheme =>
-        !IsRelative && (Scheme.OrdinalEquals("https", true) || Scheme.OrdinalEquals("wss", true));
+        !IsRelative
+        && (Scheme.OrdinalEquals("https", ignoreCase: true) || Scheme.OrdinalEquals("wss", ignoreCase: true));
     #endregion
 
     #region ctors and parsing methods
@@ -547,7 +548,7 @@ public sealed class Url
         NullValueHandling nullValueHandling = NullValueHandling.Remove
     )
     {
-        QueryParams.Add(name, value, false, nullValueHandling);
+        QueryParams.Add(name, value, isEncoded: false, nullValueHandling: nullValueHandling);
         return this;
     }
 
@@ -866,7 +867,7 @@ public sealed class Url
     /// <summary>
     /// Converts this Url object to its string representation.
     /// </summary>
-    public override string ToString() => ToString(false);
+    public override string ToString() => ToString(encodeSpaceAsPlus: false);
 
     /// <summary>
     /// Converts this Url object to System.Uri

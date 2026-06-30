@@ -939,11 +939,11 @@ public sealed class RedisCache(
                     continue;
                 }
 
-                var cacheVal = val is null ? CacheValue<T>.Null : new CacheValue<T>(val, true);
+                var cacheVal = val is null ? CacheValue<T>.Null : new CacheValue<T>(val, hasValue: true);
 
                 // ttl is null  → persistent key, no expiry → Expiration = null (valid hit)
                 // ttl.Value > 0 → remaining TTL → Expiration = ttl
-                result[originalKeys[idx]] = new CacheValueWithExpiration<T>(cacheVal, ttl);
+                result[originalKeys[idx]] = new CacheValueWithExpiration<T>(cacheVal, expiration: ttl);
             }
         }
 
@@ -1127,7 +1127,7 @@ public sealed class RedisCache(
 
         if (!rawValue.HasValue)
         {
-            return new CacheValueWithExpiration<T>(CacheValue<T>.NoValue, null);
+            return new CacheValueWithExpiration<T>(CacheValue<T>.NoValue, expiration: null);
         }
 
         try
@@ -1139,7 +1139,7 @@ public sealed class RedisCache(
             {
                 if (_IsExpired(frame.PhysicalExpiresAt, now))
                 {
-                    return new CacheValueWithExpiration<T>(CacheValue<T>.NoValue, null);
+                    return new CacheValueWithExpiration<T>(CacheValue<T>.NoValue, expiration: null);
                 }
 
                 // Family-2: a tag/clear-invalidated entry is a miss for direct mirror reads.
@@ -1147,7 +1147,7 @@ public sealed class RedisCache(
 
                 if (CacheTagInvalidation.IsInvalidated(frame.CreatedAt, newestMarker))
                 {
-                    return new CacheValueWithExpiration<T>(CacheValue<T>.NoValue, null);
+                    return new CacheValueWithExpiration<T>(CacheValue<T>.NoValue, expiration: null);
                 }
 
                 if (frame.SlidingExpiration.HasValue)
@@ -1161,14 +1161,14 @@ public sealed class RedisCache(
 
                     if (ttl is { Ticks: <= 0 })
                     {
-                        return new CacheValueWithExpiration<T>(CacheValue<T>.NoValue, null);
+                        return new CacheValueWithExpiration<T>(CacheValue<T>.NoValue, expiration: null);
                     }
 
                     CacheValue<T> slidingValue = frame.IsNull
                         ? CacheValue<T>.Null
                         : new CacheValue<T>(_DeserializeValueSegment<T>(frame.ValueSegment), hasValue: true);
 
-                    return new CacheValueWithExpiration<T>(slidingValue, ttl);
+                    return new CacheValueWithExpiration<T>(slidingValue, expiration: ttl);
                 }
 
                 if (_IsExpired(frame.LogicalExpiresAt, now))
@@ -1984,7 +1984,9 @@ public sealed class RedisCache(
             return (T?)(object?)(byte[]?)redisValue;
         }
 
-        return serializer.Deserialize<T>((byte[])redisValue!);
+        // SE.Redis 3.0+ exposes the value as a ReadOnlySequence<byte> over its native storage; deserializing off
+        // the sequence skips the byte[] materialization that (byte[])redisValue forces for inline (ShortBlob) values.
+        return serializer.Deserialize<T>((ReadOnlySequence<byte>)redisValue!);
     }
 
     private async ValueTask<CacheValue<T>> _RedisValueToCacheValueAsync<T>(
@@ -2037,7 +2039,7 @@ public sealed class RedisCache(
                 }
 
                 var framedValue = _DeserializeValueSegment<T>(frame.ValueSegment);
-                return new CacheValue<T>(framedValue, true);
+                return new CacheValue<T>(framedValue, hasValue: true);
             }
 
             if (redisValue == _NullValue)
@@ -2046,7 +2048,7 @@ public sealed class RedisCache(
             }
 
             var value = _FromRedisValue<T>(redisValue);
-            return new CacheValue<T>(value, true);
+            return new CacheValue<T>(value, hasValue: true);
         }
         catch (Exception e)
         {
@@ -2123,7 +2125,13 @@ public sealed class RedisCache(
                 return false;
             }
 
-            destination.Write((byte[])redisValue!);
+            // Write the value straight from its native ReadOnlySequence<byte> storage (SE.Redis 3.0+), avoiding the
+            // intermediate byte[] that (byte[])redisValue would materialize — keeping this path's single-copy intent.
+            foreach (var segment in (ReadOnlySequence<byte>)redisValue!)
+            {
+                destination.Write(segment.Span);
+            }
+
             return true;
         }
         catch (Exception e)
@@ -2413,7 +2421,7 @@ public sealed class RedisCache(
         return (int)result == 1;
     }
 
-    private static string _ToConcurrencyStamp(RedisValue value) => string.Concat("b64:", ((byte[])value!).ToBase64());
+    private static string _ToConcurrencyStamp(RedisValue value) => $"b64:{((byte[])value!).ToBase64()}";
 
     private static bool _TryDecodeConcurrencyStamp(string stamp, out RedisValue value)
     {
@@ -2516,7 +2524,7 @@ public sealed class RedisCache(
 
             if (CacheTagInvalidation.IsInvalidated(frame.CreatedAt, newestMarker))
             {
-                logicalExpiresAt = logicalExpiresAt.HasValue && logicalExpiresAt.Value < now ? logicalExpiresAt : now;
+                logicalExpiresAt = logicalExpiresAt < now ? logicalExpiresAt : now;
                 slidingExpiration = null;
             }
 
@@ -2671,7 +2679,7 @@ public sealed class RedisCache(
         }
     }
 
-    private static bool _IsExpired(DateTime? expiresAt, DateTime now) => expiresAt.HasValue && expiresAt.Value <= now;
+    private static bool _IsExpired(DateTime? expiresAt, DateTime now) => expiresAt <= now;
 
     private static TimeSpan _Min(TimeSpan left, TimeSpan right) => left <= right ? left : right;
 

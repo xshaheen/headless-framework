@@ -367,7 +367,10 @@ public sealed class PermissionGrantStoreTests : TestBase
         // then
         await _repository
             .Received(1)
-            .InsertManyAsync(Arg.Is<IEnumerable<PermissionGrantRecord>>(records => records.Count() == 2), AbortToken);
+            .InsertManyAsync(
+                Arg.Is<IEnumerable<PermissionGrantRecord>>(records => records.Take(3).Count() == 2),
+                AbortToken
+            );
     }
 
     [Fact]

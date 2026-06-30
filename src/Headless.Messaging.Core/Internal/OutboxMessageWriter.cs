@@ -158,8 +158,8 @@ internal sealed class OutboxMessageWriter(
                 .StoreMessageAsync(
                     publishRequest.MessageName,
                     _CreateStorageEnvelope(publishRequest),
-                    null,
-                    cancellationToken
+                    transaction: null,
+                    cancellationToken: cancellationToken
                 )
                 .ConfigureAwait(false);
 
@@ -168,7 +168,12 @@ internal sealed class OutboxMessageWriter(
             if (publishRequest.Message.Headers.ContainsKey(Headers.DelayTime))
             {
                 await dispatcher
-                    .EnqueueToScheduler(immediateMessage, publishRequest.PublishAt, null, cancellationToken)
+                    .EnqueueToScheduler(
+                        immediateMessage,
+                        publishRequest.PublishAt,
+                        transaction: null,
+                        cancellationToken: cancellationToken
+                    )
                     .ConfigureAwait(false);
             }
             else

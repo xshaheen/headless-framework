@@ -144,11 +144,11 @@ internal sealed class RuntimeConsumerRegistry(
                     case RuntimeSubscriptionDuplicateBehavior.Ignore:
                         logger.DuplicateRuntimeSubscriptionIgnored(messageName, group, handlerId);
                         return new RuntimeConsumerRegistrationResult(
-                            RuntimeConsumerRegistrationStatus.Ignored,
-                            null,
-                            messageName,
-                            group,
-                            existing.HandlerId
+                            Status: RuntimeConsumerRegistrationStatus.Ignored,
+                            SubscriptionId: null,
+                            MessageName: messageName,
+                            Group: group,
+                            HandlerId: existing.HandlerId
                         );
                     case RuntimeSubscriptionDuplicateBehavior.Replace:
                         _registrations = _registrations.Remove(existing);

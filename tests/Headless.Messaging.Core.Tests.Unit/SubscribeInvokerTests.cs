@@ -24,7 +24,7 @@ public sealed class SubscribeInvokerTests : TestBase
             );
         });
 
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
 
         var message = new InvokerTestMessage("test-123");
@@ -53,7 +53,7 @@ public sealed class SubscribeInvokerTests : TestBase
             );
         });
 
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
 
         var message = new InvokerTestMessage("test-456");
@@ -83,7 +83,7 @@ public sealed class SubscribeInvokerTests : TestBase
             );
         });
 
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
 
         var message = new InvokerTestMessage("test-789");
@@ -118,7 +118,7 @@ public sealed class SubscribeInvokerTests : TestBase
             );
         });
 
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
 
         var mediumMessage = new MediumMessage
@@ -160,7 +160,7 @@ public sealed class SubscribeInvokerTests : TestBase
             );
         });
 
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
 
         var message = new InvokerTestMessage("test");
@@ -208,7 +208,7 @@ public sealed class SubscribeInvokerTests : TestBase
             );
         });
 
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
 
         var message = new InvokerTestMessage("test");
@@ -239,7 +239,7 @@ public sealed class SubscribeInvokerTests : TestBase
             );
         });
 
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
 
         var message = new InvokerTestMessage("test");
@@ -269,7 +269,7 @@ public sealed class SubscribeInvokerTests : TestBase
             );
         });
 
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
 
         var mediumMessage = _CreateMediumMessage(
@@ -302,7 +302,7 @@ public sealed class SubscribeInvokerTests : TestBase
             );
         });
 
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
 
         var mediumMessage = _CreateMediumMessage(
@@ -335,7 +335,7 @@ public sealed class SubscribeInvokerTests : TestBase
             );
         });
 
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
 
         var mediumMessage = _CreateMediumMessage(
@@ -368,7 +368,7 @@ public sealed class SubscribeInvokerTests : TestBase
             );
         });
 
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
 
         var mediumMessage = _CreateMediumMessage(new InvokerTestMessage("callback"), "test.messageName");
@@ -397,7 +397,7 @@ public sealed class SubscribeInvokerTests : TestBase
             );
         });
 
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
 
         var mediumMessage = _CreateMediumMessage(
@@ -431,7 +431,7 @@ public sealed class SubscribeInvokerTests : TestBase
             );
         });
 
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
 
         var mediumMessage = _CreateMediumMessage(
@@ -463,7 +463,7 @@ public sealed class SubscribeInvokerTests : TestBase
             );
         });
 
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
 
         var mediumMessage = _CreateMediumMessage(
@@ -495,7 +495,7 @@ public sealed class SubscribeInvokerTests : TestBase
             );
         });
 
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
 
         var mediumMessage = _CreateMediumMessage(
@@ -526,7 +526,7 @@ public sealed class SubscribeInvokerTests : TestBase
             );
         });
 
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
 
         var mediumMessage = _CreateMediumMessage(
@@ -557,7 +557,7 @@ public sealed class SubscribeInvokerTests : TestBase
             );
         });
 
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
         var sentTime = new DateTimeOffset(2026, 3, 24, 10, 11, 12, TimeSpan.Zero);
 
@@ -590,7 +590,7 @@ public sealed class SubscribeInvokerTests : TestBase
             );
         });
 
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
 
         var mediumMessage = _CreateMediumMessage(
@@ -622,7 +622,7 @@ public sealed class SubscribeInvokerTests : TestBase
             );
         });
 
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
 
         var maxLengthTenantId = new string('x', MessageOptions.TenantIdMaxLength);
@@ -655,7 +655,7 @@ public sealed class SubscribeInvokerTests : TestBase
             );
         });
 
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
 
         var oversizedTenantId = new string('x', MessageOptions.TenantIdMaxLength + 1);

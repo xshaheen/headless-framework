@@ -146,7 +146,7 @@ public sealed class HeadlessTestServer<TProgram>(
     /// Thrown when <see cref="ConfigureDatabaseReset"/> was not called or
     /// <see cref="DatabaseResetOptions.ConnectionProvider"/> is <see langword="null"/>.
     /// </exception>
-    public async Task ResetDatabaseAsync()
+    public async Task ResetDatabaseAsync(CancellationToken cancellationToken = default)
     {
         if (_configureDatabaseReset is null)
         {
@@ -157,7 +157,7 @@ public sealed class HeadlessTestServer<TProgram>(
 
         Ensure.NotDisposed(_disposed, this);
 
-        await _resetGate.WaitAsync().ConfigureAwait(false);
+        await _resetGate.WaitAsync(cancellationToken).ConfigureAwait(false);
 
         try
         {
@@ -176,7 +176,7 @@ public sealed class HeadlessTestServer<TProgram>(
                 }
 
                 _resetConnection = options.ConnectionProvider(Services);
-                await _resetConnection.OpenAsync().ConfigureAwait(false);
+                await _resetConnection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
                 _databaseReset = await DatabaseReset.CreateAsync(_resetConnection, options).ConfigureAwait(false);
             }
@@ -193,12 +193,12 @@ public sealed class HeadlessTestServer<TProgram>(
                 catch (DbException) when (retries > 1)
                 {
                     retries--;
-                    await Task.Delay(TimeSpan.FromMilliseconds(100)).ConfigureAwait(false);
+                    await Task.Delay(TimeSpan.FromMilliseconds(100), cancellationToken).ConfigureAwait(false);
 
                     // Re-open if closed or broken
                     if (_resetConnection!.State != System.Data.ConnectionState.Open)
                     {
-                        await _resetConnection.OpenAsync().ConfigureAwait(false);
+                        await _resetConnection.OpenAsync(cancellationToken).ConfigureAwait(false);
                     }
                 }
                 catch (DbException ex)

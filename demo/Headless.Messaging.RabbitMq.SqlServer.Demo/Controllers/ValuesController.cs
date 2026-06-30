@@ -181,7 +181,7 @@ public sealed class PersonConsumer : IConsume<Person>
         Console.WriteLine(
             string.Create(
                 CultureInfo.InvariantCulture,
-                $@"{DateTime.UtcNow} Subscriber invoked, Info: {context.Message}"
+                $"{DateTime.UtcNow} Subscriber invoked, Info: {context.Message}"
             )
         );
         return ValueTask.CompletedTask;

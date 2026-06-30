@@ -210,9 +210,7 @@ public sealed class KafkaMessageConsumer : IConsume<KafkaMessage>
 {
     public ValueTask ConsumeAsync(ConsumeContext<KafkaMessage> context, CancellationToken cancellationToken)
     {
-        Console.WriteLine(
-            $@"Subscriber output message: {context.Message.Value.ToString(CultureInfo.InvariantCulture)}"
-        );
+        Console.WriteLine($"Subscriber output message: {context.Message.Value.ToString(CultureInfo.InvariantCulture)}");
         return ValueTask.CompletedTask;
     }
 }

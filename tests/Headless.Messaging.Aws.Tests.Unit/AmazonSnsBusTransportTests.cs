@@ -103,7 +103,7 @@ public sealed class AmazonSnsBusTransportTests : TestBase
         );
 
         // when
-        var result = await transport.SendAsync(message);
+        var result = await transport.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeTrue();
@@ -149,7 +149,7 @@ public sealed class AmazonSnsBusTransportTests : TestBase
         );
 
         // when
-        var result = await transport.SendAsync(message);
+        var result = await transport.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeTrue();
@@ -192,7 +192,7 @@ public sealed class AmazonSnsBusTransportTests : TestBase
         );
 
         // when
-        var result = await transport.SendAsync(message);
+        var result = await transport.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeTrue();
@@ -227,7 +227,7 @@ public sealed class AmazonSnsBusTransportTests : TestBase
         );
 
         // when
-        var result = await transport.SendAsync(message);
+        var result = await transport.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeTrue();
@@ -278,7 +278,7 @@ public sealed class AmazonSnsBusTransportTests : TestBase
         );
 
         // when
-        var result = await transport.SendAsync(message);
+        var result = await transport.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeTrue();
@@ -314,7 +314,7 @@ public sealed class AmazonSnsBusTransportTests : TestBase
         );
 
         // when
-        var result = await transport.SendAsync(message);
+        var result = await transport.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeFalse();
@@ -343,7 +343,7 @@ public sealed class AmazonSnsBusTransportTests : TestBase
         );
 
         // when
-        var result = await transport.SendAsync(message);
+        var result = await transport.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeFalse();
@@ -377,7 +377,7 @@ public sealed class AmazonSnsBusTransportTests : TestBase
         );
 
         // when
-        var result = await transport.SendAsync(message);
+        var result = await transport.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeTrue();
@@ -412,7 +412,7 @@ public sealed class AmazonSnsBusTransportTests : TestBase
         );
 
         // when
-        var result = await transport.SendAsync(message);
+        var result = await transport.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeTrue();
@@ -448,9 +448,9 @@ public sealed class AmazonSnsBusTransportTests : TestBase
         );
 
         // when - send multiple messages
-        await transport.SendAsync(message);
-        await transport.SendAsync(message);
-        await transport.SendAsync(message);
+        await transport.SendAsync(message, AbortToken);
+        await transport.SendAsync(message, AbortToken);
+        await transport.SendAsync(message, AbortToken);
 
         // then - _topicArnMaps is pre-populated, so ListTopicsAsync should never be called
         await snsClient.DidNotReceive().ListTopicsAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>());
@@ -491,7 +491,7 @@ public sealed class AmazonSnsBusTransportTests : TestBase
         );
 
         // when
-        var result = await transport.SendAsync(message);
+        var result = await transport.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeTrue();

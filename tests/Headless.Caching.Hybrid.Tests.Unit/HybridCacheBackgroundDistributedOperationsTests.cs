@@ -278,9 +278,8 @@ public sealed class HybridCacheBackgroundDistributedOperationsTests : TestBase
         // caller must not block on it (FusionCache CanExecuteBackgroundBackplaneOperations analog — our framework
         // backgrounds the publish together with the L2 write under the single flag rather than a separate one).
         using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
-        var l2 = new InMemoryRemoteCacheAdapter(
-            new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true })
-        );
+        using var l2Inner = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        var l2 = new InMemoryRemoteCacheAdapter(l2Inner);
 
         var publishGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var publishStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

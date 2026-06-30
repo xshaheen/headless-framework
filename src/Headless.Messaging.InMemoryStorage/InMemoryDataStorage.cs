@@ -84,10 +84,7 @@ internal sealed class InMemoryDataStorage(
             // Mirror the SQL providers' terminal guard: only reject when status is terminal AND
             // NextRetryAt is null. A Succeeded row with non-null NextRetryAt is degenerate but
             // shouldn't be blocked by this guard — cross-storage parity per the at-least-once contract.
-            if (
-                (current.StatusName is StatusName.Succeeded || current.StatusName is StatusName.Failed)
-                && current.NextRetryAt is null
-            )
+            if ((current.StatusName is StatusName.Succeeded or StatusName.Failed) && current.NextRetryAt is null)
             {
                 return ValueTask.FromResult(false);
             }
@@ -146,10 +143,7 @@ internal sealed class InMemoryDataStorage(
         lock (current)
         {
             // Mirror the SQL providers' terminal guard (see ChangePublishStateAsync above).
-            if (
-                (current.StatusName is StatusName.Succeeded || current.StatusName is StatusName.Failed)
-                && current.NextRetryAt is null
-            )
+            if ((current.StatusName is StatusName.Succeeded or StatusName.Failed) && current.NextRetryAt is null)
             {
                 return ValueTask.FromResult(false);
             }
@@ -332,10 +326,7 @@ internal sealed class InMemoryDataStorage(
 
             if (existing is not null)
             {
-                if (
-                    (existing.StatusName is StatusName.Succeeded || existing.StatusName is StatusName.Failed)
-                    && existing.NextRetryAt is null
-                )
+                if ((existing.StatusName is StatusName.Succeeded or StatusName.Failed) && existing.NextRetryAt is null)
                 {
                     // Terminal — leave it alone.
                     return ValueTask.FromResult(false);

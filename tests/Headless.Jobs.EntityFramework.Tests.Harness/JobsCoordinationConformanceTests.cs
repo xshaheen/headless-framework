@@ -147,11 +147,11 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
             // MarkFailed in-flight row becomes terminal Failed (never retried), owner retained for audit,
             // lease cleared (#4) and a node-death ExceptionMessage set so it's distinguishable from a run failure (#8).
             affected.Should().Be(1);
-            var detail = await fixture.ReadTimeJobDetailAsync(id, ct);
-            detail.Status.Should().Be((int)JobStatus.Failed);
-            detail.OwnerId.Should().Be(dead);
-            detail.LockedUntil.Should().BeNull();
-            detail.ExceptionMessage.Should().Be("Node is not alive!");
+            var (status, ownerId, lockedUntil, exceptionMessage, _) = await fixture.ReadTimeJobDetailAsync(id, ct);
+            status.Should().Be((int)JobStatus.Failed);
+            ownerId.Should().Be(dead);
+            lockedUntil.Should().BeNull();
+            exceptionMessage.Should().Be("Node is not alive!");
         }
         finally
         {
@@ -188,11 +188,11 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
             // Skip in-flight row becomes terminal Skipped (idempotency-critical: never re-run), owner retained,
             // lease cleared (#4) and SkippedReason set.
             affected.Should().Be(1);
-            var detail = await fixture.ReadTimeJobDetailAsync(id, ct);
-            detail.Status.Should().Be((int)JobStatus.Skipped);
-            detail.OwnerId.Should().Be(dead);
-            detail.LockedUntil.Should().BeNull();
-            detail.SkippedReason.Should().Be("Node is not alive!");
+            var (status, ownerId, lockedUntil, _, skippedReason) = await fixture.ReadTimeJobDetailAsync(id, ct);
+            status.Should().Be((int)JobStatus.Skipped);
+            ownerId.Should().Be(dead);
+            lockedUntil.Should().BeNull();
+            skippedReason.Should().Be("Node is not alive!");
         }
         finally
         {
@@ -427,10 +427,10 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
             (await persistence.RenewTimeJobLease(ownedId, ct)).Should().Be(1);
             (await persistence.RenewTimeJobLease(foreignId, ct)).Should().Be(0); // lease lost -> cancel-on-loss
 
-            var ownedDetail = await fixture.ReadTimeJobDetailAsync(ownedId, ct);
-            ownedDetail.Status.Should().Be((int)JobStatus.InProgress);
-            ownedDetail.LockedUntil.Should().NotBeNull();
-            ownedDetail.LockedUntil!.Value.Should().BeAfter(seededLease); // lease slid forward
+            var (ownedStatus, _, ownedLockedUntil, _, _) = await fixture.ReadTimeJobDetailAsync(ownedId, ct);
+            ownedStatus.Should().Be((int)JobStatus.InProgress);
+            ownedLockedUntil.Should().NotBeNull();
+            ownedLockedUntil!.Value.Should().BeAfter(seededLease); // lease slid forward
 
             // The foreign row was not renewed: its lease is unchanged.
             (await fixture.ReadTimeJobDetailAsync(foreignId, ct))
@@ -469,10 +469,10 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
             .BeNegative();
 
         // The row is untouched: ownership and lease are exactly as seeded (no UPDATE ran).
-        var detail = await fixture.ReadTimeJobDetailAsync(id, ct);
-        detail.Status.Should().Be((int)JobStatus.InProgress);
-        detail.OwnerId.Should().Be("node-a@1");
-        detail.LockedUntil.Should().BeCloseTo(lease, TimeSpan.FromSeconds(5));
+        var (status, ownerId, lockedUntil, _, _) = await fixture.ReadTimeJobDetailAsync(id, ct);
+        status.Should().Be((int)JobStatus.InProgress);
+        ownerId.Should().Be("node-a@1");
+        lockedUntil.Should().BeCloseTo(lease, TimeSpan.FromSeconds(5));
     }
 
     /// <summary>
@@ -542,16 +542,20 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
 
             (await fixture.ReadTimeJobAsync(retryId, ct)).Should().Be(((int)JobStatus.Idle, null));
 
-            var fail = await fixture.ReadTimeJobDetailAsync(failId, ct);
-            fail.Status.Should().Be((int)JobStatus.Failed);
-            fail.OwnerId.Should().Be(owner);
-            fail.LockedUntil.Should().BeNull();
-            fail.ExceptionMessage.Should().Be("Lease lapsed while running!");
+            var (failStatus, failOwnerId, failLockedUntil, failExceptionMessage, _) =
+                await fixture.ReadTimeJobDetailAsync(failId, ct);
+            failStatus.Should().Be((int)JobStatus.Failed);
+            failOwnerId.Should().Be(owner);
+            failLockedUntil.Should().BeNull();
+            failExceptionMessage.Should().Be("Lease lapsed while running!");
 
-            var skip = await fixture.ReadTimeJobDetailAsync(skipId, ct);
-            skip.Status.Should().Be((int)JobStatus.Skipped);
-            skip.LockedUntil.Should().BeNull();
-            skip.SkippedReason.Should().Be("Lease lapsed while running!");
+            var (skipStatus, _, skipLockedUntil, _, skipSkippedReason) = await fixture.ReadTimeJobDetailAsync(
+                skipId,
+                ct
+            );
+            skipStatus.Should().Be((int)JobStatus.Skipped);
+            skipLockedUntil.Should().BeNull();
+            skipSkippedReason.Should().Be("Lease lapsed while running!");
 
             // Healthy renewing job (future lease) is untouched.
             (await fixture.ReadTimeJobAsync(healthyId, ct))

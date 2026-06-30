@@ -8,6 +8,7 @@ using Headless.Jobs.BackgroundServices;
 using Headless.Jobs.Coordination;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Internal;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute.ExceptionExtensions;
@@ -23,7 +24,7 @@ namespace Tests;
 /// is provider-agnostic Core logic, so these are unit tests over the real in-memory lock provider shared between two
 /// simulated nodes (KTD8) — no Docker, no DB.
 /// </summary>
-public sealed class JobsDistributedLockGuardTests
+public sealed class JobsDistributedLockGuardTests : TestBase
 {
     private static readonly DistributedLockAcquireOptions _HoldOptions = new()
     {
@@ -78,7 +79,7 @@ public sealed class JobsDistributedLockGuardTests
         var spyLock = Substitute.For<IDistributedLock>();
         var options = new SchedulerOptionsBuilder { UseStorageLock = false };
 
-        await _InvokeSeedAsync(manager, options, spyLock, CancellationToken.None);
+        await _InvokeSeedAsync(manager, options, spyLock, AbortToken);
 
         await manager.Received(1).MigrateDefinedCronJobs(Arg.Any<(string, string)[]>(), Arg.Any<CancellationToken>());
         await spyLock
@@ -94,11 +95,11 @@ public sealed class JobsDistributedLockGuardTests
         var manager = Substitute.For<IInternalJobManager>();
         var options = new SchedulerOptionsBuilder { UseStorageLock = true };
 
-        await _InvokeSeedAsync(manager, options, lockProvider, CancellationToken.None);
+        await _InvokeSeedAsync(manager, options, lockProvider, AbortToken);
 
         await manager.Received(1).MigrateDefinedCronJobs(Arg.Any<(string, string)[]>(), Arg.Any<CancellationToken>());
         // Lease released on completion → the resource is free again for the next boot.
-        (await lockProvider.IsLockedAsync(JobsKeys.CronSeedMigrationResource))
+        (await lockProvider.IsLockedAsync(JobsKeys.CronSeedMigrationResource, AbortToken))
             .Should()
             .BeFalse();
     }
@@ -114,12 +115,12 @@ public sealed class JobsDistributedLockGuardTests
             .ThrowsAsync(new InvalidOperationException("seed boom"));
         var options = new SchedulerOptionsBuilder { UseStorageLock = true };
 
-        var act = async () => await _InvokeSeedAsync(manager, options, lockProvider, CancellationToken.None);
+        var act = async () => await _InvokeSeedAsync(manager, options, lockProvider, AbortToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
         // The `await using` must release the lease even when the body throws, so the resource is free for the next boot
         // rather than wedged until the TTL expires.
-        (await lockProvider.IsLockedAsync(JobsKeys.CronSeedMigrationResource))
+        (await lockProvider.IsLockedAsync(JobsKeys.CronSeedMigrationResource, AbortToken))
             .Should()
             .BeFalse();
     }
@@ -139,7 +140,7 @@ public sealed class JobsDistributedLockGuardTests
         var manager = Substitute.For<IInternalJobManager>();
         var options = new SchedulerOptionsBuilder { UseStorageLock = true };
 
-        await _InvokeSeedAsync(manager, options, nodeB, CancellationToken.None);
+        await _InvokeSeedAsync(manager, options, nodeB, AbortToken);
 
         await manager
             .DidNotReceive()
@@ -157,7 +158,7 @@ public sealed class JobsDistributedLockGuardTests
         var options = new SchedulerOptionsBuilder { UseStorageLock = true };
 
         // Faulting acquire is swallowed as a skip — startup must not fail on a lock-store hiccup.
-        await _InvokeSeedAsync(manager, options, faultingLock, CancellationToken.None);
+        await _InvokeSeedAsync(manager, options, faultingLock, AbortToken);
 
         await manager
             .DidNotReceive()
@@ -198,8 +199,9 @@ public sealed class JobsDistributedLockGuardTests
         var manager = Substitute.For<IInternalJobManager>();
         var options = new SchedulerOptionsBuilder { UseStorageLock = true };
 
-        // CancellationToken.None → not cancelled → the OCE is swallowed as a skip, startup is not failed.
-        await _InvokeSeedAsync(manager, options, faultingLock, CancellationToken.None);
+        // AbortToken is normally not cancelled, so the provider OCE is swallowed as a skip; if the test is aborted,
+        // cancellation can still propagate promptly.
+        await _InvokeSeedAsync(manager, options, faultingLock, AbortToken);
 
         await manager
             .DidNotReceive()
@@ -227,7 +229,7 @@ public sealed class JobsDistributedLockGuardTests
         );
 
         // Must not throw — the throwing factory is swallowed as a skip.
-        await hostedService.SeedDefinedCronJobsAsync(options, CancellationToken.None);
+        await hostedService.SeedDefinedCronJobsAsync(options, AbortToken);
 
         await manager
             .DidNotReceive()

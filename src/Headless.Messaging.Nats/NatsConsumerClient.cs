@@ -587,7 +587,7 @@ internal sealed class NatsConsumerClient(
         {
             try
             {
-                await Task.WhenAll(inFlight).WaitAsync(_ShutdownDrainTimeout).ConfigureAwait(false);
+                await Task.WhenAll(inFlight).WaitAsync(_ShutdownDrainTimeout, _timeProvider).ConfigureAwait(false);
             }
             catch (Exception ex)
             {

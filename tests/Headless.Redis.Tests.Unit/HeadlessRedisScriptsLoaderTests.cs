@@ -3,11 +3,12 @@
 using System.Net;
 using System.Security.Cryptography;
 using Headless.Redis;
+using Headless.Testing.Tests;
 using StackExchange.Redis;
 
 namespace Tests;
 
-public sealed class HeadlessRedisScriptsLoaderTests
+public sealed class HeadlessRedisScriptsLoaderTests : TestBase
 {
     [Fact]
     public void should_accept_null_timeProvider_and_use_system()
@@ -43,7 +44,7 @@ public sealed class HeadlessRedisScriptsLoaderTests
         using var sut = new HeadlessRedisScriptsLoader(multiplexer);
 
         // when
-        await sut.LoadAsync([]);
+        await sut.LoadAsync([], cancellationToken: AbortToken);
 
         // then
         await server.DidNotReceive().ScriptLoadAsync(Arg.Any<string>(), Arg.Any<CommandFlags>());
@@ -61,11 +62,11 @@ public sealed class HeadlessRedisScriptsLoaderTests
 
         // when
         using var loaded = new HeadlessRedisScriptsLoader(multiplexer);
-        await loaded.LoadAsync([script]);
-        _ = await loaded.EvaluateAsync(db, script, parameters: null);
+        await loaded.LoadAsync([script], cancellationToken: AbortToken);
+        _ = await loaded.EvaluateAsync(db, script, parameters: null, cancellationToken: AbortToken);
 
         using var fresh = new HeadlessRedisScriptsLoader(multiplexer);
-        _ = await fresh.EvaluateAsync(db, script, parameters: null);
+        _ = await fresh.EvaluateAsync(db, script, parameters: null, cancellationToken: AbortToken);
 
         // then
         await server.Received(2).ScriptLoadAsync(Arg.Any<string>(), Arg.Any<CommandFlags>());
@@ -79,7 +80,8 @@ public sealed class HeadlessRedisScriptsLoaderTests
         using var sut = new HeadlessRedisScriptsLoader(multiplexer);
 
         // when
-        var act = () => sut.LoadAsync([CustomReturnOneScriptDefinition.Instance]).AsTask();
+        var act = () =>
+            sut.LoadAsync([CustomReturnOneScriptDefinition.Instance], cancellationToken: AbortToken).AsTask();
 
         // then
         await act.Should().ThrowAsync<RedisConnectionException>().WithMessage("No writable Redis endpoints*");
@@ -110,7 +112,7 @@ public sealed class HeadlessRedisScriptsLoaderTests
         using var sut = new HeadlessRedisScriptsLoader(multiplexer);
 
         // when
-        await sut.LoadAsync(scripts);
+        await sut.LoadAsync(scripts, cancellationToken: AbortToken);
 
         // then
         await writableServer.Received(scripts.Length).ScriptLoadAsync(Arg.Any<string>(), Arg.Any<CommandFlags>());
@@ -133,7 +135,7 @@ public sealed class HeadlessRedisScriptsLoaderTests
         using var sut = new HeadlessRedisScriptsLoader(multiplexer);
 
         // when
-        await sut.LoadAsync(scripts);
+        await sut.LoadAsync(scripts, cancellationToken: AbortToken);
 
         // then
         await server.Received(scripts.Length).ScriptLoadAsync(Arg.Any<string>(), Arg.Any<CommandFlags>());
@@ -147,10 +149,10 @@ public sealed class HeadlessRedisScriptsLoaderTests
         var otherScript = CustomReturnTwoScriptDefinition.Instance;
         var (multiplexer, server) = _CreateMultiplexerWithServer(isConnected: true, isReplica: false);
         using var sut = new HeadlessRedisScriptsLoader(multiplexer);
-        await sut.LoadAsync([script]);
+        await sut.LoadAsync([script], cancellationToken: AbortToken);
 
         // when
-        await sut.LoadAsync([script, otherScript]);
+        await sut.LoadAsync([script, otherScript], cancellationToken: AbortToken);
 
         // then
         await server.Received(2).ScriptLoadAsync(Arg.Any<string>(), Arg.Any<CommandFlags>());
@@ -165,7 +167,7 @@ public sealed class HeadlessRedisScriptsLoaderTests
         using var sut = new HeadlessRedisScriptsLoader(multiplexer);
 
         // when
-        await sut.LoadAsync([script, script]);
+        await sut.LoadAsync([script, script], cancellationToken: AbortToken);
 
         // then
         await server.Received(1).ScriptLoadAsync(Arg.Any<string>(), Arg.Any<CommandFlags>());
@@ -184,7 +186,7 @@ public sealed class HeadlessRedisScriptsLoaderTests
             .Returns(Task.FromResult(RedisResult.Create(1)));
 
         // when
-        var result = await sut.EvaluateAsync(db, customScript, parameters: null);
+        var result = await sut.EvaluateAsync(db, customScript, parameters: null, cancellationToken: AbortToken);
 
         // then
         ((int)result)
@@ -206,11 +208,11 @@ public sealed class HeadlessRedisScriptsLoaderTests
         db.ScriptEvaluateAsync(Arg.Any<LoadedLuaScript>(), Arg.Any<object>())
             .Returns(Task.FromResult(RedisResult.Create(1)));
 
-        _ = await sut.EvaluateAsync(db, script, parameters: null);
+        _ = await sut.EvaluateAsync(db, script, parameters: null, cancellationToken: AbortToken);
 
         // when
         sut.ResetScripts();
-        _ = await sut.EvaluateAsync(db, script, parameters: null);
+        _ = await sut.EvaluateAsync(db, script, parameters: null, cancellationToken: AbortToken);
 
         // then
         await server.Received(2).ScriptLoadAsync(Arg.Any<string>(), Arg.Any<CommandFlags>());
@@ -244,7 +246,7 @@ public sealed class HeadlessRedisScriptsLoaderTests
 
                     return releaseFirstOtherScriptLoad.Task.ContinueWith(
                         _ => _CreateScriptHash(source),
-                        TestContext.Current.CancellationToken,
+                        AbortToken,
                         TaskContinuationOptions.ExecuteSynchronously,
                         TaskScheduler.Default
                     );
@@ -257,17 +259,17 @@ public sealed class HeadlessRedisScriptsLoaderTests
             .Returns(Task.FromResult(RedisResult.Create(1)));
 
         using var sut = new HeadlessRedisScriptsLoader(multiplexer);
-        _ = await sut.EvaluateAsync(db, script, parameters: null);
+        _ = await sut.EvaluateAsync(db, script, parameters: null, cancellationToken: AbortToken);
 
         // when
-        var loadOtherScriptTask = sut.EvaluateAsync(db, otherScript, parameters: null);
-        await firstOtherScriptLoadStarted.Task.WaitAsync(TestContext.Current.CancellationToken);
+        var loadOtherScriptTask = sut.EvaluateAsync(db, otherScript, parameters: null, cancellationToken: AbortToken);
+        await firstOtherScriptLoadStarted.Task.WaitAsync(AbortToken);
 
         sut.ResetScripts();
         releaseFirstOtherScriptLoad.SetResult();
 
         _ = await loadOtherScriptTask;
-        _ = await sut.EvaluateAsync(db, script, parameters: null);
+        _ = await sut.EvaluateAsync(db, script, parameters: null, cancellationToken: AbortToken);
 
         // then
         await server
@@ -310,7 +312,7 @@ public sealed class HeadlessRedisScriptsLoaderTests
 
                     return releaseSecondScriptLoad.Task.ContinueWith(
                         _ => _CreateScriptHash(source),
-                        TestContext.Current.CancellationToken,
+                        AbortToken,
                         TaskContinuationOptions.ExecuteSynchronously,
                         TaskScheduler.Default
                     );
@@ -323,12 +325,12 @@ public sealed class HeadlessRedisScriptsLoaderTests
             .Returns(Task.FromResult(RedisResult.Create(1)));
 
         using var sut = new HeadlessRedisScriptsLoader(multiplexer);
-        _ = await sut.EvaluateAsync(db, script, parameters: null);
+        _ = await sut.EvaluateAsync(db, script, parameters: null, cancellationToken: AbortToken);
         sut.ResetScripts();
 
         // when
-        var reloadTask = sut.EvaluateAsync(db, script, parameters: null);
-        await secondScriptLoadStarted.Task.WaitAsync(TestContext.Current.CancellationToken);
+        var reloadTask = sut.EvaluateAsync(db, script, parameters: null, cancellationToken: AbortToken);
+        await secondScriptLoadStarted.Task.WaitAsync(AbortToken);
 
         sut.ResetScripts();
         releaseSecondScriptLoad.SetResult();
@@ -354,7 +356,7 @@ public sealed class HeadlessRedisScriptsLoaderTests
         using var sut = new HeadlessRedisScriptsLoader(multiplexer);
 
         // when
-        var act = () => sut.LoadAsync([script, sameTypeOtherScript]).AsTask();
+        var act = () => sut.LoadAsync([script, sameTypeOtherScript], cancellationToken: AbortToken).AsTask();
 
         // then
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*multiple instances*");

@@ -358,7 +358,7 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
 
     private async Task<long> _CountAdvisoryLocksAsync(PostgresAdvisoryLockKey key)
     {
-        var keys = key.Keys;
+        var (key1, key2) = key.Keys;
 
         await using var connection = await _OpenAsync();
         await using var command = connection.CreateCommand();
@@ -373,15 +373,17 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
               AND l.objid = @objId
               AND l.objsubid = @objSubId
             """;
-        command.Parameters.AddWithValue("classId", keys.Key1);
-        command.Parameters.AddWithValue("objId", keys.Key2);
+        command.Parameters.AddWithValue("classId", key1);
+        command.Parameters.AddWithValue("objId", key2);
         command.Parameters.AddWithValue("objSubId", (short)(key.HasSingleKey ? 1 : 2));
 
         return (long)(await command.ExecuteScalarAsync(AbortToken) ?? 0L);
     }
 
+#pragma warning disable CA2000
+    // DatabaseConnection owns and disposes this internally-owned fake connection.
     private sealed class ThrowingSavePointDatabaseConnection()
-        : DatabaseConnection(new ThrowingSavePointDbConnection(), isExternallyOwned: true, TimeProvider.System)
+        : DatabaseConnection(new ThrowingSavePointDbConnection(), isExternallyOwned: false, TimeProvider.System)
     {
         public override bool ShouldPrepareCommands => false;
 
@@ -393,6 +395,7 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
             CancellationToken cancellationToken
         ) => throw new NotSupportedException();
     }
+#pragma warning restore CA2000
 
     private sealed class ThrowingSavePointDbConnection : DbConnection
     {

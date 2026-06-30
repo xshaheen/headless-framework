@@ -67,7 +67,7 @@ public sealed class ServerTimingMiddlewareTests : TestBase
 
         // then
         context.Response.Headers.Should().ContainKey("Trailer");
-        context.Response.Headers["Trailer"].ToString().Should().Contain(_ServerTimingHeader);
+        context.Response.Headers.Trailer.ToString().Should().Contain(_ServerTimingHeader);
     }
 
     [Fact]

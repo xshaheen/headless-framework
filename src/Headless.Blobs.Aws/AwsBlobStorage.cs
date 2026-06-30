@@ -288,7 +288,7 @@ public sealed class AwsBlobStorage(
         }
         catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.NotFound)
         {
-            return objectKeys.ConvertAll(_ => Result<bool, Exception>.Ok(true));
+            return objectKeys.ConvertAll(_ => Result<bool, Exception>.Ok(value: true));
         }
         catch (DeleteObjectsException e) // This exception is thrown when some items fail to delete.
         {

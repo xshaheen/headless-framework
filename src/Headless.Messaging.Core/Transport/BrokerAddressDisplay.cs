@@ -23,7 +23,7 @@ public static class BrokerAddressDisplay
         }
 
         return string.Join(
-            ",",
+            ',',
             endpoints.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(Format)
         );
     }

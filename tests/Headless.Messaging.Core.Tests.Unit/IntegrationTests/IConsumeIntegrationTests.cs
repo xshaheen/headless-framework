@@ -218,7 +218,7 @@ public sealed class IConsumeIntegrationTests
             );
         });
 
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         var dispatcher = provider.GetRequiredService<IMessageDispatcher>();
 
         var orderPlaced = new OrderPlaced("ORDER-1", 50m);

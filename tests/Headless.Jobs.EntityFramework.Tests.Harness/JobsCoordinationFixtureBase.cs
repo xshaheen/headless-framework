@@ -400,8 +400,8 @@ public static class JobsCoordinationFixtureExtensions
         CancellationToken cancellationToken
     )
     {
-        var detail = await fixture.ReadTimeJobDetailAsync(id, cancellationToken);
-        return (detail.Status, detail.OwnerId);
+        var (status, ownerId, _, _, _) = await fixture.ReadTimeJobDetailAsync(id, cancellationToken);
+        return (status, ownerId);
     }
 
     /// <summary>

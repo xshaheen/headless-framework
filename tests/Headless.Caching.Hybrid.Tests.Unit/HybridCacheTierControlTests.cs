@@ -124,9 +124,9 @@ public sealed class HybridCacheTierControlTests : TestBase
             throw new InvalidOperationException("upstream unavailable")
         );
 
-        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-            await cache.GetOrAddAsync(key, throwingFactory, _Options(skipRead: true, failSafe: true), AbortToken)
-        );
+        var act = async () =>
+            await cache.GetOrAddAsync(key, throwingFactory, _Options(skipRead: true, failSafe: true), AbortToken);
+        await act.Should().ThrowAsync<InvalidOperationException>();
     }
 
     #endregion

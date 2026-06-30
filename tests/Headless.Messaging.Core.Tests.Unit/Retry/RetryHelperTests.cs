@@ -22,7 +22,7 @@ public sealed class RetryHelperTests : TestBase
         var decision = RetryHelper.RecordAttemptAndComputeDecision(
             message,
 #pragma warning disable MA0015 // ReSharper disable once NotResolvedInText
-            new ArgumentException(@"permanent", "param"),
+            new ArgumentException("permanent", "param"),
 #pragma warning restore MA0015
             new RetryPolicyOptions(),
             inlineRetries: 0
@@ -234,13 +234,18 @@ public sealed class RetryHelperTests : TestBase
 
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal) { ["cap-msg-id"] = "stop-test-1" };
         var origin = new Message(headers, null);
-        var stored = await storage.StoreReceivedMessageAsync("test.topic", "test-group", origin);
+        var stored = await storage.StoreReceivedMessageAsync("test.topic", "test-group", origin, AbortToken);
 
         // Simulate a Stop outcome: Failed status, no NextRetryAt, Retries stays below MaxPersistedRetries.
         stored.Retries = 0;
-        await storage.ChangeReceiveStateAsync(stored, StatusName.Failed, nextRetryAt: null);
+        await storage.ChangeReceiveStateAsync(
+            stored,
+            StatusName.Failed,
+            nextRetryAt: null,
+            cancellationToken: AbortToken
+        );
 
-        var candidates = await storage.GetReceivedMessagesOfNeedRetryAsync();
+        var candidates = await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken);
 
         candidates.Should().BeEmpty("Stop-terminated rows must be excluded from the retry pickup query");
     }
@@ -518,7 +523,7 @@ public sealed class RetryHelperTests : TestBase
             new ServiceCollection().BuildServiceProvider(),
             MessageType.Subscribe,
             Substitute.For<ILogger>(),
-            CancellationToken.None
+            AbortToken
         );
 
         callbackCount.Should().Be(1, "OnExhausted must fire exactly once when the budget is consumed");
@@ -610,9 +615,9 @@ public sealed class RetryHelperTests : TestBase
             (_, _) => throw new InvalidOperationException("callback fault"),
             failed,
             timeout: TimeSpan.FromSeconds(1),
-            storageId: Guid.Parse("00000000-0000-0000-0000-000000000042"),
+            storageId: _Guid(0x42),
             logger,
-            cancellationToken: CancellationToken.None
+            cancellationToken: AbortToken
         );
 
         // No exception escaped; that's the contract.
@@ -660,7 +665,7 @@ public sealed class RetryHelperTests : TestBase
             },
             failed,
             timeout: TimeSpan.FromSeconds(30),
-            storageId: Guid.Parse("00000000-0000-0000-0000-000000000007"),
+            storageId: _Guid(0x07),
             Substitute.For<ILogger>(),
             cancellationToken: hostCts.Token
         );
@@ -697,14 +702,14 @@ public sealed class RetryHelperTests : TestBase
             },
             failed,
             timeout: TimeSpan.FromMilliseconds(100),
-            storageId: Guid.Parse("00000000-0000-0000-0000-000000000099"),
+            storageId: _Guid(0x99),
             Substitute.For<ILogger>(),
-            cancellationToken: CancellationToken.None
+            cancellationToken: AbortToken
         );
 
         // The callback's token must have been cancelled when the timeout fired so the cooperative
         // callback can short-circuit before the dispatch scope is disposed.
-        var cancelled = await observedCancellation.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        var cancelled = await observedCancellation.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
         cancelled.Should().BeTrue();
     }
 
@@ -746,15 +751,15 @@ public sealed class RetryHelperTests : TestBase
             },
             failed,
             timeout: TimeSpan.FromMilliseconds(50),
-            storageId: Guid.Parse("00000000-0000-0000-0000-000000000101"),
+            storageId: _Guid(0x01, 0x01),
             Substitute.For<ILogger>(),
-            cancellationToken: CancellationToken.None
+            cancellationToken: AbortToken
         );
 
         // After helper returns (timeout fired), the orphan should eventually observe cancellation
         // through OCE — never ObjectDisposedException. CTS disposal must be deferred to after the
         // orphan completes.
-        await observed.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        await observed.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
         observedException.Should().NotBeNull();
         observedException
             .Should()
@@ -800,7 +805,7 @@ public sealed class RetryHelperTests : TestBase
             },
             failed,
             timeout: TimeSpan.FromSeconds(30),
-            storageId: Guid.Parse("00000000-0000-0000-0000-000000000202"),
+            storageId: _Guid(0x02, 0x02),
             logger,
             cancellationToken: hostCts.Token
         );
@@ -833,4 +838,8 @@ public sealed class RetryHelperTests : TestBase
                 because: "a cooperative-callback OCE during shutdown must not log ExecutedThresholdCallbackFailed"
             );
     }
+
+    private static Guid _Guid(byte last) => _Guid(0, last);
+
+    private static Guid _Guid(byte penultimate, byte last) => new(0, 0, 0, 0, 0, 0, 0, 0, 0, penultimate, last);
 }

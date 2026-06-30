@@ -3,13 +3,15 @@
 using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.AzureServiceBus;
+using Headless.Messaging.Transport;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Tests;
 
-public sealed class AzureServiceBusConsumerClientTests
+public sealed class AzureServiceBusConsumerClientTests : TestBase
 {
     private readonly ILogger _logger = Substitute.For<ILogger>();
     private readonly IOptions<AzureServiceBusOptions> _options = Options.Create(
@@ -173,7 +175,7 @@ public sealed class AzureServiceBusConsumerClientTests
         await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
 
         // when
-        await client.PauseAsync();
+        await client.PauseAsync(AbortToken);
 
         // then — no exception
     }
@@ -185,8 +187,8 @@ public sealed class AzureServiceBusConsumerClientTests
         await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
 
         // when
-        await client.PauseAsync();
-        await client.PauseAsync();
+        await client.PauseAsync(AbortToken);
+        await client.PauseAsync(AbortToken);
 
         // then — no exception, second call is no-op
     }
@@ -198,7 +200,7 @@ public sealed class AzureServiceBusConsumerClientTests
         await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
 
         // when
-        await client.ResumeAsync();
+        await client.ResumeAsync(AbortToken);
 
         // then — no exception
     }
@@ -210,8 +212,8 @@ public sealed class AzureServiceBusConsumerClientTests
         await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
 
         // when
-        await client.PauseAsync();
-        await client.ResumeAsync();
+        await client.PauseAsync(AbortToken);
+        await client.ResumeAsync(AbortToken);
 
         // then — no exception
     }
@@ -223,9 +225,9 @@ public sealed class AzureServiceBusConsumerClientTests
         await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
 
         // when
-        await client.PauseAsync();
-        await client.ResumeAsync();
-        await client.ResumeAsync(); // second resume is no-op
+        await client.PauseAsync(AbortToken);
+        await client.ResumeAsync(AbortToken);
+        await client.ResumeAsync(AbortToken); // second resume is no-op
 
         // then — no exception
     }
@@ -238,7 +240,7 @@ public sealed class AzureServiceBusConsumerClientTests
         await client.DisposeAsync();
 
         // when — should not throw
-        await client.PauseAsync();
+        await client.PauseAsync(AbortToken);
     }
 
     [Fact]
@@ -249,7 +251,7 @@ public sealed class AzureServiceBusConsumerClientTests
         await client.DisposeAsync();
 
         // when — should not throw
-        await client.ResumeAsync();
+        await client.ResumeAsync(AbortToken);
     }
 
     [Fact]
@@ -262,7 +264,8 @@ public sealed class AzureServiceBusConsumerClientTests
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         )!;
         var gate = gateField.GetValue(client)!;
-        var isPausedProp = gate.GetType().GetProperty("IsPaused", BindingFlags.Public | BindingFlags.Instance)!;
+        var isPausedProp = gate.GetType()
+            .GetProperty(nameof(ConsumerPauseGate.IsPaused), BindingFlags.Public | BindingFlags.Instance)!;
 
         // then - gate starts open
         ((bool)isPausedProp.GetValue(gate)!)
@@ -270,7 +273,7 @@ public sealed class AzureServiceBusConsumerClientTests
             .BeFalse();
 
         // when
-        await client.PauseAsync();
+        await client.PauseAsync(AbortToken);
 
         // then - startup gate closes while paused
         ((bool)isPausedProp.GetValue(gate)!)
@@ -278,7 +281,7 @@ public sealed class AzureServiceBusConsumerClientTests
             .BeTrue();
 
         // when
-        await client.ResumeAsync();
+        await client.ResumeAsync(AbortToken);
 
         // then - gate reopens for late-starting listeners
         ((bool)isPausedProp.GetValue(gate)!)
@@ -296,10 +299,10 @@ public sealed class AzureServiceBusConsumerClientTests
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         )!;
 
-        await client.PauseAsync();
+        await client.PauseAsync(AbortToken);
 
         // when
-        await client.ResumeAsync();
+        await client.ResumeAsync(AbortToken);
 
         // then - resume only opens the gate before first ListeningAsync startup
         ((int)startedField.GetValue(client)!)

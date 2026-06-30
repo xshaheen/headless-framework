@@ -75,7 +75,9 @@ public sealed class BlobStorageDataProtectionIntegrationTests(AzuriteFixture fix
 
         // then
         retrievedElements.Should().NotBeEmpty();
-        var retrieved = retrievedElements.FirstOrDefault(e => e.Attribute("id")?.Value == keyId);
+        var retrieved = retrievedElements.FirstOrDefault(e =>
+            string.Equals(e.Attribute("id")?.Value, keyId, StringComparison.Ordinal)
+        );
         retrieved.Should().NotBeNull();
         retrieved!.ToString().Should().Be(element.ToString());
     }
@@ -113,7 +115,9 @@ public sealed class BlobStorageDataProtectionIntegrationTests(AzuriteFixture fix
         foreach (var key in keys)
         {
             var keyId = key.Attribute("id")!.Value;
-            var retrieved = retrievedElements.FirstOrDefault(e => e.Attribute("id")?.Value == keyId);
+            var retrieved = retrievedElements.FirstOrDefault(e =>
+                string.Equals(e.Attribute("id")?.Value, keyId, StringComparison.Ordinal)
+            );
             retrieved.Should().NotBeNull($"key {keyId} should be retrieved");
             retrieved!.ToString().Should().Be(key.ToString());
         }
@@ -157,13 +161,15 @@ public sealed class BlobStorageDataProtectionIntegrationTests(AzuriteFixture fix
         var retrievedElements = repository.GetAllElements();
 
         // then
-        var retrieved = retrievedElements.FirstOrDefault(e => e.Attribute("id")?.Value == keyId);
+        var retrieved = retrievedElements.FirstOrDefault(e =>
+            string.Equals(e.Attribute("id")?.Value, keyId, StringComparison.Ordinal)
+        );
         retrieved.Should().NotBeNull();
 
         // Verify structure preserved
-        retrieved!.Attribute("version")?.Value.Should().Be("1");
+        retrieved!.Attribute("version")!.Value.Should().Be("1");
         retrieved.Element("descriptor").Should().NotBeNull();
-        retrieved.Element("descriptor")!.Attribute("type")?.Value.Should().Be("test-descriptor");
+        retrieved.Element("descriptor")!.Attribute("type")!.Value.Should().Be("test-descriptor");
         retrieved.Element("descriptor")!.Element("keyEncryptor").Should().NotBeNull();
         retrieved
             .Element("descriptor")!
@@ -209,7 +215,9 @@ public sealed class BlobStorageDataProtectionIntegrationTests(AzuriteFixture fix
         foreach (var key in keys)
         {
             var keyId = key.Attribute("id")!.Value;
-            var retrieved = retrievedElements.FirstOrDefault(e => e.Attribute("id")?.Value == keyId);
+            var retrieved = retrievedElements.FirstOrDefault(e =>
+                string.Equals(e.Attribute("id")?.Value, keyId, StringComparison.Ordinal)
+            );
             retrieved.Should().NotBeNull($"concurrent key {keyId} should be retrieved");
         }
     }

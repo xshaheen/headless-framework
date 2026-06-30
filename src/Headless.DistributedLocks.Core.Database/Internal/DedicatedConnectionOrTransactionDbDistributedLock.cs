@@ -228,11 +228,13 @@ internal sealed class DedicatedConnectionOrTransactionDbDistributedLock(
                     if (existing is null)
                     {
                         var newHandle = Connection.GetConnectionMonitoringHandle();
+#pragma warning disable MA0173 // LazyInitializer.EnsureInitialized cannot dispose the losing racer's IDisposable handle nor model the tri-state disposed sentinel; the hand-rolled CAS is required.
                         existing = Interlocked.CompareExchange(
                             ref _connectionMonitoringHandleOrDisposedSentinel,
                             newHandle,
                             comparand: null
                         );
+#pragma warning restore MA0173
 
                         if (existing is null)
                         {

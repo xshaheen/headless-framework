@@ -12,6 +12,19 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
     private readonly FakeFactoryCacheStore _store = new();
+    private readonly List<FactoryCacheCoordinator> _coordinators = [];
+
+    protected override ValueTask DisposeAsyncCore()
+    {
+        foreach (var coordinator in _coordinators)
+        {
+            coordinator.Dispose();
+        }
+
+        _coordinators.Clear();
+
+        return base.DisposeAsyncCore();
+    }
 
     [Fact]
     public void should_throw_when_time_provider_is_null()
@@ -1356,7 +1369,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
         var logger = Substitute.For<ILogger<FactoryCacheCoordinator>>();
         logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
-        var coordinator = new FactoryCacheCoordinator(_timeProvider, logger);
+        var coordinator = _CreateCoordinator(logger);
         var ceilingRegistered = _WaitForBackgroundCeilingRegistered(coordinator);
         var backgroundFinished = _WaitForBackgroundFinished(coordinator);
         var timeoutRegistered = _WaitForFactoryTimeoutRegistered(coordinator);
@@ -1416,7 +1429,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var key = Faker.Random.AlphaNumeric(8);
         var logger = Substitute.For<ILogger<FactoryCacheCoordinator>>();
         logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
-        var coordinator = new FactoryCacheCoordinator(_timeProvider, logger);
+        var coordinator = _CreateCoordinator(logger);
         var timeoutRegistered = _WaitForFactoryTimeoutRegistered(coordinator);
         var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var abandonedFactoryGate = new TaskCompletionSource<string?>(
@@ -1469,7 +1482,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var key = Faker.Random.AlphaNumeric(8);
         var logger = Substitute.For<ILogger<FactoryCacheCoordinator>>();
         logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
-        var coordinator = new FactoryCacheCoordinator(_timeProvider, logger);
+        var coordinator = _CreateCoordinator(logger);
         var options = _CreateOptions(
             duration: TimeSpan.FromSeconds(1),
             isFailSafeEnabled: false,
@@ -2881,7 +2894,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
         var logger = Substitute.For<ILogger<FactoryCacheCoordinator>>();
         logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
-        var coordinator = new FactoryCacheCoordinator(_timeProvider, logger);
+        var coordinator = _CreateCoordinator(logger);
         var timeoutRegistered = _WaitForFactoryTimeoutRegistered(coordinator);
         var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         // Gate the factory: it ignores cancellation and only completes when we signal it
@@ -3088,7 +3101,18 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
     private static void _RemoveEntryDirectly(FakeFactoryCacheStore store, string key) => store.RemoveEntry(key);
 
     private FactoryCacheCoordinator _CreateCoordinator() =>
-        new(_timeProvider, NullLogger<FactoryCacheCoordinator>.Instance);
+        _CreateCoordinator(NullLogger<FactoryCacheCoordinator>.Instance);
+
+    // Tracks every coordinator so it is disposed in teardown, regardless of how the test consumes it
+    // (inline fluent calls cannot take a `using`). Coordinator.Dispose is idempotent, so tests that
+    // dispose mid-run via `using var` are unaffected.
+    private FactoryCacheCoordinator _CreateCoordinator(ILogger<FactoryCacheCoordinator> logger)
+    {
+        var coordinator = new FactoryCacheCoordinator(_timeProvider, logger);
+        _coordinators.Add(coordinator);
+
+        return coordinator;
+    }
 
     private static Task _WaitForBackgroundFinished(FactoryCacheCoordinator coordinator)
     {

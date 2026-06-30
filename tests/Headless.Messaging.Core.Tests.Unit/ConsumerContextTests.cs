@@ -126,6 +126,8 @@ public sealed class ConsumerContextTestConsumer
 {
     public static ValueTask Consume(ContextTestMessage message, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+        Console.WriteLine($"Consumed message with value: {message.Value}");
         return ValueTask.CompletedTask;
     }
 }

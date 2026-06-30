@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Security.Cryptography;
+
 namespace Headless.Messaging.Retry;
 
 /// <summary>
@@ -38,9 +40,11 @@ public sealed class ExponentialBackoffStrategy(
         // Add jitter (±25% randomization to prevent thundering herd), then re-clamp so the
         // final delay never exceeds _maxDelay — otherwise the +25% upside silently violates
         // the documented "maximum delay between retries" contract.
-        var jitter = ((Random.Shared.NextDouble() * 0.5) - 0.25) * delayMs;
+        var jitter = ((_GetRandomUnitDouble() * 0.5) - 0.25) * delayMs;
         var finalDelayMs = Math.Clamp(delayMs + jitter, 0, _maxDelay.TotalMilliseconds);
 
         return RetryDecision.Continue(TimeSpan.FromMilliseconds(finalDelayMs));
     }
+
+    private static double _GetRandomUnitDouble() => RandomNumberGenerator.GetInt32(int.MaxValue) / (double)int.MaxValue;
 }

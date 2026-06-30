@@ -58,17 +58,28 @@ internal sealed class AzureServiceBusQueueTransport(
     {
         return _senders.GetOrAdd(
             queueName,
-            name => new Lazy<ServiceBusSender>(
-                () =>
-                {
-                    _client ??= busOptions.Value.TokenCredential is not null
-                        ? new ServiceBusClient(busOptions.Value.Namespace, busOptions.Value.TokenCredential)
-                        : new ServiceBusClient(busOptions.Value.ConnectionString);
-                    return _client.CreateSender(name);
-                },
-                LazyThreadSafetyMode.ExecutionAndPublication
-            )
+            static (name, transport) =>
+            {
+                var factory = new SenderFactory(transport, name);
+
+                return new Lazy<ServiceBusSender>(factory.Create, LazyThreadSafetyMode.ExecutionAndPublication);
+            },
+            this
         );
+    }
+
+    private ServiceBusSender _CreateSender(string queueName)
+    {
+        _client ??= busOptions.Value.TokenCredential is not null
+            ? new ServiceBusClient(busOptions.Value.Namespace, busOptions.Value.TokenCredential)
+            : new ServiceBusClient(busOptions.Value.ConnectionString);
+
+        return _client.CreateSender(queueName);
+    }
+
+    private sealed class SenderFactory(AzureServiceBusQueueTransport transport, string queueName)
+    {
+        public ServiceBusSender Create() => transport._CreateSender(queueName);
     }
 }
 

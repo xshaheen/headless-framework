@@ -252,7 +252,7 @@ public sealed class FeaturesInitializationBackgroundServiceTests : TestBase
                 return Task.FromResult<IReadOnlyList<FeatureGroupDefinition>>([]);
             });
 
-        var sut = _CreateSut(options);
+        using var sut = _CreateSut(options);
 
         // when
         await sut.StartAsync(AbortToken);
@@ -350,7 +350,7 @@ public sealed class FeaturesInitializationBackgroundServiceTests : TestBase
                 }
             });
 
-        var sut = _CreateSut(options);
+        using var sut = _CreateSut(options);
 
         // when - start with a cancellable token
         await sut.StartAsync(cts.Token);

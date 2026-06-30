@@ -50,9 +50,9 @@ public sealed class ConsumerRegisterTests : TestBase
 
         var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
         var handle = Activator.CreateInstance(handleType, nonPublic: true)!;
-
+        using var cts = new CancellationTokenSource();
         handleType.GetProperty("Logger")!.SetValue(handle, NullLogger<ConsumerRegister>.Instance);
-        handleType.GetProperty("Cts")!.SetValue(handle, new CancellationTokenSource());
+        handleType.GetProperty("Cts")!.SetValue(handle, cts);
         handleType.GetProperty("GroupName")!.SetValue(handle, "payments");
         handleType.GetProperty("ConsumerTasks")!.SetValue(handle, new ConcurrentBag<Task>());
 
@@ -179,7 +179,7 @@ public sealed class ConsumerRegisterTests : TestBase
 
         // Swap factory: first call returns a metadata client; per-thread calls return a
         // ready listener so ExecuteAsync can finish and expose the paused handle state.
-        var readyClient = new ReadyListeningConsumerClient();
+        await using var readyClient = new ReadyListeningConsumerClient();
         var callCount = 0;
         var factorySub = Substitute.For<IConsumerClientFactory>();
         factorySub
@@ -206,7 +206,7 @@ public sealed class ConsumerRegisterTests : TestBase
 
         // when — call ExecuteAsync directly (the internal path ReStartAsync uses after PulseAsync)
         var executeAsync = typeof(ConsumerRegister).GetMethod(
-            "ExecuteAsync",
+            nameof(ConsumerRegister.ExecuteAsync),
             BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
             binder: null,
             Type.EmptyTypes,
@@ -225,7 +225,9 @@ public sealed class ConsumerRegisterTests : TestBase
         var handles = groupHandlesField.GetValue(register)!;
         // Use dynamic to avoid compile-time knowledge of GroupHandle's private nested type
         var handleType = handles.GetType().GetGenericArguments()[1]; // ConcurrentDictionary<string, GroupHandle>
+#pragma warning disable REFL009 // The referenced member is not known to exist
         var tryGetMethod = handles.GetType().GetMethod("TryGetValue")!;
+#pragma warning restore REFL009
         var handleArgs = new object?[] { handleName, null };
         var found = (bool)tryGetMethod.Invoke(handles, handleArgs)!;
         found.Should().BeTrue("handle should have been created for the group");
@@ -248,7 +250,7 @@ public sealed class ConsumerRegisterTests : TestBase
             .GetField("_state", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly)!
             .SetValue(register, 1);
 
-        await register.OnTopologyChangedAsync();
+        await register.OnTopologyChangedAsync(AbortToken);
 
         var pendingRefresh = typeof(ConsumerRegister)
             .GetField(

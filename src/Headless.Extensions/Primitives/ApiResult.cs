@@ -93,7 +93,7 @@ public readonly struct ApiResult : IEquatable<ApiResult>
     /// <summary>Creates a failed result carrying the supplied error.</summary>
     /// <param name="error">The error describing the failure.</param>
     /// <returns>A failed <see cref="ApiResult"/>.</returns>
-    public static ApiResult Fail(ResultError error) => new(false, error);
+    public static ApiResult Fail(ResultError error) => new(isSuccess: false, error);
 
     // Generic factory methods (type inference)
 

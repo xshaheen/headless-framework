@@ -96,9 +96,9 @@ public static class CommonExtensions
     [RequiresUnreferencedCode("Uses Type.GetProperties which is not compatible with trimming.")]
     private static IEnumerable<(string Name, object? Value)> _ObjectToKV(object obj) =>
         from prop in obj.GetType().GetProperties()
-        let getter = prop.GetGetMethod(false)
+        let getter = prop.GetGetMethod(nonPublic: false)
         where getter is not null
-        let val = getter.Invoke(obj, null)
+        let val = getter.Invoke(obj, parameters: null)
         select (prop.Name, GetDeclaredTypeValue(val, prop.PropertyType));
 
     [RequiresUnreferencedCode("Uses Type.GetInterfaces which is not compatible with trimming.")]
@@ -160,7 +160,7 @@ public static class CommonExtensions
 
         if (prop is not null)
         {
-            value = prop.GetValue(obj, null);
+            value = prop.GetValue(obj, index: null);
             return true;
         }
 

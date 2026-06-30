@@ -421,8 +421,8 @@ public sealed class InMemoryConsumerClientTests : TestBase
     public async Task PauseAsync_is_idempotent_when_called_twice()
     {
         // when
-        await _client.PauseAsync();
-        await _client.PauseAsync();
+        await _client.PauseAsync(AbortToken);
+        await _client.PauseAsync(AbortToken);
 
         // then — no exception
     }
@@ -431,7 +431,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
     public async Task ResumeAsync_is_noop_when_not_paused()
     {
         // when
-        await _client.ResumeAsync();
+        await _client.ResumeAsync(AbortToken);
 
         // then — no exception
     }
@@ -440,8 +440,8 @@ public sealed class InMemoryConsumerClientTests : TestBase
     public async Task PauseAsync_then_ResumeAsync_completes_full_cycle()
     {
         // when
-        await _client.PauseAsync();
-        await _client.ResumeAsync();
+        await _client.PauseAsync(AbortToken);
+        await _client.ResumeAsync(AbortToken);
 
         // then — no exception
     }

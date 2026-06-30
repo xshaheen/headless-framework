@@ -396,7 +396,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
     private InternalFunctionContext _BuildContextFromNonGeneric(TimeJobEntity job)
     {
-        return new InternalFunctionContext
+        var context = new InternalFunctionContext
         {
             FunctionName = job.Function,
             JobId = job.Id,
@@ -406,8 +406,11 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             ParentId = job.ParentId,
             ExecutionTime = job.ExecutionTime ?? timeProvider.GetUtcNow().UtcDateTime,
             RunCondition = job.RunCondition ?? RunCondition.OnAnyCompletedStatus,
-            TimeJobChildren = [.. job.Children.Select(_BuildContextFromNonGeneric)],
         };
+
+        context.TimeJobChildren.AddRange(job.Children.Select(_BuildContextFromNonGeneric));
+
+        return context;
     }
 
     private async Task<List<TTimeJob>> _AddTimeJobsBatchAsync(

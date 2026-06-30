@@ -266,12 +266,12 @@ public sealed class AzureBlobStorage(
     {
         if (!response.IsError)
         {
-            return Result<bool, Exception>.Ok(true);
+            return Result<bool, Exception>.Ok(value: true);
         }
 
         if (response.Status == 404)
         {
-            return Result<bool, Exception>.Ok(false);
+            return Result<bool, Exception>.Ok(value: false);
         }
 
         return Result<bool, Exception>.Fail(new RequestFailedException(response.Status, response.ReasonPhrase));

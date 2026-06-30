@@ -233,7 +233,7 @@ internal sealed class MessageObservationStore(TimeProvider? timeProvider = null)
             MessageObservationType.Consumed => _consumed,
             MessageObservationType.Faulted => _faulted,
             MessageObservationType.Exhausted => _exhausted,
-            _ => throw new ArgumentOutOfRangeException(nameof(type), type, null),
+            _ => throw new ArgumentOutOfRangeException(nameof(type), type, message: null),
         };
 
     internal DateTimeOffset GetUtcNow() => _timeProvider.GetUtcNow();

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Security.Cryptography;
 using Headless.Checks;
 using Headless.DistributedLocks;
 using Headless.Messaging.CircuitBreaker;
@@ -135,7 +136,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
 
         if (!StartupJitterApplied)
         {
-            var jitter = TimeSpan.FromTicks((long)(_baseInterval.Ticks * Random.Shared.NextDouble()));
+            var jitter = TimeSpan.FromTicks((long)(_baseInterval.Ticks * _GetRandomUnitDouble()));
             await context.WaitAsync(jitter).ConfigureAwait(false);
             StartupJitterApplied = true;
         }
@@ -266,7 +267,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
             return;
         }
 
-        using var lossRegistration = _RegisterLeaseLossLogger(StoragePickupKind.Received, acquiredHandle);
+        await using var lossRegistration = _RegisterLeaseLossLogger(StoragePickupKind.Received, acquiredHandle);
 
         await _ExecuteReceivedWorkAsync(connection, context).ConfigureAwait(false);
     }
@@ -656,6 +657,8 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         cache[circuitBreakerGroup] = isOpen;
         return isOpen;
     }
+
+    private static double _GetRandomUnitDouble() => RandomNumberGenerator.GetInt32(int.MaxValue) / (double)int.MaxValue;
 }
 
 internal static partial class RetryProcessorLog

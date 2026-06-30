@@ -8,8 +8,6 @@ namespace Headless.Jobs.Models;
 
 public class InternalFunctionContext
 {
-    private HashSet<string> ParametersToUpdate { get; set; } = [];
-
     // Cached function delegate, priority, and max concurrency for performance optimization
     // Eliminates dictionary lookups during execution
     public JobFunctionDelegate CachedDelegate { get; set; } = null!;
@@ -36,17 +34,17 @@ public class InternalFunctionContext
 
     public DateTime ExecutionTime { get; set; }
     public RunCondition RunCondition { get; set; }
-    public List<InternalFunctionContext> TimeJobChildren { get; set; } = [];
+    public List<InternalFunctionContext> TimeJobChildren { get; } = [];
+
+    public HashSet<string> PropertiesToUpdate { get; } = [];
 
     [DynamicDependency(DynamicallyAccessedMemberTypes.PublicProperties, typeof(InternalFunctionContext))]
     public InternalFunctionContext SetProperty<T>(Expression<Func<InternalFunctionContext, T>> property, T value)
     {
-        ParametersToUpdate ??= [];
-
         if (property.Body is MemberExpression { Member: PropertyInfo prop })
         {
             prop.SetValue(this, value);
-            ParametersToUpdate.Add(prop.Name);
+            PropertiesToUpdate.Add(prop.Name);
         }
         else
         {
@@ -58,9 +56,7 @@ public class InternalFunctionContext
 
     public InternalFunctionContext ResetUpdateProps()
     {
-        ParametersToUpdate.Clear();
+        PropertiesToUpdate.Clear();
         return this;
     }
-
-    public HashSet<string> GetPropsToUpdate() => ParametersToUpdate;
 }

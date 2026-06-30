@@ -173,7 +173,7 @@ dotnet_diagnostic.CA1045.severity = suggestion
 # CA1047: Do not declare protected member in sealed type
 dotnet_diagnostic.CA1047.severity = warning
 # CA2227: Collection properties should be read only
-dotnet_diagnostic.CA2227.severity = suggestion
+dotnet_diagnostic.CA2227.severity = silent
 
 # --- Performance & allocations ---
 
@@ -276,6 +276,11 @@ dotnet_diagnostic.RCS1021.severity = silent
 dotnet_diagnostic.MA0025.severity = suggestion
 # MA0026: TO-DO comment
 dotnet_diagnostic.MA0026.severity = suggestion
+# MA0182: Internal type apparently never used — suppressed globally.
+# Systematic false-positive in this framework: internal types are frequently
+# registered via DI across InternalsVisibleTo seams (e.g. Headless.Api.Core types
+# registered in Headless.Api.ServiceDefaults), which the analyzer can't see.
+dotnet_diagnostic.MA0182.severity = none
 # FAA0002: Use AwesomeAssertions equivalent
 dotnet_diagnostic.FAA0002.severity = warning
 
@@ -845,3 +850,18 @@ resharper_using_statement_resource_initialization_highlighting = none
 
 # ReSharper - ShortLivedHttpClient
 resharper_short_lived_http_client_highlighting = none
+
+##########################################
+# Non-shipping code (demo / benchmarks / tests)
+#
+# Demo apps, benchmarks, and tests are not packaged or shipped, so a rule that is
+# valuable in src/ produces only noise here. It stays ACTIVE in src/ — this section
+# narrows it for non-shipping folders only.
+##########################################
+
+[{demo,benchmarks,tests}/**/*.cs]
+
+# CA5394: Do not use insecure randomness
+# Random.Shared is used for fake-data generation and timing jitter in demos,
+# benchmarks, and tests — not for anything security-sensitive.
+dotnet_diagnostic.CA5394.severity = none

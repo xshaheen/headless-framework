@@ -10,7 +10,7 @@ namespace Headless.Urls;
 [PublicAPI]
 public sealed class QueryParamCollection : IReadOnlyNameValueList<object?>
 {
-    private readonly NameValueList<QueryParamValue> _values = new(true);
+    private readonly NameValueList<QueryParamValue> _values = new(caseSensitiveNames: true);
 
     /// <summary>
     /// Returns a new instance of QueryParamCollection
@@ -30,7 +30,7 @@ public sealed class QueryParamCollection : IReadOnlyNameValueList<object?>
 
         _values.AddRange(
             from kv in query.TrimStart('?').ToKeyValuePairs()
-            select (kv.Key, new QueryParamValue(kv.Value, true))
+            select (kv.Key, new QueryParamValue(kv.Value, isEncoded: true))
         );
     }
 
@@ -48,7 +48,7 @@ public sealed class QueryParamCollection : IReadOnlyNameValueList<object?>
     /// <summary>
     /// Returns serialized, encoded query string. Insertion order is preserved.
     /// </summary>
-    public override string ToString() => ToString(false);
+    public override string ToString() => ToString(encodeSpaceAsPlus: false);
 
     /// <summary>
     /// Returns serialized, encoded query string. Insertion order is preserved.
@@ -73,7 +73,7 @@ public sealed class QueryParamCollection : IReadOnlyNameValueList<object?>
     public void AppendTo(StringBuilder sb, bool encodeSpaceAsPlus)
     {
         var first = true;
-        foreach (var p in _values)
+        foreach (var (parameterName, parameterValue) in _values)
         {
             if (!first)
             {
@@ -82,8 +82,8 @@ public sealed class QueryParamCollection : IReadOnlyNameValueList<object?>
 
             first = false;
 
-            var name = Url.EncodeIllegalCharacters(p.Name, encodeSpaceAsPlus);
-            var value = p.Value.Encode(encodeSpaceAsPlus);
+            var name = Url.EncodeIllegalCharacters(parameterName, encodeSpaceAsPlus);
+            var value = parameterValue.Encode(encodeSpaceAsPlus);
 
             sb.Append(name);
             if (value is not null)
@@ -200,16 +200,19 @@ public sealed class QueryParamCollection : IReadOnlyNameValueList<object?>
         // Scalar fast-path: null, string, and any non-IEnumerable value are not split, so yield
         // them directly. This mirrors the original branch order (null/string before IEnumerable)
         // and only the non-null, non-string IEnumerable case is recursively split below.
-        if (value is null or string || value is not IEnumerable en)
+        switch (value)
         {
-            yield return value;
-        }
-        else
-        {
-            foreach (var item in en.Cast<object?>().SelectMany(_SplitCollectionDelegate))
-            {
-                yield return item;
-            }
+            case IEnumerable en and not string:
+                foreach (var item in en.Cast<object?>().SelectMany(_SplitCollectionDelegate))
+                {
+                    yield return item;
+                }
+
+                break;
+
+            default:
+                yield return value;
+                break;
         }
     }
 
@@ -231,8 +234,8 @@ public sealed class QueryParamCollection : IReadOnlyNameValueList<object?>
         // Indexed loop avoids allocating the Select iterator + closure on every enumeration.
         for (var i = 0; i < _values.Count; i++)
         {
-            var qp = _values[i];
-            yield return (qp.Name, qp.Value.Value);
+            var (name, value) = _values[i];
+            yield return (name, value.Value);
         }
     }
 
@@ -260,10 +263,10 @@ public sealed class QueryParamCollection : IReadOnlyNameValueList<object?>
         // chaining GetAll(...) with a Select projection.
         for (var i = 0; i < _values.Count; i++)
         {
-            var qp = _values[i];
-            if (qp.Name.OrdinalEquals(name))
+            var (parameterName, parameterValue) = _values[i];
+            if (parameterName.OrdinalEquals(name))
             {
-                yield return qp.Value.Value;
+                yield return parameterValue.Value;
             }
         }
     }
@@ -277,8 +280,8 @@ public sealed class QueryParamCollection : IReadOnlyNameValueList<object?>
         // Indexed scan avoids the Any closure; compares the unwrapped value, not the QueryParamValue wrapper.
         for (var i = 0; i < _values.Count; i++)
         {
-            var qp = _values[i];
-            if (string.Equals(qp.Name, name, StringComparison.Ordinal) && Equals(qp.Value.Value, value))
+            var (parameterName, parameterValue) = _values[i];
+            if (string.Equals(parameterName, name, StringComparison.Ordinal) && Equals(parameterValue.Value, value))
             {
                 return true;
             }

@@ -19,7 +19,7 @@ namespace Headless.Jobs.Managers;
 /// <c>ITimeJobManager.AddAsync</c>.
 /// </remarks>
 /// <typeparam name="TTimeJob">The concrete time job entity type for this application.</typeparam>
-public class FluentChainJobBuilder<TTimeJob>
+public sealed class FluentChainJobBuilder<TTimeJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
 {
     private readonly TTimeJob _rootTicker;
@@ -208,7 +208,7 @@ public class FluentChainJobBuilder<TTimeJob>
     public static implicit operator TTimeJob(FluentChainJobBuilder<TTimeJob> builder) => builder.Build();
 
     // Individual child builders to prevent duplicate configuration
-    public class FirstChildBuilder
+    public sealed class FirstChildBuilder
     {
         private readonly FluentChainJobBuilder<TTimeJob> _mainBuilder;
         private readonly TTimeJob _child;
@@ -315,7 +315,7 @@ public class FluentChainJobBuilder<TTimeJob>
         public TTimeJob ToTTimeJob() => Build();
     }
 
-    public class SecondChildBuilder
+    public sealed class SecondChildBuilder
     {
         private readonly FluentChainJobBuilder<TTimeJob> _mainBuilder;
         private readonly TTimeJob _child;
@@ -419,7 +419,7 @@ public class FluentChainJobBuilder<TTimeJob>
         public TTimeJob ToTTimeJob() => Build();
     }
 
-    public class ThirdChildBuilder
+    public sealed class ThirdChildBuilder
     {
         private readonly FluentChainJobBuilder<TTimeJob> _mainBuilder;
         private readonly TTimeJob _child;
@@ -520,7 +520,7 @@ public class FluentChainJobBuilder<TTimeJob>
         public TTimeJob ToTTimeJob() => Build();
     }
 
-    public class FourthChildBuilder
+    public sealed class FourthChildBuilder
     {
         private readonly FluentChainJobBuilder<TTimeJob> _mainBuilder;
         private readonly TTimeJob _child;
@@ -618,7 +618,7 @@ public class FluentChainJobBuilder<TTimeJob>
         public TTimeJob ToTTimeJob() => Build();
     }
 
-    public class FifthChildBuilder
+    public sealed class FifthChildBuilder
     {
         private readonly FluentChainJobBuilder<TTimeJob> _mainBuilder;
         private readonly TTimeJob _child;
@@ -720,7 +720,7 @@ public class FluentChainJobBuilder<TTimeJob>
 /// Configures the root (parent) job in a <see cref="FluentChainJobBuilder{TTimeJob}"/> tree.
 /// </summary>
 /// <typeparam name="TTimeJob">The concrete time job entity type for this application.</typeparam>
-public class ParentBuilder<TTimeJob>
+public sealed class ParentBuilder<TTimeJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
 {
     private readonly TTimeJob _parent;
@@ -787,7 +787,7 @@ public class ParentBuilder<TTimeJob>
 /// Received as the argument to the <c>WithFirstChild</c> … <c>WithFifthChild</c> callbacks.
 /// </summary>
 /// <typeparam name="TTimeJob">The concrete time job entity type for this application.</typeparam>
-public class ChildBuilder<TTimeJob>
+public sealed class ChildBuilder<TTimeJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
 {
     private readonly TTimeJob _child;
@@ -864,7 +864,7 @@ public class ChildBuilder<TTimeJob>
 /// Received as the argument to the <c>With*GrandChild</c> callbacks on a <c>*ChildBuilder</c>.
 /// </summary>
 /// <typeparam name="TTimeJob">The concrete time job entity type for this application.</typeparam>
-public class GrandChildBuilder<TTimeJob>
+public sealed class GrandChildBuilder<TTimeJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
 {
     private readonly TTimeJob _grandChild;

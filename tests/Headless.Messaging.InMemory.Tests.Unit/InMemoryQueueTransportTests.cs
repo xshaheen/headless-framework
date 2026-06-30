@@ -90,7 +90,7 @@ public sealed class InMemoryQueueTransportTests : TestBase
         var message = _CreateTestMessage("msg-1", "test-messageName");
 
         // when
-        var result = await _transport.SendAsync(message);
+        var result = await _transport.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeTrue();
@@ -104,7 +104,7 @@ public sealed class InMemoryQueueTransportTests : TestBase
         var message = _CreateTestMessage("msg-1", "unsubscribed-messageName");
 
         // when
-        var result = await _transport.SendAsync(message);
+        var result = await _transport.SendAsync(message, AbortToken);
 
         // then — message is silently dropped; transport reports success (the send itself did not fail)
         result.Succeeded.Should().BeTrue();
