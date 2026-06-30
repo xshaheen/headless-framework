@@ -681,6 +681,28 @@ public abstract class BlobStorageTestsBase : TestBase
         withMetadata.Should().ContainSingle();
         withMetadata[0].Metadata.Should().NotBeNull();
         withMetadata[0].Metadata!["author"].Should().Be("blake");
+
+        // IncludeMetadata must survive query cloning across pages: stream a second blob with pageSize 1 so the
+        // continuation-token clone is exercised, and assert every page still carries metadata.
+        await using (var content2 = new MemoryStream("payload2"u8.ToArray()))
+        {
+            await storage.UploadAsync(_Loc("doc2.txt"), content2, metadata, AbortToken);
+        }
+
+        var streamed = new List<BlobInfo>();
+
+        await foreach (
+            var blob in storage.GetBlobsAsync(
+                new BlobQuery(ContainerName, pageSize: 1, includeMetadata: true),
+                AbortToken
+            )
+        )
+        {
+            streamed.Add(blob);
+        }
+
+        streamed.Should().HaveCount(2);
+        streamed.Should().OnlyContain(blob => blob.Metadata != null && blob.Metadata!["author"] == "blake");
     }
 
     public virtual async Task move_relocates_blob_and_metadata()

@@ -310,5 +310,36 @@ public sealed class DataProtectionBuilderExtensionsTests : TestBase
         managerFactoryInvoked.Should().BeTrue();
     }
 
+    [Fact]
+    public void should_not_fall_back_to_unkeyed_manager_when_factory_returns_null()
+    {
+        // A supplied factory is authoritative: returning null must NOT silently resolve the unkeyed default manager
+        // (which would ensure the wrong store's container). The unkeyed manager here must never be resolved.
+        var services = new ServiceCollection();
+        var unkeyedManager = Substitute.For<IBlobContainerManager>();
+        services.AddSingleton(unkeyedManager);
+        var builder = services.AddDataProtection();
+        var factoryReturnedNull = false;
+
+        // when
+        builder.PersistKeysToBlobStorage(
+            _ => Substitute.For<IBlobStorage>(),
+            _ =>
+            {
+                factoryReturnedNull = true;
+                return null;
+            }
+        );
+
+        // then
+        using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<KeyManagementOptions>>().Value;
+
+        factoryReturnedNull.Should().BeTrue();
+        options.XmlRepository.Should().BeOfType<BlobStorageDataProtectionXmlRepository>();
+        // The unkeyed manager was registered but must not have been touched, proving no silent fallback.
+        unkeyedManager.ReceivedCalls().Should().BeEmpty();
+    }
+
     #endregion
 }

@@ -44,7 +44,13 @@ public static class BlobStorageExtensions
                     yield break;
                 }
 
-                current = new BlobQuery(current.Container, current.Prefix, current.PageSize, page.ContinuationToken);
+                current = new BlobQuery(
+                    current.Container,
+                    current.Prefix,
+                    current.PageSize,
+                    page.ContinuationToken,
+                    current.IncludeMetadata
+                );
             }
         }
 
@@ -370,7 +376,13 @@ public static class BlobStorageExtensions
     {
         try
         {
-            return new BlobQuery(query.Container, prefix, query.PageSize, query.ContinuationToken);
+            return new BlobQuery(
+                query.Container,
+                prefix,
+                query.PageSize,
+                query.ContinuationToken,
+                query.IncludeMetadata
+            );
         }
         catch (ArgumentException)
         {

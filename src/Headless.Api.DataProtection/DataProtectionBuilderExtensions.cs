@@ -99,8 +99,12 @@ public static class DataProtectionBuilderExtensions
         builder.Services.AddSingleton<IConfigureOptions<KeyManagementOptions>>(services =>
         {
             var storage = storageFactory.Invoke(services);
-            var containerManager =
-                containerManagerFactory?.Invoke(services) ?? services.GetService<IBlobContainerManager>();
+            // Only fall back to the unkeyed manager when NO factory was supplied. When a factory is supplied its result
+            // is authoritative even if null (a keyed store whose manager resolves to null must not silently ensure the
+            // unkeyed default store's container — that mutates the wrong backend and still fails the keyed write).
+            var containerManager = containerManagerFactory is null
+                ? services.GetService<IBlobContainerManager>()
+                : containerManagerFactory.Invoke(services);
             var loggerFactory = services.GetService<ILoggerFactory>();
 
             return new ConfigureOptions<KeyManagementOptions>(options =>

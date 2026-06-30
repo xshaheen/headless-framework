@@ -115,13 +115,15 @@ public interface IBlobStorage : IAsyncDisposable
     /// found or <paramref name="destination"/> is already occupied.
     /// </returns>
     /// <remarks>
-    /// Move never overwrites: when <paramref name="destination"/> already exists the move is rejected and returns
+    /// Move rejects an occupied destination: when <paramref name="destination"/> already exists the move returns
     /// <see langword="false"/> without touching either blob (delete-then-move, or <see cref="CopyAsync"/> for
-    /// overwrite semantics). Move is otherwise a non-atomic copy-then-delete; if deleting the source fails after a
-    /// successful copy, the implementation makes a best-effort attempt to roll back by deleting the destination copy
-    /// so the original is preserved — safe because reject-occupied guarantees that copy is the one this move created.
-    /// A resolved self-move (source and destination resolving to the same backend address) is a no-op returning
-    /// <see langword="true"/>. On filesystem-like providers the metadata sidecar moves with the blob.
+    /// overwrite semantics). This pre-check is <b>non-atomic</b> on every provider except Redis (whose move is a single
+    /// atomic script): a destination created concurrently between the check and the copy may still be overwritten, so a
+    /// caller needing a hard no-overwrite guarantee must serialize moves to a key. Move is otherwise a non-atomic
+    /// copy-then-delete; if deleting the source fails after a successful copy, the implementation makes a best-effort
+    /// attempt to roll back by deleting the destination copy so the original is preserved. A resolved self-move (source
+    /// and destination resolving to the same backend address) is a no-op returning <see langword="true"/>. On
+    /// filesystem-like providers the metadata sidecar moves with the blob.
     /// </remarks>
     ValueTask<bool> MoveAsync(
         BlobLocation source,
