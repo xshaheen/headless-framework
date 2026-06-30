@@ -502,7 +502,6 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
     /// <summary>
     /// Gets diagnostic information about the scheduler state.
     /// </summary>
-#pragma warning disable CA1024 // This constructs a multi-line diagnostic snapshot, not a cheap property.
     public string GetDiagnostics()
     {
         var builder = new StringBuilder();
@@ -546,7 +545,6 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
 
         return builder.ToString();
     }
-#pragma warning restore CA1024
 
     /// <summary>
     /// Waits for all currently running tasks to complete.

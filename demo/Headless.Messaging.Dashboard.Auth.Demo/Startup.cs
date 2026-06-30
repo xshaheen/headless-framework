@@ -14,12 +14,10 @@ public class Startup
         AddMessagingWithOpenIdAndCustomAuthorization(services);
 
         services.AddCors(x =>
-        {
             x.AddDefaultPolicy(p =>
-            {
-                p.WithOrigins("https://localhost:5001").AllowCredentials().AllowAnyHeader().AllowAnyMethod();
-            });
-        });
+                p.WithOrigins("https://localhost:5001").AllowCredentials().AllowAnyHeader().AllowAnyMethod()
+            )
+        );
 
         services.AddControllers();
     }
@@ -31,10 +29,7 @@ public class Startup
         app.UseAuthentication();
         app.UseAuthorization();
         app.UseCookiePolicy();
-        app.UseEndpoints(endpoints =>
-        {
-            endpoints.MapControllers();
-        });
+        app.UseEndpoints(endpoints => endpoints.MapControllers());
     }
 
     public IServiceCollection AddMessagingWithOpenIdAuthorization(IServiceCollection services)

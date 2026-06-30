@@ -142,7 +142,7 @@ public sealed class CorrelationPrecedenceTests
     public void should_leave_traceparent_header_unchanged()
     {
         // given
-        var traceParent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00";
+        const string traceParent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00";
         var factory = _CreateFactory(selector: static message => message.Correlation);
 
         // when

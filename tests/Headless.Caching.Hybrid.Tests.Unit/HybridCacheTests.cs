@@ -408,7 +408,7 @@ public sealed class HybridCacheTests : TestBase
         var (cache, l1, l2, publisher) = _CreateCache();
         await using var _ = cache;
 
-        var prefix = "test:";
+        const string prefix = "test:";
         await l1.UpsertAsync($"{prefix}key1", 1, TimeSpan.FromMinutes(5), AbortToken);
         await l1.UpsertAsync($"{prefix}key2", 2, TimeSpan.FromMinutes(5), AbortToken);
         await l2.UpsertAsync($"{prefix}key1", 1, TimeSpan.FromMinutes(5), AbortToken);
@@ -495,7 +495,7 @@ public sealed class HybridCacheTests : TestBase
     public async Task should_ignore_self_originated_invalidation_messages()
     {
         // given
-        var instanceId = "instance-1";
+        const string instanceId = "instance-1";
         var options = new HybridCacheOptions { InstanceId = instanceId };
         var (cache, l1, _, _) = _CreateCache(options);
         await using var _ = cache;
@@ -547,7 +547,7 @@ public sealed class HybridCacheTests : TestBase
         var (cache, l1, _, _) = _CreateCache(options);
         await using var _ = cache;
 
-        var prefix = "user:";
+        const string prefix = "user:";
         await l1.UpsertAsync($"{prefix}1", 1, TimeSpan.FromMinutes(5), AbortToken);
         await l1.UpsertAsync($"{prefix}2", 2, TimeSpan.FromMinutes(5), AbortToken);
         await l1.UpsertAsync("other:1", 3, TimeSpan.FromMinutes(5), AbortToken);

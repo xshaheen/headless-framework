@@ -127,7 +127,7 @@ public sealed class KafkaConsumerClientTests : TestBase
             .CreateTopicsAsync(Arg.Any<IEnumerable<TopicSpecification>>(), Arg.Any<CreateTopicsOptions>())
             .Returns(Task.CompletedTask);
 
-        IConsumerClient client = new KafkaConsumerClient(
+        await using IConsumerClient client = new KafkaConsumerClient(
             "test-group",
             1,
             _options,
@@ -392,8 +392,8 @@ public sealed class KafkaConsumerClientTests : TestBase
         await using var client = new KafkaConsumerClient("test-group", 1, _options, _serviceProvider);
 
         // when — no consumer built yet, but should not throw
-        await client.PauseAsync();
-        await client.PauseAsync();
+        await client.PauseAsync(AbortToken);
+        await client.PauseAsync(AbortToken);
 
         // then — no exception
     }
@@ -405,7 +405,7 @@ public sealed class KafkaConsumerClientTests : TestBase
         await using var client = new KafkaConsumerClient("test-group", 1, _options, _serviceProvider);
 
         // when — never paused, resume should be a no-op
-        await client.ResumeAsync();
+        await client.ResumeAsync(AbortToken);
 
         // then — no exception
     }
@@ -417,8 +417,8 @@ public sealed class KafkaConsumerClientTests : TestBase
         await using var client = new KafkaConsumerClient("test-group", 1, _options, _serviceProvider);
 
         // when
-        await client.PauseAsync();
-        await client.ResumeAsync();
+        await client.PauseAsync(AbortToken);
+        await client.ResumeAsync(AbortToken);
 
         // then — no exception, state restored
     }
@@ -431,7 +431,7 @@ public sealed class KafkaConsumerClientTests : TestBase
         await client.DisposeAsync();
 
         // when — should not throw
-        await client.PauseAsync();
+        await client.PauseAsync(AbortToken);
     }
 
     [Fact]
@@ -442,7 +442,7 @@ public sealed class KafkaConsumerClientTests : TestBase
         await client.DisposeAsync();
 
         // when — should not throw
-        await client.ResumeAsync();
+        await client.ResumeAsync(AbortToken);
     }
 
     [Fact]
@@ -452,9 +452,9 @@ public sealed class KafkaConsumerClientTests : TestBase
         await using var client = new KafkaConsumerClient("test-group", 1, _options, _serviceProvider);
 
         // when
-        await client.PauseAsync();
-        await client.ResumeAsync();
-        await client.ResumeAsync(); // second resume is no-op
+        await client.PauseAsync(AbortToken);
+        await client.ResumeAsync(AbortToken);
+        await client.ResumeAsync(AbortToken); // second resume is no-op
 
         // then — no exception
     }

@@ -23,7 +23,7 @@ namespace Headless.DistributedLocks;
 /// </remarks>
 /// <param name="storage">Backend storage seam performing the native acquire/release.</param>
 /// <param name="releaseSignal">Wake-up seam used between retry attempts; polling is the correctness fallback.</param>
-/// <param name="options">Shared lock options, including resource-name length and waiter caps.</param>
+/// <param name="lockOptions">Shared lock options, including resource-name length and waiter caps.</param>
 /// <param name="guidGenerator">Source of per-acquisition lock ids.</param>
 /// <param name="timeProvider">Clock used for deadlines and waits (deterministic under test).</param>
 /// <param name="logger">Logger for release-failure diagnostics.</param>
@@ -33,7 +33,7 @@ namespace Headless.DistributedLocks;
 public sealed class ConnectionScopedDistributedLock(
     IConnectionScopedLockStorage storage,
     IReleaseSignal releaseSignal,
-    DistributedLockOptions options,
+    DistributedLockOptions lockOptions,
     IGuidGenerator guidGenerator,
     TimeProvider timeProvider,
     ILogger<ConnectionScopedDistributedLock> logger,
@@ -47,8 +47,8 @@ public sealed class ConnectionScopedDistributedLock(
     // Per-resource waiter accounting for DoS protection, sharing the same cap enforcement as the
     // sibling DistributedLock via the common WaiterCapRegistry.
     private readonly WaiterCapRegistry _waiterCaps = new(
-        options.MaxConcurrentWaitingResources,
-        options.MaxWaitersPerResource
+        lockOptions.MaxConcurrentWaitingResources,
+        lockOptions.MaxWaitersPerResource
     );
 
     /// <summary>
@@ -92,7 +92,7 @@ public sealed class ConnectionScopedDistributedLock(
     /// lock cannot be acquired before the acquire timeout elapses.
     /// </summary>
     /// <param name="resource">The resource to lock. Must be non-null, non-whitespace, and within the configured max length.</param>
-    /// <param name="acquireOptions">
+    /// <param name="options">
     /// Per-call options (acquire timeout, monitoring mode, release-on-dispose).
     /// <see langword="null"/> applies the defaults set on this instance.
     /// </param>
@@ -103,11 +103,11 @@ public sealed class ConnectionScopedDistributedLock(
     /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled.</exception>
     public Task<IDistributedLease?> TryAcquireAsync(
         string resource,
-        DistributedLockAcquireOptions? acquireOptions = null,
+        DistributedLockAcquireOptions? options = null,
         CancellationToken cancellationToken = default
     )
     {
-        return _AcquireCoreAsync(throwOnTimeout: false, resource, acquireOptions, isShared: false, cancellationToken);
+        return _AcquireCoreAsync(throwOnTimeout: false, resource, options, isShared: false, cancellationToken);
     }
 
     /// <summary>
@@ -135,19 +135,19 @@ public sealed class ConnectionScopedDistributedLock(
     private async Task<IDistributedLease?> _AcquireCoreAsync(
         bool throwOnTimeout,
         string resource,
-        DistributedLockAcquireOptions? acquireOptions,
+        DistributedLockAcquireOptions? options,
         bool isShared,
         CancellationToken cancellationToken
     )
     {
         Argument.IsNotNullOrWhiteSpace(resource);
 
-        Argument.IsLessThanOrEqualTo(resource.Length, options.MaxResourceNameLength, paramName: nameof(resource));
+        Argument.IsLessThanOrEqualTo(resource.Length, lockOptions.MaxResourceNameLength, paramName: nameof(resource));
 
-        DistributedLockCoreHelpers.ValidateAcquireTimeout(acquireOptions?.AcquireTimeout);
+        DistributedLockCoreHelpers.ValidateAcquireTimeout(options?.AcquireTimeout);
 
-        var acquireTimeout = acquireOptions?.AcquireTimeout ?? DefaultAcquireTimeout;
-        var observeLoss = (acquireOptions?.Monitoring ?? LockMonitoringMode.None) != LockMonitoringMode.None;
+        var acquireTimeout = options?.AcquireTimeout ?? DefaultAcquireTimeout;
+        var observeLoss = (options?.Monitoring ?? LockMonitoringMode.None) != LockMonitoringMode.None;
         var started = timeProvider.GetTimestamp();
         var deadline =
             acquireTimeout == Timeout.InfiniteTimeSpan
@@ -216,7 +216,7 @@ public sealed class ConnectionScopedDistributedLock(
                         handle,
                         fencingToken,
                         waited,
-                        acquireOptions?.ReleaseOnDispose ?? true,
+                        options?.ReleaseOnDispose ?? true,
                         timeProvider,
                         _ReleaseAsync,
                         logger

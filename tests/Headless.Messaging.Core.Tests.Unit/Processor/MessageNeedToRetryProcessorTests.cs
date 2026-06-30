@@ -398,7 +398,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         );
 
         // Set current interval to just above long.MaxValue / 2 in ticks — doubling would overflow
-        var nearMaxTicks = (long.MaxValue / 2) + 1;
+        const long nearMaxTicks = (long.MaxValue / 2) + 1;
         _SetCurrentInterval(sut, TimeSpan.FromTicks(nearMaxTicks));
 
         // when — invoke AdjustPollingInterval directly (enqueued=1, skippedCircuitOpen=9 → 90% > 50% threshold → backoff path)

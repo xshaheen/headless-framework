@@ -24,7 +24,7 @@ public sealed class TenantIdTagEnricherTests : TestBase
         };
 
         // when
-        await _enricher.Enrich(activity, context);
+        await _enricher.Enrich(activity, context, AbortToken);
 
         // then
         activity.GetTagItem("headless.messaging.tenant_id").Should().Be("tenant-123");
@@ -43,7 +43,7 @@ public sealed class TenantIdTagEnricherTests : TestBase
         };
 
         // when
-        await _enricher.Enrich(activity, context);
+        await _enricher.Enrich(activity, context, AbortToken);
 
         // then
         activity.GetTagItem("headless.messaging.tenant_id").Should().BeNull();
@@ -64,7 +64,7 @@ public sealed class TenantIdTagEnricherTests : TestBase
         };
 
         // when
-        await _enricher.Enrich(activity, context);
+        await _enricher.Enrich(activity, context, AbortToken);
 
         // then
         activity.GetTagItem("headless.messaging.tenant_id").Should().BeNull();

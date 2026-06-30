@@ -15,7 +15,7 @@ public sealed class IsConditionTests
     [Fact]
     public void is_should_throw_when_condition_is_false()
     {
-        var value = 5;
+        const int value = 5;
         var action = () => Argument.IsTrue(value > 10);
         var actionWithMessage = () => Argument.IsTrue(value > 10, "value too small");
 
@@ -36,7 +36,7 @@ public sealed class IsConditionTests
     [Fact]
     public void is_false_should_throw_when_condition_is_true()
     {
-        var value = 5;
+        const int value = 5;
         var action = () => Argument.IsFalse(value < 10);
         var actionWithMessage = () => Argument.IsFalse(value < 10, "value too large");
 

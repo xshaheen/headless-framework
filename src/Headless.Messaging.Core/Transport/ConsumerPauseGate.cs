@@ -42,13 +42,13 @@ internal sealed class ConsumerPauseGate
         {
             if (_disposed || _paused)
             {
-                return new ValueTask<bool>(false);
+                return new ValueTask<bool>(result: false);
             }
 
             _paused = true;
             _gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         }
-        return new ValueTask<bool>(true);
+        return new ValueTask<bool>(result: true);
     }
 
     /// <summary>
@@ -63,14 +63,14 @@ internal sealed class ConsumerPauseGate
         {
             if (_disposed || !_paused)
             {
-                return new ValueTask<bool>(false);
+                return new ValueTask<bool>(result: false);
             }
 
             _paused = false;
             gateToComplete = _gate;
         }
         gateToComplete.TrySetResult();
-        return new ValueTask<bool>(true);
+        return new ValueTask<bool>(result: true);
     }
 
     public void Release()

@@ -135,10 +135,7 @@ public sealed class HeadlessTenantWriteGuardTests(
 
         // when
         services.AddHeadlessTenantWriteGuard(
-            (_, provider) =>
-            {
-                resolvedMarkerId = provider.GetRequiredService<TenantWriteGuardOptionsMarker>().Id;
-            }
+            (_, provider) => resolvedMarkerId = provider.GetRequiredService<TenantWriteGuardOptionsMarker>().Id
         );
 
         using var provider = services.BuildServiceProvider();

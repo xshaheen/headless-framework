@@ -86,10 +86,7 @@ internal sealed class DiagnosticListener(
                             _Propagator.Inject(
                                 new PropagationContext(Activity.Current.Context, Baggage.Current),
                                 eventData.Message,
-                                (msg, key, value) =>
-                                {
-                                    msg.Headers[key] = value;
-                                }
+                                (msg, key, value) => msg.Headers[key] = value
                             );
                         }
                     }
@@ -199,10 +196,7 @@ internal sealed class DiagnosticListener(
                         _Propagator.Inject(
                             new PropagationContext(activity.Context, Baggage.Current),
                             eventData.TransportMessage,
-                            (msg, key, value) =>
-                            {
-                                msg.Headers[key] = value;
-                            }
+                            (msg, key, value) => msg.Headers[key] = value
                         );
                     }
                 }

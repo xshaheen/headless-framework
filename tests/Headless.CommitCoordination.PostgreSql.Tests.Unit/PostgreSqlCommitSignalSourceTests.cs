@@ -19,7 +19,8 @@ public sealed class PostgreSqlCommitSignalSourceTests
         );
         var calls = 0;
         var key = new object();
-        using var provider = new ServiceCollection().BuildServiceProvider();
+        await using var provider = new ServiceCollection().BuildServiceProvider();
+
         var scope = source.Attach(
             new CommitCoordinatorBindings { Services = provider, ProviderTransactionKey = key },
             CancellationToken.None

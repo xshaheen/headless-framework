@@ -51,18 +51,12 @@ builder
 
 const string dashboardPolicy = "DashboardPolicy";
 
-builder.Services.AddAuthorization(options =>
-{
-    options.AddPolicy(dashboardPolicy, policy => policy.RequireAuthenticatedUser());
-});
+builder.Services.AddAuthorizationBuilder().AddPolicy(dashboardPolicy, policy => policy.RequireAuthenticatedUser());
 
 builder.Services.AddHttpClient();
 
 // Jobs setup — no AddOperationalStore() means in-memory persistence by default
-builder.Services.AddHeadlessJobs(options =>
-{
-    options.AddDashboard(d => d.WithHostAuthentication(dashboardPolicy));
-});
+builder.Services.AddHeadlessJobs(options => options.AddDashboard(d => d.WithHostAuthentication(dashboardPolicy)));
 
 builder.Services.AddHostedService<DemoJobSeeder>();
 

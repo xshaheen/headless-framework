@@ -19,7 +19,7 @@ public sealed class EqualityTests
         // given
         const int value = 5;
         var action = () => Argument.IsEqualTo(value, 6);
-        var customMessage = "values differ";
+        const string customMessage = "values differ";
         var actionWithCustomMessage = () => Argument.IsEqualTo(value, 6, customMessage);
 
         // then

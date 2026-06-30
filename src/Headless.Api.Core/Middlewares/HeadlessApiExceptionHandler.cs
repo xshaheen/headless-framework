@@ -284,9 +284,7 @@ internal sealed partial class HeadlessApiExceptionHandler(
         // Iterative walk capped at depth so a pathological/cyclic InnerException chain cannot blow
         // the stack. AggregateException's children are visited recursively with the remaining depth
         // budget so a pathological nested-AggregateException tree cannot exceed the same total cap.
-        var depth = 0;
-
-        while (ex is not null && depth < maxDepth)
+        for (var depth = 0; ex is not null && depth < maxDepth; depth++)
         {
             if (ex is OperationCanceledException)
             {
@@ -313,7 +311,6 @@ internal sealed partial class HeadlessApiExceptionHandler(
             }
 
             ex = ex.InnerException;
-            depth++;
         }
 
         return false;

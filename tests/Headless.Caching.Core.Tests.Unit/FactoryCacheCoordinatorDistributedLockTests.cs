@@ -18,7 +18,10 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
     public async Task should_throw_before_store_access_when_option_enabled_without_provider()
     {
         // given — a coordinator constructed WITHOUT a factory lock provider
-        var coordinator = new FactoryCacheCoordinator(_timeProvider, NullLogger<FactoryCacheCoordinator>.Instance);
+        using var coordinator = new FactoryCacheCoordinator(
+            _timeProvider,
+            NullLogger<FactoryCacheCoordinator>.Instance
+        );
         var factoryCalls = 0;
 
         ValueTask<string?> factory(CancellationToken cancellationToken)
@@ -42,7 +45,7 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
     {
         // given
         var key = Faker.Random.AlphaNumeric(8);
-        var coordinator = _CreateCoordinator();
+        using var coordinator = _CreateCoordinator();
         var heldDuringFactory = false;
 
         ValueTask<string?> factory(CancellationToken cancellationToken)
@@ -241,7 +244,7 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
     {
         // given — a cold key, so there is no fail-safe fallback
         var key = Faker.Random.AlphaNumeric(8);
-        var coordinator = _CreateCoordinator();
+        using var coordinator = _CreateCoordinator();
 
         static ValueTask<string?> factory(CancellationToken cancellationToken) =>
             throw new InvalidOperationException("boom");
@@ -463,7 +466,7 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
         _lockProvider.AcquireFault = () => new InvalidOperationException("lock backend unavailable");
-        var coordinator = _CreateCoordinator();
+        using var coordinator = _CreateCoordinator();
         var factoryCalls = 0;
 
         ValueTask<string?> factory(CancellationToken cancellationToken)
@@ -491,7 +494,7 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
         _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
         using var callerCts = new CancellationTokenSource(); // not cancelled — identity match must suffice
         _lockProvider.AcquireFault = () => new OperationCanceledException(callerCts.Token);
-        var coordinator = _CreateCoordinator();
+        using var coordinator = _CreateCoordinator();
 
         // when
         var act = async () =>
@@ -518,7 +521,7 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
         using var callerCts = new CancellationTokenSource(); // not cancelled
         using var internalCts = new CancellationTokenSource();
         _lockProvider.AcquireFault = () => new OperationCanceledException(internalCts.Token);
-        var coordinator = _CreateCoordinator();
+        using var coordinator = _CreateCoordinator();
 
         // when
         var result = await coordinator.GetOrAddAsync<string>(
@@ -542,7 +545,7 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
         _lockProvider.ReleaseFault = () => new InvalidOperationException("release failed");
         var logger = Substitute.For<ILogger<FactoryCacheCoordinator>>();
         logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
-        var coordinator = new FactoryCacheCoordinator(_timeProvider, logger, _lockProvider);
+        using var coordinator = new FactoryCacheCoordinator(_timeProvider, logger, _lockProvider);
 
         // when — the release failure must never mask the operation's outcome
         var result = await coordinator.GetOrAddAsync<string>(

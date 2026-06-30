@@ -251,7 +251,7 @@ public sealed class ConsumerServiceSelector(IServiceProvider serviceProvider) : 
         {
             if (executeDescriptor[i].IntentType != intentType)
             {
-                return new WildcardCacheKey(group, null);
+                return new WildcardCacheKey(group, IntentType: null);
             }
         }
 

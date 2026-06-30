@@ -7,7 +7,7 @@ using StackExchange.Redis;
 
 namespace Headless.Messaging.Redis;
 
-internal class RedisConnectionPool : IRedisConnectionPool, IDisposable
+internal sealed class RedisConnectionPool : IRedisConnectionPool, IDisposable
 {
     private readonly ConcurrentBag<AsyncLazyRedisConnection> _connections = [];
 

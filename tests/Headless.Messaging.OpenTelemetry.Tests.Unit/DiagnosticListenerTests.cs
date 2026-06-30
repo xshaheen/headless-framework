@@ -173,9 +173,8 @@ public sealed class DiagnosticListenerTests : TestBase
         var failing = Substitute.For<IActivityTagEnricher>();
         failing
             .When(e =>
-            {
-                _ = e.Enrich(Arg.Any<Activity>(), Arg.Any<MessagingEnrichmentContext>(), Arg.Any<CancellationToken>());
-            })
+                _ = e.Enrich(Arg.Any<Activity>(), Arg.Any<MessagingEnrichmentContext>(), Arg.Any<CancellationToken>())
+            )
             .Throw(new InvalidOperationException("enricher failure"));
 
         var succeeding = Substitute.For<IActivityTagEnricher>();
@@ -204,9 +203,8 @@ public sealed class DiagnosticListenerTests : TestBase
         var failing = Substitute.For<IActivityTagEnricher>();
         failing
             .When(e =>
-            {
-                _ = e.Enrich(Arg.Any<Activity>(), Arg.Any<MessagingEnrichmentContext>(), Arg.Any<CancellationToken>());
-            })
+                _ = e.Enrich(Arg.Any<Activity>(), Arg.Any<MessagingEnrichmentContext>(), Arg.Any<CancellationToken>())
+            )
             .Throw(new InvalidOperationException("enricher failure"));
 
         var listener = new DiagnosticListener([failing]); // no logger
@@ -387,9 +385,8 @@ public sealed class DiagnosticListenerTests : TestBase
         var failing = Substitute.For<IActivityTagEnricher>();
         failing
             .When(e =>
-            {
-                _ = e.Enrich(Arg.Any<Activity>(), Arg.Any<MessagingEnrichmentContext>(), Arg.Any<CancellationToken>());
-            })
+                _ = e.Enrich(Arg.Any<Activity>(), Arg.Any<MessagingEnrichmentContext>(), Arg.Any<CancellationToken>())
+            )
             .Throw(new InvalidOperationException("enricher failure"));
 
         var listener = new DiagnosticListener([failing], logger);

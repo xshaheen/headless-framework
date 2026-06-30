@@ -552,7 +552,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     {
         // given
         await using var sut = _Create(failureThreshold: 1);
-        var circuitGroup = "1:test.group";
+        const string circuitGroup = "1:test.group";
         sut.RegisterGroupCallbacks(
             circuitGroup,
             onPause: () => ValueTask.CompletedTask,

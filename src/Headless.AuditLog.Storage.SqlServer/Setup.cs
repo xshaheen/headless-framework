@@ -26,10 +26,7 @@ public static class SetupAuditLogSqlServer
         {
             Argument.IsNotNullOrWhiteSpace(connectionString);
 
-            return setup.UseSqlServer(options =>
-            {
-                options.ConnectionString = connectionString;
-            });
+            return setup.UseSqlServer(options => options.ConnectionString = connectionString);
         }
 
         /// <summary>

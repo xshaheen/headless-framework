@@ -117,12 +117,7 @@ public sealed class JobsOptionsBuilderTests
 
         var builder = new JobsOptionsBuilder<FakeTimeJob, FakeCronJob>(executionContext, schedulerOptions);
 
-        builder.UseJobsSeeder(
-            async (ITimeJobManager<FakeTimeJob> _) =>
-            {
-                await Task.CompletedTask;
-            }
-        );
+        builder.UseJobsSeeder(async (ITimeJobManager<FakeTimeJob> _) => await Task.CompletedTask);
 
         var seeder = typeof(JobsOptionsBuilder<FakeTimeJob, FakeCronJob>)
             .GetProperty(

@@ -34,7 +34,7 @@ public sealed class EndpointsExtensionsWireShapeTests : TestBase
 
         // then
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        response.Content.Headers.ContentType?.MediaType.Should()?.Be("application/problem+json");
 
         var json = await response.Content.ReadAsStringAsync(AbortToken);
         using var doc = JsonDocument.Parse(json);

@@ -352,11 +352,13 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
                 )
                 : null;
         var lockProvider = new FakeCacheFactoryLockProvider();
-        var coordinator = new FactoryCacheCoordinator(
+
+        using var coordinator = new FactoryCacheCoordinator(
             _timeProvider,
             NullLogger<FactoryCacheCoordinator>.Instance,
             lockProvider
         );
+
         var factoryCalls = 0;
 
         // when
@@ -1777,8 +1779,10 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var key = Faker.Random.AlphaNumeric(8);
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         _store.SetEntry(key, "old", now.AddMinutes(5), now.AddMinutes(5), eagerRefreshAt: now.AddSeconds(-1));
-        var coordinator = _CreateCoordinator();
+        using var coordinator = _CreateCoordinator();
+#pragma warning disable CA2025 // Do not pass 'IDisposable' instances into unawaited tasks
         var backgroundFinished = _WaitForBackgroundFinished(coordinator);
+#pragma warning restore CA2025
         var options = _CreateOptions(duration: TimeSpan.FromMinutes(10), eagerRefreshThreshold: 0.5f);
 
         // when

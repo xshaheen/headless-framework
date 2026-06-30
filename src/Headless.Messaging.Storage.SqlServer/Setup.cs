@@ -29,10 +29,7 @@ public static class SetupSqlServerMessaging
         {
             Argument.IsNotNullOrWhiteSpace(connectionString);
 
-            return setup.UseSqlServer(opt =>
-            {
-                opt.ConnectionString = connectionString;
-            });
+            return setup.UseSqlServer(opt => opt.ConnectionString = connectionString);
         }
 
         /// <summary>

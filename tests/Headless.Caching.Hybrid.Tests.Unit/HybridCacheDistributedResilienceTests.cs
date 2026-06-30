@@ -201,7 +201,7 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
     public async Task should_keep_l1_tag_invalidation_and_trip_circuit_when_l2_marker_bump_fails()
     {
         // given — an entry tagged and present in both tiers
-        var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         using var l2 = new TogglableRemoteCache(_timeProvider);
         var cache = _CreateCache(
             l1,

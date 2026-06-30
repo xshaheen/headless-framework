@@ -134,13 +134,16 @@ public sealed class SetupApiTenancyTests
     {
         // given
         var services = new ServiceCollection();
-        services.AddAuthorization(options =>
-        {
-            options.DefaultPolicy = new AuthorizationPolicyBuilder()
-                .RequireAuthenticatedUser()
-                .AddRequirements(new TenantRequirement())
-                .Build();
-        });
+
+        services
+            .AddAuthorizationBuilder()
+            .SetDefaultPolicy(
+                new AuthorizationPolicyBuilder()
+                    .RequireAuthenticatedUser()
+                    .AddRequirements(new TenantRequirement())
+                    .Build()
+            );
+
         var manifest = new TenantPostureManifest();
         manifest.RecordSeam(HeadlessAuthorizationTenancyBuilder.Seam, TenantPostureStatus.Enforcing);
         using var serviceProvider = services.BuildServiceProvider();
@@ -158,13 +161,16 @@ public sealed class SetupApiTenancyTests
     {
         // given
         var services = new ServiceCollection();
-        services.AddAuthorization(options =>
-        {
-            options.FallbackPolicy = new AuthorizationPolicyBuilder()
-                .RequireAuthenticatedUser()
-                .AddRequirements(new TenantRequirement())
-                .Build();
-        });
+
+        services
+            .AddAuthorizationBuilder()
+            .SetFallbackPolicy(
+                new AuthorizationPolicyBuilder()
+                    .RequireAuthenticatedUser()
+                    .AddRequirements(new TenantRequirement())
+                    .Build()
+            );
+
         var manifest = new TenantPostureManifest();
         manifest.RecordSeam(HeadlessAuthorizationTenancyBuilder.Seam, TenantPostureStatus.Enforcing);
         using var serviceProvider = services.BuildServiceProvider();

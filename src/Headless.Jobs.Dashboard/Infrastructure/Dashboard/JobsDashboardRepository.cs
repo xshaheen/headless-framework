@@ -527,7 +527,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
         var pastDaysWithData = pastData.Count;
         var futureDaysWithData = futureData.Count;
 
-        var remainingSlots = maxTotalDays - 1; // Exclude today
+        const int remainingSlots = maxTotalDays - 1; // Exclude today
         var emptyPastSlots = Math.Max(0, (remainingSlots - futureDaysWithData) / 2);
         var emptyFutureSlots = Math.Max(0, remainingSlots - pastDaysWithData - emptyPastSlots);
 

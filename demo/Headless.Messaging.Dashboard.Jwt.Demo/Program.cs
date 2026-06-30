@@ -51,10 +51,7 @@ builder
 
 const string dashboardPolicy = "DashboardPolicy";
 
-builder.Services.AddAuthorization(options =>
-{
-    options.AddPolicy(dashboardPolicy, policy => policy.RequireAuthenticatedUser());
-});
+builder.Services.AddAuthorizationBuilder().AddPolicy(dashboardPolicy, policy => policy.RequireAuthenticatedUser());
 
 builder.Services.AddHttpClient();
 

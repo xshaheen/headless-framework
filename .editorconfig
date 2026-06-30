@@ -270,7 +270,7 @@ dotnet_diagnostic.MA0047.severity = warning
 # --- Style & maintainability ---
 
 # RCS1021: Convert lambda expression body to expression-body
-dotnet_diagnostic.RCS1021.severity = suggestion
+dotnet_diagnostic.RCS1021.severity = silent
 # MA0025: Implement the functionality (or raise NotSupportedException)
 # Tests intentionally throw NotImplementedException to exercise exception-handler mapping
 dotnet_diagnostic.MA0025.severity = suggestion

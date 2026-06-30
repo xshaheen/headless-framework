@@ -14,7 +14,6 @@ namespace Headless.Messaging;
 [PublicAPI]
 public record ConsumeContext
 {
-    private CancellationToken _cancellationToken;
     private volatile bool _isCompleted;
 
     /// <summary>
@@ -34,11 +33,7 @@ public record ConsumeContext
     /// <summary>
     /// Gets the cancellation token currently active for this consume operation.
     /// </summary>
-    public CancellationToken CancellationToken
-    {
-        get => _cancellationToken;
-        internal init => _cancellationToken = value;
-    }
+    public CancellationToken CancellationToken { get; internal set; }
 
     internal object? Response { get; private set; }
 
@@ -56,7 +51,7 @@ public record ConsumeContext
             throw new InvalidOperationException("ConsumeContext is read-only after the consumer has completed.");
         }
 
-        _cancellationToken = cancellationToken;
+        CancellationToken = cancellationToken;
     }
 
     /// <summary>

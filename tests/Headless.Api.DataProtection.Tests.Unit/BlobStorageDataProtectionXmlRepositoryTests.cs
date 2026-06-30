@@ -160,7 +160,7 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
         var blobs = new List<BlobInfo> { _CreateBlobInfo("test-key.xml") };
         _SetupStorageWithBlobs(storage, blobs);
 
-        var xmlContent = """
+        const string xmlContent = """
             <key id="test-123" version="1">
               <creationDate>2026-01-01T00:00:00Z</creationDate>
               <encryptedKey>base64data</encryptedKey>
@@ -243,7 +243,7 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
         // XXE attack attempt - external entity declaration
         // In .NET 5+, XElement.Load() has DTD processing disabled by default
         // The entity reference will be included literally, not resolved
-        var xxeXml = """
+        const string xxeXml = """
             <?xml version="1.0"?>
             <!DOCTYPE key [
               <!ENTITY xxe SYSTEM "file:///etc/passwd">

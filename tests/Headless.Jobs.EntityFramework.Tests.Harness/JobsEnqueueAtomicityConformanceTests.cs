@@ -227,10 +227,7 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
 
             await fixture.RunCoordinatedTransactionAsync(
                 host.Services,
-                async (_, _, innerCt) =>
-                {
-                    (await manager.AddAsync(_CronJob(), innerCt)).Should().NotBeNull();
-                },
+                async (_, _, innerCt) => (await manager.AddAsync(_CronJob(), innerCt)).Should().NotBeNull(),
                 ct
             );
 

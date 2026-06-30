@@ -606,7 +606,9 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
 
         public AlreadyCanceledHandle()
         {
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
             _cancellationTokenSource.Cancel();
+#pragma warning restore MA0045
         }
 
         public CancellationToken ConnectionLostToken => _cancellationTokenSource.Token;

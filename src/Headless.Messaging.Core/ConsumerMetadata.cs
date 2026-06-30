@@ -10,8 +10,8 @@ namespace Headless.Messaging;
 /// <param name="MessageName">The message name to subscribe to.</param>
 /// <param name="Group">The consumer group name (Kafka group.id or RabbitMQ queue name).</param>
 /// <param name="Concurrency">The maximum number of messages to process concurrently.</param>
-/// <param name="HandlerId">The deterministic handler identity used for duplicate detection and diagnostics.</param>
 /// <param name="IntentType">The delivery intent used to subscribe this consumer.</param>
+/// <param name="HandlerId">The deterministic handler identity used for duplicate detection and diagnostics.</param>
 /// <remarks>
 /// This record stores the configuration metadata for a consumer registered via
 /// <c>ForMessage&lt;TMessage&gt;(...)</c> or assembly scanning.

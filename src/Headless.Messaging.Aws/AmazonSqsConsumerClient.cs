@@ -67,7 +67,7 @@ internal sealed class AmazonSqsConsumerClient(
             return queueUrls;
         }
 
-        await _ConnectAsync(true, false, cancellationToken).ConfigureAwait(false);
+        await _ConnectAsync(initSns: true, initSqs: false, cancellationToken).ConfigureAwait(false);
 
         var topicArns = new List<string>();
         foreach (var topic in messageNames)

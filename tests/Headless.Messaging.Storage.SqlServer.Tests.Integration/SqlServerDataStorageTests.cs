@@ -38,10 +38,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
             x.Schema = "messaging";
             x.Version = "v1"; // Must match MessagingOptions.Version for retry queries
         });
-        services.Configure<MessagingOptions>(x =>
-        {
-            x.Version = "v1";
-        });
+        services.Configure<MessagingOptions>(x => x.Version = "v1");
         services.AddSingleton<IStorageInitializer, SqlServerStorageInitializer>();
         services.AddSingleton<ISerializer, JsonUtf8Serializer>();
 

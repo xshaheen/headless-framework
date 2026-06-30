@@ -147,10 +147,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
             {
                 Servers = fixture.ConnectionString,
                 EnableSubscriberClientStreamAndSubjectCreation = true,
-                StreamOptions = config =>
-                {
-                    config.Storage = StreamConfigStorage.Memory;
-                },
+                StreamOptions = config => config.Storage = StreamConfigStorage.Memory,
             }
         );
 

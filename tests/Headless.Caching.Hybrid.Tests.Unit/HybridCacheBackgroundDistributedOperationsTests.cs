@@ -277,7 +277,7 @@ public sealed class HybridCacheBackgroundDistributedOperationsTests : TestBase
         // other tests cover: when the flag is on, the invalidation broadcast runs in the detached tail, so the
         // caller must not block on it (FusionCache CanExecuteBackgroundBackplaneOperations analog — our framework
         // backgrounds the publish together with the L2 write under the single flag rather than a separate one).
-        var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         var l2 = new InMemoryRemoteCacheAdapter(
             new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true })
         );

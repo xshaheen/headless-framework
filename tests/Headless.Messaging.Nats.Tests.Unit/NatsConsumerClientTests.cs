@@ -258,15 +258,15 @@ public sealed class NatsConsumerClientTests : TestBase
     {
         await using var client = _CreateClient("test-group");
 
-        await client.PauseAsync();
-        await client.PauseAsync();
+        await client.PauseAsync(AbortToken);
+        await client.PauseAsync(AbortToken);
     }
 
     [Fact]
     public async Task ResumeAsync_is_noop_when_not_paused()
     {
         await using var client = _CreateClient("test-group");
-        await client.ResumeAsync();
+        await client.ResumeAsync(AbortToken);
     }
 
     [Fact]
@@ -274,8 +274,8 @@ public sealed class NatsConsumerClientTests : TestBase
     {
         await using var client = _CreateClient("test-group");
 
-        await client.PauseAsync();
-        await client.ResumeAsync();
+        await client.PauseAsync(AbortToken);
+        await client.ResumeAsync(AbortToken);
     }
 
     [Fact]
@@ -283,9 +283,9 @@ public sealed class NatsConsumerClientTests : TestBase
     {
         await using var client = _CreateClient("test-group");
 
-        await client.PauseAsync();
-        await client.ResumeAsync();
-        await client.ResumeAsync();
+        await client.PauseAsync(AbortToken);
+        await client.ResumeAsync(AbortToken);
+        await client.ResumeAsync(AbortToken);
     }
 
     [Fact]
@@ -294,7 +294,7 @@ public sealed class NatsConsumerClientTests : TestBase
         var client = _CreateClient("test-group");
         await client.DisposeAsync();
 
-        await client.PauseAsync();
+        await client.PauseAsync(AbortToken);
     }
 
     [Fact]
@@ -303,7 +303,7 @@ public sealed class NatsConsumerClientTests : TestBase
         var client = _CreateClient("test-group");
         await client.DisposeAsync();
 
-        await client.ResumeAsync();
+        await client.ResumeAsync(AbortToken);
     }
 
     // CommitAsync / RejectAsync tests
@@ -530,7 +530,7 @@ public sealed class NatsConsumerClientTests : TestBase
             (_, _, _) => Task.FromResult(consumer)
         );
         await client.SubscribeAsync(["orders.created", "orders.updated"]);
-        await client.PauseAsync();
+        await client.PauseAsync(AbortToken);
 
         using var cts = new CancellationTokenSource();
 

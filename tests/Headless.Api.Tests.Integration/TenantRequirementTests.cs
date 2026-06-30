@@ -248,20 +248,23 @@ public sealed class TenantRequirementTests : TestBase
 
         builder.Services.AddSingleton<IAuthorizationHandler, AlwaysFailRequirementHandler>();
         builder.Services.AddTestAuthentication(registerForbidScheme: true);
-        builder.Services.AddAuthorization(options =>
-        {
-            options.FallbackPolicy = new AuthorizationPolicyBuilder(HttpTenancyTestHarness.Scheme)
-                .RequireAuthenticatedUser()
-                .AddRequirements(new TenantRequirement())
-                .Build();
-            options.AddPolicy(
+
+        builder
+            .Services.AddAuthorizationBuilder()
+            .SetFallbackPolicy(
+                new AuthorizationPolicyBuilder(HttpTenancyTestHarness.Scheme)
+                    .RequireAuthenticatedUser()
+                    .AddRequirements(new TenantRequirement())
+                    .Build()
+            )
+            .AddPolicy(
                 "TenantAndDenied",
                 policy =>
                     policy
                         .RequireAuthenticatedUser()
                         .AddRequirements(new TenantRequirement(), new AlwaysFailRequirement())
             );
-        });
+
         if (registerCustomAuthResultHandler)
         {
             // Registered after AddHeadlessTenancy() to verify the typed-feature contract survives
@@ -313,7 +316,7 @@ public sealed class TenantRequirementTests : TestBase
 
     private async Task _AssertTenantRequiredProblemDetailsAsync(HttpResponseMessage response)
     {
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        response.Content.Headers.ContentType?.MediaType.Should()?.Be("application/problem+json");
         var json = await response.Content.ReadAsStringAsync(AbortToken);
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;

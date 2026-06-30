@@ -199,7 +199,7 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
             // Conservatively invalidate the tracked minimum: we don't hold _admissionLock here, so we can't
             // cheaply confirm whether this item was the minimum. Null forces a one-time re-scan on the next
             // queue-full add. Volatile ensures the write is visible to threads entering Enqueue.
-            Volatile.Write(ref _minExpiryItem, null);
+            Volatile.Write(ref _minExpiryItem, value: null);
             _logger.LogAutoRecoveryItemSuperseded(key, item.Kind);
         }
     }
@@ -337,7 +337,7 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
                     // Invalidate the tracked minimum so the next queue-full Enqueue re-scans rather
                     // than trusting a pointer that may now refer to a removed item. Volatile matches
                     // the write pattern used by OnSuccessfulL2Operation and _TryRemoveConflicting.
-                    Volatile.Write(ref _minExpiryItem, null);
+                    Volatile.Write(ref _minExpiryItem, value: null);
                     _logger.LogAutoRecoveryItemExpired(pair.Key, pair.Value.Kind);
                 }
             }
@@ -375,7 +375,7 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
                         {
                             // Invalidate the tracked minimum so the next queue-full Enqueue re-scans rather than
                             // trusting a pointer that may now refer to a removed item.
-                            Volatile.Write(ref _minExpiryItem, null);
+                            Volatile.Write(ref _minExpiryItem, value: null);
                             _logger.LogAutoRecoveryItemDroppedAfterRetries(
                                 exception,
                                 item.Key,

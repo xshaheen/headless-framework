@@ -609,7 +609,7 @@ public sealed partial class HybridCache(
 
                     if (!value.HasValue)
                     {
-                        return new CacheValueWithExpiration<ICollection<T>>(value, null);
+                        return new CacheValueWithExpiration<ICollection<T>>(value, expiration: null);
                     }
 
                     var expiration = await l2Cache.GetExpirationAsync(key, ct).ConfigureAwait(false);

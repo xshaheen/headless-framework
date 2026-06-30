@@ -44,28 +44,19 @@ builder.Services.AddDbContextFactory<PermissionsMigrationDbContext>(options =>
     options.UseNpgsql(connectionString, b => b.MigrationsAssembly(Assembly.GetExecutingAssembly().FullName))
 );
 
-builder.Services.AddHeadlessPermissions(setup =>
-{
-    setup.UseEntityFramework<PermissionsMigrationDbContext>();
-});
+builder.Services.AddHeadlessPermissions(setup => setup.UseEntityFramework<PermissionsMigrationDbContext>());
 
 builder.Services.AddDbContextFactory<SettingsMigrationDbContext>(options =>
     options.UseNpgsql(connectionString, b => b.MigrationsAssembly(Assembly.GetExecutingAssembly().FullName))
 );
 
-builder.Services.AddHeadlessSettings(setup =>
-{
-    setup.UseEntityFramework<SettingsMigrationDbContext>();
-});
+builder.Services.AddHeadlessSettings(setup => setup.UseEntityFramework<SettingsMigrationDbContext>());
 
 builder.Services.AddDbContextFactory<FeaturesMigrationDbContext>(options =>
     options.UseNpgsql(connectionString, b => b.MigrationsAssembly(Assembly.GetExecutingAssembly().FullName))
 );
 
-builder.Services.AddHeadlessFeatures(setup =>
-{
-    setup.UseEntityFramework<FeaturesMigrationDbContext>();
-});
+builder.Services.AddHeadlessFeatures(setup => setup.UseEntityFramework<FeaturesMigrationDbContext>());
 
 var app = builder.Build();
 

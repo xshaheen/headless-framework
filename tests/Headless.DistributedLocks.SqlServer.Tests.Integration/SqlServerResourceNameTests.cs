@@ -62,7 +62,7 @@ public sealed class SqlServerResourceNameTests : TestBase
     [Fact]
     public void should_encode_special_characters_correctly()
     {
-        var specialResource = "lock:resource-with-special_chars#$@!";
+        const string specialResource = "lock:resource-with-special_chars#$@!";
         SqlServerResourceName.Encode(specialResource).Should().Be(specialResource);
 
         var longSpecialResource =

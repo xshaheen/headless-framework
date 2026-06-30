@@ -334,12 +334,7 @@ public sealed class IdempotencyMiddlewareCustomHooksTests : IdempotencyMiddlewar
         // Endpoint metadata adds PUT to the methods
         var endpoint = new Endpoint(
             _ => Task.CompletedTask,
-            new EndpointMetadataCollection(
-                new IdempotencyMetadata(o =>
-                {
-                    ((HashSet<string>)o.Methods).Add("PUT");
-                })
-            ),
+            new EndpointMetadataCollection(new IdempotencyMetadata(o => ((HashSet<string>)o.Methods).Add("PUT"))),
             "test"
         );
         context.Features.Set<IEndpointFeature>(new EndpointFeature { Endpoint = endpoint });
