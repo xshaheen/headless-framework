@@ -152,11 +152,13 @@ public sealed class ConsumerRegistryExtensionsTests
         IntentType intentType,
         string messageName,
         Dictionary<Type, object> providerConfigs
-    ) =>
-        new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), messageName, group, 1, intentType)
+    )
+    {
+        return new(typeof(TestMessage), typeof(TestConsumer), messageName, group, 1, intentType)
         {
             ProviderConfigs = providerConfigs,
         };
+    }
 
     private sealed record FakeConsumerConfig(string Value);
 

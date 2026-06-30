@@ -253,7 +253,7 @@ public sealed class AzureBlobStorage(
         {
             // The whole container is missing, so every requested blob is simply "not found" -> Ok(false), matching
             // the per-blob not-found semantics of a single delete rather than reporting an operation failure.
-            return blobNames.Select(_ => Result<bool, Exception>.Ok(false)).ToList();
+            return blobNames.Select(_ => Result<bool, Exception>.Ok(value: false)).ToList();
         }
     }
 

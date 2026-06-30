@@ -142,7 +142,7 @@ internal sealed class PostgresFencingTokenSource(
                 await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
             }
 
-            Volatile.Write(ref _sequenceEnsured, true);
+            Volatile.Write(ref _sequenceEnsured, value: true);
         }
         finally
         {

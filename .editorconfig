@@ -82,7 +82,7 @@ indent_size = 2
 insert_final_newline = true
 
 # .NET
-[*.{cs,csx,cake,vb,vbx}]
+[*.cs]
 insert_final_newline = true
 
 # Batch Files
@@ -103,245 +103,156 @@ trim_trailing_whitespace = false
 insert_final_newline = false
 
 ##########################################
-# ReSharper Rules
-# ReSharper / inspectcode severity alignment
-# The SDK's Roslyn analyzer severities (Headless.NET.Sdk.Analyzers.editorconfig) are injected via
-# MSBuild and are read by the COMPILER only -- ReSharper / Rider / `jb inspectcode` never see them,
-# so those tools report at each rule's analyzer-default and drown real findings in by-design noise.
-# The resharper_* keys below re-state the intent for the IDE/inspectcode side. They affect
-# ReSharper-based tooling only (zero compiler impact); the SDK build config stays the source of
-# truth for Roslyn (CA*/RCS*/MA*) rule severities. Extend this block per repo as needed.
+# Analyzer Diagnostic Severities
+#
+# Roslyn analyzer-rule severities, grouped by intent. Families: CA* (NetAnalyzers),
+# RCS* (Roslynator), MA* (Meziantou), VSTHRD*/AsyncFixer*/Asyncify* (async & threading),
+# FAA* (AwesomeAssertions), CS* (compiler). The default below leaves every other rule at
+# its analyzer default; the per-rule lines tune the ones we care about.
 ##########################################
 
-[*.{cs,csx,cake,vb,vbx}]
+[*.cs]
 
-# XML Docs
-resharper_xmldoc_indent_child_elements = remove_indent
-resharper_xmldoc_indent_text = remove_indent
-resharper_xmldoc_blank_line_after_pi = true
-resharper_xmldoc_space_before_self_closing = true
-resharper_xmldoc_wrap_tags_and_pi = false
-resharper_xmldoc_keep_user_linebreaks = true
-
-# .NET align preferences
-resharper_int_align_comments = true
-resharper_align_multiline_binary_expressions_chain = false
-resharper_int_align_fields = false
-resharper_int_align_assignments = false
-resharper_int_align_nested_ternary = false
-resharper_int_align_switch_expressions = false
-resharper_int_align_switch_sections = false
-resharper_int_align_property_patterns = false
-
-# Keep as its
-resharper_keep_existing_primary_constructor_declaration_parens_arrangement = false
-resharper_keep_existing_declaration_parens_arrangement = false
-resharper_keep_existing_invocation_parens_arrangement = true
-resharper_keep_existing_attribute_arrangement = true
-resharper_keep_existing_linebreaks = true
-resharper_keep_existing_arrangement = true
-resharper_keep_existing_initializer_arrangement = true
-resharper_keep_existing_embedded_arrangement = false
-resharper_keep_existing_expr_member_arrangement = true
-resharper_keep_existing_property_patterns_arrangement = false
-resharper_keep_existing_switch_expression_arrangement = false
-
-# Blank lines
-resharper_enforce_line_ending_style = true
-resharper_wrap_lines = false
-resharper_keep_user_linebreaks = true
-resharper_wrap_before_declaration_lpar = false
-resharper_wrap_before_declaration_rpar = true
-resharper_wrap_after_invocation_lpar = true
-resharper_wrap_before_invocation_rpar = true
-resharper_csharp_wrap_arguments_style = chop_if_long
-resharper_csharp_wrap_before_first_type_parameter_constraint = true
-resharper_csharp_wrap_parameters_style = chop_if_long
-resharper_wrap_arguments_style = wrap_if_long
-resharper_wrap_parameters_style = chop_if_long
-resharper_wrap_before_binary_opsign = false
-resharper_wrap_before_eq = false
-resharper_wrap_before_first_type_parameter_constraint = true
-resharper_wrap_verbatim_interpolated_strings = no_wrap
-resharper_wrap_before_linq_expression = true
-resharper_wrap_before_arrow_with_expressions = false
-resharper_blank_lines_after_control_transfer_statements = 1
-resharper_blank_lines_after_multiline_statements = 1
-resharper_blank_lines_around_single_line_auto_property = 1
-resharper_blank_lines_around_single_line_local_method = 1
-resharper_blank_lines_around_single_line_property = 1
-resharper_blank_lines_before_block_statements = 1
-resharper_blank_lines_before_control_transfer_statements = 1
-resharper_blank_lines_before_multiline_statements = 1
-
-# Preferences
-resharper_place_expr_accessor_on_single_line = true
-resharper_place_expr_method_on_single_line = true
-resharper_place_expr_property_on_single_line = true
-resharper_arguments_skip_single = true
-resharper_arguments_string_literal = named
-resharper_outdent_commas = true
-resharper_empty_block_style = together_same_line
-resharper_nested_ternary_style = simple_wrap
-resharper_place_simple_enum_on_single_line = true
-resharper_place_linq_into_on_new_line = false
-resharper_place_simple_accessorholder_on_single_line = true
-resharper_braces_for_ifelse = required_for_multiline
-resharper_arguments_literal = named
-resharper_wrap_object_and_collection_initializer_style = chop_if_long
-resharper_place_simple_embedded_statement_on_same_line = false
-resharper_space_within_single_line_array_initializer_braces = true
-
-# ReSharper inspection severities
-resharper_arrange_redundant_parentheses_highlighting = hint
-resharper_arrange_this_qualifier_highlighting = hint
-resharper_arrange_type_member_modifiers_highlighting = hint
-resharper_arrange_type_modifiers_highlighting = hint
-resharper_built_in_type_reference_style_highlighting = hint
-resharper_check_namespace_highlighting = warning
-resharper_heap_view_can_avoid_closure_highlighting = hint
-resharper_html_tag_not_closed_highlighting = warning
-resharper_mvc_action_not_resolved_highlighting = suggestion
-resharper_mvc_area_not_resolved_highlighting = suggestion
-resharper_mvc_controller_not_resolved_highlighting = suggestion
-resharper_mvc_invalid_model_type_highlighting = warning
-resharper_mvc_partial_view_not_resolved_highlighting = suggestion
-resharper_mvc_template_not_resolved_highlighting = suggestion
-resharper_mvc_view_component_not_resolved_highlighting = suggestion
-resharper_mvc_view_component_view_not_resolved_highlighting = suggestion
-resharper_mvc_view_not_resolved_highlighting = suggestion
-resharper_not_accessed_positional_property_global_highlighting = suggestion
-resharper_razor_layout_not_resolved_highlighting = suggestion
-resharper_redundant_argument_default_value_highlighting = suggestion
-resharper_redundant_base_qualifier_highlighting = warning
-resharper_redundant_suppress_nullable_warning_expression_highlighting = none
-resharper_suggest_var_or_type_built_in_types_highlighting = hint
-resharper_suggest_var_or_type_elsewhere_highlighting = hint
-resharper_suggest_var_or_type_simple_types_highlighting = hint
-resharper_unused_auto_property_accessor_global_highlighting = suggestion
-resharper_unused_auto_property_accessor_local_highlighting = suggestion
-resharper_unused_type_parameter_highlighting = suggestion
-
-##########################################
-# SDK analyzer baseline -- mirrored for Rider visibility
-# Source of truth: Headless.NET.Sdk/configurations/Headless.NET.Sdk.Analyzers.editorconfig (injected by the SDK
-# as an is_global analyzer config the COMPILER honors but Rider/ReSharper/inspectcode cannot see). Restated here
-# as a sectioned editorconfig the IDE reads, so its warnings match the build. Keep in sync with the SDK file by
-# re-running .context/scripts/assemble-editorconfig.sh after bumping the Headless SDK.
-##########################################
-[*.{cs,csx,cake,vb,vbx}]
-
-##########################################
-# Severities (analyzer diagnostics)
-##########################################
-
-# Default Severity for all .NET Code Style rules
+# Default severity for all .NET code-analysis rules
 dotnet_analyzer_diagnostic.severity = default
 
-# CA1848: Use the LoggerMessage delegates
-dotnet_diagnostic.CA1848.severity = silent
-# CA1863: Cache a 'CompositeFormat' for repeated use in this formatting operation
-dotnet_diagnostic.CA1863.severity = suggestion
-# CA5394: Do not use insecure randomness
-dotnet_diagnostic.CA5394.severity = suggestion
-# CA1861: Avoid constant arrays as arguments
-dotnet_diagnostic.CA1861.severity = suggestion
-# CA1716: Identifiers should not match keywords
-dotnet_diagnostic.CA1716.severity = none
-# CA1000: Do not declare static members on generic types
-dotnet_diagnostic.CA1000.severity = suggestion
-# CA1859: Use concrete types when possible for improved performance
-dotnet_diagnostic.CA1859.severity = suggestion
-# CA1024: Use properties where appropriate
-dotnet_diagnostic.CA1024.severity = suggestion
-# CA1310: Specify StringComparison for correctness
-dotnet_diagnostic.CA1310.severity = suggestion
-# CA1307: Specify StringComparison for clarity
-dotnet_diagnostic.CA1307.severity = suggestion
-# CA1305: Specify IFormatProvider
-dotnet_diagnostic.CA1305.severity = suggestion
-# CA1304: Specify CultureInfo
-dotnet_diagnostic.CA1304.severity = suggestion
+# --- Globalization & culture ---
+
 # CA1303: Do not pass literals as localized parameters
 dotnet_diagnostic.CA1303.severity = suggestion
+# CA1304: Specify CultureInfo
+dotnet_diagnostic.CA1304.severity = suggestion
+# CA1305: Specify IFormatProvider
+dotnet_diagnostic.CA1305.severity = suggestion
+# CA1307: Specify StringComparison for clarity
+dotnet_diagnostic.CA1307.severity = suggestion
 # CA1309: Use ordinal StringComparison
 dotnet_diagnostic.CA1309.severity = suggestion
-# CA1805: Do not initialize unnecessarily.
-dotnet_diagnostic.CA1805.severity = suggestion
+# CA1310: Specify StringComparison for correctness
+dotnet_diagnostic.CA1310.severity = suggestion
+# MA0006: Use String.Equals instead of equality operator
+dotnet_diagnostic.MA0006.severity = suggestion
+
+# --- Naming ---
+
 # CA1707: Identifiers should not contain underscores
 dotnet_diagnostic.CA1707.severity = warning
 # CA1708: Identifiers should differ by more than case
 dotnet_diagnostic.CA1708.severity = warning
-# CA1715: Identifiers should have correct prefix
-dotnet_diagnostic.CA1715.severity = warning
 # CA1712: Do not prefix enum values with type name
 dotnet_diagnostic.CA1712.severity = warning
+# CA1715: Identifiers should have correct prefix
+dotnet_diagnostic.CA1715.severity = warning
+# CA1716: Identifiers should not match keywords
+dotnet_diagnostic.CA1716.severity = none
 # CA1720: Identifiers should not contain type names
 dotnet_diagnostic.CA1720.severity = suggestion
 # CA1725: Parameter names should match base declaration
 dotnet_diagnostic.CA1725.severity = suggestion
-# CA2009: Do not call ToImmutableCollection on an ImmutableCollection value
-dotnet_diagnostic.CA2009.severity = warning
-# CA1851: Possible multiple enumerations of 'IEnumerable' collection
-dotnet_diagnostic.CA1851.severity = suggestion
+
+# --- Design & API surface ---
+
+# CA1000: Do not declare static members on generic types
+dotnet_diagnostic.CA1000.severity = suggestion
 # CA1008: Enums should have zero value
 dotnet_diagnostic.CA1008.severity = suggestion
-# CA2249: Consider using 'string.Contains' instead of 'string.IndexOf'
-dotnet_diagnostic.CA2249.severity = warning
 # CA1018: Mark attributes with AttributeUsageAttribute
 dotnet_diagnostic.CA1018.severity = warning
+# CA1019: Define accessors for attribute arguments
+dotnet_diagnostic.CA1019.severity = suggestion
+# CA1024: Use properties where appropriate
+dotnet_diagnostic.CA1024.severity = suggestion
+# CA1027: Mark enums with FlagsAttribute
+dotnet_diagnostic.CA1027.severity = none
+# CA1028: Enum Storage should be Int32
+dotnet_diagnostic.CA1028.severity = suggestion
+# CA1036: A class that implements IComparable<T> or IComparable should override comparison operators
+dotnet_diagnostic.CA1036.severity = suggestion
 # CA1045: Do not pass types by reference
 dotnet_diagnostic.CA1045.severity = suggestion
 # CA1047: Do not declare protected member in sealed type
 dotnet_diagnostic.CA1047.severity = warning
+# CA2227: Collection properties should be read only
+dotnet_diagnostic.CA2227.severity = suggestion
+
+# --- Performance & allocations ---
+
+# CA1805: Do not initialize unnecessarily.
+dotnet_diagnostic.CA1805.severity = suggestion
+# CA1823: Avoid unused private fields
+dotnet_diagnostic.CA1823.severity = suggestion
 # CA1825: Avoid zero-length array allocations
 dotnet_diagnostic.CA1825.severity = warning
-# CA1827: Do not use Count() or LongCount() when Any() can be used
-dotnet_diagnostic.CA1827.severity = warning
 # CA1826: Do not use Enumerable methods on indexable collections. Instead use the collection directly
 dotnet_diagnostic.CA1826.severity = warning
+# CA1827: Do not use Count() or LongCount() when Any() can be used
+dotnet_diagnostic.CA1827.severity = warning
 # CA1829: Use Length/Count property instead of Count() when available
 dotnet_diagnostic.CA1829.severity = warning
 # CA1831|CA1832|CA1833: Use AsSpan or AsMemory instead of Range-based indexers when appropriate
 dotnet_diagnostic.CA1831.severity = warning
 dotnet_diagnostic.CA1832.severity = warning
 dotnet_diagnostic.CA1833.severity = warning
-# CA1837: Use 'Environment.ProcessId'
-dotnet_diagnostic.CA1837.severity = warning
 # CA1836: Prefer IsEmpty over Count
 dotnet_diagnostic.CA1836.severity = warning
-# CA1036: A class that implements IComparable<T> or IComparable should override comparison operators
-dotnet_diagnostic.CA1036.severity = suggestion
-# CA1019: Define accessors for attribute arguments
-dotnet_diagnostic.CA1019.severity = suggestion
-# CA2227: Collection properties should be read only
-dotnet_diagnostic.CA2227.severity = suggestion
-# CA1028: Enum Storage should be Int32
-dotnet_diagnostic.CA1028.severity = suggestion
-# CA1027: Mark enums with FlagsAttribute
-dotnet_diagnostic.CA1027.severity = none
-# CA1823: Avoid unused private fields
-dotnet_diagnostic.CA1823.severity = suggestion
+# CA1837: Use 'Environment.ProcessId'
+dotnet_diagnostic.CA1837.severity = warning
+# CA1848: Use the LoggerMessage delegates
+dotnet_diagnostic.CA1848.severity = silent
+# CA1851: Possible multiple enumerations of 'IEnumerable' collection
+dotnet_diagnostic.CA1851.severity = suggestion
+# CA1859: Use concrete types when possible for improved performance
+dotnet_diagnostic.CA1859.severity = suggestion
+# CA1861: Avoid constant arrays as arguments
+dotnet_diagnostic.CA1861.severity = suggestion
+# CA1863: Cache a 'CompositeFormat' for repeated use in this formatting operation
+dotnet_diagnostic.CA1863.severity = suggestion
 
-# FAA0002: Use AwesomeAssertions equivalent
-dotnet_diagnostic.FAA0002.severity = warning
+# --- Async & threading ---
 
-# RCS1021: Convert lambda expression body to expression-body
-dotnet_diagnostic.RCS1021.severity = suggestion
-# VSTHRD002: Avoid problematic synchronous waits
-dotnet_diagnostic.VSTHRD002.severity = none
+dotnet_diagnostic.CA2011.severity = warning
+dotnet_diagnostic.CA2012.severity = warning
 # MA0045: Do not use blocking call (make method async)
 dotnet_diagnostic.MA0045.severity = suggestion
-# MA0025: Implement the functionality (or raise NotSupportedException)
-# Tests intentionally throw NotImplementedException to exercise exception-handler mapping
-dotnet_diagnostic.MA0025.severity = suggestion
-# MA0026: TO-DO comment
-dotnet_diagnostic.MA0026.severity = suggestion
 # MA0079: Forward the CancellationToken using .WithCancellation()
 dotnet_diagnostic.MA0079.severity = warning
-# MA0006: Use String.Equals instead of equality operator
-dotnet_diagnostic.MA0006.severity = suggestion
+dotnet_diagnostic.MA0080.severity = warning
+dotnet_diagnostic.AsyncFixer02.severity = warning
+dotnet_diagnostic.AsyncFixer03.severity = warning
+dotnet_diagnostic.AsyncFixer04.severity = warning
+dotnet_diagnostic.AsyncFixer05.severity = warning
+dotnet_diagnostic.AsyncifyInvocation.severity = warning
+dotnet_diagnostic.AsyncifyVariable.severity = warning
+# VSTHRD002: Avoid problematic synchronous waits
+dotnet_diagnostic.VSTHRD002.severity = none
+dotnet_diagnostic.VSTHRD100.severity = warning
+dotnet_diagnostic.VSTHRD101.severity = warning
+dotnet_diagnostic.VSTHRD103.severity = warning
+dotnet_diagnostic.VSTHRD107.severity = warning
+dotnet_diagnostic.VSTHRD110.severity = warning
+dotnet_diagnostic.VSTHRD114.severity = warning
 
+# --- Security ---
+
+dotnet_diagnostic.CA5350.severity = warning
+dotnet_diagnostic.CA5351.severity = warning
+dotnet_diagnostic.CA5359.severity = warning
+dotnet_diagnostic.CA5360.severity = warning
+dotnet_diagnostic.CA5364.severity = warning
+dotnet_diagnostic.CA5379.severity = warning
+dotnet_diagnostic.CA5384.severity = warning
+dotnet_diagnostic.CA5385.severity = warning
+# CA5394: Do not use insecure randomness
+dotnet_diagnostic.CA5394.severity = suggestion
+
+# --- Correctness & reliability ---
+
+# CA2009: Do not call ToImmutableCollection on an ImmutableCollection value
+dotnet_diagnostic.CA2009.severity = warning
+dotnet_diagnostic.CA2016.severity = warning
+# CA2249: Consider using 'string.Contains' instead of 'string.IndexOf'
+dotnet_diagnostic.CA2249.severity = warning
+dotnet_diagnostic.CS0184.severity = warning
 # Earlier always-on promotions (correctness/reliability) kept regardless of consumer .editorconfig.
 dotnet_diagnostic.MA0001.severity = warning
 dotnet_diagnostic.MA0002.severity = warning
@@ -356,36 +267,17 @@ dotnet_diagnostic.MA0037.severity = error
 dotnet_diagnostic.MA0039.severity = error
 dotnet_diagnostic.MA0047.severity = warning
 
-# Async/threading safety
-dotnet_diagnostic.AsyncFixer02.severity = warning
-dotnet_diagnostic.AsyncFixer03.severity = warning
-dotnet_diagnostic.AsyncFixer04.severity = warning
-dotnet_diagnostic.AsyncFixer05.severity = warning
-dotnet_diagnostic.VSTHRD100.severity = warning
-dotnet_diagnostic.VSTHRD101.severity = warning
-dotnet_diagnostic.VSTHRD103.severity = warning
-dotnet_diagnostic.VSTHRD107.severity = warning
-dotnet_diagnostic.VSTHRD110.severity = warning
-dotnet_diagnostic.VSTHRD114.severity = warning
-dotnet_diagnostic.AsyncifyInvocation.severity = warning
-dotnet_diagnostic.AsyncifyVariable.severity = warning
-dotnet_diagnostic.MA0080.severity = warning
-dotnet_diagnostic.CA2011.severity = warning
-dotnet_diagnostic.CA2012.severity = warning
+# --- Style & maintainability ---
 
-# Security
-dotnet_diagnostic.CA5350.severity = warning
-dotnet_diagnostic.CA5351.severity = warning
-dotnet_diagnostic.CA5359.severity = warning
-dotnet_diagnostic.CA5360.severity = warning
-dotnet_diagnostic.CA5364.severity = warning
-dotnet_diagnostic.CA5379.severity = warning
-dotnet_diagnostic.CA5384.severity = warning
-dotnet_diagnostic.CA5385.severity = warning
-
-# Correctness
-dotnet_diagnostic.CA2016.severity = warning
-dotnet_diagnostic.CS0184.severity = warning
+# RCS1021: Convert lambda expression body to expression-body
+dotnet_diagnostic.RCS1021.severity = suggestion
+# MA0025: Implement the functionality (or raise NotSupportedException)
+# Tests intentionally throw NotImplementedException to exercise exception-handler mapping
+dotnet_diagnostic.MA0025.severity = suggestion
+# MA0026: TO-DO comment
+dotnet_diagnostic.MA0026.severity = suggestion
+# FAA0002: Use AwesomeAssertions equivalent
+dotnet_diagnostic.FAA0002.severity = warning
 
 ##########################################
 # Code Style
@@ -655,89 +547,271 @@ dotnet_naming_rule.interface_rule.style = prefix_interface_with_i_style
 dotnet_naming_rule.interface_rule.severity = warning
 
 ##########################################
-# Repo-local override: demos & benchmarks are illustrative (CA5394 = fake-data RNG), not production.
+# C# Formatting Rules
+# https://docs.microsoft.com/dotnet/fundamentals/code-analysis/style-rules/formatting-rules
 ##########################################
-[demo/**/*.cs]
-dotnet_diagnostic.CA5394.severity = none
 
-[benchmarks/**/*.cs]
-dotnet_diagnostic.CA5394.severity = none
+# Newline options
+csharp_new_line_before_open_brace = all
+csharp_new_line_before_else = true
+csharp_new_line_before_catch = true
+csharp_new_line_before_finally = true
+csharp_new_line_before_members_in_anonymous_types = true
+csharp_new_line_between_query_expression_clauses = true
+# Indentation options
+csharp_indent_case_contents = true
+csharp_indent_switch_labels = true
+csharp_indent_labels = no_change
+csharp_indent_block_contents = true
+csharp_indent_braces = false
+csharp_indent_case_contents_when_block = false
+# Spacing options
+csharp_space_after_cast = false
+csharp_space_after_keywords_in_control_flow_statements = true
+csharp_space_before_colon_in_inheritance_clause = true
+csharp_space_after_colon_in_inheritance_clause = true
+csharp_space_around_binary_operators = before_and_after
+csharp_space_between_method_declaration_parameter_list_parentheses = false
+csharp_space_between_method_declaration_empty_parameter_list_parentheses = false
+csharp_space_between_method_declaration_name_and_open_parenthesis = false
+csharp_space_between_method_call_parameter_list_parentheses = false
+csharp_space_between_method_call_empty_parameter_list_parentheses = false
+csharp_space_between_method_call_name_and_opening_parenthesis = false
+csharp_space_after_comma = true
+csharp_space_before_comma = false
+csharp_space_after_dot = false
+csharp_space_before_dot = false
+csharp_space_after_semicolon_in_for_statement = true
+csharp_space_before_semicolon_in_for_statement = false
+csharp_space_around_declaration_statements = false
+csharp_space_before_open_square_brackets = false
+csharp_space_between_empty_square_brackets = false
+csharp_space_between_square_brackets = false
+# Wrap options
+csharp_preserve_single_line_statements = false
+csharp_preserve_single_line_blocks = true
 
 ##########################################
-# Test projects — disposal inspections are by-design noise
-# Test-lifetime objects don't need deterministic disposal: xUnit owns the fixture lifecycle and the
-# test host is short-lived. This mirrors the SDK's injected Headless.NET.Sdk.Tests.editorconfig (which
-# the compiler honors but ReSharper/Rider/inspectcode cannot see). The resharper_* keys affect IDE
-# tooling only; the dotnet_diagnostic keys also relax the test build, which is the intended behavior.
+# ReSharper
+#
+# ReSharper / inspectcode severity alignment.
+# The SDK's Roslyn analyzer severities (Headless.NET.Sdk.Analyzers.editorconfig) are injected via
+# MSBuild and are read by the COMPILER only -- ReSharper / Rider / `jb inspectcode` never see them,
+# so those tools report at each rule's analyzer-default and drown real findings in by-design noise.
+# The resharper_* keys below re-state the intent for the IDE/inspectcode side. They affect
+# ReSharper-based tooling only (zero compiler impact); the SDK build config stays the source of
+# truth for Roslyn (CA*/RCS*/MA*) rule severities. Extend this block per repo as needed.
+
+# XML Docs
+resharper_xmldoc_indent_child_elements = remove_indent
+resharper_xmldoc_indent_text = remove_indent
+resharper_xmldoc_blank_line_after_pi = true
+resharper_xmldoc_space_before_self_closing = true
+resharper_xmldoc_wrap_tags_and_pi = false
+resharper_xmldoc_keep_user_linebreaks = true
+
+# .NET align preferences
+resharper_int_align_comments = true
+resharper_align_multiline_binary_expressions_chain = false
+resharper_int_align_fields = false
+resharper_int_align_assignments = false
+resharper_int_align_nested_ternary = false
+resharper_int_align_switch_expressions = false
+resharper_int_align_switch_sections = false
+resharper_int_align_property_patterns = false
+
+# Keep as its
+resharper_keep_existing_primary_constructor_declaration_parens_arrangement = false
+resharper_keep_existing_declaration_parens_arrangement = false
+resharper_keep_existing_invocation_parens_arrangement = true
+resharper_keep_existing_attribute_arrangement = true
+resharper_keep_existing_linebreaks = true
+resharper_keep_existing_arrangement = true
+resharper_keep_existing_initializer_arrangement = true
+resharper_keep_existing_embedded_arrangement = false
+resharper_keep_existing_expr_member_arrangement = true
+resharper_keep_existing_property_patterns_arrangement = false
+resharper_keep_existing_switch_expression_arrangement = false
+
+# Blank lines
+resharper_enforce_line_ending_style = true
+resharper_wrap_lines = false
+resharper_keep_user_linebreaks = true
+resharper_wrap_before_declaration_lpar = false
+resharper_wrap_before_declaration_rpar = true
+resharper_wrap_after_invocation_lpar = true
+resharper_wrap_before_invocation_rpar = true
+resharper_csharp_wrap_arguments_style = chop_if_long
+resharper_csharp_wrap_before_first_type_parameter_constraint = true
+resharper_csharp_wrap_parameters_style = chop_if_long
+resharper_wrap_arguments_style = wrap_if_long
+resharper_wrap_parameters_style = chop_if_long
+resharper_wrap_before_binary_opsign = false
+resharper_wrap_before_eq = false
+resharper_wrap_before_first_type_parameter_constraint = true
+resharper_wrap_verbatim_interpolated_strings = no_wrap
+resharper_wrap_before_linq_expression = true
+resharper_wrap_before_arrow_with_expressions = false
+resharper_blank_lines_after_control_transfer_statements = 1
+resharper_blank_lines_after_multiline_statements = 1
+resharper_blank_lines_around_single_line_auto_property = 1
+resharper_blank_lines_around_single_line_local_method = 1
+resharper_blank_lines_around_single_line_property = 1
+resharper_blank_lines_before_block_statements = 1
+resharper_blank_lines_before_control_transfer_statements = 1
+resharper_blank_lines_before_multiline_statements = 1
+
+# Preferences
+resharper_place_expr_accessor_on_single_line = true
+resharper_place_expr_method_on_single_line = true
+resharper_place_expr_property_on_single_line = true
+resharper_arguments_skip_single = true
+resharper_arguments_string_literal = named
+resharper_outdent_commas = true
+resharper_empty_block_style = together_same_line
+resharper_nested_ternary_style = simple_wrap
+resharper_place_simple_enum_on_single_line = true
+resharper_place_linq_into_on_new_line = false
+resharper_place_simple_accessorholder_on_single_line = true
+resharper_braces_for_ifelse = required_for_multiline
+resharper_arguments_literal = named
+resharper_wrap_object_and_collection_initializer_style = chop_if_long
+resharper_place_simple_embedded_statement_on_same_line = false
+resharper_space_within_single_line_array_initializer_braces = true
+
+# ReSharper inspection severities
+resharper_arrange_redundant_parentheses_highlighting = hint
+resharper_arrange_this_qualifier_highlighting = hint
+resharper_arrange_type_member_modifiers_highlighting = hint
+resharper_arrange_type_modifiers_highlighting = hint
+resharper_built_in_type_reference_style_highlighting = hint
+resharper_check_namespace_highlighting = warning
+resharper_heap_view_can_avoid_closure_highlighting = hint
+resharper_html_tag_not_closed_highlighting = warning
+resharper_mvc_action_not_resolved_highlighting = suggestion
+resharper_mvc_area_not_resolved_highlighting = suggestion
+resharper_mvc_controller_not_resolved_highlighting = suggestion
+resharper_mvc_invalid_model_type_highlighting = warning
+resharper_mvc_partial_view_not_resolved_highlighting = suggestion
+resharper_mvc_template_not_resolved_highlighting = suggestion
+resharper_mvc_view_component_not_resolved_highlighting = suggestion
+resharper_mvc_view_component_view_not_resolved_highlighting = suggestion
+resharper_mvc_view_not_resolved_highlighting = suggestion
+resharper_not_accessed_positional_property_global_highlighting = suggestion
+resharper_razor_layout_not_resolved_highlighting = suggestion
+resharper_redundant_argument_default_value_highlighting = suggestion
+resharper_redundant_base_qualifier_highlighting = warning
+resharper_redundant_suppress_nullable_warning_expression_highlighting = none
+resharper_suggest_var_or_type_built_in_types_highlighting = hint
+resharper_suggest_var_or_type_elsewhere_highlighting = hint
+resharper_suggest_var_or_type_simple_types_highlighting = hint
+resharper_unused_auto_property_accessor_global_highlighting = suggestion
+resharper_unused_auto_property_accessor_local_highlighting = suggestion
+resharper_unused_type_parameter_highlighting = suggestion
+
 ##########################################
-[tests/**/*.cs]
-# ReSharper - DisposeOnUsingVariable
-# Test objects often managed by test framework or intentionally not disposed
-resharper_dispose_on_using_variable_highlighting = none
-resharper_not_disposed_resource_highlighting = none
-resharper_using_statement_resource_initialization_highlighting = none
-resharper_access_to_disposed_closure_highlighting = none
-resharper_access_to_modified_closure_highlighting = none
-# --- SDK tests analyzer baseline (mirrors Headless.NET.Sdk.Tests.editorconfig; keep in sync) ---
+# Test projects
 # These rules are relaxed for test code where patterns like mock setup,
 # intentional test fixtures, and cancellation testing are common.
+
+# This mirrors the SDK's injected Headless.NET.Sdk.Tests.editorconfig (which
+# the compiler honors but ReSharper/Rider/inspectcode cannot see).
+##########################################
+
+[tests/**/*.cs]
+
+# --- Async & threading ---
 
 # CA2012: ValueTask should be directly awaited
 # NSubstitute .Returns(ValueTask.FromResult(...)) is a false positive - each call returns fresh ValueTask
 dotnet_diagnostic.CA2012.severity = none
-
-# CA1508: Avoid dead conditional code
-# Tests intentionally verify edge cases like Equals(null) returning false
-dotnet_diagnostic.CA1508.severity = none
-
-# CA1822: Member can be static
-# Test fixture classes often have instance methods for reflection testing
-dotnet_diagnostic.CA1822.severity = none
-
-# CA1873: Logging argument evaluation may be expensive
-# Test assertions often inspect ILogger calls directly; suppress this analyzer for test-only code
-dotnet_diagnostic.CA1873.severity = none
-
-# CA5398: Avoid hardcoded SslProtocols
-# Tests verify specific TLS protocol configurations work correctly
-dotnet_diagnostic.CA5398.severity = none
-
-# IDE0017: Object initialization can be simplified
-# Tests may intentionally test property setters separately from construction
-dotnet_diagnostic.IDE0017.severity = suggestion
-
-# xUnit1051: Use TestContext.Current.CancellationToken
-# Tests that test cancellation behavior need manual CancellationTokenSource control
-dotnet_diagnostic.xUnit1051.severity = suggestion
-
-# CA2000: Dispose objects before losing scope
-# Mock setups delegate lifecycle to consuming code; test-scoped objects cleaned up by test framework
-dotnet_diagnostic.CA2000.severity = suggestion
-
+# AsyncFixer03/VSTHRD100: Async void method
+# Tests may have intentional async void methods for testing reflection
+dotnet_diagnostic.AsyncFixer03.severity = suggestion
+dotnet_diagnostic.VSTHRD100.severity = suggestion
 # EPC13: Task result should be observed
 # Complex async test patterns may intentionally not observe intermediate tasks
 dotnet_diagnostic.EPC13.severity = suggestion
-
+# MA0045: Do not use blocking calls in sync method
+# Stream tests verify synchronous behavior explicitly
+dotnet_diagnostic.MA0045.severity = suggestion
 # VSTHRD003: Avoid awaiting foreign Tasks
 # Tests capture tasks for later assertion which is valid test pattern
 dotnet_diagnostic.VSTHRD003.severity = none
 
+# --- Disposal & lifecycle ---
+
+# CA1001: Types that own disposable fields should be disposable
+dotnet_diagnostic.CA1001.severity = suggestion
+# CA2000: Dispose objects before losing scope
+# Mock setups delegate lifecycle to consuming code; test-scoped objects cleaned up by test framework
+dotnet_diagnostic.CA2000.severity = suggestion
 # CA2213: Disposable fields should be disposed
 # Mock objects and test fixtures often don't need explicit disposal
 dotnet_diagnostic.CA2213.severity = none
 
-# FAA0002: Use AwesomeAssertions
-# Some tests intentionally use xUnit Assert for specific scenarios
-dotnet_diagnostic.FAA0002.severity = suggestion
+# --- Design & API surface ---
 
-# xUnit1045/xUnit1046: TheoryData type arguments might not be serializable
-# Parameterized tests often use non-serializable types for complex test scenarios
-dotnet_diagnostic.xUnit1045.severity = suggestion
-dotnet_diagnostic.xUnit1046.severity = suggestion
+# CA1028: Enum Storage should be Int32
+# Tests may intentionally verify non-Int32 enum backing types
+dotnet_diagnostic.CA1028.severity = none
+# CA2225: Operator overloads have named alternates
+# Generated primitive types and tests don't need named alternates
+dotnet_diagnostic.CA2225.severity = suggestion
+# CA2227: Collection properties should be read only
+# Test fixtures and serializers may intentionally keep extension-data setters
+dotnet_diagnostic.CA2227.severity = none
+# CA2263: Use the generic overload
+# Tests may intentionally test non-generic overloads
+dotnet_diagnostic.CA2263.severity = suggestion
+# MA0096: IComparable without IEquatable
+# Test helper classes focus on comparison behavior only
+dotnet_diagnostic.MA0096.severity = suggestion
+# AL1003: Should not have non-obsolete empty constructors
+# Generated snapshot files from source generators include these
+dotnet_diagnostic.AL1003.severity = none
+
+# --- Correctness & reliability ---
+
+# CA1508: Avoid dead conditional code
+# Tests intentionally verify edge cases like Equals(null) returning false
+dotnet_diagnostic.CA1508.severity = none
+# CA2201: Do not raise reserved exception types
+# Tests verify generic exception handling behavior
+dotnet_diagnostic.CA2201.severity = none
+# ERP022: Unobserved exception in catch block
+# Specific test cleanup may swallow exceptions intentionally
+dotnet_diagnostic.ERP022.severity = suggestion
+# MA0015: Specify the parameter name in ArgumentException
+# Tests intentionally verify exception type without caring about param name
+dotnet_diagnostic.MA0015.severity = suggestion
+
+# --- Security ---
 
 # CA2100: Review SQL queries for security vulnerabilities
 # Test fixtures use parameterized cleanup SQL; no user input involved
 dotnet_diagnostic.CA2100.severity = none
+# CA5398: Avoid hardcoded SslProtocols
+# Tests verify specific TLS protocol configurations work correctly
+dotnet_diagnostic.CA5398.severity = none
+
+# --- Assertions & test frameworks ---
+
+# FAA0002: Use AwesomeAssertions
+# Some tests intentionally use xUnit Assert for specific scenarios
+dotnet_diagnostic.FAA0002.severity = suggestion
+# JSON001: Invalid JSON pattern
+# Tests intentionally use invalid JSON to verify error handling
+dotnet_diagnostic.JSON001.severity = suggestion
+# xUnit1045/xUnit1046: TheoryData type arguments might not be serializable
+# Parameterized tests often use non-serializable types for complex test scenarios
+dotnet_diagnostic.xUnit1045.severity = suggestion
+dotnet_diagnostic.xUnit1046.severity = suggestion
+# xUnit1051: Use TestContext.Current.CancellationToken
+# Tests that test cancellation behavior need manual CancellationTokenSource control
+dotnet_diagnostic.xUnit1051.severity = suggestion
+
+# --- Reflection ---
 
 # REFL009/REFL016/REFL017: Reflection member analysis
 # Tests verify reflection behavior on internal/dynamic members
@@ -745,58 +819,29 @@ dotnet_diagnostic.REFL009.severity = suggestion
 dotnet_diagnostic.REFL016.severity = suggestion
 dotnet_diagnostic.REFL017.severity = suggestion
 
-# MA0015: Specify the parameter name in ArgumentException
-# Tests intentionally verify exception type without caring about param name
-dotnet_diagnostic.MA0015.severity = suggestion
-
-# JSON001: Invalid JSON pattern
-# Tests intentionally use invalid JSON to verify error handling
-dotnet_diagnostic.JSON001.severity = suggestion
-
-# CA2201: Do not raise reserved exception types
-# Tests verify generic exception handling behavior
-dotnet_diagnostic.CA2201.severity = none
-
-# CA2263: Use the generic overload
-# Tests may intentionally test non-generic overloads
-dotnet_diagnostic.CA2263.severity = suggestion
-
-# CA1028: Enum Storage should be Int32
-# Tests may intentionally verify non-Int32 enum backing types
-dotnet_diagnostic.CA1028.severity = none
-
-# AL1003: Should not have non-obsolete empty constructors
-# Generated snapshot files from source generators include these
-dotnet_diagnostic.AL1003.severity = none
-
-# MA0045: Do not use blocking calls in sync method
-# Stream tests verify synchronous behavior explicitly
-dotnet_diagnostic.MA0045.severity = suggestion
-
-# MA0096: IComparable without IEquatable
-# Test helper classes focus on comparison behavior only
-dotnet_diagnostic.MA0096.severity = suggestion
-
-# ERP022: Unobserved exception in catch block
-# Specific test cleanup may swallow exceptions intentionally
-dotnet_diagnostic.ERP022.severity = suggestion
-
-# CA2225: Operator overloads have named alternates
-# Generated primitive types and tests don't need named alternates
-dotnet_diagnostic.CA2225.severity = suggestion
-
-# CA2227: Collection properties should be read only
-# Test fixtures and serializers may intentionally keep extension-data setters
-dotnet_diagnostic.CA2227.severity = none
-
-# AsyncFixer03/VSTHRD100: Async void method
-# Tests may have intentional async void methods for testing reflection
-dotnet_diagnostic.AsyncFixer03.severity = suggestion
-dotnet_diagnostic.VSTHRD100.severity = suggestion
+# --- Naming ---
 
 # IDE1006: Naming rule violation
 # Tests use the snake_case `should_do_thing` method-naming convention for readability.
 dotnet_diagnostic.IDE1006.severity = none
 
-# CA1001: Types that own disposable fields should be disposable
-dotnet_diagnostic.CA1001.severity = suggestion
+# --- Style & maintainability ---
+
+# CA1822: Member can be static
+# Test fixture classes often have instance methods for reflection testing
+dotnet_diagnostic.CA1822.severity = none
+# CA1873: Logging argument evaluation may be expensive
+# Test assertions often inspect ILogger calls directly; suppress this analyzer for test-only code
+dotnet_diagnostic.CA1873.severity = none
+# IDE0017: Object initialization can be simplified
+# Tests may intentionally test property setters separately from construction
+dotnet_diagnostic.IDE0017.severity = suggestion
+
+# ReSharper - DisposeOnUsingVariable
+# Test objects often managed by test framework or intentionally not disposed
+resharper_dispose_on_using_variable_highlighting = none
+resharper_not_disposed_resource_highlighting = none
+resharper_using_statement_resource_initialization_highlighting = none
+
+# ReSharper - ShortLivedHttpClient
+resharper_short_lived_http_client_highlighting = none

@@ -162,18 +162,21 @@ public sealed class EndToEndTests : TestBase
     public async Task WaitForConsumed_with_predicate_filters_correctly()
     {
         // given — use TestConsumer so we get a singleton that handles the messages
-        await using var harness = await MessagingTestHarness.CreateAsync(services =>
-        {
-            services.AddSingleton<TestConsumer<OrderCreatedEvent>>();
-            services.AddHeadlessMessaging(options =>
+        await using var harness = await MessagingTestHarness.CreateAsync(
+            services =>
             {
-                options.UseInMemory();
-                options.UseInMemoryStorage();
-                options.ForMessage<OrderCreatedEvent>(message =>
-                    message.MessageName("order-created").OnBus<TestConsumer<OrderCreatedEvent>>()
-                );
-            });
-        });
+                services.AddSingleton<TestConsumer<OrderCreatedEvent>>();
+                services.AddHeadlessMessaging(options =>
+                {
+                    options.UseInMemory();
+                    options.UseInMemoryStorage();
+                    options.ForMessage<OrderCreatedEvent>(message =>
+                        message.MessageName("order-created").OnBus<TestConsumer<OrderCreatedEvent>>()
+                    );
+                });
+            },
+            AbortToken
+        );
 
         // Publish a non-target message first
         await harness.Publisher.PublishAsync(new OrderCreatedEvent("other", 1m), cancellationToken: AbortToken);
@@ -255,18 +258,21 @@ public sealed class EndToEndTests : TestBase
         // given
         var notifier = Substitute.For<INotificationService>();
 
-        await using var harness = await MessagingTestHarness.CreateAsync(services =>
-        {
-            services.AddSingleton(notifier);
-            services.AddHeadlessMessaging(options =>
+        await using var harness = await MessagingTestHarness.CreateAsync(
+            services =>
             {
-                options.UseInMemory();
-                options.UseInMemoryStorage();
-                options.ForMessage<OrderCreatedEvent>(message =>
-                    message.MessageName("order-created").OnBus<NotifyingConsumer>()
-                );
-            });
-        });
+                services.AddSingleton(notifier);
+                services.AddHeadlessMessaging(options =>
+                {
+                    options.UseInMemory();
+                    options.UseInMemoryStorage();
+                    options.ForMessage<OrderCreatedEvent>(message =>
+                        message.MessageName("order-created").OnBus<NotifyingConsumer>()
+                    );
+                });
+            },
+            AbortToken
+        );
 
         // when
         await harness.Publisher.PublishAsync(new OrderCreatedEvent("ORD-INJ", 75m), cancellationToken: AbortToken);
@@ -280,22 +286,25 @@ public sealed class EndToEndTests : TestBase
     public async Task Bus_and_queue_observations_are_distinguished_by_intent()
     {
         // given
-        await using var harness = await MessagingTestHarness.CreateAsync(services =>
-        {
-            services.AddSingleton<IntentRecorder>();
-            services.AddHeadlessMessaging(options =>
+        await using var harness = await MessagingTestHarness.CreateAsync(
+            services =>
             {
-                options.ForMessage<OrderCreatedEvent>(message =>
+                services.AddSingleton<IntentRecorder>();
+                services.AddHeadlessMessaging(options =>
                 {
-                    message
-                        .MessageName("order-created")
-                        .OnBus<BusIntentConsumer>(consumer => consumer.Group("bus-workers"));
-                    message.OnQueue<QueueIntentConsumer>(consumer => consumer.Group("queue-workers"));
+                    options.ForMessage<OrderCreatedEvent>(message =>
+                    {
+                        message
+                            .MessageName("order-created")
+                            .OnBus<BusIntentConsumer>(consumer => consumer.Group("bus-workers"));
+                        message.OnQueue<QueueIntentConsumer>(consumer => consumer.Group("queue-workers"));
+                    });
+                    options.UseInMemory();
+                    options.UseInMemoryStorage();
                 });
-                options.UseInMemory();
-                options.UseInMemoryStorage();
-            });
-        });
+            },
+            AbortToken
+        );
 
         var bus = harness.GetRequiredService<IBus>();
         var queue = harness.GetRequiredService<IQueue>();
@@ -355,22 +364,25 @@ public sealed class EndToEndTests : TestBase
     public async Task Outbox_bus_and_queue_flow_through_inmemory_transport_with_intent()
     {
         // given
-        await using var harness = await MessagingTestHarness.CreateAsync(services =>
-        {
-            services.AddSingleton<IntentRecorder>();
-            services.AddHeadlessMessaging(options =>
+        await using var harness = await MessagingTestHarness.CreateAsync(
+            services =>
             {
-                options.ForMessage<OrderCreatedEvent>(message =>
+                services.AddSingleton<IntentRecorder>();
+                services.AddHeadlessMessaging(options =>
                 {
-                    message
-                        .MessageName("outbox-order-created")
-                        .OnBus<BusIntentConsumer>(consumer => consumer.Group("outbox-bus"));
-                    message.OnQueue<QueueIntentConsumer>(consumer => consumer.Group("outbox-queue"));
+                    options.ForMessage<OrderCreatedEvent>(message =>
+                    {
+                        message
+                            .MessageName("outbox-order-created")
+                            .OnBus<BusIntentConsumer>(consumer => consumer.Group("outbox-bus"));
+                        message.OnQueue<QueueIntentConsumer>(consumer => consumer.Group("outbox-queue"));
+                    });
+                    options.UseInMemory();
+                    options.UseInMemoryStorage();
                 });
-                options.UseInMemory();
-                options.UseInMemoryStorage();
-            });
-        });
+            },
+            AbortToken
+        );
 
         var outboxBus = harness.GetRequiredService<IOutboxBus>();
         var outboxQueue = harness.GetRequiredService<IOutboxQueue>();
@@ -421,14 +433,17 @@ public sealed class EndToEndTests : TestBase
     public async Task Queue_observation_is_not_double_recorded_as_bus_for_queue_transport()
     {
         // given
-        await using var harness = await MessagingTestHarness.CreateAsync(services =>
-        {
-            services.AddHeadlessMessaging(options =>
+        await using var harness = await MessagingTestHarness.CreateAsync(
+            services =>
             {
-                options.UseInMemoryStorage();
-                options.RegisterExtension(new QueueOnlyTransportExtension());
-            });
-        });
+                services.AddHeadlessMessaging(options =>
+                {
+                    options.UseInMemoryStorage();
+                    options.RegisterExtension(new QueueOnlyTransportExtension());
+                });
+            },
+            AbortToken
+        );
 
         var queue = harness.GetRequiredService<IQueue>();
 

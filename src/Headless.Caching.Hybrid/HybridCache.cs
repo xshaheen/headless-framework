@@ -776,7 +776,7 @@ public sealed partial class HybridCache(
             return expiration;
         }
 
-        return expiration.HasValue && expiration.Value < cacheOptions.DefaultLocalExpiration.Value
+        return expiration < cacheOptions.DefaultLocalExpiration.Value
             ? expiration
             : cacheOptions.DefaultLocalExpiration;
     }

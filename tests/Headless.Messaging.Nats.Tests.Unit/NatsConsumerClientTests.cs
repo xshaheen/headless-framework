@@ -762,12 +762,15 @@ public sealed class NatsConsumerClientTests : TestBase
             _options,
             _serviceProvider,
             (_, _, _) => Task.FromResult(consumer)
-        );
-        client.OnMessageCallback = async (_, _) =>
+        )
         {
-            handlerStarted.TrySetResult();
-            await releaseHandler.Task;
+            OnMessageCallback = async (_, _) =>
+            {
+                handlerStarted.TrySetResult();
+                await releaseHandler.Task;
+            },
         };
+
         await client.SubscribeAsync(["orders.created"]);
 
         using var cts = new CancellationTokenSource();

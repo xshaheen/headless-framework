@@ -176,11 +176,10 @@ internal class JobsSchedulerBackgroundService : BackgroundService, IJobsHostSche
                 _executionContext.SetNextPlannedOccurrence(_timeProvider.GetUtcNow().UtcDateTime.Add(sleepDuration));
             }
 
-            var notify = _executionContext.NotifyCoreAction;
-            if (notify != null)
-            {
-                notify(_executionContext.GetNextPlannedOccurrence(), CoreNotifyActionType.NotifyNextOccurence);
-            }
+            _executionContext.NotifyCoreAction?.Invoke(
+                _executionContext.GetNextPlannedOccurrence(),
+                CoreNotifyActionType.NotifyNextOccurence
+            );
 
             await _timeProvider.Delay(sleepDuration, cancellationToken).ConfigureAwait(false);
         }

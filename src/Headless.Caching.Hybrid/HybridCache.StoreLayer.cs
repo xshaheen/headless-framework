@@ -443,31 +443,27 @@ public sealed partial class HybridCache
                 return (SkipL2: false, Succeeded: false, ConditionFailed: false);
             }
         }
-        else
+
+        var expiresIn = (entry.SlidingExpiration is null ? entry.PhysicalExpiresAt : entry.LogicalExpiresAt).Subtract(
+            _GetUtcNow()
+        );
+
+        try
         {
-            var expiresIn = (
-                entry.SlidingExpiration is null ? entry.PhysicalExpiresAt : entry.LogicalExpiresAt
-            ).Subtract(_GetUtcNow());
+            await l2Cache.UpsertAsync(key, entry.IsNull ? default : entry.Value, expiresIn, ct).ConfigureAwait(false);
+            return (SkipL2: false, Succeeded: true, ConditionFailed: false);
+        }
+        catch (Exception exception) when (!FactoryCacheCoordinator.IsCallerCancellation(exception, ct))
+        {
+            _OpenDistributedCacheCircuit(exception, key);
+            _logger.LogFailedToWriteToL2Cache(exception, key);
 
-            try
+            if (cacheOptions.ReThrowDistributedCacheExceptions)
             {
-                await l2Cache
-                    .UpsertAsync(key, entry.IsNull ? default : entry.Value, expiresIn, ct)
-                    .ConfigureAwait(false);
-                return (SkipL2: false, Succeeded: true, ConditionFailed: false);
+                throw;
             }
-            catch (Exception exception) when (!FactoryCacheCoordinator.IsCallerCancellation(exception, ct))
-            {
-                _OpenDistributedCacheCircuit(exception, key);
-                _logger.LogFailedToWriteToL2Cache(exception, key);
 
-                if (cacheOptions.ReThrowDistributedCacheExceptions)
-                {
-                    throw;
-                }
-
-                return (SkipL2: false, Succeeded: false, ConditionFailed: false);
-            }
+            return (SkipL2: false, Succeeded: false, ConditionFailed: false);
         }
     }
 

@@ -376,7 +376,7 @@ public readonly struct PostgresAdvisoryLockKey : IEquatable<PostgresAdvisoryLock
 
     private static string _ToHashString((int Key1, int Key2) keys)
     {
-        return string.Create(CultureInfo.InvariantCulture, $"{keys.Key1:x8},{keys.Key2:x8}");
+        return $"{keys.Key1:x8},{keys.Key2:x8}";
     }
 
     private enum KeyEncoding

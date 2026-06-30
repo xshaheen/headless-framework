@@ -20,22 +20,20 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
     {
         var key = new PostgresAdvisoryLockKey(Faker.Random.Long());
 
-        await using (var connection = await _OpenAsync())
-        await using (var transaction = await connection.BeginTransactionAsync(AbortToken))
-        {
-            await PostgresDistributedLock.AcquireWithTransactionAsync(key, transaction, AbortToken);
+        await using var connection = await _OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync(AbortToken);
+        await PostgresDistributedLock.AcquireWithTransactionAsync(key, transaction, AbortToken);
 
-            (await _CountAdvisoryLocksAsync(key)).Should().BePositive();
+        (await _CountAdvisoryLocksAsync(key)).Should().BePositive();
 
-            await transaction.CommitAsync(AbortToken);
+        await transaction.CommitAsync(AbortToken);
 
-            // then release while the holding connection is still open. If we counted after the
-            // `using` block disposed the connection, connection-close would release the lock
-            // regardless of commit/rollback — this proves the xact-lock drops at COMMIT itself.
-            (await _CountAdvisoryLocksAsync(key))
-                .Should()
-                .Be(0);
-        }
+        // then release while the holding connection is still open. If we counted after the
+        // `using` block disposed the connection, connection-close would release the lock
+        // regardless of commit/rollback — this proves the xact-lock drops at COMMIT itself.
+        (await _CountAdvisoryLocksAsync(key))
+            .Should()
+            .Be(0);
     }
 
     [Fact]
@@ -43,21 +41,19 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
     {
         var key = new PostgresAdvisoryLockKey(Faker.Random.Long());
 
-        await using (var connection = await _OpenAsync())
-        await using (var transaction = await connection.BeginTransactionAsync(AbortToken))
-        {
-            await PostgresDistributedLock.AcquireWithTransactionAsync(key, transaction, AbortToken);
+        await using var connection = await _OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync(AbortToken);
+        await PostgresDistributedLock.AcquireWithTransactionAsync(key, transaction, AbortToken);
 
-            (await _CountAdvisoryLocksAsync(key)).Should().BePositive();
+        (await _CountAdvisoryLocksAsync(key)).Should().BePositive();
 
-            await transaction.RollbackAsync(AbortToken);
+        await transaction.RollbackAsync(AbortToken);
 
-            // then release while the holding connection is still open so connection-close cannot be
-            // the thing that drops the lock — this proves the xact-lock is released at ROLLBACK itself.
-            (await _CountAdvisoryLocksAsync(key))
-                .Should()
-                .Be(0);
-        }
+        // then release while the holding connection is still open so connection-close cannot be
+        // the thing that drops the lock — this proves the xact-lock is released at ROLLBACK itself.
+        (await _CountAdvisoryLocksAsync(key))
+            .Should()
+            .Be(0);
     }
 
     [Fact]

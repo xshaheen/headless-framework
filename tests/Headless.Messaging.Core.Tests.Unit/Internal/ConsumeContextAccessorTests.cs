@@ -95,10 +95,11 @@ public sealed class ConsumeContextAccessorTests
     public void should_not_leak_between_sequential_messages()
     {
         // given
-        var accessor = new AsyncLocalConsumeContextAccessor();
-
-        // when
-        accessor.Current = _Context("first");
+        var accessor = new AsyncLocalConsumeContextAccessor
+        {
+            // when
+            Current = _Context("first"),
+        };
         accessor.Current = null;
         var secondEntryValue = accessor.Current;
         accessor.Current = _Context("second");

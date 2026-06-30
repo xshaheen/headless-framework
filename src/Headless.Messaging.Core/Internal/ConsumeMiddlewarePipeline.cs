@@ -77,10 +77,7 @@ internal sealed class ConsumeMiddlewarePipeline(
 
         try
         {
-            if (consumeContextAccessor is not null)
-            {
-                consumeContextAccessor.Current = consumeContext;
-            }
+            consumeContextAccessor?.Current = consumeContext;
 
             await using var scope = serviceProvider.CreateAsyncScope();
             var provider = scope.ServiceProvider;
@@ -132,10 +129,7 @@ internal sealed class ConsumeMiddlewarePipeline(
         }
         finally
         {
-            if (consumeContextAccessor is not null)
-            {
-                consumeContextAccessor.Current = previousConsumeContext;
-            }
+            consumeContextAccessor?.Current = previousConsumeContext;
         }
 
         consumeHeaders.TryGetValue(Headers.CallbackName, out var callbackName);

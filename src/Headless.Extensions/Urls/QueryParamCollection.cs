@@ -178,11 +178,7 @@ public sealed class QueryParamCollection : IReadOnlyNameValueList<object?>
             {
                 _values.Add(item);
             }
-            else if (val is null && nullValueHandling == NullValueHandling.Remove)
-            {
-                continue;
-            }
-            else
+            else if (val is not null || nullValueHandling != NullValueHandling.Remove)
             {
                 Add(name, val, isEncoded, nullValueHandling);
             }

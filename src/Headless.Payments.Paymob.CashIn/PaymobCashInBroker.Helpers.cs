@@ -56,14 +56,11 @@ public partial class PaymobCashInBroker
             await PaymobCashInException.ThrowAsync(response, cancellationToken).ConfigureAwait(false);
         }
 
-        var result = await response
-            .Content.ReadFromJsonAsync<TResponse>(CashInJsonOptions.JsonOptions, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (result is null)
-        {
-            throw new PaymobCashInException("Paymob CashIn returned null response body.", response.StatusCode, null);
-        }
+        var result =
+            await response
+                .Content.ReadFromJsonAsync<TResponse>(CashInJsonOptions.JsonOptions, cancellationToken)
+                .ConfigureAwait(false)
+            ?? throw new PaymobCashInException("Paymob CashIn returned null response body.", response.StatusCode, null);
 
         return result;
     }

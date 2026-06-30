@@ -52,8 +52,8 @@ public sealed class IdempotencyEndToEndTests : TestBase
         var first = await _Post(client, "/echo", key: "k1", body: "abc");
         var second = await _Post(client, "/echo", key: "k1", body: "abc");
 
-        var firstBody = await first.Content.ReadAsStringAsync();
-        var secondBody = await second.Content.ReadAsStringAsync();
+        var firstBody = await first.Content.ReadAsStringAsync(AbortToken);
+        var secondBody = await second.Content.ReadAsStringAsync(AbortToken);
 
         secondBody.Should().Be(firstBody);
     }
@@ -73,7 +73,7 @@ public sealed class IdempotencyEndToEndTests : TestBase
 
         conflict.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
 
-        var json = await conflict.Content.ReadAsStringAsync();
+        var json = await conflict.Content.ReadAsStringAsync(AbortToken);
         json.Should().Contain("g:idempotency_key_reused");
     }
 
@@ -140,7 +140,7 @@ public sealed class IdempotencyEndToEndTests : TestBase
         var response = await _Post(client, "/echo", key: "k1", body: oversize);
 
         response.StatusCode.Should().Be(HttpStatusCode.RequestEntityTooLarge);
-        var json = await response.Content.ReadAsStringAsync();
+        var json = await response.Content.ReadAsStringAsync(AbortToken);
         json.Should().Contain("g:idempotency_body_too_large");
 
         // 413 is not in ASP.NET Core's default ApiBehaviorOptions.ClientErrorMapping, so the
@@ -171,8 +171,8 @@ public sealed class IdempotencyEndToEndTests : TestBase
         second.Headers.Contains(HttpHeaderNames.IdempotentReplayed).Should().BeFalse();
 
         // Per-invocation GUID in body proves handler ran each time (not replay)
-        var firstBody = await first.Content.ReadAsStringAsync();
-        var secondBody = await second.Content.ReadAsStringAsync();
+        var firstBody = await first.Content.ReadAsStringAsync(AbortToken);
+        var secondBody = await second.Content.ReadAsStringAsync(AbortToken);
         secondBody.Should().NotBe(firstBody);
     }
 

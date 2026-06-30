@@ -66,11 +66,8 @@ public sealed class AmazonSnsBusTransportTests(LocalStackTestFixture fixture) : 
     /// <inheritdoc />
     protected override async ValueTask DisposeAsyncCore()
     {
-        if (_snsClient is not null)
-        {
-            _snsClient.Dispose();
-            _snsClient = null;
-        }
+        _snsClient?.Dispose();
+        _snsClient = null;
 
         await base.DisposeAsyncCore();
     }

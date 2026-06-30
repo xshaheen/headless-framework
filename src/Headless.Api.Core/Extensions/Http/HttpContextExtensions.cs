@@ -74,11 +74,10 @@ public static class HttpContextExtensions
 
                 break;
             default:
-                var message = string.Create(
-                    CultureInfo.InvariantCulture,
+                var exception = new NotSupportedException(
                     $"Unknown {nameof(ResponseCacheLocation)}: {cacheProfile.Location}"
                 );
-                var exception = new NotSupportedException(message);
+
                 Debug.Fail(exception.ToString());
 
                 throw exception;

@@ -15,6 +15,11 @@ using ZiggyCreatures.Caching.Fusion;
 namespace Headless.Caching.Benchmarks;
 
 [SuppressMessage(
+    "Performance",
+    "CA1859:Use concrete types when possible for improved performance",
+    Justification = "Factory-owned caches are disposed through the returned benchmark client."
+)]
+[SuppressMessage(
     "Reliability",
     "CA2000:Dispose objects before losing scope",
     Justification = "Factory-owned caches are disposed through the returned benchmark client."
@@ -359,8 +364,9 @@ internal static class CacheBenchmarkClientFactory
         return connectionString;
     }
 
-    private static CacheEntryOptions _CreateHeadlessOptions(TimeSpan duration) =>
-        new()
+    private static CacheEntryOptions _CreateHeadlessOptions(TimeSpan duration)
+    {
+        return new()
         {
             Duration = duration,
             IsFailSafeEnabled = true,
@@ -368,14 +374,19 @@ internal static class CacheBenchmarkClientFactory
             FailSafeThrottleDuration = TimeSpan.FromSeconds(1),
             EagerRefreshThreshold = 0.8f,
         };
+    }
 
-    private static FusionCacheEntryOptions _CreateFusionOptions(TimeSpan duration) =>
-        new FusionCacheEntryOptions(duration)
-            .SetFailSafe(true, TimeSpan.FromMinutes(5), TimeSpan.FromSeconds(1))
+    private static FusionCacheEntryOptions _CreateFusionOptions(TimeSpan duration)
+    {
+        return new FusionCacheEntryOptions(duration)
+            .SetFailSafe(isEnabled: true, TimeSpan.FromMinutes(5), TimeSpan.FromSeconds(1))
             .SetEagerRefresh(0.8f);
+    }
 
-    private static FusionCacheEntryOptions _CreateFusionDistributedOptions(TimeSpan duration) =>
-        _CreateFusionOptions(duration).SetSkipMemoryCache(true);
+    private static FusionCacheEntryOptions _CreateFusionDistributedOptions(TimeSpan duration)
+    {
+        return _CreateFusionOptions(duration).SetSkipMemoryCache(skip: true);
+    }
 
     private sealed class PrefixDistributedCache(string prefix, IDistributedCache inner) : IDistributedCache, IDisposable
     {

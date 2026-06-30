@@ -317,26 +317,22 @@ internal sealed class Bootstrapper(
 
     private void _CheckRequirement()
     {
-        var marker = serviceProvider.GetService<MessagingMarkerService>();
-        if (marker == null)
-        {
-            throw new InvalidOperationException(
+        var marker =
+            serviceProvider.GetService<MessagingMarkerService>()
+            ?? throw new InvalidOperationException(
                 "AddHeadlessMessaging() must be added on the service collection.   eg: services.AddHeadlessMessaging(...)"
             );
-        }
 
         _DrainPendingMessageRegistrations();
 
-        var messageQueueMarker = serviceProvider.GetService<MessageQueueMarkerService>();
-        if (messageQueueMarker == null)
-        {
-            throw new InvalidOperationException(
+        var messageQueueMarker =
+            serviceProvider.GetService<MessageQueueMarkerService>()
+            ?? throw new InvalidOperationException(
                 "Messaging requires a transport provider. Register a native IBusTransport/IQueueTransport "
                     + "(e.g., UseRabbitMq, UseKafka, UseAzureServiceBus)."
                     + Environment.NewLine
                     + "Example: services.AddHeadlessMessaging(setup => { setup.UseRabbitMq(...); });"
             );
-        }
 
         var databaseMarkers = serviceProvider.GetServices<MessageStorageMarkerService>().ToArray();
 

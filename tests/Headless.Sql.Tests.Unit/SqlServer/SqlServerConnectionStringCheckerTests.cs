@@ -65,10 +65,12 @@ public sealed class SqlServerConnectionStringCheckerTests
     {
         // given - verify implementation sets ConnectTimeout = 1
         const string connectionString = "Server=localhost;Database=test;Connect Timeout=30";
-        var builder = new SqlConnectionStringBuilder(connectionString);
 
-        // when - simulate what CheckAsync does
-        builder.ConnectTimeout = 1;
+        var builder = new SqlConnectionStringBuilder(connectionString)
+        {
+            // when - simulate what CheckAsync does
+            ConnectTimeout = 1,
+        };
 
         // then
         builder.ConnectTimeout.Should().Be(1);

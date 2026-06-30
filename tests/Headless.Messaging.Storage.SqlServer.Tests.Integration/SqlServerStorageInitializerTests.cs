@@ -58,7 +58,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
 
         // then
         await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync();
+        await connection.OpenAsync(AbortToken);
 
         var columns = await connection.QueryAsync<string>(
             """
@@ -93,7 +93,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
 
         // then
         await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync();
+        await connection.OpenAsync(AbortToken);
 
         var columns = await connection.QueryAsync<string>(
             """

@@ -52,7 +52,7 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
 
         var stored1 = await storage.StoreMessageAsync("stats-test", msg1, cancellationToken: AbortToken);
         var stored2 = await storage.StoreMessageAsync("stats-test", msg2, cancellationToken: AbortToken);
-        var stored3 = await storage.StoreMessageAsync("stats-test", msg3, cancellationToken: AbortToken);
+        await storage.StoreMessageAsync("stats-test", msg3, cancellationToken: AbortToken);
 
         await storage.ChangePublishStateAsync(stored1, StatusName.Succeeded, cancellationToken: AbortToken);
         await storage.ChangePublishStateAsync(stored2, StatusName.Failed, cancellationToken: AbortToken);

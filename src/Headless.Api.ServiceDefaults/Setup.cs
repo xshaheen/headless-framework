@@ -547,16 +547,13 @@ public static class SetupApi
         // overrides (e.g. options.HealthPath = "/healthz") are excluded from traces. The delegate is
         // replaced atomically here; no mutable fields are read after the tracing provider captures
         // its snapshot.
-        if (serviceOptions is not null)
-        {
-            serviceOptions.OpenTelemetry.SkipOperationalEndpointFunc =
-                HeadlessServiceDefaultsOpenTelemetryOptions.BuildSkipFunc(
-                    healthPath: options.HealthPath,
-                    alivePath: options.AlivePath,
-                    healthMapped: options.MapHealthEndpoint,
-                    aliveMapped: options.MapAliveEndpoint
-                );
-        }
+        serviceOptions?.OpenTelemetry.SkipOperationalEndpointFunc =
+            HeadlessServiceDefaultsOpenTelemetryOptions.BuildSkipFunc(
+                healthPath: options.HealthPath,
+                alivePath: options.AlivePath,
+                healthMapped: options.MapHealthEndpoint,
+                aliveMapped: options.MapAliveEndpoint
+            );
 
         if (options.MapHealthEndpoint)
         {

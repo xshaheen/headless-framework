@@ -316,26 +316,26 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
             StringComparer.Ordinal
         );
 
-        Dictionary<string, int> valuesMap;
-
-        if (type == MessageType.Publish)
-        {
-            valuesMap = storage
-                .PublishedMessages.Values.Where(x =>
-                    string.Equals(x.StatusName.ToString(), statusName, StringComparison.Ordinal)
-                )
-                .GroupBy(x => x.Added.ToString("yyyy-MM-dd-HH", CultureInfo.InvariantCulture), StringComparer.Ordinal)
-                .ToDictionary(x => x.Key, x => x.Count(), StringComparer.Ordinal);
-        }
-        else
-        {
-            valuesMap = storage
-                .ReceivedMessages.Values.Where(x =>
-                    string.Equals(x.StatusName.ToString(), statusName, StringComparison.Ordinal)
-                )
-                .GroupBy(x => x.Added.ToString("yyyy-MM-dd-HH", CultureInfo.InvariantCulture), StringComparer.Ordinal)
-                .ToDictionary(x => x.Key, x => x.Count(), StringComparer.Ordinal);
-        }
+        var valuesMap =
+            type == MessageType.Publish
+                ? storage
+                    .PublishedMessages.Values.Where(x =>
+                        string.Equals(x.StatusName.ToString(), statusName, StringComparison.Ordinal)
+                    )
+                    .GroupBy(
+                        x => x.Added.ToString("yyyy-MM-dd-HH", CultureInfo.InvariantCulture),
+                        StringComparer.Ordinal
+                    )
+                    .ToDictionary(x => x.Key, x => x.Count(), StringComparer.Ordinal)
+                : storage
+                    .ReceivedMessages.Values.Where(x =>
+                        string.Equals(x.StatusName.ToString(), statusName, StringComparison.Ordinal)
+                    )
+                    .GroupBy(
+                        x => x.Added.ToString("yyyy-MM-dd-HH", CultureInfo.InvariantCulture),
+                        StringComparer.Ordinal
+                    )
+                    .ToDictionary(x => x.Key, x => x.Count(), StringComparer.Ordinal);
 
         foreach (var key in keyMaps.Keys)
         {

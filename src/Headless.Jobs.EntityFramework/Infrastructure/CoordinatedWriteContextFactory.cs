@@ -23,17 +23,11 @@ internal static class CoordinatedWriteContextFactory
     public static ConstructorInfo RequireOptionsConstructor<TContext>()
         where TContext : DbContext
     {
-        var constructor = typeof(TContext).GetConstructor([typeof(DbContextOptions<TContext>)]);
-
-        if (constructor is null)
-        {
-            throw new InvalidOperationException(
+        return typeof(TContext).GetConstructor([typeof(DbContextOptions<TContext>)])
+            ?? throw new InvalidOperationException(
                 $"Coordinated job writes require {typeof(TContext).Name} to declare a public constructor accepting a "
                     + $"single DbContextOptions<{typeof(TContext).Name}> argument — the same constructor EF Core's "
                     + "DbContext pooling requires."
             );
-        }
-
-        return constructor;
     }
 }

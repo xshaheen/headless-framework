@@ -895,16 +895,7 @@ public sealed class RedisCache(
                 else
                 {
                     // Non-framed (legacy) entry: no embedded expiration metadata — needs live TTL probe.
-                    T? legacyValue;
-
-                    if (rawValue == _NullValue)
-                    {
-                        legacyValue = default;
-                    }
-                    else
-                    {
-                        legacyValue = _FromRedisValue<T>(rawValue);
-                    }
+                    var legacyValue = rawValue == _NullValue ? default : _FromRedisValue<T>(rawValue);
 
                     (slidingOrLegacyHits ??= []).Add((i, redisKeys[i], legacyValue));
                 }
@@ -1196,22 +1187,16 @@ public sealed class RedisCache(
 
             // Non-framed (legacy/raw) entry: value is present but carries no logical expiry metadata.
             // Fall back to the live server TTL for the expiration component.
-            CacheValue<T> legacyValue;
-
-            if (rawValue == _NullValue)
-            {
-                legacyValue = CacheValue<T>.Null;
-            }
-            else
-            {
-                legacyValue = new CacheValue<T>(_FromRedisValue<T>(rawValue), true);
-            }
+            var legacyValue =
+                rawValue == _NullValue
+                    ? CacheValue<T>.Null
+                    : new CacheValue<T>(_FromRedisValue<T>(rawValue), hasValue: true);
 
             var legacyTtl = await _database.KeyTimeToLiveAsync(redisKey).ConfigureAwait(false);
 
             if (legacyTtl is { Ticks: <= 0 })
             {
-                return new CacheValueWithExpiration<T>(CacheValue<T>.NoValue, null);
+                return new CacheValueWithExpiration<T>(CacheValue<T>.NoValue, expiration: null);
             }
 
             return new CacheValueWithExpiration<T>(legacyValue, legacyTtl);

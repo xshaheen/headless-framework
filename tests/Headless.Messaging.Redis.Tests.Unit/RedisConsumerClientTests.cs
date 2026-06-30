@@ -137,8 +137,8 @@ public sealed class RedisConsumerClientTests : TestBase
         await using var client = new RedisConsumerClient("test-group", 1, _mockStreamManager, _options, logger);
 
         // when
-        await client.PauseAsync();
-        await client.PauseAsync();
+        await client.PauseAsync(AbortToken);
+        await client.PauseAsync(AbortToken);
 
         // then — no exception
     }
@@ -151,7 +151,7 @@ public sealed class RedisConsumerClientTests : TestBase
         await using var client = new RedisConsumerClient("test-group", 1, _mockStreamManager, _options, logger);
 
         // when
-        await client.ResumeAsync();
+        await client.ResumeAsync(AbortToken);
 
         // then — no exception
     }
