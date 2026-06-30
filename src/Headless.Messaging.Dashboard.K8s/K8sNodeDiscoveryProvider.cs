@@ -200,7 +200,7 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache,
             return 0;
         }
 
-        var portByName = servicePorts.FirstOrDefault(p => p.Name == portName);
+        var portByName = servicePorts.FirstOrDefault(p => string.Equals(p.Name, portName, StringComparison.Ordinal));
         if (portByName is null)
         {
             return 0;

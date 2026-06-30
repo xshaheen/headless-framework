@@ -65,7 +65,7 @@ public sealed class DistributedLocksDiagnosticsTests : TestBase
         meterListener.SetMeasurementEventCallback<int>(
             (instrument, measurement, tags, state) =>
             {
-                if (instrument.Name == "headless.lock.failed")
+                if (string.Equals(instrument.Name, "headless.lock.failed", StringComparison.Ordinal))
                 {
                     Interlocked.Add(ref lockFailedCount, measurement);
                 }
@@ -74,7 +74,7 @@ public sealed class DistributedLocksDiagnosticsTests : TestBase
         meterListener.SetMeasurementEventCallback<double>(
             (instrument, measurement, tags, state) =>
             {
-                if (instrument.Name == "headless.lock.wait.time")
+                if (string.Equals(instrument.Name, "headless.lock.wait.time", StringComparison.Ordinal))
                 {
                     Interlocked.Increment(ref waitTimeRecorded);
                 }
@@ -89,7 +89,11 @@ public sealed class DistributedLocksDiagnosticsTests : TestBase
         }
 
         // then
-        var myActivities = activities.Where(a => (string?)a.GetTagItem("headless.lock.resource") == resource).ToList();
+        var myActivities = activities
+            .Where(a =>
+                string.Equals((string?)a.GetTagItem("headless.lock.resource"), resource, StringComparison.Ordinal)
+            )
+            .ToList();
         myActivities.Should().ContainSingle();
         var activity = myActivities.Single();
         activity.OperationName.Should().Be("lock.acquire");
@@ -112,7 +116,8 @@ public sealed class DistributedLocksDiagnosticsTests : TestBase
         var activities = new ConcurrentBag<Activity>();
         using var activityListener = new ActivityListener
         {
-            ShouldListenTo = source => source.Name == "Headless.DistributedLocks",
+            ShouldListenTo = source =>
+                string.Equals(source.Name, "Headless.DistributedLocks", StringComparison.Ordinal),
             Sample = static (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
             ActivityStopped = activities.Add,
         };
@@ -133,7 +138,7 @@ public sealed class DistributedLocksDiagnosticsTests : TestBase
         meterListener.SetMeasurementEventCallback<int>(
             (instrument, measurement, tags, state) =>
             {
-                if (instrument.Name == "headless.lock.failed")
+                if (string.Equals(instrument.Name, "headless.lock.failed", StringComparison.Ordinal))
                 {
                     Interlocked.Add(ref lockFailedCount, measurement);
                 }
@@ -142,7 +147,7 @@ public sealed class DistributedLocksDiagnosticsTests : TestBase
         meterListener.SetMeasurementEventCallback<double>(
             (instrument, measurement, tags, state) =>
             {
-                if (instrument.Name == "headless.lock.wait.time")
+                if (string.Equals(instrument.Name, "headless.lock.wait.time", StringComparison.Ordinal))
                 {
                     Interlocked.Increment(ref waitTimeRecorded);
                 }
@@ -161,7 +166,11 @@ public sealed class DistributedLocksDiagnosticsTests : TestBase
         // then
         await act.Should().ThrowAsync<LockAcquisitionTimeoutException>();
 
-        var myActivities = activities.Where(a => (string?)a.GetTagItem("headless.lock.resource") == resource).ToList();
+        var myActivities = activities
+            .Where(a =>
+                string.Equals((string?)a.GetTagItem("headless.lock.resource"), resource, StringComparison.Ordinal)
+            )
+            .ToList();
         myActivities.Should().ContainSingle();
         var activity = myActivities.Single();
         activity.OperationName.Should().Be("lock.acquire");

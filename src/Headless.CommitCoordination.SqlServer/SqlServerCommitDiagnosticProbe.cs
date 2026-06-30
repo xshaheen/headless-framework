@@ -143,8 +143,11 @@ internal sealed class SqlServerCommitDiagnosticProbe(IOptions<SqlServerCommitCoo
         public void OnNext(KeyValuePair<string, object?> evt)
         {
             if (
-                evt.Key != SqlServerCommitDiagnosticObserver.SqlAfterCommitTransaction
-                || SqlServerCommitDiagnosticObserver.IsRollbackOperation(evt.Value)
+                !string.Equals(
+                    evt.Key,
+                    SqlServerCommitDiagnosticObserver.SqlAfterCommitTransaction,
+                    StringComparison.Ordinal
+                ) || SqlServerCommitDiagnosticObserver.IsRollbackOperation(evt.Value)
             )
             {
                 return;

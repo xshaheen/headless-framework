@@ -80,7 +80,7 @@ public class GatewayProxyAgent(
         }
         else
         {
-            if (_consulDiscoveryOptions.NodeName == requestNodeName)
+            if (string.Equals(_consulDiscoveryOptions.NodeName, requestNodeName, StringComparison.Ordinal))
             {
                 return false;
             }

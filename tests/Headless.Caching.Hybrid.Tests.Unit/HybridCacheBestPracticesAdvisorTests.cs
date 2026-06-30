@@ -419,5 +419,7 @@ internal sealed class CapturingLogger : ILogger<HybridCacheBestPracticesAdvisor>
     public IEnumerable<EventId> Warnings() => _entries.Where(e => e.Level == LogLevel.Warning).Select(e => e.Event);
 
     public bool HasWarning(string eventName) =>
-        _entries.Any(e => e.Level == LogLevel.Warning && e.Event.Name == eventName);
+        _entries.Any(e =>
+            e.Level == LogLevel.Warning && string.Equals(e.Event.Name, eventName, StringComparison.Ordinal)
+        );
 }

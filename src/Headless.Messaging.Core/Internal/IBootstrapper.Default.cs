@@ -449,7 +449,7 @@ internal sealed class Bootstrapper(
         };
 
         throw new InvalidOperationException(
-            $"{caller} was registered but no I{(intent == "bus" ? "Bus" : "Queue")}Transport is available. "
+            $"{caller} was registered but no I{(string.Equals(intent, "bus", StringComparison.Ordinal) ? "Bus" : "Queue")}Transport is available. "
                 + $"Register a {intent}-capable transport provider before messaging bootstrap starts."
         );
     }

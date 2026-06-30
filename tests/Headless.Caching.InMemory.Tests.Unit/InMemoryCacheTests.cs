@@ -27,7 +27,7 @@ public sealed class InMemoryCacheTests : TestBase
             var type = item.GetType();
             var itemKey = (string)type.GetProperty("Key")!.GetValue(item)!;
 
-            if (itemKey == key)
+            if (string.Equals(itemKey, key, StringComparison.Ordinal))
             {
                 var entry = type.GetProperty("Value")!.GetValue(item)!;
 
@@ -2736,7 +2736,7 @@ public sealed class InMemoryCacheTests : TestBase
         var options = new InMemoryCacheOptions
         {
             MaxMemorySize = 10000,
-            SizeCalculator = v => v is string s && s == "skip" ? -1 : 100,
+            SizeCalculator = v => v is string s && string.Equals(s, "skip", StringComparison.Ordinal) ? -1 : 100,
         };
         using var cache = _CreateCache(options);
 

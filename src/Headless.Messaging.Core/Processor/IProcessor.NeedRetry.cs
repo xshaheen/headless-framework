@@ -531,14 +531,17 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     }
 
     /// <summary>
+    /// <para>
     /// Two-counter adaptive polling:
     /// - _consecutiveHealthyCycles: cycles with zero circuit-open messages → halves interval at >=2.
     /// - _consecutiveCleanCycles: cycles with zero total retry messages → resets to base at >=3.
     /// Clean cycles (total==0) increment both counters; the >=3 reset check runs before the >=2
     /// halving check, so a sustained quiet period snaps back to base rather than halving stepwise.
-    ///
+    /// </para>
+    /// <para>
     /// All mutations of _currentIntervalTicks use CAS (CompareExchange) loops to avoid
     /// non-atomic read-modify-write races with concurrent ResetBackpressureAsync calls.
+    /// </para>
     /// </summary>
     internal void AdjustPollingInterval(int enqueued, int skippedCircuitOpen)
     {

@@ -50,7 +50,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
             {
                 var (compilation, methodPairs) = source;
 
-                if (compilation.Assembly.Name == "Jobs")
+                if (string.Equals(compilation.Assembly.Name, "Jobs", StringComparison.Ordinal))
                 {
                     return;
                 }
@@ -122,14 +122,26 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
             return null;
         }
 
-        if (methodSymbol.ContainingAssembly.Name != semanticModel.Compilation.Assembly.Name)
+        if (
+            !string.Equals(
+                methodSymbol.ContainingAssembly.Name,
+                semanticModel.Compilation.Assembly.Name,
+                StringComparison.Ordinal
+            )
+        )
         {
             return null;
         }
 
         var hasJobFunction = methodSymbol
             .GetAttributes()
-            .Any(attr => attr.AttributeClass?.Name == SourceGeneratorConstants.JobFunctionAttributeName);
+            .Any(attr =>
+                string.Equals(
+                    attr.AttributeClass?.Name,
+                    SourceGeneratorConstants.JobFunctionAttributeName,
+                    StringComparison.Ordinal
+                )
+            );
         if (!hasJobFunction)
         {
             return null;
@@ -180,7 +192,13 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
 
             var jobFunctionAttributeData = methodSymbol
                 ?.GetAttributes()
-                .FirstOrDefault(ad => ad.AttributeClass?.Name == SourceGeneratorConstants.JobFunctionAttributeName);
+                .FirstOrDefault(ad =>
+                    string.Equals(
+                        ad.AttributeClass?.Name,
+                        SourceGeneratorConstants.JobFunctionAttributeName,
+                        StringComparison.Ordinal
+                    )
+                );
             if (jobFunctionAttributeData == null)
             {
                 continue;
@@ -761,10 +779,14 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
                     var attributeName = attributeClass.Name;
                     var fullName = attributeClass.ToDisplayString();
 
-                    return attributeName == "JobsConstructorAttribute"
-                        || attributeName == "JobsConstructor"
-                        || fullName == "Headless.Jobs.Base.JobsConstructorAttribute"
-                        || fullName == "Headless.Jobs.Base.JobsConstructor";
+                    return string.Equals(attributeName, "JobsConstructorAttribute", StringComparison.Ordinal)
+                        || string.Equals(attributeName, "JobsConstructor", StringComparison.Ordinal)
+                        || string.Equals(
+                            fullName,
+                            "Headless.Jobs.Base.JobsConstructorAttribute",
+                            StringComparison.Ordinal
+                        )
+                        || string.Equals(fullName, "Headless.Jobs.Base.JobsConstructor", StringComparison.Ordinal);
                 });
         });
 
@@ -786,7 +808,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
         var simpleClassName = classDeclaration.Identifier.Text;
 
         // Use simple name if in the same namespace as assembly (root namespace)
-        var useSimpleName = classNamespace == assemblyName;
+        var useSimpleName = string.Equals(classNamespace, assemblyName, StringComparison.Ordinal);
         var displayClassName = useSimpleName ? simpleClassName : fullClassName;
         var methodName = $"Create{fullClassName.Replace(".", "")}";
 
@@ -797,7 +819,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
         foreach (var parameter in parameters)
         {
             var parameterName = SourceGeneratorUtilities.FirstLetterToLower(parameter.Identifier.Text);
-            if (parameterName != "serviceProvider")
+            if (!string.Equals(parameterName, "serviceProvider", StringComparison.Ordinal))
             {
                 if (parameter.Type != null)
                 {
@@ -890,7 +912,9 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
             if (primaryConstructor != null)
             {
                 var parameterName = parameter.Identifier.Text;
-                return primaryConstructor.Parameters.FirstOrDefault(p => p.Name == parameterName);
+                return primaryConstructor.Parameters.FirstOrDefault(p =>
+                    string.Equals(p.Name, parameterName, StringComparison.Ordinal)
+                );
             }
         }
         return null;

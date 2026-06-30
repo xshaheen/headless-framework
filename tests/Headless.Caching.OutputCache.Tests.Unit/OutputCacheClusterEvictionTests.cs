@@ -8,15 +8,18 @@ using Microsoft.Extensions.Time.Testing;
 namespace Tests;
 
 /// <summary>
+/// <para>
 /// The headline guarantee: a tag evicted through the store on node A makes node B's cached entry a miss, carried
 /// by the backplane. Uses the engine's two-node convergence pattern (a synchronous in-memory bus over two
 /// <see cref="HybridCache"/> nodes sharing one L2 backend) wrapped in <see cref="HeadlessOutputCacheStore"/>, so
 /// no broker / Testcontainers is needed — the new surface under test is only the store wrapper over each node.
-///
+/// </para>
+/// <para>
 /// Each node caches its own response via its own <c>SetAsync</c> — the real per-instance output-cache behavior,
 /// where every app instance renders and stores the response under the same key+tags. The engine's logical tag
 /// invalidation version-pins entries by their own node's write (a plain key read-backfill does not re-tag the
 /// promoted L1 copy), so the cluster guarantee is proven against entries each node wrote itself.
+/// </para>
 /// </summary>
 public sealed class OutputCacheClusterEvictionTests
 {

@@ -437,7 +437,7 @@ internal sealed class ConsumeMiddlewarePipeline(
         var dispatchMethod = typeof(IMessageDispatcher)
             .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
             .Single(method =>
-                method.Name == nameof(IMessageDispatcher.DispatchInScopeAsync)
+                string.Equals(method.Name, nameof(IMessageDispatcher.DispatchInScopeAsync), StringComparison.Ordinal)
                 && method.GetParameters().Length == 4
                 && method.GetParameters()[1].ParameterType == typeof(ConsumerExecutorDescriptor)
             )

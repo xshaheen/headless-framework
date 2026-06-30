@@ -520,7 +520,7 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
         public override bool Contains(object value) => _parameters.Contains((DbParameter)value);
 
         public override bool Contains(string value) =>
-            _parameters.Exists(parameter => parameter.ParameterName == value);
+            _parameters.Exists(parameter => string.Equals(parameter.ParameterName, value, StringComparison.Ordinal));
 
         public override void CopyTo(Array array, int index) => ((ICollection)_parameters).CopyTo(array, index);
 
@@ -529,7 +529,9 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
         public override int IndexOf(object value) => _parameters.IndexOf((DbParameter)value);
 
         public override int IndexOf(string parameterName) =>
-            _parameters.FindIndex(parameter => parameter.ParameterName == parameterName);
+            _parameters.FindIndex(parameter =>
+                string.Equals(parameter.ParameterName, parameterName, StringComparison.Ordinal)
+            );
 
         public override void Insert(int index, object value) => _parameters.Insert(index, (DbParameter)value);
 

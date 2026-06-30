@@ -423,7 +423,7 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
             {
                 var arguments = call.GetArguments();
 
-                return call.GetMethodInfo().Name == nameof(ILogger.Log)
+                return string.Equals(call.GetMethodInfo().Name, nameof(ILogger.Log), StringComparison.Ordinal)
                     && arguments[0] is LogLevel.Warning
                     && arguments[1] is EventId { Id: 13, Name: "CacheFactoryLockAcquireFailed" };
             });
@@ -566,7 +566,7 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
             {
                 var arguments = call.GetArguments();
 
-                return call.GetMethodInfo().Name == nameof(ILogger.Log)
+                return string.Equals(call.GetMethodInfo().Name, nameof(ILogger.Log), StringComparison.Ordinal)
                     && arguments[0] is LogLevel.Warning
                     && arguments[1] is EventId { Id: 12, Name: "CacheFactoryLockReleaseFailed" };
             });

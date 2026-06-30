@@ -27,10 +27,7 @@ public static class SetupSettingsSqlServer
         {
             Argument.IsNotNullOrWhiteSpace(connectionString);
 
-            return setup.UseSqlServer(options =>
-            {
-                options.ConnectionString = connectionString;
-            });
+            return setup.UseSqlServer(options => options.ConnectionString = connectionString);
         }
 
         /// <summary>Configures the settings feature to use SQL Server, binding options from <paramref name="configuration"/>.</summary>

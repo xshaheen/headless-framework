@@ -73,7 +73,7 @@ internal sealed class PostgreSqlSettingValueRecordRepository(
         var sql =
             $"SELECT {_ValueColumns} FROM {PostgreSqlSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingValuesTableName)} WHERE {string.Join(" AND ", filters)};";
 
-        return _ReadValuesAsync(sql, cancellationToken, parameters.ToArray());
+        return _ReadValuesAsync(sql, cancellationToken, [.. parameters]);
     }
 
     /// <inheritdoc/>

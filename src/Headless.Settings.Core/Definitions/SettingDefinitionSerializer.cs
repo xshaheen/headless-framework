@@ -64,7 +64,7 @@ public sealed class SettingDefinitionSerializer(IGuidGenerator guidGenerator) : 
     /// <inheritdoc/>
     public List<SettingDefinitionRecord> Serialize(IEnumerable<SettingDefinition> settings)
     {
-        return settings.Select(Serialize).ToList();
+        return [.. settings.Select(Serialize)];
     }
 
     /// <inheritdoc/>

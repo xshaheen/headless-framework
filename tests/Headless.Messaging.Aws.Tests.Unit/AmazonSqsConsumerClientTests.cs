@@ -61,7 +61,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
             .ReceivedCalls()
             .Where(call =>
             {
-                if (call.GetMethodInfo().Name != nameof(ILogger.Log))
+                if (!string.Equals(call.GetMethodInfo().Name, nameof(ILogger.Log), StringComparison.Ordinal))
                 {
                     return false;
                 }
@@ -85,7 +85,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
             .ReceivedCalls()
             .Where(call =>
             {
-                if (call.GetMethodInfo().Name != nameof(ILogger.Log))
+                if (!string.Equals(call.GetMethodInfo().Name, nameof(ILogger.Log), StringComparison.Ordinal))
                 {
                     return false;
                 }

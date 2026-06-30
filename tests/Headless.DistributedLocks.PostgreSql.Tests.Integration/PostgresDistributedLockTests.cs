@@ -102,7 +102,7 @@ public sealed class PostgresDistributedLockTests(PostgresDistributedLockFixture 
         var sentinelSeen = false;
         listener.Notification += (_, args) =>
         {
-            if (args.Channel != channel)
+            if (!string.Equals(args.Channel, channel, StringComparison.Ordinal))
             {
                 return;
             }

@@ -407,7 +407,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
             {
                 var arguments = call.GetArguments();
 
-                return call.GetMethodInfo().Name == nameof(ILogger.Log)
+                return string.Equals(call.GetMethodInfo().Name, nameof(ILogger.Log), StringComparison.Ordinal)
                     && arguments[0] is LogLevel.Warning
                     && arguments[1] is EventId { Id: 1, Name: "CacheFailSafeActivated" };
             });
@@ -1385,7 +1385,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
             observed = logger
                 .ReceivedCalls()
                 .Any(call =>
-                    call.GetMethodInfo().Name == nameof(ILogger.Log)
+                    string.Equals(call.GetMethodInfo().Name, nameof(ILogger.Log), StringComparison.Ordinal)
                     && call.GetArguments()[1] is EventId { Id: 6, Name: "CacheBackgroundCompletionFailed" }
                 );
 
@@ -1436,7 +1436,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
             observed = logger
                 .ReceivedCalls()
                 .Any(call =>
-                    call.GetMethodInfo().Name == nameof(ILogger.Log)
+                    string.Equals(call.GetMethodInfo().Name, nameof(ILogger.Log), StringComparison.Ordinal)
                     && call.GetArguments()[1] is EventId { Id: 6, Name: "CacheBackgroundCompletionFailed" }
                 );
 
@@ -1475,7 +1475,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var inertWarnings = logger
             .ReceivedCalls()
             .Count(call =>
-                call.GetMethodInfo().Name == nameof(ILogger.Log)
+                string.Equals(call.GetMethodInfo().Name, nameof(ILogger.Log), StringComparison.Ordinal)
                 && call.GetArguments()[1] is EventId { Id: 7, Name: "CacheSoftTimeoutInert" }
             );
 
@@ -2907,7 +2907,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
             observed = logger
                 .ReceivedCalls()
                 .Any(call =>
-                    call.GetMethodInfo().Name == nameof(ILogger.Log)
+                    string.Equals(call.GetMethodInfo().Name, nameof(ILogger.Log), StringComparison.Ordinal)
                     && call.GetArguments()[1] is EventId { Id: 16, Name: "CacheFactoryDiscardedSuccess" }
                 );
 

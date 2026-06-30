@@ -31,7 +31,7 @@ internal class RedisConnectionPool : IRedisConnectionPool, IDisposable
 
     public void Dispose()
     {
-        _Dispose(true);
+        _Dispose(disposing: true);
         GC.SuppressFinalize(this);
     }
 

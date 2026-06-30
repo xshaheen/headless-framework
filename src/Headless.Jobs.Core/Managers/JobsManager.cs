@@ -99,7 +99,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             entity.Id = guidGenerator.Create();
         }
 
-        if (JobFunctionProvider.JobFunctions.All(x => x.Key != entity.Function))
+        if (JobFunctionProvider.JobFunctions.All(x => !string.Equals(x.Key, entity.Function, StringComparison.Ordinal)))
         {
             throw new JobValidatorException($"Cannot find JobFunction with name {entity.Function}");
         }
@@ -190,7 +190,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             entity.Id = guidGenerator.Create();
         }
 
-        if (JobFunctionProvider.JobFunctions.All(x => x.Key != entity.Function))
+        if (JobFunctionProvider.JobFunctions.All(x => !string.Equals(x.Key, entity.Function, StringComparison.Ordinal)))
         {
             throw new JobValidatorException($"Cannot find JobFunction with name {entity.Function}");
         }
@@ -282,7 +282,9 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             return new JobResult<TCronJob>(new ArgumentNullException(nameof(cronJob), "Cron job must not be null!"));
         }
 
-        if (JobFunctionProvider.JobFunctions.All(x => x.Key != cronJob.Function))
+        if (
+            JobFunctionProvider.JobFunctions.All(x => !string.Equals(x.Key, cronJob.Function, StringComparison.Ordinal))
+        )
         {
             return new JobResult<TCronJob>(
                 new JobValidatorException($"Cannot find JobFunction with name {cronJob.Function}")
@@ -535,7 +537,11 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 entity.Id = guidGenerator.Create();
             }
 
-            if (JobFunctionProvider.JobFunctions.All(x => x.Key != entity.Function))
+            if (
+                JobFunctionProvider.JobFunctions.All(x =>
+                    !string.Equals(x.Key, entity.Function, StringComparison.Ordinal)
+                )
+            )
             {
                 (errors ??= []).Add($"Cannot find JobFunction with name {entity.Function}");
                 continue;
@@ -683,7 +689,11 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 continue;
             }
 
-            if (JobFunctionProvider.JobFunctions.All(x => x.Key != cronJob.Function))
+            if (
+                JobFunctionProvider.JobFunctions.All(x =>
+                    !string.Equals(x.Key, cronJob.Function, StringComparison.Ordinal)
+                )
+            )
             {
                 errors.Add(new JobValidatorException($"Cannot find JobFunction with name {cronJob.Function}"));
                 continue;

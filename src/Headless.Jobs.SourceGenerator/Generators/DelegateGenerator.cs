@@ -150,7 +150,9 @@ internal static class DelegateGenerator
 
         // Use simple class name if in root namespace (due to using statement), otherwise use full name
         var simpleClassName = classDeclaration.Identifier.Text;
-        var useSimpleName = assemblyName != null && classNamespace == assemblyName;
+        var useSimpleName =
+            !string.Equals(assemblyName, b: null, StringComparison.Ordinal)
+            && string.Equals(classNamespace, assemblyName, StringComparison.Ordinal);
 
         string methodCall;
         if (isStatic)

@@ -523,7 +523,9 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             };
             db.Orders.Add(order);
 
-            var sut = _CreateSut(opts => opts.PropertyFilter = (_, name) => name == "CustomerName");
+            var sut = _CreateSut(opts =>
+                opts.PropertyFilter = (_, name) => string.Equals(name, "CustomerName", StringComparison.Ordinal)
+            );
 
             // when
             var result = _Capture(sut, db);
@@ -558,7 +560,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             // then - should capture both Customer and the owned Address
             result.Should().NotBeEmpty();
             var addressEntry = result.FirstOrDefault(e =>
-                e.EntityType != null && e.EntityType.Contains(nameof(Address), StringComparison.Ordinal)
+                e.EntityType?.Contains(nameof(Address), StringComparison.Ordinal) == true
             );
             addressEntry.Should().NotBeNull();
         }

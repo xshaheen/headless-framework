@@ -1324,7 +1324,10 @@ public sealed class HybridCacheTests : TestBase
         // when — node A's factory write publishes, and node B receives the invalidation
         var fresh = await nodeA.GetOrAddAsync(key, _ => new ValueTask<int?>(2), TimeSpan.FromMinutes(5), AbortToken);
         published.Should().ContainSingle(m => m.Key == key && m.InstanceId == "node-a");
-        await nodeB.HandleInvalidationAsync(published.Single(m => m.Key == key), AbortToken);
+        await nodeB.HandleInvalidationAsync(
+            published.Single(m => string.Equals(m.Key, key, StringComparison.Ordinal)),
+            AbortToken
+        );
 
         // then — node B dropped its outdated L1 copy and the next read converges through the shared L2
         fresh.Value.Should().Be(2);

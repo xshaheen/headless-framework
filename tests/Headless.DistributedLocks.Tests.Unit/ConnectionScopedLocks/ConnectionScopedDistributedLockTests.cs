@@ -128,7 +128,8 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
         // given (listen to the distributed-locks activity source)
         var activities = new List<Activity>();
         using var listener = new ActivityListener();
-        listener.ShouldListenTo = source => source.Name == "Headless.DistributedLocks";
+        listener.ShouldListenTo = source =>
+            string.Equals(source.Name, "Headless.DistributedLocks", StringComparison.Ordinal);
         listener.Sample = static (ref _) => ActivitySamplingResult.AllData;
         listener.ActivityStopped = activities.Add;
         ActivitySource.AddActivityListener(listener);

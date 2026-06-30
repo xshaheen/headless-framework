@@ -190,7 +190,7 @@ internal sealed partial class SqlServerCommitDiagnosticObserver(
 
     internal static bool IsRollbackOperation(object? payload)
     {
-        return _GetProperty(payload, "Operation") as string == "Rollback";
+        return string.Equals(_GetProperty(payload, "Operation") as string, "Rollback", StringComparison.Ordinal);
     }
 
     private static object? _GetProperty(object? source, string propertyName)

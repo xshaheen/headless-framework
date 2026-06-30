@@ -21,18 +21,14 @@ namespace Headless.Serializer;
 /// over-advance instead of silently corrupting the write index.
 /// </remarks>
 [PublicAPI]
-public sealed class PooledByteBufferWriter : IBufferWriter<byte>, IDisposable
+public sealed class PooledByteBufferWriter(int initialCapacity = PooledByteBufferWriter._DefaultInitialBufferSize)
+    : IBufferWriter<byte>,
+        IDisposable
 {
     private const int _DefaultInitialBufferSize = 256;
 
-    private byte[] _buffer;
+    private byte[] _buffer = ArrayPool<byte>.Shared.Rent(Math.Max(initialCapacity, _DefaultInitialBufferSize));
     private int _index;
-
-    public PooledByteBufferWriter(int initialCapacity = _DefaultInitialBufferSize)
-    {
-        _buffer = ArrayPool<byte>.Shared.Rent(Math.Max(initialCapacity, _DefaultInitialBufferSize));
-        _index = 0;
-    }
 
     /// <summary>The bytes written so far. Valid only until the next write or <see cref="Dispose"/>.</summary>
     public ReadOnlySpan<byte> WrittenSpan => _buffer.AsSpan(0, _index);

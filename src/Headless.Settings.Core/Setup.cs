@@ -44,10 +44,7 @@ public static class SetupCoreSettings
         {
             services.AddSingleton<T>();
 
-            services.Configure<SettingManagementProvidersOptions>(options =>
-            {
-                options.DefinitionProviders.Add<T>();
-            });
+            services.Configure<SettingManagementProvidersOptions>(options => options.DefinitionProviders.Add<T>());
 
             return services;
         }

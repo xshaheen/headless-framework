@@ -26,8 +26,9 @@ internal sealed class AzureServiceBusTransport(
     /// <returns></returns>
     public IServiceBusProducerDescriptor CreateProducerForMessage(TransportMessage transportMessage)
     {
-        return busOptions.Value.CustomProducers.SingleOrDefault(p => p.MessageTypeName == transportMessage.GetName())
-            ?? new ServiceBusProducerDescriptor(transportMessage.GetName(), busOptions.Value.TopicPath);
+        return busOptions.Value.CustomProducers.SingleOrDefault(p =>
+                string.Equals(p.MessageTypeName, transportMessage.GetName(), StringComparison.Ordinal)
+            ) ?? new ServiceBusProducerDescriptor(transportMessage.GetName(), busOptions.Value.TopicPath);
     }
 
     public BrokerAddress BrokerAddress =>

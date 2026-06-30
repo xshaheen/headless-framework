@@ -658,7 +658,9 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         // Per-policy dead-node transition (#315, #316/U4) — mirrors EF ReleaseDeadNodeTimeJobResources. Idle/Queued
         // reclaimed immediately; InProgress arms defer to the lease (LockedUntil <= now) so a still-leased running
         // job survives a membership blip and is recovered by U3 once its lease lapses.
-        var owned = _timeJobs.Values.Where(x => x.OwnerId == instanceIdentifier).ToArray();
+        var owned = _timeJobs
+            .Values.Where(x => string.Equals(x.OwnerId, instanceIdentifier, StringComparison.Ordinal))
+            .ToArray();
 
         foreach (var job in owned)
         {
@@ -1232,7 +1234,9 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         // Per-policy dead-node transition (#315, #316/U4) — mirrors EF ReleaseDeadNodeOccurrenceResources.
         // Idle/Queued reclaimed immediately; InProgress arms defer to the lease (LockedUntil <= now) so a
         // still-leased running occurrence survives a membership blip and is recovered by U3 once its lease lapses.
-        var owned = _cronOccurrences.Values.Where(x => x.OwnerId == instanceIdentifier).ToArray();
+        var owned = _cronOccurrences
+            .Values.Where(x => string.Equals(x.OwnerId, instanceIdentifier, StringComparison.Ordinal))
+            .ToArray();
 
         foreach (var occurrence in owned)
         {
@@ -1591,7 +1595,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
         return (job.Status == JobStatus.Idle || job.Status == JobStatus.Queued)
             && (
-                job.OwnerId == _ownerId
+                string.Equals(job.OwnerId, _ownerId, StringComparison.Ordinal)
                 || job.LockedUntil == null
                 || (job.LockedUntil <= now && job.OnNodeDeath == NodeDeathPolicy.Retry)
             );
@@ -1605,7 +1609,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
         return (occurrence.Status == JobStatus.Idle || occurrence.Status == JobStatus.Queued)
             && (
-                occurrence.OwnerId == _ownerId
+                string.Equals(occurrence.OwnerId, _ownerId, StringComparison.Ordinal)
                 || occurrence.LockedUntil == null
                 || (occurrence.LockedUntil <= now && occurrence.OnNodeDeath == NodeDeathPolicy.Retry)
             );

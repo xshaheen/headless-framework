@@ -162,7 +162,7 @@ public sealed class QueryParamCollection : IReadOnlyNameValueList<object?>
 
         foreach (var item in old)
         {
-            if (item.Name != name)
+            if (!string.Equals(item.Name, name, StringComparison.Ordinal))
             {
                 _values.Add(item);
                 continue;
@@ -282,7 +282,7 @@ public sealed class QueryParamCollection : IReadOnlyNameValueList<object?>
         for (var i = 0; i < _values.Count; i++)
         {
             var qp = _values[i];
-            if (qp.Name == name && Equals(qp.Value.Value, value))
+            if (string.Equals(qp.Name, name, StringComparison.Ordinal) && Equals(qp.Value.Value, value))
             {
                 return true;
             }

@@ -75,7 +75,9 @@ public sealed class CollectionValidatorsUniqueElementsTests
         var result = sut.TestValidate(model);
 
         result.ShouldHaveValidationErrorFor(x => x.Elements);
-        var failure = result.Errors.Single(e => e.PropertyName == nameof(TestModel.Elements));
+        var failure = result.Errors.Single(e =>
+            string.Equals(e.PropertyName, nameof(TestModel.Elements), StringComparison.Ordinal)
+        );
         failure.FormattedMessagePlaceholderValues["TotalDuplicates"].Should().Be(1);
     }
 }

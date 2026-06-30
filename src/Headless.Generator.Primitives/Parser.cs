@@ -163,11 +163,7 @@ internal static class Parser
         // StringLengthAttribute
         StringLengthInfo? stringLengthInfo = null;
 
-        if (
-            underlyingType == PrimitiveUnderlyingType.String
-            && stringLengthAttr is not null
-            && stringLengthAttr.ConstructorArguments.Length >= 3
-        )
+        if (underlyingType == PrimitiveUnderlyingType.String && stringLengthAttr?.ConstructorArguments.Length >= 3)
         {
             var minValue = (int)stringLengthAttr.ConstructorArguments[0].Value!;
             var maxValue = (int)stringLengthAttr.ConstructorArguments[1].Value!;
@@ -290,7 +286,7 @@ internal static class Parser
 
             foreach (var a in parentSymbol.GetAttributes())
             {
-                if (a.AttributeClass?.Name == "SupportedOperationsAttribute")
+                if (string.Equals(a.AttributeClass?.Name, "SupportedOperationsAttribute", StringComparison.Ordinal))
                 {
                     parentAttrData = a;
                     break;
@@ -438,15 +434,15 @@ internal static class Parser
 
             if (_IsSystemNamespace(ns))
             {
-                if (name == "IParsable")
+                if (string.Equals(name, "IParsable", StringComparison.Ordinal))
                 {
                     flags.Item1 = true;
                 }
-                else if (name == "ISpanFormattable")
+                else if (string.Equals(name, "ISpanFormattable", StringComparison.Ordinal))
                 {
                     flags.Item8 = true;
                 }
-                else if (name == "IUtf8SpanFormattable")
+                else if (string.Equals(name, "IUtf8SpanFormattable", StringComparison.Ordinal))
                 {
                     flags.Item9 = true;
                 }
@@ -480,7 +476,10 @@ internal static class Parser
         // Check primitiveType for IUtf8SpanFormattable
         foreach (var iface in primitiveType.AllInterfaces)
         {
-            if (iface.Name == "IUtf8SpanFormattable" && _IsSystemNamespace(iface.ContainingNamespace))
+            if (
+                string.Equals(iface.Name, "IUtf8SpanFormattable", StringComparison.Ordinal)
+                && _IsSystemNamespace(iface.ContainingNamespace)
+            )
             {
                 flags.Item10 = true;
                 break;

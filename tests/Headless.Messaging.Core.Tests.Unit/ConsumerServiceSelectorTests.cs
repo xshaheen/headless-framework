@@ -251,7 +251,9 @@ public sealed class ConsumerServiceSelectorTests
 
         // then
         candidates.Should().HaveCount(2);
-        var ordersCandidates = candidates.Where(c => c.MessageName == "orders.placed").ToList();
+        var ordersCandidates = candidates
+            .Where(c => string.Equals(c.MessageName, "orders.placed", StringComparison.Ordinal))
+            .ToList();
         ordersCandidates.Should().HaveCount(2);
     }
 

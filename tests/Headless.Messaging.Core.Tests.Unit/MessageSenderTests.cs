@@ -666,12 +666,16 @@ public sealed class MessageSenderTests : TestBase
         result.Succeeded.Should().BeTrue();
         busTransport
             .ReceivedCalls()
-            .Count(call => call.GetMethodInfo().Name == nameof(IBusTransport.SendAsync))
+            .Count(call =>
+                string.Equals(call.GetMethodInfo().Name, nameof(IBusTransport.SendAsync), StringComparison.Ordinal)
+            )
             .Should()
             .Be(1);
         queueTransport
             .ReceivedCalls()
-            .Count(call => call.GetMethodInfo().Name == nameof(IQueueTransport.SendAsync))
+            .Count(call =>
+                string.Equals(call.GetMethodInfo().Name, nameof(IQueueTransport.SendAsync), StringComparison.Ordinal)
+            )
             .Should()
             .Be(0);
     }
@@ -719,12 +723,16 @@ public sealed class MessageSenderTests : TestBase
         result.Succeeded.Should().BeTrue();
         queueTransport
             .ReceivedCalls()
-            .Count(call => call.GetMethodInfo().Name == nameof(IQueueTransport.SendAsync))
+            .Count(call =>
+                string.Equals(call.GetMethodInfo().Name, nameof(IQueueTransport.SendAsync), StringComparison.Ordinal)
+            )
             .Should()
             .Be(1);
         busTransport
             .ReceivedCalls()
-            .Count(call => call.GetMethodInfo().Name == nameof(IBusTransport.SendAsync))
+            .Count(call =>
+                string.Equals(call.GetMethodInfo().Name, nameof(IBusTransport.SendAsync), StringComparison.Ordinal)
+            )
             .Should()
             .Be(0);
     }
@@ -823,7 +831,9 @@ public sealed class MessageSenderTests : TestBase
             );
         queueTransport
             .ReceivedCalls()
-            .Count(call => call.GetMethodInfo().Name == nameof(IQueueTransport.SendAsync))
+            .Count(call =>
+                string.Equals(call.GetMethodInfo().Name, nameof(IQueueTransport.SendAsync), StringComparison.Ordinal)
+            )
             .Should()
             .Be(0);
     }
@@ -874,7 +884,9 @@ public sealed class MessageSenderTests : TestBase
             );
         busTransport
             .ReceivedCalls()
-            .Count(call => call.GetMethodInfo().Name == nameof(IBusTransport.SendAsync))
+            .Count(call =>
+                string.Equals(call.GetMethodInfo().Name, nameof(IBusTransport.SendAsync), StringComparison.Ordinal)
+            )
             .Should()
             .Be(0);
     }

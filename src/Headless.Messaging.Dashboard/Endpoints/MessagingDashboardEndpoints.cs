@@ -743,7 +743,7 @@ public static class MessagingDashboardEndpoints
             var response = await httpClient.GetStringAsync(healthEndpoint).ConfigureAwait(false);
             sw.Stop();
 
-            if (response == "OK")
+            if (string.Equals(response, "OK", StringComparison.Ordinal))
             {
                 return Results.Text(sw.ElapsedMilliseconds.ToString("D", CultureInfo.InvariantCulture));
             }

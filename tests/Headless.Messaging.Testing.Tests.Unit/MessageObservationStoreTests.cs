@@ -192,7 +192,7 @@ public sealed class MessageObservationStoreTests : TestBase
             typeof(SimpleMessage),
             MessageObservationType.Published,
             intentType: null,
-            predicate: p => p is SimpleMessage sm && sm.Value == "yes",
+            predicate: p => p is SimpleMessage sm && string.Equals(sm.Value, "yes", StringComparison.Ordinal),
             timeout: TimeSpan.FromSeconds(5),
             cancellationToken: AbortToken
         );
@@ -225,7 +225,7 @@ public sealed class MessageObservationStoreTests : TestBase
             typeof(SimpleMessage),
             MessageObservationType.Consumed,
             intentType: null,
-            predicate: p => p is SimpleMessage sm && sm.Value == "match-me",
+            predicate: p => p is SimpleMessage sm && string.Equals(sm.Value, "match-me", StringComparison.Ordinal),
             timeout: TimeSpan.FromMilliseconds(50),
             cancellationToken: AbortToken
         );
@@ -260,7 +260,7 @@ public sealed class MessageObservationStoreTests : TestBase
             typeof(SimpleMessage),
             MessageObservationType.Published,
             intentType: IntentType.Queue,
-            predicate: p => p is SimpleMessage sm && sm.Value == "same",
+            predicate: p => p is SimpleMessage sm && string.Equals(sm.Value, "same", StringComparison.Ordinal),
             timeout: TimeSpan.FromMilliseconds(50),
             cancellationToken: AbortToken
         );

@@ -253,7 +253,7 @@ internal static class NamespaceCollector
         var namespaceName = typeSymbol.ContainingNamespace?.ToDisplayString();
         if (
             !string.IsNullOrEmpty(namespaceName)
-            && namespaceName != "<global namespace>"
+            && !string.Equals(namespaceName, "<global namespace>", StringComparison.Ordinal)
             && _IsValidNamespace(namespaceName)
         )
         {
@@ -267,11 +267,11 @@ internal static class NamespaceCollector
     private static bool _IsValidNamespace(string? namespaceName)
     {
         return !string.IsNullOrWhiteSpace(namespaceName)
-            && namespaceName != "System"
+            && !string.Equals(namespaceName, "System", StringComparison.Ordinal)
             && // Avoid duplicate System namespace
             !namespaceName!.StartsWith("System.Runtime", StringComparison.Ordinal)
-            && !namespaceName.Contains("<")
-            && !namespaceName.Contains(">")
+            && !namespaceName.Contains('<')
+            && !namespaceName.Contains('>')
             && namespaceName.Length > 1;
     }
 

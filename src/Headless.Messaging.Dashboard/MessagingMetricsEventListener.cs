@@ -77,15 +77,27 @@ internal sealed class MessagingMetricsEventListener : EventListener
 
         var val = payload.Values.ToArray();
 
-        if ((string)val[0] == MessageDiagnosticListenerNames.PublishedPerSec)
+        if (string.Equals((string)val[0], MessageDiagnosticListenerNames.PublishedPerSec, StringComparison.Ordinal))
         {
             PublishedPerSec.Add(Convert.ToInt32(val[3], CultureInfo.InvariantCulture));
         }
-        else if ((string)val[0] == MessageDiagnosticListenerNames.InvokeSubscriberPerSec)
+        else if (
+            string.Equals(
+                (string)val[0],
+                MessageDiagnosticListenerNames.InvokeSubscriberPerSec,
+                StringComparison.Ordinal
+            )
+        )
         {
             InvokeSubscriberPerSec.Add(Convert.ToInt32(val[3], CultureInfo.InvariantCulture));
         }
-        else if ((string)val[0] == MessageDiagnosticListenerNames.InvokeSubscriberElapsedMs)
+        else if (
+            string.Equals(
+                (string)val[0],
+                MessageDiagnosticListenerNames.InvokeSubscriberElapsedMs,
+                StringComparison.Ordinal
+            )
+        )
         {
             var v = Convert.ToInt32(val[2], CultureInfo.InvariantCulture);
             InvokeSubscriberElapsedMs.Add(v == 0 ? null : v);

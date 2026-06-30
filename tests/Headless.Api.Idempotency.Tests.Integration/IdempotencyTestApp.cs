@@ -288,21 +288,25 @@ internal static class IdempotencyTestApp
     }
 
     /// <summary>
+    /// <para>
     /// In-memory <see cref="IDistributedLock"/> that models lease expiry. Each resource
     /// tracks an owner lock-id and an absolute expiration timestamp; <c>TryAcquireAsync</c>
     /// considers the slot free either when no owner is set OR when the current owner's lease has
     /// elapsed (lock stealing). Releasing a lock whose lease already expired is a silent no-op so
     /// the original holder cannot disturb a successor.
-    ///
+    /// </para>
+    /// <para>
     /// Why model expiry: production lock providers (Redis SET NX PX, ZooKeeper ephemeral nodes)
     /// always allow another caller to acquire a previously-leased resource once the lease elapses,
     /// even if the original holder has not released. A pure semaphore-per-resource double hides
     /// this behavior — handler code that depends on lease semantics (e.g., short
     /// <c>WinnerLockLease</c> values, lease-shorter-than-handler-runtime bugs) passes integration
     /// tests against a semaphore double and fails in production against Redis.
-    ///
+    /// </para>
+    /// <para>
     /// Implements only TryAcquireAsync + IDistributedLease.DisposeAsync — the surface the
     /// idempotency middleware actually uses. Other interface methods throw NotSupportedException.
+    /// </para>
     /// </summary>
     internal sealed class InMemoryDistributedLockDouble(TimeProvider timeProvider) : IDistributedLock
     {

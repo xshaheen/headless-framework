@@ -182,7 +182,8 @@ internal sealed class ConsumerRegistry : IConsumerRegistry
         }
 
         return all.FirstOrDefault(m =>
-            string.Equals(m.MessageName, messageName, StringComparison.OrdinalIgnoreCase) && m.Group == group
+            string.Equals(m.MessageName, messageName, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(m.Group, group, StringComparison.Ordinal)
         );
     }
 

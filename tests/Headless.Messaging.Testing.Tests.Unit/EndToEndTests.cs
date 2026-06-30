@@ -183,7 +183,7 @@ public sealed class EndToEndTests : TestBase
 
         // when — wait for specifically the "target" order
         var recorded = await harness.WaitForConsumed<OrderCreatedEvent>(
-            msg => msg.OrderId == "target",
+            msg => string.Equals(msg.OrderId, "target", StringComparison.Ordinal),
             TimeSpan.FromSeconds(5),
             AbortToken
         );
@@ -399,12 +399,12 @@ public sealed class EndToEndTests : TestBase
             AbortToken
         );
         var busConsumed = await harness.WaitForConsumed<OrderCreatedEvent>(
-            message => message.OrderId == "outbox-bus",
+            message => string.Equals(message.OrderId, "outbox-bus", StringComparison.Ordinal),
             TimeSpan.FromSeconds(5),
             AbortToken
         );
         var queueConsumed = await harness.WaitForConsumed<OrderCreatedEvent>(
-            message => message.OrderId == "outbox-queue",
+            message => string.Equals(message.OrderId, "outbox-queue", StringComparison.Ordinal),
             TimeSpan.FromSeconds(5),
             AbortToken
         );
@@ -456,7 +456,7 @@ public sealed class EndToEndTests : TestBase
             .GetType()
             .GetFields(BindingFlags.Instance | BindingFlags.NonPublic)
             .Select(field => field.GetValue(transport)?.GetType().Name)
-            .FirstOrDefault(name => name is not null && name.Contains("Transport", StringComparison.Ordinal));
+            .FirstOrDefault(name => name?.Contains("Transport", StringComparison.Ordinal) == true);
     }
 
     private sealed class QueueOnlyTransportExtension : IMessagesOptionsExtension

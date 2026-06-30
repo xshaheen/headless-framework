@@ -46,13 +46,15 @@ public sealed class CorrelationPrecedenceTests
     public void should_reject_correlation_values_with_control_characters(string correlationId, string source)
     {
         // given
-        var accessor =
-            source == "ambient"
-                ? new AsyncLocalConsumeContextAccessor { Current = _ConsumeContext(correlationId) }
-                : null;
-        var factory =
-            source == "selector" ? _CreateFactory(selector: _ => correlationId) : _CreateFactory(accessor: accessor);
-        var options = source == "explicit" ? new PublishOptions { CorrelationId = correlationId } : null;
+        var accessor = string.Equals(source, "ambient", StringComparison.Ordinal)
+            ? new AsyncLocalConsumeContextAccessor { Current = _ConsumeContext(correlationId) }
+            : null;
+        var factory = string.Equals(source, "selector", StringComparison.Ordinal)
+            ? _CreateFactory(selector: _ => correlationId)
+            : _CreateFactory(accessor: accessor);
+        var options = string.Equals(source, "explicit", StringComparison.Ordinal)
+            ? new PublishOptions { CorrelationId = correlationId }
+            : null;
 
         // when
         var act = () => factory.Create(new TestMessage(null), options);

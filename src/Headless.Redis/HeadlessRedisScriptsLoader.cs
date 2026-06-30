@@ -389,7 +389,7 @@ public sealed class HeadlessRedisScriptsLoader(
         ScriptsLoadState state
     )
     {
-        return definitions.Where(scriptDefinition => _GetLoadedScript(scriptDefinition, state) is null).ToArray();
+        return [.. definitions.Where(scriptDefinition => _GetLoadedScript(scriptDefinition, state) is null)];
     }
 
     private void _ResetScripts(int expectedVersion)

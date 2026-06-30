@@ -267,7 +267,7 @@ public sealed class Url
                     ? uri.Port
                     : null; // don't default Port if not included explicitly
             _pathSegments = [];
-            if (uri.AbsolutePath.Length > 0 && uri.AbsolutePath != "/")
+            if (uri.AbsolutePath.Length > 0 && !string.Equals(uri.AbsolutePath, "/", StringComparison.Ordinal))
             {
                 AppendPathSegment(uri.AbsolutePath);
             }

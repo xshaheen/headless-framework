@@ -296,7 +296,8 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
         {
             await creator.CreateTablesAsync(TestContext.Current.CancellationToken);
         }
-        catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.DuplicateTable)
+        catch (PostgresException e)
+            when (string.Equals(e.SqlState, PostgresErrorCodes.DuplicateTable, StringComparison.Ordinal))
         {
             // Orders table already created by an earlier test in this collection.
         }

@@ -619,7 +619,7 @@ public sealed class MessagingIntentSplitTests : TestBase
         {
             if (
                 value.Value is MessageEventDataPubSend eventData
-                && eventData.TransportMessage.GetName() == _expectedMessageName
+                && string.Equals(eventData.TransportMessage.GetName(), _expectedMessageName, StringComparison.Ordinal)
             )
             {
                 BeforePublishData = eventData;
