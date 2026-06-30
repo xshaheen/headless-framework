@@ -35,7 +35,7 @@ public sealed record ConsumerMetadata(
     public string ResolvedHandlerId =>
         string.IsNullOrWhiteSpace(HandlerId)
             ? MessagingConventions.GetDefaultHandlerId(ConsumerType, MessageType)
-            : HandlerId!;
+            : HandlerId;
 
     /// <summary>
     /// Per-consumer circuit breaker overrides registered via

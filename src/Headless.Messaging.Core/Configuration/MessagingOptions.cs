@@ -451,7 +451,7 @@ public sealed class MessagingOptions
 
         var resolvedGroup =
             !string.IsNullOrWhiteSpace(explicitGroup) ? explicitGroup
-            : !string.IsNullOrWhiteSpace(Conventions.DefaultGroup) ? Conventions.DefaultGroup!
+            : !string.IsNullOrWhiteSpace(Conventions.DefaultGroup) ? Conventions.DefaultGroup
             : IsDefaultGroupNameConfigured ? DefaultGroupName
             : Conventions.GetGroupName(handlerId);
 

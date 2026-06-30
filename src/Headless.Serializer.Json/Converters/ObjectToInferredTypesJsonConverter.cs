@@ -3,7 +3,7 @@
 namespace Headless.Serializer.Converters;
 
 /// <summary>
-/// Deserializes <c>object</c>-typed properties to their most appropriate .NET type by inspecting the
+/// Deserializes <see langword="object"/>-typed properties to their most appropriate .NET type by inspecting the
 /// JSON token: booleans become <see cref="bool"/>, integers become <see cref="long"/>, floats become
 /// <see cref="double"/>, ISO-8601 date strings become <see cref="DateTimeOffset"/>, plain strings remain
 /// <see cref="string"/>, and everything else is returned as a <see cref="System.Text.Json.JsonElement"/>.

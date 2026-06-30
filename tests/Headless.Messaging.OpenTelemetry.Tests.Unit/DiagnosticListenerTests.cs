@@ -722,7 +722,7 @@ public sealed class DiagnosticListenerTests : TestBase
                 binder: null,
                 types: [typeof(string), typeof(int)],
                 modifiers: null
-            )!,
+            ),
             OperationTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             RetryCount = retryCount,
         };

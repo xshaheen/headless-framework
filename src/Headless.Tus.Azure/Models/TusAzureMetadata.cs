@@ -275,7 +275,7 @@ internal sealed partial class TusAzureMetadata
     private static string _SanitizeAzureMetadataKey(string key)
     {
         // Azure metadata keys: must start with letter or underscore, alphanumeric and underscore only
-        var sanitized = _AzureMetadataKey().Replace(key, "_").ToLowerInvariant();
+        var sanitized = AzureMetadataKey.Replace(key, "_").ToLowerInvariant();
 
         // An empty or all-invalid key sanitizes to nothing; fall back to "_" instead of indexing into an
         // empty string below.
@@ -294,7 +294,7 @@ internal sealed partial class TusAzureMetadata
     }
 
     [GeneratedRegex("[^a-zA-Z0-9_]", RegexOptions.None, 100)]
-    private static partial Regex _AzureMetadataKey();
+    private static partial Regex AzureMetadataKey { get; }
 
     #endregion
 

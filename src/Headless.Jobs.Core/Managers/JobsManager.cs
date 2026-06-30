@@ -119,7 +119,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         var coordinated = _TryCaptureCoordinatedContext();
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
-        var executionTime = entity.ExecutionTime!.Value;
+        var executionTime = entity.ExecutionTime.Value;
 
         if (coordinated is { } context)
         {

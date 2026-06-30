@@ -451,7 +451,10 @@ public sealed class InMemoryCache
         if (wasReplaced)
         {
             if (sizeDelta != 0)
+            {
                 Interlocked.Add(ref _currentMemorySize, sizeDelta);
+            }
+
             _TrackUpdate(expiresAt);
         }
 
@@ -536,7 +539,10 @@ public sealed class InMemoryCache
         if (wasExpectedValue)
         {
             if (sizeDelta != 0)
+            {
                 Interlocked.Add(ref _currentMemorySize, sizeDelta);
+            }
+
             _TrackUpdate(expiresAt);
         }
 

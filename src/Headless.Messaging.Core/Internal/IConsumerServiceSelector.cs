@@ -20,7 +20,7 @@ public interface IConsumerServiceSelector
     /// <summary>
     /// Selects a set of <see cref="ConsumerExecutorDescriptor" /> candidates for the current message associated with
     /// </summary>
-    /// <returns>A set of <see cref="ConsumerExecutorDescriptor" /> candidates or <c>null</c>.</returns>
+    /// <returns>A set of <see cref="ConsumerExecutorDescriptor" /> candidates or <see langword="null"/>.</returns>
     IReadOnlyList<ConsumerExecutorDescriptor> SelectCandidates();
 
     /// <summary>
@@ -169,7 +169,7 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
     {
         if (!string.IsNullOrWhiteSpace(metadata.Group))
         {
-            return metadata.Group!;
+            return metadata.Group;
         }
 
         _messagingOptions.Conventions.Version = _messagingOptions.Version;
@@ -182,7 +182,7 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
             .GetParameters()
             .Select(p => new ParameterDescriptor
             {
-                Name = p.Name!,
+                Name = p.Name,
                 ParameterType = p.ParameterType,
                 IsFromMessaging = p.ParameterType == typeof(CancellationToken),
             })

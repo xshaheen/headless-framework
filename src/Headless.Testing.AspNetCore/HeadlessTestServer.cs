@@ -144,7 +144,7 @@ public sealed class HeadlessTestServer<TProgram>(
     /// </summary>
     /// <exception cref="InvalidOperationException">
     /// Thrown when <see cref="ConfigureDatabaseReset"/> was not called or
-    /// <see cref="DatabaseResetOptions.ConnectionProvider"/> is <c>null</c>.
+    /// <see cref="DatabaseResetOptions.ConnectionProvider"/> is <see langword="null"/>.
     /// </exception>
     public async Task ResetDatabaseAsync()
     {

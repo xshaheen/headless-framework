@@ -13,7 +13,7 @@ namespace Headless.Serializer;
 /// its backend's lowest-allocation path (<c>System.Text.Json</c>'s <c>Utf8JsonWriter</c>/<c>Utf8JsonReader</c>,
 /// MessagePack's <c>IBufferWriter</c>/<c>ReadOnlySequence</c> APIs) without intermediate <c>byte[]</c> or
 /// <see cref="Stream"/> materialization. Use the extension methods in <see cref="SerializerExtensions"/> when a
-/// <c>byte[]</c>, <c>string</c>, or <see cref="Stream"/> is more convenient.
+/// <c>byte[]</c>, <see langword="string"/>, or <see cref="Stream"/> is more convenient.
 /// </remarks>
 public interface ISerializer
 {

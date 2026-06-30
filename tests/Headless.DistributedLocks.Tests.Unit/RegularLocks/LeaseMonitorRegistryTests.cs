@@ -109,7 +109,7 @@ public sealed class LeaseMonitorRegistryTests : TestBase
         var bucket = _GetBucket(registry, resource);
         var isRemovedField = bucket.GetType().GetField("_isRemoved", BindingFlags.Instance | BindingFlags.NonPublic);
         isRemovedField.Should().NotBeNull();
-        isRemovedField!.SetValue(bucket, true);
+        isRemovedField.SetValue(bucket, true);
     }
 
     private static object _GetBucket(LeaseMonitorRegistry registry, string resource)

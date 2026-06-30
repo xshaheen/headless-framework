@@ -369,7 +369,7 @@ internal sealed class AmazonSqsConsumerClient(
                 if (intentType == IntentType.Bus && string.IsNullOrWhiteSpace(_queueUrl))
                 {
                     // Create or get existing queue URL asynchronously
-                    var queueResponse = await _sqsClient!
+                    var queueResponse = await _sqsClient
                         .CreateQueueAsync(groupId.ToSqsCreateQueueRequest(), cancellationToken)
                         .ConfigureAwait(false);
                     _queueUrl = queueResponse.QueueUrl;

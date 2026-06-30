@@ -362,7 +362,7 @@ internal sealed class MessagePublishRequestFactory(
 
             var ex = new InvalidOperationException(
                 $"Header '{Headers.TenantId}' is reserved. "
-                    + $"Use the typed TenantId property on your publish options to set the tenant identifier."
+                    + "Use the typed TenantId property on your publish options to set the tenant identifier."
             )
             {
                 Data = { ["Headers.TenantId.Raw"] = safeRawForReservedMessage },

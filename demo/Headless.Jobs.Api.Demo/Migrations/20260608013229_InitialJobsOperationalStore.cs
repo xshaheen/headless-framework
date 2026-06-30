@@ -13,7 +13,6 @@ public partial class InitialJobsOperationalStore : Migration
 
         migrationBuilder.CreateTable(
             name: "CronJobs",
-            schema: "jobs",
             columns: table => new
             {
                 Id = table.Column<Guid>(type: "uuid", nullable: false),
@@ -27,6 +26,7 @@ public partial class InitialJobsOperationalStore : Migration
                 CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                 UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
             },
+            schema: "jobs",
             constraints: table =>
             {
                 table.PrimaryKey("PK_CronJobs", x => x.Id);
@@ -35,7 +35,6 @@ public partial class InitialJobsOperationalStore : Migration
 
         migrationBuilder.CreateTable(
             name: "TimeJobs",
-            schema: "jobs",
             columns: table => new
             {
                 Id = table.Column<Guid>(type: "uuid", nullable: false),
@@ -59,22 +58,22 @@ public partial class InitialJobsOperationalStore : Migration
                 ParentId = table.Column<Guid>(type: "uuid", nullable: true),
                 RunCondition = table.Column<int>(type: "integer", nullable: true),
             },
+            schema: "jobs",
             constraints: table =>
             {
                 table.PrimaryKey("PK_TimeJobs", x => x.Id);
                 table.ForeignKey(
                     name: "FK_TimeJobs_TimeJobs_ParentId",
                     column: x => x.ParentId,
-                    principalSchema: "jobs",
                     principalTable: "TimeJobs",
-                    principalColumn: "Id"
+                    principalColumn: "Id",
+                    principalSchema: "jobs"
                 );
             }
         );
 
         migrationBuilder.CreateTable(
             name: "CronJobOccurrences",
-            schema: "jobs",
             columns: table => new
             {
                 Id = table.Column<Guid>(type: "uuid", nullable: false),
@@ -91,15 +90,16 @@ public partial class InitialJobsOperationalStore : Migration
                 CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                 UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
             },
+            schema: "jobs",
             constraints: table =>
             {
                 table.PrimaryKey("PK_CronJobOccurrences", x => x.Id);
                 table.ForeignKey(
                     name: "FK_CronJobOccurrences_CronJobs_CronJobId",
                     column: x => x.CronJobId,
-                    principalSchema: "jobs",
                     principalTable: "CronJobs",
                     principalColumn: "Id",
+                    principalSchema: "jobs",
                     onDelete: ReferentialAction.Cascade
                 );
             }
@@ -107,66 +107,66 @@ public partial class InitialJobsOperationalStore : Migration
 
         migrationBuilder.CreateIndex(
             name: "IX_CronJobOccurrence_CronJobId",
-            schema: "jobs",
             table: "CronJobOccurrences",
-            column: "CronJobId"
+            column: "CronJobId",
+            schema: "jobs"
         );
 
         migrationBuilder.CreateIndex(
             name: "IX_CronJobOccurrence_ExecutionTime",
-            schema: "jobs",
             table: "CronJobOccurrences",
-            column: "ExecutionTime"
+            column: "ExecutionTime",
+            schema: "jobs"
         );
 
         migrationBuilder.CreateIndex(
             name: "IX_CronJobOccurrence_Status_ExecutionTime",
-            schema: "jobs",
             table: "CronJobOccurrences",
-            columns: new[] { "Status", "ExecutionTime" }
+            columns: new[] { "Status", "ExecutionTime" },
+            schema: "jobs"
         );
 
         migrationBuilder.CreateIndex(
             name: "UQ_CronJobId_ExecutionTime",
-            schema: "jobs",
             table: "CronJobOccurrences",
             columns: new[] { "CronJobId", "ExecutionTime" },
+            schema: "jobs",
             unique: true
         );
 
         migrationBuilder.CreateIndex(
             name: "IX_CronJobs_Expression",
-            schema: "jobs",
             table: "CronJobs",
-            column: "Expression"
+            column: "Expression",
+            schema: "jobs"
         );
 
         migrationBuilder.CreateIndex(
             name: "IX_Function_Expression",
-            schema: "jobs",
             table: "CronJobs",
-            columns: new[] { "Function", "Expression" }
+            columns: new[] { "Function", "Expression" },
+            schema: "jobs"
         );
 
         migrationBuilder.CreateIndex(
             name: "IX_TimeJob_ExecutionTime",
-            schema: "jobs",
             table: "TimeJobs",
-            column: "ExecutionTime"
+            column: "ExecutionTime",
+            schema: "jobs"
         );
 
         migrationBuilder.CreateIndex(
             name: "IX_TimeJob_Status_ExecutionTime",
-            schema: "jobs",
             table: "TimeJobs",
-            columns: new[] { "Status", "ExecutionTime" }
+            columns: new[] { "Status", "ExecutionTime" },
+            schema: "jobs"
         );
 
         migrationBuilder.CreateIndex(
             name: "IX_TimeJobs_ParentId",
-            schema: "jobs",
             table: "TimeJobs",
-            column: "ParentId"
+            column: "ParentId",
+            schema: "jobs"
         );
     }
 

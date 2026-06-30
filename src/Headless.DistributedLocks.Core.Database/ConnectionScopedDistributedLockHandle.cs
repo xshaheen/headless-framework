@@ -11,7 +11,7 @@ namespace Headless.DistributedLocks;
 /// (or <see cref="ReleaseAsync"/> is called) — there is no TTL and no GC finalizer safety net: the storage holds a
 /// strong reference to the underlying engine handle for its lifetime, so a consumer that abandons this handle without
 /// disposing it leaks the backing connection and its advisory lock until the provider itself is disposed. This is the
-/// deliberate contract for connection-scoped locks (mirroring <c>lock</c>/<c>using</c> discipline); the reference
+/// deliberate contract for connection-scoped locks (mirroring <see langword="lock"/>/<see langword="using"/> discipline); the reference
 /// engine's finalizer queue was intentionally dropped in favor of requiring explicit disposal. Always dispose the
 /// handle (an <c>await using</c> is the intended usage).
 /// </summary>

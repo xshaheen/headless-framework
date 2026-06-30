@@ -228,7 +228,7 @@ internal sealed class SqlServerMembershipStore(
                     command.Parameters.AddWithValue("NodeId", identity.NodeId.Value);
                     command.Parameters.AddWithValue("Incarnation", identity.Incarnation.Value);
 
-                    var accepted = (bool)(await command.ExecuteScalarAsync(ct).ConfigureAwait(false))!;
+                    var accepted = (bool)(await command.ExecuteScalarAsync(ct).ConfigureAwait(false));
                     await transaction.CommitAsync(ct).ConfigureAwait(false);
 
                     // Retention pruning runs once per tick on the read path; the heartbeat path no longer prunes.

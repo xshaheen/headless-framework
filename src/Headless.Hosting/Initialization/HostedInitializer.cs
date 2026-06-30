@@ -17,7 +17,7 @@ namespace Headless.Hosting.Initialization;
 /// <see cref="OperationCanceledException"/> rather than hanging. On first start the field
 /// initializer's TCS is never <c>IsCompleted</c>, so the cancel path is skipped.
 /// <para>
-/// Subclasses may override <see cref="RunOnStartup"/> to return <c>false</c> to skip
+/// Subclasses may override <see cref="RunOnStartup"/> to return <see langword="false"/> to skip
 /// <see cref="InitializeAsync"/> entirely while still marking the initializer complete, so
 /// dependents that await <see cref="WaitForInitializationAsync"/> do not block.
 /// </para>
@@ -29,19 +29,19 @@ public abstract class HostedInitializer : IHostedLifecycleService, IInitializer
 
     /// <summary>Gets a value indicating whether initialization has completed successfully.</summary>
     /// <remarks>
-    /// Derived from the completion promise so it can never disagree with it: <c>true</c> only after a
-    /// successful (or skipped) run, and <c>false</c> while initialization is still in progress —
+    /// Derived from the completion promise so it can never disagree with it: <see langword="true"/> only after a
+    /// successful (or skipped) run, and <see langword="false"/> while initialization is still in progress —
     /// including the host-restart re-entry window — or when the run faulted or was canceled. Reading a
-    /// stored flag instead would report a stale <c>true</c> across a restart while the new
+    /// stored flag instead would report a stale <see langword="true"/> across a restart while the new
     /// <see cref="InitializeAsync"/> is still running.
     /// </remarks>
     public bool IsInitialized => _completion.Task.IsCompletedSuccessfully;
 
     /// <summary>
-    /// When <c>false</c>, <see cref="StartingAsync"/> skips <see cref="InitializeAsync"/> entirely
-    /// but still marks the initializer complete (<see cref="IsInitialized"/> becomes <c>true</c> and
+    /// When <see langword="false"/>, <see cref="StartingAsync"/> skips <see cref="InitializeAsync"/> entirely
+    /// but still marks the initializer complete (<see cref="IsInitialized"/> becomes <see langword="true"/> and
     /// the completion promise is resolved) so dependents awaiting
-    /// <see cref="WaitForInitializationAsync"/> are released. Defaults to <c>true</c>.
+    /// <see cref="WaitForInitializationAsync"/> are released. Defaults to <see langword="true"/>.
     /// </summary>
     protected virtual bool RunOnStartup => true;
 

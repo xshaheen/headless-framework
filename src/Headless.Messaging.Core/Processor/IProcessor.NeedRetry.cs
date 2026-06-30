@@ -170,7 +170,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
             // CAS loops at lines 553/576 that use the same primitive on int fields.
 #pragma warning disable VSTHRD003
             _ = _publishedRetryConsumeTask.ContinueWith(
-                t => Interlocked.CompareExchange(ref _publishedRetryConsumeTask, null, t),
+                t => Interlocked.CompareExchange(ref _publishedRetryConsumeTask, value: null, t),
                 CancellationToken.None,
                 TaskContinuationOptions.ExecuteSynchronously,
                 TaskScheduler.Default
@@ -207,7 +207,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         // Interlocked.CompareExchange atomically nulls the field only if it still points at `t`.
 #pragma warning disable VSTHRD003
         _ = _receivedRetryConsumeTask.ContinueWith(
-            t => Interlocked.CompareExchange(ref _receivedRetryConsumeTask, null, t),
+            t => Interlocked.CompareExchange(ref _receivedRetryConsumeTask, value: null, t),
             CancellationToken.None,
             TaskContinuationOptions.ExecuteSynchronously,
             TaskScheduler.Default
@@ -239,7 +239,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
             return;
         }
 
-        using var lossRegistration = _RegisterLeaseLossLogger(StoragePickupKind.Published, acquiredHandle);
+        await using var lossRegistration = _RegisterLeaseLossLogger(StoragePickupKind.Published, acquiredHandle);
 
         await _ExecutePublishedWorkAsync(connection, context).ConfigureAwait(false);
     }
@@ -405,7 +405,10 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
                 continue;
             }
 
-            await _dispatcher.EnqueueToExecute(message, null, context.CancellationToken).ConfigureAwait(false);
+            await _dispatcher
+                .EnqueueToExecute(message, descriptor: null, context.CancellationToken)
+                .ConfigureAwait(false);
+
             enqueued++;
         }
 

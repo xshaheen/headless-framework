@@ -20,7 +20,7 @@ namespace Headless.CommitCoordination.SqlServer;
 /// degrades dispatch latency, never durability.
 /// </summary>
 /// <remarks>
-/// SqlClient's diagnostic callbacks are synchronous <c>void</c> on the connection's own thread; blocking them on the
+/// SqlClient's diagnostic callbacks are synchronous <see langword="void"/> on the connection's own thread; blocking them on the
 /// signal drain would stall the SqlClient pipeline. We therefore start the drain and let it run on the thread pool,
 /// observing faults asynchronously (never swallowing them — a faulted drain is the relay's crash-recovery path: the
 /// uncommitted work buffer is recovered by the relay on restart, so a logged fault here is a diagnostic, not data

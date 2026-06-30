@@ -39,7 +39,14 @@ internal sealed class RabbitMqTransport : IBusTransport, IQueueTransport
             };
 
             await channel
-                .BasicPublishAsync(_exchange, message.GetName(), false, props, message.Body, cancellationToken)
+                .BasicPublishAsync(
+                    _exchange,
+                    message.GetName(),
+                    mandatory: false,
+                    props,
+                    message.Body,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
 
             var messageName = message.GetName();

@@ -134,7 +134,7 @@ public class Startup
             .AddAuthentication(opt => opt.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme)
             .AddScheme<MyDashboardAuthenticationSchemeOptions, MyDashboardAuthenticationHandler>(
                 MyDashboardAuthenticationSchemeDefaults.Scheme,
-                null
+                configureOptions: null
             )
             .AddCookie()
             .AddOpenIdConnect(options =>

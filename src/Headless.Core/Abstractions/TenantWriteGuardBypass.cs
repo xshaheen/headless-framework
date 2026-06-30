@@ -50,7 +50,7 @@ internal sealed class TenantWriteGuardBypass : ITenantWriteGuardBypass
         public bool IsActive => Volatile.Read(ref _refCount) > 0;
 
         /// <summary>Atomically increments the ref count unless the state is terminal.</summary>
-        /// <returns><c>true</c> if a ref was taken; <c>false</c> if the state is terminal.</returns>
+        /// <returns><see langword="true"/> if a ref was taken; <see langword="false"/> if the state is terminal.</returns>
         public bool TryAddRef()
         {
             int current;

@@ -108,7 +108,7 @@ public sealed class GeoValidatorsStringLatitudeTests
 
     private sealed class TestModelValidator : AbstractValidator<TestModel>
     {
-        public TestModelValidator() => RuleFor(x => x.Latitude!).Latitude();
+        public TestModelValidator() => RuleFor(x => x.Latitude).Latitude();
     }
 
     [Fact]
@@ -249,7 +249,7 @@ public sealed class GeoValidatorsStringLongitudeTests
 
     private sealed class TestModelValidator : AbstractValidator<TestModel>
     {
-        public TestModelValidator() => RuleFor(x => x.Longitude!).Longitude();
+        public TestModelValidator() => RuleFor(x => x.Longitude).Longitude();
     }
 
     [Fact]

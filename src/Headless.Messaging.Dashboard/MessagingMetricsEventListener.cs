@@ -5,7 +5,7 @@ using Headless.Messaging.Diagnostics;
 
 namespace Headless.Messaging.Dashboard;
 
-internal class MessagingMetricsEventListener : EventListener
+internal sealed class MessagingMetricsEventListener : EventListener
 {
     public const int HistorySize = 300;
     private readonly TimeProvider _timeProvider;

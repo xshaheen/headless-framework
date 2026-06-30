@@ -411,7 +411,7 @@ public sealed class DisposableSemaphoreSlotTests : TestBase
         var handle = await semaphore.TryAcquireAsync(acquireOptions, AbortToken);
         handle.Should().NotBeNull("pre-condition: slot must be acquired");
 
-        var slot = (DisposableSemaphoreSlot)handle!;
+        var slot = (DisposableSemaphoreSlot)handle;
 
         // Reattach deregisterMonitor if provided by rebuilding the slot directly.
         // DistributedSemaphoreProvider wires its own deregister; for tests that need a custom

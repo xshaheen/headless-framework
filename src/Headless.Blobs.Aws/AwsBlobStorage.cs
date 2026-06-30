@@ -310,7 +310,7 @@ public sealed class AwsBlobStorage(
                 }
                 else
                 {
-                    results.Add(Result<bool, Exception>.Ok(true));
+                    results.Add(Result<bool, Exception>.Ok(value: true));
                 }
             }
 
@@ -321,7 +321,7 @@ public sealed class AwsBlobStorage(
 
         // No exceptions were thrown, so all items were deleted successfully.
 
-        return objectKeys.ConvertAll(_ => Result<bool, Exception>.Ok(true));
+        return objectKeys.ConvertAll(_ => Result<bool, Exception>.Ok(value: true));
     }
 
     public async ValueTask<int> DeleteAllAsync(

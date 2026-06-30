@@ -1939,15 +1939,17 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var key = Faker.Random.AlphaNumeric(8);
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         _store.SetEntry(key, "old", now.AddMinutes(5), now.AddMinutes(5), eagerRefreshAt: now.AddSeconds(-1));
-        var coordinator = _CreateCoordinator();
+        using var coordinator = _CreateCoordinator();
+#pragma warning disable CA2025 // Do not pass 'IDisposable' instances into unawaited tasks
         var backgroundFinished = _WaitForBackgroundFinished(coordinator);
         var ceilingRegistered = _WaitForBackgroundCeilingRegistered(coordinator);
+#pragma warning restore CA2025 // Do not pass 'IDisposable' instances into unawaited tasks
         var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var factoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
         var options = _CreateOptions(
             duration: TimeSpan.FromMinutes(10),
-            eagerRefreshThreshold: 0.5f,
-            backgroundFactoryCeiling: TimeSpan.FromSeconds(2)
+            backgroundFactoryCeiling: TimeSpan.FromSeconds(2),
+            eagerRefreshThreshold: 0.5f
         );
 
         async ValueTask<string?> factory(CancellationToken cancellationToken)

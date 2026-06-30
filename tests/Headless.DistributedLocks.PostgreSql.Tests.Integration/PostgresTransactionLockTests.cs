@@ -511,7 +511,7 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
         {
             foreach (var value in values)
             {
-                Add(value!);
+                Add(value);
             }
         }
 

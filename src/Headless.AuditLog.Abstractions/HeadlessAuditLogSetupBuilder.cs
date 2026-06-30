@@ -57,7 +57,7 @@ public sealed class HeadlessAuditLogSetupBuilder
     /// merged into the shared <see cref="AuditLogStorageOptions"/> instance.
     /// </summary>
     /// <param name="configure">Delegate that mutates the shared storage options.</param>
-    /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <c>null</c>.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
     public HeadlessAuditLogSetupBuilder ConfigureStorage(Action<AuditLogStorageOptions> configure)
     {
         Argument.IsNotNull(configure);
@@ -72,7 +72,7 @@ public sealed class HeadlessAuditLogSetupBuilder
     /// (e.g., <c>UseEntityFramework</c>, <c>UsePostgreSql</c>) rather than end consumers.
     /// </summary>
     /// <param name="extension">The extension to register.</param>
-    /// <exception cref="ArgumentNullException"><paramref name="extension"/> is <c>null</c>.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="extension"/> is <see langword="null"/>.</exception>
     public void RegisterExtension(IAuditLogStorageOptionsExtension extension)
     {
         Argument.IsNotNull(extension);

@@ -126,8 +126,8 @@ public sealed class RedisCacheFailSafeTests(RedisCacheFixture fixture) : RedisCa
         var ttl = await Database.KeyTimeToLiveAsync(key + ":" + key);
         ttl.Should().NotBeNull();
         // physical = max(Duration=1s, FailSafeMaxDuration=3s) = 3s
-        ttl!.Value.Should().BeGreaterThan(TimeSpan.FromSeconds(1.5));
-        ttl!.Value.Should().BeLessThanOrEqualTo(options.FailSafeMaxDuration + TimeSpan.FromSeconds(2));
+        ttl.Value.Should().BeGreaterThan(TimeSpan.FromSeconds(1.5));
+        ttl.Value.Should().BeLessThanOrEqualTo(options.FailSafeMaxDuration + TimeSpan.FromSeconds(2));
     }
 
     /// <summary>
@@ -154,7 +154,7 @@ public sealed class RedisCacheFailSafeTests(RedisCacheFixture fixture) : RedisCa
         // then – TTL should be close to Duration (no fail-safe inflation)
         var ttl = await Database.KeyTimeToLiveAsync(key + ":" + key);
         ttl.Should().NotBeNull();
-        ttl!.Value.Should().BeCloseTo(duration, TimeSpan.FromSeconds(2));
+        ttl.Value.Should().BeCloseTo(duration, TimeSpan.FromSeconds(2));
     }
 
     /// <summary>
@@ -274,7 +274,7 @@ public sealed class RedisCacheFailSafeTests(RedisCacheFixture fixture) : RedisCa
         // then
         beforeExpiry.Should().NotBeNull();
         // Should be close to the logical Duration (2s), NOT the physical (5s)
-        beforeExpiry!.Value.Should().BeLessThanOrEqualTo(options.Duration + TimeSpan.FromSeconds(1));
+        beforeExpiry.Value.Should().BeLessThanOrEqualTo(options.Duration + TimeSpan.FromSeconds(1));
         beforeExpiry.Value.Should().BeGreaterThan(TimeSpan.Zero);
 
         // After logical expiry GetExpirationAsync must return null

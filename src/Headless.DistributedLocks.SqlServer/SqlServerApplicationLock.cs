@@ -223,7 +223,7 @@ internal static class SqlServerApplicationLock
             IF APPLOCK_MODE(N'public', @resource, N'Session') <> N'NoLock'
                 EXEC sys.sp_releaseapplock @Resource = @resource, @LockOwner = N'Session', @DbPrincipal = N'public';
             """;
-        command.Parameters.AddWithValue("resource", resource);
+        command.Parameters.AddWithValue(nameof(resource), resource);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -245,7 +245,7 @@ internal static class SqlServerApplicationLock
             IF APPLOCK_MODE(N'public', @resource, N'Transaction') <> N'NoLock'
                 EXEC sys.sp_releaseapplock @Resource = @resource, @LockOwner = N'Transaction', @DbPrincipal = N'public';
             """;
-        command.Parameters.AddWithValue("resource", resource);
+        command.Parameters.AddWithValue(nameof(resource), resource);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -279,7 +279,7 @@ internal static class SqlServerApplicationLock
                 SELECT @result;
             END;
             """;
-        command.Parameters.AddWithValue("resource", resource);
+        command.Parameters.AddWithValue(nameof(resource), resource);
         command.Parameters.AddWithValue("lockMode", isShared ? SharedLockMode : ExclusiveLockMode);
         command.Parameters.AddWithValue("lockTimeout", _ToLockTimeoutMilliseconds(acquireTimeout));
 

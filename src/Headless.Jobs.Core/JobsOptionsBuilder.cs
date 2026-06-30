@@ -279,7 +279,7 @@ public sealed class SchedulerOptionsBuilder
     /// How often a running job's lease is renewed (slides <c>LockedUntil</c> forward) while it executes, so a
     /// healthy long-running job is never falsely reclaimed (#316). The owning worker's execution loop extends the
     /// lease on this cadence; a job that stops renewing (crashed or wedged) has its lease lapse and is reclaimed
-    /// per its <c>OnNodeDeath</c> policy. <c>null</c> (the default) derives ≈ <see cref="LeaseDuration"/> / 3 so a
+    /// per its <c>OnNodeDeath</c> policy. <see langword="null"/> (the default) derives ≈ <see cref="LeaseDuration"/> / 3 so a
     /// single missed renewal cannot lapse the lease. An explicit value must be positive and strictly less than
     /// <see cref="LeaseDuration"/>; see <see cref="ResolveLeaseRenewalInterval"/>.
     /// </summary>

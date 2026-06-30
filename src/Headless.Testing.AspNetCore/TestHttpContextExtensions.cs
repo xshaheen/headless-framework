@@ -25,7 +25,7 @@ public static class TestHttpContextExtensions
     /// <para/>
     /// <see cref="DefaultHttpContext"/> has a minimal feature collection. Code that reads
     /// <c>IHttpConnectionFeature</c> directly (rather than via <see cref="HttpContext.Connection"/>)
-    /// may get <c>null</c>.
+    /// may get <see langword="null"/>.
     /// </remarks>
     /// <returns>The created <see cref="HttpContext"/> for further customization.</returns>
     public static HttpContext SetHttpContext(

@@ -264,7 +264,7 @@ public sealed class SqlServerPermissionsStorageTests(SqlServerPermissionsFixture
         command.Parameters.AddWithValue("@schema", _Schema);
         command.Parameters.AddWithValue("@table", tableName);
 
-        return (bool)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken))!;
+        return (bool)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken));
     }
 
     private async Task<bool> _IndexExistsAsync(string tableName, string indexName)
@@ -284,7 +284,7 @@ public sealed class SqlServerPermissionsStorageTests(SqlServerPermissionsFixture
         command.Parameters.AddWithValue("@index", indexName);
         command.Parameters.AddWithValue("@object", $"{_Schema}.{tableName}");
 
-        return (bool)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken))!;
+        return (bool)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken));
     }
 
     private sealed class TestCurrentTenant(string? tenantId) : ICurrentTenant

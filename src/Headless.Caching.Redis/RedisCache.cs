@@ -1175,21 +1175,21 @@ public sealed class RedisCache(
 
                     CacheValue<T> slidingValue = frame.IsNull
                         ? CacheValue<T>.Null
-                        : new CacheValue<T>(_DeserializeValueSegment<T>(frame.ValueSegment), true);
+                        : new CacheValue<T>(_DeserializeValueSegment<T>(frame.ValueSegment), hasValue: true);
 
                     return new CacheValueWithExpiration<T>(slidingValue, ttl);
                 }
 
                 if (_IsExpired(frame.LogicalExpiresAt, now))
                 {
-                    return new CacheValueWithExpiration<T>(CacheValue<T>.NoValue, null);
+                    return new CacheValueWithExpiration<T>(CacheValue<T>.NoValue, expiration: null);
                 }
 
                 TimeSpan? logicalRemaining = frame.LogicalExpiresAt?.Subtract(now);
 
                 CacheValue<T> cacheValue = frame.IsNull
                     ? CacheValue<T>.Null
-                    : new CacheValue<T>(_DeserializeValueSegment<T>(frame.ValueSegment), true);
+                    : new CacheValue<T>(_DeserializeValueSegment<T>(frame.ValueSegment), hasValue: true);
 
                 return new CacheValueWithExpiration<T>(cacheValue, logicalRemaining);
             }

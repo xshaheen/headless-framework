@@ -141,7 +141,7 @@ internal sealed class ServiceProviderLocalEventBus(IServiceProvider services) : 
         {
             if (_GetHandlerOrder(handler.GetType()) != 0)
             {
-                return array.OrderBy(ordered => _GetHandlerOrder(ordered.GetType())).ToArray();
+                return [.. array.OrderBy(ordered => _GetHandlerOrder(ordered.GetType()))];
             }
         }
 

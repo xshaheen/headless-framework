@@ -64,17 +64,18 @@ public sealed class PaymobCashInAuthenticator : IPaymobCashInAuthenticator, IDis
             await PaymobCashInException.ThrowAsync(response, CancellationToken.None).ConfigureAwait(false);
         }
 
-        var content = await response
-            .Content.ReadFromJsonAsync<CashInAuthenticationTokenResponse>(
-                CashInJsonOptions.JsonOptions,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        if (content is null)
-        {
-            throw new PaymobCashInException("Paymob CashIn returned null response body.", response.StatusCode, null);
-        }
+        var content =
+            await response
+                .Content.ReadFromJsonAsync<CashInAuthenticationTokenResponse>(
+                    CashInJsonOptions.JsonOptions,
+                    cancellationToken
+                )
+                .ConfigureAwait(false)
+            ?? throw new PaymobCashInException(
+                "Paymob CashIn returned null response body.",
+                response.StatusCode,
+                body: null
+            );
 
         _cachedToken = content.Token;
         _tokenExpiration = _timeProvider.GetUtcNow().Add(config.TokenRefreshBuffer);

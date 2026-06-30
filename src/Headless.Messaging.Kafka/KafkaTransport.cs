@@ -27,7 +27,7 @@ internal sealed class KafkaTransport(ILogger<KafkaTransport> logger, IKafkaConne
                 headers.Add(
                     header.Value != null
                         ? new Header(header.Key, Encoding.UTF8.GetBytes(header.Value))
-                        : new Header(header.Key, null)
+                        : new Header(header.Key, value: null)
                 );
             }
 

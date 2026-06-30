@@ -20,7 +20,7 @@ public sealed class DatabaseResetOptions
     /// Additional tables to exclude from reset. <c>__EFMigrationsHistory</c> is always excluded
     /// automatically — no need to add it here.
     /// </summary>
-    public List<Table> TablesToIgnore { get; set; } = [];
+    public List<Table> TablesToIgnore { get; init; } = [];
 
     /// <summary>
     /// Factory for creating an <em>unopened</em> <see cref="DbConnection"/>.

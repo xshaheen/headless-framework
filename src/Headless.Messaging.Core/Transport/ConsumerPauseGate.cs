@@ -33,8 +33,8 @@ internal sealed class ConsumerPauseGate
 
     /// <summary>
     /// Transitions the gate to the paused state.
-    /// Returns <c>true</c> if this call actually transitioned from unpaused to paused;
-    /// <c>false</c> if already paused or disposed.
+    /// Returns <see langword="true"/> if this call actually transitioned from unpaused to paused;
+    /// <see langword="false"/> if already paused or disposed.
     /// </summary>
     public ValueTask<bool> PauseAsync()
     {
@@ -53,8 +53,8 @@ internal sealed class ConsumerPauseGate
 
     /// <summary>
     /// Transitions the gate to the resumed state.
-    /// Returns <c>true</c> if this call actually transitioned from paused to resumed;
-    /// <c>false</c> if already resumed or disposed.
+    /// Returns <see langword="true"/> if this call actually transitioned from paused to resumed;
+    /// <see langword="false"/> if already resumed or disposed.
     /// </summary>
     public ValueTask<bool> ResumeAsync()
     {

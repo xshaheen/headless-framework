@@ -238,7 +238,7 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache,
             //check for hide Tag
             if (_IsNodeHidden(tag, messagingTagScope))
             {
-                return new TagFilterResult(true, filteredPortIndex, filteredPortName);
+                return new TagFilterResult(HideNode: true, filteredPortIndex, filteredPortName);
             }
 
             isNodeHidden = false;

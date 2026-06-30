@@ -497,7 +497,7 @@ public sealed class RedisDistributedLockStorage(
         {
             var value = await valueTask.ConfigureAwait(false);
             var logicalKey = _TryGetLogicalKey(key);
-            if (value.HasValue && logicalKey is not null && logicalKey.StartsWith(prefix, StringComparison.Ordinal))
+            if (value.HasValue && logicalKey?.StartsWith(prefix, StringComparison.Ordinal) == true)
             {
                 result[logicalKey] = value.ToString();
             }

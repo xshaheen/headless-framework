@@ -154,7 +154,7 @@ internal class JobsSchedulerBackgroundService : BackgroundService, IJobsHostSche
                     );
                 }
 
-                _executionContext.SetFunctions(null);
+                _executionContext.SetFunctions(functions: null);
             }
 
             var (timeRemaining, functions) = await _internalJobsManager
@@ -167,8 +167,8 @@ internal class JobsSchedulerBackgroundService : BackgroundService, IJobsHostSche
             if (timeRemaining == Timeout.InfiniteTimeSpan || timeRemaining > TimeSpan.FromDays(1))
             {
                 sleepDuration = TimeSpan.FromDays(1);
-                _executionContext.SetNextPlannedOccurrence(null);
-                _executionContext.SetFunctions(null);
+                _executionContext.SetNextPlannedOccurrence(dt: null);
+                _executionContext.SetFunctions(functions: null);
             }
             else
             {

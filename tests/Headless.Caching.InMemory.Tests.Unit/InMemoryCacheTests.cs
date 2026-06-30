@@ -144,7 +144,7 @@ public sealed class InMemoryCacheTests : TestBase
             .GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
         property.Should().NotBeNull();
 
-        return (T?)property!.GetValue(entry);
+        return (T?)property.GetValue(entry);
     }
 
     private static void _AssertEnvelopeParity(InMemoryCache cache, string key, DateTime expectedExpiration)

@@ -256,7 +256,7 @@ internal sealed class ConsumerRegistry : IConsumerRegistry
     /// Checks if a consumer is already registered for the specified message type.
     /// </summary>
     /// <param name="messageType">The message type to check.</param>
-    /// <returns><c>true</c> if a consumer is registered for the message type; otherwise, <c>false</c>.</returns>
+    /// <returns><see langword="true"/> if a consumer is registered for the message type; otherwise, <see langword="false"/>.</returns>
     public bool IsRegistered(Type messageType)
     {
         // If frozen, check the frozen list

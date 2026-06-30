@@ -627,9 +627,9 @@ public sealed partial class HybridCache
     /// Executes a numeric L2 operation, syncs the result to L1, and publishes a key invalidation. Shared by
     /// <see cref="IncrementAsync(string,double,TimeSpan?,CancellationToken)"/>,
     /// <see cref="SetIfHigherAsync(string,double,TimeSpan?,CancellationToken)"/>,
-    /// <see cref="SetIfLowerAsync(string,double,TimeSpan?,CancellationToken)"/>, and their <c>long</c> overloads.
+    /// <see cref="SetIfLowerAsync(string,double,TimeSpan?,CancellationToken)"/>, and their <see langword="long"/> overloads.
     /// </summary>
-    /// <typeparam name="TResult">Return type of the L2 operation (e.g. <c>double</c> or <c>long</c>).</typeparam>
+    /// <typeparam name="TResult">Return type of the L2 operation (e.g. <see langword="double"/> or <see langword="long"/>).</typeparam>
     /// <typeparam name="TL1">Type stored in L1 (equals <typeparamref name="TResult"/> for increment, equals the
     /// input value type for set-if-higher/lower).</typeparam>
     /// <param name="isUpdated">
@@ -683,7 +683,7 @@ public sealed partial class HybridCache
         Argument.IsNotNull(value);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var items = value as T[] ?? value.ToArray();
+        var items = value as T[] ?? [.. value];
         var addedCount = await l2Cache.SetAddAsync(key, items, expiration, cancellationToken).ConfigureAwait(false);
 
         if (addedCount == items.Length)

@@ -290,7 +290,7 @@ public static class JobsCoordinationFixtureExtensions
         await using var command = connection.CreateCommand();
         command.CommandText =
             $"INSERT INTO {fixture.QualifiedTimeJobsTable} ({_InsertColumns}) "
-            + $"VALUES (@id, @function, @function, @status, @ownerId, "
+            + "VALUES (@id, @function, @function, @status, @ownerId, "
             + $"{fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, 0, 0, 0, @onNodeDeath, @lockedUntil);";
 
         // Status and OnNodeDeath persist as enum names (HasConversion<string>), so seed the names, not ordinals.
@@ -352,7 +352,7 @@ public static class JobsCoordinationFixtureExtensions
         // distinct execution times when several occurrences of the same cron are seeded together.
         command.CommandText =
             $"INSERT INTO {fixture.QualifiedCronJobOccurrencesTable} ({_CronOccurrenceInsertColumns}) "
-            + $"VALUES (@id, @cronJobId, @status, @ownerId, @executionTime, "
+            + "VALUES (@id, @cronJobId, @status, @ownerId, @executionTime, "
             + $"{fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, 0, 0, @onNodeDeath, @lockedUntil);";
 
         _AddParameter(command, "@id", id);
@@ -421,7 +421,7 @@ public static class JobsCoordinationFixtureExtensions
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText =
-            $"SELECT \"Status\", \"OwnerId\", \"LockedUntil\", \"ExceptionMessage\", \"SkippedReason\" "
+            "SELECT \"Status\", \"OwnerId\", \"LockedUntil\", \"ExceptionMessage\", \"SkippedReason\" "
             + $"FROM {fixture.QualifiedTimeJobsTable} WHERE \"Id\" = @id;";
         _AddParameter(command, "@id", id);
 

@@ -194,10 +194,10 @@ public sealed class CamelCaseQueryParameterOperationProcessorTests : TestBase
                 null,
                 Type.EmptyTypes,
                 null
-            )!,
-            null!,
-            null!,
-            null!,
+            ),
+            null,
+            null,
+            null,
             [desc]
         );
     }

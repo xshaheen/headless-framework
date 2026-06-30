@@ -639,7 +639,7 @@ public sealed partial class HybridCache(
             _logger.LogSettingLocalCacheKey(key, localExpiration);
             // Use UpsertAsync to replace any existing L1 data (not SetAddAsync which would merge)
             await LocalCache
-                .UpsertAsync(key, cacheValue.Value!, localExpiration, cancellationToken)
+                .UpsertAsync(key, cacheValue.Value, localExpiration, cancellationToken)
                 .ConfigureAwait(false);
         }
 

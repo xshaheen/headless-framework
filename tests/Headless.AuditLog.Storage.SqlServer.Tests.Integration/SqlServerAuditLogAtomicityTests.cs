@@ -187,7 +187,7 @@ public sealed class SqlServerAuditLogAtomicityTests(SqlServerAuditLogFixture fix
         );
         command.Parameters.AddWithValue("@action", action);
 
-        return (int)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken))!;
+        return (int)await command.ExecuteScalarAsync(TestContext.Current.CancellationToken);
     }
 
     private sealed class TestAmbientAccessor : IAmbientDbTransactionAccessor

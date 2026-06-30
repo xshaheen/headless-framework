@@ -117,9 +117,9 @@ public static class SetupNatsMessaging
                         throw new InvalidOperationException(
                             $"Consumer '{consumer.ConsumerType.Name}' (group '{consumer.Group}') subscribes to "
                                 + $"'{reg.MessageType.Name}' which uses SubjectShard(...) but does not declare shard "
-                                + $"coverage. Call .UseNats(c => c.Sharded()) on the consumer registration to prevent "
-                                + $"silent message loss: NATS delivers zero messages to a non-wildcard filter that does "
-                                + $"not match any shard subject."
+                                + "coverage. Call .UseNats(c => c.Sharded()) on the consumer registration to prevent "
+                                + "silent message loss: NATS delivers zero messages to a non-wildcard filter that does "
+                                + "not match any shard subject."
                         );
                     }
                 }

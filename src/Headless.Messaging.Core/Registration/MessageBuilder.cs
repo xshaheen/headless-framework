@@ -126,7 +126,7 @@ internal sealed class MessageBuilder<TMessage>(IServiceCollection services)
             _messageName,
             _correlationSelector,
             providerConfigs,
-            _consumers.Select(x => x.Build(providerConfigs)).ToList()
+            _consumers.ConvertAll(x => x.Build(providerConfigs))
         );
     }
 

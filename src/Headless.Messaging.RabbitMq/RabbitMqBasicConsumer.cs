@@ -168,7 +168,7 @@ public sealed class RabbitMqBasicConsumer(
     {
         if (Channel.IsOpen)
         {
-            await Channel.BasicAckAsync(deliveryTag, false).ConfigureAwait(false);
+            await Channel.BasicAckAsync(deliveryTag, multiple: false).ConfigureAwait(false);
         }
     }
 
@@ -176,7 +176,7 @@ public sealed class RabbitMqBasicConsumer(
     {
         if (Channel.IsOpen)
         {
-            await Channel.BasicRejectAsync(deliveryTag, true).ConfigureAwait(false);
+            await Channel.BasicRejectAsync(deliveryTag, requeue: true).ConfigureAwait(false);
         }
     }
 

@@ -17,27 +17,23 @@ namespace Headless.DistributedLocks.PostgreSql;
 /// server-side <c>lock_timeout</c> (used by the transaction-coupled API, where a server-side block is correct). When the
 /// connection has a transaction the <c>_xact_</c> variants are emitted, which release on transaction end.
 /// </remarks>
-internal sealed partial class PostgresAdvisoryLock : IDbSynchronizationStrategy<object>
+internal sealed partial class PostgresAdvisoryLock(bool isShared, TimeProvider timeProvider, bool allowHashing = true)
+    : IDbSynchronizationStrategy<object>
 {
     // A non-null sentinel returned on success; advisory locks carry no per-acquire release state beyond the key.
     private static readonly object _Cookie = new();
 
-    private readonly bool _isShared;
-    private readonly bool _allowHashing;
-    private readonly TimeProvider _timeProvider;
-
-    public PostgresAdvisoryLock(bool isShared, TimeProvider timeProvider, bool allowHashing = true)
-    {
-        _isShared = isShared;
-        _allowHashing = allowHashing;
-        _timeProvider = timeProvider;
-    }
+    private readonly bool _isShared = isShared;
+    private readonly bool _allowHashing = allowHashing;
+    private readonly TimeProvider _timeProvider = timeProvider;
 
     /// <summary>Advisory locks do not natively support upgradeable read locks.</summary>
     public bool IsUpgradeable => false;
 
-    public object GetHeldLockIdentity(string resourceName) =>
-        PostgresAdvisoryLockKey.FromString(resourceName, _allowHashing);
+    public object GetHeldLockIdentity(string resourceName)
+    {
+        return PostgresAdvisoryLockKey.FromString(resourceName, _allowHashing);
+    }
 
     public async ValueTask<object?> TryAcquireAsync(
         DatabaseConnection connection,
@@ -329,7 +325,9 @@ internal sealed partial class PostgresAdvisoryLock : IDbSynchronizationStrategy<
         {
             await setSavePointCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.NoActiveSqlTransaction)
+        catch (PostgresException exception)
+            when (string.Equals(exception.SqlState, PostgresErrorCodes.NoActiveSqlTransaction, StringComparison.Ordinal)
+            )
         {
             return false;
         }
@@ -373,11 +371,11 @@ internal sealed partial class PostgresAdvisoryLock : IDbSynchronizationStrategy<
         public int LockTimeout { get; } = _ParsePostgresTimeout(lockTimeout);
 
         private static int _ParsePostgresTimeout(string timeout) =>
-            _PostgresTimeoutRegex().Match(timeout) is { Success: true, Value: var value }
+            PostgresTimeoutRegex.Match(timeout) is { Success: true, Value: var value }
                 ? int.Parse(value, CultureInfo.InvariantCulture)
                 : throw new FormatException($"Unexpected timeout setting value '{timeout}'.");
     }
 
     [GeneratedRegex(@"^\d+(?=(?:ms)?$)", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
-    private static partial Regex _PostgresTimeoutRegex();
+    private static partial Regex PostgresTimeoutRegex { get; }
 }

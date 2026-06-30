@@ -24,15 +24,10 @@ internal class RedisConnectionPool : IRedisConnectionPool, IDisposable
         _Init();
     }
 
-    private AsyncLazyRedisConnection? QuietConnection
-    {
-        get
-        {
-            return _poolAlreadyConfigured
-                ? _connections.OrderBy(static c => c.CreatedConnection?.ConnectionCapacity ?? int.MaxValue).First()
-                : null;
-        }
-    }
+    private AsyncLazyRedisConnection? QuietConnection =>
+        _poolAlreadyConfigured
+            ? _connections.OrderBy(static c => c.CreatedConnection?.ConnectionCapacity ?? int.MaxValue).First()
+            : null;
 
     public void Dispose()
     {

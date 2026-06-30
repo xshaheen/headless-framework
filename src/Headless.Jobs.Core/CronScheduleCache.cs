@@ -19,7 +19,7 @@ internal static partial class CronScheduleCache
     {
         Argument.IsNotNull(expr);
 
-        return _ReplaceRegex().Replace(expr.Trim(), " ");
+        return ReplaceRegex.Replace(expr.Trim(), " ");
     }
 
     public static CrontabSchedule Get(string expression)
@@ -52,5 +52,5 @@ internal static partial class CronScheduleCache
     public static bool Invalidate(string expression) => _Cache.TryRemove(_Normalize(expression), out _);
 
     [GeneratedRegex(@"\s+", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
-    private static partial Regex _ReplaceRegex();
+    private static partial Regex ReplaceRegex { get; }
 }

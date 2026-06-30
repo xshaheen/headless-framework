@@ -34,13 +34,13 @@ public sealed partial class AzureBlobNamingNormalizer : IBlobNamingNormalizer
             }
 
             // Container names can contain only letters, numbers, and the dash (-) character.
-            containerName = _OnlyLettersNumbersAndDash().Replace(containerName, string.Empty);
+            containerName = OnlyLettersNumbersAndDash.Replace(containerName, string.Empty);
             // Every dash (-) character must be immediately preceded and followed by a letter or number;
             // consecutive dashes are not permitted in container names.
             // Container names must start or end with a letter or number
-            containerName = _ConsecutiveDashes().Replace(containerName, "-");
-            containerName = _StartWithDash().Replace(containerName, string.Empty);
-            containerName = _EndWithDash().Replace(containerName, string.Empty);
+            containerName = ConsecutiveDashes.Replace(containerName, "-");
+            containerName = StartWithDash.Replace(containerName, string.Empty);
+            containerName = EndWithDash.Replace(containerName, string.Empty);
 
             // Container names must be from 3 through 63 characters long.
             return containerName.Length >= 3 ? containerName : containerName.PadRight(3, '0');
@@ -61,16 +61,16 @@ public sealed partial class AzureBlobNamingNormalizer : IBlobNamingNormalizer
     #region Helpers
 
     [GeneratedRegex("[^a-z0-9-]", RegexOptions.None, 100)]
-    private static partial Regex _OnlyLettersNumbersAndDash();
+    private static partial Regex OnlyLettersNumbersAndDash { get; }
 
     [GeneratedRegex("-{2,}", RegexOptions.None, 100)]
-    private static partial Regex _ConsecutiveDashes();
+    private static partial Regex ConsecutiveDashes { get; }
 
     [GeneratedRegex("^-", RegexOptions.None, 100)]
-    private static partial Regex _StartWithDash();
+    private static partial Regex StartWithDash { get; }
 
     [GeneratedRegex("-$", RegexOptions.None, 100)]
-    private static partial Regex _EndWithDash();
+    private static partial Regex EndWithDash { get; }
 
     #endregion
 }

@@ -148,12 +148,12 @@ public record ConsumeContext
     /// </summary>
     /// <value>
     /// An optional string identifier that correlates this message with other related messages in a workflow or conversation.
-    /// Returns <c>null</c> if no correlation is established.
+    /// Returns <see langword="null"/> if no correlation is established.
     /// Supports GUID, ULID, snowflake IDs, or custom formats.
     /// </value>
     /// <exception cref="ArgumentException">
     /// Thrown when attempting to set an empty string.
-    /// Use <c>null</c> instead to indicate no correlation.
+    /// Use <see langword="null"/> instead to indicate no correlation.
     /// </exception>
     /// <remarks>
     /// <para>

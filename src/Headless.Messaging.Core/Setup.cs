@@ -631,25 +631,17 @@ public static class SetupMessaging
             );
     }
 
-    private readonly struct ConsumerRegistrationSettings : IEquatable<ConsumerRegistrationSettings>
+    private readonly struct ConsumerRegistrationSettings(
+        byte concurrency,
+        string resolvedHandlerId,
+        ConsumerCircuitBreakerSettings circuitBreaker,
+        IReadOnlyDictionary<Type, object> providerConfigs
+    ) : IEquatable<ConsumerRegistrationSettings>
     {
-        private readonly byte _concurrency;
-        private readonly string _resolvedHandlerId;
-        private readonly ConsumerCircuitBreakerSettings _circuitBreaker;
-        private readonly IReadOnlyDictionary<Type, object> _providerConfigs;
-
-        public ConsumerRegistrationSettings(
-            byte concurrency,
-            string resolvedHandlerId,
-            ConsumerCircuitBreakerSettings circuitBreaker,
-            IReadOnlyDictionary<Type, object> providerConfigs
-        )
-        {
-            _concurrency = concurrency;
-            _resolvedHandlerId = resolvedHandlerId;
-            _circuitBreaker = circuitBreaker;
-            _providerConfigs = providerConfigs;
-        }
+        private readonly byte _concurrency = concurrency;
+        private readonly string _resolvedHandlerId = resolvedHandlerId;
+        private readonly ConsumerCircuitBreakerSettings _circuitBreaker = circuitBreaker;
+        private readonly IReadOnlyDictionary<Type, object> _providerConfigs = providerConfigs;
 
         public bool Equals(ConsumerRegistrationSettings other) =>
             _concurrency == other._concurrency
