@@ -3,6 +3,7 @@ using Headless.Testing.Tests;
 using Headless.Threading;
 using Microsoft.Extensions.Time.Testing;
 
+#pragma warning disable REFL009 // The referenced member is not known to exist
 namespace Tests.Threading;
 
 public sealed class KeyedAsyncLockTests : TestBase

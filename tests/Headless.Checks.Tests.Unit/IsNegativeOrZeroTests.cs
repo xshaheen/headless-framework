@@ -91,27 +91,27 @@ public sealed class IsNegativeOrZeroTests
         {
             NumericKind.Short => () =>
             {
-                var value = (short)3;
+                const short value = (short)3;
                 Argument.IsNegativeOrZero(value, message);
             },
             NumericKind.Int => () =>
             {
-                var value = 3;
+                const int value = 3;
                 Argument.IsNegativeOrZero(value, message);
             },
             NumericKind.Long => () =>
             {
-                var value = 5L;
+                const long value = 5L;
                 Argument.IsNegativeOrZero(value, message);
             },
             NumericKind.Float => () =>
             {
-                var value = 5.5f;
+                const float value = 5.5f;
                 Argument.IsNegativeOrZero(value, message);
             },
             NumericKind.Double => () =>
             {
-                var value = 7.5;
+                const double value = 7.5;
                 Argument.IsNegativeOrZero(value, message);
             },
             NumericKind.TimeSpan => () =>

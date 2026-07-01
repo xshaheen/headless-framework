@@ -90,27 +90,27 @@ public sealed class IsNegativeTests
         {
             NumericKind.Short => () =>
             {
-                var value = (short)3;
+                const short value = (short)3;
                 Argument.IsNegative(value, message);
             },
             NumericKind.Int => () =>
             {
-                var value = 3;
+                const int value = 3;
                 Argument.IsNegative(value, message);
             },
             NumericKind.Long => () =>
             {
-                var value = 5L;
+                const long value = 5L;
                 Argument.IsNegative(value, message);
             },
             NumericKind.Float => () =>
             {
-                var value = 5.5f;
+                const float value = 5.5f;
                 Argument.IsNegative(value, message);
             },
             NumericKind.Double => () =>
             {
-                var value = 7.5;
+                const double value = 7.5;
                 Argument.IsNegative(value, message);
             },
             NumericKind.TimeSpan => () =>
