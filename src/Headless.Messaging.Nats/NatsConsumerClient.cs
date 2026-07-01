@@ -544,7 +544,7 @@ internal sealed class NatsConsumerClient(
             return;
         }
 
-        _CancelReceives();
+        await _CancelReceives().ConfigureAwait(false);
     }
 
     public async ValueTask ResumeAsync(CancellationToken cancellationToken = default)
@@ -576,7 +576,7 @@ internal sealed class NatsConsumerClient(
 
         _pauseGate.Release();
         _ready.TrySetCanceled();
-        _CancelReceives();
+        await _CancelReceives().ConfigureAwait(false);
 
         // Drain in-flight concurrent handlers before disposing the semaphore and connection, so a
         // running handler does not Ack/Nak on a disposed connection. Bounded so a stuck handler cannot
@@ -642,7 +642,7 @@ internal sealed class NatsConsumerClient(
         }
     }
 
-    private void _CancelReceives()
+    private async Task _CancelReceives()
     {
         ReceiveTokenState receiveTokenState;
         lock (_receiveLock)
@@ -652,7 +652,7 @@ internal sealed class NatsConsumerClient(
 
         try
         {
-            receiveTokenState.Source.Cancel();
+            await receiveTokenState.Source.CancelAsync().ConfigureAwait(false);
         }
         catch (ObjectDisposedException)
         {
