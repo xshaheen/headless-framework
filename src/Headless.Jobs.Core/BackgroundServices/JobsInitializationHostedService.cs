@@ -10,7 +10,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Jobs.BackgroundServices;
 
 /// <summary>

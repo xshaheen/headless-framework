@@ -111,9 +111,9 @@ public static class ProcessExtensions
             // Process has already exited (WaitForExitAsync awaited above), so the synchronous WaitForExit() returns
             // immediately after draining buffered stdio — no deadlock risk; the async overload does not guarantee
             // redirected streams have fully drained.
-#pragma warning disable CA1849, AsyncFixer02
+#pragma warning disable CA1849, AsyncFixer02, MA0042
             process.WaitForExit();
-#pragma warning restore CA1849, AsyncFixer02
+#pragma warning restore CA1849, AsyncFixer02, MA0042
 
             exitCode = process.ExitCode;
         }

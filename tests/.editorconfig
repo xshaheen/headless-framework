@@ -1,0 +1,31 @@
+# Test-project analyzer relaxations.
+#
+# Test code legitimately triggers a handful of analyzers that are pure noise here
+# but remain valuable in shipping code, so they are silenced ONLY under tests/.
+# Production severities are unchanged (see the repo-root .editorconfig). This file
+# inherits everything else from the root config (root = true lives there).
+#
+# Rationale per rule:
+#   CA2000    - Test-scoped disposables (in-memory caches, sqlite connections,
+#               meters, lease monitors) live for the test's lifetime in a
+#               short-lived process; "dispose before out of scope" is not
+#               meaningful and often cannot be honored because the object must
+#               outlive the local scope that creates it.
+#   REFL009   - Tests reflect over internal/private members by string name. The
+#   REFL017     analyzer cannot resolve them through an object-typed receiver (or
+#               dislikes nameof of the concrete type), but the members exist -
+#               nameof/GetProperty compile, so the reflection is correct.
+#   JSON001   - Tests pass intentionally-malformed JSON string literals to assert
+#               the deserializer throws; the "invalid JSON" warning is the point
+#               of the test input.
+#   xUnit1045 - Theory data uses object / List<T>; this only affects Test Explorer
+#               row enumeration, not test correctness.
+#   MA0176    - Guid-creation micro-optimization is irrelevant in test fixtures.
+
+[*.cs]
+dotnet_diagnostic.CA2000.severity = none
+dotnet_diagnostic.REFL009.severity = none
+dotnet_diagnostic.REFL017.severity = none
+dotnet_diagnostic.JSON001.severity = none
+dotnet_diagnostic.xUnit1045.severity = none
+dotnet_diagnostic.MA0176.severity = none

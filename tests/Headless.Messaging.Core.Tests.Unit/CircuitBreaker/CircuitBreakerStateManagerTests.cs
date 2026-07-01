@@ -7,6 +7,7 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
+#pragma warning disable MA0015 // Specify the parameter name in ArgumentException
 namespace Tests.CircuitBreaker;
 
 public sealed class CircuitBreakerStateManagerTests : TestBase

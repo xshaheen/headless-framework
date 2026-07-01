@@ -38,7 +38,7 @@ public sealed class JobsOptionsBuilderTests
         var jsonOptions =
             typeof(JobsOptionsBuilder<FakeTimeJob, FakeCronJob>)
                 .GetProperty(
-                    nameof(JobsOptionsBuilder<FakeTimeJob, FakeCronJob>.RequestJsonSerializerOptions),
+                    nameof(JobsOptionsBuilder<,>.RequestJsonSerializerOptions),
                     BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly
                 )!
                 .GetValue(builder) as JsonSerializerOptions;
@@ -60,7 +60,7 @@ public sealed class JobsOptionsBuilderTests
 
         var flag = typeof(JobsOptionsBuilder<FakeTimeJob, FakeCronJob>)
             .GetProperty(
-                nameof(JobsOptionsBuilder<FakeTimeJob, FakeCronJob>.RequestGZipCompressionEnabled),
+                nameof(JobsOptionsBuilder<,>.RequestGZipCompressionEnabled),
                 BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly
             )!
             .GetValue(builder);
@@ -80,7 +80,7 @@ public sealed class JobsOptionsBuilderTests
 
         var flag = typeof(JobsOptionsBuilder<FakeTimeJob, FakeCronJob>)
             .GetProperty(
-                nameof(JobsOptionsBuilder<FakeTimeJob, FakeCronJob>.SeedDefinedCronJobs),
+                nameof(JobsOptionsBuilder<,>.SeedDefinedCronJobs),
                 BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
             )!
             .GetValue(builder);
@@ -101,7 +101,7 @@ public sealed class JobsOptionsBuilderTests
         var handlerType =
             typeof(JobsOptionsBuilder<FakeTimeJob, FakeCronJob>)
                 .GetProperty(
-                    nameof(JobsOptionsBuilder<FakeTimeJob, FakeCronJob>.JobExceptionHandlerType),
+                    nameof(JobsOptionsBuilder<,>.JobExceptionHandlerType),
                     BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
                 )!
                 .GetValue(builder) as Type;
@@ -121,7 +121,7 @@ public sealed class JobsOptionsBuilderTests
 
         var seeder = typeof(JobsOptionsBuilder<FakeTimeJob, FakeCronJob>)
             .GetProperty(
-                nameof(JobsOptionsBuilder<FakeTimeJob, FakeCronJob>.TimeSeederAction),
+                nameof(JobsOptionsBuilder<,>.TimeSeederAction),
                 BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly
             )!
             .GetValue(builder);
@@ -146,7 +146,7 @@ public sealed class JobsOptionsBuilderTests
 
         var seeder = typeof(JobsOptionsBuilder<FakeTimeJob, FakeCronJob>)
             .GetProperty(
-                nameof(JobsOptionsBuilder<FakeTimeJob, FakeCronJob>.CronSeederAction),
+                nameof(JobsOptionsBuilder<,>.CronSeederAction),
                 BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly
             )!
             .GetValue(builder);
@@ -208,7 +208,7 @@ public sealed class JobsOptionsBuilderTests
         // Default should be true
         var defaultFlag = typeof(JobsOptionsBuilder<FakeTimeJob, FakeCronJob>)
             .GetProperty(
-                nameof(JobsOptionsBuilder<FakeTimeJob, FakeCronJob>.RegisterBackgroundServices),
+                nameof(JobsOptionsBuilder<,>.RegisterBackgroundServices),
                 BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
             )!
             .GetValue(builder);
@@ -219,7 +219,7 @@ public sealed class JobsOptionsBuilderTests
 
         var flag = typeof(JobsOptionsBuilder<FakeTimeJob, FakeCronJob>)
             .GetProperty(
-                nameof(JobsOptionsBuilder<FakeTimeJob, FakeCronJob>.RegisterBackgroundServices),
+                nameof(JobsOptionsBuilder<,>.RegisterBackgroundServices),
                 BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
             )!
             .GetValue(builder);

@@ -736,7 +736,9 @@ public sealed class HeadlessTenantWriteGuardTests(
         persisted.Should().BeFalse();
     }
 
+#pragma warning disable xUnit1004 // Test methods should not be skipped
     [Fact(Skip = "https://github.com/xshaheen/headless-framework/issues/249")]
+#pragma warning restore xUnit1004
     public async Task guard_enabled_should_reject_attach_then_modify_cross_tenant_row()
     {
         // given
@@ -765,7 +767,9 @@ public sealed class HeadlessTenantWriteGuardTests(
         persistedName.Should().Be("attach-update-owned-by-b");
     }
 
+#pragma warning disable xUnit1004 // Test methods should not be skipped
     [Fact(Skip = "https://github.com/xshaheen/headless-framework/issues/249")]
+#pragma warning restore xUnit1004
     public async Task guard_enabled_should_reject_attach_then_remove_cross_tenant_row()
     {
         // given

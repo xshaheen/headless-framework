@@ -328,9 +328,12 @@ public sealed class RecordingInfrastructureTests : TestBase
         {
             await pipeline.ExecuteAsync(context, payload, typeof(SimplePayload), AbortToken);
         }
+#pragma warning disable ERP022 // Unobserved exception in generic exception handler
         catch
-        { /* expected */
+        {
+            /* expected */
         }
+#pragma warning restore ERP022
 
         // then
         store.Faulted.Single().Exception.Should().BeSameAs(ex);

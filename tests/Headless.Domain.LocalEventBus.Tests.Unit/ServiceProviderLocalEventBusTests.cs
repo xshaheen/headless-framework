@@ -4,6 +4,8 @@ using System.Reflection;
 using Headless.Domain;
 using Microsoft.Extensions.DependencyInjection;
 
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
+#pragma warning disable MA0015 // Specify the parameter name in ArgumentException
 namespace Tests;
 
 public sealed class ServiceProviderLocalEventBusTests
@@ -202,9 +204,7 @@ public sealed class ServiceProviderLocalEventBusTests
         var publisher = _CreatePublisher(services);
 
         // when
-#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
         var act = () => publisher.Publish(new TestLocalMessage("test"));
-#pragma warning restore MA0045
 
         // then - single exception should be re-thrown directly, not wrapped
         act.Should().Throw<InvalidOperationException>().WithMessage("Single failure");

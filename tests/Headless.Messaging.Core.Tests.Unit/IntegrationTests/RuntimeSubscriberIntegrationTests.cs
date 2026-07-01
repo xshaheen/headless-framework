@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Headless.Checks;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Testing.Tests;
@@ -226,6 +227,7 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
             CancellationToken cancellationToken
         )
         {
+            Argument.IsNotNull(services);
             _started.TrySetResult();
             await _release.Task.WaitAsync(cancellationToken);
             ProcessedMessageIds.Enqueue(context.Message.Id);

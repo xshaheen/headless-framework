@@ -36,7 +36,20 @@ builder.AddHeadless(encryption =>
     encryption.DefaultSalt = "DemoSalt"u8.ToArray();
 });
 
-addRedisDistributedLock(builder.Services);
+// Redis connection (required by Headless.DistributedLocks.Redis)
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
+builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect("localhost:6379"));
+#pragma warning restore MA0045
+
+// Messages
+builder.Services.AddHeadlessMessaging(setup =>
+{
+    setup.UseInMemory();
+    setup.UseInMemoryStorage();
+});
+
+// Resource Locks
+builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
 
 const string connectionString = "Host=localhost;Database=Headless;Username=postgres;Password=postgres";
 
@@ -61,21 +74,3 @@ builder.Services.AddHeadlessFeatures(setup => setup.UseEntityFramework<FeaturesM
 var app = builder.Build();
 
 await app.RunAsync();
-
-return;
-
-static void addRedisDistributedLock(IServiceCollection services)
-{
-    // Redis connection (required by Headless.DistributedLocks.Redis)
-    services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect("localhost:6379"));
-
-    // Messages
-    services.AddHeadlessMessaging(setup =>
-    {
-        setup.UseInMemory();
-        setup.UseInMemoryStorage();
-    });
-
-    // Resource Locks
-    services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
-}

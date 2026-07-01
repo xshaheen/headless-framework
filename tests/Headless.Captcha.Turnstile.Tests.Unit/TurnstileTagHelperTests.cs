@@ -46,7 +46,9 @@ public sealed class TurnstileTagHelperTests
         var helper = new TurnstileScriptTagHelper(_Options(new TurnstileOptions { SiteKey = "", SiteSecret = "s" }));
         var output = _NewOutput("turnstile-script");
 
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
         var act = () => helper.Process(_NewContext(), output);
+#pragma warning restore MA0045
 
         act.Should().Throw<InvalidOperationException>();
     }

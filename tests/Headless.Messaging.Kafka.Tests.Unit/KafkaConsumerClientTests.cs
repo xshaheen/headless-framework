@@ -536,10 +536,12 @@ public sealed class KafkaConsumerClientTests : TestBase
             {
                 await listeningTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
             }
+#pragma warning disable ERP022 // Unobserved exception in generic exception handler
             catch
             {
                 // Expected — mock throws OCE on second Consume call.
             }
+#pragma warning restore ERP022
 
             // then — callback should not be invoked, offset should be seeked back
             callbackInvoked.Should().BeFalse();
@@ -554,10 +556,12 @@ public sealed class KafkaConsumerClientTests : TestBase
             {
                 await listeningTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
             }
+#pragma warning disable ERP022 // Unobserved exception in generic exception handler
             catch
             {
                 // Best-effort cleanup only.
             }
+#pragma warning restore ERP022 // Unobserved exception in generic exception handler
         }
     }
 }

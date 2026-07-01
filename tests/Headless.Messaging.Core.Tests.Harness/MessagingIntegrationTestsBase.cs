@@ -777,7 +777,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
     {
         return string.IsNullOrWhiteSpace(MessagingOptions.MessageNamePrefix)
             ? messageName
-            : string.Concat(MessagingOptions.MessageNamePrefix, ".", messageName);
+            : $"{MessagingOptions.MessageNamePrefix}.{messageName}";
     }
 
     private async Task<IReadOnlyList<MessageView>> _FindReceivedMessagesAsync(

@@ -14,6 +14,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Tests.Helpers;
 
+#pragma warning disable MA0015 // Specify the parameter name in ArgumentException
 namespace Tests;
 
 public sealed class SubscribeExecutorRetryTests : TestBase

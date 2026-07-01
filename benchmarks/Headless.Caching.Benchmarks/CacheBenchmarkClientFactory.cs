@@ -177,7 +177,9 @@ internal static class CacheBenchmarkClientFactory
     private static ICacheBenchmarkClient _CreateHeadlessRedis(string keyPrefix)
     {
         var descriptor = _GetDescriptor(BenchmarkProviderIds.HeadlessRedis);
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
         var multiplexer = ConnectionMultiplexer.Connect(_GetRequiredRedisConnectionString());
+#pragma warning restore MA0045
         var scriptsLoader = new HeadlessRedisScriptsLoader(multiplexer);
         var cache = new RedisCache(
             new SystemJsonSerializer(),
@@ -301,7 +303,9 @@ internal static class CacheBenchmarkClientFactory
     private static ICacheBenchmarkClient _CreateFoundatioRedis(string keyPrefix)
     {
         var descriptor = _GetDescriptor(BenchmarkProviderIds.FoundatioRedis);
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
         var multiplexer = ConnectionMultiplexer.Connect(_GetRequiredRedisConnectionString());
+#pragma warning restore MA0045
         var cache = new ScopedCacheClient(
             new RedisCacheClient(options => options.ConnectionMultiplexer(multiplexer)),
             keyPrefix

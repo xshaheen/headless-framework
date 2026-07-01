@@ -6,6 +6,7 @@ using Headless.Messaging.Exceptions;
 using Headless.Messaging.Retry;
 using Headless.Testing.Tests;
 
+#pragma warning disable MA0015 // Specify the parameter name in ArgumentException
 namespace Tests.Retry;
 
 public sealed class ExponentialBackoffStrategyTests : TestBase
