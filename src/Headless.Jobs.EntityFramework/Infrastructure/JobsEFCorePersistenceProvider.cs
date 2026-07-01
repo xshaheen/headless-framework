@@ -13,7 +13,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Jobs.Infrastructure;
 
-internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
+internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     IDbContextFactory<TDbContext> dbContextFactory,
     DbContextOptions<TDbContext> coordinatedWriteOptions,
     TimeProvider timeProvider,

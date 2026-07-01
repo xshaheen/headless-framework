@@ -61,8 +61,8 @@ internal static class MappingExtensions
         TCronJobOccurrence,
         TCronJob
     >()
-        where TCronJob : CronJobEntity, new()
-        where TCronJobOccurrence : CronJobOccurrenceEntity<TCronJob>, new() =>
+        where TCronJobOccurrence : CronJobOccurrenceEntity<TCronJob>, new()
+        where TCronJob : CronJobEntity, new() =>
         e => new CronJobOccurrenceEntity<TCronJob>
         {
             Id = e.Id,
@@ -82,8 +82,8 @@ internal static class MappingExtensions
     internal static Expression<
         Func<TCronJobOccurrence, CronJobOccurrenceEntity<TCronJob>>
     > ForLatestQueuedCronJobOccurrence<TCronJobOccurrence, TCronJob>()
-        where TCronJob : CronJobEntity, new()
-        where TCronJobOccurrence : CronJobOccurrenceEntity<TCronJob>, new() =>
+        where TCronJobOccurrence : CronJobOccurrenceEntity<TCronJob>, new()
+        where TCronJob : CronJobEntity, new() =>
         e => new CronJobOccurrenceEntity<TCronJob>
         {
             Id = e.Id,

@@ -15,9 +15,7 @@ internal static class AttributeValidator
     /// </summary>
     public static void ValidateJobFunctionAttribute(
         (string? functionName, string? cronExpression, int taskPriority, int maxConcurrency) attributeValues,
-        ClassDeclarationSyntax classDeclaration,
         MethodDeclarationSyntax methodDeclaration,
-        IMethodSymbol? methodSymbol,
         string className,
         Location attributeLocation,
         HashSet<string> usedFunctionNames,

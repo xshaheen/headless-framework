@@ -352,16 +352,14 @@ public sealed class MessagingOptions
     {
         Argument.IsNotNullOrWhiteSpace(messageName);
 
-        return string.IsNullOrWhiteSpace(MessageNamePrefix)
-            ? messageName
-            : string.Concat(MessageNamePrefix, ".", messageName);
+        return string.IsNullOrWhiteSpace(MessageNamePrefix) ? messageName : $"{MessageNamePrefix}.{messageName}";
     }
 
     internal string ApplyGroupNamePrefix(string group)
     {
         Argument.IsNotNullOrWhiteSpace(group);
 
-        return string.IsNullOrWhiteSpace(GroupNamePrefix) ? group : string.Concat(GroupNamePrefix, ".", group);
+        return string.IsNullOrWhiteSpace(GroupNamePrefix) ? group : $"{GroupNamePrefix}.{group}";
     }
 
     internal static void ValidateMessageName(string messageName)

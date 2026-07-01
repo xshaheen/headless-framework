@@ -211,9 +211,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
             // Validate all attribute values
             AttributeValidator.ValidateJobFunctionAttribute(
                 attributeValues,
-                classDeclaration,
                 methodDeclaration,
-                methodSymbol,
                 classDeclaration.Identifier.Text,
                 attributeLocation,
                 usedFunctionNames,

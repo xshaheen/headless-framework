@@ -168,7 +168,7 @@ internal sealed class EfAuditChangeCapture(
 
                 if (byDefault)
                 {
-                    return type.GetCustomAttribute<AuditIgnoreAttribute>() is null;
+                    return !Attribute.IsDefined(type, typeof(AuditIgnoreAttribute));
                 }
 
                 return typeof(IAuditTracked).IsAssignableFrom(type);

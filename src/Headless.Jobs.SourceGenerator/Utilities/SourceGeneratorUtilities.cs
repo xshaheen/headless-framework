@@ -98,18 +98,20 @@ internal static class SourceGeneratorUtilities
             {
                 return $"\"{stringKey}\"";
             }
-            else if (keyArg.Value != null)
+
+            if (keyArg.Value != null)
             {
-                return _FormatServiceKeyValue(keyArg.Value, keyArg.Type);
+                return _FormatServiceKeyValue(keyArg.Value);
             }
         }
+
         return null;
     }
 
     /// <summary>
     /// Formats a service key value for C# code generation.
     /// </summary>
-    private static string _FormatServiceKeyValue(object value, ITypeSymbol? type)
+    private static string _FormatServiceKeyValue(object value)
     {
         return value switch
         {
