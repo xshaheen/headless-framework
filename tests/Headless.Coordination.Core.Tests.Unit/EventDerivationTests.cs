@@ -9,6 +9,8 @@ namespace Tests;
 
 public sealed class EventDerivationTests : TestBase
 {
+    private readonly List<object> _disposables = [];
+
     [Fact]
     public async Task should_emit_joined_once_for_new_alive_identity()
     {
@@ -18,7 +20,7 @@ public sealed class EventDerivationTests : TestBase
         store.EnqueueSnapshot(_Snapshot(node, NodeLivenessState.Alive));
         store.EnqueueSnapshot(_Snapshot(node, NodeLivenessState.Alive));
         var source = new MembershipEventSource(NullLogger<MembershipEventSource>.Instance);
-        using var sut = _CreateHeartbeatService(store, source);
+        var sut = _CreateHeartbeatService(store, source);
         using var watcherCts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
         await using var watcher = source.WatchAsync(watcherCts.Token).GetAsyncEnumerator(watcherCts.Token);
 
@@ -43,7 +45,7 @@ public sealed class EventDerivationTests : TestBase
         store.EnqueueSnapshot(_Snapshot(node, NodeLivenessState.Alive));
         store.EnqueueSnapshot(_Snapshot(node, NodeLivenessState.Dead));
         var source = new MembershipEventSource(NullLogger<MembershipEventSource>.Instance);
-        using var sut = _CreateHeartbeatService(store, source);
+        var sut = _CreateHeartbeatService(store, source);
         using var watcherCts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
         await using var watcher = source.WatchAsync(watcherCts.Token).GetAsyncEnumerator(watcherCts.Token);
 
@@ -74,7 +76,7 @@ public sealed class EventDerivationTests : TestBase
         store.EnqueueSnapshot(_Snapshot(oldIdentity, NodeLivenessState.Alive));
         store.EnqueueSnapshot(_Snapshot(newIdentity, NodeLivenessState.Alive));
         var source = new MembershipEventSource(NullLogger<MembershipEventSource>.Instance);
-        using var sut = _CreateHeartbeatService(store, source);
+        var sut = _CreateHeartbeatService(store, source);
         await using var watcher = source.WatchAsync(AbortToken).GetAsyncEnumerator(AbortToken);
 
         // when
@@ -99,7 +101,7 @@ public sealed class EventDerivationTests : TestBase
         var store = new FakeMembershipStore();
         store.EnqueueSnapshot(_Snapshot(node, NodeLivenessState.Alive));
         var source = new MembershipEventSource(NullLogger<MembershipEventSource>.Instance);
-        using var sut = _CreateHeartbeatService(store, source);
+        var sut = _CreateHeartbeatService(store, source);
         using var watcherCts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
         await using var watcher = source.WatchAsync(watcherCts.Token).GetAsyncEnumerator(watcherCts.Token);
         await sut.RunOnceAsync(AbortToken);
@@ -113,7 +115,25 @@ public sealed class EventDerivationTests : TestBase
         await _ShouldHaveNoImmediateEventAsync(watcher, watcherCts);
     }
 
-    private static MembershipHeartbeatBackgroundService _CreateHeartbeatService(
+    protected override async ValueTask DisposeAsyncCore()
+    {
+        foreach (var disposable in _disposables)
+        {
+            switch (disposable)
+            {
+                case IAsyncDisposable asyncDisposable:
+                    await asyncDisposable.DisposeAsync().ConfigureAwait(false);
+                    break;
+                case IDisposable syncDisposable:
+                    syncDisposable.Dispose();
+                    break;
+            }
+        }
+
+        await base.DisposeAsyncCore().ConfigureAwait(false);
+    }
+
+    private MembershipHeartbeatBackgroundService _CreateHeartbeatService(
         FakeMembershipStore store,
         MembershipEventSource source
     )
@@ -126,14 +146,18 @@ public sealed class EventDerivationTests : TestBase
             new FakeHostApplicationLifetime(),
             NullLogger<MembershipService>.Instance
         );
+        _disposables.Add(service);
 
-        return new MembershipHeartbeatBackgroundService(
+        var heartbeat = new MembershipHeartbeatBackgroundService(
             service,
             source,
             new CoordinationOptions(),
             new FakeTimeProvider(),
             NullLogger<MembershipHeartbeatBackgroundService>.Instance
         );
+        _disposables.Add(heartbeat);
+
+        return heartbeat;
     }
 
     private static NodeIdentity _Identity(string nodeId, long incarnation)
