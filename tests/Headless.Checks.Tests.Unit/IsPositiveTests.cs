@@ -19,26 +19,36 @@ public sealed class IsPositiveTests
         Argument.IsPositive(_validValues.TimeSpanValue).Should().Be(_validValues.TimeSpanValue);
     }
 
-    public static readonly TheoryData<object> TestData =
+    public enum NumericKind
+    {
+        Int,
+        Float,
+        Double,
+        TimeSpan,
+    }
+
+    // Serializable enum discriminator (xUnit1045) instead of a mixed-type TheoryData<object>; each
+    // kind is mapped to the typed guard call inside the test so Test Explorer can enumerate the rows.
+    public static readonly TheoryData<NumericKind> TestData =
     [
-        -5,
-        -5.5f,
-        -7.5,
-        TimeSpan.Parse("-00:00:10", CultureInfo.InvariantCulture),
+        NumericKind.Int,
+        NumericKind.Float,
+        NumericKind.Double,
+        NumericKind.TimeSpan,
     ];
 
     [Theory]
     [MemberData(nameof(TestData))]
-    public void is_positive_should_throw_argument_out_of_range_exception_when_negative(object argument)
+    public void is_positive_should_throw_argument_out_of_range_exception_when_negative(NumericKind kind)
     {
-        Action action = argument switch
+        Action action = kind switch
         {
-            int => () => Argument.IsPositive((int)argument),
-            float => () => Argument.IsPositive((float)argument),
-            decimal => () => Argument.IsPositive((decimal)argument),
-            double => () => Argument.IsPositive((double)argument),
-            TimeSpan => () => Argument.IsPositive((TimeSpan)argument),
-            _ => throw new InvalidOperationException("Unsupported argument type"),
+            NumericKind.Int => () => Argument.IsPositive(-5),
+            NumericKind.Float => () => Argument.IsPositive(-5.5f),
+            NumericKind.Double => () => Argument.IsPositive(-7.5),
+            NumericKind.TimeSpan => () =>
+                Argument.IsPositive(TimeSpan.Parse("-00:00:10", CultureInfo.InvariantCulture)),
+            _ => throw new ArgumentOutOfRangeException(nameof(kind)),
         };
 
         action.Should().Throw<ArgumentOutOfRangeException>();

@@ -26,64 +26,100 @@ public sealed class IsNegativeOrZeroTests
         Argument.IsNegativeOrZero(_validValues.TimeSpanValue).Should().Be(_validValues.TimeSpanValue);
     }
 
-    public static readonly TheoryData<object> PositiveData =
+    public enum NumericKind
+    {
+        Short,
+        Int,
+        Long,
+        Float,
+        Double,
+        TimeSpan,
+    }
+
+    // Serializable enum discriminator (xUnit1045) instead of a mixed-type TheoryData<object>; each
+    // kind is mapped to the typed guard call inside the test so Test Explorer can enumerate the rows.
+    public static readonly TheoryData<NumericKind> PositiveData =
     [
-        (short)3,
-        3,
-        5L,
-        5.5f,
-        7.5,
-        7.5d,
-        TimeSpan.Parse("00:00:10", CultureInfo.InvariantCulture),
+        NumericKind.Short,
+        NumericKind.Int,
+        NumericKind.Long,
+        NumericKind.Float,
+        NumericKind.Double,
+        NumericKind.TimeSpan,
     ];
 
     [Theory]
     [MemberData(nameof(PositiveData))]
-    public void is_negative_or_zero_should_throw_argument_out_of_range_exception_when_positive(object argument)
+    public void is_negative_or_zero_should_throw_argument_out_of_range_exception_when_positive(NumericKind kind)
     {
-        Action action = argument switch
+        Action action = kind switch
         {
-            short => () => Argument.IsNegativeOrZero((short)argument),
-            int => () => Argument.IsNegativeOrZero((int)argument),
-            long => () => Argument.IsNegativeOrZero((long)argument),
-            float => () => Argument.IsNegativeOrZero((float)argument),
-            double => () => Argument.IsNegativeOrZero((double)argument),
-            decimal => () => Argument.IsNegativeOrZero((decimal)argument),
-            TimeSpan => () => Argument.IsNegativeOrZero((TimeSpan)argument),
-            _ => throw new InvalidOperationException("Unsupported argument type"),
+            NumericKind.Short => () => Argument.IsNegativeOrZero((short)3),
+            NumericKind.Int => () => Argument.IsNegativeOrZero(3),
+            NumericKind.Long => () => Argument.IsNegativeOrZero(5L),
+            NumericKind.Float => () => Argument.IsNegativeOrZero(5.5f),
+            NumericKind.Double => () => Argument.IsNegativeOrZero(7.5),
+            NumericKind.TimeSpan => () =>
+                Argument.IsNegativeOrZero(TimeSpan.Parse("00:00:10", CultureInfo.InvariantCulture)),
+            _ => throw new ArgumentOutOfRangeException(nameof(kind)),
         };
 
         action.Should().Throw<ArgumentOutOfRangeException>();
     }
 
-    public static readonly TheoryData<object, string> PositiveDataWithCustomMessage = new()
-    {
-        { (short)3, "Error argument must be negative or zero." },
-        { 3, "Error argument must be negative or zero." },
-        { 5L, "Error argument must be negative or zero." },
-        { 5.5f, "Error argument must be negative or zero." },
-        { 7.5, "Error argument must be negative or zero." },
-        { 7.5d, "Error argument must be negative or zero." },
-        { TimeSpan.Parse("00:00:10", CultureInfo.InvariantCulture), "Error argument must be negative or zero." },
-    };
+    public static readonly TheoryData<NumericKind> PositiveDataWithCustomMessage =
+    [
+        NumericKind.Short,
+        NumericKind.Int,
+        NumericKind.Long,
+        NumericKind.Float,
+        NumericKind.Double,
+        NumericKind.TimeSpan,
+    ];
 
     [Theory]
     [MemberData(nameof(PositiveDataWithCustomMessage))]
     public void is_negative_or_zero_should_throw_argument_out_of_range_exception_when_positive_with_custom_message(
-        object argument,
-        string message
+        NumericKind kind
     )
     {
-        Action action = argument switch
+        const string message = "Error argument must be negative or zero.";
+
+        // The guard captures the parameter name via [CallerArgumentExpression]; call through a local
+        // named `value` so the thrown message stays "(Parameter 'value')" regardless of the numeric type.
+        Action action = kind switch
         {
-            short value => () => Argument.IsNegativeOrZero(value, message),
-            int value => () => Argument.IsNegativeOrZero(value, message),
-            long value => () => Argument.IsNegativeOrZero(value, message),
-            float value => () => Argument.IsNegativeOrZero(value, message),
-            double value => () => Argument.IsNegativeOrZero(value, message),
-            decimal value => () => Argument.IsNegativeOrZero(value, message),
-            TimeSpan value => () => Argument.IsNegativeOrZero(value, message),
-            _ => throw new InvalidOperationException("Unsupported argument type"),
+            NumericKind.Short => () =>
+            {
+                var value = (short)3;
+                Argument.IsNegativeOrZero(value, message);
+            },
+            NumericKind.Int => () =>
+            {
+                var value = 3;
+                Argument.IsNegativeOrZero(value, message);
+            },
+            NumericKind.Long => () =>
+            {
+                var value = 5L;
+                Argument.IsNegativeOrZero(value, message);
+            },
+            NumericKind.Float => () =>
+            {
+                var value = 5.5f;
+                Argument.IsNegativeOrZero(value, message);
+            },
+            NumericKind.Double => () =>
+            {
+                var value = 7.5;
+                Argument.IsNegativeOrZero(value, message);
+            },
+            NumericKind.TimeSpan => () =>
+            {
+                var value = TimeSpan.Parse("00:00:10", CultureInfo.InvariantCulture);
+                Argument.IsNegativeOrZero(value, message);
+            },
+            _ => throw new ArgumentOutOfRangeException(nameof(kind)),
         };
 
         action.Should().Throw<ArgumentOutOfRangeException>().WithMessage($"{message} (Parameter 'value')");
