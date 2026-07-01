@@ -846,17 +846,15 @@ dotnet_diagnostic.IDE0017.severity = suggestion
 # Test objects often managed by test framework or intentionally not disposed
 resharper_dispose_on_using_variable_highlighting = none
 resharper_not_disposed_resource_highlighting = none
+resharper_access_to_disposed_closure_highlighting = none
 resharper_using_statement_resource_initialization_highlighting = none
-
+# ReSharper AccessToModifiedClosure - Access to modified captured variable
+resharper_access_to_modified_closure_highlighting = none
 # ReSharper - ShortLivedHttpClient
 resharper_short_lived_http_client_highlighting = none
 
 ##########################################
 # Non-shipping code (demo / benchmarks / tests)
-#
-# Demo apps, benchmarks, and tests are not packaged or shipped, so a rule that is
-# valuable in src/ produces only noise here. It stays ACTIVE in src/ — this section
-# narrows it for non-shipping folders only.
 ##########################################
 
 [{demo,benchmarks,tests}/**/*.cs]

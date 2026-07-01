@@ -87,7 +87,9 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
         return base.can_delete_entire_folder_with_wildcard();
     }
 
+#pragma warning disable xUnit1004 // Test methods should not be skipped
     [Fact(Skip = "Directory.EnumerateFiles does not support nested folder wildcards")]
+#pragma warning restore xUnit1004
     public override Task can_delete_folder_with_multi_folder_wildcards()
     {
         return base.can_delete_folder_with_multi_folder_wildcards();

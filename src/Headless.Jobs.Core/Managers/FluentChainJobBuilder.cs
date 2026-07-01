@@ -57,7 +57,9 @@ public sealed class FluentChainJobBuilder<TTimeJob>
     /// Defaults to <see cref="TimeProvider.System"/> when <see langword="null"/>.
     /// </param>
     /// <returns>A builder ready to accept child configuration.</returns>
+#pragma warning disable CA1000 // Do not declare static members on generic types
     public static FluentChainJobBuilder<TTimeJob> BeginWith(
+#pragma warning restore CA100
         Action<ParentBuilder<TTimeJob>> configure,
         TimeProvider? timeProvider = null
     )

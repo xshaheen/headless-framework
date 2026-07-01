@@ -5,6 +5,7 @@ using Headless.Captcha;
 using Microsoft.AspNetCore.Razor.TagHelpers;
 using Microsoft.Extensions.Options;
 
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
 namespace Tests;
 
 /// <summary>reCAPTCHA tag-helper rendering for v2 (div + script) and v3 (script + programmatic script).</summary>

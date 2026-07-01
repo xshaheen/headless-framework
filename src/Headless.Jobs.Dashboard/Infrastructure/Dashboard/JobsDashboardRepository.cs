@@ -350,7 +350,9 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
     }
 
     /// <summary>Projects a coordination liveness snapshot into the dashboard node view. Pure — testable in isolation.</summary>
+#pragma warning disable RCS1158 // Static member in generic type should use a type parameter
     internal static IReadOnlyList<LiveNodeView> ProjectLiveNodes(IReadOnlyList<NodeLivenessSnapshot> snapshot)
+#pragma warning restore RCS1158
     {
         var views = new List<LiveNodeView>(snapshot.Count);
 

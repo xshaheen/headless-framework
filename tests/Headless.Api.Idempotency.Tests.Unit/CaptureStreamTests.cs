@@ -3,6 +3,7 @@
 using Headless.Api;
 using Headless.Testing.Tests;
 
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
 namespace Tests;
 
 public sealed class CaptureStreamTests : TestBase

@@ -543,7 +543,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
         var client = new InMemoryConsumerClient(queue, "disposed-group", 1);
         await client.DisposeAsync();
 
-        // when / then
+        // when & then
         var act = client.DrainPendingMessages;
         act.Should().NotThrow();
     }
@@ -554,7 +554,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
         // given — client created but no messages enqueued
         var act = () => _client.DrainPendingMessages();
 
-        // when / then
+        // when & then
         act.Should().NotThrow();
     }
 

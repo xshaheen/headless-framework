@@ -428,7 +428,7 @@ public sealed class IdempotencyEndToEndTests : TestBase
 
         // Winner advances to one of two states: gated inside the race window (pre-fix) or
         // gated inside the handler (post-fix). Whichever fires first is enough to send the loser.
-        await Task.WhenAny(winnerInRaceWindow.Task, gate.WaitForInvocationsAsync(1, TimeSpan.FromSeconds(5)));
+        _ = await Task.WhenAny(winnerInRaceWindow.Task, gate.WaitForInvocationsAsync(1, TimeSpan.FromSeconds(5)));
 
         var loserTask = _Post(client, "/echo", key: "race-k", body: "hello");
 

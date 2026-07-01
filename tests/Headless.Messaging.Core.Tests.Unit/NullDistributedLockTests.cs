@@ -83,7 +83,7 @@ public sealed class NullDistributedLockTests : TestBase
         var handle = await sut.TryAcquireAsync("test.resource", cancellationToken: AbortToken);
         handle.Should().NotBeNull();
 
-        // when / then — disposing repeatedly must not throw
+        // when & then — disposing repeatedly must not throw
         var act = async () =>
         {
             await handle!.DisposeAsync();

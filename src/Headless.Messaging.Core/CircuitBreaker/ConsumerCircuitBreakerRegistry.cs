@@ -32,7 +32,9 @@ internal sealed class ConsumerCircuitBreakerRegistry
     /// </exception>
     internal void Register(string groupName, ConsumerCircuitBreakerOptions options)
     {
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
         _Validator.ValidateAndThrow(options);
+#pragma warning restore MA0045
 
         if (!_options.TryAdd(groupName, options))
         {
@@ -51,7 +53,9 @@ internal sealed class ConsumerCircuitBreakerRegistry
     /// </summary>
     internal void RegisterOrUpdate(string groupName, ConsumerCircuitBreakerOptions options)
     {
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
         _Validator.ValidateAndThrow(options);
+#pragma warning restore MA0045
         _options[groupName] = options;
     }
 

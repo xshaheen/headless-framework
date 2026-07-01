@@ -238,7 +238,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
     [Fact]
     public async Task should_handle_empty_array_for_delayed_state_change()
     {
-        // when / then - should not throw
+        // when & then - should not throw
         await _storage.ChangePublishStateToDelayedAsync([], AbortToken);
     }
 

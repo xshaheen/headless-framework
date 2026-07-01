@@ -736,7 +736,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         // given
         using var sut = _Create();
 
-        // when / then — calling Dispose twice should not throw
+        // when & then — calling Dispose twice should not throw
         var act = () =>
         {
 #pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
@@ -902,7 +902,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         // given
         await using var sut = _Create();
 
-        // when / then
+        // when & then
         var act = async () => await sut.ResetAsync(null!);
         await act.Should().ThrowAsync<ArgumentNullException>();
     }
@@ -914,7 +914,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         await using var sut = _Create();
         var longName = new string('x', 513);
 
-        // when / then
+        // when & then
         var act = async () => await sut.ResetAsync(longName);
         await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
     }
@@ -929,7 +929,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         // given
         using var sut = _Create();
 
-        // when / then
+        // when & then
         sut.GetSnapshot("never-registered").Should().BeNull();
     }
 
@@ -1290,7 +1290,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         // given
         await using var sut = _Create();
 
-        // when / then
+        // when & then
         var act = async () => await sut.ForceOpenAsync(null!);
         await act.Should().ThrowAsync<ArgumentNullException>();
     }
@@ -1302,7 +1302,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         await using var sut = _Create();
         var longName = new string('x', 257);
 
-        // when / then
+        // when & then
         var act = async () => await sut.ForceOpenAsync(longName);
         await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
     }
@@ -1317,7 +1317,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         // given
         using var sut = _Create();
 
-        // when / then
+        // when & then
         sut.KnownGroups.Should().NotBeNull();
         sut.KnownGroups.Should().BeEmpty();
     }
@@ -1329,7 +1329,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         using var sut = _Create();
         sut.RegisterKnownGroups(["group.a", "group.b"]);
 
-        // when / then
+        // when & then
         sut.KnownGroups.Should().HaveCount(2);
         sut.KnownGroups.Should().Contain("group.a");
         sut.KnownGroups.Should().Contain("group.b");

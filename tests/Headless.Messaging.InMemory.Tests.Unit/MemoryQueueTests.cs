@@ -109,7 +109,7 @@ public sealed class MemoryQueueTests : TestBase
         // given — no subscriber registered; SendBus matches real-broker no-op semantics (no throw)
         var message = _CreateTestMessage("msg-1", "unsubscribed-messageName");
 
-        // when / then — must not throw
+        // when & then — must not throw
         var action = () => _queue.SendBus(message);
         action.Should().NotThrow();
     }
@@ -471,7 +471,7 @@ public sealed class MemoryQueueTests : TestBase
         var logger = Substitute.For<ILogger<MemoryQueue>>();
         var queue = new MemoryQueue(logger);
 
-        // when / then
+        // when & then
         var act = () => queue.DrainAllPendingMessages();
         act.Should().NotThrow();
     }

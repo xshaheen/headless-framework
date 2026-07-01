@@ -7,6 +7,7 @@ using Headless.CommitCoordination.EntityFramework;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
 namespace Tests;
 
 public sealed class CommitCoordinationTransactionInterceptorTests : IDisposable

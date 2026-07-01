@@ -24,7 +24,9 @@ internal static class ConsumerRegistryExtensions
             x =>
                 x is IProviderHeaderContributions
                     ? x.GetType().GetHashCode()
+#pragma warning disable RCS1249 // Unnecessary null-forgiving operator
                     : EqualityComparer<TConfig?>.Default.GetHashCode(x!)
+#pragma warning restore RCS1249
         );
 
         var configs = registry

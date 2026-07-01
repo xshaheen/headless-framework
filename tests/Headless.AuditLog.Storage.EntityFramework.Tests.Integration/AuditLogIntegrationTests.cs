@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Tests.Fixture;
 
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
 namespace Tests;
 
 public sealed class AuditLogIntegrationTests : TestBase
@@ -449,7 +450,7 @@ public sealed class AuditLogIntegrationTests : TestBase
         order.Emit(new TestDistributedMessage(Guid.NewGuid().ToString("N")));
         db.EmittingOrders.Add(order);
 
-        // when / then
+        // when & then
         var act = async () => await db.SaveChangesAsync(AbortToken);
         (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage(
             ThrowingPublishAuditTestDbContext.PublishFailureMessage
@@ -485,7 +486,7 @@ public sealed class AuditLogIntegrationTests : TestBase
             }
         );
 
-        // when / then
+        // when & then
         var act = async () => await db.SaveChangesAsync(AbortToken);
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("Simulated audit save failure.");
 
@@ -518,7 +519,7 @@ public sealed class AuditLogIntegrationTests : TestBase
             }
         );
 
-        // when / then
+        // when & then
         var act = () => db.SaveChanges();
         act.Should().Throw<InvalidOperationException>().WithMessage("Simulated audit save failure.");
 

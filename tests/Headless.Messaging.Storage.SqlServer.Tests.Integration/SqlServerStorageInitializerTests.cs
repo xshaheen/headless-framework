@@ -361,7 +361,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         const string schema = "table_names";
         var initializer = _CreateInitializer(schema, useStorageLock: true);
 
-        // when / then
+        // when & then
         initializer.GetPublishedTableName().Should().Be($"{schema}.Published");
         initializer.GetReceivedTableName().Should().Be($"{schema}.Received");
     }

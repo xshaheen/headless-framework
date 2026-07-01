@@ -55,7 +55,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         // given
         var coordinator = _CreateCoordinator();
 
-        // when / then
+        // when & then
         var act = coordinator.Dispose;
         act.Should().NotThrow();
     }

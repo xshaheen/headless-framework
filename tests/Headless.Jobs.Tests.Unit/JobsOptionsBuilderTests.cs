@@ -5,6 +5,7 @@ using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 
+#pragma warning disable REFL017 // Don't use name of wrong member
 namespace Tests;
 
 public sealed class JobsOptionsBuilderTests

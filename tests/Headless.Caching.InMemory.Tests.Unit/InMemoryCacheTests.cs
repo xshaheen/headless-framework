@@ -2514,7 +2514,7 @@ public sealed class InMemoryCacheTests : TestBase
         // given
         var cache = _CreateCache();
 
-        // when / then - should not throw
+        // when & then - should not throw
         cache.Dispose();
         cache.Dispose();
     }
