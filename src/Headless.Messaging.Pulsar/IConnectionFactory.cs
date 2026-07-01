@@ -12,7 +12,7 @@ namespace Headless.Messaging.Pulsar;
 /// Manages the shared Pulsar client and per-topic producer cache for the Pulsar transport.
 /// </summary>
 /// <remarks>
-/// The <c>PulsarClient</c> is created lazily on the first call to <see cref="RentClient"/> or
+/// The <c>PulsarClient</c> is created lazily on the first call to <see cref="RentClientAsync"/> or
 /// <see cref="CreateProducerAsync"/>. Producers are cached per topic; a failed producer task is
 /// evicted from the cache so the next call creates a fresh producer.
 /// </remarks>
@@ -32,13 +32,13 @@ public interface IConnectionFactory
     /// Returns the shared <c>PulsarClient</c>, creating it if it has not been opened yet.
     /// The client is long-lived; do not dispose it directly.
     /// </summary>
-    PulsarClient RentClient();
+    Task<PulsarClient> RentClientAsync();
 }
 
 /// <summary>Default implementation of <see cref="IConnectionFactory"/>.</summary>
 public sealed class ConnectionFactory : IConnectionFactory, IAsyncDisposable
 {
-    private readonly Lock _lock = new();
+    private readonly SemaphoreSlim _clientLock = new(1, 1);
     private PulsarClient? _client;
     private readonly MessagingPulsarOptions _options;
     private readonly Func<string, Task<IProducer<byte[]>>>? _producerFactoryOverride;
@@ -75,6 +75,8 @@ public sealed class ConnectionFactory : IConnectionFactory, IAsyncDisposable
         {
             await _client.CloseAsync().ConfigureAwait(false);
         }
+
+        _clientLock.Dispose();
     }
 
     public string ServersAddress => BrokerAddressDisplay.Format(_options.ServiceUrl);
@@ -83,7 +85,7 @@ public sealed class ConnectionFactory : IConnectionFactory, IAsyncDisposable
     {
         if (_producerFactoryOverride is null)
         {
-            _client ??= RentClient();
+            _client ??= await RentClientAsync().ConfigureAwait(false);
         }
 
         var producerTask = _topicProducers.GetOrAdd(
@@ -103,9 +105,11 @@ public sealed class ConnectionFactory : IConnectionFactory, IAsyncDisposable
         }
     }
 
-    public PulsarClient RentClient()
+    public async Task<PulsarClient> RentClientAsync()
     {
-        lock (_lock)
+        // Serialize lazy creation through an async lock (the client is long-lived, so this path is cold).
+        await _clientLock.WaitAsync().ConfigureAwait(false);
+        try
         {
             if (_client is null)
             {
@@ -119,10 +123,14 @@ public sealed class ConnectionFactory : IConnectionFactory, IAsyncDisposable
                     builder.TlsProtocols(_options.TlsOptions.TlsProtocols);
                 }
 
-                _client = builder.BuildAsync().Result;
+                _client = await builder.BuildAsync().ConfigureAwait(false);
             }
 
             return _client;
+        }
+        finally
+        {
+            _clientLock.Release();
         }
     }
 
