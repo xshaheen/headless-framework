@@ -373,6 +373,12 @@ internal sealed class MultiplexedConnectionLock(DatabaseConnection connection) :
 
                 // Lazily register a monitoring handle on first read. The connection outlives this handle until release,
                 // so it is safe to ask its monitor for a connection-lost token here.
+                //
+                // MA0173 suggests LazyInitializer.EnsureInitialize here, but that is unsafe for a *disposable*:
+                // the lock-free overload can run the factory on multiple racing threads and discards the losing
+                // handle WITHOUT disposing it, leaking a monitoring handle on every lost race. The CAS below is
+                // deliberate — it disposes the loser — so the analyzer is suppressed for this block.
+#pragma warning disable MA0173
                 if (Volatile.Read(ref _monitoringHandle) is null)
                 {
                     var newHandle = @lock._connection.GetConnectionMonitoringHandle();
@@ -383,6 +389,7 @@ internal sealed class MultiplexedConnectionLock(DatabaseConnection connection) :
                         newHandle.Dispose();
                     }
                 }
+#pragma warning restore MA0173
 
                 var handle = Volatile.Read(ref _monitoringHandle);
                 ObjectDisposedException.ThrowIf(handle is null, this);
