@@ -19,7 +19,8 @@
 #               the deserializer throws; the "invalid JSON" warning is the point
 #               of the test input.
 #   xUnit1045 - Theory data uses object / List<T>; this only affects Test Explorer
-#               row enumeration, not test correctness.
+#   xUnit1046   row enumeration, not test correctness (1046 is the same concern for
+#               Func<> theory data, which is inherently non-serializable).
 #   MA0176    - Guid-creation micro-optimization is irrelevant in test fixtures.
 
 [*.cs]
@@ -28,4 +29,5 @@ dotnet_diagnostic.REFL009.severity = none
 dotnet_diagnostic.REFL017.severity = none
 dotnet_diagnostic.JSON001.severity = none
 dotnet_diagnostic.xUnit1045.severity = none
+dotnet_diagnostic.xUnit1046.severity = none
 dotnet_diagnostic.MA0176.severity = none
