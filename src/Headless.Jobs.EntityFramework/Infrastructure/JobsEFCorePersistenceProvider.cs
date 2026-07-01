@@ -120,7 +120,9 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
         ((IDbContextOptionsBuilderInfrastructure)coordinatedOptionsBuilder).AddOrUpdateExtension(reboundRelational);
 
         var dbContext = _CreateContext(coordinatedOptionsBuilder.Options);
+#pragma warning disable MA0045 // Enlisting an existing transaction is an in-memory operation (no I/O), and this is a synchronous context factory.
         dbContext.Database.UseTransaction(transaction);
+#pragma warning restore MA0045
 
         return dbContext;
     }
