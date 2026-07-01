@@ -691,7 +691,8 @@ public sealed class BusTests : TestBase
             .Returns<ValueTask<TransportMessage>>(_ => throw new InvalidOperationException("Serializer failure"));
 
         var options = new MessagingOptions();
-        var publisher = _CreateBusWithSerializer(serializer, options);
+        await using var testTransport = new TestTransport();
+        var publisher = _CreateBusWithSerializer(serializer, options, testTransport);
 
         // when
         var act = () => publisher.PublishAsync(new TestMessage("test"), cancellationToken: AbortToken);
@@ -703,7 +704,7 @@ public sealed class BusTests : TestBase
     private static IBus _CreateBusWithSerializer(
         ISerializer serializer,
         MessagingOptions options,
-        IBusTransport? transport = null,
+        IBusTransport transport,
         string? mappedMessageName = "test.messageName"
     )
     {
@@ -718,13 +719,7 @@ public sealed class BusTests : TestBase
         );
         var pipeline = new PublishMiddlewarePipeline(new ServiceCollection().BuildServiceProvider());
 
-        return new Bus(
-            serializer,
-            transport ?? new TestTransport(),
-            publishRequestFactory,
-            pipeline,
-            TimeProvider.System
-        );
+        return new Bus(serializer, transport, publishRequestFactory, pipeline, TimeProvider.System);
     }
 
     private static Bus _CreateBus(

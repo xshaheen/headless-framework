@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.Metrics;
 using Headless.DistributedLocks;
 using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
@@ -27,13 +28,15 @@ namespace Tests.CircuitBreaker;
 /// </remarks>
 public sealed class CircuitBreakerIntegrationTests : TestBase
 {
+    private readonly List<IMeterFactory> _meterFactories = [];
+
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
 
     private static string _CircuitKey(string group) => $"{IntentType.Bus:D}:{group}";
 
-    private static CircuitBreakerStateManager _CreateStateManager(
+    private CircuitBreakerStateManager _CreateStateManager(
         int failureThreshold = 3,
         TimeSpan? openDuration = null,
         TimeSpan? maxOpenDuration = null,
@@ -48,13 +51,28 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
             SuccessfulCyclesToResetEscalation = successfulCyclesToResetEscalation,
         };
 
+        // Owned by the test: disposed in DisposeAsyncCore so the meter stays alive for the test.
+        var meterFactory = CircuitBreakerTestHelpers.CreateMeterFactory();
+        _meterFactories.Add(meterFactory);
+
         return new CircuitBreakerStateManager(
             Options.Create(opts),
             new ConsumerCircuitBreakerRegistry(),
             new NullLogger<CircuitBreakerStateManager>(),
-            new CircuitBreakerMetrics(CircuitBreakerTestHelpers.CreateMeterFactory()),
+            new CircuitBreakerMetrics(meterFactory),
             TimeProvider.System
         );
+    }
+
+    protected override async ValueTask DisposeAsyncCore()
+    {
+        foreach (var meterFactory in _meterFactories)
+        {
+            meterFactory.Dispose();
+        }
+
+        _meterFactories.Clear();
+        await base.DisposeAsyncCore().ConfigureAwait(false);
     }
 
     private static MediumMessage _CreateMessage(string? group)

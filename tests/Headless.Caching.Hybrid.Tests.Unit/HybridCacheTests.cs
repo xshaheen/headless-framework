@@ -11,6 +11,11 @@ public sealed class HybridCacheTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
 
+    // The HybridCache returned here is disposed per test (via `await using` or an explicit DisposeAsync), but it
+    // does not own the injected L1/L2 stores. This fixture collects those raw InMemoryCache instances and disposes
+    // them at teardown.
+    private readonly List<object> _disposables = [];
+
     private (HybridCache cache, IInMemoryCache l1, IRemoteCache l2, IBus publisher) _CreateCache(
         HybridCacheOptions? options = null
     )
@@ -30,6 +35,9 @@ public sealed class HybridCacheTests : TestBase
             .Returns(Task.CompletedTask);
 
         var cache = new HybridCache(l1, l2, publisher, options, timeProvider: _timeProvider);
+
+        _disposables.Add(l1);
+        _disposables.Add(inMemoryCache);
 
         return (cache, l1, l2, publisher);
     }
@@ -1923,4 +1931,23 @@ public sealed class HybridCacheTests : TestBase
     }
 
     #endregion
+
+    protected override async ValueTask DisposeAsyncCore()
+    {
+        foreach (var disposable in _disposables)
+        {
+            switch (disposable)
+            {
+                case IAsyncDisposable asyncDisposable:
+                    await asyncDisposable.DisposeAsync().ConfigureAwait(false);
+                    break;
+                case IDisposable syncDisposable:
+                    syncDisposable.Dispose();
+                    break;
+            }
+        }
+
+        _disposables.Clear();
+        await base.DisposeAsyncCore().ConfigureAwait(false);
+    }
 }

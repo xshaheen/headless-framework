@@ -359,7 +359,11 @@ public sealed class DisposableSemaphoreSlotTests : TestBase
             resource,
             deregisterMonitor: (_, _) => Interlocked.Increment(ref deregisterCount)
         );
-        var monitor = new LeaseMonitor(slot, _timeProvider, LoggerFactory.CreateLogger(nameof(LeaseMonitor)));
+        await using var monitor = new LeaseMonitor(
+            slot,
+            _timeProvider,
+            LoggerFactory.CreateLogger(nameof(LeaseMonitor))
+        );
         slot.AttachMonitor(monitor);
         var lostToken = slot.LostToken;
 

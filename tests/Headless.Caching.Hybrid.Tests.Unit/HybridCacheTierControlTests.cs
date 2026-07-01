@@ -17,15 +17,18 @@ public sealed class HybridCacheTierControlTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
 
+    // The HybridCache returned here is disposed per test via `await using`, but it does not own the injected
+    // L1/L2 stores. This fixture collects those raw InMemoryCache instances and disposes them at teardown.
+    private readonly List<object> _disposables = [];
+
     private (HybridCache cache, IInMemoryCache l1, IRemoteCache l2, IBus publisher) _CreateCache(
         HybridCacheOptions? options = null
     )
     {
         options ??= new HybridCacheOptions();
         var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
-        var l2 = new InMemoryRemoteCacheAdapter(
-            new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true })
-        );
+        var l2Inner = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        var l2 = new InMemoryRemoteCacheAdapter(l2Inner);
 
         var publisher = Substitute.For<IBus>();
         publisher
@@ -34,7 +37,29 @@ public sealed class HybridCacheTierControlTests : TestBase
 
         var cache = new HybridCache(l1, l2, publisher, options, timeProvider: _timeProvider);
 
+        _disposables.Add(l1);
+        _disposables.Add(l2Inner);
+
         return (cache, l1, l2, publisher);
+    }
+
+    protected override async ValueTask DisposeAsyncCore()
+    {
+        foreach (var disposable in _disposables)
+        {
+            switch (disposable)
+            {
+                case IAsyncDisposable asyncDisposable:
+                    await asyncDisposable.DisposeAsync().ConfigureAwait(false);
+                    break;
+                case IDisposable syncDisposable:
+                    syncDisposable.Dispose();
+                    break;
+            }
+        }
+
+        _disposables.Clear();
+        await base.DisposeAsyncCore().ConfigureAwait(false);
     }
 
     private static CacheEntryOptions _Options(

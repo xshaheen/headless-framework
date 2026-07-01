@@ -7,8 +7,24 @@ using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
-public sealed class BlobStorageDataProtectionXmlRepositoryTests
+public sealed class BlobStorageDataProtectionXmlRepositoryTests : IAsyncLifetime
 {
+    // Paged results handed to the storage mock are owned by the test: the code under test
+    // (GetBlobsListAsync) iterates but does not dispose them, so dispose them at teardown.
+    private readonly List<PagedFileListResult> _pagedResults = [];
+
+    public ValueTask InitializeAsync() => ValueTask.CompletedTask;
+
+    public async ValueTask DisposeAsync()
+    {
+        foreach (var paged in _pagedResults)
+        {
+            await paged.DisposeAsync();
+        }
+
+        _pagedResults.Clear();
+    }
+
     #region Constructor Tests
 
     [Fact]
@@ -540,11 +556,14 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
             .Returns(ValueTask.FromResult(PagedFileListResult.Empty));
     }
 
-    private static void _SetupStorageWithBlobs(IBlobStorage storage, IReadOnlyCollection<BlobInfo> blobs)
+    private void _SetupStorageWithBlobs(IBlobStorage storage, IReadOnlyCollection<BlobInfo> blobs)
     {
+        var paged = new PagedFileListResult(blobs);
+        _pagedResults.Add(paged);
+
         storage
             .GetPagedListAsync(Arg.Any<string[]>(), Arg.Any<string?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(ValueTask.FromResult(new PagedFileListResult(blobs)));
+            .Returns(ValueTask.FromResult(paged));
     }
 
     private static BlobInfo _CreateBlobInfo(string blobKey)

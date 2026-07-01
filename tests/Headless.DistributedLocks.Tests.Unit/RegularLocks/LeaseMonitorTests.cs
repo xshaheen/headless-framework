@@ -237,6 +237,7 @@ public sealed class LeaseMonitorTests : TestBase
     {
         // Helper isolates the strong-reference scope so the JIT cannot keep the LeaseMonitor
         // alive in a local on the caller's stack frame across GC.Collect.
+        // CA2000: intentionally not disposed — this test verifies GC reclaims an abandoned monitor.
         var monitor = new LeaseMonitor(handle, _timeProvider, LoggerFactory.CreateLogger(nameof(LeaseMonitor)));
         var task = monitor.MonitoringTask;
         monitor = null;

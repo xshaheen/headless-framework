@@ -574,7 +574,7 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
 
         public void GrantNext() => _grant = true;
 
-        public ValueTask<ConnectionScopedLockHandle?> TryAcquireAsync(
+        public async ValueTask<ConnectionScopedLockHandle?> TryAcquireAsync(
             string resource,
             string leaseId,
             bool isShared,
@@ -583,10 +583,16 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
         )
         {
             cancellationToken.ThrowIfCancellationRequested();
+            await Task.CompletedTask.ConfigureAwait(false);
 
-            return ValueTask.FromResult(
-                _grant ? new ConnectionScopedLockHandle(resource, leaseId, ReleaseAsync, CancellationToken.None) : null
-            );
+            if (!_grant)
+            {
+                return null;
+            }
+
+            // Ownership of the handle transfers to the caller (the lock under test), which
+            // releases/disposes it.
+            return new ConnectionScopedLockHandle(resource, leaseId, ReleaseAsync, CancellationToken.None);
         }
 
         public ValueTask ReleaseAsync(

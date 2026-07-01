@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.Metrics;
 using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Exceptions;
@@ -13,12 +14,13 @@ namespace Tests.CircuitBreaker;
 public sealed class CircuitBreakerStateManagerTests : TestBase
 {
     private const string _Group = "test.group";
+    private readonly List<IMeterFactory> _meterFactories = [];
 
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
 
-    private static CircuitBreakerStateManager _Create(
+    private CircuitBreakerStateManager _Create(
         int failureThreshold = 5,
         TimeSpan? openDuration = null,
         TimeSpan? maxOpenDuration = null,
@@ -34,9 +36,9 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
             SuccessfulCyclesToResetEscalation = successfulCyclesToResetEscalation,
         };
 
-#pragma warning disable CA2000 // Dispose objects before losing scope
+        // Owned by the test: disposed in DisposeAsyncCore so the meter stays alive for the test.
         var meterFactory = CircuitBreakerTestHelpers.CreateMeterFactory();
-#pragma warning restore CA2000
+        _meterFactories.Add(meterFactory);
 
         return new CircuitBreakerStateManager(
             Options.Create(opts),
@@ -53,6 +55,17 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         {
             await sut.ReportFailureAsync(group, new TimeoutException("transient"));
         }
+    }
+
+    protected override async ValueTask DisposeAsyncCore()
+    {
+        foreach (var meterFactory in _meterFactories)
+        {
+            meterFactory.Dispose();
+        }
+
+        _meterFactories.Clear();
+        await base.DisposeAsyncCore().ConfigureAwait(false);
     }
 
     // -------------------------------------------------------------------------
