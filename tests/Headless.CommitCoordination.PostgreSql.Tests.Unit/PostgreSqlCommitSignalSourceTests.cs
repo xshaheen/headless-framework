@@ -37,7 +37,7 @@ public sealed class PostgreSqlCommitSignalSourceTests
                 }
             );
 
-            await source.SignalCommittedAsync(key, CancellationToken.None);
+            await source.SignalCommittedAsync(key);
 
             stack.Current.Should().BeSameAs(scope.Coordinator);
         }
@@ -105,7 +105,7 @@ public sealed class PostgreSqlCommitSignalSourceTests
         );
 
         await callerScope.DisposeAsync();
-        await source.SignalCommittedAsync(key, CancellationToken.None);
+        await source.SignalCommittedAsync(key);
         await scope.DisposeAsync();
 
         marker.Should().NotBeNull();

@@ -41,7 +41,7 @@ public sealed class SqlServerCommitSignalSourceTests : TestBase
                 }
             );
 
-            await source.SignalCommittedAsync(key, AbortToken);
+            await source.SignalCommittedAsync(key);
         }
 
         calls.Should().Be(1);
@@ -77,7 +77,7 @@ public sealed class SqlServerCommitSignalSourceTests : TestBase
         );
 
         await callerScope.DisposeAsync();
-        await source.SignalCommittedAsync(key, AbortToken);
+        await source.SignalCommittedAsync(key);
         await scope.DisposeAsync();
 
         marker.Should().NotBeNull();
@@ -94,8 +94,8 @@ public sealed class SqlServerCommitSignalSourceTests : TestBase
         // No scope attached for this key — the diagnostic fires for every connection, so an absent key is the
         // normal case and must be a silent no-op (no throw) that completes SYNCHRONOUSLY: the fast-path returns
         // ValueTask.CompletedTask, which is what lets the observer's _Drain skip the Task allocation.
-        var committed = source.SignalCommittedAsync(new object(), AbortToken);
-        var rolledBack = source.SignalRolledBackAsync(new object(), AbortToken);
+        var committed = source.SignalCommittedAsync(new object());
+        var rolledBack = source.SignalRolledBackAsync(new object());
 
         committed
             .IsCompletedSuccessfully.Should()
@@ -298,7 +298,7 @@ public sealed class SqlServerCommitSignalSourceTests : TestBase
                 );
 
                 // Commit removes the predecessor from the registry (synchronous TryRemove) but does NOT dispose it.
-                await source.SignalCommittedAsync(key, AbortToken);
+                await source.SignalCommittedAsync(key);
             },
             AbortToken
         );
@@ -320,7 +320,7 @@ public sealed class SqlServerCommitSignalSourceTests : TestBase
         // Disposing the predecessor must NOT evict the successor that now owns the key (remove-if-equal).
         await first.DisposeAsync();
 
-        await source.SignalCommittedAsync(key, AbortToken);
+        await source.SignalCommittedAsync(key);
         await second.DisposeAsync();
 
         firstCommits.Should().Be(1);

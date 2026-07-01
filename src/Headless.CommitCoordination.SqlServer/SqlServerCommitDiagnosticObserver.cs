@@ -69,11 +69,11 @@ internal sealed partial class SqlServerCommitDiagnosticObserver(
                 // The commit-after event can carry a "Rollback" operation in some flows; treat it as a rollback.
                 if (IsRollbackOperation(evt.Value))
                 {
-                    _Drain(signalSource.SignalRolledBackAsync(key, CancellationToken.None));
+                    _Drain(signalSource.SignalRolledBackAsync(key));
                 }
                 else
                 {
-                    _Drain(signalSource.SignalCommittedAsync(key, CancellationToken.None));
+                    _Drain(signalSource.SignalCommittedAsync(key));
                 }
 
                 break;
@@ -85,7 +85,7 @@ internal sealed partial class SqlServerCommitDiagnosticObserver(
                     return;
                 }
 
-                _Drain(signalSource.SignalRolledBackAsync(key, CancellationToken.None));
+                _Drain(signalSource.SignalRolledBackAsync(key));
 
                 break;
             }
