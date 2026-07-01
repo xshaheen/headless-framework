@@ -900,8 +900,8 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         }
 
         var occurrence = query
-            .Where(_CanAcquireCronOccurrence)
-            .Where(x => x.ExecutionTime >= mainSchedulerThreshold) // Only recent/upcoming tasks (not heavily overdue)
+            // Only recent/upcoming tasks (not heavily overdue)
+            .Where(x => _CanAcquireCronOccurrence(x) && x.ExecutionTime >= mainSchedulerThreshold)
             .OrderBy(x => x.ExecutionTime)
             .FirstOrDefault();
 
