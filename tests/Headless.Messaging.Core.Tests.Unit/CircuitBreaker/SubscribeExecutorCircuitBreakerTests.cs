@@ -177,7 +177,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), AbortToken);
 
         // then
-        await cbMock.Received(1).ReportSuccessAsync(_CircuitBreakerGroupName, AbortToken);
+        await cbMock.Received(1).ReportSuccessAsync(_CircuitBreakerGroupName, CancellationToken.None);
     }
 
     [Fact]
@@ -315,7 +315,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             );
-        await cbMock.Received(1).ReportSuccessAsync(_CircuitBreakerGroupName, AbortToken);
+        await cbMock.Received(1).ReportSuccessAsync(_CircuitBreakerGroupName, CancellationToken.None);
     }
 }
 
