@@ -136,7 +136,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         pauseCalled.Should().BeFalse();
 
         // when — 3rd failure hits the threshold
-        await sut.ReportFailureAsync(group, new TimeoutException("transient-3"));
+        await sut.ReportFailureAsync(group, new TimeoutException("transient-3"), AbortToken);
 
         // then — circuit opens, pause callback invoked
         sut.IsOpen(group).Should().BeTrue();
