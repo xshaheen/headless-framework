@@ -195,7 +195,7 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
                 {
                     Added = x.Added,
                     StorageId = x.StorageId,
-                    MessageId = x.Origin.GetId(),
+                    MessageId = x.Origin.Id,
                     Version = "N/A",
                     Content = x.Content,
                     IntentType = x.IntentType,
@@ -257,7 +257,7 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
                     Added = x.Added,
                     Group = x.Group,
                     StorageId = x.StorageId,
-                    MessageId = x.Origin.GetId(),
+                    MessageId = x.Origin.Id,
                     Version = "N/A",
                     Content = x.Content,
                     IntentType = x.IntentType,

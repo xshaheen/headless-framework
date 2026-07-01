@@ -99,8 +99,8 @@ public sealed class MemoryQueueTests : TestBase
 
         // then
         receivedMessage.Should().NotBeNull();
-        receivedMessage!.Value.GetId().Should().Be("msg-1");
-        receivedMessage.Value.GetName().Should().Be("test-messageName");
+        receivedMessage!.Value.Id.Should().Be("msg-1");
+        receivedMessage.Value.Name.Should().Be("test-messageName");
     }
 
     [Fact]
@@ -168,7 +168,7 @@ public sealed class MemoryQueueTests : TestBase
 
         // then
         receivedMessages.Should().HaveCount(2);
-        receivedMessages.Select(m => m.GetId()).Should().BeEquivalentTo(["msg-a", "msg-b"]);
+        receivedMessages.Select(m => m.Id).Should().BeEquivalentTo(["msg-a", "msg-b"]);
     }
 
     [Fact]

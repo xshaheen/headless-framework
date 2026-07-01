@@ -26,7 +26,7 @@ internal sealed class AzureServiceBusQueueTransport(
     {
         try
         {
-            var queueName = transportMessage.GetName();
+            var queueName = transportMessage.Name;
             var sender = _GetSender(queueName).Value;
             var message = AzureServiceBusMessageBuilder.Build(transportMessage, busOptions.Value.EnableSessions);
 

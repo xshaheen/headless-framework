@@ -79,7 +79,7 @@ public sealed class InMemoryQueueTransportTests : TestBase
         // then
         result.Succeeded.Should().BeTrue();
         receivedMessage.Should().NotBeNull();
-        receivedMessage!.Value.GetId().Should().Be("msg-1");
+        receivedMessage!.Value.Id.Should().Be("msg-1");
     }
 
     [Fact]

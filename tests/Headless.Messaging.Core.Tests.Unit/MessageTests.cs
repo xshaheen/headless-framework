@@ -75,7 +75,7 @@ public sealed class MessageTests : TestBase
         var message = new Message(headers, null);
 
         // when
-        var result = message.GetId();
+        var result = message.Id;
 
         // then
         result.Should().Be(messageId);
@@ -90,7 +90,7 @@ public sealed class MessageTests : TestBase
         var message = new Message(headers, null);
 
         // when
-        var result = message.GetName();
+        var result = message.Name;
 
         // then
         result.Should().Be(messageName);

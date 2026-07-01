@@ -218,7 +218,7 @@ internal sealed class OutboxMessageWriter(
             var eventData = new MessageEventDataPubStore
             {
                 OperationTimestamp = _NowUnixTimeMilliseconds(),
-                Operation = message.GetName(),
+                Operation = message.Name,
                 Message = message,
                 IntentType = intentType,
                 CancellationToken = cancellationToken,
@@ -248,7 +248,7 @@ internal sealed class OutboxMessageWriter(
             var eventData = new MessageEventDataPubStore
             {
                 OperationTimestamp = now,
-                Operation = message.GetName(),
+                Operation = message.Name,
                 Message = message,
                 IntentType = intentType,
                 ElapsedTimeMs = now - tracingTimestamp.Value,
@@ -276,7 +276,7 @@ internal sealed class OutboxMessageWriter(
             var eventData = new MessageEventDataPubStore
             {
                 OperationTimestamp = now,
-                Operation = message.GetName(),
+                Operation = message.Name,
                 Message = message,
                 IntentType = intentType,
                 ElapsedTimeMs = now - tracingTimestamp.Value,

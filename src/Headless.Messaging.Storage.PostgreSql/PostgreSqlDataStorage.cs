@@ -267,7 +267,7 @@ internal sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@LockedUntil", stored.LockedUntil.ToUtcParameterValue()),
             new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar) { Value = DBNull.Value },
             new NpgsqlParameter("@StatusName", nameof(StatusName.Scheduled)),
-            new NpgsqlParameter("@MessageId", message.Origin.GetId()),
+            new NpgsqlParameter("@MessageId", message.Origin.Id),
         ];
 
         if (transaction == null)
@@ -406,7 +406,7 @@ internal sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@LockedUntil", DBNull.Value),
             new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar) { Value = DBNull.Value },
             new NpgsqlParameter("@StatusName", nameof(StatusName.Failed)),
-            new NpgsqlParameter("@MessageId", message.Origin.GetId()),
+            new NpgsqlParameter("@MessageId", message.Origin.Id),
             new NpgsqlParameter("@ExceptionInfo", exceptionInfo ?? (object)DBNull.Value),
             // #4 — active-lease guard uses the injected TimeProvider (not DB now()) so all lease math
             // shares one clock domain; keeps the guard testable with a fake clock.
@@ -463,7 +463,7 @@ internal sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@LockedUntil", mediumMessage.LockedUntil.ToUtcParameterValue()),
             new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar) { Value = DBNull.Value },
             new NpgsqlParameter("@StatusName", nameof(StatusName.Scheduled)),
-            new NpgsqlParameter("@MessageId", message.Origin.GetId()),
+            new NpgsqlParameter("@MessageId", message.Origin.Id),
             new NpgsqlParameter("@ExceptionInfo", DBNull.Value),
             // #4 — active-lease guard uses the injected TimeProvider (not DB now()) so all lease math
             // shares one clock domain; keeps the guard testable with a fake clock.

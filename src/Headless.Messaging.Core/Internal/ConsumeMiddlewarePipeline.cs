@@ -137,7 +137,7 @@ internal sealed class ConsumeMiddlewarePipeline(
         return new ConsumerExecutedResult(
             consumeContext.Response,
             consumeContext.ResponseType,
-            context.MediumMessage.Origin.GetId(),
+            context.MediumMessage.Origin.Id,
             string.IsNullOrEmpty(callbackName) ? null : callbackName,
             callbackHeaders,
             consumeContext.ResponseCallbackName

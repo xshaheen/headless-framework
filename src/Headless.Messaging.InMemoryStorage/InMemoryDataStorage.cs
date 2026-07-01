@@ -284,7 +284,7 @@ internal sealed class InMemoryDataStorage(
         cancellationToken.ThrowIfCancellationRequested();
 
         var content = string.IsNullOrEmpty(message.Content) ? serializer.Serialize(message.Origin) : message.Content;
-        var messageId = message.Origin.GetId();
+        var messageId = message.Origin.Id;
         var version = messagingOptions.Value.Version;
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var expiresAt = now.AddSeconds(messagingOptions.Value.FailedMessageExpiredAfter);

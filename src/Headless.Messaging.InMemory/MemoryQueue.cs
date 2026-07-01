@@ -134,7 +134,7 @@ internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
     /// <param name="message">The transport message to send</param>
     public void SendBus(TransportMessage message)
     {
-        var name = message.GetName();
+        var name = message.Name;
         lock (_lock)
         {
             if (!_messageNameGroups.TryGetValue((IntentType.Bus, name), out var groupList))
@@ -158,7 +158,7 @@ internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
     /// <param name="message">The transport message to send</param>
     public void SendQueue(TransportMessage message)
     {
-        var name = message.GetName();
+        var name = message.Name;
         lock (_lock)
         {
             if (!_messageNameGroups.TryGetValue((IntentType.Queue, name), out var groupList) || groupList.Count == 0)

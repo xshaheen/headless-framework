@@ -33,7 +33,7 @@ public sealed class BusTests : TestBase
 
         // then
         testTransport.SentMessages.Should().ContainSingle();
-        testTransport.SentMessages[0].GetName().Should().Be("test.messageName");
+        testTransport.SentMessages[0].Name.Should().Be("test.messageName");
     }
 
     [Fact]
@@ -50,7 +50,7 @@ public sealed class BusTests : TestBase
 
         // then — transport message name must equal the registry-sourced mapping, not a convention-derived fallback
         testTransport.SentMessages.Should().ContainSingle();
-        testTransport.SentMessages[0].GetName().Should().Be("orders.placed");
+        testTransport.SentMessages[0].Name.Should().Be("orders.placed");
     }
 
     [Fact]
@@ -67,7 +67,7 @@ public sealed class BusTests : TestBase
 
         // then
         testTransport.SentMessages.Should().ContainSingle();
-        testTransport.SentMessages[0].GetName().Should().Be("test-message");
+        testTransport.SentMessages[0].Name.Should().Be("test-message");
     }
 
     [Fact]
@@ -83,7 +83,7 @@ public sealed class BusTests : TestBase
 
         // then
         testTransport.SentMessages.Should().ContainSingle();
-        testTransport.SentMessages[0].GetName().Should().Be(nameof(UnmappedMessage));
+        testTransport.SentMessages[0].Name.Should().Be(nameof(UnmappedMessage));
     }
 
     [Fact]
@@ -117,7 +117,7 @@ public sealed class BusTests : TestBase
 
         // then
         testTransport.SentMessages.Should().ContainSingle();
-        testTransport.SentMessages[0].GetName().Should().Be("myapp.events");
+        testTransport.SentMessages[0].Name.Should().Be("myapp.events");
     }
 
     [Fact]
@@ -296,7 +296,7 @@ public sealed class BusTests : TestBase
 
         // then
         testTransport.SentMessages.Should().ContainSingle();
-        testTransport.SentMessages[0].GetName().Should().Be("explicit.messageName");
+        testTransport.SentMessages[0].Name.Should().Be("explicit.messageName");
     }
 
     [Theory]

@@ -389,7 +389,7 @@ internal sealed class MessageSender : IMessageSender
             var eventData = new MessageEventDataPubSend
             {
                 OperationTimestamp = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds(),
-                Operation = message.GetName(),
+                Operation = message.Name,
                 BrokerAddress = broker,
                 TransportMessage = message,
                 IntentType = intentType,
@@ -418,7 +418,7 @@ internal sealed class MessageSender : IMessageSender
             var eventData = new MessageEventDataPubSend
             {
                 OperationTimestamp = now,
-                Operation = message.GetName(),
+                Operation = message.Name,
                 BrokerAddress = broker,
                 TransportMessage = message,
                 IntentType = intentType,
@@ -447,7 +447,7 @@ internal sealed class MessageSender : IMessageSender
             var eventData = new MessageEventDataPubSend
             {
                 OperationTimestamp = now,
-                Operation = message.GetName(),
+                Operation = message.Name,
                 BrokerAddress = broker,
                 TransportMessage = message,
                 IntentType = intentType,

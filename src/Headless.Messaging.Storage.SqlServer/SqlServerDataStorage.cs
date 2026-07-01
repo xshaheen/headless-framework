@@ -250,7 +250,7 @@ internal sealed class SqlServerDataStorage(
             new SqlParameter("@LockedUntil", SqlDbType.DateTime2) { Value = stored.LockedUntil.ToUtcParameterValue() },
             _OwnerParameter("@Owner", stored.LockedUntil),
             new SqlParameter("@StatusName", nameof(StatusName.Scheduled)),
-            new SqlParameter("@MessageId", message.Origin.GetId()),
+            new SqlParameter("@MessageId", message.Origin.Id),
         ];
 
         if (transaction == null)
@@ -391,7 +391,7 @@ internal sealed class SqlServerDataStorage(
             new SqlParameter("@LockedUntil", SqlDbType.DateTime2) { Value = DBNull.Value },
             _OwnerParameter("@Owner", lockedUntil: null),
             new SqlParameter("@StatusName", nameof(StatusName.Failed)),
-            new SqlParameter("@MessageId", message.Origin.GetId()),
+            new SqlParameter("@MessageId", message.Origin.Id),
             new SqlParameter("@Version", messagingOptions.Value.Version),
             new SqlParameter("@ExceptionInfo", exceptionInfo ?? (object)DBNull.Value),
             // #4 — active-lease guard uses the injected TimeProvider (not GETUTCDATE()) so all lease
@@ -454,7 +454,7 @@ internal sealed class SqlServerDataStorage(
             },
             _OwnerParameter("@Owner", mediumMessage.LockedUntil),
             new SqlParameter("@StatusName", nameof(StatusName.Scheduled)),
-            new SqlParameter("@MessageId", message.Origin.GetId()),
+            new SqlParameter("@MessageId", message.Origin.Id),
             new SqlParameter("@Version", messagingOptions.Value.Version),
             new SqlParameter("@ExceptionInfo", DBNull.Value),
             // #4 — active-lease guard uses the injected TimeProvider (not GETUTCDATE()) so all lease

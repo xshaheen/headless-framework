@@ -33,7 +33,7 @@ internal sealed class KafkaTransport(ILogger<KafkaTransport> logger, IKafkaConne
 
             var result = await producer
                 .ProduceAsync(
-                    message.GetName(),
+                    message.Name,
                     new Message<string, byte[]>
                     {
                         Headers = headers,
@@ -41,7 +41,7 @@ internal sealed class KafkaTransport(ILogger<KafkaTransport> logger, IKafkaConne
                             message.Headers.TryGetValue(KafkaHeaders.KafkaKey, out var kafkaMessageKey)
                             && !string.IsNullOrEmpty(kafkaMessageKey)
                                 ? kafkaMessageKey
-                                : message.GetId(),
+                                : message.Id,
                         Value = message.Body.ToArray(),
                     },
                     cancellationToken
@@ -52,7 +52,7 @@ internal sealed class KafkaTransport(ILogger<KafkaTransport> logger, IKafkaConne
             {
                 if (_logger.IsEnabled(LogLevel.Debug))
                 {
-                    _logger.LogKafkaTopicMessagePublished(message.GetName());
+                    _logger.LogKafkaTopicMessagePublished(message.Name);
                 }
 
                 return OperateResult.Success;

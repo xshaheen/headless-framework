@@ -88,7 +88,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
         _EnsureInitialized();
 
         var count = _storage!.ReceivedMessages.Values.Count(m =>
-            string.Equals(m.Origin.GetId(), messageId, StringComparison.Ordinal)
+            string.Equals(m.Origin.Id, messageId, StringComparison.Ordinal)
             && string.Equals(m.Group, group, StringComparison.Ordinal)
         );
 

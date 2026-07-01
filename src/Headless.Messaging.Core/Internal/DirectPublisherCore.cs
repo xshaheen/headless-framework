@@ -107,7 +107,7 @@ internal static class DirectPublisherCore
             var eventData = new MessageEventDataPubSend
             {
                 OperationTimestamp = nowMs(),
-                Operation = message.GetName(),
+                Operation = message.Name,
                 BrokerAddress = brokerAddress,
                 TransportMessage = message,
                 IntentType = intentType,
@@ -137,7 +137,7 @@ internal static class DirectPublisherCore
             var eventData = new MessageEventDataPubSend
             {
                 OperationTimestamp = now,
-                Operation = message.GetName(),
+                Operation = message.Name,
                 BrokerAddress = brokerAddress,
                 TransportMessage = message,
                 IntentType = intentType,
@@ -167,7 +167,7 @@ internal static class DirectPublisherCore
             var eventData = new MessageEventDataPubSend
             {
                 OperationTimestamp = now,
-                Operation = message.GetName(),
+                Operation = message.Name,
                 BrokerAddress = brokerAddress,
                 TransportMessage = message,
                 IntentType = intentType,
@@ -199,7 +199,7 @@ internal static class DirectPublisherCore
             var eventData = new MessageEventDataPubSend
             {
                 OperationTimestamp = now,
-                Operation = message.GetName(),
+                Operation = message.Name,
                 BrokerAddress = brokerAddress,
                 TransportMessage = message,
                 IntentType = intentType,
@@ -225,7 +225,7 @@ internal static class DirectPublisherCore
             var eventData = new MessageEventDataPubStore
             {
                 OperationTimestamp = nowMs(),
-                Operation = message.GetName(),
+                Operation = message.Name,
                 Message = message,
                 IntentType = intentType,
                 Exception = exception,

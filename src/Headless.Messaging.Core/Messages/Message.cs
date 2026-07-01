@@ -66,25 +66,19 @@ public static class MessageExtensions
     extension(Message message)
     {
         /// <summary>
-        /// Retrieves the unique message identifier from the message headers.
+        /// Gets the unique message identifier from the message headers.
         /// </summary>
-        /// <returns>The message ID stored in the <see cref="Headers.MessageId"/> header.</returns>
+        /// <value>The message ID stored in the <see cref="Headers.MessageId"/> header.</value>
         /// <exception cref="KeyNotFoundException">Thrown if the MessageId header is not present.</exception>
-        public string GetId()
-        {
-            return message.Headers[Headers.MessageId]!;
-        }
+        public string Id => message.Headers[Headers.MessageId]!;
 
         /// <summary>
-        /// Retrieves the message name from the message headers.
+        /// Gets the message name from the message headers.
         /// The message name identifies the message, exchange, or subject the message relates to.
         /// </summary>
-        /// <returns>The message name stored in the <see cref="Headers.MessageName"/> header.</returns>
+        /// <value>The message name stored in the <see cref="Headers.MessageName"/> header.</value>
         /// <exception cref="KeyNotFoundException">Thrown if the MessageName header is not present.</exception>
-        public string GetName()
-        {
-            return message.Headers[Headers.MessageName]!;
-        }
+        public string Name => message.Headers[Headers.MessageName]!;
 
         /// <summary>
         /// Attempts to retrieve the callback subscriber name from the message headers.

@@ -306,8 +306,8 @@ public static class MessagingDashboardEndpoints
             new
             {
                 StorageId = message.StorageId.ToString("D"),
-                MessageId = message.Origin.GetId(),
-                Name = message.Origin.GetName(),
+                MessageId = message.Origin.Id,
+                message.Origin.Name,
                 message.IntentType,
                 message.Content,
                 message.Added,
@@ -332,8 +332,8 @@ public static class MessagingDashboardEndpoints
             new
             {
                 StorageId = message.StorageId.ToString("D"),
-                MessageId = message.Origin.GetId(),
-                Name = message.Origin.GetName(),
+                MessageId = message.Origin.Id,
+                message.Origin.Name,
                 Group = message.Origin.GetGroup(),
                 message.IntentType,
                 message.Content,

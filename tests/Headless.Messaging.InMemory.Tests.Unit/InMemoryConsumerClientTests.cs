@@ -100,7 +100,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
 
         // then
         receivedMessage.Should().NotBeNull();
-        receivedMessage!.Value.GetId().Should().Be("msg-1");
+        receivedMessage!.Value.Id.Should().Be("msg-1");
         receivedSender.Should().BeNull();
     }
 
@@ -327,7 +327,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
         var processOrder = new List<string>();
         client.OnMessageCallback = (msg, _) =>
         {
-            processOrder.Add(msg.GetId());
+            processOrder.Add(msg.Id);
             return Task.CompletedTask;
         };
 

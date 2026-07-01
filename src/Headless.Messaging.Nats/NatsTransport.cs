@@ -58,7 +58,7 @@ internal sealed class NatsTransport(ILogger<NatsTransport> logger, INatsConnecti
 
             if (logger.IsEnabled(LogLevel.Debug))
             {
-                logger.LogNatsStreamMessagePublished(message.GetName(), ack.Seq);
+                logger.LogNatsStreamMessagePublished(message.Name, ack.Seq);
             }
 
             return OperateResult.Success;
@@ -93,7 +93,7 @@ internal sealed class NatsTransport(ILogger<NatsTransport> logger, INatsConnecti
 
     internal static NatsJSPubOpts CreatePublishOpts(TransportMessage message)
     {
-        return new NatsJSPubOpts { MsgId = message.GetId() };
+        return new NatsJSPubOpts { MsgId = message.Id };
     }
 
     internal static string ResolveSubject(TransportMessage message, ILogger? logger = null)
@@ -103,17 +103,17 @@ internal sealed class NatsTransport(ILogger<NatsTransport> logger, INatsConnecti
             || string.IsNullOrWhiteSpace(shard)
         )
         {
-            return message.GetName();
+            return message.Name;
         }
 
         try
         {
-            return $"{message.GetName()}.{NatsSubjectShard.Validate(shard)}";
+            return $"{message.Name}.{NatsSubjectShard.Validate(shard)}";
         }
         catch (InvalidOperationException ex)
         {
             logger?.LogInvalidSubjectShard(shard, ex.Message);
-            return message.GetName();
+            return message.Name;
         }
     }
 }

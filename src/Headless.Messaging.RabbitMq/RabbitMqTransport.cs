@@ -24,7 +24,7 @@ internal sealed class RabbitMqTransport : IBusTransport, IQueueTransport
     public async Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        RabbitMqValidation.ValidateMessageName(message.GetName());
+        RabbitMqValidation.ValidateMessageName(message.Name);
 
         IChannel? channel = null;
         try
@@ -33,24 +33,17 @@ internal sealed class RabbitMqTransport : IBusTransport, IQueueTransport
 
             var props = new BasicProperties
             {
-                MessageId = message.GetId(),
+                MessageId = message.Id,
                 DeliveryMode = DeliveryModes.Persistent,
                 Headers = message.Headers.ToDictionary(x => x.Key, object? (x) => x.Value, StringComparer.Ordinal),
             };
 
             await channel
-                .BasicPublishAsync(
-                    _exchange,
-                    message.GetName(),
-                    mandatory: false,
-                    props,
-                    message.Body,
-                    cancellationToken
-                )
+                .BasicPublishAsync(_exchange, message.Name, mandatory: false, props, message.Body, cancellationToken)
                 .ConfigureAwait(false);
 
-            var messageName = message.GetName();
-            var messageId = message.GetId();
+            var messageName = message.Name;
+            var messageId = message.Id;
             _logger.MessagePublished(messageName, messageId);
 
             return OperateResult.Success;

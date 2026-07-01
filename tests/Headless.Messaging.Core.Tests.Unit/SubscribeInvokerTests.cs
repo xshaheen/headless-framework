@@ -37,7 +37,7 @@ public sealed class SubscribeInvokerTests : TestBase
 
         // then
         result.Should().NotBeNull();
-        result.MessageId.Should().Be(mediumMessage.Origin.GetId());
+        result.MessageId.Should().Be(mediumMessage.Origin.Id);
     }
 
     [Fact]

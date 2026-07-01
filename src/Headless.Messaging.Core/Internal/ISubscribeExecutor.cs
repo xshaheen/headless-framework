@@ -74,14 +74,14 @@ internal sealed class SubscribeExecutor(
             var selector = provider.GetRequiredService<MethodMatcherCache>();
             if (
                 !selector.TryGetMessageNameExecutor(
-                    message.Origin.GetName(),
+                    message.Origin.Name,
                     message.Origin.GetGroup()!,
                     message.IntentType,
                     out descriptor
                 )
             )
             {
-                var safeName = LogSanitizer.Sanitize(message.Origin.GetName());
+                var safeName = LogSanitizer.Sanitize(message.Origin.Name);
                 var safeGroup = LogSanitizer.Sanitize(message.Origin.GetGroup());
 
                 logger.SubscriberNotFound(safeName, safeGroup);
@@ -181,7 +181,7 @@ internal sealed class SubscribeExecutor(
         {
             logger.ConsumerExecuteFailed(
                 ex,
-                LogSanitizer.Sanitize(message.Origin.GetName()),
+                LogSanitizer.Sanitize(message.Origin.Name),
                 message.StorageId,
                 message.Origin.GetExecutionInstanceId()
             );
@@ -467,7 +467,7 @@ internal sealed class SubscribeExecutor(
                             MessageName = ret.CallbackName,
                             Headers = ret.CallbackHeader,
                             MessageType = ret.ResultType,
-                            CorrelationId = message.Origin.GetId(),
+                            CorrelationId = message.Origin.Id,
                             CorrelationSequence = message.Origin.GetCorrelationSequence() + 1,
                             // Chain the next hop: the published response carries this callback name so its
                             // consumer can react and publish a further response.
@@ -544,7 +544,7 @@ internal sealed class SubscribeExecutor(
             var eventData = new MessageEventDataSubExecute
             {
                 OperationTimestamp = timeProvider.GetUtcNow().ToUnixTimeMilliseconds(),
-                Operation = message.GetName(),
+                Operation = message.Name,
                 Message = message,
                 IntentType = intentType,
                 MethodInfo = method,
@@ -579,7 +579,7 @@ internal sealed class SubscribeExecutor(
             var eventData = new MessageEventDataSubExecute
             {
                 OperationTimestamp = now,
-                Operation = message.GetName(),
+                Operation = message.Name,
                 Message = message,
                 IntentType = intentType,
                 MethodInfo = method,
@@ -612,7 +612,7 @@ internal sealed class SubscribeExecutor(
         var eventData = new MessageEventDataSubExecute
         {
             OperationTimestamp = now,
-            Operation = message.GetName(),
+            Operation = message.Name,
             Message = message,
             IntentType = intentType,
             MethodInfo = method,

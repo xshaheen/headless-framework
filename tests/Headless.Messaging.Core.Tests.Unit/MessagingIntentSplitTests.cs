@@ -316,7 +316,7 @@ public sealed class MessagingIntentSplitTests : TestBase
                 Arg.Is<TimeSpan?>(delay => delay == null),
                 IntentType.Bus
             );
-        transport.LastMessage!.Value.GetName().Should().Be("events.prepared");
+        transport.LastMessage!.Value.Name.Should().Be("events.prepared");
         diagnostics
             .BeforePublishData.Should()
             .BeOfType<MessageEventDataPubSend>()
@@ -363,7 +363,7 @@ public sealed class MessagingIntentSplitTests : TestBase
                 Arg.Is<TimeSpan?>(delay => delay == null),
                 IntentType.Queue
             );
-        transport.LastMessage!.Value.GetName().Should().Be("jobs.prepared");
+        transport.LastMessage!.Value.Name.Should().Be("jobs.prepared");
         diagnostics
             .BeforePublishData.Should()
             .BeOfType<MessageEventDataPubSend>()
@@ -619,7 +619,7 @@ public sealed class MessagingIntentSplitTests : TestBase
         {
             if (
                 value.Value is MessageEventDataPubSend eventData
-                && string.Equals(eventData.TransportMessage.GetName(), _expectedMessageName, StringComparison.Ordinal)
+                && string.Equals(eventData.TransportMessage.Name, _expectedMessageName, StringComparison.Ordinal)
             )
             {
                 BeforePublishData = eventData;
