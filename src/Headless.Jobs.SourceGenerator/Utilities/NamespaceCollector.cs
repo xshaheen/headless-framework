@@ -147,7 +147,11 @@ internal static class NamespaceCollector
     /// </summary>
     private static void _CollectExistingUsingNamespaces(SyntaxTree syntaxTree, HashSet<string> namespaces)
     {
+        // Roslyn source generators run synchronously; there is no async pipeline to await GetRootAsync on,
+        // so MA0045 (use GetRootAsync) does not apply here.
+#pragma warning disable MA0045
         var root = syntaxTree.GetRoot();
+#pragma warning restore MA0045
 
         // Collect regular using directives (exclude static, alias, and global usings)
         var usingDirectives = root.DescendantNodes().OfType<UsingDirectiveSyntax>();
