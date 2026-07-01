@@ -824,6 +824,12 @@ dotnet_diagnostic.REFL009.severity = suggestion
 dotnet_diagnostic.REFL016.severity = suggestion
 dotnet_diagnostic.REFL017.severity = suggestion
 
+# --- Performance ---
+
+# MA0176: Optimize Guid creation
+# Guid-creation micro-optimization is irrelevant in test fixtures.
+dotnet_diagnostic.MA0176.severity = none
+
 # --- Naming ---
 
 # IDE1006: Naming rule violation

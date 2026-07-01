@@ -223,9 +223,9 @@ public static class ProcessExtensions
                 // callbacks may still be in-flight. The no-argument WaitForExit() blocks until
                 // all redirected streams have been fully read, ensuring OnNext is never called
                 // after OnCompleted (which would violate the Rx contract).
-#pragma warning disable CA1849 // Synchronous WaitForExit() is intentional: the async overload does not guarantee redirected stdio has drained.
+#pragma warning disable CA1849, MA0042 // Synchronous WaitForExit() is intentional: the async overload does not guarantee redirected stdio has drained.
                 process.WaitForExit();
-#pragma warning restore CA1849
+#pragma warning restore CA1849, MA0042
 
                 observer.OnNext(
                     new ProcessObservedOutput(

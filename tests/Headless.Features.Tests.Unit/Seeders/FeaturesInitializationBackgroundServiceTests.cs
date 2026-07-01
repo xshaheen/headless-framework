@@ -74,7 +74,7 @@ public sealed class FeaturesInitializationBackgroundServiceTests : TestBase
                 return Task.CompletedTask;
             });
 
-        var sut = _CreateSut(options);
+        using var sut = _CreateSut(options);
         await sut.StartAsync(AbortToken);
         await saveDone.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
