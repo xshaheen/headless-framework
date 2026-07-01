@@ -229,6 +229,8 @@ public sealed class HelperTest
     }
 }
 
+#pragma warning disable MA0036 // MA0036: used as a reflection target for the IsController test; making it static (abstract+sealed in IL) would change the test's expectations.
 public sealed class HomeController;
+#pragma warning restore MA0036
 
 public abstract class AbstractController;

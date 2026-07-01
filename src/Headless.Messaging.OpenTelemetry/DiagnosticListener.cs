@@ -524,7 +524,9 @@ internal sealed class DiagnosticListener(
             {
                 try
                 {
+#pragma warning disable MA0045 // _CallEnrichers is intentionally synchronous (fire-and-forget async tail); GetResult() runs only on an already-completed ValueTask to observe exceptions, so it never blocks.
                     vt.GetAwaiter().GetResult();
+#pragma warning restore MA0045
                 }
                 catch (Exception ex)
                 {

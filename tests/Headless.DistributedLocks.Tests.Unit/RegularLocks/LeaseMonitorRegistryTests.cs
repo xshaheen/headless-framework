@@ -96,6 +96,7 @@ public sealed class LeaseMonitorRegistryTests : TestBase
     {
         // CA2000: intentionally not disposed — this test verifies the registry's WeakReference
         // safety net removes the bucket when an abandoned (leaked, undisposed) monitor is GC'd.
+#pragma warning disable CA2000 // CA2000: intentional — this test verifies GC reclaims an abandoned (undisposed) monitor; disposing defeats it.
         var monitor = new LeaseMonitor(
             new FakeLeaseHandle
             {
@@ -107,6 +108,7 @@ public sealed class LeaseMonitorRegistryTests : TestBase
             timeProvider,
             logger
         );
+#pragma warning restore CA2000
 
         registry.Register(resource, leaseId, monitor);
     }
@@ -114,7 +116,9 @@ public sealed class LeaseMonitorRegistryTests : TestBase
     private static void _MarkBucketRemoved(LeaseMonitorRegistry registry, string resource)
     {
         var bucket = _GetBucket(registry, resource);
+#pragma warning disable REFL009 // REFL009: reflecting an internal member by name over an object-typed value; the member exists.
         var isRemovedField = bucket.GetType().GetField("_isRemoved", BindingFlags.Instance | BindingFlags.NonPublic);
+#pragma warning restore REFL009
         isRemovedField.Should().NotBeNull();
         isRemovedField.SetValue(bucket, true);
     }
@@ -139,7 +143,9 @@ public sealed class LeaseMonitorRegistryTests : TestBase
     private static int _GetRawBucketCount(LeaseMonitorRegistry registry)
     {
         var activeMonitors = _GetActiveMonitors(registry);
+#pragma warning disable REFL009 // REFL009: reflecting an internal member by name over an object-typed value; the member exists.
         var countProperty = activeMonitors.GetType().GetProperty("Count");
+#pragma warning restore REFL009
         countProperty.Should().NotBeNull();
 
         return (int)countProperty!.GetValue(activeMonitors)!;

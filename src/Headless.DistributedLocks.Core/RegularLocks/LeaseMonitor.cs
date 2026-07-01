@@ -116,7 +116,9 @@ internal sealed class LeaseMonitor : IAsyncDisposable
                 // LostToken callback threw — Cancel() wraps the failures).
                 try
                 {
+#pragma warning disable MA0045 // Cancel() runs in a synchronous ContinueWith delegate and relies on its synchronous AggregateException; it cannot be async.
                     faultState.HandleLostSource.Cancel();
+#pragma warning restore MA0045
                 }
                 catch (ObjectDisposedException)
                 {

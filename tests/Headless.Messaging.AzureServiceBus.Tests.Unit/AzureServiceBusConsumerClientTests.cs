@@ -264,13 +264,13 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         )!;
         var gate = gateField.GetValue(client)!;
+#pragma warning disable REFL009, REFL017 // REFL009/REFL017: refactor-safe nameof(ConsumerPauseGate.IsPaused) reflected over an object-typed private field; the member exists.
         var isPausedProp = gate.GetType()
             .GetProperty(nameof(ConsumerPauseGate.IsPaused), BindingFlags.Public | BindingFlags.Instance)!;
+#pragma warning restore REFL009, REFL017
 
         // then - gate starts open
-        ((bool)isPausedProp.GetValue(gate)!)
-            .Should()
-            .BeFalse();
+        ((bool)isPausedProp.GetValue(gate)!).Should().BeFalse();
 
         // when
         await client.PauseAsync(AbortToken);

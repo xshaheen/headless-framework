@@ -17,6 +17,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
+#pragma warning disable MA0025 // Implement the functionality instead of throwing NotImplementedException
 namespace Tests;
 
 public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase

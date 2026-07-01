@@ -238,7 +238,9 @@ public sealed class LeaseMonitorTests : TestBase
         // Helper isolates the strong-reference scope so the JIT cannot keep the LeaseMonitor
         // alive in a local on the caller's stack frame across GC.Collect.
         // CA2000: intentionally not disposed — this test verifies GC reclaims an abandoned monitor.
+#pragma warning disable CA2000 // CA2000: intentional — this test verifies GC reclaims an abandoned (undisposed) monitor; disposing defeats it.
         var monitor = new LeaseMonitor(handle, _timeProvider, LoggerFactory.CreateLogger(nameof(LeaseMonitor)));
+#pragma warning restore CA2000
         var task = monitor.MonitoringTask;
         monitor = null;
         _ = monitor; // suppress "unused" — intent is to overwrite the local.
