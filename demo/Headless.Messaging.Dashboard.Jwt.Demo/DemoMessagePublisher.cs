@@ -87,7 +87,11 @@ public sealed class DemoMessagePublisher(IServiceScopeFactory scopeFactory, ILog
                     {
                         OrderId = _counter,
                         CustomerName = _CustomerNames[Random.Shared.Next(_CustomerNames.Length)],
-                        Amount = Math.Round((decimal)((Random.Shared.NextDouble() * 500) + 10), 2),
+                        Amount = Math.Round(
+                            (decimal)((Random.Shared.NextDouble() * 500) + 10),
+                            2,
+                            MidpointRounding.AwayFromZero
+                        ),
                     },
                     cancellationToken: ct
                 );
@@ -99,7 +103,11 @@ public sealed class DemoMessagePublisher(IServiceScopeFactory scopeFactory, ILog
                     {
                         PaymentId = string.Create(CultureInfo.InvariantCulture, $"PAY-{_counter:D6}"),
                         OrderId = Random.Shared.Next(1, _counter + 1),
-                        Amount = Math.Round((decimal)((Random.Shared.NextDouble() * 500) + 10), 2),
+                        Amount = Math.Round(
+                            (decimal)((Random.Shared.NextDouble() * 500) + 10),
+                            2,
+                            MidpointRounding.AwayFromZero
+                        ),
                         Currency = _Currencies[Random.Shared.Next(_Currencies.Length)],
                     },
                     cancellationToken: ct
