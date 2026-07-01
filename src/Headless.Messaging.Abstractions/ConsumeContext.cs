@@ -14,7 +14,6 @@ namespace Headless.Messaging;
 [PublicAPI]
 public record ConsumeContext
 {
-    private CancellationToken _cancellationToken;
     private volatile bool _isCompleted;
 
     /// <summary>
@@ -34,11 +33,7 @@ public record ConsumeContext
     /// <summary>
     /// Gets the cancellation token currently active for this consume operation.
     /// </summary>
-    public CancellationToken CancellationToken
-    {
-        get => _cancellationToken;
-        internal init => _cancellationToken = value;
-    }
+    public CancellationToken CancellationToken { get; internal set; }
 
     internal object? Response { get; private set; }
 
@@ -56,7 +51,7 @@ public record ConsumeContext
             throw new InvalidOperationException("ConsumeContext is read-only after the consumer has completed.");
         }
 
-        _cancellationToken = cancellationToken;
+        CancellationToken = cancellationToken;
     }
 
     /// <summary>
@@ -148,12 +143,12 @@ public record ConsumeContext
     /// </summary>
     /// <value>
     /// An optional string identifier that correlates this message with other related messages in a workflow or conversation.
-    /// Returns <c>null</c> if no correlation is established.
+    /// Returns <see langword="null"/> if no correlation is established.
     /// Supports GUID, ULID, snowflake IDs, or custom formats.
     /// </value>
     /// <exception cref="ArgumentException">
     /// Thrown when attempting to set an empty string.
-    /// Use <c>null</c> instead to indicate no correlation.
+    /// Use <see langword="null"/> instead to indicate no correlation.
     /// </exception>
     /// <remarks>
     /// <para>

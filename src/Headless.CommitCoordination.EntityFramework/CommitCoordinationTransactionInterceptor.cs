@@ -55,7 +55,7 @@ public sealed partial class CommitCoordinationTransactionInterceptor(
     {
         try
         {
-            await signalSource.SignalCommittedAsync(transaction, cancellationToken).ConfigureAwait(false);
+            await signalSource.SignalCommittedAsync(transaction).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -80,7 +80,7 @@ public sealed partial class CommitCoordinationTransactionInterceptor(
     {
         try
         {
-            await signalSource.SignalRolledBackAsync(transaction, cancellationToken).ConfigureAwait(false);
+            await signalSource.SignalRolledBackAsync(transaction).ConfigureAwait(false);
         }
         catch (Exception ex)
         {

@@ -21,9 +21,7 @@ public sealed class AmazonSqsMessageConsumer : IConsume<AmazonSqsMessage>
 {
     public ValueTask ConsumeAsync(ConsumeContext<AmazonSqsMessage> context, CancellationToken cancellationToken)
     {
-        Console.WriteLine(
-            $@"Subscriber output message: {context.Message.Value.ToString(CultureInfo.InvariantCulture)}"
-        );
+        Console.WriteLine($"Subscriber output message: {context.Message.Value.ToString(CultureInfo.InvariantCulture)}");
 
         return ValueTask.CompletedTask;
     }

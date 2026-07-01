@@ -2,6 +2,7 @@
 
 using Headless.Serializer.Converters;
 
+#pragma warning disable JSON001 // Invalid JSON pattern
 namespace Tests.Converters;
 
 public sealed class CollectionItemJsonConverterTests

@@ -32,10 +32,7 @@ public static class SetupPulsarMessaging
         /// <returns>The same <paramref name="setup"/> builder for chaining.</returns>
         public MessagingSetupBuilder UsePulsar(string serverUrl)
         {
-            return setup.UsePulsar(opt =>
-            {
-                opt.ServiceUrl = serverUrl;
-            });
+            return setup.UsePulsar(opt => opt.ServiceUrl = serverUrl);
         }
 
         /// <summary>

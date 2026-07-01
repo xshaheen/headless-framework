@@ -19,10 +19,7 @@ public sealed class SetupTests : TestBase
         services.AddLogging();
 
         // when
-        services.AddHeadlessMessaging(setup =>
-        {
-            setup.UseEntityFramework<TestMessagingDbContext>();
-        });
+        services.AddHeadlessMessaging(setup => setup.UseEntityFramework<TestMessagingDbContext>());
 
         await using var provider = services.BuildServiceProvider();
 

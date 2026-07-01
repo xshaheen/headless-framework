@@ -85,7 +85,7 @@ public static class CollectionExtensions
     {
         Argument.IsNotNull(source);
 
-        var addedItems = items.TryGetNonEnumeratedCount(out var count) ? new List<T>(count) : new List<T>();
+        var addedItems = items.TryGetNonEnumeratedCount(out var count) ? new List<T>(count) : [];
 
         // List<T>.Contains is O(n), making the naive loop O(n*m). For large lists, snapshot the existing
         // items into a HashSet (same default equality as List<T>.Contains) so membership checks are O(1).

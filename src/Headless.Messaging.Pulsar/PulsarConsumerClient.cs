@@ -170,7 +170,9 @@ internal sealed class PulsarConsumerClient(
         var ceiling = TimeSpan.FromSeconds(30);
         var doubled = TimeSpan.FromTicks(Math.Max(current.Ticks * 2, floor.Ticks));
         var capped = doubled > ceiling ? ceiling : doubled;
+#pragma warning disable CA5394 // Non-security jitter for retry backoff; cryptographic RNG is unnecessary here.
         var jitterMs = Random.Shared.Next(0, (int)Math.Max(1, capped.TotalMilliseconds / 4));
+#pragma warning restore CA5394
         return capped + TimeSpan.FromMilliseconds(jitterMs);
     }
 

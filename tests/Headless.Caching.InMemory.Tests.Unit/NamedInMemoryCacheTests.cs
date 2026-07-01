@@ -113,7 +113,7 @@ public sealed class NamedInMemoryCacheTests : TestBase
         await using var provider = _BuildProvider();
         var cacheProvider = provider.GetRequiredService<ICacheProvider>();
 
-        // when / then
+        // when & then
         cacheProvider.GetCache("orders").Should().BeSameAs(provider.GetRequiredKeyedService<ICache>("orders"));
         cacheProvider
             .GetCache(CacheConstants.MemoryCacheProvider)

@@ -5,6 +5,7 @@ using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Messages;
+using Headless.Messaging.Registration;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Internal;
@@ -362,7 +363,7 @@ internal sealed class MessagePublishRequestFactory(
 
             var ex = new InvalidOperationException(
                 $"Header '{Headers.TenantId}' is reserved. "
-                    + $"Use the typed TenantId property on your publish options to set the tenant identifier."
+                    + "Use the typed TenantId property on your publish options to set the tenant identifier."
             )
             {
                 Data = { ["Headers.TenantId.Raw"] = safeRawForReservedMessage },

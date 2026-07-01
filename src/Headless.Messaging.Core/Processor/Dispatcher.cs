@@ -523,7 +523,7 @@ internal sealed class Dispatcher : IDispatcher
             var result = await _sender.SendAsync(message, dispatchScope.ServiceProvider).ConfigureAwait(false);
             if (!result.Succeeded)
             {
-                _logger.MessagePublishException(result.Exception, message.Origin.GetId(), result.ToString());
+                _logger.MessagePublishException(result.Exception, message.Origin.Id, result.ToString());
             }
         }
         catch (Exception ex)
@@ -540,7 +540,7 @@ internal sealed class Dispatcher : IDispatcher
             var result = await _sender.SendAsync(message, dispatchScope.ServiceProvider).ConfigureAwait(false);
             if (!result.Succeeded)
             {
-                _logger.MessagePublishException(result.Exception, message.Origin.GetId(), result.ToString());
+                _logger.MessagePublishException(result.Exception, message.Origin.Id, result.ToString());
             }
         }
         catch (Exception ex)

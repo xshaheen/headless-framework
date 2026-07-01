@@ -27,30 +27,23 @@ namespace Headless.DistributedLocks.SqlServer;
 /// cancels the handle's <c>ConnectionLostToken</c>.
 /// </para>
 /// </remarks>
-internal sealed class SqlServerConnectionScopedLockStorage : IConnectionScopedLockStorage, IAsyncDisposable
+/// <remarks>
+/// Initializes a new instance of <see cref="SqlServerConnectionScopedLockStorage"/> using the
+/// resolved <see cref="SqlServerDistributedLockOptions"/> and the supplied <see cref="TimeProvider"/>.
+/// </remarks>
+/// <param name="options">Resolved options; validated on startup.</param>
+/// <param name="timeProvider">Time provider used for liveness-probe timer scheduling.</param>
+internal sealed class SqlServerConnectionScopedLockStorage(
+    IOptions<SqlServerDistributedLockOptions> options,
+    TimeProvider timeProvider
+) : IConnectionScopedLockStorage, IAsyncDisposable
 {
-    private readonly SqlServerDistributedLockOptions _options;
-    private readonly TimeProvider _timeProvider;
+    private readonly SqlServerDistributedLockOptions _options = options.Value;
     private readonly ConcurrentDictionary<string, HeldLock> _heldByLeaseId = new(StringComparer.Ordinal);
 
     // Set at the top of DisposeAsync so an acquire racing teardown does not register a lock the teardown snapshot of
     // _heldByLeaseId already iterated past (which would leak its connection and applock).
     private volatile bool _disposed;
-
-    /// <summary>
-    /// Initializes a new instance of <see cref="SqlServerConnectionScopedLockStorage"/> using the
-    /// resolved <see cref="SqlServerDistributedLockOptions"/> and the supplied <see cref="TimeProvider"/>.
-    /// </summary>
-    /// <param name="options">Resolved options; validated on startup.</param>
-    /// <param name="timeProvider">Time provider used for liveness-probe timer scheduling.</param>
-    public SqlServerConnectionScopedLockStorage(
-        IOptions<SqlServerDistributedLockOptions> options,
-        TimeProvider timeProvider
-    )
-    {
-        _options = options.Value;
-        _timeProvider = timeProvider;
-    }
 
     /// <inheritdoc/>
     /// <remarks>
@@ -97,7 +90,7 @@ internal sealed class SqlServerConnectionScopedLockStorage : IConnectionScopedLo
                 isShared,
                 connection,
                 _options.CommandTimeout,
-                _timeProvider
+                timeProvider
             );
 
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
@@ -406,7 +399,7 @@ internal sealed class SqlServerConnectionScopedLockStorage : IConnectionScopedLo
         );
         command.CommandText = "SELECT APPLOCK_TEST(N'public', @resource, @lockMode, N'Session');";
         command.Parameters.AddWithValue("resource", encodedResource);
-        command.Parameters.AddWithValue("lockMode", lockMode);
+        command.Parameters.AddWithValue(nameof(lockMode), lockMode);
 
         return Convert.ToInt32(
                 await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false),
@@ -481,7 +474,11 @@ internal sealed class SqlServerConnectionScopedLockStorage : IConnectionScopedLo
         {
             if (args.CurrentState is ConnectionState.Broken or ConnectionState.Closed)
             {
+                // StateChangeEventHandler is a synchronous void delegate, so there is no async path to flow
+                // CancelAsync (MA0045) through; the lost-token must be cancelled inline in the event handler.
+#pragma warning disable MA0045
                 _lostTokenSource.Cancel();
+#pragma warning restore MA0045
             }
         }
 
@@ -507,7 +504,7 @@ internal sealed class SqlServerConnectionScopedLockStorage : IConnectionScopedLo
 
                 // Zero-wait gate: if release (or another probe) holds the connection, skip this tick rather than
                 // queueing a concurrent command on the non-thread-safe SqlConnection.
-                if (!await _connectionGate.WaitAsync(TimeSpan.Zero).ConfigureAwait(false))
+                if (!await _connectionGate.WaitAsync(TimeSpan.Zero, CancellationToken.None).ConfigureAwait(false))
                 {
                     return;
                 }

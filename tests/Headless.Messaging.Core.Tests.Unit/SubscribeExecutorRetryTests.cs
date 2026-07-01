@@ -14,6 +14,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Tests.Helpers;
 
+#pragma warning disable MA0015 // Specify the parameter name in ArgumentException
 namespace Tests;
 
 public sealed class SubscribeExecutorRetryTests : TestBase
@@ -42,7 +43,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
     private static ConsumerExecutorDescriptor _CreateDescriptor()
     {
         var consumeMethod = typeof(IConsume<CancellationExecutorTestMessage>).GetMethod(
-            nameof(IConsume<CancellationExecutorTestMessage>.ConsumeAsync),
+            nameof(IConsume<>.ConsumeAsync),
             BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
             null,
             [typeof(ConsumeContext<CancellationExecutorTestMessage>), typeof(CancellationToken)],
@@ -539,7 +540,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .ChangeReceiveStateAsync(
                 Arg.Any<MediumMessage>(),
                 StatusName.Scheduled,
-                Arg.Is<DateTime?>(v => v.HasValue && v.Value > nowBefore.Add(options.RetryPolicy.InitialDispatchGrace)),
+                Arg.Is<DateTime?>(v => v > nowBefore.Add(options.RetryPolicy.InitialDispatchGrace)),
                 Arg.Any<DateTime?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()

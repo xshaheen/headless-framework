@@ -99,8 +99,8 @@ public sealed class MemoryQueueTests : TestBase
 
         // then
         receivedMessage.Should().NotBeNull();
-        receivedMessage!.Value.GetId().Should().Be("msg-1");
-        receivedMessage.Value.GetName().Should().Be("test-messageName");
+        receivedMessage!.Value.Id.Should().Be("msg-1");
+        receivedMessage.Value.Name.Should().Be("test-messageName");
     }
 
     [Fact]
@@ -109,7 +109,7 @@ public sealed class MemoryQueueTests : TestBase
         // given — no subscriber registered; SendBus matches real-broker no-op semantics (no throw)
         var message = _CreateTestMessage("msg-1", "unsubscribed-messageName");
 
-        // when / then — must not throw
+        // when & then — must not throw
         var action = () => _queue.SendBus(message);
         action.Should().NotThrow();
     }
@@ -168,7 +168,7 @@ public sealed class MemoryQueueTests : TestBase
 
         // then
         receivedMessages.Should().HaveCount(2);
-        receivedMessages.Select(m => m.GetId()).Should().BeEquivalentTo(["msg-a", "msg-b"]);
+        receivedMessages.Select(m => m.Id).Should().BeEquivalentTo(["msg-a", "msg-b"]);
     }
 
     [Fact]
@@ -299,8 +299,8 @@ public sealed class MemoryQueueTests : TestBase
         await cts.CancelAsync();
 
         // then - both groups should receive the message
-        messages1.Should().HaveCount(1);
-        messages2.Should().HaveCount(1);
+        messages1.Should().ContainSingle();
+        messages2.Should().ContainSingle();
 
         await client1.DisposeAsync();
         await client2.DisposeAsync();
@@ -388,7 +388,7 @@ public sealed class MemoryQueueTests : TestBase
         await cts.CancelAsync();
 
         // then - should only receive one message, not duplicates
-        receivedMessages.Should().HaveCount(1);
+        receivedMessages.Should().ContainSingle();
     }
 
     // -------------------------------------------------------------------------
@@ -471,7 +471,7 @@ public sealed class MemoryQueueTests : TestBase
         var logger = Substitute.For<ILogger<MemoryQueue>>();
         var queue = new MemoryQueue(logger);
 
-        // when / then
+        // when & then
         var act = () => queue.DrainAllPendingMessages();
         act.Should().NotThrow();
     }

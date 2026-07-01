@@ -20,7 +20,9 @@ namespace Headless.Messaging;
 /// </para>
 /// </remarks>
 [PublicAPI]
+#pragma warning disable CA1028 // Enum Storage should be Int32
 public enum IntentType : short
+#pragma warning restore CA1028
 {
     /// <summary>
     /// Broadcast intent (publish/subscribe). Every subscriber receives its own copy of the message.

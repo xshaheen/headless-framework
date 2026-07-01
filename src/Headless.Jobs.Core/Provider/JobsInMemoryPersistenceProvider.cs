@@ -99,9 +99,11 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         // NOTE: we project to the raw job here and only build the full
         //       TimeJobEntity graph after we successfully acquire the lock.
         var timeJobsToUpdate = _timeJobs
-            .Values.Where(x => x.ExecutionTime != null)
-            .Where(x => x.Status is JobStatus.Idle or JobStatus.Queued)
-            .Where(x => x.ExecutionTime <= fallbackThreshold) // Only tasks older than 1 second
+            .Values.Where(x =>
+                x.ExecutionTime != null
+                && x.Status is JobStatus.Idle or JobStatus.Queued
+                && x.ExecutionTime <= fallbackThreshold
+            ) // Only tasks older than 1 second
             .ToArray();
 
         foreach (var job in timeJobsToUpdate)
@@ -133,7 +135,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     public Task ReleaseAcquiredTimeJobs(Guid[] timeJobIds, CancellationToken cancellationToken = default)
     {
         var now = _timeProvider.GetUtcNow().UtcDateTime;
-        var idsToRelease = timeJobIds.Length == 0 ? _timeJobs.Keys.ToArray() : timeJobIds;
+        var idsToRelease = timeJobIds.Length == 0 ? [.. _timeJobs.Keys] : timeJobIds;
 
         foreach (var id in idsToRelease)
         {
@@ -163,9 +165,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
         // Base query: same filter as EF provider, but over the snapshot
         var baseQuery = _timeJobs
-            .Values.Where(x => x.ExecutionTime != null)
-            .Where(_CanAcquire)
-            .Where(x => x.ExecutionTime >= oneSecondAgo)
+            .Values.Where(x => x.ExecutionTime != null && _CanAcquire(x) && x.ExecutionTime >= oneSecondAgo)
             .ToArray();
 
         // Get minimum execution time
@@ -266,7 +266,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     }
 
     public Task<TimeJobEntity[]> AcquireImmediateTimeJobsAsync(
-        Guid[] ids,
+        Guid[]? ids,
         CancellationToken cancellationToken = default
     )
     {
@@ -658,7 +658,9 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         // Per-policy dead-node transition (#315, #316/U4) — mirrors EF ReleaseDeadNodeTimeJobResources. Idle/Queued
         // reclaimed immediately; InProgress arms defer to the lease (LockedUntil <= now) so a still-leased running
         // job survives a membership blip and is recovered by U3 once its lease lapses.
-        var owned = _timeJobs.Values.Where(x => x.OwnerId == instanceIdentifier).ToArray();
+        var owned = _timeJobs
+            .Values.Where(x => string.Equals(x.OwnerId, instanceIdentifier, StringComparison.Ordinal))
+            .ToArray();
 
         foreach (var job in owned)
         {
@@ -898,8 +900,8 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         }
 
         var occurrence = query
-            .Where(_CanAcquireCronOccurrence)
-            .Where(x => x.ExecutionTime >= mainSchedulerThreshold) // Only recent/upcoming tasks (not heavily overdue)
+            // Only recent/upcoming tasks (not heavily overdue)
+            .Where(x => _CanAcquireCronOccurrence(x) && x.ExecutionTime >= mainSchedulerThreshold)
             .OrderBy(x => x.ExecutionTime)
             .FirstOrDefault();
 
@@ -985,8 +987,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         var fallbackThreshold = now.AddSeconds(-1); // Fallback picks up tasks older than main 1-second window
 
         var occurrencesToUpdate = _cronOccurrences
-            .Values.Where(x => x.Status is JobStatus.Idle or JobStatus.Queued)
-            .Where(x => x.ExecutionTime <= fallbackThreshold) // Only tasks older than 1 second
+            .Values.Where(x => x.Status is JobStatus.Idle or JobStatus.Queued && x.ExecutionTime <= fallbackThreshold) // Only tasks older than 1 second
             .ToArray();
 
         foreach (var occurrence in occurrencesToUpdate)
@@ -1140,7 +1141,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     public Task ReleaseAcquiredCronJobOccurrences(Guid[] occurrenceIds, CancellationToken cancellationToken = default)
     {
         var now = _timeProvider.GetUtcNow().UtcDateTime;
-        var idsToRelease = occurrenceIds.Length == 0 ? _cronOccurrences.Keys.ToArray() : occurrenceIds;
+        var idsToRelease = occurrenceIds.Length == 0 ? [.. _cronOccurrences.Keys] : occurrenceIds;
 
         foreach (var id in idsToRelease)
         {
@@ -1232,7 +1233,9 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         // Per-policy dead-node transition (#315, #316/U4) — mirrors EF ReleaseDeadNodeOccurrenceResources.
         // Idle/Queued reclaimed immediately; InProgress arms defer to the lease (LockedUntil <= now) so a
         // still-leased running occurrence survives a membership blip and is recovered by U3 once its lease lapses.
-        var owned = _cronOccurrences.Values.Where(x => x.OwnerId == instanceIdentifier).ToArray();
+        var owned = _cronOccurrences
+            .Values.Where(x => string.Equals(x.OwnerId, instanceIdentifier, StringComparison.Ordinal))
+            .ToArray();
 
         foreach (var occurrence in owned)
         {
@@ -1319,7 +1322,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     }
 
     public Task<PaginationResult<CronJobOccurrenceEntity<TCronJob>>> GetAllCronJobOccurrencesPaginated(
-        Expression<Func<CronJobOccurrenceEntity<TCronJob>, bool>> predicate,
+        Expression<Func<CronJobOccurrenceEntity<TCronJob>, bool>>? predicate,
         int pageNumber,
         int pageSize,
         CancellationToken cancellationToken = default
@@ -1392,7 +1395,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     }
 
     public Task<CronJobOccurrenceEntity<TCronJob>[]> AcquireImmediateCronOccurrencesAsync(
-        Guid[] occurrenceIds,
+        Guid[]? occurrenceIds,
         CancellationToken cancellationToken = default
     )
     {
@@ -1579,7 +1582,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             return [];
         }
 
-        return children.Keys.ToArray();
+        return [.. children.Keys];
     }
 
     private bool _CanAcquire(TTimeJob job)
@@ -1591,7 +1594,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
         return (job.Status == JobStatus.Idle || job.Status == JobStatus.Queued)
             && (
-                job.OwnerId == _ownerId
+                string.Equals(job.OwnerId, _ownerId, StringComparison.Ordinal)
                 || job.LockedUntil == null
                 || (job.LockedUntil <= now && job.OnNodeDeath == NodeDeathPolicy.Retry)
             );
@@ -1605,7 +1608,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
         return (occurrence.Status == JobStatus.Idle || occurrence.Status == JobStatus.Queued)
             && (
-                occurrence.OwnerId == _ownerId
+                string.Equals(occurrence.OwnerId, _ownerId, StringComparison.Ordinal)
                 || occurrence.LockedUntil == null
                 || (occurrence.LockedUntil <= now && occurrence.OnNodeDeath == NodeDeathPolicy.Retry)
             );
@@ -1666,7 +1669,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
     private void _ApplyFunctionContextToTicker(TTimeJob job, InternalFunctionContext context)
     {
-        var propsToUpdate = context.GetPropsToUpdate();
+        var propsToUpdate = context.PropertiesToUpdate;
 
         // STATUS / SKIPPED
         if (propsToUpdate.Contains(nameof(InternalFunctionContext.Status)) && context.Status != JobStatus.Skipped)
@@ -1722,7 +1725,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         InternalFunctionContext context
     )
     {
-        var propsToUpdate = context.GetPropsToUpdate();
+        var propsToUpdate = context.PropertiesToUpdate;
 
         // STATUS / SKIPPED
         if (propsToUpdate.Contains(nameof(InternalFunctionContext.Status)) && context.Status != JobStatus.Skipped)

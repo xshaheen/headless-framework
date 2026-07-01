@@ -41,7 +41,7 @@ internal sealed class EfAuditLogStore : IAuditLogStore
             return _EmptyResultTask;
         }
 
-        return Task.FromResult(_AddEntries(entries, _AsDbContext(savingContext)));
+        return Task.FromResult<IReadOnlyList<IAuditLogStoreEntry>>(_AddEntries(entries, _AsDbContext(savingContext)));
     }
 
     /// <inheritdoc />
@@ -87,7 +87,7 @@ internal sealed class EfAuditLogStore : IAuditLogStore
         return (DbContext)savingContext;
     }
 
-    private IReadOnlyList<IAuditLogStoreEntry> _AddEntries(IReadOnlyList<AuditLogEntryData> entries, DbContext context)
+    private List<IAuditLogStoreEntry> _AddEntries(IReadOnlyList<AuditLogEntryData> entries, DbContext context)
     {
         if (entries.Count == 0)
         {

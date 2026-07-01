@@ -87,7 +87,7 @@ public sealed class RedisTransportTests : TestBase
         _mockStreamManager.PublishAsync(Arg.Any<string>(), Arg.Any<NameValueEntry[]>()).Returns(Task.CompletedTask);
 
         // when
-        var result = await _sut.SendAsync(message);
+        var result = await _sut.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeTrue();
@@ -109,7 +109,7 @@ public sealed class RedisTransportTests : TestBase
         _mockStreamManager.PublishAsync(Arg.Any<string>(), Arg.Any<NameValueEntry[]>()).ThrowsAsync(expectedException);
 
         // when
-        var result = await _sut.SendAsync(message);
+        var result = await _sut.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeFalse();
@@ -136,7 +136,7 @@ public sealed class RedisTransportTests : TestBase
             .Returns(Task.CompletedTask);
 
         // when
-        await _sut.SendAsync(message);
+        await _sut.SendAsync(message, AbortToken);
 
         // then
         capturedEntries.Should().NotBeNull();

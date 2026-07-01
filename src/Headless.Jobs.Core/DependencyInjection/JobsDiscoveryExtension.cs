@@ -22,7 +22,7 @@ public static class JobsDiscoveryExtension
     /// <param name="assemblies">The assemblies to force-load.</param>
     public static JobsOptionsBuilder<TTimeJob, TCronJob> AddJobsDiscovery<TTimeJob, TCronJob>(
         this JobsOptionsBuilder<TTimeJob, TCronJob> jobsConfiguration,
-        Assembly[] assemblies
+        Assembly[]? assemblies
     )
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
         where TCronJob : CronJobEntity, new()

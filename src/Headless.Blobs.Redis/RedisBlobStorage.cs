@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Globalization;
 using System.Text.RegularExpressions;
 using Headless.Abstractions;
 using Headless.Blobs.Internals;
@@ -166,7 +167,10 @@ public sealed class RedisBlobStorage : IBlobStorage
             if (_options.MaxBlobSizeBytes > 0 && stream.CanSeek && stream.Length > _options.MaxBlobSizeBytes)
             {
                 throw new ArgumentException(
-                    $"Blob exceeds maximum size of {_options.MaxBlobSizeBytes} bytes. Redis blob storage is intended for small/ephemeral blobs only.",
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"Blob exceeds maximum size of {_options.MaxBlobSizeBytes} bytes. Redis blob storage is intended for small/ephemeral blobs only."
+                    ),
                     nameof(stream)
                 );
             }
@@ -244,7 +248,7 @@ public sealed class RedisBlobStorage : IBlobStorage
         // Index results by input position, not execution-start order: Parallel.ForEachAsync does not run bodies in
         // enumeration order, so an Interlocked counter would misalign results with their inputs. Honors the
         // "one Result per input blob, in original order" contract.
-        var items = blobs as IReadOnlyList<BlobUploadRequest> ?? blobs.ToList();
+        var items = blobs.AsIReadOnlyList();
         var results = new Result<Exception>[items.Count];
 
         var options = new ParallelOptions
@@ -339,7 +343,7 @@ public sealed class RedisBlobStorage : IBlobStorage
         }
 
         // Index results by input position (see BulkUploadAsync) so each entry matches its blob name in original order.
-        var names = blobNames as IReadOnlyList<string> ?? blobNames.ToList();
+        var names = blobNames.AsIReadOnlyList();
         var results = new Result<bool, Exception>[names.Count];
 
         var options = new ParallelOptions
@@ -911,7 +915,10 @@ public sealed class RedisBlobStorage : IBlobStorage
             if (totalBytes > _options.MaxBlobSizeBytes)
             {
                 throw new ArgumentException(
-                    $"Blob exceeds maximum size of {_options.MaxBlobSizeBytes} bytes. Redis blob storage is intended for small/ephemeral blobs only.",
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"Blob exceeds maximum size of {_options.MaxBlobSizeBytes} bytes. Redis blob storage is intended for small/ephemeral blobs only."
+                    ),
                     nameof(source)
                 );
             }

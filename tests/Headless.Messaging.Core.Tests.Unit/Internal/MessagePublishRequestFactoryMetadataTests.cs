@@ -4,6 +4,7 @@ using Headless.Abstractions;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
+using Headless.Messaging.Registration;
 using Microsoft.Extensions.Options;
 
 namespace Tests.Internal;
@@ -84,7 +85,7 @@ public sealed class MessagePublishRequestFactoryMetadataTests
         );
     }
 
-    private interface IOrderEvent { }
+    private interface IOrderEvent;
 
     private sealed record ConcreteOrderEvent(string OrderId) : IOrderEvent;
 }

@@ -9,7 +9,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Headless.Messaging.Dashboard.NodeDiscovery;
 
-internal sealed class ConsulDiscoveryOptionsExtension(Action<ConsulDiscoveryOptions> option) : IMessagesOptionsExtension
+internal sealed class ConsulDiscoveryOptionsExtension(Action<ConsulDiscoveryOptions>? option)
+    : IMessagesOptionsExtension
 {
     public void AddServices(IServiceCollection services)
     {

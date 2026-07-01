@@ -168,7 +168,7 @@ internal sealed class EfAuditChangeCapture(
 
                 if (byDefault)
                 {
-                    return type.GetCustomAttribute<AuditIgnoreAttribute>() is null;
+                    return !Attribute.IsDefined(type, typeof(AuditIgnoreAttribute));
                 }
 
                 return typeof(IAuditTracked).IsAssignableFrom(type);
@@ -325,7 +325,7 @@ internal sealed class EfAuditChangeCapture(
             return;
         }
 
-        if (propertyName == nameof(IDeleteAudit.IsDeleted))
+        if (string.Equals(propertyName, nameof(IDeleteAudit.IsDeleted), StringComparison.Ordinal))
         {
             var nowDeleted = property.CurrentValue is true;
             var wasDeleted = property.OriginalValue is true;
@@ -335,7 +335,7 @@ internal sealed class EfAuditChangeCapture(
             return;
         }
 
-        if (propertyName == nameof(ISuspendAudit.IsSuspended))
+        if (string.Equals(propertyName, nameof(ISuspendAudit.IsSuspended), StringComparison.Ordinal))
         {
             var nowSuspended = property.CurrentValue is true;
             var wasSuspended = property.OriginalValue is true;

@@ -24,7 +24,7 @@ namespace Headless.Messaging;
 /// <item><description>The consumer instance is resolved from that scope</description></item>
 /// <item><description><see cref="OnStartingAsync"/> is called (if the consumer implements this interface)</description></item>
 /// <item><description><see cref="IConsume{TMessage}.ConsumeAsync"/> is invoked</description></item>
-/// <item><description><see cref="OnStoppingAsync"/> is called in a <c>finally</c> block (if the consumer implements this interface)</description></item>
+/// <item><description><see cref="OnStoppingAsync"/> is called in a <see langword="finally"/> block (if the consumer implements this interface)</description></item>
 /// <item><description>The DI scope is disposed</description></item>
 /// </list>
 /// </para>
@@ -100,7 +100,7 @@ public interface IConsumerLifecycle
     /// <returns>A <see cref="ValueTask"/> representing the asynchronous shutdown operation.</returns>
     /// <remarks>
     /// <para>
-    /// This method is called once per dispatch in a <c>finally</c> block.
+    /// This method is called once per dispatch in a <see langword="finally"/> block.
     /// If this method throws an exception, it is suppressed so cleanup does not mask the original message failure.
     /// </para>
     /// <para>

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Security.Cryptography;
 using Headless.Checks;
 using Headless.DistributedLocks;
 using Headless.Messaging.CircuitBreaker;
@@ -135,7 +136,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
 
         if (!StartupJitterApplied)
         {
-            var jitter = TimeSpan.FromTicks((long)(_baseInterval.Ticks * Random.Shared.NextDouble()));
+            var jitter = TimeSpan.FromTicks((long)(_baseInterval.Ticks * _GetRandomUnitDouble()));
             await context.WaitAsync(jitter).ConfigureAwait(false);
             StartupJitterApplied = true;
         }
@@ -170,7 +171,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
             // CAS loops at lines 553/576 that use the same primitive on int fields.
 #pragma warning disable VSTHRD003
             _ = _publishedRetryConsumeTask.ContinueWith(
-                t => Interlocked.CompareExchange(ref _publishedRetryConsumeTask, null, t),
+                t => Interlocked.CompareExchange(ref _publishedRetryConsumeTask, value: null, t),
                 CancellationToken.None,
                 TaskContinuationOptions.ExecuteSynchronously,
                 TaskScheduler.Default
@@ -207,7 +208,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         // Interlocked.CompareExchange atomically nulls the field only if it still points at `t`.
 #pragma warning disable VSTHRD003
         _ = _receivedRetryConsumeTask.ContinueWith(
-            t => Interlocked.CompareExchange(ref _receivedRetryConsumeTask, null, t),
+            t => Interlocked.CompareExchange(ref _receivedRetryConsumeTask, value: null, t),
             CancellationToken.None,
             TaskContinuationOptions.ExecuteSynchronously,
             TaskScheduler.Default
@@ -239,7 +240,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
             return;
         }
 
-        using var lossRegistration = _RegisterLeaseLossLogger(StoragePickupKind.Published, acquiredHandle);
+        await using var lossRegistration = _RegisterLeaseLossLogger(StoragePickupKind.Published, acquiredHandle);
 
         await _ExecutePublishedWorkAsync(connection, context).ConfigureAwait(false);
     }
@@ -266,7 +267,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
             return;
         }
 
-        using var lossRegistration = _RegisterLeaseLossLogger(StoragePickupKind.Received, acquiredHandle);
+        await using var lossRegistration = _RegisterLeaseLossLogger(StoragePickupKind.Received, acquiredHandle);
 
         await _ExecuteReceivedWorkAsync(connection, context).ConfigureAwait(false);
     }
@@ -405,7 +406,10 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
                 continue;
             }
 
-            await _dispatcher.EnqueueToExecute(message, null, context.CancellationToken).ConfigureAwait(false);
+            await _dispatcher
+                .EnqueueToExecute(message, descriptor: null, context.CancellationToken)
+                .ConfigureAwait(false);
+
             enqueued++;
         }
 
@@ -528,14 +532,17 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     }
 
     /// <summary>
+    /// <para>
     /// Two-counter adaptive polling:
     /// - _consecutiveHealthyCycles: cycles with zero circuit-open messages → halves interval at >=2.
     /// - _consecutiveCleanCycles: cycles with zero total retry messages → resets to base at >=3.
     /// Clean cycles (total==0) increment both counters; the >=3 reset check runs before the >=2
     /// halving check, so a sustained quiet period snaps back to base rather than halving stepwise.
-    ///
+    /// </para>
+    /// <para>
     /// All mutations of _currentIntervalTicks use CAS (CompareExchange) loops to avoid
     /// non-atomic read-modify-write races with concurrent ResetBackpressureAsync calls.
+    /// </para>
     /// </summary>
     internal void AdjustPollingInterval(int enqueued, int skippedCircuitOpen)
     {
@@ -650,6 +657,8 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         cache[circuitBreakerGroup] = isOpen;
         return isOpen;
     }
+
+    private static double _GetRandomUnitDouble() => RandomNumberGenerator.GetInt32(int.MaxValue) / (double)int.MaxValue;
 }
 
 internal static partial class RetryProcessorLog

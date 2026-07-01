@@ -90,7 +90,7 @@ public sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable,
         _connectionActivator = _CreateConnection(options);
         _isPublishConfirms = options.PublishConfirms;
 
-        HostAddress = $"{options.HostName}:{options.Port}";
+        HostAddress = string.Create(CultureInfo.InvariantCulture, $"{options.HostName}:{options.Port}");
         Exchange = string.Equals("v1", messagingOptions.Version, StringComparison.Ordinal)
             ? options.ExchangeName
             : $"{options.ExchangeName}.{messagingOptions.Version}";
@@ -244,7 +244,13 @@ public sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable,
         {
             var connection = await GetConnectionAsync().ConfigureAwait(false);
             model = await connection
-                .CreateChannelAsync(new CreateChannelOptions(_isPublishConfirms, false), cancellationToken)
+                .CreateChannelAsync(
+                    new CreateChannelOptions(
+                        publisherConfirmationsEnabled: _isPublishConfirms,
+                        publisherConfirmationTrackingEnabled: false
+                    ),
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
             await model
                 .ExchangeDeclareAsync(

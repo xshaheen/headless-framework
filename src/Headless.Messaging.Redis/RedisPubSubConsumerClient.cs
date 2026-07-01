@@ -41,7 +41,7 @@ internal sealed class RedisPubSubConsumerClient(
 
         if (Volatile.Read(ref _disposed) != 0)
         {
-            ObjectDisposedException.ThrowIf(true, this);
+            ObjectDisposedException.ThrowIf(condition: true, instance: this);
         }
 
         var connection = await connectionProvider.ConnectAsync().ConfigureAwait(false);

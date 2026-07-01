@@ -128,7 +128,8 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
         // given (listen to the distributed-locks activity source)
         var activities = new List<Activity>();
         using var listener = new ActivityListener();
-        listener.ShouldListenTo = source => source.Name == "Headless.DistributedLocks";
+        listener.ShouldListenTo = source =>
+            string.Equals(source.Name, "Headless.DistributedLocks", StringComparison.Ordinal);
         listener.Sample = static (ref _) => ActivitySamplingResult.AllData;
         listener.ActivityStopped = activities.Add;
         ActivitySource.AddActivityListener(listener);
@@ -370,7 +371,6 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
         public int ReleaseCount { get; private set; }
 
         private Dictionary<string, string> LocalLeaseIds { get; } = new(StringComparer.Ordinal);
-        private Dictionary<string, string> ResourcesByLeaseId { get; } = new(StringComparer.Ordinal);
 
         public async ValueTask<ConnectionScopedLockHandle?> TryAcquireAsync(
             string resource,
@@ -396,7 +396,6 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
             }
 
             LocalLeaseIds[resource] = leaseId;
-            ResourcesByLeaseId[leaseId] = resource;
 
             return new ConnectionScopedLockHandle(
                 resource,
@@ -411,7 +410,6 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
             cancellationToken.ThrowIfCancellationRequested();
             ReleaseCount++;
             LocalLeaseIds.Remove(handle.Resource);
-            ResourcesByLeaseId.Remove(handle.LeaseId);
 
             return ValueTask.CompletedTask;
         }
@@ -421,7 +419,6 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
             cancellationToken.ThrowIfCancellationRequested();
             ReleaseCount++;
             LocalLeaseIds.Remove(resource);
-            ResourcesByLeaseId.Remove(leaseId);
 
             return ValueTask.CompletedTask;
         }
@@ -577,7 +574,7 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
 
         public void GrantNext() => _grant = true;
 
-        public ValueTask<ConnectionScopedLockHandle?> TryAcquireAsync(
+        public async ValueTask<ConnectionScopedLockHandle?> TryAcquireAsync(
             string resource,
             string leaseId,
             bool isShared,
@@ -586,10 +583,16 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
         )
         {
             cancellationToken.ThrowIfCancellationRequested();
+            await Task.CompletedTask.ConfigureAwait(false);
 
-            return ValueTask.FromResult(
-                _grant ? new ConnectionScopedLockHandle(resource, leaseId, ReleaseAsync, CancellationToken.None) : null
-            );
+            if (!_grant)
+            {
+                return null;
+            }
+
+            // Ownership of the handle transfers to the caller (the lock under test), which
+            // releases/disposes it.
+            return new ConnectionScopedLockHandle(resource, leaseId, ReleaseAsync, CancellationToken.None);
         }
 
         public ValueTask ReleaseAsync(

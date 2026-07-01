@@ -66,8 +66,11 @@ public sealed class MessagingOptionsCopyToTests : TestBase
 
         var actual = typeof(MessagingOptions)
             .GetProperties(BindingFlags.Public | BindingFlags.Instance)
-            .Where(p => !p.CanWrite || p.SetMethod is null || !p.SetMethod.IsPublic)
-            .Where(p => !p.PropertyType.IsValueType && p.PropertyType != typeof(string))
+            .Where(p =>
+                (!p.CanWrite || p.SetMethod?.IsPublic != true)
+                && !p.PropertyType.IsValueType
+                && p.PropertyType != typeof(string)
+            )
             .Select(p => p.Name)
             .ToHashSet(StringComparer.Ordinal);
 

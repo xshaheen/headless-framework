@@ -85,7 +85,7 @@ internal static class EmailToMimeMessageConverter
 
         foreach (var requestAttachment in request.Attachments)
         {
-            using var fileStream = new MemoryStream(requestAttachment.File.Length);
+            await using var fileStream = new MemoryStream(requestAttachment.File.Length);
             fileStream.Write(requestAttachment.File.Span);
             fileStream.Position = 0;
 

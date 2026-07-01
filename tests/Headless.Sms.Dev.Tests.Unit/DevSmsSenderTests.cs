@@ -1,10 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Sms.Dev;
+using Headless.Testing.Tests;
 
 namespace Tests;
 
-public sealed class DevSmsSenderTests
+public sealed class DevSmsSenderTests : TestBase
 {
     [Fact]
     public async Task should_append_the_message_to_the_file()
@@ -14,10 +15,9 @@ public sealed class DevSmsSenderTests
 
         try
         {
-            var result = await sender.SendAsync(SmsRequests.Single(text: "hello dev", messageId: "id-1"));
-
+            var result = await sender.SendAsync(SmsRequests.Single(text: "hello dev", messageId: "id-1"), AbortToken);
             result.Success.Should().BeTrue();
-            var contents = await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken);
+            var contents = await File.ReadAllTextAsync(path, AbortToken);
             contents.Should().Contain("hello dev").And.Contain("id-1");
         }
         finally
@@ -27,13 +27,12 @@ public sealed class DevSmsSenderTests
     }
 }
 
-public sealed class NoopSmsSenderTests
+public sealed class NoopSmsSenderTests : TestBase
 {
     [Fact]
     public async Task should_report_success()
     {
-        var result = await new NoopSmsSender().SendAsync(SmsRequests.Single());
-
+        var result = await new NoopSmsSender().SendAsync(SmsRequests.Single(), AbortToken);
         result.Success.Should().BeTrue();
     }
 

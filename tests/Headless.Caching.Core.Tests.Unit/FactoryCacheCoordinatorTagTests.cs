@@ -11,6 +11,19 @@ public sealed class FactoryCacheCoordinatorTagTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
     private readonly FakeFactoryCacheStore _store = new();
+    private readonly List<FactoryCacheCoordinator> _coordinators = [];
+
+    protected override ValueTask DisposeAsyncCore()
+    {
+        foreach (var coordinator in _coordinators)
+        {
+            coordinator.Dispose();
+        }
+
+        _coordinators.Clear();
+
+        return base.DisposeAsyncCore();
+    }
 
     [Fact]
     public async Task should_reject_empty_tag_in_options()
@@ -155,6 +168,12 @@ public sealed class FactoryCacheCoordinatorTagTests : TestBase
         entry!.Tags.Should().BeEquivalentTo("factory-tag");
     }
 
-    private FactoryCacheCoordinator _CreateCoordinator() =>
-        new(_timeProvider, NullLogger<FactoryCacheCoordinator>.Instance);
+    // Tracks every coordinator so it is disposed in teardown; inline fluent calls cannot take a `using`.
+    private FactoryCacheCoordinator _CreateCoordinator()
+    {
+        var coordinator = new FactoryCacheCoordinator(_timeProvider, NullLogger<FactoryCacheCoordinator>.Instance);
+        _coordinators.Add(coordinator);
+
+        return coordinator;
+    }
 }

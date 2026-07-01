@@ -86,7 +86,7 @@ public sealed class Currency(decimal amount, string currencyCode)
     /// <param name="right">The right operand.</param>
     /// <returns><see langword="true"/> if both are <see langword="null"/> or have the same amount and currency code; otherwise <see langword="false"/>.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static bool operator ==(Currency? left, Currency? right) => left?.Equals(right) ?? right is null;
+    public static bool operator ==(Currency? left, Currency? right) => left?.Equals(right) ?? (right is null);
 
     /// <summary>Determines whether two <see cref="Currency"/> instances are not equal.</summary>
     /// <param name="left">The left operand.</param>

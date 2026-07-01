@@ -354,17 +354,20 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
             if (isCancel)
             {
                 // Cancel on a background thread in case a registered callback hangs or throws.
-                _ = Task.Run(() =>
-                {
-                    try
+                _ = Task.Run(
+                    async () =>
                     {
-                        cancellationTokenSource.Cancel();
-                    }
-                    finally
-                    {
-                        cancellationTokenSource.Dispose();
-                    }
-                });
+                        try
+                        {
+                            await cancellationTokenSource.CancelAsync().ConfigureAwait(false);
+                        }
+                        finally
+                        {
+                            cancellationTokenSource.Dispose();
+                        }
+                    },
+                    CancellationToken.None
+                );
             }
             else
             {
@@ -423,17 +426,20 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
         // Cancel asynchronously: the Cancel() thread can otherwise run continuations inside the monitoring loop.
         // Setting the new source before cancelling the old one already avoids the worst of that, but doing the cancel
         // off-thread keeps this method fast and easy to reason about.
-        _ = Task.Run(() =>
-        {
-            try
+        _ = Task.Run(
+            async () =>
             {
-                monitorStateChangedTokenSource.Cancel();
-            }
-            finally
-            {
-                monitorStateChangedTokenSource.Dispose();
-            }
-        });
+                try
+                {
+                    await monitorStateChangedTokenSource.CancelAsync().ConfigureAwait(false);
+                }
+                finally
+                {
+                    monitorStateChangedTokenSource.Dispose();
+                }
+            },
+            CancellationToken.None
+        );
     }
 
     private async Task _MonitorWorkerLoopAsync()
@@ -565,20 +571,6 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
 #pragma warning restore CA1031, ERP022
     }
 
-    private static async Task _SuppressAsync(ValueTask task)
-    {
-        try
-        {
-            await task.ConfigureAwait(false);
-        }
-#pragma warning disable CA1031, ERP022 // The worker loop intentionally ignores probe failures; loss is surfaced via state change/handle cancellation.
-        catch
-        {
-            // Intentionally empty.
-        }
-#pragma warning restore CA1031, ERP022
-    }
-
     private sealed class SemaphoreReleaser(SemaphoreSlim semaphore) : IDisposable
     {
         private int _released;
@@ -604,7 +596,7 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
 
         public void Dispose()
         {
-            Interlocked.Exchange(ref _monitor, null)?._ReleaseMonitoringHandle(this);
+            Interlocked.Exchange(ref _monitor, value: null)?._ReleaseMonitoringHandle(this);
         }
     }
 
@@ -614,7 +606,9 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
 
         public AlreadyCanceledHandle()
         {
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
             _cancellationTokenSource.Cancel();
+#pragma warning restore MA0045
         }
 
         public CancellationToken ConnectionLostToken => _cancellationTokenSource.Token;

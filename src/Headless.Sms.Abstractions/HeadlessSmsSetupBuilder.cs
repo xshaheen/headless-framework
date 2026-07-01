@@ -25,7 +25,7 @@ public sealed class HeadlessSmsSetupBuilder
 
     internal IServiceCollection Services { get; }
 
-    internal IList<ISmsProviderOptionsExtension> Extensions { get; } = new List<ISmsProviderOptionsExtension>();
+    internal IList<ISmsProviderOptionsExtension> Extensions { get; } = [];
 
     /// <summary>Registers a provider extension. Called by provider <c>Use{Provider}</c> members.</summary>
     /// <exception cref="ArgumentNullException"><paramref name="extension"/> is <see langword="null"/>.</exception>

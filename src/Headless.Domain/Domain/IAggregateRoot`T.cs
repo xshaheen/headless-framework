@@ -15,7 +15,7 @@ public interface IAggregateRoot<out TId> : IEntity<TId>, IAggregateRoot
 /// <summary>Base class for aggregate roots with a single primary key.</summary>
 [PublicAPI]
 public abstract class AggregateRoot<TId> : AggregateRoot, IAggregateRoot<TId>
-    where TId : notnull, IEquatable<TId>
+    where TId : IEquatable<TId>
 {
     /// <summary>Unique identifier for this entity.</summary>
     public required TId Id { get; init; }

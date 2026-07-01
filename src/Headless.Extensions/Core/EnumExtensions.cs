@@ -60,7 +60,10 @@ public static class EnumExtensions
             4 => Unsafe.As<TEnum, uint>(ref value),
             8 => Unsafe.As<TEnum, ulong>(ref value),
             _ => throw new InvalidOperationException(
-                $"Unsupported enum underlying size: {Unsafe.SizeOf<TEnum>()} bytes."
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Unsupported enum underlying size: {Unsafe.SizeOf<TEnum>()} bytes."
+                )
             ),
         };
     }

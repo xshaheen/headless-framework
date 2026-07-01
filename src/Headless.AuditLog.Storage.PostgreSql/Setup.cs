@@ -20,16 +20,13 @@ public static class SetupAuditLogPostgreSql
         /// Configures the audit log to persist entries to PostgreSql using the provided
         /// connection string.
         /// </summary>
-        /// <param name="connectionString">Npgsql connection string. Must not be <c>null</c> or whitespace.</param>
-        /// <exception cref="ArgumentException"><paramref name="connectionString"/> is <c>null</c> or whitespace.</exception>
+        /// <param name="connectionString">Npgsql connection string. Must not be <see langword="null"/> or whitespace.</param>
+        /// <exception cref="ArgumentException"><paramref name="connectionString"/> is <see langword="null"/> or whitespace.</exception>
         public HeadlessAuditLogSetupBuilder UsePostgreSql(string connectionString)
         {
             Argument.IsNotNullOrWhiteSpace(connectionString);
 
-            return setup.UsePostgreSql(options =>
-            {
-                options.ConnectionString = connectionString;
-            });
+            return setup.UsePostgreSql(options => options.ConnectionString = connectionString);
         }
 
         /// <summary>
@@ -40,13 +37,13 @@ public static class SetupAuditLogPostgreSql
         /// <remarks>
         /// The provider self-initializes the schema and table on startup (serialized with
         /// <c>pg_advisory_xact_lock</c> across replicas) unless
-        /// <see cref="AuditLogStorageOptions.InitializeOnStartup"/> is <c>false</c>. Audit rows
+        /// <see cref="AuditLogStorageOptions.InitializeOnStartup"/> is <see langword="false"/>. Audit rows
         /// are written via batched <c>INSERT … VALUES</c> statements (up to 500 rows per command).
         /// When an <see cref="IAmbientDbTransactionAccessor"/> is registered and the calling
         /// <c>DbContext</c> has an open <c>NpgsqlTransaction</c>, writes enroll atomically in
         /// that transaction; otherwise they commit on a separate connection.
         /// </remarks>
-        /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <c>null</c>.</exception>
+        /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
         public HeadlessAuditLogSetupBuilder UsePostgreSql(Action<PostgreSqlAuditLogOptions> configure)
         {
             Argument.IsNotNull(configure);

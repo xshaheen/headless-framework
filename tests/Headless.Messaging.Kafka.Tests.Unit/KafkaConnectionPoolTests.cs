@@ -139,7 +139,9 @@ public sealed class KafkaConnectionPoolTests : TestBase
         Parallel.ForEach(producers, producer => pool.Return(producer));
 
         // then - at least some should be returned successfully, some may be disposed
-        var returnedCount = producers.Count(p => !p.ReceivedCalls().Any(c => c.GetMethodInfo().Name == "Dispose"));
+        var returnedCount = producers.Count(p =>
+            !p.ReceivedCalls().Any(c => string.Equals(c.GetMethodInfo().Name, "Dispose", StringComparison.Ordinal))
+        );
         returnedCount.Should().BeLessThanOrEqualTo(10); // max pool size
     }
 

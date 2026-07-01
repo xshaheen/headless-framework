@@ -318,7 +318,7 @@ public static class TypeExtensions
 
     /// <summary>Returns void if given type is Task. Return T, if given type is Task{T}. Returns given type otherwise.</summary>
     /// <param name="type">The type to unwrap.</param>
-    /// <returns><see cref="void"/> for <see cref="Task"/>, the result type for <see cref="Task{TResult}"/>, or <paramref name="type"/> itself otherwise.</returns>
+    /// <returns>void for <see cref="Task"/>, the result type for <see cref="Task{TResult}"/>, or <paramref name="type"/> itself otherwise.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="type"/> is <see langword="null"/>.</exception>
     public static Type UnwrapTask(this Type type)
     {

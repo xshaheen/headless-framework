@@ -129,8 +129,8 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
 
         await db.SaveChangesAsync(AbortToken);
 
-        a.Id.Should().BeGreaterThan(0);
-        b.Id.Should().BeGreaterThan(0);
+        a.Id.Should().BePositive();
+        b.Id.Should().BePositive();
         a.Id.Should().NotBe(b.Id);
 
         var persisted = await db.LongKeyed.CountAsync(AbortToken);

@@ -55,7 +55,6 @@ public sealed partial class EntityFrameworkCommitSignalSource(
     /// <param name="providerTransactionKey">
     /// The transaction correlation key — the <c>DbTransaction</c> instance passed to the interceptor.
     /// </param>
-    /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>A task that completes when the drain has finished.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="providerTransactionKey" /> is <see langword="null" />.</exception>
     [SuppressMessage(
@@ -63,7 +62,7 @@ public sealed partial class EntityFrameworkCommitSignalSource(
         "CA2000:Dispose objects before losing scope",
         Justification = "The enlisting caller owns the scope lifetime and disposes it; the signal source signals and drains only, never disposing or popping the ambient frame."
     )]
-    public async ValueTask SignalCommittedAsync(object providerTransactionKey, CancellationToken cancellationToken)
+    public async ValueTask SignalCommittedAsync(object providerTransactionKey)
     {
         Argument.IsNotNull(providerTransactionKey);
 
@@ -85,7 +84,7 @@ public sealed partial class EntityFrameworkCommitSignalSource(
         // commit thread, settling before this returns and before the caller's un-signalled scope dispose can race it.
         // Only the drain (the awaited continuation, ConfigureAwait(false)) runs off-thread. Wrapping the whole call in
         // Task.Run would defer the claim itself, letting a racing Dispose claim RolledBack and discard committed work.
-        _SignalInBackground(SignalCommittedAsync(providerTransactionKey, CancellationToken.None).AsTask());
+        _SignalInBackground(SignalCommittedAsync(providerTransactionKey).AsTask());
     }
 
     /// <summary>
@@ -95,7 +94,6 @@ public sealed partial class EntityFrameworkCommitSignalSource(
     /// <param name="providerTransactionKey">
     /// The transaction correlation key — the <c>DbTransaction</c> instance passed to the interceptor.
     /// </param>
-    /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>A task that completes when the drain has finished.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="providerTransactionKey" /> is <see langword="null" />.</exception>
     [SuppressMessage(
@@ -103,7 +101,7 @@ public sealed partial class EntityFrameworkCommitSignalSource(
         "CA2000:Dispose objects before losing scope",
         Justification = "The enlisting caller owns the scope lifetime and disposes it; the signal source signals and drains only, never disposing or popping the ambient frame."
     )]
-    public async ValueTask SignalRolledBackAsync(object providerTransactionKey, CancellationToken cancellationToken)
+    public async ValueTask SignalRolledBackAsync(object providerTransactionKey)
     {
         Argument.IsNotNull(providerTransactionKey);
 
@@ -122,7 +120,7 @@ public sealed partial class EntityFrameworkCommitSignalSource(
 
         // Invoke synchronously (NOT via Task.Run) so the terminal claim settles on the commit thread; see the note on
         // SignalCommittedInBackground. Only the drain runs off-thread.
-        _SignalInBackground(SignalRolledBackAsync(providerTransactionKey, CancellationToken.None).AsTask());
+        _SignalInBackground(SignalRolledBackAsync(providerTransactionKey).AsTask());
     }
 
     // The claim settles synchronously on the commit thread (see SignalCommittedInBackground); only the drain runs

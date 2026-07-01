@@ -73,7 +73,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         // then
         exceptionThrown.Should().BeTrue();
         consumeCallCount.Should().Be(1);
-        _loggedEvents.Should().HaveCount(1);
+        _loggedEvents.Should().ContainSingle();
         _loggedEvents[0].LogType.Should().Be(MqLogType.ConsumeError);
         _loggedEvents[0].Reason.Should().Contain("Error consuming message");
         _loggedEvents[0].Reason.Should().Contain("Simulated consumption error");

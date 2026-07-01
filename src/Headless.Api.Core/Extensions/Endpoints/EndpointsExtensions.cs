@@ -38,7 +38,12 @@ public static class EndpointsExtensions
         var mainHostBaseUri = new Uri(mainHost, UriKind.Absolute);
 
         app.MapGet(
+                // ASP0018: the catch-all token is required to match every path on the redirect hosts; the handler
+                // deliberately reads the full request path via HttpContext (with leading slash + query) rather than
+                // the route value, so the token itself is intentionally unbound.
+#pragma warning disable ASP0018
                 pattern: "{*path}",
+#pragma warning restore ASP0018
                 handler: (HttpContext context, IProblemDetailsCreator problemDetailsCreator) =>
                     BuildRedirectResultOrBadRequest(
                         context.Request.Path,

@@ -8,7 +8,7 @@ namespace Headless.Jobs.Temps;
 /// No-operation implementation of IJobsHostScheduler.
 /// Used when background services are disabled (queue-only mode).
 /// </summary>
-internal class NoOpJobsHostScheduler : IJobsHostScheduler
+internal sealed class NoOpJobsHostScheduler : IJobsHostScheduler
 {
     public bool IsRunning => false;
 

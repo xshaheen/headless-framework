@@ -28,10 +28,7 @@ public static class SetupPostgreSqlMessaging
         {
             Argument.IsNotNullOrWhiteSpace(connectionString);
 
-            return setup.UsePostgreSql(opt =>
-            {
-                opt.ConnectionString = connectionString;
-            });
+            return setup.UsePostgreSql(opt => opt.ConnectionString = connectionString);
         }
 
         /// <summary>

@@ -148,7 +148,7 @@ public sealed class MessagingConventions
     {
         if (!string.IsNullOrWhiteSpace(DefaultGroup))
         {
-            return DefaultGroup!;
+            return DefaultGroup;
         }
 
         Argument.IsNotNullOrWhiteSpace(handlerId, "HandlerId cannot be null or whitespace.");

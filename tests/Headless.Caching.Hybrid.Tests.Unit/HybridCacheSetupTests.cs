@@ -22,7 +22,7 @@ public sealed class HybridCacheSetupTests : TestBase
         services.AddSingleton<TimeProvider>(_timeProvider);
         services.AddSingleton(Substitute.For<IBus>());
 
-        var l2Inner = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+        using var l2Inner = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
         var remote = new InMemoryRemoteCacheAdapter(l2Inner);
 
         services.AddHeadlessCaching(setup =>

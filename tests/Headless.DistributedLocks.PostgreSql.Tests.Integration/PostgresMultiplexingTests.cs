@@ -124,10 +124,9 @@ public sealed class PostgresMultiplexingTests(PostgresDistributedLockFixture fix
             // A test-runner abort propagates; a deadline becomes a clear assertion failure (not an opaque OCE).
             AbortToken.ThrowIfCancellationRequested();
 
-            if (deadlineCts.IsCancellationRequested)
-            {
-                Assert.Fail("Condition was not satisfied within the 15s deadline.");
-            }
+            deadlineCts
+                .IsCancellationRequested.Should()
+                .BeFalse("the condition was not satisfied within the 15s deadline");
 
             try
             {
@@ -136,7 +135,9 @@ public sealed class PostgresMultiplexingTests(PostgresDistributedLockFixture fix
             catch (OperationCanceledException)
                 when (deadlineCts.IsCancellationRequested && !AbortToken.IsCancellationRequested)
             {
-                Assert.Fail("Condition was not satisfied within the 15s deadline.");
+                deadlineCts
+                    .IsCancellationRequested.Should()
+                    .BeFalse("the condition was not satisfied within the 15s deadline");
             }
         }
     }
@@ -149,7 +150,7 @@ public sealed class PostgresMultiplexingTests(PostgresDistributedLockFixture fix
     private async Task<IReadOnlyList<int>> _GetBackendPidsHoldingAsync(string keyMaterial, bool? isShared = null)
     {
         var key = PostgresAdvisoryLockKey.FromString(keyMaterial, allowHashing: true);
-        var keys = key.Keys;
+        var (key1, key2) = key.Keys;
 
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
@@ -166,8 +167,8 @@ public sealed class PostgresMultiplexingTests(PostgresDistributedLockFixture fix
               AND l.objid = @objId
               AND l.objsubid = @objSubId
             """;
-        command.Parameters.AddWithValue("classId", keys.Key1);
-        command.Parameters.AddWithValue("objId", keys.Key2);
+        command.Parameters.AddWithValue("classId", key1);
+        command.Parameters.AddWithValue("objId", key2);
         command.Parameters.AddWithValue("objSubId", (short)(key.HasSingleKey ? 1 : 2));
 
         if (isShared.HasValue)

@@ -5,9 +5,10 @@ using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.JobsThreadPool;
 using Microsoft.Extensions.Hosting;
 
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Jobs.BackgroundServices;
 
-internal class JobsFallbackBackgroundService(
+internal sealed class JobsFallbackBackgroundService(
     IInternalJobManager internalJobsManager,
     SchedulerOptionsBuilder schedulerOptions,
     JobsExecutionTaskHandler tickerExecutionTaskHandler,
@@ -101,7 +102,7 @@ internal class JobsFallbackBackgroundService(
                                         try
                                         {
                                             await tickerExecutionTaskHandler
-                                                .ExecuteTaskAsync(function, true, ct)
+                                                .ExecuteTaskAsync(function, isDue: true, cancellationToken: ct)
                                                 .ConfigureAwait(false);
                                         }
                                         finally

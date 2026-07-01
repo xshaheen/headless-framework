@@ -26,10 +26,7 @@ public static class SetupPostgreSqlCoordination
         {
             Argument.IsNotNullOrWhiteSpace(connectionString);
 
-            return setup.UsePostgreSql(options =>
-            {
-                options.ConnectionString = connectionString;
-            });
+            return setup.UsePostgreSql(options => options.ConnectionString = connectionString);
         }
 
         /// <summary>

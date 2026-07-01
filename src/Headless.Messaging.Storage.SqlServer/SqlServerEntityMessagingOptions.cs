@@ -32,7 +32,7 @@ public partial class SqlServerEntityFrameworkMessagingOptions
             Argument.IsNotNullOrWhiteSpace(value);
             Argument.Matches(
                 value,
-                _ValidIdentifier(),
+                ValidIdentifier,
                 $"Schema name must start with a letter, underscore, @ or # and contain only letters, digits, underscores, @ or # (max {MaxSchemaLength} chars)"
             );
 
@@ -46,7 +46,7 @@ public partial class SqlServerEntityFrameworkMessagingOptions
     /// Max 128 chars per SQL Server identifier rules.
     /// </summary>
     [GeneratedRegex("^[a-zA-Z_@#][a-zA-Z0-9_@#$]{0,127}$", RegexOptions.None, 100)]
-    private static partial Regex _ValidIdentifier();
+    private static partial Regex ValidIdentifier { get; }
 
     /// <summary>
     /// Gets or sets the maximum length for the Owner column. Default is <see cref="DataStorageConstants.OwnerColumnMaxLength"/>.

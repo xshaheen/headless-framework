@@ -4,9 +4,10 @@ using Headless.Jobs.Interfaces;
 using Headless.Jobs.JobsThreadPool;
 using Headless.Jobs.Models;
 
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Jobs.Dispatcher;
 
-internal class JobsDispatcher(
+internal sealed class JobsDispatcher(
     JobsTaskScheduler taskScheduler,
     JobsExecutionTaskHandler taskHandler,
     IJobFunctionConcurrencyGate concurrencyGate
@@ -14,7 +15,7 @@ internal class JobsDispatcher(
 {
     public bool IsEnabled => true;
 
-    public async Task DispatchAsync(InternalFunctionContext[] contexts, CancellationToken cancellationToken = default)
+    public async Task DispatchAsync(InternalFunctionContext[]? contexts, CancellationToken cancellationToken = default)
     {
         if (contexts == null || contexts.Length == 0)
         {
@@ -36,7 +37,9 @@ internal class JobsDispatcher(
 
                         try
                         {
-                            await taskHandler.ExecuteTaskAsync(context, false, ct).ConfigureAwait(false);
+                            await taskHandler
+                                .ExecuteTaskAsync(context, isDue: false, cancellationToken: ct)
+                                .ConfigureAwait(false);
                         }
                         finally
                         {

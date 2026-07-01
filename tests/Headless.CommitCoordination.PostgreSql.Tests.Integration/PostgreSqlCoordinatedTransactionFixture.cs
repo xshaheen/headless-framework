@@ -104,7 +104,7 @@ public sealed class PostgreSqlCoordinatedTransactionFixture
                 connection,
                 transaction
             );
-            command.Parameters.AddWithValue("name", name);
+            command.Parameters.AddWithValue(nameof(name), name);
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
     }

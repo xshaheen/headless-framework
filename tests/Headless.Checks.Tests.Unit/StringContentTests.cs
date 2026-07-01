@@ -16,7 +16,7 @@ public sealed class StringContentTests
     [Fact]
     public void starts_with_should_throw_when_not_matching()
     {
-        var value = "hello world";
+        const string value = "hello world";
         var action = () => Argument.StartsWith(value, "world");
 
         action
@@ -34,7 +34,7 @@ public sealed class StringContentTests
     [Fact]
     public void ends_with_should_throw_when_not_matching()
     {
-        var value = "hello world";
+        const string value = "hello world";
         var action = () => Argument.EndsWith(value, "hello");
         action.Should().ThrowExactly<ArgumentException>().WithMessage("*must end with \"hello\"*");
     }
@@ -48,7 +48,7 @@ public sealed class StringContentTests
     [Fact]
     public void contains_should_throw_when_not_matching()
     {
-        var value = "hello world";
+        const string value = "hello world";
         var action = () => Argument.Contains(value, "xyz");
         action.Should().ThrowExactly<ArgumentException>().WithMessage("*must contain \"xyz\"*");
     }

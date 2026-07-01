@@ -61,7 +61,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
             .ReceivedCalls()
             .Where(call =>
             {
-                if (call.GetMethodInfo().Name != nameof(ILogger.Log))
+                if (!string.Equals(call.GetMethodInfo().Name, nameof(ILogger.Log), StringComparison.Ordinal))
                 {
                     return false;
                 }
@@ -85,7 +85,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
             .ReceivedCalls()
             .Where(call =>
             {
-                if (call.GetMethodInfo().Name != nameof(ILogger.Log))
+                if (!string.Equals(call.GetMethodInfo().Name, nameof(ILogger.Log), StringComparison.Ordinal))
                 {
                     return false;
                 }
@@ -905,8 +905,8 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         await using var client = new AmazonSqsConsumerClient("test-group", 1, _CreateOptions(), logger);
 
         // when
-        await client.PauseAsync();
-        await client.PauseAsync();
+        await client.PauseAsync(AbortToken);
+        await client.PauseAsync(AbortToken);
 
         // then — no exception
     }
@@ -919,7 +919,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         await using var client = new AmazonSqsConsumerClient("test-group", 1, _CreateOptions(), logger);
 
         // when
-        await client.ResumeAsync();
+        await client.ResumeAsync(AbortToken);
 
         // then — no exception
     }
@@ -932,8 +932,8 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         await using var client = new AmazonSqsConsumerClient("test-group", 1, _CreateOptions(), logger);
 
         // when
-        await client.PauseAsync();
-        await client.ResumeAsync();
+        await client.PauseAsync(AbortToken);
+        await client.ResumeAsync(AbortToken);
 
         // then — no exception
     }
@@ -958,7 +958,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         _SetPrivateFields(client, sqsClient, "http://test");
 
         // when — pause, then start listening
-        await client.PauseAsync();
+        await client.PauseAsync(AbortToken);
 
         using var cts = new CancellationTokenSource();
         var listenTask = Task.Run(
@@ -986,7 +986,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         await listenTask;
 
         // after resume, polling should have started
-        receiveCount.Should().BeGreaterThan(0);
+        receiveCount.Should().BePositive();
     }
 
     [Fact]

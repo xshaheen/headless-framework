@@ -160,7 +160,9 @@ internal sealed class TrackedCommitScope : ICommitScope
             return;
         }
 
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
         _ownedServices.Value.Dispose();
+#pragma warning restore MA0045
     }
 
     private async ValueTask _DisposeOwnedServicesAsync()

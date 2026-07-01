@@ -262,7 +262,10 @@ internal sealed class RedisMembershipStore(
                 // Local contract violation on the script's return shape, not an error raised by the Redis
                 // server, so InvalidOperationException (matching _ClusterKey below) is the precise type.
                 throw new InvalidOperationException(
-                    $"Unexpected coordination membership read script result shape (length={fields?.Length ?? 0}, expected >= 4)."
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"Unexpected coordination membership read script result shape (length={fields?.Length ?? 0}, expected >= 4)."
+                    )
                 );
             }
 
@@ -282,7 +285,7 @@ internal sealed class RedisMembershipStore(
         }
 
         // The read Lua already returns members sorted (table.sort); no C# re-sort is needed.
-        return snapshots.ToArray();
+        return [.. snapshots];
     }
 
     private static NodeIdentity[] _ParseLiveNodes(RedisResult[]? result)

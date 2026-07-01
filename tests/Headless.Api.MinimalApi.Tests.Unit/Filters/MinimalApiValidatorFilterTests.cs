@@ -34,7 +34,10 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
     {
         // given
         var filter = _CreateFilter<ValidatorFilterTestRequest>();
-        var context = _CreateContext(new ValidatorFilterTestRequest("Name", "test@example.com"));
+        var context = _CreateContext(
+            new ValidatorFilterTestRequest("Name", "test@example.com"),
+            cancellationToken: AbortToken
+        );
         var expectedResult = new object();
         var next = _CreateNext(expectedResult);
 
@@ -51,7 +54,11 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
         // given
         var filter = _CreateFilter<ValidatorFilterTestRequest>();
         var validator = new ValidatorFilterTestRequestValidator();
-        var context = _CreateContext(new ValidatorFilterTestRequest("ValidName", "valid@example.com"), [validator]);
+        var context = _CreateContext(
+            new ValidatorFilterTestRequest("ValidName", "valid@example.com"),
+            [validator],
+            cancellationToken: AbortToken
+        );
         var expectedResult = new object();
         var next = _CreateNext(expectedResult);
 
@@ -72,7 +79,8 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
         var context = _CreateContext(
             new ValidatorFilterTestRequest("", "invalid-email"),
             [validator],
-            creator: creator
+            creator: creator,
+            cancellationToken: AbortToken
         );
         var next = _CreateNext();
 
@@ -94,7 +102,11 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
         // given
         var filter = _CreateFilter<ValidatorFilterTestRequest>();
         var validator = _CreateMockValidator(new ValidationResult());
-        var context = _CreateContext(new ValidatorFilterTestRequest("Name", "test@example.com"), [validator]);
+        var context = _CreateContext(
+            new ValidatorFilterTestRequest("Name", "test@example.com"),
+            [validator],
+            cancellationToken: AbortToken
+        );
         var expectedResult = new object();
         var next = _CreateNext(expectedResult);
 
@@ -117,7 +129,8 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
         var validator2 = _CreateMockValidator(new ValidationResult());
         var context = _CreateContext(
             new ValidatorFilterTestRequest("Name", "test@example.com"),
-            [validator1, validator2]
+            [validator1, validator2],
+            cancellationToken: AbortToken
         );
         var expectedResult = new object();
         var next = _CreateNext(expectedResult);
@@ -150,7 +163,8 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
         var context = _CreateContext(
             new ValidatorFilterTestRequest("", "invalid"),
             [validator1, validator2],
-            creator: creator
+            creator: creator,
+            cancellationToken: AbortToken
         );
         var next = _CreateNext();
 
@@ -164,8 +178,8 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
                 Arg.Is<Dictionary<string, List<ErrorDescriptor>>>(d =>
                     d.ContainsKey("name")
                     && d.ContainsKey("email")
-                    && d["name"].Any(e => e.Description == "Name error from validator 1")
-                    && d["email"].Any(e => e.Description == "Email error from validator 2")
+                    && d["name"].Exists(e => e.Description == "Name error from validator 1")
+                    && d["email"].Exists(e => e.Description == "Email error from validator 2")
                 )
             );
     }
@@ -176,17 +190,22 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
         // given
         var creator = _CreateProblemDetailsCreator();
         var filter = _CreateFilter<ValidatorFilterTestRequest>();
+
         var validator1 = _CreateMockValidator(
             new ValidationResult([new ValidationFailure("Name", "Name must not be empty")])
         );
+
         var validator2 = _CreateMockValidator(
             new ValidationResult([new ValidationFailure("Name", "Name must be at least 3 characters")])
         );
+
         var context = _CreateContext(
             new ValidatorFilterTestRequest("", "test@example.com"),
             [validator1, validator2],
-            creator: creator
+            creator: creator,
+            AbortToken
         );
+
         var next = _CreateNext();
 
         // when
@@ -199,8 +218,8 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
                 Arg.Is<Dictionary<string, List<ErrorDescriptor>>>(d =>
                     d.ContainsKey("name")
                     && d["name"].Count == 2
-                    && d["name"].Any(e => e.Description == "Name must not be empty")
-                    && d["name"].Any(e => e.Description == "Name must be at least 3 characters")
+                    && d["name"].Exists(e => e.Description == "Name must not be empty")
+                    && d["name"].Exists(e => e.Description == "Name must be at least 3 characters")
                 )
             );
     }
@@ -234,7 +253,7 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
         var creator = _CreateProblemDetailsCreator();
         var filter = _CreateFilter<ValidatorFilterTestRequest>();
         var validator = new ValidatorFilterTestRequestValidator();
-        var context = _CreateContext(null, [validator], creator: creator);
+        var context = _CreateContext(null, [validator], creator: creator, cancellationToken: AbortToken);
         var next = _CreateNext();
 
         // when
@@ -277,7 +296,8 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
         var context = _CreateContext(
             new ValidatorFilterTestRequest("", "test@example.com"),
             [validator],
-            creator: creator
+            creator: creator,
+            cancellationToken: AbortToken
         );
         var next = _CreateNext();
 
@@ -304,7 +324,8 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
         var context = _CreateContext(
             new ValidatorFilterTestRequest("", "test@example.com"),
             [validator],
-            creator: creator
+            creator: creator,
+            cancellationToken: AbortToken
         );
         var next = _CreateNext();
 
@@ -335,7 +356,11 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
             _CreateMockValidator(new ValidationResult()),
             _CreateMockValidator(new ValidationResult()),
         };
-        var context = _CreateContext(new ValidatorFilterTestRequest("Name", "test@example.com"), validatorList);
+        var context = _CreateContext(
+            new ValidatorFilterTestRequest("Name", "test@example.com"),
+            validatorList,
+            cancellationToken: AbortToken
+        );
         var expectedResult = new object();
         var next = _CreateNext(expectedResult);
 
@@ -357,7 +382,11 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
         // given
         var filter = _CreateFilter<ValidatorFilterTestRequest>();
         var validator = _CreateMockValidator(new ValidationResult()); // IsValid = true
-        var context = _CreateContext(new ValidatorFilterTestRequest("Name", "test@example.com"), [validator]);
+        var context = _CreateContext(
+            new ValidatorFilterTestRequest("Name", "test@example.com"),
+            [validator],
+            cancellationToken: AbortToken
+        );
         var expectedResult = new object();
         var nextCalled = false;
 

@@ -100,7 +100,7 @@ public sealed class IgnoreCaseStringComparer : StringComparer
     /// </summary>
     /// <param name="obj">The string to hash. A <see langword="null"/> value yields a hash code of <c>0</c>.</param>
     /// <returns>A hash code based on the symbol content of <paramref name="obj"/>.</returns>
-    public override int GetHashCode(string obj)
+    public override int GetHashCode(string? obj)
     {
         if (obj is null)
         {

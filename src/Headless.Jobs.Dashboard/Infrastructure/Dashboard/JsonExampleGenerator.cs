@@ -84,7 +84,7 @@ internal static class JsonExampleGenerator
             TypeCode.Int16 => (short)1,
             TypeCode.Int32 => 123,
             TypeCode.Int64 => 123L,
-            TypeCode.Object => Activator.CreateInstance(type)!,
+            TypeCode.Object => Activator.CreateInstance(type),
             TypeCode.SByte => (sbyte)1,
             TypeCode.Single => 123.45f,
             TypeCode.String => "string",

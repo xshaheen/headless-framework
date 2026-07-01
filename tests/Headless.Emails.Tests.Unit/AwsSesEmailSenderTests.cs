@@ -57,7 +57,7 @@ public sealed class AwsSesEmailSenderTests
                 Arg.Do<SendEmailRequest>(r =>
                 {
                     captured = r;
-                    if (r.Content.Raw?.Data is MemoryStream ms)
+                    if (r.Content.Raw?.Data is { } ms)
                     {
                         rawBytes = ms.ToArray();
                     }

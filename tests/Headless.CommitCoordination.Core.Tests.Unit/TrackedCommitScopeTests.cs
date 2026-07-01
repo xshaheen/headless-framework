@@ -1,11 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.CommitCoordination;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
-public sealed class TrackedCommitScopeTests
+public sealed class TrackedCommitScopeTests : TestBase
 {
     [Fact]
     public async Task should_not_dispose_owned_services_on_redundant_signal_while_claiming_drain_is_in_flight()
@@ -87,7 +88,7 @@ public sealed class TrackedCommitScopeTests
         tracked.Dispose();
 #pragma warning restore VSTHRD103
 
-        await drainFinished.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await drainFinished.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
         drainResolveFailure.Should().BeNull("the offloaded rollback drain runs before the owned scope is disposed");
 
         // The abandon cleanup disposes the owned scope after the offloaded drain; wait for the transfer to land.

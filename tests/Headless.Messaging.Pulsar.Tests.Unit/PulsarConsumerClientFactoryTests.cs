@@ -32,7 +32,7 @@ public sealed class PulsarConsumerClientFactoryTests : TestBase
     public async Task should_throw_broker_connection_exception_on_connection_failure()
     {
         // given
-        _connectionFactory.RentClient().Throws(new InvalidOperationException("Connection failed"));
+        _connectionFactory.RentClientAsync().ThrowsAsync(new InvalidOperationException("Connection failed"));
         var factory = new PulsarConsumerClientFactory(_connectionFactory, _loggerFactory, _options);
 
         // when
@@ -47,7 +47,7 @@ public sealed class PulsarConsumerClientFactoryTests : TestBase
     {
         // given
         var innerException = new InvalidOperationException("Connection failed");
-        _connectionFactory.RentClient().Throws(innerException);
+        _connectionFactory.RentClientAsync().ThrowsAsync(innerException);
         var factory = new PulsarConsumerClientFactory(_connectionFactory, _loggerFactory, _options);
 
         // when
@@ -95,7 +95,7 @@ public sealed class PulsarConsumerClientFactoryTests : TestBase
     public async Task should_call_rent_client_when_creating_consumer()
     {
         // given - RentClient will throw since we can't mock PulsarClient
-        _connectionFactory.RentClient().Throws(new InvalidOperationException("Cannot mock PulsarClient"));
+        _connectionFactory.RentClientAsync().ThrowsAsync(new InvalidOperationException("Cannot mock PulsarClient"));
         var factory = new PulsarConsumerClientFactory(_connectionFactory, _loggerFactory, _options);
 
         // when
@@ -109,6 +109,6 @@ public sealed class PulsarConsumerClientFactoryTests : TestBase
         }
 
         // then
-        _connectionFactory.Received(1).RentClient();
+        await _connectionFactory.Received(1).RentClientAsync();
     }
 }

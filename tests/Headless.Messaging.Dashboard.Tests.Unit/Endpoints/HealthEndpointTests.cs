@@ -18,15 +18,15 @@ public sealed class HealthEndpointTests : TestBase
     {
         // given
         await using var app = _CreateTestApp();
-        await app.StartAsync();
+        await app.StartAsync(AbortToken);
         using var client = app.GetTestClient();
 
         // when
-        var response = await client.GetAsync("/api/health");
+        var response = await client.GetAsync("/api/health", AbortToken);
 
         // then
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
-        var body = await response.Content.ReadAsStringAsync();
+        var body = await response.Content.ReadAsStringAsync(AbortToken);
         body.Should().Be("OK");
     }
 
@@ -35,15 +35,15 @@ public sealed class HealthEndpointTests : TestBase
     {
         // given - no auth header set
         await using var app = _CreateTestApp();
-        await app.StartAsync();
+        await app.StartAsync(AbortToken);
         using var client = app.GetTestClient();
 
         // when
-        var response = await client.GetAsync("/api/health");
+        var response = await client.GetAsync("/api/health", AbortToken);
 
         // then - should succeed without auth
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
-        var body = await response.Content.ReadAsStringAsync();
+        var body = await response.Content.ReadAsStringAsync(AbortToken);
         body.Should().Be("OK");
     }
 

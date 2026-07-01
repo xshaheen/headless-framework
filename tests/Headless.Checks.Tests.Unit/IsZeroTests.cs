@@ -18,7 +18,7 @@ public sealed class IsZeroTests
     [Fact]
     public void is_zero_should_throw_when_not_zero()
     {
-        var value = 5;
+        const int value = 5;
         var action = () => Argument.IsZero(value);
 
         action
@@ -55,7 +55,7 @@ public sealed class IsZeroTests
     [Fact]
     public void is_not_zero_should_throw_when_zero()
     {
-        var value = 0;
+        const int value = 0;
         var action = () => Argument.IsNotZero(value);
 
         action

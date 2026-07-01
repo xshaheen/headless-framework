@@ -15,12 +15,13 @@ using Headless.Blobs.Aws;
 using Headless.Blobs.Azure;
 using Headless.Blobs.CloudflareR2;
 using Headless.Blobs.FileSystem;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Tests;
 
-public sealed class MultiProviderIsolationTests
+public sealed class MultiProviderIsolationTests : TestBase
 {
     private static AWSOptions _DummyAwsOptions() =>
         new() { Region = RegionEndpoint.USEast1, Credentials = new BasicAWSCredentials("k", "s") };
@@ -115,12 +116,12 @@ public sealed class MultiProviderIsolationTests
         string[] container = ["bucket"];
 
         // when
-        await defaultStorage.UploadContentAsync(container, "a.txt", "hello");
+        await defaultStorage.UploadContentAsync(container, "a.txt", "hello", cancellationToken: AbortToken);
 
         // then
-        (await defaultStorage.GetBlobContentAsync(container, "a.txt"))
+        (await defaultStorage.GetBlobContentAsync(container, "a.txt", cancellationToken: AbortToken))
             .Should()
             .Be("hello");
-        (await scratch.GetBlobContentAsync(container, "a.txt")).Should().BeNull();
+        (await scratch.GetBlobContentAsync(container, "a.txt", cancellationToken: AbortToken)).Should().BeNull();
     }
 }

@@ -154,7 +154,7 @@ public sealed class UrlBuildingTests
     [Fact]
     public void should_remove_query_params_by_enumerable()
     {
-        var url = "http://www.mysite.com/more?x=1&y=2&z=3".RemoveQueryParams(new[] { "x", "z" });
+        var url = "http://www.mysite.com/more?x=1&y=2&z=3".RemoveQueryParams(["x", "z"]);
         url.ToString().Should().Be("http://www.mysite.com/more?y=2");
     }
 

@@ -92,7 +92,7 @@ public sealed class RedisCacheEntryFrameTests
         var decoded = _Decode(encoded);
 
         (encoded[2] & _HasSlidingExpirationFlag).Should().Be(0);
-        encoded.Length.Should().Be(_HeaderLength + Encoding.UTF8.GetByteCount("value"));
+        encoded.Should().HaveCount(_HeaderLength + Encoding.UTF8.GetByteCount("value"));
         encoded.AsSpan(_HeaderLength).ToArray().Should().Equal(Encoding.UTF8.GetBytes("value"));
         decoded.SlidingExpiration.Should().BeNull();
         decoded.ValueSegment.ToArray().Should().Equal(Encoding.UTF8.GetBytes("value"));
@@ -245,7 +245,7 @@ public sealed class RedisCacheEntryFrameTests
         var decoded = _Decode(encoded);
 
         (encoded[2] & _HasTagsFlag).Should().Be(0);
-        encoded.Length.Should().Be(_HeaderLength + Encoding.UTF8.GetByteCount("value"));
+        encoded.Should().HaveCount(_HeaderLength + Encoding.UTF8.GetByteCount("value"));
         decoded.Tags.Should().BeNull();
         decoded.ValueSegment.ToArray().Should().Equal(Encoding.UTF8.GetBytes("value"));
     }

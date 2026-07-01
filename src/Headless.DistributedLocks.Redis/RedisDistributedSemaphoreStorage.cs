@@ -70,15 +70,15 @@ public sealed class RedisDistributedSemaphoreStorage(
         CancellationToken cancellationToken = default
     )
     {
-        var keys = _GetKeys(resource);
+        var (holdersKey, fenceKey) = _GetKeys(resource);
         Argument.IsNotNullOrEmpty(leaseId);
         Argument.IsGreaterThanOrEqualTo(maxCount, 1);
         Argument.IsGreaterThan(ttl, TimeSpan.Zero);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var result = await _TryAcquireSemaphoreAsync(
-                keys.HoldersKey,
-                keys.FenceKey,
+        var (acquired, resultFencingToken) = await _TryAcquireSemaphoreAsync(
+                holdersKey,
+                fenceKey,
                 leaseId,
                 maxCount,
                 ttl,
@@ -86,8 +86,8 @@ public sealed class RedisDistributedSemaphoreStorage(
             )
             .ConfigureAwait(false);
 
-        return result.Acquired
-            ? new DistributedLockAcquireResult(Acquired: true, result.FencingToken)
+        return acquired
+            ? new DistributedLockAcquireResult(Acquired: true, resultFencingToken)
             : DistributedLockAcquireResult.Failed;
     }
 
@@ -113,7 +113,7 @@ public sealed class RedisDistributedSemaphoreStorage(
         CancellationToken cancellationToken = default
     )
     {
-        var keys = _GetKeys(resource);
+        var (holdersKey, _) = _GetKeys(resource);
         Argument.IsNotNullOrEmpty(leaseId);
         Argument.IsGreaterThan(ttl, TimeSpan.Zero);
         cancellationToken.ThrowIfCancellationRequested();
@@ -122,7 +122,7 @@ public sealed class RedisDistributedSemaphoreStorage(
             .EvaluateAsync(
                 Db,
                 TryExtendSemaphoreScriptDefinition.Instance,
-                _GetSemaphoreSlotParameters(keys.HoldersKey, leaseId, ttl),
+                _GetSemaphoreSlotParameters(holdersKey, leaseId, ttl),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -149,7 +149,7 @@ public sealed class RedisDistributedSemaphoreStorage(
         CancellationToken cancellationToken = default
     )
     {
-        var keys = _GetKeys(resource);
+        var (holdersKey, _) = _GetKeys(resource);
         Argument.IsNotNullOrEmpty(leaseId);
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -157,7 +157,7 @@ public sealed class RedisDistributedSemaphoreStorage(
             .EvaluateAsync(
                 Db,
                 ValidateSemaphoreScriptDefinition.Instance,
-                _GetSemaphoreSlotParameters(keys.HoldersKey, leaseId, ttl: null),
+                _GetSemaphoreSlotParameters(holdersKey, leaseId, ttl: null),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -183,7 +183,7 @@ public sealed class RedisDistributedSemaphoreStorage(
         CancellationToken cancellationToken = default
     )
     {
-        var keys = _GetKeys(resource);
+        var (holdersKey, _) = _GetKeys(resource);
         Argument.IsNotNullOrEmpty(leaseId);
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -191,7 +191,7 @@ public sealed class RedisDistributedSemaphoreStorage(
             .EvaluateAsync(
                 Db,
                 ReleaseSemaphoreScriptDefinition.Instance,
-                _GetSemaphoreSlotParameters(keys.HoldersKey, leaseId, ttl: null),
+                _GetSemaphoreSlotParameters(holdersKey, leaseId, ttl: null),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -213,14 +213,14 @@ public sealed class RedisDistributedSemaphoreStorage(
     /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is already cancelled.</exception>
     public async ValueTask<long> GetCountAsync(string resource, CancellationToken cancellationToken = default)
     {
-        var keys = _GetKeys(resource);
+        var (holdersKey, _) = _GetKeys(resource);
         cancellationToken.ThrowIfCancellationRequested();
 
         var result = await scriptsLoader
             .EvaluateAsync(
                 Db,
                 GetSemaphoreCountScriptDefinition.Instance,
-                new SemaphoreCountParams(keys.HoldersKey),
+                new SemaphoreCountParams(holdersKey),
                 cancellationToken
             )
             .ConfigureAwait(false);

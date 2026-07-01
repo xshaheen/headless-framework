@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Messaging.Registration;
 
 namespace Headless.Messaging.AzureServiceBus;
 

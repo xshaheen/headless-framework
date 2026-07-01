@@ -9,7 +9,7 @@ namespace Headless.Jobs.Temps;
 /// No-operation implementation of IJobsDispatcher.
 /// Used when background services are disabled (queue-only mode).
 /// </summary>
-internal class NoOpJobsDispatcher : IJobsDispatcher
+internal sealed class NoOpJobsDispatcher : IJobsDispatcher
 {
     public bool IsEnabled => false;
 

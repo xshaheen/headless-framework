@@ -93,7 +93,7 @@ internal sealed class JobsInitializationHostedService(
         // Seeding pipeline
         var options = executionContext.OptionsSeeding;
 
-        if (options is null || options.SeedDefinedCronJobs)
+        if (options?.SeedDefinedCronJobs != false)
         {
             await SeedDefinedCronJobsAsync(schedulerOptions, cancellationToken).ConfigureAwait(false);
         }

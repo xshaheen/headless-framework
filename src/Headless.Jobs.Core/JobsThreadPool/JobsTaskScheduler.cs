@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.Globalization;
+using System.Text;
 using Headless.Checks;
 using Headless.Jobs.Enums;
 
@@ -195,7 +197,7 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
             var thread = new Thread(() => _WorkerLoop(workerId))
             {
                 IsBackground = true,
-                Name = $"Headless.Jobs.Worker-{workerId}",
+                Name = $"Headless.Jobs.Worker-{workerId.ToString(CultureInfo.InvariantCulture)}",
             };
             thread.Start();
 
@@ -216,8 +218,10 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
 
         try
         {
-            // Run the async worker loop
+            // Run the async worker loop on the dedicated worker thread.
+#pragma warning disable MA0045 // ThreadStart is sync; the async loop is intentionally bridged here.
             Task.Run(async () => await _WorkerLoopCoreAsync(workerId).ConfigureAwait(false)).GetAwaiter().GetResult();
+#pragma warning restore MA0045
         }
         finally
         {
@@ -235,11 +239,10 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
 
         while (!_shutdownCts.Token.IsCancellationRequested && !_disposed)
         {
-            WorkItem workItem;
             var foundWork = false;
 
             // 1. Try local queue first (fastest path)
-            if (localQueue.TryDequeue(out workItem))
+            if (localQueue.TryDequeue(out var workItem))
             {
                 foundWork = true;
                 consecutiveStealFailures = 0;
@@ -501,11 +504,15 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
     /// </summary>
     public string GetDiagnostics()
     {
-        var text = "=== Jobs Work-Stealing Scheduler ===\n";
-        text += $"Status: {(_isFrozen ? "FROZEN" : (_disposed ? "DISPOSED" : "ACTIVE"))}\n";
-        text += $"Workers: {_activeWorkers}/{_maxConcurrency}\n";
-        text += $"Total Queued (counter): {_totalQueuedTasks}\n\n";
-        text += "Queue Distribution:\n";
+        var builder = new StringBuilder();
+        builder.Append("=== Jobs Work-Stealing Scheduler ===\n");
+        builder.Append(
+            CultureInfo.InvariantCulture,
+            $"Status: {(_isFrozen ? "FROZEN" : (_disposed ? "DISPOSED" : "ACTIVE"))}\n"
+        );
+        builder.Append(CultureInfo.InvariantCulture, $"Workers: {_activeWorkers}/{_maxConcurrency}\n");
+        builder.Append(CultureInfo.InvariantCulture, $"Total Queued (counter): {_totalQueuedTasks}\n\n");
+        builder.Append("Queue Distribution:\n");
 
         var totalInQueues = 0;
         for (var i = 0; i < _maxConcurrency; i++)
@@ -514,26 +521,29 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
             totalInQueues += count;
             if (count > 0)
             {
-                text += $"  Queue[{i}]: {count} tasks\n";
+                builder.Append(CultureInfo.InvariantCulture, $"  Queue[{i}]: {count} tasks\n");
             }
         }
 
         if (totalInQueues == 0)
         {
-            text += "  All queues empty\n";
+            builder.Append("  All queues empty\n");
         }
         else
         {
-            text += $"  Total in queues: {totalInQueues}\n";
+            builder.Append(CultureInfo.InvariantCulture, $"  Total in queues: {totalInQueues}\n");
         }
 
         // Discrepancy check
         if (totalInQueues != _totalQueuedTasks)
         {
-            text += $"\n⚠️ DISCREPANCY: Counter shows {_totalQueuedTasks} but queues have {totalInQueues} tasks!\n";
+            builder.Append(
+                CultureInfo.InvariantCulture,
+                $"\n⚠️ DISCREPANCY: Counter shows {_totalQueuedTasks} but queues have {totalInQueues} tasks!\n"
+            );
         }
 
-        return text;
+        return builder.ToString();
     }
 
     /// <summary>

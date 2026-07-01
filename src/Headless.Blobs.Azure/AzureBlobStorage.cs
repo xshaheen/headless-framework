@@ -144,7 +144,7 @@ public sealed class AzureBlobStorage(
         // Materialize to an indexed list so each result lands in the slot matching its input position.
         // Parallel.ForEachAsync does not run bodies in enumeration order, so deriving the index from execution
         // order (e.g. via Interlocked) would misalign results with their inputs whenever parallelism > 1.
-        var items = blobs as IReadOnlyList<BlobUploadRequest> ?? blobs.ToList();
+        var items = blobs.AsIReadOnlyList();
         var results = new Result<Exception>[items.Count];
 
         var options = new ParallelOptions
@@ -253,7 +253,7 @@ public sealed class AzureBlobStorage(
         {
             // The whole container is missing, so every requested blob is simply "not found" -> Ok(false), matching
             // the per-blob not-found semantics of a single delete rather than reporting an operation failure.
-            return blobNames.Select(_ => Result<bool, Exception>.Ok(false)).ToList();
+            return blobNames.Select(_ => Result<bool, Exception>.Ok(value: false)).ToList();
         }
     }
 
@@ -266,12 +266,12 @@ public sealed class AzureBlobStorage(
     {
         if (!response.IsError)
         {
-            return Result<bool, Exception>.Ok(true);
+            return Result<bool, Exception>.Ok(value: true);
         }
 
         if (response.Status == 404)
         {
-            return Result<bool, Exception>.Ok(false);
+            return Result<bool, Exception>.Ok(value: false);
         }
 
         return Result<bool, Exception>.Fail(new RequestFailedException(response.Status, response.ReasonPhrase));

@@ -1,10 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Abstractions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace Headless.Core;
+namespace Headless.Abstractions;
 
 /// <summary>
 /// DI registration extensions for the framework GUID generator.

@@ -26,10 +26,10 @@ public sealed class SourceCodeBuilder
     private readonly StringBuilder _indentations;
     private const string _IndentationString = "    ";
 
-    private static readonly string[] _CachedIndentations = Enumerable
-        .Range(0, 11)
-        .Select(i => string.Concat(Enumerable.Repeat(_IndentationString, i)))
-        .ToArray();
+    private static readonly string[] _CachedIndentations =
+    [
+        .. Enumerable.Range(0, 11).Select(i => string.Concat(Enumerable.Repeat(_IndentationString, i))),
+    ];
 
     private bool _previousWasNewLine;
     private int? _savedPosition;

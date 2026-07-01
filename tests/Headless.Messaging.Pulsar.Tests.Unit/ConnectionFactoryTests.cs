@@ -11,14 +11,10 @@ namespace Tests;
 
 public sealed class ConnectionFactoryTests : TestBase
 {
-    private readonly ILogger<ConnectionFactory> _logger;
-    private readonly IOptions<MessagingPulsarOptions> _options;
-
-    public ConnectionFactoryTests()
-    {
-        _logger = NullLogger<ConnectionFactory>.Instance;
-        _options = Options.Create(new MessagingPulsarOptions { ServiceUrl = "pulsar://localhost:6650" });
-    }
+    private readonly ILogger<ConnectionFactory> _logger = NullLogger<ConnectionFactory>.Instance;
+    private readonly IOptions<MessagingPulsarOptions> _options = Options.Create(
+        new MessagingPulsarOptions { ServiceUrl = "pulsar://localhost:6650" }
+    );
 
     [Fact]
     public async Task should_have_correct_servers_address()
@@ -63,7 +59,7 @@ public sealed class ConnectionFactoryTests : TestBase
     public async Task should_dispose_without_error()
     {
         // given
-        var factory = new ConnectionFactory(_logger, _options);
+        await using var factory = new ConnectionFactory(_logger, _options);
 
         // when
         var act = async () => await factory.DisposeAsync();

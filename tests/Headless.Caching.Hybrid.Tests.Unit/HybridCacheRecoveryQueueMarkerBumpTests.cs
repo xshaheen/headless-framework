@@ -31,7 +31,7 @@ public sealed class HybridCacheRecoveryQueueMarkerBumpTests : TestBase
     public void on_successful_marker_bump_keeps_a_queued_newer_generation()
     {
         using var queue = _CreateQueue();
-        var key = "\0hybrid-marker:tag:orders";
+        const string key = "\0hybrid-marker:tag:orders";
         var tNew = _timeProvider.GetUtcNow();
         var tOld = tNew - TimeSpan.FromSeconds(10);
 
@@ -53,7 +53,7 @@ public sealed class HybridCacheRecoveryQueueMarkerBumpTests : TestBase
     public void on_incoming_flush_all_does_not_drop_a_queued_marker_bump()
     {
         using var queue = _CreateQueue();
-        var key = "\0hybrid-marker:clear";
+        const string key = "\0hybrid-marker:clear";
 
         _EnqueueMarkerBump(queue, key, _timeProvider.GetUtcNow());
         queue.Count.Should().Be(1);

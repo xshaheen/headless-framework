@@ -7,18 +7,12 @@ using Tests.Helpers;
 
 namespace Tests.IntegrationTests;
 
-public abstract class IntegrationTestBase : TestBase
+public abstract class IntegrationTestBase(ITestOutputHelper testOutput) : TestBase
 {
-    private readonly ITestOutputHelper _testOutput;
     protected CancellationTokenSource CancellationTokenSource { get; } = new(TimeSpan.FromSeconds(10));
     protected ServiceProvider Container { get; private set; } = null!;
     protected ObservableCollection<object> HandledMessages { get; } = [];
     protected IOutboxBus Publisher { get; private set; } = null!;
-
-    protected IntegrationTestBase(ITestOutputHelper testOutput)
-    {
-        _testOutput = testOutput;
-    }
 
     protected IServiceScope Scope { get; private set; } = null!;
 
@@ -27,7 +21,7 @@ public abstract class IntegrationTestBase : TestBase
     public override ValueTask InitializeAsync()
     {
         var services = new ServiceCollection();
-        services.AddTestSetup(_testOutput);
+        services.AddTestSetup(testOutput);
         services.AddSingleton(new MessageQueueMarkerService("Broker"));
         services.AddSingleton(new MessageStorageMarkerService("Storage"));
         services.AddSingleton(_ => new TestMessageCollector(HandledMessages));

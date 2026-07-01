@@ -155,7 +155,7 @@ public sealed class DistributedLockTests : TestBase
         // given
         var provider = _CreateProvider();
         var resource = Faker.Random.AlphaNumeric(10);
-        var guid = new Guid("00112233-4455-6677-8899-aabbccddeeff");
+        var guid = new Guid(0x00112233, 0x4455, 0x6677, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff);
         _guidGenerator.Create().Returns(guid);
 
         // when
@@ -479,7 +479,7 @@ public sealed class DistributedLockTests : TestBase
         var resource = Faker.Random.AlphaNumeric(10);
 
         // Pre-lock the resource
-        await _storage.InsertAsync(options.KeyPrefix + resource, "existing-lock", TimeSpan.FromMinutes(5));
+        await _storage.InsertAsync(options.KeyPrefix + resource, "existing-lock", TimeSpan.FromMinutes(5), AbortToken);
 
         // when - use zero timeout for immediate failure
         var result = await provider.TryAcquireAsync(
@@ -501,7 +501,7 @@ public sealed class DistributedLockTests : TestBase
         var resource = Faker.Random.AlphaNumeric(10);
 
         // Pre-lock the resource
-        await _storage.InsertAsync(options.KeyPrefix + resource, "existing-lock", TimeSpan.FromMinutes(5));
+        await _storage.InsertAsync(options.KeyPrefix + resource, "existing-lock", TimeSpan.FromMinutes(5), AbortToken);
 
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
@@ -586,7 +586,7 @@ public sealed class DistributedLockTests : TestBase
         var resource = Faker.Random.AlphaNumeric(10);
 
         // Pre-lock the resource
-        await _storage.InsertAsync(options.KeyPrefix + resource, "existing-lock", TimeSpan.FromMinutes(5));
+        await _storage.InsertAsync(options.KeyPrefix + resource, "existing-lock", TimeSpan.FromMinutes(5), AbortToken);
 
         var cts = new CancellationTokenSource();
         try
@@ -634,9 +634,9 @@ public sealed class DistributedLockTests : TestBase
         var provider = _CreateProvider(options);
 
         // Pre-lock different resources
-        await _storage.InsertAsync(options.KeyPrefix + "resource1", "lock1", TimeSpan.FromMinutes(5));
-        await _storage.InsertAsync(options.KeyPrefix + "resource2", "lock2", TimeSpan.FromMinutes(5));
-        await _storage.InsertAsync(options.KeyPrefix + "resource3", "lock3", TimeSpan.FromMinutes(5));
+        await _storage.InsertAsync(options.KeyPrefix + "resource1", "lock1", TimeSpan.FromMinutes(5), AbortToken);
+        await _storage.InsertAsync(options.KeyPrefix + "resource2", "lock2", TimeSpan.FromMinutes(5), AbortToken);
+        await _storage.InsertAsync(options.KeyPrefix + "resource3", "lock3", TimeSpan.FromMinutes(5), AbortToken);
 
         var cts = new CancellationTokenSource();
         try

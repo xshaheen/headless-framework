@@ -116,7 +116,7 @@ public sealed class PermissiveOperationsTests
         // then
         result.Should().NotBeNull();
         result.IsEmpty.Should().BeFalse();
-        result.Area.Should().BeGreaterThan(0);
+        result.Area.Should().BePositive();
     }
 
     [Fact]
@@ -252,7 +252,7 @@ public sealed class PermissiveOperationsTests
         result.Should().NotBeNull();
         result.IsEmpty.Should().BeFalse();
         result.Area.Should().BeLessThan(square1.Area);
-        result.Area.Should().BeGreaterThan(0);
+        result.Area.Should().BePositive();
     }
 
     [Fact]
@@ -319,7 +319,7 @@ public sealed class PermissiveOperationsTests
         // then
         result.Should().NotBeNull();
         result!.IsEmpty.Should().BeFalse();
-        result.Area.Should().BeGreaterThan(0);
+        result.Area.Should().BePositive();
     }
 
     [Fact]

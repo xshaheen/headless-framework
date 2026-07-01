@@ -8,7 +8,7 @@ using Headless.Jobs.Models;
 
 namespace Headless.Jobs.Managers;
 
-internal class InternalJobsManager<TTimeJob, TCronJob>(
+internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
     IJobPersistenceProvider<TTimeJob, TCronJob> persistenceProvider,
     TimeProvider timeProvider,
     IJobsNotificationHubSender notificationHubSender
@@ -145,47 +145,57 @@ internal class InternalJobsManager<TTimeJob, TCronJob>(
 
         await foreach (var updatedTimeJob in persistenceProvider.QueueTimeJobs(minTimeJobs, cancellationToken))
         {
-            results.Add(
-                new InternalFunctionContext
-                {
-                    FunctionName = updatedTimeJob.Function,
-                    JobId = updatedTimeJob.Id,
-                    Type = JobType.TimeJob,
-                    Retries = updatedTimeJob.Retries,
-                    RetryIntervals = updatedTimeJob.RetryIntervals,
-                    ParentId = updatedTimeJob.ParentId,
-                    ExecutionTime = updatedTimeJob.ExecutionTime ?? timeProvider.GetUtcNow().UtcDateTime,
-                    TimeJobChildren = updatedTimeJob
-                        .Children.Select(ch => new InternalFunctionContext
-                        {
-                            FunctionName = ch.Function,
-                            JobId = ch.Id,
-                            Type = JobType.TimeJob,
-                            Retries = ch.Retries,
-                            RetryIntervals = ch.RetryIntervals,
-                            ParentId = ch.ParentId,
-                            RunCondition = ch.RunCondition ?? RunCondition.OnAnyCompletedStatus,
-                            TimeJobChildren = ch
-                                .Children.Select(gch => new InternalFunctionContext
-                                {
-                                    FunctionName = gch.Function,
-                                    JobId = gch.Id,
-                                    Type = JobType.TimeJob,
-                                    Retries = gch.Retries,
-                                    RetryIntervals = gch.RetryIntervals,
-                                    ParentId = gch.ParentId,
-                                    RunCondition = ch.RunCondition ?? RunCondition.OnAnyCompletedStatus,
-                                })
-                                .ToList(),
-                        })
-                        .ToList(),
-                }
-            );
+            results.Add(_BuildQueuedTimeJobContext(updatedTimeJob));
 
             await notificationHubSender.UpdateTimeJobNotifyAsync(updatedTimeJob).ConfigureAwait(false);
         }
 
-        return results.ToArray();
+        return [.. results];
+    }
+
+    private InternalFunctionContext _BuildQueuedTimeJobContext(TimeJobEntity timeJob)
+    {
+        var context = new InternalFunctionContext
+        {
+            FunctionName = timeJob.Function,
+            JobId = timeJob.Id,
+            Type = JobType.TimeJob,
+            Retries = timeJob.Retries,
+            RetryIntervals = timeJob.RetryIntervals,
+            ParentId = timeJob.ParentId,
+            ExecutionTime = timeJob.ExecutionTime ?? timeProvider.GetUtcNow().UtcDateTime,
+        };
+
+        foreach (var child in timeJob.Children)
+        {
+            var childContext = new InternalFunctionContext
+            {
+                FunctionName = child.Function,
+                JobId = child.Id,
+                Type = JobType.TimeJob,
+                Retries = child.Retries,
+                RetryIntervals = child.RetryIntervals,
+                ParentId = child.ParentId,
+                RunCondition = child.RunCondition ?? RunCondition.OnAnyCompletedStatus,
+            };
+
+            childContext.TimeJobChildren.AddRange(
+                child.Children.Select(grandChild => new InternalFunctionContext
+                {
+                    FunctionName = grandChild.Function,
+                    JobId = grandChild.Id,
+                    Type = JobType.TimeJob,
+                    Retries = grandChild.Retries,
+                    RetryIntervals = grandChild.RetryIntervals,
+                    ParentId = grandChild.ParentId,
+                    RunCondition = child.RunCondition ?? RunCondition.OnAnyCompletedStatus,
+                })
+            );
+
+            context.TimeJobChildren.Add(childContext);
+        }
+
+        return context;
     }
 
     private async Task<InternalFunctionContext[]> _QueueNextCronJobsAsync(
@@ -228,7 +238,7 @@ internal class InternalJobsManager<TTimeJob, TCronJob>(
             }
         }
 
-        return results.ToArray();
+        return [.. results];
     }
 
     private async Task<(DateTime Key, InternalManagerContext[] Items)?> _GetEarliestCronJobGroupAsync(
@@ -417,7 +427,7 @@ internal class InternalJobsManager<TTimeJob, TCronJob>(
     }
 
     public async Task ReleaseAcquiredResources(
-        InternalFunctionContext[] resources,
+        InternalFunctionContext[]? resources,
         CancellationToken cancellationToken = default
     )
     {
@@ -510,7 +520,7 @@ internal class InternalJobsManager<TTimeJob, TCronJob>(
         {
             await persistenceProvider
                 .UpdateTimeJobsWithUnifiedContext(
-                    resources.Select(x => x.JobId).ToArray(),
+                    [.. resources.Select(x => x.JobId)],
                     unifiedFunctionContext,
                     cancellationToken
                 )
@@ -559,42 +569,7 @@ internal class InternalJobsManager<TTimeJob, TCronJob>(
             var timedOutTimeJob in persistenceProvider.QueueTimedOutTimeJobs(cancellationToken).ConfigureAwait(false)
         )
         {
-            results.Add(
-                new InternalFunctionContext
-                {
-                    FunctionName = timedOutTimeJob.Function,
-                    JobId = timedOutTimeJob.Id,
-                    Type = JobType.TimeJob,
-                    Retries = timedOutTimeJob.Retries,
-                    RetryIntervals = timedOutTimeJob.RetryIntervals,
-                    ParentId = timedOutTimeJob.ParentId,
-                    ExecutionTime = timedOutTimeJob.ExecutionTime ?? timeProvider.GetUtcNow().UtcDateTime,
-                    TimeJobChildren = timedOutTimeJob
-                        .Children.Select(ch => new InternalFunctionContext
-                        {
-                            FunctionName = ch.Function,
-                            JobId = ch.Id,
-                            Type = JobType.TimeJob,
-                            Retries = ch.Retries,
-                            RetryIntervals = ch.RetryIntervals,
-                            ParentId = ch.ParentId,
-                            RunCondition = ch.RunCondition ?? RunCondition.OnAnyCompletedStatus,
-                            TimeJobChildren = ch
-                                .Children.Select(gch => new InternalFunctionContext
-                                {
-                                    FunctionName = gch.Function,
-                                    JobId = gch.Id,
-                                    Type = JobType.TimeJob,
-                                    Retries = gch.Retries,
-                                    RetryIntervals = gch.RetryIntervals,
-                                    ParentId = gch.ParentId,
-                                    RunCondition = ch.RunCondition ?? RunCondition.OnAnyCompletedStatus,
-                                })
-                                .ToList(),
-                        })
-                        .ToList(),
-                }
-            );
+            results.Add(_BuildQueuedTimeJobContext(timedOutTimeJob));
 
             await notificationHubSender.UpdateTimeJobNotifyAsync(timedOutTimeJob).ConfigureAwait(false);
         }
@@ -622,7 +597,7 @@ internal class InternalJobsManager<TTimeJob, TCronJob>(
                 .ConfigureAwait(false);
         }
 
-        return results.ToArray();
+        return [.. results];
     }
 
     public async Task MigrateDefinedCronJobs(

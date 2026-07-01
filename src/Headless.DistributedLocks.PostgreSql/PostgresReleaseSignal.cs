@@ -118,7 +118,7 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
         await using var command = connection.CreateCommand();
         command.CommandTimeout = _commandTimeoutSeconds;
         command.CommandText = $"SELECT pg_catalog.pg_notify('{_Channel}', @resource)";
-        command.Parameters.AddWithValue("resource", resource);
+        command.Parameters.AddWithValue(nameof(resource), resource);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 

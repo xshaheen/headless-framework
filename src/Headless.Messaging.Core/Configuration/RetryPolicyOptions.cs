@@ -136,7 +136,7 @@ public sealed class RetryPolicyOptions
     /// <para>
     /// Delivery is <b>at-least-once</b>: under broker redelivery, partial failures, or crash-recover
     /// this callback MAY fire more than once for the same message. The handler MUST be idempotent
-    /// — use <c>Message.GetId()</c> as the dedupe key. The framework makes best-effort to skip
+    /// — use <c>Message.Id</c> as the dedupe key. The framework makes best-effort to skip
     /// re-firing when storage proves the row is already in a terminal state, but does not
     /// guarantee single-fire under all broker semantics.
     /// </para>

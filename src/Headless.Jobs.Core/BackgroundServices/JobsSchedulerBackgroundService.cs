@@ -7,9 +7,10 @@ using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.JobsThreadPool;
 using Microsoft.Extensions.Hosting;
 
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Jobs.BackgroundServices;
 
-internal class JobsSchedulerBackgroundService : BackgroundService, IJobsHostScheduler
+internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsHostScheduler
 {
     private readonly RestartThrottleManager _restartThrottle;
     private readonly IInternalJobManager _internalJobsManager;
@@ -108,7 +109,7 @@ internal class JobsSchedulerBackgroundService : BackgroundService, IJobsHostSche
             }
             finally
             {
-                _executionContext.SetFunctions(null);
+                _executionContext.SetFunctions(functions: null);
                 _schedulerLoopCancellationTokenSource?.Dispose();
                 _schedulerLoopCancellationTokenSource = null;
             }
@@ -142,7 +143,9 @@ internal class JobsSchedulerBackgroundService : BackgroundService, IJobsHostSche
 
                             try
                             {
-                                await _taskHandler.ExecuteTaskAsync(function, false, ct).ConfigureAwait(false);
+                                await _taskHandler
+                                    .ExecuteTaskAsync(function, isDue: false, cancellationToken: ct)
+                                    .ConfigureAwait(false);
                             }
                             finally
                             {
@@ -154,7 +157,7 @@ internal class JobsSchedulerBackgroundService : BackgroundService, IJobsHostSche
                     );
                 }
 
-                _executionContext.SetFunctions(null);
+                _executionContext.SetFunctions(functions: null);
             }
 
             var (timeRemaining, functions) = await _internalJobsManager
@@ -167,8 +170,8 @@ internal class JobsSchedulerBackgroundService : BackgroundService, IJobsHostSche
             if (timeRemaining == Timeout.InfiniteTimeSpan || timeRemaining > TimeSpan.FromDays(1))
             {
                 sleepDuration = TimeSpan.FromDays(1);
-                _executionContext.SetNextPlannedOccurrence(null);
-                _executionContext.SetFunctions(null);
+                _executionContext.SetNextPlannedOccurrence(dt: null);
+                _executionContext.SetFunctions(functions: null);
             }
             else
             {
@@ -176,11 +179,10 @@ internal class JobsSchedulerBackgroundService : BackgroundService, IJobsHostSche
                 _executionContext.SetNextPlannedOccurrence(_timeProvider.GetUtcNow().UtcDateTime.Add(sleepDuration));
             }
 
-            var notify = _executionContext.NotifyCoreAction;
-            if (notify != null)
-            {
-                notify(_executionContext.GetNextPlannedOccurrence(), CoreNotifyActionType.NotifyNextOccurence);
-            }
+            _executionContext.NotifyCoreAction?.Invoke(
+                _executionContext.GetNextPlannedOccurrence(),
+                CoreNotifyActionType.NotifyNextOccurence
+            );
 
             await _timeProvider.Delay(sleepDuration, cancellationToken).ConfigureAwait(false);
         }

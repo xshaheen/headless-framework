@@ -144,7 +144,10 @@ internal static class RecordingTransportRecorder
                     {
                         foreach (var candidate in assembly.GetExportedTypes())
                         {
-                            if (candidate.FullName == name || candidate.Name == name)
+                            if (
+                                string.Equals(candidate.FullName, name, StringComparison.Ordinal)
+                                || string.Equals(candidate.Name, name, StringComparison.Ordinal)
+                            )
                             {
                                 return candidate;
                             }

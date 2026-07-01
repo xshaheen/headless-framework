@@ -72,11 +72,18 @@ public sealed class RedisDistributedLockStorage(
         var lockKey = _GetLockKey(key);
         var fenceKey = _GetFenceKey(key);
 
-        var result = await _TryAcquireLockAsync(Db, lockKey, fenceKey, leaseId, ttl, cancellationToken)
+        var (acquired, fencingToken) = await _TryAcquireLockAsync(
+                Db,
+                lockKey,
+                fenceKey,
+                leaseId,
+                ttl,
+                cancellationToken
+            )
             .ConfigureAwait(false);
 
-        return result.Acquired
-            ? new DistributedLockAcquireResult(Acquired: true, result.FencingToken)
+        return acquired
+            ? new DistributedLockAcquireResult(Acquired: true, fencingToken)
             : DistributedLockAcquireResult.Failed;
     }
 
@@ -360,7 +367,8 @@ public sealed class RedisDistributedLockStorage(
         )
         {
             var logicalKey = _TryGetLogicalKey(key);
-            if (logicalKey is not null && logicalKey.StartsWith(prefix, StringComparison.Ordinal))
+
+            if (logicalKey?.StartsWith(prefix, StringComparison.Ordinal) == true)
             {
                 count++;
             }
@@ -497,7 +505,7 @@ public sealed class RedisDistributedLockStorage(
         {
             var value = await valueTask.ConfigureAwait(false);
             var logicalKey = _TryGetLogicalKey(key);
-            if (value.HasValue && logicalKey is not null && logicalKey.StartsWith(prefix, StringComparison.Ordinal))
+            if (value.HasValue && logicalKey?.StartsWith(prefix, StringComparison.Ordinal) == true)
             {
                 result[logicalKey] = value.ToString();
             }
@@ -533,7 +541,8 @@ public sealed class RedisDistributedLockStorage(
         {
             var value = await valueTask.ConfigureAwait(false);
             var logicalKey = _TryGetLogicalKey(key);
-            if (value.HasValue && logicalKey is not null && logicalKey.StartsWith(prefix, StringComparison.Ordinal))
+
+            if (value.HasValue && logicalKey?.StartsWith(prefix, StringComparison.Ordinal) == true)
             {
                 var ttl = await ttlTask.ConfigureAwait(false);
                 result[logicalKey] = (value.ToString(), ttl);

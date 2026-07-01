@@ -30,12 +30,12 @@ public sealed class RedisDistributedLockStorageTests(RedisTestFixture fixture) :
         var leaseId = Guid.NewGuid().ToString("N");
 
         // when
-        var result = await fixture.LockStorage.InsertAsync(key, leaseId, TimeSpan.FromMinutes(5));
+        var result = await fixture.LockStorage.InsertAsync(key, leaseId, TimeSpan.FromMinutes(5), AbortToken);
 
         // then
         result.Acquired.Should().BeTrue();
         result.FencingToken.Should().Be(1);
-        var stored = await fixture.LockStorage.GetAsync(key);
+        var stored = await fixture.LockStorage.GetAsync(key, AbortToken);
         stored.Should().Be(leaseId);
     }
 
@@ -46,15 +46,15 @@ public sealed class RedisDistributedLockStorageTests(RedisTestFixture fixture) :
         var key = $"lock:{Faker.Random.AlphaNumeric(10)}";
         var originalLockId = Guid.NewGuid().ToString("N");
         var newLockId = Guid.NewGuid().ToString("N");
-        await fixture.LockStorage.InsertAsync(key, originalLockId, TimeSpan.FromMinutes(5));
+        await fixture.LockStorage.InsertAsync(key, originalLockId, TimeSpan.FromMinutes(5), AbortToken);
 
         // when
-        var result = await fixture.LockStorage.InsertAsync(key, newLockId, TimeSpan.FromMinutes(5));
+        var result = await fixture.LockStorage.InsertAsync(key, newLockId, TimeSpan.FromMinutes(5), AbortToken);
 
         // then
         result.Acquired.Should().BeFalse();
         result.FencingToken.Should().BeNull();
-        var stored = await fixture.LockStorage.GetAsync(key);
+        var stored = await fixture.LockStorage.GetAsync(key, AbortToken);
         stored.Should().Be(originalLockId);
     }
 
@@ -68,10 +68,10 @@ public sealed class RedisDistributedLockStorageTests(RedisTestFixture fixture) :
         var secondLockId = Guid.NewGuid().ToString("N");
 
         // when
-        var first = await fixture.LockStorage.InsertAsync(key, firstLockId, TimeSpan.FromMinutes(5));
-        var failed = await fixture.LockStorage.InsertAsync(key, failedLockId, TimeSpan.FromMinutes(5));
-        await fixture.LockStorage.RemoveIfEqualAsync(key, firstLockId);
-        var second = await fixture.LockStorage.InsertAsync(key, secondLockId, TimeSpan.FromMinutes(5));
+        var first = await fixture.LockStorage.InsertAsync(key, firstLockId, TimeSpan.FromMinutes(5), AbortToken);
+        var failed = await fixture.LockStorage.InsertAsync(key, failedLockId, TimeSpan.FromMinutes(5), AbortToken);
+        await fixture.LockStorage.RemoveIfEqualAsync(key, firstLockId, AbortToken);
+        var second = await fixture.LockStorage.InsertAsync(key, secondLockId, TimeSpan.FromMinutes(5), AbortToken);
 
         // then
         first.FencingToken.Should().Be(1);
@@ -88,7 +88,7 @@ public sealed class RedisDistributedLockStorageTests(RedisTestFixture fixture) :
         var leaseId = Guid.NewGuid().ToString("N");
 
         // when
-        var result = await fixture.LockStorage.InsertAsync(key, leaseId, TimeSpan.FromMinutes(5));
+        var result = await fixture.LockStorage.InsertAsync(key, leaseId, TimeSpan.FromMinutes(5), AbortToken);
 
         // then
         result.Acquired.Should().BeTrue();
@@ -107,12 +107,12 @@ public sealed class RedisDistributedLockStorageTests(RedisTestFixture fixture) :
         var leaseId = Guid.NewGuid().ToString("N");
 
         // when
-        var result = await fixture.LockStorage.InsertAsync(key, leaseId, TimeSpan.FromMinutes(5));
+        var result = await fixture.LockStorage.InsertAsync(key, leaseId, TimeSpan.FromMinutes(5), AbortToken);
 
         // then
         result.Acquired.Should().BeTrue();
-        (await fixture.LockStorage.GetAsync(key)).Should().Be(leaseId);
-        (await fixture.LockStorage.RemoveIfEqualAsync(key, leaseId)).Should().BeTrue();
+        (await fixture.LockStorage.GetAsync(key, AbortToken)).Should().Be(leaseId);
+        (await fixture.LockStorage.RemoveIfEqualAsync(key, leaseId, AbortToken)).Should().BeTrue();
     }
 
     [Fact]
@@ -126,12 +126,14 @@ public sealed class RedisDistributedLockStorageTests(RedisTestFixture fixture) :
         var first = await fixture.LockStorage.InsertAsync(
             firstKey,
             Guid.NewGuid().ToString("N"),
-            TimeSpan.FromMinutes(5)
+            TimeSpan.FromMinutes(5),
+            AbortToken
         );
         var second = await fixture.LockStorage.InsertAsync(
             secondKey,
             Guid.NewGuid().ToString("N"),
-            TimeSpan.FromMinutes(5)
+            TimeSpan.FromMinutes(5),
+            AbortToken
         );
 
         // then
@@ -163,7 +165,7 @@ public sealed class RedisDistributedLockStorageTests(RedisTestFixture fixture) :
 
         // then - only one should succeed
         successCount.Should().Be(1);
-        var stored = await fixture.LockStorage.GetAsync(key);
+        var stored = await fixture.LockStorage.GetAsync(key, AbortToken);
         stored.Should().NotBeNullOrEmpty();
         lockIds.Should().Contain(stored!);
     }
@@ -181,10 +183,10 @@ public sealed class RedisDistributedLockStorageTests(RedisTestFixture fixture) :
         var ttl = TimeSpan.FromMinutes(5);
 
         // when
-        await fixture.LockStorage.InsertAsync(key, leaseId, ttl);
+        await fixture.LockStorage.InsertAsync(key, leaseId, ttl, AbortToken);
 
         // then
-        var expiration = await fixture.LockStorage.GetExpirationAsync(key);
+        var expiration = await fixture.LockStorage.GetExpirationAsync(key, AbortToken);
         expiration.Should().NotBeNull();
         expiration!.Value.TotalMinutes.Should().BeGreaterThan(4);
         expiration.Value.TotalMinutes.Should().BeLessThanOrEqualTo(5);
@@ -197,13 +199,13 @@ public sealed class RedisDistributedLockStorageTests(RedisTestFixture fixture) :
         var key = $"lock:{Faker.Random.AlphaNumeric(10)}";
         var leaseId = Guid.NewGuid().ToString("N");
         var ttl = TimeSpan.FromMilliseconds(100);
-        await fixture.LockStorage.InsertAsync(key, leaseId, ttl);
+        await fixture.LockStorage.InsertAsync(key, leaseId, ttl, AbortToken);
 
         // when
-        await Task.Delay(200);
+        await Task.Delay(200, AbortToken);
 
         // then
-        var exists = await fixture.LockStorage.ExistsAsync(key);
+        var exists = await fixture.LockStorage.ExistsAsync(key, AbortToken);
         exists.Should().BeFalse();
     }
 
@@ -214,15 +216,15 @@ public sealed class RedisDistributedLockStorageTests(RedisTestFixture fixture) :
         var key = $"lock:{Faker.Random.AlphaNumeric(10)}";
         var lockId1 = Guid.NewGuid().ToString("N");
         var lockId2 = Guid.NewGuid().ToString("N");
-        await fixture.LockStorage.InsertAsync(key, lockId1, TimeSpan.FromMilliseconds(100));
+        await fixture.LockStorage.InsertAsync(key, lockId1, TimeSpan.FromMilliseconds(100), AbortToken);
 
         // when - wait for expiration
-        await Task.Delay(200);
-        var result = await fixture.LockStorage.InsertAsync(key, lockId2, TimeSpan.FromMinutes(5));
+        await Task.Delay(200, AbortToken);
+        var result = await fixture.LockStorage.InsertAsync(key, lockId2, TimeSpan.FromMinutes(5), AbortToken);
 
         // then
         result.Acquired.Should().BeTrue();
-        var stored = await fixture.LockStorage.GetAsync(key);
+        var stored = await fixture.LockStorage.GetAsync(key, AbortToken);
         stored.Should().Be(lockId2);
     }
 
@@ -234,12 +236,12 @@ public sealed class RedisDistributedLockStorageTests(RedisTestFixture fixture) :
         var leaseId = Guid.NewGuid().ToString("N");
 
         // when
-        await fixture.LockStorage.InsertAsync(key, leaseId, ttl: null);
+        await fixture.LockStorage.InsertAsync(key, leaseId, ttl: null, AbortToken);
 
         // then
-        var expiration = await fixture.LockStorage.GetExpirationAsync(key);
+        var expiration = await fixture.LockStorage.GetExpirationAsync(key, AbortToken);
         expiration.Should().BeNull();
-        var exists = await fixture.LockStorage.ExistsAsync(key);
+        var exists = await fixture.LockStorage.ExistsAsync(key, AbortToken);
         exists.Should().BeTrue();
     }
 
@@ -253,14 +255,14 @@ public sealed class RedisDistributedLockStorageTests(RedisTestFixture fixture) :
         // given
         var key = $"lock:{Faker.Random.AlphaNumeric(10)}";
         var leaseId = Guid.NewGuid().ToString("N");
-        await fixture.LockStorage.InsertAsync(key, leaseId, TimeSpan.FromMinutes(5));
+        await fixture.LockStorage.InsertAsync(key, leaseId, TimeSpan.FromMinutes(5), AbortToken);
 
         // when
-        var result = await fixture.LockStorage.RemoveIfEqualAsync(key, leaseId);
+        var result = await fixture.LockStorage.RemoveIfEqualAsync(key, leaseId, AbortToken);
 
         // then
         result.Should().BeTrue();
-        var exists = await fixture.LockStorage.ExistsAsync(key);
+        var exists = await fixture.LockStorage.ExistsAsync(key, AbortToken);
         exists.Should().BeFalse();
     }
 
@@ -271,16 +273,16 @@ public sealed class RedisDistributedLockStorageTests(RedisTestFixture fixture) :
         var key = $"lock:{Faker.Random.AlphaNumeric(10)}";
         var leaseId = Guid.NewGuid().ToString("N");
         var wrongLockId = Guid.NewGuid().ToString("N");
-        await fixture.LockStorage.InsertAsync(key, leaseId, TimeSpan.FromMinutes(5));
+        await fixture.LockStorage.InsertAsync(key, leaseId, TimeSpan.FromMinutes(5), AbortToken);
 
         // when
-        var result = await fixture.LockStorage.RemoveIfEqualAsync(key, wrongLockId);
+        var result = await fixture.LockStorage.RemoveIfEqualAsync(key, wrongLockId, AbortToken);
 
         // then
         result.Should().BeFalse();
-        var exists = await fixture.LockStorage.ExistsAsync(key);
+        var exists = await fixture.LockStorage.ExistsAsync(key, AbortToken);
         exists.Should().BeTrue();
-        var stored = await fixture.LockStorage.GetAsync(key);
+        var stored = await fixture.LockStorage.GetAsync(key, AbortToken);
         stored.Should().Be(leaseId);
     }
 
@@ -292,7 +294,7 @@ public sealed class RedisDistributedLockStorageTests(RedisTestFixture fixture) :
         var leaseId = Guid.NewGuid().ToString("N");
 
         // when
-        var result = await fixture.LockStorage.RemoveIfEqualAsync(key, leaseId);
+        var result = await fixture.LockStorage.RemoveIfEqualAsync(key, leaseId, AbortToken);
 
         // then
         result.Should().BeFalse();
@@ -304,7 +306,7 @@ public sealed class RedisDistributedLockStorageTests(RedisTestFixture fixture) :
         // given - simulate concurrent removal attempts
         var key = $"lock:{Faker.Random.AlphaNumeric(10)}";
         var leaseId = Guid.NewGuid().ToString("N");
-        await fixture.LockStorage.InsertAsync(key, leaseId, TimeSpan.FromMinutes(5));
+        await fixture.LockStorage.InsertAsync(key, leaseId, TimeSpan.FromMinutes(5), AbortToken);
 
         var removeCount = 0;
 
@@ -337,14 +339,20 @@ public sealed class RedisDistributedLockStorageTests(RedisTestFixture fixture) :
         var key = $"lock:{Faker.Random.AlphaNumeric(10)}";
         var originalId = Guid.NewGuid().ToString("N");
         var newId = Guid.NewGuid().ToString("N");
-        await fixture.LockStorage.InsertAsync(key, originalId, TimeSpan.FromMinutes(5));
+        await fixture.LockStorage.InsertAsync(key, originalId, TimeSpan.FromMinutes(5), AbortToken);
 
         // when
-        var result = await fixture.LockStorage.ReplaceIfEqualAsync(key, originalId, newId, TimeSpan.FromMinutes(10));
+        var result = await fixture.LockStorage.ReplaceIfEqualAsync(
+            key,
+            originalId,
+            newId,
+            TimeSpan.FromMinutes(10),
+            AbortToken
+        );
 
         // then
         result.Should().BeTrue();
-        var stored = await fixture.LockStorage.GetAsync(key);
+        var stored = await fixture.LockStorage.GetAsync(key, AbortToken);
         stored.Should().Be(newId);
     }
 
@@ -356,19 +364,20 @@ public sealed class RedisDistributedLockStorageTests(RedisTestFixture fixture) :
         var originalId = Guid.NewGuid().ToString("N");
         var wrongExpectedId = Guid.NewGuid().ToString("N");
         var newId = Guid.NewGuid().ToString("N");
-        await fixture.LockStorage.InsertAsync(key, originalId, TimeSpan.FromMinutes(5));
+        await fixture.LockStorage.InsertAsync(key, originalId, TimeSpan.FromMinutes(5), AbortToken);
 
         // when
         var result = await fixture.LockStorage.ReplaceIfEqualAsync(
             key,
             wrongExpectedId,
             newId,
-            TimeSpan.FromMinutes(10)
+            TimeSpan.FromMinutes(10),
+            AbortToken
         );
 
         // then
         result.Should().BeFalse();
-        var stored = await fixture.LockStorage.GetAsync(key);
+        var stored = await fixture.LockStorage.GetAsync(key, AbortToken);
         stored.Should().Be(originalId);
     }
 
@@ -379,13 +388,13 @@ public sealed class RedisDistributedLockStorageTests(RedisTestFixture fixture) :
         var key = $"lock:{Faker.Random.AlphaNumeric(10)}";
         var originalId = Guid.NewGuid().ToString("N");
         var newId = Guid.NewGuid().ToString("N");
-        await fixture.LockStorage.InsertAsync(key, originalId, TimeSpan.FromMinutes(1));
+        await fixture.LockStorage.InsertAsync(key, originalId, TimeSpan.FromMinutes(1), AbortToken);
 
         // when
-        await fixture.LockStorage.ReplaceIfEqualAsync(key, originalId, newId, TimeSpan.FromMinutes(30));
+        await fixture.LockStorage.ReplaceIfEqualAsync(key, originalId, newId, TimeSpan.FromMinutes(30), AbortToken);
 
         // then
-        var expiration = await fixture.LockStorage.GetExpirationAsync(key);
+        var expiration = await fixture.LockStorage.GetExpirationAsync(key, AbortToken);
         expiration.Should().NotBeNull();
         expiration!.Value.TotalMinutes.Should().BeGreaterThan(25);
     }
@@ -403,11 +412,11 @@ public sealed class RedisDistributedLockStorageTests(RedisTestFixture fixture) :
         var key2 = $"{prefix}resource2";
         var lockId1 = Guid.NewGuid().ToString("N");
         var lockId2 = Guid.NewGuid().ToString("N");
-        await fixture.LockStorage.InsertAsync(key1, lockId1, TimeSpan.FromMinutes(5));
-        await fixture.LockStorage.InsertAsync(key2, lockId2, TimeSpan.FromMinutes(5));
+        await fixture.LockStorage.InsertAsync(key1, lockId1, TimeSpan.FromMinutes(5), AbortToken);
+        await fixture.LockStorage.InsertAsync(key2, lockId2, TimeSpan.FromMinutes(5), AbortToken);
 
         // when
-        var result = await fixture.LockStorage.GetAllByPrefixAsync(prefix);
+        var result = await fixture.LockStorage.GetAllByPrefixAsync(prefix, AbortToken);
 
         // then
         result.Should().HaveCount(2);
@@ -423,12 +432,12 @@ public sealed class RedisDistributedLockStorageTests(RedisTestFixture fixture) :
         var key1 = $"{prefix}resource1";
         var key2 = $"{prefix}resource2";
         var key3 = $"{prefix}resource3";
-        await fixture.LockStorage.InsertAsync(key1, "id1", TimeSpan.FromMinutes(5));
-        await fixture.LockStorage.InsertAsync(key2, "id2", TimeSpan.FromMinutes(5));
-        await fixture.LockStorage.InsertAsync(key3, "id3", TimeSpan.FromMinutes(5));
+        await fixture.LockStorage.InsertAsync(key1, "id1", TimeSpan.FromMinutes(5), AbortToken);
+        await fixture.LockStorage.InsertAsync(key2, "id2", TimeSpan.FromMinutes(5), AbortToken);
+        await fixture.LockStorage.InsertAsync(key3, "id3", TimeSpan.FromMinutes(5), AbortToken);
 
         // when
-        var count = await fixture.LockStorage.GetCountAsync(prefix);
+        var count = await fixture.LockStorage.GetCountAsync(prefix, AbortToken);
 
         // then
         count.Should().Be(3);

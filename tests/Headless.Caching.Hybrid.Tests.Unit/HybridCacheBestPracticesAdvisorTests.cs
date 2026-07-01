@@ -321,14 +321,12 @@ public sealed class HybridCacheBestPracticesAdvisorTests : TestBase
 
         logger
             .Warnings()
-            .Where(e =>
-                e.Name
-                    is "FailSafeMaxDurationNotBeyondDuration"
-                        or "FactorySoftTimeoutInertWithoutFailSafe"
-                        or "EagerRefreshThresholdTooHigh"
-            )
             .Should()
-            .BeEmpty();
+            .NotContain(e =>
+                e.Name == "FailSafeMaxDurationNotBeyondDuration"
+                || e.Name == "FactorySoftTimeoutInertWithoutFailSafe"
+                || e.Name == "EagerRefreshThresholdTooHigh"
+            );
     }
 
     // ────────────────────────────────────────────────────────────
@@ -418,6 +416,10 @@ internal sealed class CapturingLogger : ILogger<HybridCacheBestPracticesAdvisor>
 
     public IEnumerable<EventId> Warnings() => _entries.Where(e => e.Level == LogLevel.Warning).Select(e => e.Event);
 
-    public bool HasWarning(string eventName) =>
-        _entries.Any(e => e.Level == LogLevel.Warning && e.Event.Name == eventName);
+    public bool HasWarning(string eventName)
+    {
+        return _entries.Exists(e =>
+            e.Level == LogLevel.Warning && string.Equals(e.Event.Name, eventName, StringComparison.Ordinal)
+        );
+    }
 }

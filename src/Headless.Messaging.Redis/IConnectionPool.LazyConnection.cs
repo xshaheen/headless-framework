@@ -70,7 +70,12 @@ public class AsyncLazyRedisConnection(
 
         if (connection == null)
         {
-            throw new InvalidOperationException($"Can't establish redis connection,after [{attempt}] attempts.");
+            throw new InvalidOperationException(
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Can't establish redis connection,after [{attempt}] attempts."
+                )
+            );
         }
 
         return new RedisConnection(connection);

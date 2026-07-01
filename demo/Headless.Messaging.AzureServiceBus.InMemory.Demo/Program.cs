@@ -24,7 +24,7 @@ builder.Services.AddHeadlessMessaging(setup =>
                 new("IsFromSampleProject", "'true'"),
             ];
         };
-        asb.SqlFilters = [new("IsFromSampleProjectFilter", "IsFromSampleProject = 'true'")];
+        asb.SqlFilters.Add(new("IsFromSampleProjectFilter", "IsFromSampleProject = 'true'"));
 
         asb.ConfigureCustomProducer<EntityCreatedForIntegration>(cfg =>
             cfg.UseTopic("entity-created").WithSubscription()
@@ -75,4 +75,4 @@ app.MapGet(
     }
 );
 
-app.Run();
+await app.RunAsync();

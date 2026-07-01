@@ -3,6 +3,7 @@
 using Headless.CommitCoordination;
 using Headless.CommitCoordination.EntityFramework;
 using Headless.EntityFramework;
+using Headless.Testing.Tests;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,13 +16,13 @@ namespace Tests;
 /// deliberately NO AddInterceptors call; the test passes only when the registered IDbContextOptionsConfiguration
 /// wires the commit interceptor.
 /// </summary>
-public sealed class DiRegisteredInterceptorsConfigurationTests
+public sealed class DiRegisteredInterceptorsConfigurationTests : TestBase
 {
     [Fact]
     public async Task should_attach_di_interceptors_to_a_plain_add_dbcontext()
     {
         await using var connection = new SqliteConnection("DataSource=:memory:");
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
 
         var services = new ServiceCollection();
         services.AddLogging();
@@ -34,7 +35,7 @@ public sealed class DiRegisteredInterceptorsConfigurationTests
 
         await using (var setup = root.CreateAsyncScope())
         {
-            await setup.ServiceProvider.GetRequiredService<PlainDbContext>().Database.EnsureCreatedAsync();
+            await setup.ServiceProvider.GetRequiredService<PlainDbContext>().Database.EnsureCreatedAsync(AbortToken);
         }
 
         await using var scope = root.CreateAsyncScope();
@@ -57,7 +58,8 @@ public sealed class DiRegisteredInterceptorsConfigurationTests
                 ((PlainDbContext)ctx).Set<PlainRow>().Add(new PlainRow { Name = "x" });
                 await ctx.SaveChangesAsync(ct);
             },
-            scope.ServiceProvider
+            scope.ServiceProvider,
+            cancellationToken: AbortToken
         );
 
         drained

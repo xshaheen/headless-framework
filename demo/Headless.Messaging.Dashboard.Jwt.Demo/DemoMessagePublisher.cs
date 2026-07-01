@@ -87,7 +87,11 @@ public sealed class DemoMessagePublisher(IServiceScopeFactory scopeFactory, ILog
                     {
                         OrderId = _counter,
                         CustomerName = _CustomerNames[Random.Shared.Next(_CustomerNames.Length)],
-                        Amount = Math.Round((decimal)(Random.Shared.NextDouble() * 500 + 10), 2),
+                        Amount = Math.Round(
+                            (decimal)((Random.Shared.NextDouble() * 500) + 10),
+                            2,
+                            MidpointRounding.AwayFromZero
+                        ),
                     },
                     cancellationToken: ct
                 );
@@ -97,9 +101,13 @@ public sealed class DemoMessagePublisher(IServiceScopeFactory scopeFactory, ILog
                 await publisher.PublishAsync(
                     new PaymentProcessed
                     {
-                        PaymentId = $"PAY-{_counter:D6}",
+                        PaymentId = string.Create(CultureInfo.InvariantCulture, $"PAY-{_counter:D6}"),
                         OrderId = Random.Shared.Next(1, _counter + 1),
-                        Amount = Math.Round((decimal)(Random.Shared.NextDouble() * 500 + 10), 2),
+                        Amount = Math.Round(
+                            (decimal)((Random.Shared.NextDouble() * 500) + 10),
+                            2,
+                            MidpointRounding.AwayFromZero
+                        ),
                         Currency = _Currencies[Random.Shared.Next(_Currencies.Length)],
                     },
                     cancellationToken: ct
@@ -111,7 +119,7 @@ public sealed class DemoMessagePublisher(IServiceScopeFactory scopeFactory, ILog
                     new UserRegistered
                     {
                         UserId = Guid.NewGuid().ToString()[..8],
-                        Email = $"user{_counter}@example.com",
+                        Email = string.Create(CultureInfo.InvariantCulture, $"user{_counter}@example.com"),
                         Plan = _Plans[Random.Shared.Next(_Plans.Length)],
                     },
                     cancellationToken: ct

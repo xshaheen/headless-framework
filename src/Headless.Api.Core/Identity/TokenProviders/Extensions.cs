@@ -35,9 +35,8 @@ public static class IdentityBuilderExtensions
         }
 
         builder.Services.Configure<IdentityOptions>(identityOptions =>
-        {
-            identityOptions.Tokens.PasswordResetTokenProvider = options.Name;
-        });
+            identityOptions.Tokens.PasswordResetTokenProvider = options.Name
+        );
 
         builder.AddTokenProvider<PasswordResetTokenProvider<TUser>>(options.Name);
 
@@ -69,9 +68,8 @@ public static class IdentityBuilderExtensions
         builder.Services.TryAddSingleton<TotpRfc6238Generator>();
 
         builder.Services.Configure<IdentityOptions>(identityOptions =>
-        {
-            identityOptions.Tokens.PasswordResetTokenProvider = options.Name;
-        });
+            identityOptions.Tokens.PasswordResetTokenProvider = options.Name
+        );
 
         builder.AddTokenProvider<PasswordResetCodeProvider<TUser>>(options.Name);
 
@@ -105,9 +103,8 @@ public static class IdentityBuilderExtensions
         }
 
         builder.Services.Configure<IdentityOptions>(identityOptions =>
-        {
-            identityOptions.Tokens.EmailConfirmationTokenProvider = options.Name;
-        });
+            identityOptions.Tokens.EmailConfirmationTokenProvider = options.Name
+        );
 
         builder.AddTokenProvider<EmailConfirmationTokenProvider<TUser>>(options.Name);
 
@@ -139,9 +136,8 @@ public static class IdentityBuilderExtensions
         builder.Services.TryAddSingleton<TotpRfc6238Generator>();
 
         builder.Services.Configure<IdentityOptions>(identityOptions =>
-        {
-            identityOptions.Tokens.EmailConfirmationTokenProvider = options.Name;
-        });
+            identityOptions.Tokens.EmailConfirmationTokenProvider = options.Name
+        );
 
         builder.AddTokenProvider<EmailConfirmationCodeProvider<TUser>>(options.Name);
 

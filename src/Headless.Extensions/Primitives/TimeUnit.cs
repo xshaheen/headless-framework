@@ -83,7 +83,7 @@ public static class TimeUnit
             {
                 // Cast to long: 100-ns ticks above int.MaxValue (~214s) must not truncate.
                 return long.TryParse(trimmed[..^5], CultureInfo.InvariantCulture, out var nanoseconds)
-                    ? new TimeSpan((long)Math.Round(nanoseconds / 100d))
+                    ? new TimeSpan((long)Math.Round(nanoseconds / 100d, MidpointRounding.AwayFromZero))
                     : null;
             }
 

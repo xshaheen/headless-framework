@@ -139,7 +139,7 @@ public sealed class FeatureManager(
         }
 
         // Getting list for case of there are more than one provider with the same providerName
-        providers = providers.TakeWhile(p => string.Equals(p.Name, providerName, StringComparison.Ordinal)).ToList();
+        providers = [.. providers.TakeWhile(p => string.Equals(p.Name, providerName, StringComparison.Ordinal))];
 
         foreach (var provider in providers)
         {

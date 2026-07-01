@@ -136,7 +136,7 @@ public abstract class DataStorageTestsBase : TestBase
         // then
         result.Should().NotBeNull();
         result.StorageId.Should().NotBe(Guid.Empty);
-        result.Origin.GetId().Should().Be("non-numeric-id");
+        result.Origin.Id.Should().Be("non-numeric-id");
     }
 
     public virtual async Task should_store_published_message_with_intent_type()

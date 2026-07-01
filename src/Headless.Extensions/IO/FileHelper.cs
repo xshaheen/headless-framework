@@ -56,7 +56,7 @@ public static class FileHelper
 
         Directory.CreateDirectory(directoryPath);
 
-        var items = blobs as IReadOnlyList<(Stream BlobStream, string BlobName)> ?? blobs.ToList();
+        var items = blobs.AsIReadOnlyList();
         var results = new Result<Exception>[items.Count];
 
         // Bound concurrency so a large batch does not open unbounded FileStreams at once (amplified by the

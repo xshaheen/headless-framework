@@ -26,7 +26,7 @@ public sealed class HeadlessFeaturesSetupBuilder
 
     internal FeaturesStorageOptions StorageOptions { get; } = new();
 
-    internal IList<IFeaturesStorageOptionsExtension> Extensions { get; } = new List<IFeaturesStorageOptionsExtension>();
+    internal IList<IFeaturesStorageOptionsExtension> Extensions { get; } = [];
 
     /// <summary>Applies <paramref name="configure"/> to the shared <see cref="FeaturesStorageOptions"/> (schema names, table names, etc.).</summary>
     /// <param name="configure">A delegate that mutates the storage options.</param>

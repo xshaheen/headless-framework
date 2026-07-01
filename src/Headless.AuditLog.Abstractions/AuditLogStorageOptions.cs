@@ -10,7 +10,7 @@ namespace Headless.AuditLog;
 /// Configure these options via <see cref="HeadlessAuditLogSetupBuilder.ConfigureStorage"/> inside
 /// the <c>AddHeadlessAuditLog(setup =&gt; …)</c> lambda. The EF Core provider validates the schema
 /// and table name at startup; raw-SQL providers (PostgreSql, SqlServer) self-initialize the DDL
-/// unless <see cref="InitializeOnStartup"/> is set to <c>false</c>.
+/// unless <see cref="InitializeOnStartup"/> is set to <see langword="false"/>.
 /// </remarks>
 [PublicAPI]
 public sealed class AuditLogStorageOptions
@@ -27,7 +27,7 @@ public sealed class AuditLogStorageOptions
 
     /// <summary>
     /// Override the column type used for JSON columns (<c>OldValues</c>, <c>NewValues</c>,
-    /// <c>ChangedFields</c>). When <c>null</c>, each provider falls back to its own default:
+    /// <c>ChangedFields</c>). When <see langword="null"/>, each provider falls back to its own default:
     /// <see cref="AuditLogJsonColumnType.Jsonb"/> for PostgreSql and
     /// <see cref="AuditLogJsonColumnType.NvarcharMax"/> for SqlServer.
     /// </summary>
@@ -41,16 +41,16 @@ public sealed class AuditLogStorageOptions
     /// <summary>
     /// Override the SQL column type for the <c>CreatedAt</c> column (e.g.,
     /// <c>"timestamp with time zone"</c> for PostgreSql, <c>"datetime2"</c> for SqlServer).
-    /// When <c>null</c> or empty, the provider uses its own default mapping.
+    /// When <see langword="null"/> or empty, the provider uses its own default mapping.
     /// </summary>
     public string? CreatedAtColumnType { get; set; }
 
     /// <summary>
-    /// When <c>false</c>, the startup storage initializer is skipped — use when the schema is
+    /// When <see langword="false"/>, the startup storage initializer is skipped — use when the schema is
     /// provisioned out-of-band (migrations job / DBA). The initializer still reports
     /// <c>IsInitialized = true</c> so dependents that await <c>WaitForInitializationAsync</c>
     /// do not block. Only affects raw-DDL self-initializing providers; EF-mode storage uses
-    /// EF Core migrations and is not affected by this flag. Default: <c>true</c>.
+    /// EF Core migrations and is not affected by this flag. Default: <see langword="true"/>.
     /// </summary>
     public bool InitializeOnStartup { get; set; } = true;
 

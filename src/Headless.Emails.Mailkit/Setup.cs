@@ -187,7 +187,9 @@ public static class SetupMailkit
 
             services.AddSingleton<ObjectPool<SmtpClient>>(static sp =>
             {
-                var maxPoolSize = sp.GetRequiredService<IOptionsMonitor<MailkitSmtpOptions>>().Get(null).MaxPoolSize;
+                var maxPoolSize = sp.GetRequiredService<IOptionsMonitor<MailkitSmtpOptions>>()
+                    .Get(name: null)
+                    .MaxPoolSize;
                 var policy = sp.GetRequiredService<IPooledObjectPolicy<SmtpClient>>();
 
                 return new DefaultObjectPoolProvider { MaximumRetained = maxPoolSize }.Create(policy);

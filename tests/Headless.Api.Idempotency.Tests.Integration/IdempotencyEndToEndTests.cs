@@ -52,8 +52,8 @@ public sealed class IdempotencyEndToEndTests : TestBase
         var first = await _Post(client, "/echo", key: "k1", body: "abc");
         var second = await _Post(client, "/echo", key: "k1", body: "abc");
 
-        var firstBody = await first.Content.ReadAsStringAsync();
-        var secondBody = await second.Content.ReadAsStringAsync();
+        var firstBody = await first.Content.ReadAsStringAsync(AbortToken);
+        var secondBody = await second.Content.ReadAsStringAsync(AbortToken);
 
         secondBody.Should().Be(firstBody);
     }
@@ -73,7 +73,7 @@ public sealed class IdempotencyEndToEndTests : TestBase
 
         conflict.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
 
-        var json = await conflict.Content.ReadAsStringAsync();
+        var json = await conflict.Content.ReadAsStringAsync(AbortToken);
         json.Should().Contain("g:idempotency_key_reused");
     }
 
@@ -101,12 +101,12 @@ public sealed class IdempotencyEndToEndTests : TestBase
         using var client = IdempotencyTestApp.CreateClient(app);
 
         var first = await _Post(client, "/status?code=503", key: "k1", body: "");
-        first.StatusCode.Should().Be((HttpStatusCode)503);
+        first.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
         first.Headers.Contains(HttpHeaderNames.IdempotentReplayed).Should().BeFalse();
 
         // Retry — handler should run fresh (cache empty)
         var second = await _Post(client, "/status?code=503", key: "k1", body: "");
-        second.StatusCode.Should().Be((HttpStatusCode)503);
+        second.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
         second.Headers.Contains(HttpHeaderNames.IdempotentReplayed).Should().BeFalse();
     }
 
@@ -140,7 +140,7 @@ public sealed class IdempotencyEndToEndTests : TestBase
         var response = await _Post(client, "/echo", key: "k1", body: oversize);
 
         response.StatusCode.Should().Be(HttpStatusCode.RequestEntityTooLarge);
-        var json = await response.Content.ReadAsStringAsync();
+        var json = await response.Content.ReadAsStringAsync(AbortToken);
         json.Should().Contain("g:idempotency_body_too_large");
 
         // 413 is not in ASP.NET Core's default ApiBehaviorOptions.ClientErrorMapping, so the
@@ -171,8 +171,8 @@ public sealed class IdempotencyEndToEndTests : TestBase
         second.Headers.Contains(HttpHeaderNames.IdempotentReplayed).Should().BeFalse();
 
         // Per-invocation GUID in body proves handler ran each time (not replay)
-        var firstBody = await first.Content.ReadAsStringAsync();
-        var secondBody = await second.Content.ReadAsStringAsync();
+        var firstBody = await first.Content.ReadAsStringAsync(AbortToken);
+        var secondBody = await second.Content.ReadAsStringAsync(AbortToken);
         secondBody.Should().NotBe(firstBody);
     }
 
@@ -190,7 +190,8 @@ public sealed class IdempotencyEndToEndTests : TestBase
         replay.Headers.Contains(HttpHeaderNames.IdempotentReplayed).Should().BeTrue();
         replay.Headers.Contains("Set-Cookie").Should().BeFalse("Set-Cookie is not in the default allowlist");
         replay.Headers.Contains("traceparent").Should().BeFalse("traceparent is not in the default allowlist");
-        replay.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+        replay.Content.Headers.ContentType.Should().NotBeNull();
+        replay.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
     }
 
     // ── Pass-through: no key / unsupported method ────────────────────────────
@@ -330,7 +331,7 @@ public sealed class IdempotencyEndToEndTests : TestBase
         var loserTask = _Post(client, "/echo", key: "k1", body: "hello");
         // The loser must NOT complete while the winner is gated — it should be blocked on the
         // distributed lock. Give it half a second to confirm it's still pending.
-        await Task.Delay(500);
+        await Task.Delay(500, AbortToken);
         loserTask.IsCompleted.Should().BeFalse("loser is blocked on the WaitAndReplay lock");
 
         // Release the winner; both should now succeed, with the loser observing a byte-for-byte
@@ -427,14 +428,14 @@ public sealed class IdempotencyEndToEndTests : TestBase
 
         // Winner advances to one of two states: gated inside the race window (pre-fix) or
         // gated inside the handler (post-fix). Whichever fires first is enough to send the loser.
-        await Task.WhenAny(winnerInRaceWindow.Task, gate.WaitForInvocationsAsync(1, TimeSpan.FromSeconds(5)));
+        _ = await Task.WhenAny(winnerInRaceWindow.Task, gate.WaitForInvocationsAsync(1, TimeSpan.FromSeconds(5)));
 
         var loserTask = _Post(client, "/echo", key: "race-k", body: "hello");
 
         // Release both gates so the winner can finalize regardless of which path we hit.
         // releaseRaceWindow is harmless under post-fix (no waiter); gate.Release() is required
         // to unblock the handler so the winner finishes and the loser observes the Complete record.
-        await Task.Delay(200);
+        await Task.Delay(200, AbortToken);
         releaseRaceWindow.TrySetResult();
         gate.Release();
 
@@ -475,7 +476,7 @@ public sealed class IdempotencyEndToEndTests : TestBase
         var loser = await _Post(client, "/echo", key: "k1", body: "hello");
 
         loser.StatusCode.Should().Be(HttpStatusCode.Conflict);
-        var loserBody = await loser.Content.ReadAsStringAsync();
+        var loserBody = await loser.Content.ReadAsStringAsync(AbortToken);
         loserBody.Should().Contain("g:idempotency_in_flight_timeout");
 
         gate.Release();
@@ -505,8 +506,8 @@ public sealed class IdempotencyEndToEndTests : TestBase
         first.Headers.Contains(HttpHeaderNames.IdempotentReplayed).Should().BeFalse();
         second.Headers.Contains(HttpHeaderNames.IdempotentReplayed).Should().BeFalse();
 
-        var firstBody = await first.Content.ReadAsStringAsync();
-        var secondBody = await second.Content.ReadAsStringAsync();
+        var firstBody = await first.Content.ReadAsStringAsync(AbortToken);
+        var secondBody = await second.Content.ReadAsStringAsync(AbortToken);
         firstBody.Should().NotBe(secondBody, "no idempotency means each call runs the handler independently");
     }
 
@@ -534,8 +535,8 @@ public sealed class IdempotencyEndToEndTests : TestBase
         first.Headers.Contains(HttpHeaderNames.IdempotentReplayed).Should().BeFalse();
         second.Headers.Contains(HttpHeaderNames.IdempotentReplayed).Should().BeFalse();
 
-        var firstBody = await first.Content.ReadAsStringAsync();
-        var secondBody = await second.Content.ReadAsStringAsync();
+        var firstBody = await first.Content.ReadAsStringAsync(AbortToken);
+        var secondBody = await second.Content.ReadAsStringAsync(AbortToken);
         firstBody
             .Should()
             .NotBe(
@@ -571,8 +572,8 @@ public sealed class IdempotencyEndToEndTests : TestBase
             .Which.Should()
             .Be("true", "opt-in tenant-anon idempotency replays the original response");
 
-        var firstBody = await first.Content.ReadAsStringAsync();
-        var secondBody = await second.Content.ReadAsStringAsync();
+        var firstBody = await first.Content.ReadAsStringAsync(AbortToken);
+        var secondBody = await second.Content.ReadAsStringAsync(AbortToken);
         secondBody.Should().Be(firstBody, "replay must be byte-equivalent");
     }
 
@@ -650,8 +651,8 @@ public sealed class IdempotencyEndToEndTests : TestBase
         first.StatusCode.Should().Be(HttpStatusCode.Created);
         second.StatusCode.Should().Be(HttpStatusCode.Created);
 
-        var firstBody = await first.Content.ReadAsStringAsync();
-        var secondBody = await second.Content.ReadAsStringAsync();
+        var firstBody = await first.Content.ReadAsStringAsync(AbortToken);
+        var secondBody = await second.Content.ReadAsStringAsync(AbortToken);
 
         secondBody
             .Should()
@@ -791,7 +792,7 @@ public sealed class IdempotencyEndToEndTests : TestBase
         var loser = await _Post(client, "/echo", key: "lock-loser-fail", body: "hello");
 
         loser.StatusCode.Should().Be(HttpStatusCode.Conflict);
-        var loserBody = await loser.Content.ReadAsStringAsync();
+        var loserBody = await loser.Content.ReadAsStringAsync(AbortToken);
         loserBody.Should().Contain("g:idempotency_in_flight_timeout");
 
         gate.Release();

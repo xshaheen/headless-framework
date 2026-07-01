@@ -203,7 +203,7 @@ public sealed class PermissionManagerTests : TestBase
         var result = await _sut.GetAsync(permissionName, currentUser, cancellationToken: AbortToken);
 
         // then
-        result.Providers.Should().HaveCount(1);
+        result.Providers.Should().ContainSingle();
         result.Providers[0].Name.Should().Be("Role");
         result.Providers[0].Keys.Should().BeEquivalentTo(["admin", "editor"]);
     }

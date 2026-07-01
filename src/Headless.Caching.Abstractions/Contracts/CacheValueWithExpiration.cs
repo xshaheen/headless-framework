@@ -11,27 +11,21 @@ namespace Headless.Caching;
 /// in a single round-trip (see <see cref="IRemoteCache.GetAllWithExpirationAsync{T}"/>).
 /// </summary>
 /// <typeparam name="T">The type of the cached value.</typeparam>
+/// <remarks>Initializes a new instance of the <see cref="CacheValueWithExpiration{T}"/> struct.</remarks>
+/// <param name="value">The cache read result.</param>
+/// <param name="expiration">
+/// The remaining logical expiration of the entry at the time of the read, or <see langword="null"/>
+/// when the entry carries no logical expiration metadata (e.g., written by a legacy code path).
+/// </param>
 [PublicAPI]
-public readonly struct CacheValueWithExpiration<T>
+public readonly struct CacheValueWithExpiration<T>(CacheValue<T> value, TimeSpan? expiration)
 {
-    /// <summary>Initializes a new instance of the <see cref="CacheValueWithExpiration{T}"/> struct.</summary>
-    /// <param name="value">The cache read result.</param>
-    /// <param name="expiration">
-    /// The remaining logical expiration of the entry at the time of the read, or <see langword="null"/>
-    /// when the entry carries no logical expiration metadata (e.g., written by a legacy code path).
-    /// </param>
-    public CacheValueWithExpiration(CacheValue<T> value, TimeSpan? expiration)
-    {
-        Value = value;
-        Expiration = expiration;
-    }
-
     /// <summary>Gets the cache read result.</summary>
-    public CacheValue<T> Value { get; }
+    public CacheValue<T> Value { get; } = value;
 
     /// <summary>
     /// Gets the remaining logical expiration of the entry at the time of the read.
     /// <see langword="null"/> means the entry carries no logical expiration metadata.
     /// </summary>
-    public TimeSpan? Expiration { get; }
+    public TimeSpan? Expiration { get; } = expiration;
 }

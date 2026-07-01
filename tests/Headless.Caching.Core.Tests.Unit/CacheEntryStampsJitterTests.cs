@@ -33,7 +33,7 @@ public sealed class CacheEntryStampsJitterTests : TestBase
         var firstLogical = CacheEntryStamps.Compute(options, _Now).LogicalExpiresAt;
         var sawVariation = false;
 
-        // when / then — logical lands in [now+Duration, now+Duration+Jitter) and physical never precedes logical
+        // when & then — logical lands in [now+Duration, now+Duration+Jitter) and physical never precedes logical
         for (var i = 0; i < 200; i++)
         {
             var stamps = CacheEntryStamps.Compute(options, _Now);
@@ -65,7 +65,7 @@ public sealed class CacheEntryStampsJitterTests : TestBase
             FailSafeMaxDuration = TimeSpan.FromHours(1),
         };
 
-        // when / then — the physical>=logical invariant holds and physical carries the same jitter as logical
+        // when & then — the physical>=logical invariant holds and physical carries the same jitter as logical
         for (var i = 0; i < 200; i++)
         {
             var stamps = CacheEntryStamps.Compute(options, _Now);
@@ -87,7 +87,7 @@ public sealed class CacheEntryStampsJitterTests : TestBase
             EagerRefreshThreshold = 0.5f,
         };
 
-        // when / then — eager point is a fraction of the SAME jittered duration, so it stays before logical
+        // when & then — eager point is a fraction of the SAME jittered duration, so it stays before logical
         for (var i = 0; i < 200; i++)
         {
             var stamps = CacheEntryStamps.Compute(options, _Now);

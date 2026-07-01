@@ -14,7 +14,7 @@ public sealed class ConsumeContextTests
         IResponseContract response = new ConcreteResponse("accepted");
 
         // when
-        context.SetResponse<IResponseContract>(response);
+        context.SetResponse(response);
 
         // then
         context.Response.Should().BeSameAs(response);

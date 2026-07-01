@@ -7,11 +7,11 @@ namespace Tests.RegularLocks;
 public sealed class DistributedLeaseTests
 {
     [Fact]
-    public void should_report_not_lost_and_not_throw_when_lost_token_is_not_cancelled()
+    public async Task should_report_not_lost_and_not_throw_when_lost_token_is_not_cancelled()
     {
         // given
         using var lostSource = new CancellationTokenSource();
-        IDistributedLease lease = new TestLease(lostSource.Token);
+        await using IDistributedLease lease = new TestLease(lostSource.Token);
 
         // when
         var act = lease.ThrowIfLost;
@@ -22,14 +22,14 @@ public sealed class DistributedLeaseTests
     }
 
     [Fact]
-    public void should_report_lost_and_throw_when_lost_token_is_cancelled()
+    public async Task should_report_lost_and_throw_when_lost_token_is_cancelled()
     {
         // given
         using var lostSource = new CancellationTokenSource();
-        IDistributedLease lease = new TestLease(lostSource.Token);
+        await using IDistributedLease lease = new TestLease(lostSource.Token);
 
         // when
-        lostSource.Cancel();
+        await lostSource.CancelAsync();
         var act = lease.ThrowIfLost;
 
         // then

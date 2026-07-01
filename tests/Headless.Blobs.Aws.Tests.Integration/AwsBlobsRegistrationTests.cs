@@ -96,10 +96,7 @@ public sealed class AwsBlobsRegistrationTests
         // given
         var services = _BuildBaseServices();
 
-        services.AddHeadlessBlobs(blobs =>
-        {
-            blobs.UseAws(options => { }, _DummyAwsOptions());
-        });
+        services.AddHeadlessBlobs(blobs => blobs.UseAws(options => { }, _DummyAwsOptions()));
 
         await using var serviceProvider = services.BuildServiceProvider();
 
@@ -118,9 +115,8 @@ public sealed class AwsBlobsRegistrationTests
         var services = _BuildBaseServices();
 
         services.AddHeadlessBlobs(blobs =>
-        {
-            blobs.AddNamed("assets", instance => instance.UseAws(options => { }, _DummyAwsOptions()));
-        });
+            blobs.AddNamed("assets", instance => instance.UseAws(options => { }, _DummyAwsOptions()))
+        );
 
         await using var serviceProvider = services.BuildServiceProvider();
 

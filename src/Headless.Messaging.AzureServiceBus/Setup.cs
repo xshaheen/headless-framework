@@ -36,10 +36,7 @@ public static class SetupAzureServiceBusMessaging
         {
             Argument.IsNotNull(connectionString);
 
-            return setup.UseAzureServiceBus(opt =>
-            {
-                opt.ConnectionString = connectionString;
-            });
+            return setup.UseAzureServiceBus(opt => opt.ConnectionString = connectionString);
         }
 
         /// <summary>

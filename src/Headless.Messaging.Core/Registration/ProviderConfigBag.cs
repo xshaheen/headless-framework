@@ -3,7 +3,7 @@
 using System.Collections.ObjectModel;
 using Headless.Checks;
 
-namespace Headless.Messaging;
+namespace Headless.Messaging.Registration;
 
 internal interface IMessageProviderConfigBuilder<out TMessage>
     where TMessage : class

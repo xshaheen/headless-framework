@@ -2,6 +2,7 @@
 
 using Headless.CommitCoordination;
 using Headless.CommitCoordination.EntityFramework;
+using Headless.Testing.Tests;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -17,14 +18,14 @@ namespace Tests;
 /// region own that mismatch: enlist work only after the last possible partial rollback, or manage the
 /// registration manually.
 /// </summary>
-public sealed class SavepointBehaviorTests
+public sealed class SavepointBehaviorTests : TestBase
 {
     [Fact]
     public async Task savepoint_rollback_discards_rows_but_not_buffered_commit_work()
     {
         // Shared in-memory SQLite lives only while a connection is open.
         await using var connection = new SqliteConnection("DataSource=:memory:");
-        await connection.OpenAsync();
+        await connection.OpenAsync(AbortToken);
 
         var services = new ServiceCollection();
         services.AddLogging();
@@ -38,7 +39,7 @@ public sealed class SavepointBehaviorTests
         await using (var setupScope = root.CreateAsyncScope())
         {
             var setupDb = setupScope.ServiceProvider.GetRequiredService<SavepointDbContext>();
-            await setupDb.Database.EnsureCreatedAsync();
+            await setupDb.Database.EnsureCreatedAsync(AbortToken);
         }
 
         var beforeSavepointDrained = false;
@@ -88,7 +89,8 @@ public sealed class SavepointBehaviorTests
                 ctx.Set<SavepointRow>().Add(new SavepointRow { Name = "after-rollback" });
                 await ctx.SaveChangesAsync(ct);
             },
-            scope.ServiceProvider
+            scope.ServiceProvider,
+            cancellationToken: AbortToken
         );
 
         beforeSavepointDrained.Should().BeTrue("work buffered before the savepoint drains on commit");
@@ -100,7 +102,7 @@ public sealed class SavepointBehaviorTests
 
         await using var verifyScope = root.CreateAsyncScope();
         var verifyDb = verifyScope.ServiceProvider.GetRequiredService<SavepointDbContext>();
-        var names = await verifyDb.Set<SavepointRow>().AsNoTracking().Select(x => x.Name).ToListAsync();
+        var names = await verifyDb.Set<SavepointRow>().AsNoTracking().Select(x => x.Name).ToListAsync(AbortToken);
 
         names.Should().BeEquivalentTo(["before-savepoint", "after-rollback"]);
     }

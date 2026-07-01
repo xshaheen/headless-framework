@@ -111,7 +111,7 @@ internal sealed class ConfigurePostgreSqlOptions(IServiceScopeFactory serviceSco
         if (options.DataSource is null && string.IsNullOrWhiteSpace(options.ConnectionString))
         {
             throw new InvalidOperationException(
-                $"Failed to resolve a DataSource or ConnectionString from the EF Core provider extension "
+                "Failed to resolve a DataSource or ConnectionString from the EF Core provider extension "
                     + $"'{extension.GetType().FullName}' for DbContext '{options.DbContextType.FullName}'. The reflected "
                     + $"properties '{nameof(options.DataSource)}'/'{nameof(options.ConnectionString)}' returned null — "
                     + "the Npgsql EF Core provider may have renamed or restructured them."

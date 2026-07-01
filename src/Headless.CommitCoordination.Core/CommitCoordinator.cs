@@ -172,13 +172,8 @@ internal sealed partial class CommitCoordinator : ICommitCoordinator
         {
             afterDrain?.Invoke();
         }
-        catch (Exception afterDrainEx)
+        catch (Exception afterDrainEx) when (drainFault is not null)
         {
-            if (drainFault is null)
-            {
-                throw;
-            }
-
             // Re-throw the drain fault through its ExceptionDispatchInfo so the aggregate's first inner carries the
             // original throw site rather than this re-packaging frame, then combine with the cleanup fault.
             try

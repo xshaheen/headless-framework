@@ -34,13 +34,13 @@ public sealed class SqlServerConnectionStringCheckerTests
         var sut = new SqlServerConnectionStringChecker(logger);
 
         // when
-        var result = await sut.CheckAsync(
+        var (connected, databaseExists) = await sut.CheckAsync(
             "Server=invalid-host-that-does-not-exist;Database=test;Connect Timeout=1;TrustServerCertificate=True"
         );
 
         // then
-        result.Connected.Should().BeFalse();
-        result.DatabaseExists.Should().BeFalse();
+        connected.Should().BeFalse();
+        databaseExists.Should().BeFalse();
     }
 
     [Fact]
@@ -65,10 +65,12 @@ public sealed class SqlServerConnectionStringCheckerTests
     {
         // given - verify implementation sets ConnectTimeout = 1
         const string connectionString = "Server=localhost;Database=test;Connect Timeout=30";
-        var builder = new SqlConnectionStringBuilder(connectionString);
 
-        // when - simulate what CheckAsync does
-        builder.ConnectTimeout = 1;
+        var builder = new SqlConnectionStringBuilder(connectionString)
+        {
+            // when - simulate what CheckAsync does
+            ConnectTimeout = 1,
+        };
 
         // then
         builder.ConnectTimeout.Should().Be(1);

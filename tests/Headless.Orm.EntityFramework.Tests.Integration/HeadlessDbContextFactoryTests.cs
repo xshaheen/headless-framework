@@ -3,6 +3,7 @@
 using Headless.Abstractions;
 using Headless.Domain;
 using Headless.EntityFramework;
+using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Tests.Fixture;
@@ -10,7 +11,7 @@ using Tests.Fixture;
 namespace Tests;
 
 [Collection<HeadlessDbContextTestFixture>]
-public sealed class HeadlessDbContextFactoryTests(HeadlessDbContextTestFixture fixture)
+public sealed class HeadlessDbContextFactoryTests(HeadlessDbContextTestFixture fixture) : TestBase
 {
     [Fact]
     public async Task should_resolve_dbcontext_factory_from_root_provider_when_registered_via_add_headless_dbcontext()
@@ -20,11 +21,11 @@ public sealed class HeadlessDbContextFactoryTests(HeadlessDbContextTestFixture f
 
         // when — resolve the factory and create a context outside any explicit scope
         var factory = sp.GetRequiredService<IDbContextFactory<FactoryTestDbContext>>();
-        await using var ctx = await factory.CreateDbContextAsync(TestContext.Current.CancellationToken);
+        await using var ctx = await factory.CreateDbContextAsync(AbortToken);
 
         // then — context is usable and disposes cleanly
         ctx.Should().NotBeNull();
-        (await ctx.Database.CanConnectAsync(TestContext.Current.CancellationToken)).Should().BeTrue();
+        (await ctx.Database.CanConnectAsync(AbortToken)).Should().BeTrue();
     }
 
     [Fact]
@@ -37,7 +38,7 @@ public sealed class HeadlessDbContextFactoryTests(HeadlessDbContextTestFixture f
 
         // when — create + dispose a context; the factory's per-call scope must also dispose
         ScopeProbe probe;
-        await using (var ctx = await factory.CreateDbContextAsync(TestContext.Current.CancellationToken))
+        await using (var ctx = await factory.CreateDbContextAsync(AbortToken))
         {
             var scoped = (IHeadlessDbContextScopeOwner)ctx;
             scoped.OwnedScope.Should().NotBeNull("factory-created contexts carry their own scope");
@@ -57,8 +58,8 @@ public sealed class HeadlessDbContextFactoryTests(HeadlessDbContextTestFixture f
         var factory = sp.GetRequiredService<IDbContextFactory<FactoryTestDbContext>>();
 
         // when
-        await using var a = await factory.CreateDbContextAsync(TestContext.Current.CancellationToken);
-        await using var b = await factory.CreateDbContextAsync(TestContext.Current.CancellationToken);
+        await using var a = await factory.CreateDbContextAsync(AbortToken);
+        await using var b = await factory.CreateDbContextAsync(AbortToken);
 
         // then — different instances, different scopes
         a.Should().NotBeSameAs(b);
@@ -119,7 +120,7 @@ public sealed class HeadlessDbContextFactoryTests(HeadlessDbContextTestFixture f
         {
             // when — factory creates a scope, resolves ThrowingDbContext (whose ctor injects the
             // probe and then throws), and must dispose the per-call scope on the catch path
-            var act = () => factory.CreateDbContextAsync(TestContext.Current.CancellationToken);
+            var act = () => factory.CreateDbContextAsync(AbortToken);
             await act.Should().ThrowAsync<InvalidOperationException>();
 
             // then — the probe was created inside the per-call scope, and disposing that scope

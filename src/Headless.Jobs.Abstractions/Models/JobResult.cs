@@ -12,22 +12,22 @@ namespace Headless.Jobs.Models;
 /// propagate through the caller's ambient transaction on the coordinated path.
 /// </remarks>
 /// <typeparam name="TEntity">The job entity type.</typeparam>
-public class JobResult<TEntity>
+public sealed class JobResult<TEntity>
     where TEntity : class
 {
     internal JobResult(Exception exception)
-        : this(false) => Exception = exception;
+        : this(isSucceeded: false) => Exception = exception;
 
     internal JobResult(TEntity result)
-        : this(true) => Result = result;
+        : this(isSucceeded: true) => Result = result;
 
     internal JobResult(int affectedRows)
-        : this(true) => AffectedRows = affectedRows;
+        : this(isSucceeded: true) => AffectedRows = affectedRows;
 
     private JobResult(bool isSucceeded) => IsSucceeded = isSucceeded;
 
     internal JobResult(TEntity result, int affectedRows)
-        : this(true)
+        : this(isSucceeded: true)
     {
         Result = result;
         AffectedRows = affectedRows;

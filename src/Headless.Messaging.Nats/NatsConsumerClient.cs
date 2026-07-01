@@ -69,7 +69,7 @@ internal sealed class NatsConsumerClient(
     {
         // Materialize once: the source is consumed by GroupBy and the return value, so a lazy
         // input would otherwise be enumerated twice.
-        var names = messageNames as IReadOnlyList<string> ?? messageNames.ToList();
+        var names = messageNames.AsIReadOnlyList();
 
         if (!_natsOptions.EnableSubscriberClientStreamAndSubjectCreation)
         {
@@ -121,10 +121,7 @@ internal sealed class NatsConsumerClient(
     // The JetStream stream config and the consumer FilterSubjects must cover exactly the same subject
     // set, so both derive from one method: the base subject plus, for sharded names, the 'base.>'
     // wildcard, de-duplicated. (Verified output-equivalent to the prior two near-duplicate methods.)
-    private static IReadOnlyList<string> _BuildSubjects(
-        IEnumerable<string> messageNames,
-        ISet<string> shardedMessageNames
-    )
+    private static List<string> _BuildSubjects(IEnumerable<string> messageNames, ISet<string> shardedMessageNames)
     {
         Argument.IsNotNull(messageNames);
         Argument.IsNotNull(shardedMessageNames);
@@ -547,7 +544,7 @@ internal sealed class NatsConsumerClient(
             return;
         }
 
-        _CancelReceives();
+        await _CancelReceives().ConfigureAwait(false);
     }
 
     public async ValueTask ResumeAsync(CancellationToken cancellationToken = default)
@@ -579,7 +576,7 @@ internal sealed class NatsConsumerClient(
 
         _pauseGate.Release();
         _ready.TrySetCanceled();
-        _CancelReceives();
+        await _CancelReceives().ConfigureAwait(false);
 
         // Drain in-flight concurrent handlers before disposing the semaphore and connection, so a
         // running handler does not Ack/Nak on a disposed connection. Bounded so a stuck handler cannot
@@ -590,7 +587,7 @@ internal sealed class NatsConsumerClient(
         {
             try
             {
-                await Task.WhenAll(inFlight).WaitAsync(_ShutdownDrainTimeout).ConfigureAwait(false);
+                await Task.WhenAll(inFlight).WaitAsync(_ShutdownDrainTimeout, _timeProvider).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -645,7 +642,7 @@ internal sealed class NatsConsumerClient(
         }
     }
 
-    private void _CancelReceives()
+    private async Task _CancelReceives()
     {
         ReceiveTokenState receiveTokenState;
         lock (_receiveLock)
@@ -655,7 +652,7 @@ internal sealed class NatsConsumerClient(
 
         try
         {
-            receiveTokenState.Source.Cancel();
+            await receiveTokenState.Source.CancelAsync().ConfigureAwait(false);
         }
         catch (ObjectDisposedException)
         {
@@ -688,7 +685,7 @@ internal sealed class NatsConsumerClient(
         lock (_receiveLock)
         {
             receiveTokenState.RefCount--;
-            shouldDispose = receiveTokenState.RefCount == 0 && receiveTokenState.Retired;
+            shouldDispose = receiveTokenState is { RefCount: 0, Retired: true };
         }
 
         if (shouldDispose)
@@ -747,10 +744,6 @@ internal sealed class NatsConsumerClient(
         CancellationToken cancellationToken
     ) : IDisposable
     {
-#pragma warning disable CA2213 // _owner is a parent reference, not owned by this lease
-        private readonly NatsConsumerClient _owner = owner;
-#pragma warning restore CA2213
-        private readonly ReceiveTokenState _receiveTokenState = receiveTokenState;
         private int _disposed;
 
         public CancellationToken Token { get; } = receiveTokenState.GetLinkedToken(cancellationToken);
@@ -762,7 +755,7 @@ internal sealed class NatsConsumerClient(
                 return;
             }
 
-            _owner._ReleaseReceiveTokenState(_receiveTokenState);
+            owner._ReleaseReceiveTokenState(receiveTokenState);
         }
     }
 }

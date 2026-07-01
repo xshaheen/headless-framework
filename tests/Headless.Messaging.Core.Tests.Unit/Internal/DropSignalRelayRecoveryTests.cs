@@ -45,7 +45,7 @@ public sealed class DropSignalRelayRecoveryTests : TestBase
         await using var provider = services.BuildServiceProvider();
         var storage = provider.GetRequiredService<IDataStorage>();
 
-        var transaction = new TestDbTransaction();
+        await using var transaction = new TestDbTransaction();
         var stack = new CommitScopeStack();
         var dispatcher = Substitute.For<IDispatcher>();
 

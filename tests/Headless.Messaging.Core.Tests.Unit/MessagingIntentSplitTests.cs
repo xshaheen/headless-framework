@@ -25,8 +25,10 @@ public sealed class MessagingIntentSplitTests : TestBase
     {
         // Persistence rows + on-wire serializations rely on these numeric values. Changing them is
         // a breaking change for any drained inbox/outbox row at-rest. Pin them explicitly.
-        Assert.Equal(0, (int)IntentType.Bus);
-        Assert.Equal(1, (int)IntentType.Queue);
+        ((int)IntentType.Bus)
+            .Should()
+            .Be(0);
+        ((int)IntentType.Queue).Should().Be(1);
     }
 
     [Fact]
@@ -35,9 +37,8 @@ public sealed class MessagingIntentSplitTests : TestBase
         var services = new ServiceCollection();
 
         services.AddHeadlessMessaging(setup =>
-        {
-            setup.ForMessage<TestMessage>(message => message.MessageName("events.orders").OnBus<TestBusConsumer>());
-        });
+            setup.ForMessage<TestMessage>(message => message.MessageName("events.orders").OnBus<TestBusConsumer>())
+        );
 
         var metadata = services.BuildServiceProvider().GetDrainedConsumerRegistry().GetAll().Single();
 
@@ -51,9 +52,8 @@ public sealed class MessagingIntentSplitTests : TestBase
         var services = new ServiceCollection();
 
         services.AddHeadlessMessaging(setup =>
-        {
-            setup.ForMessage<TestMessage>(message => message.MessageName("jobs.orders").OnQueue<TestQueueConsumer>());
-        });
+            setup.ForMessage<TestMessage>(message => message.MessageName("jobs.orders").OnQueue<TestQueueConsumer>())
+        );
 
         var metadata = services.BuildServiceProvider().GetDrainedConsumerRegistry().GetAll().Single();
 
@@ -113,7 +113,8 @@ public sealed class MessagingIntentSplitTests : TestBase
         services.AddSingleton(registry);
 
         await using var provider = services.BuildServiceProvider();
-        var bootstrapper = new Bootstrapper(
+
+        await using var bootstrapper = new Bootstrapper(
             [],
             new NoOpStorageInitializer(),
             provider,
@@ -152,7 +153,8 @@ public sealed class MessagingIntentSplitTests : TestBase
         services.AddSingleton(registry);
 
         await using var provider = services.BuildServiceProvider();
-        var bootstrapper = new Bootstrapper(
+
+        await using var bootstrapper = new Bootstrapper(
             [],
             new NoOpStorageInitializer(),
             provider,
@@ -191,7 +193,8 @@ public sealed class MessagingIntentSplitTests : TestBase
         services.AddSingleton(Substitute.For<IOutboxBus>());
 
         await using var provider = services.BuildServiceProvider();
-        var bootstrapper = new Bootstrapper(
+
+        await using var bootstrapper = new Bootstrapper(
             [],
             new NoOpStorageInitializer(),
             provider,
@@ -237,7 +240,8 @@ public sealed class MessagingIntentSplitTests : TestBase
         services.AddSingleton(Substitute.For<IBus>());
 
         await using var provider = services.BuildServiceProvider();
-        var bootstrapper = new Bootstrapper(
+
+        await using var bootstrapper = new Bootstrapper(
             [],
             new NoOpStorageInitializer(),
             provider,
@@ -259,7 +263,8 @@ public sealed class MessagingIntentSplitTests : TestBase
         services.AddSingleton(Substitute.For<IQueue>());
 
         await using var provider = services.BuildServiceProvider();
-        var bootstrapper = new Bootstrapper(
+
+        await using var bootstrapper = new Bootstrapper(
             [],
             new NoOpStorageInitializer(),
             provider,
@@ -276,7 +281,7 @@ public sealed class MessagingIntentSplitTests : TestBase
     public async Task bus_publish_should_throw_publisher_sent_failed_when_transport_reports_failure()
     {
         // given
-        var transport = new FailingBusTransport();
+        await using var transport = new FailingBusTransport();
         var bus = _CreateBus(transport);
 
         // when
@@ -295,7 +300,7 @@ public sealed class MessagingIntentSplitTests : TestBase
             .Create(Arg.Any<TestMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<TimeSpan?>(), IntentType.Bus)
             .Returns(_CreatePreparedPublishMessage("events.prepared", IntentType.Bus));
 
-        var transport = new CapturingBusTransport();
+        await using var transport = new CapturingBusTransport();
         using var diagnostics = new CapturingDiagnosticObserver("events.prepared");
         var bus = _CreateBus(transport, publishRequestFactory);
 
@@ -311,7 +316,7 @@ public sealed class MessagingIntentSplitTests : TestBase
                 Arg.Is<TimeSpan?>(delay => delay == null),
                 IntentType.Bus
             );
-        transport.LastMessage!.Value.GetName().Should().Be("events.prepared");
+        transport.LastMessage!.Value.Name.Should().Be("events.prepared");
         diagnostics
             .BeforePublishData.Should()
             .BeOfType<MessageEventDataPubSend>()
@@ -323,7 +328,7 @@ public sealed class MessagingIntentSplitTests : TestBase
     public async Task queue_enqueue_should_throw_publisher_sent_failed_when_transport_reports_failure()
     {
         // given
-        var transport = new FailingQueueTransport();
+        await using var transport = new FailingQueueTransport();
         var queue = _CreateQueue(transport);
 
         // when
@@ -342,7 +347,7 @@ public sealed class MessagingIntentSplitTests : TestBase
             .Create(Arg.Any<TestMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<TimeSpan?>(), IntentType.Queue)
             .Returns(_CreatePreparedPublishMessage("jobs.prepared", IntentType.Queue));
 
-        var transport = new CapturingQueueTransport();
+        await using var transport = new CapturingQueueTransport();
         using var diagnostics = new CapturingDiagnosticObserver("jobs.prepared");
         var queue = _CreateQueue(transport, publishRequestFactory);
 
@@ -358,7 +363,7 @@ public sealed class MessagingIntentSplitTests : TestBase
                 Arg.Is<TimeSpan?>(delay => delay == null),
                 IntentType.Queue
             );
-        transport.LastMessage!.Value.GetName().Should().Be("jobs.prepared");
+        transport.LastMessage!.Value.Name.Should().Be("jobs.prepared");
         diagnostics
             .BeforePublishData.Should()
             .BeOfType<MessageEventDataPubSend>()
@@ -614,7 +619,7 @@ public sealed class MessagingIntentSplitTests : TestBase
         {
             if (
                 value.Value is MessageEventDataPubSend eventData
-                && eventData.TransportMessage.GetName() == _expectedMessageName
+                && string.Equals(eventData.TransportMessage.Name, _expectedMessageName, StringComparison.Ordinal)
             )
             {
                 BeforePublishData = eventData;

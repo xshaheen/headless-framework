@@ -1,4 +1,3 @@
-using System.Reflection;
 using Headless.Jobs;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Models;
@@ -17,7 +16,7 @@ public sealed class InternalFunctionContextTests
             .SetProperty(c => c.ElapsedTime, 123L)
             .SetProperty(c => c.ReleaseLock, true);
 
-        var updated = context.GetPropsToUpdate();
+        var updated = context.PropertiesToUpdate;
 
         updated
             .Should()
@@ -29,8 +28,8 @@ public sealed class InternalFunctionContextTests
                     nameof(InternalFunctionContext.ReleaseLock),
                 }
             );
-        updated.Count.Should().Be(3);
 
+        updated.Should().HaveCount(3);
         context.Status.Should().Be(JobStatus.InProgress);
         context.ElapsedTime.Should().Be(123L);
         context.ReleaseLock.Should().BeTrue();
@@ -43,11 +42,11 @@ public sealed class InternalFunctionContextTests
 
         context.SetProperty(c => c.Status, JobStatus.Succeeded).SetProperty(c => c.ElapsedTime, 500L);
 
-        context.GetPropsToUpdate().Should().NotBeEmpty();
+        context.PropertiesToUpdate.Should().NotBeEmpty();
 
         context.ResetUpdateProps();
 
-        context.GetPropsToUpdate().Should().BeEmpty();
+        context.PropertiesToUpdate.Should().BeEmpty();
     }
 
     [Fact]
@@ -61,26 +60,19 @@ public sealed class InternalFunctionContextTests
 
         context.Status.Should().Be(JobStatus.Succeeded);
         context.ElapsedTime.Should().Be(250L);
-        context.GetPropsToUpdate().Should().BeEmpty();
+        context.PropertiesToUpdate.Should().BeEmpty();
     }
 
     [Fact]
-    public void SetProperty_Reinitializes_Tracking_Set_When_Null()
+    public void PropertiesToUpdate_Defaults_To_Empty_Set_And_Tracks_Updates()
     {
         var context = new InternalFunctionContext() { FunctionName = "Test" };
 
-        // Simulate a null ParametersToUpdate set to verify the null-coalescing assignment.
-        var parametersProperty = typeof(InternalFunctionContext).GetProperty(
-            "ParametersToUpdate",
-            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
-        );
-
-        parametersProperty.Should().NotBeNull();
-        parametersProperty.SetValue(context, null);
+        context.PropertiesToUpdate.Should().BeEmpty();
 
         context.SetProperty(c => c.Status, JobStatus.InProgress);
 
-        var updated = context.GetPropsToUpdate();
+        var updated = context.PropertiesToUpdate;
         updated.Should().NotBeNull();
         updated.Should().Contain(nameof(InternalFunctionContext.Status));
     }
@@ -94,9 +86,9 @@ public sealed class InternalFunctionContextTests
 
         context.Status.Should().Be(JobStatus.Failed);
 
-        var updated = context.GetPropsToUpdate();
+        var updated = context.PropertiesToUpdate;
         updated.Should().Contain(nameof(InternalFunctionContext.Status));
-        updated.Count.Should().Be(1);
+        updated.Should().ContainSingle();
     }
 
     [Fact]
@@ -155,7 +147,7 @@ public sealed class InternalFunctionContextTests
         context.RetryIntervals.Should().BeSameAs(intervals);
         context.ExceptionDetails.Should().Be(exceptionDetails);
 
-        var updated = context.GetPropsToUpdate();
+        var updated = context.PropertiesToUpdate;
         updated
             .Should()
             .Contain(

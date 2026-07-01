@@ -58,8 +58,10 @@ public sealed class SettingManager(
         foreach (var provider in valueProviderManager.Providers.Reverse())
         {
             var supportedDefinitions = settingDefinitions
-                .Where(x => !processedNames.Contains(x.Name))
-                .Where(x => x.Providers.Count == 0 || x.Providers.Contains(provider.Name, StringComparer.Ordinal))
+                .Where(x =>
+                    !processedNames.Contains(x.Name)
+                    && (x.Providers.Count == 0 || x.Providers.Contains(provider.Name, StringComparer.Ordinal))
+                )
                 .ToArray();
 
             var settingValues = await provider
@@ -222,7 +224,7 @@ public sealed class SettingManager(
         }
 
         // Getting list for case of there are more than one provider with the same providerName
-        providers = providers.TakeWhile(p => string.Equals(p.Name, providerName, StringComparison.Ordinal)).ToList();
+        providers = [.. providers.TakeWhile(p => string.Equals(p.Name, providerName, StringComparison.Ordinal))];
 
         foreach (var provider in providers)
         {

@@ -266,7 +266,7 @@ public sealed class HeadlessRedisScriptsLoader(
         }
     }
 
-    /// <summary>Returns <c>true</c> when <paramref name="e"/> is a NOSCRIPT error from Redis.</summary>
+    /// <summary>Returns <see langword="true"/> when <paramref name="e"/> is a NOSCRIPT error from Redis.</summary>
     /// <param name="e">The server exception to inspect.</param>
     /// <returns><see langword="true"/> when the exception message starts with <c>NOSCRIPT</c>; otherwise <see langword="false"/>.</returns>
     public static bool IsNoScriptError(RedisServerException e)
@@ -389,7 +389,7 @@ public sealed class HeadlessRedisScriptsLoader(
         ScriptsLoadState state
     )
     {
-        return definitions.Where(scriptDefinition => _GetLoadedScript(scriptDefinition, state) is null).ToArray();
+        return [.. definitions.Where(scriptDefinition => _GetLoadedScript(scriptDefinition, state) is null)];
     }
 
     private void _ResetScripts(int expectedVersion)

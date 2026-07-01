@@ -99,11 +99,9 @@ public sealed class MessagingKafkaOptionsTests : TestBase
     public void should_allow_custom_retriable_error_codes()
     {
         // given, when
-        var options = new MessagingKafkaOptions
-        {
-            Servers = "localhost:9092",
-            RetriableErrorCodes = [ErrorCode.Local_TimedOut, ErrorCode.RequestTimedOut],
-        };
+        var options = new MessagingKafkaOptions { Servers = "localhost:9092" };
+        options.RetriableErrorCodes.Clear();
+        options.RetriableErrorCodes.AddRange([ErrorCode.Local_TimedOut, ErrorCode.RequestTimedOut]);
 
         // then
         options.RetriableErrorCodes.Should().HaveCount(2);
@@ -154,10 +152,10 @@ public sealed class MessagingKafkaOptionsTests : TestBase
     }
 
     [Fact]
-    public void GetDefaultRetriableErrorCodes_should_return_expected_codes()
+    public void DefaultRetriableErrorCodes_should_return_expected_codes()
     {
         // given, when
-        var codes = MessagingKafkaOptions.GetDefaultRetriableErrorCodes();
+        var codes = MessagingKafkaOptions.DefaultRetriableErrorCodes;
 
         // then
         codes.Should().HaveCount(10);

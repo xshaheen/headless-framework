@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Testing.Tests;
+
 namespace Tests.Core;
 
-public sealed class TimeSpanExtensionsTests
+public sealed class TimeSpanExtensionsTests : TestBase
 {
     [Fact]
     public void clamp_should_return_value_when_within_range()
@@ -112,7 +114,7 @@ public sealed class TimeSpanExtensionsTests
         var timeout = TimeSpan.Zero;
 
         // when
-        using var cts = timeout.ToCancellationTokenSource();
+        using var cts = timeout.ToCancellationTokenSource(AbortToken);
 
         // then
         cts.IsCancellationRequested.Should().BeTrue();
@@ -125,7 +127,7 @@ public sealed class TimeSpanExtensionsTests
         var timeout = TimeSpan.FromMinutes(5);
 
         // when
-        using var cts = timeout.ToCancellationTokenSource();
+        using var cts = timeout.ToCancellationTokenSource(AbortToken);
 
         // then
         cts.IsCancellationRequested.Should().BeFalse();
@@ -138,7 +140,7 @@ public sealed class TimeSpanExtensionsTests
         var timeout = TimeSpan.FromMinutes(-5);
 
         // when
-        using var cts = timeout.ToCancellationTokenSource();
+        using var cts = timeout.ToCancellationTokenSource(AbortToken);
 
         // then
         cts.IsCancellationRequested.Should().BeFalse();

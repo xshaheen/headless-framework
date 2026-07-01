@@ -236,7 +236,10 @@ public static partial class Argument
         throw new ArgumentOutOfRangeException(
             paramName,
             message
-                ?? $"The argument {paramName.ToAssertString()} must have a length of {length} (Actual length {actualLength})."
+                ?? string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"The argument {paramName.ToAssertString()} must have a length of {length} (Actual length {actualLength})."
+                )
         );
     }
 
@@ -246,7 +249,10 @@ public static partial class Argument
         throw new ArgumentOutOfRangeException(
             paramName,
             message
-                ?? $"The argument {paramName.ToAssertString()} must have a length of at least {minLength} (Actual length {actualLength})."
+                ?? string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"The argument {paramName.ToAssertString()} must have a length of at least {minLength} (Actual length {actualLength})."
+                )
         );
     }
 
@@ -256,7 +262,10 @@ public static partial class Argument
         throw new ArgumentOutOfRangeException(
             paramName,
             message
-                ?? $"The argument {paramName.ToAssertString()} must have a length of at most {maxLength} (Actual length {actualLength})."
+                ?? string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"The argument {paramName.ToAssertString()} must have a length of at most {maxLength} (Actual length {actualLength})."
+                )
         );
     }
 
@@ -272,7 +281,10 @@ public static partial class Argument
         throw new ArgumentOutOfRangeException(
             paramName,
             message
-                ?? $"The argument {paramName.ToAssertString()} must have a length between {minLength} and {maxLength} (Actual length {actualLength})."
+                ?? string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"The argument {paramName.ToAssertString()} must have a length between {minLength} and {maxLength} (Actual length {actualLength})."
+                )
         );
     }
 
@@ -282,7 +294,10 @@ public static partial class Argument
         throw new ArgumentOutOfRangeException(
             paramName,
             message
-                ?? $"The argument {paramName.ToAssertString()} must have a length greater than {length} (Actual length {actualLength})."
+                ?? string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"The argument {paramName.ToAssertString()} must have a length greater than {length} (Actual length {actualLength})."
+                )
         );
     }
 
@@ -292,7 +307,10 @@ public static partial class Argument
         throw new ArgumentOutOfRangeException(
             paramName,
             message
-                ?? $"The argument {paramName.ToAssertString()} must have a length less than {length} (Actual length {actualLength})."
+                ?? string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"The argument {paramName.ToAssertString()} must have a length less than {length} (Actual length {actualLength})."
+                )
         );
     }
 
@@ -301,7 +319,11 @@ public static partial class Argument
     {
         throw new ArgumentOutOfRangeException(
             paramName,
-            message ?? $"The argument {paramName.ToAssertString()} must not have a length of {length}."
+            message
+                ?? string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"The argument {paramName.ToAssertString()} must not have a length of {length}."
+                )
         );
     }
 }

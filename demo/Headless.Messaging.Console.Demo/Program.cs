@@ -51,5 +51,7 @@ _ = Task.Run(
     cts.Token
 );
 
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
 AppDomain.CurrentDomain.ProcessExit += (_, _) => cts.Cancel();
+#pragma warning restore MA0045
 Console.ReadLine();

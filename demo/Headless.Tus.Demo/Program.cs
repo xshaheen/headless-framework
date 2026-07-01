@@ -9,9 +9,8 @@ using tusdotnet.Models;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddAzureClients(clientBuilder =>
-{
-    clientBuilder.AddBlobServiceClient("CONNECTION_STRING").WithVersion(BlobClientOptions.ServiceVersion.V2024_08_04);
-});
+    clientBuilder.AddBlobServiceClient("CONNECTION_STRING").WithVersion(BlobClientOptions.ServiceVersion.V2024_08_04)
+);
 
 var app = builder.Build();
 

@@ -90,7 +90,7 @@ public sealed class RabbitMqTransportTests : TestBase
         );
 
         // when
-        var result = await transport.SendAsync(message);
+        var result = await transport.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeTrue();
@@ -122,7 +122,7 @@ public sealed class RabbitMqTransportTests : TestBase
         );
 
         // when
-        await transport.SendAsync(message);
+        await transport.SendAsync(message, AbortToken);
 
         // then
         _pool.Received(1).Return(_channel);
@@ -157,7 +157,7 @@ public sealed class RabbitMqTransportTests : TestBase
             .Do(_ => throw new InvalidOperationException("Publish failed"));
 
         // when
-        var result = await transport.SendAsync(message);
+        var result = await transport.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeFalse();
@@ -199,7 +199,7 @@ public sealed class RabbitMqTransportTests : TestBase
             );
 
         // when
-        var result = await transport.SendAsync(message);
+        var result = await transport.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeFalse();
@@ -223,7 +223,7 @@ public sealed class RabbitMqTransportTests : TestBase
         );
 
         // when
-        await transport.SendAsync(message);
+        await transport.SendAsync(message, AbortToken);
 
         // then
         await _channel
@@ -333,7 +333,7 @@ public sealed class RabbitMqTransportTests : TestBase
         );
 
         // when
-        await transport.SendAsync(message);
+        await transport.SendAsync(message, AbortToken);
 
         // then
         await _channel
@@ -364,7 +364,7 @@ public sealed class RabbitMqTransportTests : TestBase
         );
 
         // when
-        await transport.SendAsync(message);
+        await transport.SendAsync(message, AbortToken);
 
         // then
         await _channel
@@ -409,7 +409,7 @@ public sealed class RabbitMqTransportTests : TestBase
             .Do(_ => throw expectedException);
 
         // when
-        var result = await transport.SendAsync(message);
+        var result = await transport.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeFalse();

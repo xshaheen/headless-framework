@@ -27,7 +27,7 @@ public static class ValueConvertersExtensions
     public static void AddAllPrimitivesValueConvertersMappings(this ModelConfigurationBuilder builder)
     {
         var assemblies = AssemblyHelper.GetCurrentAssemblies(
-            acceptPredicate: assembly => assembly.GetCustomAttribute<PrimitiveAssemblyAttribute>() is not null,
+            acceptPredicate: assembly => Attribute.IsDefined(assembly, typeof(PrimitiveAssemblyAttribute)),
             excludePredicate: AssemblyHelper.IsSystemAssemblyName
         );
 

@@ -32,8 +32,8 @@ public sealed class BusTests : TestBase
         await publisher.PublishAsync(new TestMessage("test-value"), cancellationToken: AbortToken);
 
         // then
-        testTransport.SentMessages.Should().HaveCount(1);
-        testTransport.SentMessages[0].GetName().Should().Be("test.messageName");
+        testTransport.SentMessages.Should().ContainSingle();
+        testTransport.SentMessages[0].Name.Should().Be("test.messageName");
     }
 
     [Fact]
@@ -49,8 +49,8 @@ public sealed class BusTests : TestBase
         await publisher.PublishAsync(new TestMessage("test-value"), cancellationToken: AbortToken);
 
         // then — transport message name must equal the registry-sourced mapping, not a convention-derived fallback
-        testTransport.SentMessages.Should().HaveCount(1);
-        testTransport.SentMessages[0].GetName().Should().Be("orders.placed");
+        testTransport.SentMessages.Should().ContainSingle();
+        testTransport.SentMessages[0].Name.Should().Be("orders.placed");
     }
 
     [Fact]
@@ -66,8 +66,8 @@ public sealed class BusTests : TestBase
         await publisher.PublishAsync(new TestMessage("test-value"), cancellationToken: AbortToken);
 
         // then
-        testTransport.SentMessages.Should().HaveCount(1);
-        testTransport.SentMessages[0].GetName().Should().Be("test-message");
+        testTransport.SentMessages.Should().ContainSingle();
+        testTransport.SentMessages[0].Name.Should().Be("test-message");
     }
 
     [Fact]
@@ -82,8 +82,8 @@ public sealed class BusTests : TestBase
         await publisher.PublishAsync(new UnmappedMessage(42), cancellationToken: AbortToken);
 
         // then
-        testTransport.SentMessages.Should().HaveCount(1);
-        testTransport.SentMessages[0].GetName().Should().Be(nameof(UnmappedMessage));
+        testTransport.SentMessages.Should().ContainSingle();
+        testTransport.SentMessages[0].Name.Should().Be(nameof(UnmappedMessage));
     }
 
     [Fact]
@@ -99,7 +99,7 @@ public sealed class BusTests : TestBase
         await publisher.PublishAsync<TestMessage>(null, cancellationToken: AbortToken);
 
         // then
-        testTransport.SentMessages.Should().HaveCount(1);
+        testTransport.SentMessages.Should().ContainSingle();
         testTransport.SentMessages[0].Body.Length.Should().Be(0);
     }
 
@@ -116,8 +116,8 @@ public sealed class BusTests : TestBase
         await publisher.PublishAsync(new TestMessage("test"), cancellationToken: AbortToken);
 
         // then
-        testTransport.SentMessages.Should().HaveCount(1);
-        testTransport.SentMessages[0].GetName().Should().Be("myapp.events");
+        testTransport.SentMessages.Should().ContainSingle();
+        testTransport.SentMessages[0].Name.Should().Be("myapp.events");
     }
 
     [Fact]
@@ -169,7 +169,7 @@ public sealed class BusTests : TestBase
         await publisher.PublishAsync(new TestMessage("test"), cancellationToken: AbortToken);
 
         // then
-        testTransport.SentMessages.Should().HaveCount(1);
+        testTransport.SentMessages.Should().ContainSingle();
         var headers = testTransport.SentMessages[0].Headers;
         headers.Should().ContainKey(Headers.MessageId);
         headers.Should().ContainKey(Headers.CorrelationId);
@@ -198,7 +198,7 @@ public sealed class BusTests : TestBase
         await publisher.PublishAsync(new TestMessage("test"), publishOptions, AbortToken);
 
         // then
-        testTransport.SentMessages.Should().HaveCount(1);
+        testTransport.SentMessages.Should().ContainSingle();
         testTransport.SentMessages[0].Headers[Headers.MessageId].Should().Be("custom-id-123");
         testTransport.SentMessages[0].Headers[Headers.CorrelationId].Should().Be("corr-123");
         testTransport.SentMessages[0].Headers[Headers.CorrelationSequence].Should().Be("5");
@@ -238,7 +238,7 @@ public sealed class BusTests : TestBase
         await publisher.PublishAsync(new TestMessage("test"), publishOptions, AbortToken);
 
         // then
-        testTransport.SentMessages.Should().HaveCount(1);
+        testTransport.SentMessages.Should().ContainSingle();
         testTransport.SentMessages[0].Headers[Headers.MessageId].Should().HaveLength(MessageOptions.MessageIdMaxLength);
     }
 
@@ -295,8 +295,8 @@ public sealed class BusTests : TestBase
         await publisher.PublishAsync(new TestMessage("test"), publishOptions, AbortToken);
 
         // then
-        testTransport.SentMessages.Should().HaveCount(1);
-        testTransport.SentMessages[0].GetName().Should().Be("explicit.messageName");
+        testTransport.SentMessages.Should().ContainSingle();
+        testTransport.SentMessages[0].Name.Should().Be("explicit.messageName");
     }
 
     [Theory]
@@ -397,7 +397,7 @@ public sealed class BusTests : TestBase
         await publisher.PublishAsync(new TestMessage("test"), publishOptions, AbortToken);
 
         // then
-        testTransport.SentMessages.Should().HaveCount(1);
+        testTransport.SentMessages.Should().ContainSingle();
         testTransport.SentMessages[0].Headers[Headers.TenantId].Should().Be("acme");
     }
 
@@ -419,7 +419,7 @@ public sealed class BusTests : TestBase
         await publisher.PublishAsync(new TestMessage("test"), publishOptions, AbortToken);
 
         // then
-        testTransport.SentMessages.Should().HaveCount(1);
+        testTransport.SentMessages.Should().ContainSingle();
         testTransport.SentMessages[0].Headers[Headers.TenantId].Should().Be("acme");
     }
 
@@ -481,7 +481,7 @@ public sealed class BusTests : TestBase
         await publisher.PublishAsync(new TestMessage("test"), cancellationToken: AbortToken);
 
         // then
-        testTransport.SentMessages.Should().HaveCount(1);
+        testTransport.SentMessages.Should().ContainSingle();
         testTransport.SentMessages[0].Headers.Should().NotContainKey(Headers.TenantId);
     }
 
@@ -502,7 +502,7 @@ public sealed class BusTests : TestBase
         await publisher.PublishAsync(new TestMessage("test"), publishOptions, AbortToken);
 
         // then
-        testTransport.SentMessages.Should().HaveCount(1);
+        testTransport.SentMessages.Should().ContainSingle();
         testTransport.SentMessages[0].Headers.Should().NotContainKey(Headers.TenantId);
     }
 
@@ -580,7 +580,7 @@ public sealed class BusTests : TestBase
         await publisher.PublishAsync(new TestMessage("test"), publishOptions, AbortToken);
 
         // then
-        testTransport.SentMessages.Should().HaveCount(1);
+        testTransport.SentMessages.Should().ContainSingle();
         testTransport.SentMessages[0].Headers[Headers.TenantId].Should().Be(maxTenantId);
     }
 
@@ -597,8 +597,8 @@ public sealed class BusTests : TestBase
         await publisher.PublishAsync(new TestMessage("test-value"), cancellationToken: AbortToken);
 
         // then
-        testTransport.SentMessages.Should().HaveCount(1);
-        testTransport.SentMessages[0].Body.Length.Should().BeGreaterThan(0);
+        testTransport.SentMessages.Should().ContainSingle();
+        testTransport.SentMessages[0].Body.Length.Should().BePositive();
         var bodyString = Encoding.UTF8.GetString(testTransport.SentMessages[0].Body.Span);
         bodyString.Should().Contain("test-value");
     }
@@ -691,7 +691,8 @@ public sealed class BusTests : TestBase
             .Returns<ValueTask<TransportMessage>>(_ => throw new InvalidOperationException("Serializer failure"));
 
         var options = new MessagingOptions();
-        var publisher = _CreateBusWithSerializer(serializer, options);
+        await using var testTransport = new TestTransport();
+        var publisher = _CreateBusWithSerializer(serializer, options, testTransport);
 
         // when
         var act = () => publisher.PublishAsync(new TestMessage("test"), cancellationToken: AbortToken);
@@ -703,7 +704,7 @@ public sealed class BusTests : TestBase
     private static IBus _CreateBusWithSerializer(
         ISerializer serializer,
         MessagingOptions options,
-        IBusTransport? transport = null,
+        IBusTransport transport,
         string? mappedMessageName = "test.messageName"
     )
     {
@@ -718,13 +719,7 @@ public sealed class BusTests : TestBase
         );
         var pipeline = new PublishMiddlewarePipeline(new ServiceCollection().BuildServiceProvider());
 
-        return new Bus(
-            serializer,
-            transport ?? new TestTransport(),
-            publishRequestFactory,
-            pipeline,
-            TimeProvider.System
-        );
+        return new Bus(serializer, transport, publishRequestFactory, pipeline, TimeProvider.System);
     }
 
     private static Bus _CreateBus(

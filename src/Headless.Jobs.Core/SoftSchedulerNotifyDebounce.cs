@@ -14,7 +14,7 @@ public sealed class SoftSchedulerNotifyDebounce : IDisposable
     public SoftSchedulerNotifyDebounce(Action<string> notifyCoreAction)
     {
         _notifyCoreAction = notifyCoreAction;
-        _timer = new Timer(_Callback, null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+        _timer = new Timer(_Callback, state: null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
     }
 
     /// <summary>
@@ -31,7 +31,7 @@ public sealed class SoftSchedulerNotifyDebounce : IDisposable
         }
 
         // Call immediately so the reported thread count stays in sync
-        _Callback(null);
+        _Callback();
     }
 
     /// <summary>
@@ -39,10 +39,10 @@ public sealed class SoftSchedulerNotifyDebounce : IDisposable
     /// </summary>
     internal void Flush()
     {
-        _Callback(null);
+        _Callback();
     }
 
-    private void _Callback(object? _)
+    private void _Callback(object? _ = null)
     {
         if (Volatile.Read(ref _disposed) == 1)
         {

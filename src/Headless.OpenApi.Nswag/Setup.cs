@@ -239,8 +239,8 @@ public static class SetupNswag
     /// <list type="bullet">
     ///   <item><description><c>Money</c> / <c>Money?</c> — <c>number</c> (decimal format)</description></item>
     ///   <item><description><c>Month</c> / <c>Month?</c> — <c>integer</c></description></item>
-    ///   <item><description><c>AccountId</c> — <c>string</c></description></item>
-    ///   <item><description><c>UserId</c> — <c>string</c></description></item>
+    ///   <item><description><c>AccountId</c> — <see langword="string"/></description></item>
+    ///   <item><description><c>UserId</c> — <see langword="string"/></description></item>
     /// </list>
     /// This method is called automatically when <see cref="HeadlessNswagOptions.AddPrimitiveMappings"/> is
     /// <see langword="true"/> (the default). Call it directly only when you manage your own

@@ -6,7 +6,7 @@ using Headless.Jobs.Models;
 
 namespace Headless.Jobs.Temps;
 
-internal class NoOpJobsNotificationHubSender : IJobsNotificationHubSender
+internal sealed class NoOpJobsNotificationHubSender : IJobsNotificationHubSender
 {
     public Task AddCronJobNotifyAsync(object cronJob)
     {

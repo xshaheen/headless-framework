@@ -1,20 +1,20 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text.RegularExpressions;
 using Headless.Checks;
+using Headless.Constants;
 using Headless.Messaging.Persistence;
 
 namespace Headless.Messaging.Storage.PostgreSql;
 
 [PublicAPI]
-public partial class PostgreSqlEntityFrameworkMessagingOptions
+public class PostgreSqlEntityFrameworkMessagingOptions
 {
     public const string DefaultSchema = "messaging";
 
     /// <summary>
     /// PostgreSQL maximum identifier length for schema names.
     /// </summary>
-    public const int MaxSchemaLength = 63;
+    public const int MaxSchemaLength = StorageIdentifier.PostgreSql.IdentifierMaxLength;
 
     /// <summary>
     /// Gets or sets the schema to use when creating database objects.
@@ -30,22 +30,20 @@ public partial class PostgreSqlEntityFrameworkMessagingOptions
         set
         {
             Argument.IsNotNullOrWhiteSpace(value);
+            Argument.IsLessThanOrEqualTo(
+                value.Length,
+                MaxSchemaLength,
+                $"Schema name must not exceed {MaxSchemaLength} chars"
+            );
             Argument.Matches(
                 value,
-                _ValidIdentifier(),
+                StorageIdentifier.PostgreSql.IdentifierPattern,
                 $"Schema name must start with a letter or underscore and contain only letters, digits, underscores (max {MaxSchemaLength} chars)"
             );
 
             field = value;
         }
     } = DefaultSchema;
-
-    /// <summary>
-    /// PostgreSQL identifier validation regex.
-    /// Must start with a letter or underscore, contain only letters, digits, underscores, max 63 chars.
-    /// </summary>
-    [GeneratedRegex("^[a-zA-Z_][a-zA-Z0-9_]{0,62}$", RegexOptions.None, 100)]
-    private static partial Regex _ValidIdentifier();
 
     /// <summary>
     /// Gets or sets the maximum length for the Owner column. Default is <see cref="DataStorageConstants.OwnerColumnMaxLength"/>.

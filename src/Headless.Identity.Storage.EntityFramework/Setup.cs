@@ -363,10 +363,7 @@ public static class SetupIdentityEntityFramework
         }
 
         services.TryAddSingleton<HeadlessIdentityDefaultsSentinel>();
-        services.Configure<IdentityOptions>(options =>
-        {
-            options.Stores.SchemaVersion = IdentitySchemaVersions.Version3;
-        });
+        services.Configure<IdentityOptions>(options => options.Stores.SchemaVersion = IdentitySchemaVersions.Version3);
     }
 }
 

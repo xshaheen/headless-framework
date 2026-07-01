@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
 
 /// <summary>
 /// In-memory scenarios that need a captured logger, attached capabilities, durable buffers, or a

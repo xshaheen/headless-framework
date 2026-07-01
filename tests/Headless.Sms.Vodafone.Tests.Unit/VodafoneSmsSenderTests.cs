@@ -3,6 +3,7 @@
 using System.Net;
 using Headless.Sms;
 using Headless.Sms.Vodafone;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using WireMock.RequestBuilders;
@@ -10,7 +11,7 @@ using WireMock.ResponseBuilders;
 
 namespace Tests;
 
-public sealed class VodafoneSmsSenderTests : IClassFixture<SmsWireMockFixture>
+public sealed class VodafoneSmsSenderTests : TestBase, IClassFixture<SmsWireMockFixture>
 {
     private readonly SmsWireMockFixture _fixture;
 
@@ -48,7 +49,7 @@ public sealed class VodafoneSmsSenderTests : IClassFixture<SmsWireMockFixture>
     {
         _StubSubmit("<Response><Success>true</Success></Response>");
 
-        var result = await _CreateSender().SendAsync(SmsRequests.Single());
+        var result = await _CreateSender().SendAsync(SmsRequests.Single(), AbortToken);
 
         result.Success.Should().BeTrue();
     }
@@ -58,7 +59,7 @@ public sealed class VodafoneSmsSenderTests : IClassFixture<SmsWireMockFixture>
     {
         _StubSubmit("<RESPONSE><SUCCESS>TRUE</SUCCESS></RESPONSE>");
 
-        var result = await _CreateSender().SendAsync(SmsRequests.Single());
+        var result = await _CreateSender().SendAsync(SmsRequests.Single(), AbortToken);
 
         result.Success.Should().BeTrue();
     }
@@ -68,7 +69,7 @@ public sealed class VodafoneSmsSenderTests : IClassFixture<SmsWireMockFixture>
     {
         _StubSubmit("<Response><Success>false</Success></Response>");
 
-        var result = await _CreateSender().SendAsync(SmsRequests.Single());
+        var result = await _CreateSender().SendAsync(SmsRequests.Single(), AbortToken);
 
         result.Success.Should().BeFalse();
     }
@@ -78,7 +79,7 @@ public sealed class VodafoneSmsSenderTests : IClassFixture<SmsWireMockFixture>
     {
         _StubSubmit(string.Empty);
 
-        var result = await _CreateSender().SendAsync(SmsRequests.Single());
+        var result = await _CreateSender().SendAsync(SmsRequests.Single(), AbortToken);
 
         result.Success.Should().BeFalse();
     }
@@ -88,7 +89,7 @@ public sealed class VodafoneSmsSenderTests : IClassFixture<SmsWireMockFixture>
     {
         _StubSubmit("<Response><Success>true</Success></Response>");
 
-        await _CreateSender().SendAsync(SmsRequests.Single(text: "a & b < c"));
+        await _CreateSender().SendAsync(SmsRequests.Single(text: "a & b < c"), AbortToken);
 
         var body = _fixture.Server.LogEntries.Single().RequestMessage?.Body;
         body.Should().Contain("a &amp; b &lt; c");
@@ -109,7 +110,7 @@ public sealed class VodafoneSmsSenderTests : IClassFixture<SmsWireMockFixture>
         );
         var sender = new VodafoneSmsSender(_fixture.HttpClientFactory, options, NullLogger<VodafoneSmsSender>.Instance);
 
-        var result = await sender.SendAsync(SmsRequests.Single());
+        var result = await sender.SendAsync(SmsRequests.Single(), AbortToken);
 
         result.Success.Should().BeFalse();
         result.FailureKind.Should().Be(SmsFailureKind.Transient);

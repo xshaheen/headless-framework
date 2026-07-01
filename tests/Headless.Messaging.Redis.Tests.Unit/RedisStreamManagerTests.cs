@@ -60,7 +60,7 @@ public sealed class RedisStreamManagerTests : TestBase
         await _sut.PublishAsync("test-stream", entries);
 
         // then
-        await _mockConnectionPool.Received(1).ConnectAsync();
+        await _mockConnectionPool.Received(1).ConnectAsync(CancellationToken.None);
     }
 
     [Fact]
@@ -126,6 +126,6 @@ public sealed class RedisStreamManagerTests : TestBase
         await _sut.Ack("stream", "group", "id");
 
         // then
-        await _mockConnectionPool.Received(1).ConnectAsync();
+        await _mockConnectionPool.Received(1).ConnectAsync(CancellationToken.None);
     }
 }

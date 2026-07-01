@@ -12,34 +12,34 @@ public sealed class BlobDownloadResultTests : TestBase
     [Fact]
     public void should_expose_stream_property_when_created_with_stream()
     {
-        // Arrange
+        // given
         using var stream = new MemoryStream([1, 2, 3]);
 
-        // Act
+        // when
         using var result = new BlobDownloadResult(stream, "test.txt");
 
-        // Assert
+        // then
         result.Stream.Should().BeSameAs(stream);
     }
 
     [Fact]
     public void should_expose_filename_property_when_created_with_filename()
     {
-        // Arrange
+        // given
         using var stream = new MemoryStream();
         const string fileName = "document.pdf";
 
-        // Act
+        // when
         using var result = new BlobDownloadResult(stream, fileName);
 
-        // Assert
+        // then
         result.FileName.Should().Be(fileName);
     }
 
     [Fact]
     public void should_expose_metadata_property_when_created_with_metadata()
     {
-        // Arrange
+        // given
         using var stream = new MemoryStream();
         var metadata = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
@@ -47,10 +47,10 @@ public sealed class BlobDownloadResultTests : TestBase
             ["author"] = "test",
         };
 
-        // Act
+        // when
         using var result = new BlobDownloadResult(stream, "file.txt", metadata);
 
-        // Assert
+        // then
         result.Metadata.Should().NotBeNull();
         result.Metadata!["key"].Should().Be("value");
         result.Metadata["author"].Should().Be("test");
@@ -59,13 +59,13 @@ public sealed class BlobDownloadResultTests : TestBase
     [Fact]
     public void should_have_null_metadata_when_not_provided()
     {
-        // Arrange
+        // given
         using var stream = new MemoryStream();
 
-        // Act
+        // when
         using var result = new BlobDownloadResult(stream, "file.txt");
 
-        // Assert
+        // then
         result.Metadata.Should().BeNull();
     }
 
@@ -76,14 +76,14 @@ public sealed class BlobDownloadResultTests : TestBase
     [Fact]
     public void should_dispose_stream_when_dispose_is_called()
     {
-        // Arrange
+        // given
         var stream = new MemoryStream([1, 2, 3]);
         var result = new BlobDownloadResult(stream, "test.txt");
 
-        // Act
+        // when
         result.Dispose();
 
-        // Assert - verify stream is disposed by trying to read
+        // then - verify stream is disposed by trying to read
         var act = stream.ReadByte;
         act.Should().Throw<ObjectDisposedException>();
     }
@@ -91,14 +91,14 @@ public sealed class BlobDownloadResultTests : TestBase
     [Fact]
     public async Task should_dispose_stream_async_when_dispose_async_is_called()
     {
-        // Arrange
+        // given
         var stream = new MemoryStream([1, 2, 3]);
         var result = new BlobDownloadResult(stream, "test.txt");
 
-        // Act
+        // when
         await result.DisposeAsync();
 
-        // Assert - verify stream is disposed by trying to read
+        // then - verify stream is disposed by trying to read
         var act = stream.ReadByte;
         act.Should().Throw<ObjectDisposedException>();
     }
@@ -110,18 +110,18 @@ public sealed class BlobDownloadResultTests : TestBase
     [Fact]
     public void should_support_using_statement_when_used_with_using_block()
     {
-        // Arrange
+        // given
         var stream = new MemoryStream([1, 2, 3]);
         Stream? capturedStream;
 
-        // Act
+        // when
         using (var result = new BlobDownloadResult(stream, "test.txt"))
         {
             capturedStream = result.Stream;
             capturedStream.ReadByte().Should().Be(1); // Stream should be readable
         }
 
-        // Assert - stream should be disposed after using block
+        // then - stream should be disposed after using block
         var act = () => capturedStream.ReadByte();
         act.Should().Throw<ObjectDisposedException>();
     }
@@ -129,18 +129,18 @@ public sealed class BlobDownloadResultTests : TestBase
     [Fact]
     public async Task should_support_await_using_statement_when_used_with_await_using()
     {
-        // Arrange
+        // given
         var stream = new MemoryStream([1, 2, 3]);
         Stream? capturedStream;
 
-        // Act
+        // when
         await using (var result = new BlobDownloadResult(stream, "test.txt"))
         {
             capturedStream = result.Stream;
             capturedStream.ReadByte().Should().Be(1); // Stream should be readable
         }
 
-        // Assert - stream should be disposed after await using block
+        // then - stream should be disposed after await using block
         var act = () => capturedStream.ReadByte();
         act.Should().Throw<ObjectDisposedException>();
     }

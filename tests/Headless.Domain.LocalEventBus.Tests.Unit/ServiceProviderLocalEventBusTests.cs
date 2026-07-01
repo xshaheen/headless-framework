@@ -4,6 +4,8 @@ using System.Reflection;
 using Headless.Domain;
 using Microsoft.Extensions.DependencyInjection;
 
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
+#pragma warning disable MA0015 // Specify the parameter name in ArgumentException
 namespace Tests;
 
 public sealed class ServiceProviderLocalEventBusTests

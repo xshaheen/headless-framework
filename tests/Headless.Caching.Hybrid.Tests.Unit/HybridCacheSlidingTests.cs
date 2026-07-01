@@ -11,6 +11,10 @@ public sealed class HybridCacheSlidingTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
 
+    // The HybridCache returned by _CreateCache is disposed per test via `await using`, but it does not own the
+    // injected L1/L2 stores. This fixture collects those raw InMemoryCache instances and disposes them at teardown.
+    private readonly List<object> _disposables = [];
+
     [Fact]
     public async Task should_store_sliding_metadata_in_l2_and_bound_local_copy()
     {
@@ -144,14 +148,37 @@ public sealed class HybridCacheSlidingTests : TestBase
     private (HybridCache Cache, IInMemoryCache L1, IRemoteCache L2) _CreateCache(HybridCacheOptions options)
     {
         var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
-        var l2 = new InMemoryRemoteCacheAdapter(
-            new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true })
-        );
+        var l2Inner = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        var l2 = new InMemoryRemoteCacheAdapter(l2Inner);
         var publisher = Substitute.For<IBus>();
         publisher
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
 
-        return (new HybridCache(l1, l2, publisher, options, timeProvider: _timeProvider), l1, l2);
+        var cache = new HybridCache(l1, l2, publisher, options, timeProvider: _timeProvider);
+
+        _disposables.Add(l1);
+        _disposables.Add(l2Inner);
+
+        return (cache, l1, l2);
+    }
+
+    protected override async ValueTask DisposeAsyncCore()
+    {
+        foreach (var disposable in _disposables)
+        {
+            switch (disposable)
+            {
+                case IAsyncDisposable asyncDisposable:
+                    await asyncDisposable.DisposeAsync().ConfigureAwait(false);
+                    break;
+                case IDisposable syncDisposable:
+                    syncDisposable.Dispose();
+                    break;
+            }
+        }
+
+        _disposables.Clear();
+        await base.DisposeAsyncCore().ConfigureAwait(false);
     }
 }

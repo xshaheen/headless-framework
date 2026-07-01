@@ -12,6 +12,19 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
     private readonly FakeFactoryCacheStore _store = new();
+    private readonly List<FactoryCacheCoordinator> _coordinators = [];
+
+    protected override ValueTask DisposeAsyncCore()
+    {
+        foreach (var coordinator in _coordinators)
+        {
+            coordinator.Dispose();
+        }
+
+        _coordinators.Clear();
+
+        return base.DisposeAsyncCore();
+    }
 
     [Fact]
     public void should_throw_when_time_provider_is_null()
@@ -42,7 +55,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         // given
         var coordinator = _CreateCoordinator();
 
-        // when / then
+        // when & then
         var act = coordinator.Dispose;
         act.Should().NotThrow();
     }
@@ -352,11 +365,13 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
                 )
                 : null;
         var lockProvider = new FakeCacheFactoryLockProvider();
-        var coordinator = new FactoryCacheCoordinator(
+
+        using var coordinator = new FactoryCacheCoordinator(
             _timeProvider,
             NullLogger<FactoryCacheCoordinator>.Instance,
             lockProvider
         );
+
         var factoryCalls = 0;
 
         // when
@@ -390,9 +405,10 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
         var logger = Substitute.For<ILogger<FactoryCacheCoordinator>>();
         logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        using var coordinator = new FactoryCacheCoordinator(_timeProvider, logger);
 
         // when
-        await new FactoryCacheCoordinator(_timeProvider, logger).GetOrAddAsync<string>(
+        await coordinator.GetOrAddAsync<string>(
             _store,
             key,
             _ => throw new InvalidOperationException("downstream unavailable"),
@@ -407,7 +423,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
             {
                 var arguments = call.GetArguments();
 
-                return call.GetMethodInfo().Name == nameof(ILogger.Log)
+                return string.Equals(call.GetMethodInfo().Name, nameof(ILogger.Log), StringComparison.Ordinal)
                     && arguments[0] is LogLevel.Warning
                     && arguments[1] is EventId { Id: 1, Name: "CacheFailSafeActivated" };
             });
@@ -544,7 +560,8 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
             lastModifiedAt: now.AddMinutes(-30),
             tags: tags
         );
-        var coordinator = _CreateCoordinator();
+
+        using var coordinator = _CreateCoordinator();
 
         // when — the factory throws, activating fail-safe and the throttle restamp
         var stale = await coordinator.GetOrAddAsync<string>(
@@ -775,8 +792,15 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var key = Faker.Random.AlphaNumeric(8);
 
         // when
-        var result = await _CreateCoordinator()
-            .GetOrAddAsync<string>(_store, key, _ => ValueTask.FromResult<string?>(null), _CreateOptions(), AbortToken);
+        using var coordinator = _CreateCoordinator();
+
+        var result = await coordinator.GetOrAddAsync<string>(
+            _store,
+            key,
+            _ => ValueTask.FromResult<string?>(null),
+            _CreateOptions(),
+            AbortToken
+        );
 
         // then
         result.HasValue.Should().BeTrue();
@@ -1345,7 +1369,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
         var logger = Substitute.For<ILogger<FactoryCacheCoordinator>>();
         logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
-        var coordinator = new FactoryCacheCoordinator(_timeProvider, logger);
+        var coordinator = _CreateCoordinator(logger);
         var ceilingRegistered = _WaitForBackgroundCeilingRegistered(coordinator);
         var backgroundFinished = _WaitForBackgroundFinished(coordinator);
         var timeoutRegistered = _WaitForFactoryTimeoutRegistered(coordinator);
@@ -1385,7 +1409,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
             observed = logger
                 .ReceivedCalls()
                 .Any(call =>
-                    call.GetMethodInfo().Name == nameof(ILogger.Log)
+                    string.Equals(call.GetMethodInfo().Name, nameof(ILogger.Log), StringComparison.Ordinal)
                     && call.GetArguments()[1] is EventId { Id: 6, Name: "CacheBackgroundCompletionFailed" }
                 );
 
@@ -1405,7 +1429,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var key = Faker.Random.AlphaNumeric(8);
         var logger = Substitute.For<ILogger<FactoryCacheCoordinator>>();
         logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
-        var coordinator = new FactoryCacheCoordinator(_timeProvider, logger);
+        var coordinator = _CreateCoordinator(logger);
         var timeoutRegistered = _WaitForFactoryTimeoutRegistered(coordinator);
         var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var abandonedFactoryGate = new TaskCompletionSource<string?>(
@@ -1436,7 +1460,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
             observed = logger
                 .ReceivedCalls()
                 .Any(call =>
-                    call.GetMethodInfo().Name == nameof(ILogger.Log)
+                    string.Equals(call.GetMethodInfo().Name, nameof(ILogger.Log), StringComparison.Ordinal)
                     && call.GetArguments()[1] is EventId { Id: 6, Name: "CacheBackgroundCompletionFailed" }
                 );
 
@@ -1458,7 +1482,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var key = Faker.Random.AlphaNumeric(8);
         var logger = Substitute.For<ILogger<FactoryCacheCoordinator>>();
         logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
-        var coordinator = new FactoryCacheCoordinator(_timeProvider, logger);
+        var coordinator = _CreateCoordinator(logger);
         var options = _CreateOptions(
             duration: TimeSpan.FromSeconds(1),
             isFailSafeEnabled: false,
@@ -1475,7 +1499,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var inertWarnings = logger
             .ReceivedCalls()
             .Count(call =>
-                call.GetMethodInfo().Name == nameof(ILogger.Log)
+                string.Equals(call.GetMethodInfo().Name, nameof(ILogger.Log), StringComparison.Ordinal)
                 && call.GetArguments()[1] is EventId { Id: 7, Name: "CacheSoftTimeoutInert" }
             );
 
@@ -1768,8 +1792,10 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var key = Faker.Random.AlphaNumeric(8);
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         _store.SetEntry(key, "old", now.AddMinutes(5), now.AddMinutes(5), eagerRefreshAt: now.AddSeconds(-1));
-        var coordinator = _CreateCoordinator();
+        using var coordinator = _CreateCoordinator();
+#pragma warning disable CA2025 // Do not pass 'IDisposable' instances into unawaited tasks
         var backgroundFinished = _WaitForBackgroundFinished(coordinator);
+#pragma warning restore CA2025
         var options = _CreateOptions(duration: TimeSpan.FromMinutes(10), eagerRefreshThreshold: 0.5f);
 
         // when
@@ -1939,15 +1965,17 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var key = Faker.Random.AlphaNumeric(8);
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         _store.SetEntry(key, "old", now.AddMinutes(5), now.AddMinutes(5), eagerRefreshAt: now.AddSeconds(-1));
-        var coordinator = _CreateCoordinator();
+        using var coordinator = _CreateCoordinator();
+#pragma warning disable CA2025 // Do not pass 'IDisposable' instances into unawaited tasks
         var backgroundFinished = _WaitForBackgroundFinished(coordinator);
         var ceilingRegistered = _WaitForBackgroundCeilingRegistered(coordinator);
+#pragma warning restore CA2025 // Do not pass 'IDisposable' instances into unawaited tasks
         var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var factoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
         var options = _CreateOptions(
             duration: TimeSpan.FromMinutes(10),
-            eagerRefreshThreshold: 0.5f,
-            backgroundFactoryCeiling: TimeSpan.FromSeconds(2)
+            backgroundFactoryCeiling: TimeSpan.FromSeconds(2),
+            eagerRefreshThreshold: 0.5f
         );
 
         async ValueTask<string?> factory(CancellationToken cancellationToken)
@@ -2866,7 +2894,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
         var logger = Substitute.For<ILogger<FactoryCacheCoordinator>>();
         logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
-        var coordinator = new FactoryCacheCoordinator(_timeProvider, logger);
+        var coordinator = _CreateCoordinator(logger);
         var timeoutRegistered = _WaitForFactoryTimeoutRegistered(coordinator);
         var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         // Gate the factory: it ignores cancellation and only completes when we signal it
@@ -2905,7 +2933,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
             observed = logger
                 .ReceivedCalls()
                 .Any(call =>
-                    call.GetMethodInfo().Name == nameof(ILogger.Log)
+                    string.Equals(call.GetMethodInfo().Name, nameof(ILogger.Log), StringComparison.Ordinal)
                     && call.GetArguments()[1] is EventId { Id: 16, Name: "CacheFactoryDiscardedSuccess" }
                 );
 
@@ -3073,7 +3101,18 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
     private static void _RemoveEntryDirectly(FakeFactoryCacheStore store, string key) => store.RemoveEntry(key);
 
     private FactoryCacheCoordinator _CreateCoordinator() =>
-        new(_timeProvider, NullLogger<FactoryCacheCoordinator>.Instance);
+        _CreateCoordinator(NullLogger<FactoryCacheCoordinator>.Instance);
+
+    // Tracks every coordinator so it is disposed in teardown, regardless of how the test consumes it
+    // (inline fluent calls cannot take a `using`). Coordinator.Dispose is idempotent, so tests that
+    // dispose mid-run via `using var` are unaffected.
+    private FactoryCacheCoordinator _CreateCoordinator(ILogger<FactoryCacheCoordinator> logger)
+    {
+        var coordinator = new FactoryCacheCoordinator(_timeProvider, logger);
+        _coordinators.Add(coordinator);
+
+        return coordinator;
+    }
 
     private static Task _WaitForBackgroundFinished(FactoryCacheCoordinator coordinator)
     {

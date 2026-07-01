@@ -47,10 +47,10 @@ public sealed class JobFunctionAttribute : Attribute
         int maxConcurrency = 0
     )
     {
-        _ = functionName;
-        _ = cronExpression;
-        _ = taskPriority;
-        _ = maxConcurrency;
+        FunctionName = functionName;
+        CronExpression = cronExpression;
+        TaskPriority = taskPriority;
+        MaxConcurrency = maxConcurrency;
     }
 
     /// <summary>
@@ -64,8 +64,26 @@ public sealed class JobFunctionAttribute : Attribute
     /// </param>
     public JobFunctionAttribute(string functionName, JobPriority taskPriority, int maxConcurrency = 0)
     {
-        _ = functionName;
-        _ = taskPriority;
-        _ = maxConcurrency;
+        FunctionName = functionName;
+        TaskPriority = taskPriority;
+        MaxConcurrency = maxConcurrency;
     }
+
+    /// <summary>Unique name that identifies this function in the scheduler.</summary>
+    public string FunctionName { get; }
+
+    /// <summary>
+    /// Optional six-field (seconds-inclusive) NCrontab expression, or <see langword="null"/> for a time job.
+    /// A value starting with <c>%</c> is resolved from <c>IConfiguration</c> at startup.
+    /// </summary>
+    public string? CronExpression { get; }
+
+    /// <summary>Scheduling priority for the job.</summary>
+    public JobPriority TaskPriority { get; }
+
+    /// <summary>
+    /// Maximum number of concurrent executions. <c>0</c> means unlimited within the scheduler's overall
+    /// <c>MaxConcurrency</c> setting.
+    /// </summary>
+    public int MaxConcurrency { get; }
 }

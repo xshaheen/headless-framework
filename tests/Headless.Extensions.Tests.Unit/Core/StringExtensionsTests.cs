@@ -308,7 +308,7 @@ public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposabl
     [Fact]
     public void TruncateEnd_should_not_split_surrogate_pairs()
     {
-        var input = "ab" + _Emoji + "cd"; // 6 UTF-16 chars: a, b, high, low, c, d
+        const string input = "ab" + _Emoji + "cd"; // 6 UTF-16 chars: a, b, high, low, c, d
 
         // Cut at index 3 would orphan the high surrogate, so it backs off to 2.
         input.TruncateEnd(3).Should().Be("ab");
@@ -320,7 +320,7 @@ public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposabl
     [Fact]
     public void TruncateEnd_with_suffix_should_not_split_surrogate_pairs()
     {
-        var input = "ab" + _Emoji + "cd"; // 6 UTF-16 chars
+        const string input = "ab" + _Emoji + "cd"; // 6 UTF-16 chars
 
         // cut = maxLength(4) - suffix(1) = 3 would orphan the high surrogate, so it backs off to 2.
         input.TruncateEnd(4, "_").Should().Be("ab_");
@@ -329,7 +329,7 @@ public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposabl
     [Fact]
     public void TruncateStart_should_not_split_surrogate_pairs()
     {
-        var input = "ab" + _Emoji + "cd"; // 6 UTF-16 chars
+        const string input = "ab" + _Emoji + "cd"; // 6 UTF-16 chars
 
         // Keeping the last 3 chars would start on the orphaned low surrogate, so the start advances by one.
         input.TruncateStart(3).Should().Be("cd");
