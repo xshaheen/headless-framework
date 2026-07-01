@@ -114,7 +114,7 @@ public sealed class TimeSpanExtensionsTests : TestBase
         var timeout = TimeSpan.Zero;
 
         // when
-        using var cts = timeout.ToCancellationTokenSource();
+        using var cts = timeout.ToCancellationTokenSource(AbortToken);
 
         // then
         cts.IsCancellationRequested.Should().BeTrue();
@@ -127,7 +127,7 @@ public sealed class TimeSpanExtensionsTests : TestBase
         var timeout = TimeSpan.FromMinutes(5);
 
         // when
-        using var cts = timeout.ToCancellationTokenSource();
+        using var cts = timeout.ToCancellationTokenSource(AbortToken);
 
         // then
         cts.IsCancellationRequested.Should().BeFalse();
@@ -140,7 +140,7 @@ public sealed class TimeSpanExtensionsTests : TestBase
         var timeout = TimeSpan.FromMinutes(-5);
 
         // when
-        using var cts = timeout.ToCancellationTokenSource();
+        using var cts = timeout.ToCancellationTokenSource(AbortToken);
 
         // then
         cts.IsCancellationRequested.Should().BeFalse();

@@ -215,7 +215,7 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
 
         await using var transaction = await db.Database.BeginTransactionAsync(AbortToken);
 
-        await using (db.Database.EnlistCommitCoordination(transaction, scope.ServiceProvider))
+        await using (db.Database.EnlistCommitCoordination(transaction, scope.ServiceProvider, AbortToken))
         {
             // when — publish enlists the row inside the transaction, then the consumer rolls back.
             await outboxBus.PublishAsync(new OrderShipped($"{marker}-1"), cancellationToken: AbortToken);
@@ -242,7 +242,7 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
 
         await using var transaction = await db.Database.BeginTransactionAsync(AbortToken);
 
-        await using (db.Database.EnlistCommitCoordination(transaction, scope.ServiceProvider))
+        await using (db.Database.EnlistCommitCoordination(transaction, scope.ServiceProvider, AbortToken))
         {
             await outboxBus.PublishAsync(new OrderShipped($"{marker}-1"), cancellationToken: AbortToken);
 

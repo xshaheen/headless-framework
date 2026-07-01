@@ -362,7 +362,7 @@ public sealed class SettingsInitializationBackgroundServiceTests : TestBase
         // then
         cancelledTask.Should().Be(saveCancelled.Task, "cancellation token should cancel the background task");
 
-        await Task.WhenAny(taskCompleted.Task, Task.Delay(TimeSpan.FromSeconds(1), AbortToken));
+        _ = await Task.WhenAny(taskCompleted.Task, Task.Delay(TimeSpan.FromSeconds(1), AbortToken));
     }
 
     #endregion

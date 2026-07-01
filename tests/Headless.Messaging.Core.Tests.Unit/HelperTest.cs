@@ -153,7 +153,7 @@ public sealed class HelperTest
     public void should_reject_wildcard_with_too_many_wildcards()
     {
         // given
-        var manyWildcards = string.Join(".", Enumerable.Repeat("*", 11));
+        var manyWildcards = string.Join('.', Enumerable.Repeat("*", 11));
 
         // when
         var act = () => Helper.WildcardToRegex(manyWildcards);

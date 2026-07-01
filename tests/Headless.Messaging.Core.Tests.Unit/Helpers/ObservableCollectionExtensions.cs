@@ -10,7 +10,7 @@ public static class ObservableCollectionExtensions
         CancellationToken cancellationToken
     )
     {
-        await collection.WaitForMessages(x => x.Count() == 1, cancellationToken);
+        await collection.WaitForMessages(x => x.Take(2).Count() == 1, cancellationToken);
     }
 
     public static async Task WaitForMessages<T>(

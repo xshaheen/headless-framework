@@ -455,7 +455,7 @@ public sealed class HybridCacheTests : TestBase
         await publisher
             .Received(1)
             .PublishAsync(
-                Arg.Is<CacheInvalidationMessage>(m => m.FlushAll == true),
+                Arg.Is<CacheInvalidationMessage>(m => m.FlushAll),
                 Arg.Is<PublishOptions?>(options => options == null),
                 Arg.Any<CancellationToken>()
             );

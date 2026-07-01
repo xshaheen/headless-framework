@@ -539,7 +539,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .ChangeReceiveStateAsync(
                 Arg.Any<MediumMessage>(),
                 StatusName.Scheduled,
-                Arg.Is<DateTime?>(v => v.HasValue && v.Value > nowBefore.Add(options.RetryPolicy.InitialDispatchGrace)),
+                Arg.Is<DateTime?>(v => v > nowBefore.Add(options.RetryPolicy.InitialDispatchGrace)),
                 Arg.Any<DateTime?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()

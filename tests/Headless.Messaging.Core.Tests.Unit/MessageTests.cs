@@ -268,7 +268,7 @@ public sealed class MessageTests : TestBase
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.Exception] = "OldException" };
         var message = new Message(headers, null);
 #pragma warning disable MA0015 // ReSharper disable once NotResolvedInText
-        var exception = new ArgumentException(@"New error", "testParam");
+        var exception = new ArgumentException("New error", "testParam");
 #pragma warning restore MA0015
 
         // when

@@ -15,7 +15,7 @@ namespace Tests;
 
 /// <summary>
 /// One Testcontainers Postgres instance shared by every test, backing both the Jobs operational store (schema
-/// <c>jobs</c>) and the Coordination Postgres provider (its own <c>coordination_*</c> tables in <c>public</c>).
+/// <c>jobs</c>) and the Coordination Postgres provider (its own <c>coordination_*</c> tables in <see langword="public"/>).
 /// Serialized at the collection level because tests reset the whole database between runs.
 /// </summary>
 [UsedImplicitly]

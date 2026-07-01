@@ -84,7 +84,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         problemDetailsService.TryWriteAsync(Arg.Any<ProblemDetailsContext>()).Returns(true);
         var handler = _CreateHandler(problemDetailsService, _CreateRealCreator());
         var httpContext = new DefaultHttpContext();
-        var errors = new[] { new ErrorDescriptor("conflict_code", @"conflict description") };
+        var errors = new[] { new ErrorDescriptor("conflict_code", "conflict description") };
 
         // when
         var result = await handler.TryHandleAsync(

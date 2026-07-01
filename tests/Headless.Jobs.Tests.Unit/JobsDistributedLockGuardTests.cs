@@ -132,7 +132,11 @@ public sealed class JobsDistributedLockGuardTests : TestBase
 
         // Node A holds the seed lock.
         var nodeA = _CreateLock(storage);
-        await using var held = await nodeA.TryAcquireAsync(JobsKeys.CronSeedMigrationResource, _HoldOptions);
+        await using var held = await nodeA.TryAcquireAsync(
+            JobsKeys.CronSeedMigrationResource,
+            _HoldOptions,
+            AbortToken
+        );
         held.Should().NotBeNull("pre-condition: the seed lock must be acquirable on an empty store");
 
         // Node B (same storage) attempts the guarded seed.

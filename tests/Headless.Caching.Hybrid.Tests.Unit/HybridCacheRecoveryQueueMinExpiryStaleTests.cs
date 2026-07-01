@@ -16,8 +16,6 @@ namespace Tests;
 /// </summary>
 public sealed class HybridCacheRecoveryQueueMinExpiryStaleTests : TestBase
 {
-    private static readonly TimeSpan _Delay = TimeSpan.FromSeconds(5);
-
     private readonly FakeTimeProvider _timeProvider = new();
 
     private (HybridCache cache, TogglableRemoteCache l2) _CreateCache(int maxItems)

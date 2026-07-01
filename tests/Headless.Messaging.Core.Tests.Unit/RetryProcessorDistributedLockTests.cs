@@ -60,7 +60,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
             .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
             .Returns(new ValueTask<IEnumerable<MediumMessage>>([]));
 
-        var processor = _CreateProcessor("v1", storage, useStorageLock: true);
+        var processor = _CreateProcessor("v1", useStorageLock: true);
         using var context = _CreateContext(storage);
 
         // when
@@ -88,7 +88,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
             .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
             .Returns(new ValueTask<IEnumerable<MediumMessage>>([]));
 
-        var processor = _CreateProcessor("v1", storage, useStorageLock: true);
+        var processor = _CreateProcessor("v1", useStorageLock: true);
         using var context = _CreateContext(storage);
 
         // when
@@ -133,7 +133,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
                 );
             });
 
-        var processor = _CreateProcessor("v1", storage, useStorageLock: true, lockProvider: trackingProvider);
+        var processor = _CreateProcessor("v1", useStorageLock: true, lockProvider: trackingProvider);
         using var context = _CreateContext(storage);
 
         // when — tick 1: starts background consume task that acquires the lock and then blocks
@@ -191,7 +191,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
             .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
             .Returns(new ValueTask<IEnumerable<MediumMessage>>([]));
 
-        var processor = _CreateProcessor("v1", storage, useStorageLock: true, lockProvider: lockProvider);
+        var processor = _CreateProcessor("v1", useStorageLock: true, lockProvider: lockProvider);
         using var context = _CreateContext(storage);
 
         await processor.ProcessAsync(context);
@@ -227,13 +227,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
             );
 
         var storage = Substitute.For<IDataStorage>();
-        var processor = _CreateProcessor(
-            "v1",
-            storage,
-            useStorageLock: true,
-            lockProvider: lockProvider,
-            logger: logger
-        );
+        var processor = _CreateProcessor("v1", useStorageLock: true, lockProvider: lockProvider, logger: logger);
         using var context = _CreateContext(storage);
 
         await processor.ProcessAsync(context);
@@ -294,13 +288,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
                 );
             });
 
-        var processor = _CreateProcessor(
-            "v1",
-            storage,
-            useStorageLock: true,
-            lockProvider: lockProvider,
-            logger: logger
-        );
+        var processor = _CreateProcessor("v1", useStorageLock: true, lockProvider: lockProvider, logger: logger);
         using var context = _CreateContext(storage);
 
         await processor.ProcessAsync(context);
@@ -334,7 +322,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
             .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
             .Returns(new ValueTask<IEnumerable<MediumMessage>>([]));
 
-        var processor = _CreateProcessor("v1", storage, useStorageLock: true, lockProvider: alwaysGranted);
+        var processor = _CreateProcessor("v1", useStorageLock: true, lockProvider: alwaysGranted);
         using var context = _CreateContext(storage);
 
         // when
@@ -360,7 +348,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
             .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
             .Returns(new ValueTask<IEnumerable<MediumMessage>>([]));
 
-        var processor = _CreateProcessor("v1", storage, useStorageLock: false, lockProvider: mockProvider);
+        var processor = _CreateProcessor("v1", useStorageLock: false, lockProvider: mockProvider);
         using var context = _CreateContext(storage);
 
         // when
@@ -412,7 +400,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
                 );
             });
 
-        var processor = _CreateProcessor("v1", storage, useStorageLock: true, lockProvider: alwaysGranted);
+        var processor = _CreateProcessor("v1", useStorageLock: true, lockProvider: alwaysGranted);
         using var context = _CreateContext(storage);
 
         try
@@ -472,7 +460,6 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
 
     private MessageNeedToRetryProcessor _CreateProcessor(
         string version,
-        IDataStorage storage,
         bool useStorageLock,
         IDistributedLock? lockProvider = null,
         IDispatcher? dispatcher = null,
