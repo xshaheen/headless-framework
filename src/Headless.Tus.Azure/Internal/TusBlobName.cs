@@ -30,9 +30,19 @@ internal static class TusBlobName
             return true;
         }
 
+        // Leading/trailing whitespace corrupts the comma-joined round-trips below (they split with
+        // TrimEntries) and trailing spaces/dots are hazardous in Azure blob names.
+        if (char.IsWhiteSpace(fileId[0]) || char.IsWhiteSpace(fileId[^1]))
+        {
+            return true;
+        }
+
         foreach (var c in fileId)
         {
-            if (c is '/' or '\\' || char.IsControl(c))
+            // ',' is the separator used to persist file-id lists in blob metadata
+            // (tus_partial_uploads); an id containing one would corrupt the round-trip and make
+            // GetUploadConcatAsync report the wrong constituent files.
+            if (c is '/' or '\\' or ',' || char.IsControl(c))
             {
                 return true;
             }
