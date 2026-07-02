@@ -14,19 +14,29 @@ public sealed partial class TusAzureStore : ITusExpirationStore
     /// </summary>
     /// <param name="fileId">the TUS file identifier</param>
     /// <param name="expires">the UTC instant after which the upload is considered expired</param>
-    /// <param name="cancellationToken">token to cancel the operation</param>
+    /// <param name="cancellationToken">unused; see remarks</param>
     /// <remarks>
     /// If the blob does not exist, the call is silently ignored and a warning is logged. The
     /// expiration value is persisted in the <c>tus_expiration</c> blob metadata key and evaluated
     /// during <c>GetExpiredFilesAsync</c> and <c>RemoveExpiredFilesAsync</c>.
+    /// <para>
+    /// <paramref name="cancellationToken"/> is deliberately ignored (mirroring
+    /// <c>TusDiskStore</c>, whose store operations are non-cancellable): tusdotnet refreshes the
+    /// sliding expiration <em>after</em> a PATCH using the request's token, which is already
+    /// cancelled when the client paused or disconnected mid-request — exactly when the just
+    /// -committed partial data still needs its expiration window extended so the client can resume.
+    /// </para>
     /// </remarks>
     public async Task SetExpirationAsync(string fileId, DateTimeOffset expires, CancellationToken cancellationToken)
     {
+        await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
+
         var blobClient = _GetBlobClient(fileId);
 
         try
         {
-            var azureFile = await _GetTusFileInfoAsync(blobClient, fileId, cancellationToken).ConfigureAwait(false);
+            var azureFile = await _GetTusFileInfoAsync(blobClient, fileId, CancellationToken.None)
+                .ConfigureAwait(false);
 
             if (azureFile == null)
             {
@@ -36,7 +46,7 @@ public sealed partial class TusAzureStore : ITusExpirationStore
             }
 
             azureFile.Metadata.DateExpiration = expires;
-            await _UpdateMetadataAsync(blobClient, azureFile, cancellationToken).ConfigureAwait(false);
+            await _UpdateMetadataAsync(blobClient, azureFile, CancellationToken.None).ConfigureAwait(false);
 
             _logger.ExpirationSet(fileId, expires);
         }
@@ -50,27 +60,58 @@ public sealed partial class TusAzureStore : ITusExpirationStore
 
     /// <summary>
     /// Returns the expiration timestamp stored for the given upload, or <see langword="null"/>
-    /// if the file does not exist or no expiration has been set.
+    /// if the file does not exist, no expiration has been set, or the upload is complete.
     /// </summary>
     /// <param name="fileId">the TUS file identifier</param>
     /// <param name="cancellationToken">token to cancel the operation</param>
     /// <returns>the expiration instant, or <see langword="null"/></returns>
+    /// <remarks>
+    /// Completed uploads report no expiration — a deliberate divergence from
+    /// <c>TusDiskStore</c>, which keeps returning the stored timestamp. The TUS Expiration
+    /// extension covers <em>unfinished</em> uploads, but tusdotnet refreshes the sliding
+    /// expiration on the PATCH that completes an upload and its <c>FileHasNotExpired</c>
+    /// requirement 404s any upload whose expiration has passed — so reporting the stale
+    /// timestamp would make completed uploads unreachable through tus (no HEAD, and no
+    /// DELETE/termination) once the window elapses, even though this store never reaps them.
+    /// </remarks>
     public async Task<DateTimeOffset?> GetExpirationAsync(string fileId, CancellationToken cancellationToken)
     {
+        await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
+
         var azureFile = await _GetTusFileInfoAsync(fileId, cancellationToken).ConfigureAwait(false);
 
-        return azureFile?.Metadata.DateExpiration;
+        if (azureFile is null)
+        {
+            return null;
+        }
+
+        var uploadLength = azureFile.Metadata.UploadLength;
+
+        if (uploadLength is not null && azureFile.CurrentContentLength >= uploadLength.Value)
+        {
+            return null;
+        }
+
+        return azureFile.Metadata.DateExpiration;
     }
 
     /// <summary>
-    /// Enumerates all uploads in the configured container whose expiration timestamp is in the
-    /// past.
+    /// Enumerates the <em>incomplete</em> uploads in the configured container whose expiration
+    /// timestamp is in the past.
     /// </summary>
     /// <param name="cancellationToken">token to cancel the enumeration</param>
     /// <returns>
-    /// a collection of file identifiers for uploads whose <c>tus_expiration</c> metadata value is
-    /// at or before the current UTC time
+    /// a collection of file identifiers for unfinished uploads whose <c>tus_expiration</c>
+    /// metadata value is at or before the current UTC time
     /// </returns>
+    /// <remarks>
+    /// The TUS Expiration extension covers <em>unfinished</em> uploads only, and tusdotnet keeps
+    /// refreshing the (sliding) expiration on the PATCH that completes an upload — so completed
+    /// uploads routinely carry a past expiration. They are excluded here (matching
+    /// <c>TusDiskStore</c>) so cleanup can never destroy data the application has not consumed
+    /// yet. An upload with no declared length (Creation-Defer-Length in progress) counts as
+    /// incomplete.
+    /// </remarks>
     public async Task<IEnumerable<string>> GetExpiredFilesAsync(CancellationToken cancellationToken)
     {
         var expiredFiles = new List<string>();
@@ -89,14 +130,27 @@ public sealed partial class TusAzureStore : ITusExpirationStore
             {
                 var metadata = TusAzureMetadata.FromAzure(blobItem.Metadata);
 
-                if (metadata.DateExpiration <= now)
+                if (!(metadata.DateExpiration <= now))
                 {
-                    var fileId = _ExtractFileIdFromBlobName(blobItem.Name);
+                    continue;
+                }
 
-                    if (!string.IsNullOrEmpty(fileId))
-                    {
-                        expiredFiles.Add(fileId);
-                    }
+                // ContentLength is the committed length (staged-but-unverified checksum blocks are
+                // excluded), i.e. the same offset GetUploadOffsetAsync reports to resuming clients.
+                var uploadLength = metadata.UploadLength;
+                var committedLength = blobItem.Properties.ContentLength ?? 0;
+                var isIncomplete = uploadLength is null || committedLength < uploadLength.Value;
+
+                if (!isIncomplete)
+                {
+                    continue;
+                }
+
+                var fileId = _ExtractFileIdFromBlobName(blobItem.Name);
+
+                if (!string.IsNullOrEmpty(fileId))
+                {
+                    expiredFiles.Add(fileId);
                 }
             }
         }
@@ -111,8 +165,9 @@ public sealed partial class TusAzureStore : ITusExpirationStore
     }
 
     /// <summary>
-    /// Deletes all expired uploads discovered by <c>GetExpiredFilesAsync</c> and returns the
-    /// number of blobs successfully removed.
+    /// Deletes all expired <em>incomplete</em> uploads discovered by <c>GetExpiredFilesAsync</c>
+    /// and returns the number of blobs successfully removed. Completed uploads are never removed,
+    /// even when their expiration timestamp has passed.
     /// </summary>
     /// <param name="cancellationToken">token to cancel the operation</param>
     /// <returns>the number of expired files deleted in this call</returns>

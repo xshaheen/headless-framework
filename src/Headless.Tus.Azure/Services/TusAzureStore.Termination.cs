@@ -21,6 +21,8 @@ public sealed partial class TusAzureStore : ITusTerminationStore
     /// </remarks>
     public async Task DeleteFileAsync(string fileId, CancellationToken cancellationToken)
     {
+        await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
+
         var blobClient = _GetBlobClient(fileId);
 
         bool deleted;

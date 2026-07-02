@@ -14,9 +14,15 @@ namespace Headless.Tus;
 /// <c>IDistributedLock</c> implementation (Redis, SQL Server, etc.) to protect concurrent TUS
 /// PATCH requests across multiple application nodes. Use
 /// <c>SetupTusDistributedLock.AddDistributedLockTusLockProvider</c> for convenient registration.
+/// When several TUS endpoints (different stores/containers) share one distributed-lock backend,
+/// give each its own <paramref name="resourcePrefix"/> so equal file ids on different endpoints
+/// cannot contend for the same lock.
 /// </remarks>
 [PublicAPI]
-public sealed class DistributedLockTusLockProvider(IDistributedLock distributedLockProvider) : ITusFileLockProvider
+public sealed class DistributedLockTusLockProvider(
+    IDistributedLock distributedLockProvider,
+    string resourcePrefix = DistributedLockTusFileLock.DefaultResourcePrefix
+) : ITusFileLockProvider
 {
     /// <summary>
     /// Creates a new <c>DistributedLockTusFileLock</c> for the given TUS file without acquiring
@@ -29,6 +35,8 @@ public sealed class DistributedLockTusLockProvider(IDistributedLock distributedL
     /// </returns>
     public Task<ITusFileLock> AquireLock(string fileId)
     {
-        return Task.FromResult<ITusFileLock>(new DistributedLockTusFileLock(fileId, distributedLockProvider));
+        return Task.FromResult<ITusFileLock>(
+            new DistributedLockTusFileLock(fileId, distributedLockProvider, resourcePrefix)
+        );
     }
 }

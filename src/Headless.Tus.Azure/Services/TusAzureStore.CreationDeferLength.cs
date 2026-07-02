@@ -1,7 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Microsoft.Extensions.Logging;
 using tusdotnet.Interfaces;
+using tusdotnet.Models;
 
 namespace Headless.Tus.Services;
 
@@ -12,11 +14,17 @@ public sealed partial class TusAzureStore : ITusCreationDeferLengthStore
     /// Creation-Defer-Length extension (i.e., without an initial size declaration).
     /// </summary>
     /// <param name="fileId">the TUS file identifier</param>
-    /// <param name="uploadLength">the total upload size in bytes now known by the client</param>
+    /// <param name="uploadLength">the total upload size in bytes now known by the client; must not be negative</param>
     /// <param name="cancellationToken">token to cancel the operation</param>
-    /// <exception cref="InvalidOperationException">thrown if the file does not exist</exception>
+    /// <exception cref="TusStoreException">thrown if the file id is invalid or the file does not exist</exception>
+    /// <exception cref="ArgumentOutOfRangeException">thrown if <paramref name="uploadLength"/> is negative</exception>
     public async Task SetUploadLengthAsync(string fileId, long uploadLength, CancellationToken cancellationToken)
     {
+        // A negative value would be persisted and then read back as "unknown length" (defer-length),
+        // silently re-deferring an upload the client believes is finalized.
+        Argument.IsPositiveOrZero(uploadLength);
+        await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
+
         try
         {
             var blobClient = _GetBlobClient(fileId);
@@ -24,7 +32,7 @@ public sealed partial class TusAzureStore : ITusCreationDeferLengthStore
             // Check if file exists
             var blobInfo =
                 await _GetTusFileInfoAsync(blobClient, fileId, cancellationToken).ConfigureAwait(false)
-                ?? throw new InvalidOperationException($"File {fileId} does not exist");
+                ?? throw new TusStoreException($"File {fileId} does not exist");
 
             // Update metadata
             blobInfo.Metadata.UploadLength = uploadLength;

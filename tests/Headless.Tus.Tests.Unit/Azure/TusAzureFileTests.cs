@@ -174,11 +174,11 @@ public sealed class TusAzureFileTests : TestBase
     [Fact]
     public async Task should_get_metadata_dictionary()
     {
-        // given
+        // given - user metadata is stored as the raw Upload-Metadata string in a single entry
+        var raw = $"filename {"document.pdf".ToBase64()},contenttype {"application/pdf".ToBase64()}";
         var metadata = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            ["filename"] = "document.pdf",
-            ["contenttype"] = "application/pdf",
+            [TusAzureMetadata.RawMetadataKey] = raw,
         };
         var wrapper = _CreateWrapper("file-id", metadata);
 
