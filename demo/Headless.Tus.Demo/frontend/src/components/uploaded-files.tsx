@@ -1,32 +1,24 @@
-import { downloadUrl, terminateUpload } from "../lib/api";
-import { formatBytes, formatDate } from "../lib/format";
-import type { UploadSummary } from "../lib/api";
+import prettyBytes from "pretty-bytes";
+import { downloadUrl } from "../lib/api";
+import { formatDate } from "../lib/format";
+import { useDeleteUpload, useUploadsQuery } from "../lib/queries";
 
-export type UploadedFilesProps = {
-  files: UploadSummary[];
-  isLoading: boolean;
-  loadError: string | null;
-  onRefresh: () => void;
-};
-
-export function UploadedFiles({ files, isLoading, loadError, onRefresh }: UploadedFilesProps) {
-  const handleDelete = async (id: string) => {
-    await terminateUpload(id);
-    onRefresh();
-  };
+export function UploadedFiles() {
+  const { data: files = [], isFetching, error, refetch } = useUploadsQuery();
+  const deleteUpload = useDeleteUpload();
 
   return (
     <section className="panel">
       <div className="panel__header">
         <h2>Stored uploads</h2>
-        <button type="button" onClick={onRefresh} disabled={isLoading}>
-          {isLoading ? "Refreshing…" : "Refresh"}
+        <button type="button" onClick={() => void refetch()} disabled={isFetching}>
+          {isFetching ? "Refreshing…" : "Refresh"}
         </button>
       </div>
 
-      {loadError && <p className="panel__error">{loadError}</p>}
+      {error && <p className="panel__error">{error.message}</p>}
 
-      {files.length === 0 && !loadError ? (
+      {files.length === 0 && !error ? (
         <p className="panel__empty">Nothing stored yet — upload something above.</p>
       ) : (
         <table className="files">
@@ -47,8 +39,8 @@ export function UploadedFiles({ files, isLoading, loadError, onRefresh }: Upload
                 </td>
                 <td>
                   {file.isComplete
-                    ? formatBytes(file.committedBytes)
-                    : `${formatBytes(file.committedBytes)} of ${file.totalBytes === null ? "?" : formatBytes(file.totalBytes)}`}
+                    ? prettyBytes(file.committedBytes)
+                    : `${prettyBytes(file.committedBytes)} of ${file.totalBytes === null ? "?" : prettyBytes(file.totalBytes)}`}
                 </td>
                 <td>
                   <span className={`badge badge--${file.isComplete ? "complete" : "partial"}`}>
@@ -62,7 +54,12 @@ export function UploadedFiles({ files, isLoading, loadError, onRefresh }: Upload
                       Download
                     </a>
                   )}
-                  <button type="button" className="danger" onClick={() => void handleDelete(file.id)}>
+                  <button
+                    type="button"
+                    className="danger"
+                    disabled={deleteUpload.isPending}
+                    onClick={() => deleteUpload.mutate(file.id)}
+                  >
                     Delete
                   </button>
                 </td>

@@ -82,6 +82,39 @@ a {
   line-height: 1.6;
 }
 
+/* Tabs */
+
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.tab {
+  padding: 0.45rem 1.1rem;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.tab--active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent-2);
+}
+
+.tabs__blurb {
+  margin: -0.5rem 0 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+/* Uppy dashboard fits the dark layout */
+
+.uppy-Dashboard-inner {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
 /* Dropzone */
 
 .dropzone {

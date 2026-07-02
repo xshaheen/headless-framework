@@ -1,20 +1,28 @@
 # Headless.Tus.Demo
 
 Complete resumable-upload demo: an ASP.NET Core backend using `tusdotnet` + `Headless.Tus.Azure`
-(Azure Block Blob store, registered via `AddTusAzureStore`) and a React frontend driving the tus
-1.0.0 protocol with `tus-js-client`.
+(Azure Block Blob store, registered via `AddTusAzureStore`) and a React frontend that drives the
+same tus 1.0.0 endpoint through **two client stacks**, switchable by tab:
+
+1. **Uppy Dashboard** — `@uppy/core` + `@uppy/tus` + `@uppy/react` + `@uppy/dashboard`: the
+   batteries-included uploader UI from the tus authors (lazy-loaded chunk).
+2. **React hooks** — `react-dropzone` (file picking) + `use-tus` (one hook per transfer,
+   fingerprint resume built in) + `pretty-bytes`, with protocol mechanics visible.
+
+The stored-uploads panel under both tabs is driven by **TanStack Query** (list query + delete
+mutation; both uploaders invalidate it on completion).
 
 ## What it demonstrates
 
 - **Resumable uploads** — 5 MB PATCH chunks with pause/resume; interrupted uploads (killed tab,
-  dropped connection) resume from the last committed byte via tus fingerprints.
+  dropped connection) resume from the last committed byte via tus fingerprints — in both stacks.
 - **`AddTusAzureStore` DI registration** — options bound from the `Tus` configuration section with
   FluentValidation at startup; the store is resolved from DI inside the `MapTus` configuration factory.
 - **Verbatim `Upload-Metadata` round-trip** — upload a file with a non-ASCII name (e.g. Arabic) and
   watch HEAD echo the header byte-for-byte; downloads carry the name via RFC 8187 `filename*`.
 - **Expiration** — unfinished uploads expire after 30 idle minutes (sliding) and a background
   service removes them; completed uploads are never reaped.
-- **Termination** — cancel buttons issue tus `DELETE`, discarding server-side data.
+- **Termination** — cancel/delete buttons issue tus `DELETE`, discarding server-side data.
 
 ## Run it
 
