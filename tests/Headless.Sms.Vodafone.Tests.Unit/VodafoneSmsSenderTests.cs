@@ -6,6 +6,7 @@ using Headless.Sms.Vodafone;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Polly.Timeout;
 using WireMock.RequestBuilders;
 using WireMock.ResponseBuilders;
 
@@ -95,5 +96,30 @@ public sealed class VodafoneSmsSenderTests : TestBase, IClassFixture<SmsWireMock
 
         var body = _fixture.Server.LogEntries.Single().RequestMessage?.Body;
         body.Should().Contain("a &amp; b &lt; c");
+    }
+
+    [Fact]
+    public async Task should_classify_a_resilience_timeout_as_transient()
+    {
+        var options = Options.Create(
+            new VodafoneSmsOptions
+            {
+                SendSmsEndpoint = "http://localhost:1/submit",
+                Sender = "SENDER",
+                AccountId = "acc",
+                Password = "pass",
+                SecureHash = "0123456789ABCDEF",
+            }
+        );
+        var sender = new VodafoneSmsSender(
+            new ThrowingHttpClientFactory(new TimeoutRejectedException("pipeline timeout")),
+            options,
+            NullLogger<VodafoneSmsSender>.Instance
+        );
+
+        var result = await sender.SendAsync(SmsRequests.Single(), AbortToken);
+
+        result.Success.Should().BeFalse();
+        result.FailureKind.Should().Be(SmsFailureKind.Transient);
     }
 }

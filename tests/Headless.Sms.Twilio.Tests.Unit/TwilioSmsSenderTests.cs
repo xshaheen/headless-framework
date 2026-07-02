@@ -1,10 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
+using Headless.Sms;
 using Headless.Sms.Twilio;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using NSubstitute.ExceptionExtensions;
+using Polly.Timeout;
 using Twilio.Clients;
 using Twilio.Http;
 
@@ -36,5 +39,17 @@ public sealed class TwilioSmsSenderTests : TestBase
         var result = await _CreateSender(client).SendAsync(SmsRequests.Single(), AbortToken);
         result.Success.Should().BeTrue();
         result.ProviderMessageId.Should().Be("SM123");
+    }
+
+    [Fact]
+    public async Task should_classify_a_resilience_timeout_as_transient()
+    {
+        var client = Substitute.For<ITwilioRestClient>();
+        client.RequestAsync(Arg.Any<Request>()).ThrowsAsync(new TimeoutRejectedException("pipeline timeout"));
+
+        var result = await _CreateSender(client).SendAsync(SmsRequests.Single(), AbortToken);
+
+        result.Success.Should().BeFalse();
+        result.FailureKind.Should().Be(SmsFailureKind.Transient);
     }
 }

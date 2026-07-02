@@ -154,6 +154,8 @@
     <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.16.0" />
     <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.15.1" />
     <PackageVersion Include="PdfPig" Version="0.1.15" />
+    <!-- Legacy Polly pinned only for the Infobip SDK (referenced with an alias); everything else uses Polly.Core -->
+    <PackageVersion Include="Polly" Version="7.2.4" />
     <PackageVersion Include="Polly.Core" Version="8.7.0" />
     <PackageVersion Include="Polly.Extensions" Version="8.6.4" />
     <PackageVersion Include="Polly.RateLimiting" Version="8.6.4" />

@@ -6,6 +6,8 @@ using Infobip.Api.Client.Api;
 using Infobip.Api.Client.Model;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Polly.CircuitBreaker;
+using Polly.Timeout;
 
 namespace Headless.Sms.Infobip;
 
@@ -37,8 +39,20 @@ internal sealed class InfobipSmsSender(
 
             // A single send returns one message entry; honor its per-recipient status so a rejection delivered
             // inside a 200 response is reported as a failure (matching the bulk path) instead of a blanket
-            // success. The success id stays the bulk id, as documented.
-            var message = smsResponse.Messages is { Count: > 0 } ? smsResponse.Messages[0] : null;
+            // success. The success id stays the bulk id, as documented. A missing breakdown means the request
+            // was accepted, but a present breakdown whose count is not exactly one cannot be attributed — do
+            // not fabricate success for it (same rule as the bulk count-mismatch path).
+            var messages = smsResponse.Messages;
+
+            if (messages is { Count: not 1 })
+            {
+                return SendSingleSmsResponse.Failed(
+                    $"Infobip returned {messages.Count} message result(s) for 1 recipient(s)",
+                    SmsFailureKind.Unknown
+                );
+            }
+
+            var message = messages?[0];
 
             if (message is null || _IsAccepted(message.Status))
             {
@@ -63,7 +77,12 @@ internal sealed class InfobipSmsSender(
         {
             logger.LogSmsSendException(e, destinationCount: 1);
 
-            return SendSingleSmsResponse.FromException(e);
+            // The standard resilience pipeline surfaces its timeout and open-circuit rejections as
+            // Polly-specific exceptions; both are transport faults a retry may clear, so classify them
+            // as transient instead of letting them fall through as Unknown.
+            return e is TimeoutRejectedException or BrokenCircuitException
+                ? SendSingleSmsResponse.FromException(e, SmsFailureKind.Transient)
+                : SendSingleSmsResponse.FromException(e);
         }
     }
 
@@ -114,7 +133,14 @@ internal sealed class InfobipSmsSender(
         {
             logger.LogSmsSendException(e, request.Destinations.Count);
 
-            return SendBulkSmsResponse.FromAggregate(request.Destinations, SendSingleSmsResponse.FromException(e));
+            // The standard resilience pipeline surfaces its timeout and open-circuit rejections as
+            // Polly-specific exceptions; both are transport faults a retry may clear, so classify them
+            // as transient instead of letting them fall through as Unknown.
+            var outcome = e is TimeoutRejectedException or BrokenCircuitException
+                ? SendSingleSmsResponse.FromException(e, SmsFailureKind.Transient)
+                : SendSingleSmsResponse.FromException(e);
+
+            return SendBulkSmsResponse.FromAggregate(request.Destinations, outcome);
         }
     }
 

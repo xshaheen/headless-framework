@@ -56,10 +56,13 @@ public sealed class SendBulkSmsResponse
     /// Creates a response that applies one aggregate <paramref name="outcome"/> to every recipient. Used by
     /// providers whose API reports a single status for the whole batch rather than per-recipient detail.
     /// </summary>
-    /// <param name="destinations">The recipients the outcome applies to. Must not be <see langword="null"/>.</param>
+    /// <param name="destinations">
+    /// The recipients the outcome applies to. Must not be <see langword="null"/> or empty.
+    /// </param>
     /// <param name="outcome">The single outcome to mirror onto every recipient. Must not be <see langword="null"/>.</param>
     /// <param name="providerBatchId">The provider-assigned batch id, when available.</param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="destinations"/> is empty.</exception>
     public static SendBulkSmsResponse FromAggregate(
         IEnumerable<SmsRequestDestination> destinations,
         SendSingleSmsResponse outcome,
@@ -70,6 +73,7 @@ public sealed class SendBulkSmsResponse
         Argument.IsNotNull(outcome);
 
         var results = destinations.Select(destination => new SmsRecipientResult(destination, outcome)).ToList();
+        Argument.IsNotEmpty(results, paramName: nameof(destinations));
 
         return new SendBulkSmsResponse(results, providerBatchId);
     }

@@ -8,6 +8,8 @@ using Headless.Http;
 using Headless.Sms.Connekio.Internals;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Polly.CircuitBreaker;
+using Polly.Timeout;
 
 namespace Headless.Sms.Connekio;
 
@@ -120,7 +122,12 @@ internal sealed class ConnekioSmsSender(
         {
             logger.LogSmsSendException(e, destinationCount);
 
-            return SendSingleSmsResponse.FromException(e);
+            // The standard resilience pipeline surfaces its timeout and open-circuit rejections as
+            // Polly-specific exceptions; both are transport faults a retry may clear, so classify them
+            // as transient instead of letting them fall through as Unknown.
+            return e is TimeoutRejectedException or BrokenCircuitException
+                ? SendSingleSmsResponse.FromException(e, SmsFailureKind.Transient)
+                : SendSingleSmsResponse.FromException(e);
         }
     }
 

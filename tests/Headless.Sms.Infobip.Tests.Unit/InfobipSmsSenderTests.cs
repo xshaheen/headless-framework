@@ -6,6 +6,7 @@ using Headless.Sms.Infobip;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Polly.Timeout;
 using WireMock.RequestBuilders;
 using WireMock.ResponseBuilders;
 
@@ -318,5 +319,71 @@ public sealed class InfobipSmsSenderTests : TestBase, IClassFixture<SmsWireMockF
 
         response.Results[0].Result.Success.Should().BeFalse();
         response.Results[0].Result.FailureError.Should().Be("Infobip message status REJECTED_DESTINATION");
+    }
+
+    [Fact]
+    public async Task should_classify_a_resilience_timeout_as_transient()
+    {
+        var options = Options.Create(
+            new InfobipSmsOptions
+            {
+                Sender = "SENDER",
+                ApiKey = "api-key",
+                BasePath = "http://localhost:1",
+            }
+        );
+        var sender = new InfobipSmsSender(
+            new ThrowingHttpClientFactory(new TimeoutRejectedException("pipeline timeout")),
+            options,
+            NullLogger<InfobipSmsSender>.Instance
+        );
+
+        var result = await sender.SendAsync(SmsRequests.Single(), AbortToken);
+
+        result.Success.Should().BeFalse();
+        result.FailureKind.Should().Be(SmsFailureKind.Transient);
+    }
+
+    [Fact]
+    public async Task should_fail_a_single_send_when_the_response_has_no_message_results()
+    {
+        // A present-but-empty breakdown cannot be attributed to the recipient; success must not be fabricated
+        // (same rule as the bulk count-mismatch path).
+        _fixture
+            .Server.Given(Request.Create().UsingPost())
+            .RespondWith(
+                Response
+                    .Create()
+                    .WithStatusCode(HttpStatusCode.OK)
+                    .WithHeader("Content-Type", "application/json")
+                    .WithBody("""{"bulkId":"bulk-14","messages":[]}""")
+            );
+
+        var result = await _CreateSender().SendAsync(SmsRequests.Single(), AbortToken);
+
+        result.Success.Should().BeFalse();
+        result.FailureError.Should().Be("Infobip returned 0 message result(s) for 1 recipient(s)");
+        result.FailureKind.Should().Be(SmsFailureKind.Unknown);
+    }
+
+    [Fact]
+    public async Task should_succeed_a_single_send_when_the_response_has_no_breakdown()
+    {
+        // No "messages" field at all means the request was accepted without per-recipient detail (matching
+        // the bulk path), so the send succeeds with the bulk id.
+        _fixture
+            .Server.Given(Request.Create().UsingPost())
+            .RespondWith(
+                Response
+                    .Create()
+                    .WithStatusCode(HttpStatusCode.OK)
+                    .WithHeader("Content-Type", "application/json")
+                    .WithBody("""{"bulkId":"bulk-15"}""")
+            );
+
+        var result = await _CreateSender().SendAsync(SmsRequests.Single(), AbortToken);
+
+        result.Success.Should().BeTrue();
+        result.ProviderMessageId.Should().Be("bulk-15");
     }
 }

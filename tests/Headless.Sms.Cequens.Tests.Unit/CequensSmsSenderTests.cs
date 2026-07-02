@@ -7,6 +7,7 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
+using Polly.Timeout;
 using WireMock.RequestBuilders;
 using WireMock.ResponseBuilders;
 
@@ -178,5 +179,32 @@ public sealed class CequensSmsSenderTests : TestBase, IClassFixture<SmsWireMockF
 
         // Cequens documents no error contract, so a 5xx is not assumed to be retryable.
         result.FailureKind.Should().Be(SmsFailureKind.Unknown);
+    }
+
+    [Fact]
+    public async Task should_classify_a_resilience_timeout_as_transient()
+    {
+        var options = Options.Create(
+            new CequensSmsOptions
+            {
+                SingleSmsEndpoint = "http://localhost:1/sms",
+                TokenEndpoint = "http://localhost:1/auth",
+                ApiKey = "api-key",
+                UserName = "user",
+                SenderName = "SENDER",
+                Token = "static-token", // the throwing token fetch falls back here, so the send itself faults
+            }
+        );
+        using var sender = new CequensSmsSender(
+            new ThrowingHttpClientFactory(new TimeoutRejectedException("pipeline timeout")),
+            new FakeTimeProvider(),
+            options,
+            NullLogger<CequensSmsSender>.Instance
+        );
+
+        var result = await sender.SendAsync(SmsRequests.Single(), AbortToken);
+
+        result.Success.Should().BeFalse();
+        result.FailureKind.Should().Be(SmsFailureKind.Transient);
     }
 }

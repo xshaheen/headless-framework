@@ -6,6 +6,8 @@ using Headless.Sms.Connekio;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Polly.CircuitBreaker;
+using Polly.Timeout;
 using WireMock.RequestBuilders;
 using WireMock.ResponseBuilders;
 
@@ -127,5 +129,35 @@ public sealed class ConnekioSmsSenderTests : TestBase, IClassFixture<SmsWireMock
         var headers = _fixture.Server.LogEntries.Single().RequestMessage?.Headers;
         headers.Should().ContainKey("Authorization");
         headers!["Authorization"].ToString().Should().Contain("Basic");
+    }
+
+    public static TheoryData<Exception> ResilienceRejections { get; } =
+        new() { new TimeoutRejectedException("pipeline timeout"), new BrokenCircuitException("circuit open") };
+
+    [Theory]
+    [MemberData(nameof(ResilienceRejections))]
+    public async Task should_classify_resilience_rejections_as_transient(Exception exception)
+    {
+        var options = Options.Create(
+            new ConnekioSmsOptions
+            {
+                SingleSmsEndpoint = "http://localhost:1/single",
+                BatchSmsEndpoint = "http://localhost:1/batch",
+                Sender = "SENDER",
+                AccountId = "acc",
+                UserName = "user",
+                Password = "pass",
+            }
+        );
+        var sender = new ConnekioSmsSender(
+            new ThrowingHttpClientFactory(exception),
+            options,
+            NullLogger<ConnekioSmsSender>.Instance
+        );
+
+        var result = await sender.SendAsync(SmsRequests.Single(), AbortToken);
+
+        result.Success.Should().BeFalse();
+        result.FailureKind.Should().Be(SmsFailureKind.Transient);
     }
 }
