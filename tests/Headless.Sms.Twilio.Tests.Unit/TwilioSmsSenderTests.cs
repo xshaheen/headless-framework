@@ -43,18 +43,13 @@ public sealed class TwilioSmsSenderTests : TestBase
         result.ProviderMessageId.Should().Be("SM123");
     }
 
-    public static TheoryData<Exception> ResilienceRejections { get; } =
-        new()
-        {
-            new TimeoutRejectedException("pipeline timeout"),
-            new BrokenCircuitException("circuit open"),
-            new RateLimiterRejectedException("rate limiter rejected"),
-        };
-
     [Theory]
-    [MemberData(nameof(ResilienceRejections))]
-    public async Task should_classify_resilience_rejections_as_transient(Exception exception)
+    [InlineData(nameof(TimeoutRejectedException))]
+    [InlineData(nameof(BrokenCircuitException))]
+    [InlineData(nameof(RateLimiterRejectedException))]
+    public async Task should_classify_resilience_rejections_as_transient(string rejectionKind)
     {
+        var exception = ResilienceRejections.Create(rejectionKind);
         var client = Substitute.For<ITwilioRestClient>();
         client.RequestAsync(Arg.Any<Request>()).ThrowsAsync(exception);
 

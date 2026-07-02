@@ -35,7 +35,10 @@ public sealed class DevSmsSenderTests : TestBase
 
         try
         {
-            var response = await sender.SendBulkAsync(SmsRequests.Bulk("bulk dev", (20, "1001"), (20, "1002")));
+            var response = await sender.SendBulkAsync(
+                SmsRequests.Bulk("bulk dev", (20, "1001"), (20, "1002")),
+                AbortToken
+            );
 
             response.AllSucceeded.Should().BeTrue();
             response.Results.Should().HaveCount(2);
@@ -87,10 +90,11 @@ public sealed class NoopSmsSenderTests : TestBase
     [Fact]
     public async Task should_report_bulk_success()
     {
-        var response = await new NoopSmsSender().SendBulkAsync(SmsRequests.Bulk("Hello world", (20, "1001")));
+        var sender = new NoopSmsSender();
+        var response = await sender.SendBulkAsync(SmsRequests.Bulk("Hello world", (20, "1001")), AbortToken);
 
         response.AllSucceeded.Should().BeTrue();
-        response.Results.Should().HaveCount(1);
+        response.Results.Should().ContainSingle();
     }
 
     [Fact]

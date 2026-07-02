@@ -82,9 +82,10 @@ internal sealed class ConnekioSmsSender(
                             AccountId = _options.AccountId,
                             Sender = _options.Sender,
                             Text = request.Text,
-                            MobileList = request
-                                .Destinations.Select(r => new ConnekioRecipient { Msisdn = r.ToString() })
-                                .ToList(),
+                            MobileList =
+                            [
+                                .. request.Destinations.Select(r => new ConnekioRecipient { Msisdn = r.ToString() }),
+                            ],
                         },
                         _JsonOptions
                     ),

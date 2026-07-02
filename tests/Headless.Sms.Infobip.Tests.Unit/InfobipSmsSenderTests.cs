@@ -323,18 +323,13 @@ public sealed class InfobipSmsSenderTests : TestBase, IClassFixture<SmsWireMockF
         response.Results[0].Result.FailureError.Should().Be("Infobip message status REJECTED_DESTINATION");
     }
 
-    public static TheoryData<Exception> ResilienceRejections { get; } =
-        new()
-        {
-            new TimeoutRejectedException("pipeline timeout"),
-            new BrokenCircuitException("circuit open"),
-            new RateLimiterRejectedException("rate limiter rejected"),
-        };
-
     [Theory]
-    [MemberData(nameof(ResilienceRejections))]
-    public async Task should_classify_resilience_rejections_as_transient(Exception exception)
+    [InlineData(nameof(TimeoutRejectedException))]
+    [InlineData(nameof(BrokenCircuitException))]
+    [InlineData(nameof(RateLimiterRejectedException))]
+    public async Task should_classify_resilience_rejections_as_transient(string rejectionKind)
     {
+        var exception = ResilienceRejections.Create(rejectionKind);
         var options = Options.Create(
             new InfobipSmsOptions
             {
@@ -356,9 +351,12 @@ public sealed class InfobipSmsSenderTests : TestBase, IClassFixture<SmsWireMockF
     }
 
     [Theory]
-    [MemberData(nameof(ResilienceRejections))]
-    public async Task should_classify_bulk_resilience_rejections_as_transient(Exception exception)
+    [InlineData(nameof(TimeoutRejectedException))]
+    [InlineData(nameof(BrokenCircuitException))]
+    [InlineData(nameof(RateLimiterRejectedException))]
+    public async Task should_classify_bulk_resilience_rejections_as_transient(string rejectionKind)
     {
+        var exception = ResilienceRejections.Create(rejectionKind);
         var options = Options.Create(
             new InfobipSmsOptions
             {
