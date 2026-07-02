@@ -18,11 +18,14 @@ namespace Headless.Sms.Twilio;
 /// </remarks>
 internal sealed class TwilioSmsSender(
     ITwilioRestClient client,
-    IOptions<TwilioSmsOptions> optionsAccessor,
+    IOptionsMonitor<TwilioSmsOptions> optionsMonitor,
+    string? optionsName,
     ILogger<TwilioSmsSender> logger
 ) : ISmsSender
 {
-    private readonly TwilioSmsOptions _options = optionsAccessor.Value;
+    // Snapshot for this instance's options name — never CurrentValue, which binds the default options and
+    // would bleed configuration across keyed instances.
+    private readonly TwilioSmsOptions _options = optionsMonitor.Get(optionsName);
 
     public async ValueTask<SendSingleSmsResponse> SendAsync(
         SendSingleSmsRequest request,
