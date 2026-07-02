@@ -92,7 +92,7 @@ builder.Services.AddHeadlessFeatures(setup => setup.UseEntityFramework<AppDbCont
 - To tune storage options (schema, table names), call `setup.ConfigureStorage(o => ...)` inside the `AddHeadlessFeatures` block.
 - For EF storage: register `AddDbContextFactory<TContext>()` and call `modelBuilder.AddHeadlessFeatures(this)` in `OnModelCreating` before calling `setup.UseEntityFramework<TContext>()`.
 - `FeaturesInitializationBackgroundService` runs at startup — do NOT manually initialize features or call `IDynamicFeatureDefinitionStore.SaveAsync` directly.
-- Feature value caching is automatic and invalidated via `CacheInvalidationMessage` when values are written through `IFeatureManager`. Do not bypass `IFeatureManager` to write directly to the repository — caching will not be invalidated.
+- Feature value caching is automatic. Both `IFeatureManager` writes and direct `IFeatureValueRecordRepository` writes invalidate the affected cache entry (the repository removes it after `SaveChangesAsync`), and a distributed cache propagates the eviction across nodes. Only writes that bypass the repository entirely (raw SQL, direct `DbContext`) leave the cache stale.
 - Custom value providers must implement `IFeatureValueReadProvider` (read-only) or `IFeatureValueProvider` (read-write). Register with `services.AddFeatureValueProvider<T>()`. The last-registered provider has the highest resolution priority.
 - `FeatureDefinition.Providers` restricts which providers can read/write a feature. An empty list means all providers are allowed — the most common case.
 - Gate HTTP access with `[RequiresFeature("FeatureName")]` on controllers or actions. Use `[DisableFeatureCheck]` on individual action methods to bypass a class-level gate.
@@ -116,7 +116,7 @@ The *static store* (`IStaticFeatureDefinitionStore`) builds the feature catalog 
 
 ### Feature Value Caching
 
-`FeatureValueStore` caches resolved feature values to avoid repeated database reads. The cache is backed by the registered `ICache` (or a named cache instance when `FeatureManagementOptions.FeatureValueCacheName` is set). When `IFeatureManager.SetAsync` writes a value, `FeatureValueStore` updates or evicts the affected cache entries directly through `ICache` (a distributed cache propagates the eviction across nodes via `CacheInvalidationMessage`). Bypassing `IFeatureManager` to write values directly to the repository breaks this invalidation path.
+`FeatureValueStore` caches resolved feature values to avoid repeated database reads. The cache is backed by the registered `ICache` (or a named cache instance when `FeatureManagementOptions.FeatureValueCacheName` is set). When `IFeatureManager.SetAsync` writes a value, `FeatureValueStore` updates or evicts the affected cache entries directly through `ICache` (a distributed cache propagates the eviction across nodes via `CacheInvalidationMessage`). Direct `IFeatureValueRecordRepository` writes also evict the affected cache entry — the repository removes it after `SaveChangesAsync` — so a repository-level write bypassing the manager is still reflected on the next read. Only writes that bypass the repository entirely (raw SQL, direct `DbContext`) leave the cache stale.
 
 ### Startup Initialization
 

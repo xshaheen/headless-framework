@@ -92,7 +92,7 @@ Provider packages:
 - Grant a permission with `GrantToUserAsync` / `GrantToRoleAsync`. Prohibit explicitly with `RevokeFromUserAsync` / `RevokeFromRoleAsync`. Delete all records for a principal with `DeleteAsync(providerName, providerKey)`.
 - Resolution order (highest to lowest priority): **User** then **Role**. An explicit `Prohibited` from any provider denies access regardless of other grants. The default when no record exists is deny.
 - Do NOT call `IDynamicPermissionDefinitionStore.SaveAsync` directly — `PermissionsInitializationBackgroundService` handles it on startup.
-- Do NOT bypass `IPermissionManager` to write directly to the repository — cache invalidation will not fire.
+- Both `IPermissionManager` and direct `IPermissionGrantRepository` writes invalidate the affected cache entry (the repository removes it after `SaveChangesAsync`). Only writes that bypass the repository entirely (raw SQL, direct `DbContext`) leave the cache stale.
 - There is **no** `[HasPermission]` attribute in this framework. Use `PermissionRequirement` / `PermissionsRequirement` and wire them into ASP.NET Core authorization policies, or use `IPermissionManager` in-code.
 - `SetAsync` throws `ConflictException` when the permission is not defined, is disabled, restricts its providers and excludes the given `providerName`, or when no grant provider with that name is registered. Catch this for user-facing validation.
 - Batch writes via `SetAsync(IReadOnlyCollection<string>, ...)` are all-or-nothing — a single invalid name rejects the entire batch.
@@ -148,7 +148,7 @@ Each provider returns one of three states per permission:
 
 ### Grant Store and Caching
 
-`PermissionGrantStore` caches resolved grant statuses to avoid repeated database reads per request. The cache is backed by a tenant-scoped `ICache<PermissionGrantCacheItem>` keyed on the current tenant id. When `IPermissionManager.SetAsync` writes a grant, `PermissionGrantStore` evicts the affected cache entries directly through `ICache`. Writing directly to `IPermissionGrantRepository` bypasses this path and leaves stale cache entries.
+`PermissionGrantStore` caches resolved grant statuses to avoid repeated database reads per request. The cache is backed by a tenant-scoped `ICache<PermissionGrantCacheItem>` keyed on the current tenant id. When `IPermissionManager.SetAsync` writes a grant, `PermissionGrantStore` evicts the affected cache entries directly through `ICache`. Direct `IPermissionGrantRepository` writes also evict the affected cache entry (removed after `SaveChangesAsync`), so a repository-level write is reflected on the next read. Only writes that bypass the repository entirely (raw SQL, direct `DbContext`) leave the cache stale.
 
 ### Static vs. Dynamic Definition Store
 
