@@ -33,18 +33,16 @@ public sealed class ExpirationCleanupTests : TestBase
     [Fact]
     public async Task should_cleanup_expired_uploads()
     {
-        // given - create expired files
-        var expiredFileData1 = Faker.Random.Bytes(500);
-        var expiredFileId1 = await _CreateAndUploadFileAsync(expiredFileData1);
+        // given - create expired INCOMPLETE uploads (the TUS Expiration extension targets
+        // unfinished uploads only)
+        var expiredFileId1 = await _CreateIncompleteUploadAsync(1_000, uploadedBytes: 500);
         await _store.SetExpirationAsync(expiredFileId1, DateTimeOffset.UtcNow.AddMinutes(-30), AbortToken);
 
-        var expiredFileData2 = Faker.Random.Bytes(700);
-        var expiredFileId2 = await _CreateAndUploadFileAsync(expiredFileData2);
+        var expiredFileId2 = await _CreateIncompleteUploadAsync(1_400, uploadedBytes: 700);
         await _store.SetExpirationAsync(expiredFileId2, DateTimeOffset.UtcNow.AddMinutes(-15), AbortToken);
 
-        // given - create active file (not expired)
-        var activeFileData = Faker.Random.Bytes(600);
-        var activeFileId = await _CreateAndUploadFileAsync(activeFileData);
+        // given - create active incomplete file (not expired)
+        var activeFileId = await _CreateIncompleteUploadAsync(1_200, uploadedBytes: 600);
         await _store.SetExpirationAsync(activeFileId, DateTimeOffset.UtcNow.AddHours(1), AbortToken);
 
         // verify all files exist before cleanup
@@ -57,7 +55,7 @@ public sealed class ExpirationCleanupTests : TestBase
         // when - run expiration cleanup
         var removedCount = await _store.RemoveExpiredFilesAsync(AbortToken);
 
-        // then - expired files should be removed
+        // then - expired incomplete files should be removed
         removedCount.Should().BeGreaterThanOrEqualTo(2);
 
         (await _store.FileExistAsync(expiredFileId1, AbortToken)).Should().BeFalse();
@@ -67,12 +65,57 @@ public sealed class ExpirationCleanupTests : TestBase
         (await _store.FileExistAsync(activeFileId, AbortToken))
             .Should()
             .BeTrue();
+    }
 
-        // and active file content should be preserved
-        var blobClient = _containerClient.GetBlobClient(_BlobPrefix + activeFileId);
+    /* Test: Completed uploads survive expiration cleanup */
+
+    [Fact]
+    public async Task should_not_delete_expired_completed_uploads()
+    {
+        // given - a COMPLETED upload whose expiration has passed. tusdotnet refreshes the sliding
+        // expiration on the completing PATCH, so completed uploads routinely carry a past
+        // tus_expiration; cleanup must never destroy them (TusDiskStore parity).
+        var content = Faker.Random.Bytes(800);
+        var completedFileId = await _CreateAndUploadFileAsync(content);
+        await _store.SetExpirationAsync(completedFileId, DateTimeOffset.UtcNow.AddMinutes(-30), AbortToken);
+
+        // when
+        var expiredFiles = (await _store.GetExpiredFilesAsync(AbortToken)).ToList();
+        _ = await _store.RemoveExpiredFilesAsync(AbortToken);
+
+        // then - the completed upload is neither listed as expired nor deleted
+        expiredFiles.Should().NotContain(completedFileId);
+        (await _store.FileExistAsync(completedFileId, AbortToken)).Should().BeTrue();
+
+        // and its content is intact
+        var blobClient = _containerClient.GetBlobClient(_BlobPrefix + completedFileId);
         await using var downloadStream = new MemoryStream();
         await blobClient.DownloadToAsync(downloadStream, AbortToken);
-        downloadStream.ToArray().Should().BeEquivalentTo(activeFileData);
+        downloadStream.ToArray().Should().BeEquivalentTo(content);
+    }
+
+    /* Test: Defer-length uploads (no declared length) count as incomplete */
+
+    [Fact]
+    public async Task should_cleanup_expired_defer_length_uploads()
+    {
+        // given - an expired defer-length upload that never declared its final length; an upload
+        // with unknown length is unfinished by definition (TusDiskStore parity)
+        var fileId = await _store.CreateFileAsync(-1L, metadata: null, AbortToken);
+
+        await using (var stream = new MemoryStream(Faker.Random.Bytes(300)))
+        {
+            await _store.AppendDataAsync(fileId, stream, AbortToken);
+        }
+
+        await _store.SetExpirationAsync(fileId, DateTimeOffset.UtcNow.AddMinutes(-5), AbortToken);
+
+        // when
+        var removedCount = await _store.RemoveExpiredFilesAsync(AbortToken);
+
+        // then
+        removedCount.Should().BeGreaterThanOrEqualTo(1);
+        (await _store.FileExistAsync(fileId, AbortToken)).Should().BeFalse();
     }
 
     /* Test #106: Active uploads not deleted */
@@ -180,13 +223,11 @@ public sealed class ExpirationCleanupTests : TestBase
     [Fact]
     public async Task should_list_only_expired_files()
     {
-        // given - create mix of expired and active files
-        var expiredContent = Faker.Random.Bytes(400);
-        var expiredFileId = await _CreateAndUploadFileAsync(expiredContent);
+        // given - create mix of expired and active INCOMPLETE files
+        var expiredFileId = await _CreateIncompleteUploadAsync(800, uploadedBytes: 400);
         await _store.SetExpirationAsync(expiredFileId, DateTimeOffset.UtcNow.AddMinutes(-5), AbortToken);
 
-        var activeContent = Faker.Random.Bytes(500);
-        var activeFileId = await _CreateAndUploadFileAsync(activeContent);
+        var activeFileId = await _CreateIncompleteUploadAsync(1_000, uploadedBytes: 500);
         await _store.SetExpirationAsync(activeFileId, DateTimeOffset.UtcNow.AddHours(2), AbortToken);
 
         // when - get expired files list
@@ -204,6 +245,18 @@ public sealed class ExpirationCleanupTests : TestBase
         var fileId = await _store.CreateFileAsync(content.Length, metadata, AbortToken);
 
         await using var stream = new MemoryStream(content);
+        await _store.AppendDataAsync(fileId, stream, AbortToken);
+
+        return fileId;
+    }
+
+    private async Task<string> _CreateIncompleteUploadAsync(int declaredLength, int uploadedBytes)
+    {
+        var fileName = Faker.System.FileName();
+        var metadata = $"filename {fileName.ToBase64()}";
+        var fileId = await _store.CreateFileAsync(declaredLength, metadata, AbortToken);
+
+        await using var stream = new MemoryStream(Faker.Random.Bytes(uploadedBytes));
         await _store.AppendDataAsync(fileId, stream, AbortToken);
 
         return fileId;
