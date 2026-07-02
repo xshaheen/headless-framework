@@ -153,6 +153,80 @@ public sealed class ChecksumTrailerTests : TestBase
         (await _store.GetUploadOffsetAsync(fileId, AbortToken)).Should().Be(chunk1.Length);
     }
 
+    [Fact]
+    public async Task should_not_roll_back_a_verified_chunk_after_a_zero_byte_append()
+    {
+        // given - a committed and verified chunk, then a PATCH that delivers zero bytes (client
+        // disconnected before sending data) with a declared checksum trailer that never arrives.
+        // The zero-byte append must refresh the chunk-tracking metadata; otherwise the fallback
+        // sentinel would act on the PREVIOUS append's rollback point and destroy verified data.
+        var content = Faker.Random.Bytes(800);
+        var fileId = await _store.CreateFileAsync(content.Length + 100, metadata: null, AbortToken);
+
+        await using (var body = new MemoryStream(content))
+        {
+            await _store.AppendDataAsync(fileId, body, AbortToken);
+        }
+
+        (await _store.VerifyChecksumAsync(fileId, "sha256", SHA256.HashData(content), AbortToken)).Should().BeTrue();
+
+        await using (var empty = new MemoryStream([]))
+        {
+            (await _store.AppendDataAsync(fileId, empty, AbortToken)).Should().Be(0);
+        }
+
+        var (algorithm, hash) = _GetTrailerFallbackSentinel();
+
+        // when - tusdotnet discards the (empty) chunk via the fallback sentinel
+        var verified = await _store.VerifyChecksumAsync(fileId, algorithm, hash, AbortToken);
+
+        // then - nothing to discard; the previously verified chunk survives
+        verified.Should().BeFalse();
+        (await _store.GetUploadOffsetAsync(fileId, AbortToken)).Should().Be(content.Length);
+    }
+
+    [Fact]
+    public async Task should_accept_a_new_append_at_the_rolled_back_offset()
+    {
+        // given - a rollback caused by a bad trailer digest
+        var chunk1 = Faker.Random.Bytes(700);
+        var badChunk = Faker.Random.Bytes(500);
+        var retryChunk = Faker.Random.Bytes(500);
+        var fileId = await _store.CreateFileAsync(chunk1.Length + retryChunk.Length, metadata: null, AbortToken);
+
+        await using (var body = new MemoryStream(chunk1))
+        {
+            await _store.AppendDataAsync(fileId, body, AbortToken);
+        }
+
+        await using (var body = new MemoryStream(badChunk))
+        {
+            await _store.AppendDataAsync(fileId, body, AbortToken);
+        }
+
+        (await _store.VerifyChecksumAsync(fileId, "sha256", SHA256.HashData(Faker.Random.Bytes(64)), AbortToken))
+            .Should()
+            .BeFalse();
+
+        // when - the client resumes from the rolled-back offset with different bytes
+        await using (var body = new MemoryStream(retryChunk))
+        {
+            await _store.AppendDataAsync(fileId, body, AbortToken);
+        }
+
+        var verified = await _store.VerifyChecksumAsync(fileId, "sha256", SHA256.HashData(retryChunk), AbortToken);
+
+        // then - the surviving content is chunk1 + the retried chunk, with no residue of the bad one
+        verified.Should().BeTrue();
+        (await _store.GetUploadOffsetAsync(fileId, AbortToken)).Should().Be(chunk1.Length + retryChunk.Length);
+
+        var tusFile = await _store.GetFileAsync(fileId, AbortToken);
+        await using var contentStream = await tusFile!.GetContentAsync(AbortToken);
+        await using var downloaded = new MemoryStream();
+        await contentStream.CopyToAsync(downloaded, AbortToken);
+        downloaded.ToArray().Should().BeEquivalentTo(chunk1.Concat(retryChunk).ToArray());
+    }
+
     /// <summary>
     /// Reads tusdotnet's internal faulty-trailer sentinel. <c>ChecksumTrailerHelper.IsFallback</c>
     /// compares by reference, so the exact singleton instances must be passed through.
