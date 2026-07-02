@@ -26,7 +26,8 @@ public sealed class TestThreadSafeMessageSender : IMessageSender
         SendAsync(message);
 
     public int Count => _messagesInOrder.Count;
-    public List<MediumMessage> ReceivedMessages => _messagesInOrder.ToList();
+
+    public List<MediumMessage> ReceivedMessages => [.. _messagesInOrder];
 
     public async Task WaitForCountAsync(int target, TimeSpan timeout, CancellationToken cancellationToken = default)
     {

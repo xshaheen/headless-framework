@@ -13,31 +13,26 @@ namespace Headless.DistributedLocks;
 /// calls are forwarded to the inner storage with the prefix prepended to
 /// <c>resource</c>.
 /// </summary>
-internal sealed class ScopedDistributedReadWriteLockStorage : IDistributedReadWriteLockStorage
+/// <remarks>
+/// Initializes the scoped wrapper.
+/// </remarks>
+/// <param name="inner">The real storage backend to delegate all calls to.</param>
+/// <param name="scopedPrefix">
+/// Non-empty prefix prepended to every resource key before forwarding to
+/// <paramref name="inner"/>. Typically sourced from
+/// <see cref="DistributedLockOptions.KeyPrefix"/>.
+/// </param>
+/// <exception cref="ArgumentNullException">
+/// Thrown when <paramref name="inner"/> is <see langword="null"/>.
+/// </exception>
+/// <exception cref="ArgumentException">
+/// Thrown when <paramref name="scopedPrefix"/> is <see langword="null"/> or empty.
+/// </exception>
+internal sealed class ScopedDistributedReadWriteLockStorage(IDistributedReadWriteLockStorage inner, string scopedPrefix)
+    : IDistributedReadWriteLockStorage
 {
-    private readonly IDistributedReadWriteLockStorage _inner;
-    private readonly string _scopedPrefix;
-
-    /// <summary>
-    /// Initializes the scoped wrapper.
-    /// </summary>
-    /// <param name="inner">The real storage backend to delegate all calls to.</param>
-    /// <param name="scopedPrefix">
-    /// Non-empty prefix prepended to every resource key before forwarding to
-    /// <paramref name="inner"/>. Typically sourced from
-    /// <see cref="DistributedLockOptions.KeyPrefix"/>.
-    /// </param>
-    /// <exception cref="ArgumentNullException">
-    /// Thrown when <paramref name="inner"/> is <see langword="null"/>.
-    /// </exception>
-    /// <exception cref="ArgumentException">
-    /// Thrown when <paramref name="scopedPrefix"/> is <see langword="null"/> or empty.
-    /// </exception>
-    public ScopedDistributedReadWriteLockStorage(IDistributedReadWriteLockStorage inner, string scopedPrefix)
-    {
-        _inner = Argument.IsNotNull(inner);
-        _scopedPrefix = Argument.IsNotNullOrEmpty(scopedPrefix);
-    }
+    private readonly IDistributedReadWriteLockStorage _inner = Argument.IsNotNull(inner);
+    private readonly string _scopedPrefix = Argument.IsNotNullOrEmpty(scopedPrefix);
 
     /// <inheritdoc/>
     public ValueTask<bool> TryAcquireReadAsync(

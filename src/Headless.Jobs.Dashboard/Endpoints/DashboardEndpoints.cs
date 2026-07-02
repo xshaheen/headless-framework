@@ -176,8 +176,10 @@ internal static class DashboardEndpoints
             .WithName("CancelJob")
             .WithSummary("Cancel job by ID");
 
+        // Literal "id" segment (not a route parameter): the SPA calls "job-request/id" and supplies
+        // jobId + jobType via query string, which _GetJobRequest binds. Avoids a dead {id} route token.
         apiGroup
-            .MapGet("/job-request/{id}", _GetJobRequest<TTimeJob, TCronJob>)
+            .MapGet("/job-request/id", _GetJobRequest<TTimeJob, TCronJob>)
             .WithName("GetJobRequest")
             .WithSummary("Get job request by ID");
 

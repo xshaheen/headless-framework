@@ -30,10 +30,7 @@ public static class SetupAwsMessaging
         /// <returns>The same <paramref name="setup"/> builder for chaining.</returns>
         public MessagingSetupBuilder UseAws(RegionEndpoint region)
         {
-            return setup.UseAws(opt =>
-            {
-                opt.Region = region;
-            });
+            return setup.UseAws(opt => opt.Region = region);
         }
 
         /// <summary>

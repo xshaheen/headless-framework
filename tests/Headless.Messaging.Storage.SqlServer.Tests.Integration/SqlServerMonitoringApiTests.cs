@@ -370,7 +370,7 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
         var result = await _monitoringApi.GetMessagesAsync(query, AbortToken);
 
         // then
-        result.Items.Should().HaveCount(1);
+        result.Items.Should().ContainSingle();
         result.Items.Single().Name.Should().Be("orders.created");
     }
 

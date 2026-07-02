@@ -74,7 +74,7 @@ internal sealed partial class CommitInterceptorStartupGate<TContext>(
                         var observed = false;
 
                         // Enlist synchronously in this frame so the ambient coordinator flows to the commit edge.
-                        using (
+                        await using (
                             var commitScope = context.Database.EnlistCommitCoordination(
                                 transaction,
                                 scope.ServiceProvider,

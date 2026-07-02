@@ -56,7 +56,7 @@ public sealed class AuditLogEntry
     /// <summary>Human-readable action name (e.g., <c>"entity.created"</c>).</summary>
     public required string Action { get; init; }
 
-    /// <summary>EF change type, or <c>null</c> for explicit events.</summary>
+    /// <summary>EF change type, or <see langword="null"/> for explicit events.</summary>
     public AuditChangeType? ChangeType { get; init; }
 
     // Entity
@@ -70,7 +70,7 @@ public sealed class AuditLogEntry
     public string? EntityId { get; init; }
 
     // Changes — stored as string columns, serialized via value converters
-    /// <summary>Property values before the change. <c>null</c> for Created entries.</summary>
+    /// <summary>Property values before the change. <see langword="null"/> for Created entries.</summary>
     /// <remarks>
     /// Values are serialized as their CLR types on write but deserialize as
     /// <see cref="System.Text.Json.JsonElement"/> on read. Use <c>GetDecimal()</c>,
@@ -78,7 +78,7 @@ public sealed class AuditLogEntry
     /// </remarks>
     public Dictionary<string, object?>? OldValues { get; init; }
 
-    /// <summary>Property values after the change. <c>null</c> for Deleted entries.</summary>
+    /// <summary>Property values after the change. <see langword="null"/> for Deleted entries.</summary>
     /// <remarks>
     /// Values are serialized as their CLR types on write but deserialize as
     /// <see cref="System.Text.Json.JsonElement"/> on read. Use <c>GetDecimal()</c>,

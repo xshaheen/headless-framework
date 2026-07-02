@@ -69,7 +69,7 @@ public sealed class PreferredLocale(string country, string language) : IEquatabl
     /// <returns><see langword="true"/> if the locales are equal (including both being <see langword="null"/>); otherwise, <see langword="false"/>.</returns>
     public static bool operator ==(PreferredLocale? left, PreferredLocale? right)
     {
-        return left?.Equals(right) ?? right is null;
+        return left?.Equals(right) ?? (right is null);
     }
 
     /// <summary>Determines whether two locales are different.</summary>

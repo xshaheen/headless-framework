@@ -3,15 +3,19 @@
 using System.Net;
 using Headless.Sms;
 using Headless.Sms.Cequens;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
+using Polly.CircuitBreaker;
+using Polly.RateLimiting;
+using Polly.Timeout;
 using WireMock.RequestBuilders;
 using WireMock.ResponseBuilders;
 
 namespace Tests;
 
-public sealed class CequensSmsSenderTests : IClassFixture<SmsWireMockFixture>
+public sealed class CequensSmsSenderTests : TestBase, IClassFixture<SmsWireMockFixture>
 {
     private readonly SmsWireMockFixture _fixture;
 
@@ -80,10 +84,10 @@ public sealed class CequensSmsSenderTests : IClassFixture<SmsWireMockFixture>
         var time = new FakeTimeProvider();
         _StubTokenOk("tok-1");
         _StubSendOk();
-        var sender = _CreateSender(time);
+        using var sender = _CreateSender(time);
 
-        var first = await sender.SendAsync(SmsRequests.Single());
-        var second = await sender.SendAsync(SmsRequests.Single());
+        var first = await sender.SendAsync(SmsRequests.Single(), AbortToken);
+        var second = await sender.SendAsync(SmsRequests.Single(), AbortToken);
 
         first.Success.Should().BeTrue();
         second.Success.Should().BeTrue();
@@ -109,9 +113,9 @@ public sealed class CequensSmsSenderTests : IClassFixture<SmsWireMockFixture>
             .WhenStateIs("retried")
             .RespondWith(Response.Create().WithStatusCode(HttpStatusCode.OK).WithBody("{}"));
 
-        var sender = _CreateSender(time);
+        using var sender = _CreateSender(time);
 
-        var result = await sender.SendAsync(SmsRequests.Single());
+        var result = await sender.SendAsync(SmsRequests.Single(), AbortToken);
 
         result.Success.Should().BeTrue();
         _TokenCalls().Should().Be(2); // initial fetch + re-auth after the 401
@@ -124,9 +128,9 @@ public sealed class CequensSmsSenderTests : IClassFixture<SmsWireMockFixture>
         var time = new FakeTimeProvider();
         _StubTokenError();
         _StubSendOk();
-        var sender = _CreateSender(time, staticToken: "static-fallback");
+        using var sender = _CreateSender(time, staticToken: "static-fallback");
 
-        var result = await sender.SendAsync(SmsRequests.Single());
+        var result = await sender.SendAsync(SmsRequests.Single(), AbortToken);
 
         result.Success.Should().BeTrue();
     }
@@ -136,11 +140,81 @@ public sealed class CequensSmsSenderTests : IClassFixture<SmsWireMockFixture>
     {
         var time = new FakeTimeProvider();
         _StubTokenError();
-        var sender = _CreateSender(time);
+        using var sender = _CreateSender(time);
 
-        var result = await sender.SendAsync(SmsRequests.Single());
+        var result = await sender.SendAsync(SmsRequests.Single(), AbortToken);
 
         result.Success.Should().BeFalse();
         result.FailureKind.Should().Be(SmsFailureKind.AuthFailure);
+    }
+
+    [Fact]
+    public async Task should_classify_a_persistent_unauthorized_as_an_auth_failure()
+    {
+        var time = new FakeTimeProvider();
+        _StubTokenOk("tok");
+        _fixture
+            .Server.Given(Request.Create().WithPath("/sms").UsingPost())
+            .RespondWith(Response.Create().WithStatusCode(HttpStatusCode.Unauthorized).WithBody("unauthorized"));
+
+        using var sender = _CreateSender(time);
+
+        var result = await sender.SendAsync(SmsRequests.Single(), AbortToken);
+
+        result.Success.Should().BeFalse();
+        result.FailureError.Should().Be("unauthorized");
+        result.FailureKind.Should().Be(SmsFailureKind.AuthFailure);
+        _SendCalls().Should().Be(2); // the 401, then the re-authenticated retry that also got a 401
+    }
+
+    [Fact]
+    public async Task should_surface_the_error_body_without_guessing_a_kind_on_a_server_error()
+    {
+        var time = new FakeTimeProvider();
+        _StubTokenOk("tok");
+        _fixture
+            .Server.Given(Request.Create().WithPath("/sms").UsingPost())
+            .RespondWith(Response.Create().WithStatusCode(HttpStatusCode.InternalServerError).WithBody("down"));
+
+        using var sender = _CreateSender(time);
+
+        var result = await sender.SendAsync(SmsRequests.Single(), AbortToken);
+
+        result.Success.Should().BeFalse();
+        result.FailureError.Should().Be("down");
+
+        // Cequens documents no error contract, so a 5xx is not assumed to be retryable.
+        result.FailureKind.Should().Be(SmsFailureKind.Unknown);
+    }
+
+    [Theory]
+    [InlineData(nameof(TimeoutRejectedException))]
+    [InlineData(nameof(BrokenCircuitException))]
+    [InlineData(nameof(RateLimiterRejectedException))]
+    public async Task should_classify_resilience_rejections_as_transient(string rejectionKind)
+    {
+        var exception = ResilienceRejections.Create(rejectionKind);
+        var options = Options.Create(
+            new CequensSmsOptions
+            {
+                SingleSmsEndpoint = "http://localhost:1/sms",
+                TokenEndpoint = "http://localhost:1/auth",
+                ApiKey = "api-key",
+                UserName = "user",
+                SenderName = "SENDER",
+                Token = "static-token", // the throwing token fetch falls back here, so the send itself faults
+            }
+        );
+        using var sender = new CequensSmsSender(
+            new ThrowingHttpClientFactory(exception),
+            new FakeTimeProvider(),
+            options,
+            NullLogger<CequensSmsSender>.Instance
+        );
+
+        var result = await sender.SendAsync(SmsRequests.Single(), AbortToken);
+
+        result.Success.Should().BeFalse();
+        result.FailureKind.Should().Be(SmsFailureKind.Transient);
     }
 }

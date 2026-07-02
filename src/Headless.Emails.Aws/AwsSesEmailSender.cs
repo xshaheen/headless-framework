@@ -153,9 +153,9 @@ internal sealed class AwsSesEmailSender(IAmazonSimpleEmailServiceV2 ses, ILogger
     {
         return new Destination
         {
-            ToAddresses = request.Destination.ToAddresses.Select(address => address.ToString()).ToList(),
-            CcAddresses = request.Destination.CcAddresses.Select(address => address.ToString()).ToList(),
-            BccAddresses = request.Destination.BccAddresses.Select(address => address.ToString()).ToList(),
+            ToAddresses = [.. request.Destination.ToAddresses.Select(address => address.ToString())],
+            CcAddresses = [.. request.Destination.CcAddresses.Select(address => address.ToString())],
+            BccAddresses = [.. request.Destination.BccAddresses.Select(address => address.ToString())],
         };
     }
 

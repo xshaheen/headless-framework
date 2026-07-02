@@ -377,7 +377,7 @@ public sealed class ActionableStreamTests
     {
         // given
         var inner = new MemoryStream();
-        using var sut = new ActionableStream(inner, () => throw new InvalidOperationException("test"));
+        await using var sut = new ActionableStream(inner, () => throw new InvalidOperationException("test"));
 
         // when
         var act = async () => await sut.DisposeAsync();

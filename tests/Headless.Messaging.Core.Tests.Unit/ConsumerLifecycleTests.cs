@@ -18,7 +18,7 @@ public sealed class ConsumerLifecycleTests
         services.AddSingleton<TrackedLifecycleConsumer>();
         services.AddScoped<IConsume<TestMessage>>(sp => sp.GetRequiredService<TrackedLifecycleConsumer>());
 
-        using var serviceProvider = services.BuildServiceProvider();
+        await using var serviceProvider = services.BuildServiceProvider();
         var scopeFactory = serviceProvider.GetRequiredService<IServiceScopeFactory>();
         var dispatcher = new CompiledMessageDispatcher(scopeFactory);
 
@@ -54,7 +54,7 @@ public sealed class ConsumerLifecycleTests
         services.AddSingleton<TrackedLifecycleConsumer>();
         services.AddScoped<IConsume<TestMessage>>(sp => sp.GetRequiredService<TrackedLifecycleConsumer>());
 
-        using var serviceProvider = services.BuildServiceProvider();
+        await using var serviceProvider = services.BuildServiceProvider();
         var scopeFactory = serviceProvider.GetRequiredService<IServiceScopeFactory>();
         var dispatcher = new CompiledMessageDispatcher(scopeFactory);
 
@@ -90,7 +90,7 @@ public sealed class ConsumerLifecycleTests
         services.AddSingleton<TrackedLifecycleConsumer>();
         services.AddScoped<IConsume<TestMessage>>(sp => sp.GetRequiredService<TrackedLifecycleConsumer>());
 
-        using var serviceProvider = services.BuildServiceProvider();
+        await using var serviceProvider = services.BuildServiceProvider();
         var scopeFactory = serviceProvider.GetRequiredService<IServiceScopeFactory>();
         var dispatcher = new CompiledMessageDispatcher(scopeFactory);
 
@@ -139,7 +139,7 @@ public sealed class ConsumerLifecycleTests
         services.AddSingleton<FailingLifecycleConsumer>();
         services.AddScoped<IConsume<TestMessage>>(sp => sp.GetRequiredService<FailingLifecycleConsumer>());
 
-        using var serviceProvider = services.BuildServiceProvider();
+        await using var serviceProvider = services.BuildServiceProvider();
         var scopeFactory = serviceProvider.GetRequiredService<IServiceScopeFactory>();
         var dispatcher = new CompiledMessageDispatcher(scopeFactory);
 
@@ -174,7 +174,7 @@ public sealed class ConsumerLifecycleTests
         var services = new ServiceCollection();
         services.AddScoped<IConsume<TestMessage>, SimpleConsumer>();
 
-        using var serviceProvider = services.BuildServiceProvider();
+        await using var serviceProvider = services.BuildServiceProvider();
         var scopeFactory = serviceProvider.GetRequiredService<IServiceScopeFactory>();
         var dispatcher = new CompiledMessageDispatcher(scopeFactory);
 
@@ -202,7 +202,7 @@ public sealed class ConsumerLifecycleTests
         services.AddSingleton<FailingStoppingConsumer>();
         services.AddScoped<IConsume<TestMessage>>(sp => sp.GetRequiredService<FailingStoppingConsumer>());
 
-        using var serviceProvider = services.BuildServiceProvider();
+        await using var serviceProvider = services.BuildServiceProvider();
         var scopeFactory = serviceProvider.GetRequiredService<IServiceScopeFactory>();
         var dispatcher = new CompiledMessageDispatcher(scopeFactory);
 
@@ -235,7 +235,7 @@ public sealed class ConsumerLifecycleTests
         services.AddSingleton<FailingStartingConsumer>();
         services.AddScoped<IConsume<TestMessage>>(sp => sp.GetRequiredService<FailingStartingConsumer>());
 
-        using var serviceProvider = services.BuildServiceProvider();
+        await using var serviceProvider = services.BuildServiceProvider();
         var scopeFactory = serviceProvider.GetRequiredService<IServiceScopeFactory>();
         var dispatcher = new CompiledMessageDispatcher(scopeFactory);
 

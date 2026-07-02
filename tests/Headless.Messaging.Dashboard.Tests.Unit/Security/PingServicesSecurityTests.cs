@@ -6,15 +6,19 @@ using Headless.Testing.Tests;
 namespace Tests.Security;
 
 /// <summary>
+/// <para>
 /// CRITICAL SECURITY TESTS: PingServices SSRF Prevention
 /// These tests document the current SSRF vulnerability in PingServices endpoint.
 /// The endpoint accepts an 'endpoint' query parameter and makes an HTTP request to it.
-///
+/// </para>
+/// <para>
 /// MITIGATION: The refactored endpoint validates that the endpoint matches a registered
 /// discovery node before making the request. Unregistered endpoints return 403 Forbidden.
-///
+/// </para>
+/// <para>
 /// REMAINING VULNERABILITY: The endpoint does not validate against internal IP ranges directly.
 /// If a node is registered with an internal IP, the endpoint will allow requests to it.
+/// </para>
 /// </summary>
 public sealed class PingServicesSecurityTests : TestBase
 {

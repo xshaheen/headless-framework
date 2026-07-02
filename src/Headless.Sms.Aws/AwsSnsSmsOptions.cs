@@ -31,6 +31,6 @@ internal sealed class AwsSnsSmsOptionsValidator : AbstractValidator<AwsSnsSmsOpt
     public AwsSnsSmsOptionsValidator()
     {
         RuleFor(x => x.SenderId).NotEmpty();
-        RuleFor(x => x.MaxPrice).GreaterThan(0);
+        RuleFor(x => x.MaxPrice).GreaterThanOrEqualTo(0);
     }
 }

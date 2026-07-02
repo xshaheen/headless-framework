@@ -21,7 +21,7 @@ public sealed class AuditSensitiveAttribute : Attribute
 
     /// <summary>
     /// Override the global <see cref="AuditLogOptions.SensitiveDataStrategy"/> for this property.
-    /// When <c>null</c>, falls back to the global strategy.
+    /// When <see langword="null"/>, falls back to the global strategy.
     /// </summary>
     public SensitiveDataStrategy? Strategy { get; }
 }

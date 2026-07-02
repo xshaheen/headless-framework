@@ -88,7 +88,7 @@ public static class SnappyCompressor
     /// </param>
     /// <returns>
     /// The deserialized value, or <see langword="null" /> if the JSON payload represents a JSON
-    /// <c>null</c>.
+    /// <see langword="null"/>.
     /// </returns>
     public static T? Decompress<T>(ReadOnlyMemory<byte> compressed, JsonSerializerOptions? options = null)
     {
@@ -112,7 +112,7 @@ public static class SnappyCompressor
     /// </param>
     /// <returns>
     /// The deserialized value, or <see langword="null" /> if the JSON payload represents a JSON
-    /// <c>null</c>.
+    /// <see langword="null"/>.
     /// </returns>
     public static T? Decompress<T>(ReadOnlyMemory<byte> compressed, JsonTypeInfo<T> jsonTypeInfo)
     {

@@ -26,7 +26,11 @@ public sealed class SetupHeadlessTenancyTests
         builder
             .Services.Where(descriptor =>
                 descriptor.ServiceType == typeof(IHostedService)
-                && descriptor.ImplementationType?.Name == "HeadlessTenancyStartupValidator"
+                && string.Equals(
+                    descriptor.ImplementationType?.Name,
+                    "HeadlessTenancyStartupValidator",
+                    StringComparison.Ordinal
+                )
             )
             .Should()
             .ContainSingle();
@@ -66,7 +70,9 @@ public sealed class SetupHeadlessTenancyTests
         var hostedService = (IHostedLifecycleService)
             provider
                 .GetServices<IHostedService>()
-                .Single(service => service.GetType().Name == "HeadlessTenancyStartupValidator");
+                .Single(service =>
+                    string.Equals(service.GetType().Name, "HeadlessTenancyStartupValidator", StringComparison.Ordinal)
+                );
 
         // when — validation runs in StartingAsync so it fires before any other hosted service's StartAsync.
         var act = () => hostedService.StartingAsync(CancellationToken.None);
@@ -95,7 +101,9 @@ public sealed class SetupHeadlessTenancyTests
         var hostedService = (IHostedLifecycleService)
             provider
                 .GetServices<IHostedService>()
-                .Single(service => service.GetType().Name == "HeadlessTenancyStartupValidator");
+                .Single(service =>
+                    string.Equals(service.GetType().Name, "HeadlessTenancyStartupValidator", StringComparison.Ordinal)
+                );
 
         // when
         var act = () => hostedService.StartingAsync(CancellationToken.None);
@@ -213,7 +221,9 @@ public sealed class SetupHeadlessTenancyTests
         var hostedService = (IHostedLifecycleService)
             provider
                 .GetServices<IHostedService>()
-                .Single(service => service.GetType().Name == "HeadlessTenancyStartupValidator");
+                .Single(service =>
+                    string.Equals(service.GetType().Name, "HeadlessTenancyStartupValidator", StringComparison.Ordinal)
+                );
 
         // when
         var act = () => hostedService.StartingAsync(CancellationToken.None);
@@ -239,7 +249,9 @@ public sealed class SetupHeadlessTenancyTests
         var hostedService = (IHostedLifecycleService)
             provider
                 .GetServices<IHostedService>()
-                .Single(service => service.GetType().Name == "HeadlessTenancyStartupValidator");
+                .Single(service =>
+                    string.Equals(service.GetType().Name, "HeadlessTenancyStartupValidator", StringComparison.Ordinal)
+                );
 
         // when
         var act = () => hostedService.StartingAsync(CancellationToken.None);

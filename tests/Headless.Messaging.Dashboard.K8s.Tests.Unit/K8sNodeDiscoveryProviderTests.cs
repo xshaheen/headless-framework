@@ -7,6 +7,7 @@ using Headless.Testing.Tests;
 using k8s.Models;
 using Microsoft.Extensions.Caching.Memory;
 
+#pragma warning disable REFL009 // The referenced member is not known to exist
 namespace Tests;
 
 public sealed class K8SNodeDiscoveryProviderTests : TestBase

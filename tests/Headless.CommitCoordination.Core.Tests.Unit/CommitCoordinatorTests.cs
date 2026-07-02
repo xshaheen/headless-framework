@@ -1,10 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.CommitCoordination;
+using Headless.Testing.Tests;
 
 namespace Tests;
 
-public sealed class CommitCoordinatorTests
+public sealed class CommitCoordinatorTests : TestBase
 {
     [Fact]
     public async Task should_drain_commit_callbacks_once_when_commit_is_signaled()
@@ -209,36 +210,42 @@ public sealed class CommitCoordinatorTests
 
             for (var i = 0; i < enlisters; i++)
             {
-                tasks[i] = Task.Run(() =>
+                tasks[i] = Task.Run(
+                    () =>
+                    {
+                        barrier.SignalAndWait();
+
+                        try
+                        {
+                            coordinator.OnCommit(
+                                (_, _) =>
+                                {
+                                    Interlocked.Increment(ref drained);
+
+                                    return ValueTask.CompletedTask;
+                                }
+                            );
+
+                            Interlocked.Increment(ref accepted);
+                        }
+                        catch (InvalidOperationException)
+                        {
+                            // Lost the race to the terminal transition: enlist-after-terminal throws (never a strand).
+                        }
+                    },
+                    AbortToken
+                );
+            }
+
+            tasks[enlisters] = Task.Run(
+                async () =>
                 {
                     barrier.SignalAndWait();
 
-                    try
-                    {
-                        coordinator.OnCommit(
-                            (_, _) =>
-                            {
-                                Interlocked.Increment(ref drained);
-
-                                return ValueTask.CompletedTask;
-                            }
-                        );
-
-                        Interlocked.Increment(ref accepted);
-                    }
-                    catch (InvalidOperationException)
-                    {
-                        // Lost the race to the terminal transition: enlist-after-terminal throws (never a strand).
-                    }
-                });
-            }
-
-            tasks[enlisters] = Task.Run(async () =>
-            {
-                barrier.SignalAndWait();
-
-                await coordinator.SignalAsync(CommitOutcome.Committed, new EmptyServiceProvider());
-            });
+                    await coordinator.SignalAsync(CommitOutcome.Committed, new EmptyServiceProvider());
+                },
+                AbortToken
+            );
 
             await Task.WhenAll(tasks);
 

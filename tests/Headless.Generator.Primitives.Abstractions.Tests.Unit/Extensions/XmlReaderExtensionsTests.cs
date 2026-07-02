@@ -11,7 +11,7 @@ public sealed class XmlReaderExtensionsTests
     public void should_read_int_from_xml()
     {
         // given
-        var xml = "<value>123</value>";
+        const string xml = "<value>123</value>";
         using var stringReader = new StringReader(xml);
         using var reader = XmlReader.Create(stringReader);
         reader.Read(); // move to element
@@ -27,7 +27,7 @@ public sealed class XmlReaderExtensionsTests
     public void should_read_decimal_from_xml()
     {
         // given
-        var xml = "<value>123.45</value>";
+        const string xml = "<value>123.45</value>";
         using var stringReader = new StringReader(xml);
         using var reader = XmlReader.Create(stringReader);
         reader.Read(); // move to element

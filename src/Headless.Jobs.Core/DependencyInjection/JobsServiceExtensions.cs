@@ -1,9 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Abstractions;
 using Headless.Checks;
 using Headless.CommitCoordination;
 using Headless.Coordination;
-using Headless.Core;
 using Headless.DistributedLocks;
 using Headless.Jobs.BackgroundServices;
 using Headless.Jobs.Coordination;
@@ -110,9 +110,8 @@ public static class JobsServiceExtensions
             services.AddSingleton(sp =>
             {
                 var notification = sp.GetRequiredService<IJobsNotificationHubSender>();
-                var notifyDebounce = new SoftSchedulerNotifyDebounce(
-                    (value) => notification.UpdateActiveThreads(value)
-                );
+                var notifyDebounce = new SoftSchedulerNotifyDebounce(notification.UpdateActiveThreads);
+
                 return new JobsTaskScheduler(
                     schedulerOptionsBuilder.MaxConcurrency,
                     schedulerOptionsBuilder.IdleWorkerTimeOut,

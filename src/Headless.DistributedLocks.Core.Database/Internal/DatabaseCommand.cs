@@ -14,14 +14,11 @@ namespace Headless.DistributedLocks;
 /// </summary>
 internal sealed class DatabaseCommand(DbCommand command, DatabaseConnection connection) : IDisposable
 {
-    private readonly DbCommand _command = command;
-
 #pragma warning disable CA2213 // Not owned by the command; the connection outlives every command created against it.
-    private readonly DatabaseConnection _connection = connection;
 #pragma warning restore CA2213
 
     /// <summary>The underlying command's parameter collection.</summary>
-    public IDataParameterCollection Parameters => _command.Parameters;
+    public IDataParameterCollection Parameters => command.Parameters;
 
     // SQL here is always a constant emitted by the lock strategies / monitor, never user input.
 #pragma warning disable CA2100
@@ -32,7 +29,7 @@ internal sealed class DatabaseCommand(DbCommand command, DatabaseConnection conn
     /// <param name="sql">The SQL command text to execute.</param>
     public void SetCommandText(string sql)
     {
-        _command.CommandText = sql;
+        command.CommandText = sql;
     }
 #pragma warning restore CA2100
 
@@ -44,7 +41,7 @@ internal sealed class DatabaseCommand(DbCommand command, DatabaseConnection conn
     /// </summary>
     public void SetTimeout(TimeSpan operationTimeout)
     {
-        _command.CommandTimeout =
+        command.CommandTimeout =
             operationTimeout == Timeout.InfiniteTimeSpan ? 0 : (int)Math.Ceiling(operationTimeout.TotalSeconds) + 30;
     }
 
@@ -55,14 +52,14 @@ internal sealed class DatabaseCommand(DbCommand command, DatabaseConnection conn
     /// </summary>
     public void SetExactTimeoutSeconds(int seconds)
     {
-        _command.CommandTimeout = seconds;
+        command.CommandTimeout = seconds;
     }
 
     /// <summary>Sets the <see cref="CommandType"/> of the command (text, stored procedure, etc.).</summary>
     /// <param name="type">The command type to apply.</param>
     public void SetCommandType(CommandType type)
     {
-        _command.CommandType = type;
+        command.CommandType = type;
     }
 
     /// <summary>
@@ -80,7 +77,7 @@ internal sealed class DatabaseCommand(DbCommand command, DatabaseConnection conn
         ParameterDirection? direction = null
     )
     {
-        var parameter = _command.CreateParameter();
+        var parameter = command.CreateParameter();
 
         if (name is not null)
         {
@@ -102,7 +99,7 @@ internal sealed class DatabaseCommand(DbCommand command, DatabaseConnection conn
             parameter.Direction = direction.Value;
         }
 
-        _command.Parameters.Add(parameter);
+        command.Parameters.Add(parameter);
 
         return parameter;
     }
@@ -164,12 +161,12 @@ internal sealed class DatabaseCommand(DbCommand command, DatabaseConnection conn
 
         try
         {
-            return await executeAsync(_command, cancellationToken).ConfigureAwait(false);
+            return await executeAsync(command, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception)
             // Canceled SQL operations on some providers throw a provider-specific exception instead of OCE. That would
             // leave downstream operations faulted instead of canceled, so we wrap with OCE to propagate cancellation.
-            when (cancellationToken.IsCancellationRequested && _connection.IsCommandCancellationException(exception))
+            when (cancellationToken.IsCancellationRequested && connection.IsCommandCancellationException(exception))
         {
             throw new OperationCanceledException("Command was canceled", exception, cancellationToken);
         }
@@ -177,13 +174,13 @@ internal sealed class DatabaseCommand(DbCommand command, DatabaseConnection conn
 
     private ValueTask _PrepareIfNeededAsync(CancellationToken cancellationToken)
     {
-        return _connection.ShouldPrepareCommands ? new ValueTask(_command.PrepareAsync(cancellationToken)) : default;
+        return connection.ShouldPrepareCommands ? new ValueTask(command.PrepareAsync(cancellationToken)) : default;
     }
 
     /// <summary>Disposes the underlying <see cref="DbCommand"/>.</summary>
     public void Dispose()
     {
-        _command.Dispose();
+        command.Dispose();
     }
 
     // NOTE: no cancellation token here — the connection lock should never be held for long except in bug scenarios
@@ -192,6 +189,6 @@ internal sealed class DatabaseCommand(DbCommand command, DatabaseConnection conn
     {
         return isConnectionMonitoringQuery
             ? new ValueTask<IDisposable?>(default(IDisposable?))
-            : _connection.ConnectionMonitor.AcquireConnectionLockAsync(CancellationToken.None);
+            : connection.ConnectionMonitor.AcquireConnectionLockAsync(CancellationToken.None);
     }
 }

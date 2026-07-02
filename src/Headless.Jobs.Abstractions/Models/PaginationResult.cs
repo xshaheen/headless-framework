@@ -30,7 +30,7 @@ public class PaginationResult<T>
     public bool HasNextPage => PageNumber < TotalPages;
 
     /// <summary>1-based index of the first item on this page within the full result set.</summary>
-    public int FirstItemIndex => (PageNumber - 1) * PageSize + 1;
+    public int FirstItemIndex => ((PageNumber - 1) * PageSize) + 1;
 
     /// <summary>1-based index of the last item on this page within the full result set.</summary>
     public int LastItemIndex => Math.Min(PageNumber * PageSize, TotalCount);

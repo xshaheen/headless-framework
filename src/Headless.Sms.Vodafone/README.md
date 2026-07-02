@@ -8,7 +8,7 @@ Provides SMS sending via the Vodafone Egypt enterprise messaging API, which uses
 
 ## Key Features
 
-- `VodafoneSmsSender` — `ISmsSender` implementation backed by the Vodafone Egypt REST API.
+- `VodafoneSmsSender` — implements `ISmsSender` (single recipient) and `IBulkSmsSender` (multi-recipient bulk), backed by the Vodafone Egypt REST API.
 - Account credentials: `AccountId` + `Password` + `SecureHash`.
 - Configurable `Sender` name and `SendSmsEndpoint`.
 - Standard resilience pipeline with auto-retry **disabled** by default to prevent duplicate SMS.

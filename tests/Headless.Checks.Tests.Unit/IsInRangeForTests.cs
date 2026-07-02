@@ -28,7 +28,7 @@ public sealed class IsInRangeForTests
     [Fact]
     public void is_in_range_for_should_format_message()
     {
-        var index = 5;
+        const int index = 5;
         var action = () => Argument.IsInRangeFor(index, 3);
 
         action

@@ -200,6 +200,6 @@ internal sealed class AwsBlobContainerManager : IBlobContainerManager, IDisposab
         _ensureBucketLock.Dispose();
 
         // This manager owns its per-store S3 client (built by the DI factory), so it releases the HTTP handler/sockets.
-        (_s3 as IDisposable)?.Dispose();
+        _s3?.Dispose();
     }
 }

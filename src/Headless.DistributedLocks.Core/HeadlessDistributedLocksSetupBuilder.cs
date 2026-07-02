@@ -26,8 +26,7 @@ public sealed class HeadlessDistributedLocksSetupBuilder
 
     internal IServiceCollection Services { get; }
 
-    internal IList<IDistributedLocksOptionsExtension> Extensions { get; } =
-        new List<IDistributedLocksOptionsExtension>();
+    internal IList<IDistributedLocksOptionsExtension> Extensions { get; } = [];
 
     /// <summary>
     /// Binds <see cref="DistributedLockOptions"/> from the supplied <paramref name="configuration"/>

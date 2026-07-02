@@ -169,7 +169,10 @@ public sealed class RedisBlobStorage : IBlobStorage
             if (_options.MaxBlobSizeBytes > 0 && content.CanSeek && content.Length > _options.MaxBlobSizeBytes)
             {
                 throw new ArgumentException(
-                    $"Blob exceeds maximum size of {_options.MaxBlobSizeBytes} bytes. Redis blob storage is intended for small/ephemeral blobs only.",
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"Blob exceeds maximum size of {_options.MaxBlobSizeBytes} bytes. Redis blob storage is intended for small/ephemeral blobs only."
+                    ),
                     nameof(content)
                 );
             }
@@ -813,7 +816,10 @@ public sealed class RedisBlobStorage : IBlobStorage
             if (totalBytes > _options.MaxBlobSizeBytes)
             {
                 throw new ArgumentException(
-                    $"Blob exceeds maximum size of {_options.MaxBlobSizeBytes} bytes. Redis blob storage is intended for small/ephemeral blobs only.",
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"Blob exceeds maximum size of {_options.MaxBlobSizeBytes} bytes. Redis blob storage is intended for small/ephemeral blobs only."
+                    ),
                     nameof(source)
                 );
             }

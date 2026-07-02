@@ -9,6 +9,7 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
 namespace Tests.ReaderWriterLocks;
 
 public sealed class DistributedReadWriteLockTests : TestBase
@@ -347,7 +348,7 @@ public sealed class DistributedReadWriteLockTests : TestBase
 
         // then
         result.Should().BeNull();
-        storage.WriteReleaseCount.Should().BeGreaterThan(0);
+        storage.WriteReleaseCount.Should().BePositive();
     }
 
     [Fact]

@@ -16,9 +16,12 @@ namespace Tests;
 /// </summary>
 public sealed class HybridCacheRecoveryQueueMinExpiryStaleTests : TestBase
 {
-    private static readonly TimeSpan _Delay = TimeSpan.FromSeconds(5);
-
     private readonly FakeTimeProvider _timeProvider = new();
+
+    // The HybridCache returned here is disposed per test via `await using`, but it does not own the injected
+    // L1/L2 stores. This fixture collects those disposable backends (InMemoryCache L1 and TogglableRemoteCache L2)
+    // and disposes them at teardown.
+    private readonly List<object> _disposables = [];
 
     private (HybridCache cache, TogglableRemoteCache l2) _CreateCache(int maxItems)
     {
@@ -34,7 +37,29 @@ public sealed class HybridCacheRecoveryQueueMinExpiryStaleTests : TestBase
 
         var cache = new HybridCache(l1, l2, publisher, options, timeProvider: _timeProvider);
 
+        _disposables.Add(l1);
+        _disposables.Add(l2);
+
         return (cache, l2);
+    }
+
+    protected override async ValueTask DisposeAsyncCore()
+    {
+        foreach (var disposable in _disposables)
+        {
+            switch (disposable)
+            {
+                case IAsyncDisposable asyncDisposable:
+                    await asyncDisposable.DisposeAsync().ConfigureAwait(false);
+                    break;
+                case IDisposable syncDisposable:
+                    syncDisposable.Dispose();
+                    break;
+            }
+        }
+
+        _disposables.Clear();
+        await base.DisposeAsyncCore().ConfigureAwait(false);
     }
 
     [Fact]

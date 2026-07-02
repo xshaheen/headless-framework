@@ -313,7 +313,9 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         received.Should().BeTrue("consumer handler should be invoked");
         subscriber.ReceivedContexts.Should().HaveCountGreaterThanOrEqualTo(1);
 
-        var context = subscriber.ReceivedContexts.First(c => c.Message.Id == message.Id);
+        var context = subscriber.ReceivedContexts.First(c =>
+            string.Equals(c.Message.Id, message.Id, StringComparison.Ordinal)
+        );
         context.MessageId.Should().NotBeNullOrEmpty();
         context.MessageName.Should().Be(ResolveMessageName("test-message"));
     }
@@ -449,7 +451,9 @@ public abstract class MessagingIntegrationTestsBase : TestBase
 
         // then
         received.Should().BeTrue("message with headers should be received");
-        var context = subscriber.ReceivedContexts.FirstOrDefault(c => c.Message.Id == message.Id);
+        var context = subscriber.ReceivedContexts.FirstOrDefault(c =>
+            string.Equals(c.Message.Id, message.Id, StringComparison.Ordinal)
+        );
         context.Should().NotBeNull();
         context!.Headers.Should().ContainKey("CustomHeader");
     }
@@ -750,7 +754,12 @@ public abstract class MessagingIntegrationTestsBase : TestBase
             await Bus.PublishAsync(probe, new PublishOptions { MessageName = messageName }, AbortToken);
 
             var received = await subscriber.WaitForMessageAsync(TimeSpan.FromSeconds(1), AbortToken);
-            if (received && subscriber.ReceivedMessages.Any(message => message.Id == probe.Id))
+            if (
+                received
+                && subscriber.ReceivedMessages.Any(message =>
+                    string.Equals(message.Id, probe.Id, StringComparison.Ordinal)
+                )
+            )
             {
                 subscriber.Clear();
                 return;
@@ -768,7 +777,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
     {
         return string.IsNullOrWhiteSpace(MessagingOptions.MessageNamePrefix)
             ? messageName
-            : string.Concat(MessagingOptions.MessageNamePrefix, ".", messageName);
+            : $"{MessagingOptions.MessageNamePrefix}.{messageName}";
     }
 
     private async Task<IReadOnlyList<MessageView>> _FindReceivedMessagesAsync(
@@ -796,7 +805,9 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         page.TotalItems.Should()
             .BeLessThan(100, "MessageId filtering is in-memory; rows beyond one page risk silent truncation");
 
-        return page.Items.Where(message => message.MessageId == messageId).ToArray();
+        return page
+            .Items.Where(message => string.Equals(message.MessageId, messageId, StringComparison.Ordinal))
+            .ToArray();
     }
 }
 

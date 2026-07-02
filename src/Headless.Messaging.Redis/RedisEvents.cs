@@ -7,7 +7,7 @@ using StackExchange.Redis;
 
 namespace Headless.Messaging.Redis;
 
-internal class RedisEvents
+internal sealed class RedisEvents
 {
     private readonly IConnectionMultiplexer _connection;
     private readonly ILogger _logger;

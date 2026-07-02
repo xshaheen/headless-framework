@@ -3,10 +3,12 @@
 using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Internal;
+using Headless.Messaging.Registration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Tests.Helpers;
 
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
 namespace Tests;
 
 public sealed class ForMessageRegistrationTests
@@ -456,6 +458,7 @@ public sealed class ForMessageRegistrationTests
 
         // when
         var act = () =>
+            // ReSharper disable once AccessToDisposedClosure
             provider.GetRequiredService<IBootstrapper>().BootstrapAsync(TestContext.Current.CancellationToken);
 
         // then

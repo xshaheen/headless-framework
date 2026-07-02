@@ -28,7 +28,7 @@ internal static class JobFunctionValidator
         var semanticModel = compilation.GetSemanticModel(methodDeclaration.SyntaxTree);
         var classSymbol = semanticModel.GetDeclaredSymbol(classDeclaration);
 
-        if (classSymbol != null && classSymbol.IsAbstract)
+        if (classSymbol?.IsAbstract == true)
         {
             context.ReportDiagnostic(
                 Diagnostic.Create(
@@ -178,19 +178,35 @@ internal static class JobFunctionValidator
             var isValidParameter = false;
 
             // Check for CancellationToken
-            if (parameterTypeString == SourceGeneratorConstants.CancellationTokenTypeName)
+            if (
+                string.Equals(
+                    parameterTypeString,
+                    SourceGeneratorConstants.CancellationTokenTypeName,
+                    StringComparison.Ordinal
+                )
+            )
             {
                 isValidParameter = true;
             }
             // Check for non-generic JobFunctionContext
-            else if (parameterTypeString == SourceGeneratorConstants.BaseJobFunctionContextTypeName)
+            else if (
+                string.Equals(
+                    parameterTypeString,
+                    SourceGeneratorConstants.BaseJobFunctionContextTypeName,
+                    StringComparison.Ordinal
+                )
+            )
             {
                 isValidParameter = true;
             }
             // Check for generic JobFunctionContext<T>
             else if (
                 parameterType is INamedTypeSymbol { IsGenericType: true } namedType
-                && namedType.ConstructedFrom?.ToDisplayString() == "Headless.Jobs.Base.JobFunctionContext<T>"
+                && string.Equals(
+                    namedType.ConstructedFrom?.ToDisplayString(),
+                    "Headless.Jobs.Base.JobFunctionContext<T>",
+                    StringComparison.Ordinal
+                )
             )
             {
                 isValidParameter = true;
@@ -202,8 +218,10 @@ internal static class JobFunctionValidator
                 var typeName = namedType2.Name;
 
                 if (
-                    (namespaceName == "Headless.Jobs" || namespaceName == "Headless.Jobs.Base")
-                    && typeName == "JobFunctionContext"
+                    (
+                        string.Equals(namespaceName, "Headless.Jobs", StringComparison.Ordinal)
+                        || string.Equals(namespaceName, "Headless.Jobs.Base", StringComparison.Ordinal)
+                    ) && string.Equals(typeName, "JobFunctionContext", StringComparison.Ordinal)
                 )
                 {
                     isValidParameter = true;
@@ -213,7 +231,7 @@ internal static class JobFunctionValidator
             if (!isValidParameter)
             {
                 var parameterSyntax = methodDeclaration.ParameterList.Parameters.FirstOrDefault(p =>
-                    p.Identifier.Text == parameter.Name
+                    string.Equals(p.Identifier.Text, parameter.Name, StringComparison.Ordinal)
                 );
 
                 context.ReportDiagnostic(

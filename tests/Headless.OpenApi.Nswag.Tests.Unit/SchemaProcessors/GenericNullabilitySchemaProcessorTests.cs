@@ -150,7 +150,7 @@ public sealed class GenericNullabilitySchemaProcessorTests : TestBase
         var schema = new JsonSchema { Type = JsonObjectType.Object };
         var context = _CreateContext(contextualType, schema);
 
-        // when / then — should not throw
+        // when & then — should not throw
         _sut.Process(context);
     }
 
@@ -162,7 +162,7 @@ public sealed class GenericNullabilitySchemaProcessorTests : TestBase
         var schema = new JsonSchema { Type = JsonObjectType.String };
         var context = _CreateContext(contextualType, schema);
 
-        // when / then — should not throw
+        // when & then — should not throw
         _sut.Process(context);
     }
 

@@ -35,7 +35,7 @@ public sealed class SeedersTests : TestBase
         var provider = services.BuildServiceProvider();
 
         // when
-        await provider.SeedAsync();
+        await provider.SeedAsync(cancellationToken: AbortToken);
 
         // then — both ran, lower priority first
         recorder.Ran.Should().Equal(nameof(FirstSeeder), nameof(SecondSeeder));

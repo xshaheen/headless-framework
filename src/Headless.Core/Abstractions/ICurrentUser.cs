@@ -14,33 +14,33 @@ namespace Headless.Abstractions;
 public interface ICurrentUser
 {
     /// <summary>
-    /// Gets the raw <see cref="ClaimsPrincipal"/> for the current user, or <c>null</c> when
+    /// Gets the raw <see cref="ClaimsPrincipal"/> for the current user, or <see langword="null"/> when
     /// no authenticated principal is available.
     /// </summary>
     ClaimsPrincipal? Principal { get; }
 
     /// <summary>
     /// Gets a value indicating whether the current principal carries an authenticated identity
-    /// (<see cref="ClaimsIdentity.IsAuthenticated"/> is <c>true</c>). Do not use this as an
+    /// (<see cref="ClaimsIdentity.IsAuthenticated"/> is <see langword="true"/>). Do not use this as an
     /// authorization gate on its own.
     /// </summary>
     bool IsAuthenticated { get; }
 
     /// <summary>
     /// Gets the strongly-typed user identifier extracted from the current principal's claims,
-    /// or <c>null</c> when the claim is absent or the principal is not authenticated.
+    /// or <see langword="null"/> when the claim is absent or the principal is not authenticated.
     /// </summary>
     UserId? UserId { get; }
 
     /// <summary>
     /// Gets the account type string extracted from the current principal's claims (for example
-    /// <c>"user"</c>, <c>"service"</c>), or <c>null</c> when the claim is absent.
+    /// <c>"user"</c>, <c>"service"</c>), or <see langword="null"/> when the claim is absent.
     /// </summary>
     string? AccountType { get; }
 
     /// <summary>
     /// Gets the strongly-typed account identifier extracted from the current principal's claims,
-    /// or <c>null</c> when the claim is absent.
+    /// or <see langword="null"/> when the claim is absent.
     /// </summary>
     AccountId? AccountId { get; }
 
@@ -52,10 +52,10 @@ public interface ICurrentUser
 
     /// <summary>
     /// Returns the first claim of the specified type from the current principal, using ordinal
-    /// comparison, or <c>null</c> when no matching claim exists.
+    /// comparison, or <see langword="null"/> when no matching claim exists.
     /// </summary>
     /// <param name="claimType">The claim type to search for.</param>
-    /// <returns>The first matching <see cref="Claim"/>, or <c>null</c>.</returns>
+    /// <returns>The first matching <see cref="Claim"/>, or <see langword="null"/>.</returns>
     Claim? FindClaim(string claimType)
     {
         return Principal?.Claims.FirstOrDefault(c => string.Equals(c.Type, claimType, StringComparison.Ordinal));
@@ -63,7 +63,7 @@ public interface ICurrentUser
 
     /// <summary>
     /// Returns all claims of the specified type from the current principal, using ordinal
-    /// comparison. Returns an empty list when the principal is <c>null</c> or carries no
+    /// comparison. Returns an empty list when the principal is <see langword="null"/> or carries no
     /// matching claims.
     /// </summary>
     /// <param name="claimType">The claim type to search for.</param>

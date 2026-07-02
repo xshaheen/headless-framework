@@ -71,7 +71,7 @@ internal sealed class PublishMiddlewarePipeline(
         // delegate for every middleware in the chain. This flag is intentionally distinct from
         // context.IsCompleted: it tracks whether the innermost publish actually ran, whereas a
         // short-circuiting middleware can mark the context completed without the inner ring executing.
-        var innerRingCompleted = new StrongBox<bool>(false);
+        var innerRingCompleted = new StrongBox<bool>(value: false);
 
         Func<ValueTask> next = async () =>
         {
@@ -127,8 +127,8 @@ internal sealed class PublishMiddlewarePipeline(
 
         var invoker = _TypedInvokers.GetOrAdd(
             new MiddlewareDispatchKey(middleware.GetType(), context.MessageType),
-            static (_, state) => _CompileTypedInvoker(state.middlewareType, state.contextType),
-            (middlewareType: middleware.GetType(), contextType: context.GetType())
+            static (_, contextType) => _CompileTypedInvoker(contextType),
+            context.GetType()
         );
 
         return invoker(middleware, context, next);
@@ -143,12 +143,14 @@ internal sealed class PublishMiddlewarePipeline(
             && descriptorRegistry.TryGetPublishDescriptors(context.MessageType, out var descriptors)
         )
         {
-            return descriptors
-                .Select(descriptor => _ResolveDescriptor(provider, descriptor))
-                .Where(static middleware => middleware is not null)
-                .Cast<object>()
-                .Concat(_GetUntrackedDirectMiddleware(directMiddleware, MiddlewareDirection.Publish))
-                .ToArray();
+            return
+            [
+                .. descriptors
+                    .Select(descriptor => _ResolveDescriptor(provider, descriptor))
+                    .Where(static middleware => middleware is not null)
+                    .Cast<object>(),
+                .. _GetUntrackedDirectMiddleware(directMiddleware, MiddlewareDirection.Publish),
+            ];
         }
 
         return directMiddleware;
@@ -163,7 +165,7 @@ internal sealed class PublishMiddlewarePipeline(
             .Where(static middleware => middleware is not null)
             .Cast<object>();
 
-        return busMiddleware.Concat(typedMiddleware).ToArray();
+        return [.. busMiddleware, .. typedMiddleware];
     }
 
     private IEnumerable<object> _GetUntrackedDirectMiddleware(
@@ -175,10 +177,11 @@ internal sealed class PublishMiddlewarePipeline(
         var trackedTypes = perDirection.GetOrAdd(
             direction,
             (dir, registry) =>
-                registry
-                    .Descriptors.Where(descriptor => descriptor.Direction == dir)
-                    .Select(descriptor => descriptor.MiddlewareType)
-                    .ToHashSet(),
+                [
+                    .. registry
+                        .Descriptors.Where(descriptor => descriptor.Direction == dir)
+                        .Select(descriptor => descriptor.MiddlewareType),
+                ],
             descriptorRegistry!
         );
 
@@ -192,13 +195,13 @@ internal sealed class PublishMiddlewarePipeline(
             .FirstOrDefault(service => service?.GetType() == descriptor.MiddlewareType);
     }
 
-    private static PublishMiddlewareInvoker _CompileTypedInvoker(Type middlewareType, Type contextType)
+    private static PublishMiddlewareInvoker _CompileTypedInvoker(Type contextType)
     {
         var middlewareParam = Expression.Parameter(typeof(object), "middleware");
         var contextParam = Expression.Parameter(typeof(PublishContext), "context");
         var nextParam = Expression.Parameter(typeof(Func<ValueTask>), "next");
         var serviceType = typeof(IPublishMiddleware<>).MakeGenericType(contextType);
-        var invokeMethod = serviceType.GetMethod(nameof(IPublishMiddleware<PublishContext>.InvokeAsync))!;
+        var invokeMethod = serviceType.GetMethod(nameof(IPublishMiddleware<>.InvokeAsync))!;
 
         var body = Expression.Call(
             Expression.Convert(middlewareParam, serviceType),

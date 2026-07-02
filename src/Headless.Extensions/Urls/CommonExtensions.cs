@@ -38,17 +38,16 @@ public static class CommonExtensions
     }
 
     internal static bool OrdinalEquals(this string? s, string? value, bool ignoreCase = false) =>
-        s is not null && s.Equals(value, ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+        s?.Equals(value, ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) == true;
 
     internal static bool OrdinalContains(this string? s, string value, bool ignoreCase = false) =>
-        s is not null && s.Contains(value, ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+        s?.Contains(value, ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) == true;
 
     internal static bool OrdinalStartsWith(this string? s, string value, bool ignoreCase = false) =>
-        s is not null
-        && s.StartsWith(value, ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+        s?.StartsWith(value, ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) == true;
 
     internal static bool OrdinalEndsWith(this string? s, string value, bool ignoreCase = false) =>
-        s is not null && s.EndsWith(value, ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+        s?.EndsWith(value, ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) == true;
 
     /// <summary>
     /// Splits at the first occurrence of the given separator.
@@ -68,7 +67,7 @@ public static class CommonExtensions
         return i == -1 ? [s] : [s[..i], s[(i + separator.Length)..]];
     }
 
-    private static IEnumerable<(string Key, object? Value)> _StringToKV(string s)
+    private static List<(string Key, object? Value)> _StringToKV(string s)
     {
         if (string.IsNullOrEmpty(s))
         {
@@ -97,9 +96,9 @@ public static class CommonExtensions
     [RequiresUnreferencedCode("Uses Type.GetProperties which is not compatible with trimming.")]
     private static IEnumerable<(string Name, object? Value)> _ObjectToKV(object obj) =>
         from prop in obj.GetType().GetProperties()
-        let getter = prop.GetGetMethod(false)
+        let getter = prop.GetGetMethod(nonPublic: false)
         where getter is not null
-        let val = getter.Invoke(obj, null)
+        let val = getter.Invoke(obj, parameters: null)
         select (prop.Name, GetDeclaredTypeValue(val, prop.PropertyType));
 
     [RequiresUnreferencedCode("Uses Type.GetInterfaces which is not compatible with trimming.")]
@@ -161,7 +160,7 @@ public static class CommonExtensions
 
         if (prop is not null)
         {
-            value = prop.GetValue(obj, null);
+            value = prop.GetValue(obj, index: null);
             return true;
         }
 

@@ -138,10 +138,9 @@ public sealed class InMemoryDistributedReadWriteLockStorage(TimeProvider timePro
 
             // Readers must always carry a finite TTL: a null ttl keeps the existing finite expiry rather than
             // promoting the lease to infinite, which would let a zombie reader block writers forever.
-            state.Readers[leaseId] = existing with
-            {
-                Expiration = _ExtendExpiration(existing.Expiration, _GetExpiration(ttl), allowInfinite: false),
-            };
+            state.Readers[leaseId] = new LeaseEntry(
+                Expiration: _ExtendExpiration(existing.Expiration, _GetExpiration(ttl), allowInfinite: false)
+            );
 
             return ValueTask.FromResult(true);
         }

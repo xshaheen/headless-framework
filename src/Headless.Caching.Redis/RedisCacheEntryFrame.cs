@@ -97,7 +97,10 @@ internal static class RedisCacheEntryFrame
         if (!isNull && payload.Length > Array.MaxLength)
         {
             throw new ArgumentException(
-                $"Cache payload of {payload.Length} bytes exceeds the maximum supported size of {Array.MaxLength} bytes.",
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Cache payload of {payload.Length} bytes exceeds the maximum supported size of {Array.MaxLength} bytes."
+                ),
                 nameof(payload)
             );
         }

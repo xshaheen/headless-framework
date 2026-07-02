@@ -97,8 +97,8 @@ public sealed class RedisMessageTests : TestBase
         var message = RedisMessage.Create(streamEntry);
 
         // then
-        message.GetId().Should().Be("msg-789");
-        message.GetName().Should().Be("users.updated");
+        message.Id.Should().Be("msg-789");
+        message.Name.Should().Be("users.updated");
         message.Body.ToArray().Should().BeEquivalentTo([10, 20, 30]);
     }
 

@@ -19,7 +19,7 @@ public sealed class EmailSenderProviderTests
         await using var provider = services.BuildServiceProvider();
         var senderProvider = provider.GetRequiredService<IEmailSenderProvider>();
 
-        // when / then
+        // when & then
         senderProvider.GetSender("marketing").Should().BeSameAs(named);
         senderProvider.GetSenderOrNull("marketing").Should().BeSameAs(named);
     }
@@ -33,7 +33,7 @@ public sealed class EmailSenderProviderTests
         await using var provider = services.BuildServiceProvider();
         var senderProvider = provider.GetRequiredService<IEmailSenderProvider>();
 
-        // when / then
+        // when & then
         senderProvider.GetSenderOrNull("unknown").Should().BeNull();
     }
 
@@ -62,7 +62,7 @@ public sealed class EmailSenderProviderTests
         await using var provider = services.BuildServiceProvider();
         var senderProvider = provider.GetRequiredService<IEmailSenderProvider>();
 
-        // when / then
+        // when & then
         var getNull = () => senderProvider.GetSender(null!);
         var getEmpty = () => senderProvider.GetSender("");
         var getOrNullNull = () => senderProvider.GetSenderOrNull(null!);

@@ -3,6 +3,7 @@
 using Headless.Api;
 using Headless.Testing.Tests;
 
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
 namespace Tests;
 
 public sealed class CaptureStreamTests : TestBase
@@ -43,7 +44,7 @@ public sealed class CaptureStreamTests : TestBase
         await using var capture = new CaptureStream(inner, _Cap);
         byte[] data = [5, 6, 7];
 
-        await capture.WriteAsync(data.AsMemory());
+        await capture.WriteAsync(data.AsMemory(), AbortToken);
 
         inner.ToArray().Should().Equal(data);
         capture.CapturedBytes.Should().Equal(data);
@@ -97,7 +98,7 @@ public sealed class CaptureStreamTests : TestBase
         capture.Write(data, 0, data.Length);
 
         inner.ToArray().Should().Equal(data);
-        capture.CapturedBytes.Length.Should().Be(5);
+        capture.CapturedBytes.Should().HaveCount(5);
         capture.TruncatedCapture.Should().BeTrue();
     }
 
@@ -170,7 +171,7 @@ public sealed class CaptureStreamTests : TestBase
         var capture = new CaptureStream(inner, _Cap);
         await capture.DisposeAsync();
 
-        var act = async () => await capture.WriteAsync(new byte[] { 1 }.AsMemory());
+        var act = async () => await capture.WriteAsync(new byte[] { 1 }.AsMemory(), AbortToken);
 
         await act.Should().ThrowAsync<ObjectDisposedException>();
     }
@@ -185,7 +186,7 @@ public sealed class CaptureStreamTests : TestBase
         capture.Write([5, 6], 0, 2); // beyond cap, inner still gets it
 
         inner.ToArray().Should().Equal(1, 2, 3, 4, 5, 6);
-        capture.CapturedBytes.Length.Should().Be(3);
+        capture.CapturedBytes.Should().HaveCount(3);
         capture.TruncatedCapture.Should().BeTrue();
     }
 

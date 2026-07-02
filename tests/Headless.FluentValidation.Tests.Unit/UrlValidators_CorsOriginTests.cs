@@ -98,11 +98,11 @@ public sealed class UrlValidatorsCorsOriginTests
     public void should_substitute_placeholders_in_failure_messages()
     {
         var formatFailure = _sut.TestValidate(new TestModel("not-an-origin"))
-            .Errors.Single(e => e.PropertyName == nameof(TestModel.Origin));
+            .Errors.Single(e => string.Equals(e.PropertyName, nameof(TestModel.Origin), StringComparison.Ordinal));
         formatFailure.ErrorMessage.Should().Contain("not-an-origin").And.NotContain("{PropertyValue}");
 
         var schemeFailure = _sut.TestValidate(new TestModel("ftp://example.com"))
-            .Errors.Single(e => e.PropertyName == nameof(TestModel.Origin));
+            .Errors.Single(e => string.Equals(e.PropertyName, nameof(TestModel.Origin), StringComparison.Ordinal));
         schemeFailure.ErrorMessage.Should().Contain("ftp").And.NotContain("{Scheme}");
     }
 }

@@ -2,7 +2,6 @@
 
 using Headless.Abstractions;
 using Headless.Checks;
-using Headless.Core;
 using Headless.Messaging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;

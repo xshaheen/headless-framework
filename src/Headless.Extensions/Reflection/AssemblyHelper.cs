@@ -45,9 +45,7 @@ public static class AssemblyHelper
     [RequiresUnreferencedCode("Loading assemblies from path might load types that cannot be statically analyzed.")]
     public static List<Assembly> LoadAssemblies(string folderPath, SearchOption searchOption)
     {
-        return GetAssemblyFiles(folderPath, searchOption)
-            .Select(AssemblyLoadContext.Default.LoadFromAssemblyPath)
-            .ToList();
+        return [.. GetAssemblyFiles(folderPath, searchOption).Select(AssemblyLoadContext.Default.LoadFromAssemblyPath)];
     }
 
     /// <summary>

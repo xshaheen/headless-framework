@@ -36,7 +36,7 @@ public sealed class MissingTenantContextException : Exception
     /// custom message and an inner exception that is the cause of this exception.
     /// </summary>
     /// <param name="message">A message that describes the missing tenant context condition.</param>
-    /// <param name="innerException">The exception that caused this exception, or <c>null</c>.</param>
+    /// <param name="innerException">The exception that caused this exception, or <see langword="null"/>.</param>
     public MissingTenantContextException(string message, Exception? innerException)
         : base(message, innerException) { }
 

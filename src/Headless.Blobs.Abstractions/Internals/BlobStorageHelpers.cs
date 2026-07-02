@@ -252,7 +252,7 @@ public static class BlobStorageHelpers
             return [];
         }
 
-        var list = items as IReadOnlyList<T> ?? [.. items];
+        var list = items.AsIReadOnlyList();
         var results = new BlobBulkResult[list.Count];
 
         var options = new ParallelOptions

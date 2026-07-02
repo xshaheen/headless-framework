@@ -104,14 +104,14 @@ public sealed class AmazonPolicyExtensionsTests
         policy.AddSqsPermissions(topicArns, _QueueArn);
 
         // then
-        policy.Statements.Should().HaveCount(1);
+        policy.Statements.Should().ContainSingle();
         var statement = policy.Statements[0];
         statement.Effect.Should().Be(Statement.StatementEffect.Allow);
-        statement.Actions.Should().HaveCount(1);
+        statement.Actions.Should().ContainSingle();
         statement.Actions[0].ActionName.Should().Be("sqs:SendMessage");
-        statement.Resources.Should().HaveCount(1);
+        statement.Resources.Should().ContainSingle();
         statement.Resources[0].Id.Should().Be(_QueueArn);
-        statement.Principals.Should().HaveCount(1);
+        statement.Principals.Should().ContainSingle();
         statement.Principals[0].Id.Should().Be("*");
         statement.Conditions.Should().HaveCount(2);
     }

@@ -3,6 +3,7 @@
 using System.Reflection;
 using Headless.Testing.Tests;
 
+#pragma warning disable REFL009 // The referenced member is not known to exist
 namespace Tests;
 
 public sealed class CircularBufferTests : TestBase

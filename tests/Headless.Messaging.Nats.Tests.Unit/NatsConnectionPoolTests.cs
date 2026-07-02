@@ -92,7 +92,7 @@ public sealed class NatsConnectionPoolTests : TestBase
 
     private static bool _IsDebugLog(ICall call)
     {
-        if (call.GetMethodInfo().Name != nameof(ILogger.Log))
+        if (!string.Equals(call.GetMethodInfo().Name, nameof(ILogger.Log), StringComparison.Ordinal))
         {
             return false;
         }

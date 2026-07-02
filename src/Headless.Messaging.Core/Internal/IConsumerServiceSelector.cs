@@ -20,7 +20,7 @@ public interface IConsumerServiceSelector
     /// <summary>
     /// Selects a set of <see cref="ConsumerExecutorDescriptor" /> candidates for the current message associated with
     /// </summary>
-    /// <returns>A set of <see cref="ConsumerExecutorDescriptor" /> candidates or <c>null</c>.</returns>
+    /// <returns>A set of <see cref="ConsumerExecutorDescriptor" /> candidates or <see langword="null"/>.</returns>
     IReadOnlyList<ConsumerExecutorDescriptor> SelectCandidates();
 
     /// <summary>
@@ -37,7 +37,10 @@ public interface IConsumerServiceSelector
     void Invalidate();
 }
 
-public sealed class ConsumerServiceSelector : IConsumerServiceSelector
+/// <summary>
+/// Creates a new <see cref="ConsumerServiceSelector" />.
+/// </summary>
+public sealed class ConsumerServiceSelector(IServiceProvider serviceProvider) : IConsumerServiceSelector
 {
     /// <summary>
     /// since this class be designed as a Singleton service,the following two list must be thread safe!
@@ -45,30 +48,22 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
     private readonly ConcurrentDictionary<
         WildcardCacheKey,
         List<RegexExecuteDescriptor<ConsumerExecutorDescriptor>>
-    > _cacheList;
+    > _cacheList = new();
 
     // Per-message-type MethodInfo cache. Each registered consumer message type otherwise pays a
     // MakeGenericType + GetMethod hit on every cache rebuild (Invalidate -> SelectCandidates).
     private static readonly ConcurrentDictionary<Type, MethodInfo> _ConsumeMethodCache = new();
 
-    private readonly MessagingOptions _messagingOptions;
-    private readonly ILogger<ConsumerServiceSelector> _logger;
-    private readonly IServiceProvider _serviceProvider;
-    private readonly IRuntimeConsumerRegistry _runtimeConsumerRegistry;
+    private readonly MessagingOptions _messagingOptions = serviceProvider
+        .GetRequiredService<IOptions<MessagingOptions>>()
+        .Value;
 
-    /// <summary>
-    /// Creates a new <see cref="ConsumerServiceSelector" />.
-    /// </summary>
-    public ConsumerServiceSelector(IServiceProvider serviceProvider)
-    {
-        _serviceProvider = serviceProvider;
-        _messagingOptions = serviceProvider.GetRequiredService<IOptions<MessagingOptions>>().Value;
-        _logger = serviceProvider.GetRequiredService<ILogger<ConsumerServiceSelector>>();
-        _runtimeConsumerRegistry =
-            serviceProvider.GetService<IRuntimeConsumerRegistry>() ?? EmptyRuntimeConsumerRegistry.Instance;
-        _cacheList =
-            new ConcurrentDictionary<WildcardCacheKey, List<RegexExecuteDescriptor<ConsumerExecutorDescriptor>>>();
-    }
+    private readonly ILogger<ConsumerServiceSelector> _logger = serviceProvider.GetRequiredService<
+        ILogger<ConsumerServiceSelector>
+    >();
+
+    private readonly IRuntimeConsumerRegistry _runtimeConsumerRegistry =
+        serviceProvider.GetService<IRuntimeConsumerRegistry>() ?? EmptyRuntimeConsumerRegistry.Instance;
 
     public void Invalidate()
     {
@@ -79,29 +74,25 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
     {
         var executorDescriptorList = new List<ConsumerExecutorDescriptor>();
 
-        executorDescriptorList.AddRange(_FindConsumersFromInterfaceTypes(_serviceProvider));
+        executorDescriptorList.AddRange(_FindConsumersFromInterfaceTypes(serviceProvider));
         executorDescriptorList.AddRange(_runtimeConsumerRegistry.GetDescriptors());
 
         executorDescriptorList.AddRange(_FindConsumersFromControllerTypes());
 
-        executorDescriptorList = executorDescriptorList
-            .Distinct(new ConsumerExecutorDescriptorComparer(_logger))
-            .ToList();
-
-        return executorDescriptorList;
+        return executorDescriptorList.Distinct(new ConsumerExecutorDescriptorComparer(_logger)).ToList();
     }
 
     public ConsumerExecutorDescriptor? SelectBestCandidate(
         string key,
-        IReadOnlyList<ConsumerExecutorDescriptor> executeDescriptor
+        IReadOnlyList<ConsumerExecutorDescriptor> candidates
     )
     {
-        if (executeDescriptor.Count == 0)
+        if (candidates.Count == 0)
         {
             return null;
         }
 
-        var result = _MatchUsingName(key, executeDescriptor);
+        var result = _MatchUsingName(key, candidates);
         if (result != null)
         {
             return result;
@@ -109,7 +100,7 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
 
         //[*] match with regex, i.e.  foo.*.abc
         //[#] match regex, i.e. foo.#
-        return _MatchWildcardUsingRegex(key, executeDescriptor);
+        return _MatchWildcardUsingRegex(key, candidates);
     }
 
     private List<ConsumerExecutorDescriptor> _FindConsumersFromInterfaceTypes(IServiceProvider provider)
@@ -162,14 +153,14 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
 
     private void _DrainPendingMessageRegistrations()
     {
-        SetupMessaging.DrainPendingMessageRegistrations(_serviceProvider, _messagingOptions);
+        SetupMessaging.DrainPendingMessageRegistrations(serviceProvider, _messagingOptions);
     }
 
     private string _GetGroupName(ConsumerMetadata metadata)
     {
         if (!string.IsNullOrWhiteSpace(metadata.Group))
         {
-            return metadata.Group!;
+            return metadata.Group;
         }
 
         _messagingOptions.Conventions.Version = _messagingOptions.Version;
@@ -178,15 +169,17 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
 
     private static List<ParameterDescriptor> _BuildParameters(MethodInfo method)
     {
-        return method
-            .GetParameters()
-            .Select(p => new ParameterDescriptor
-            {
-                Name = p.Name!,
-                ParameterType = p.ParameterType,
-                IsFromMessaging = p.ParameterType == typeof(CancellationToken),
-            })
-            .ToList();
+        return
+        [
+            .. method
+                .GetParameters()
+                .Select(p => new ParameterDescriptor
+                {
+                    Name = p.Name,
+                    ParameterType = p.ParameterType,
+                    IsFromMessaging = p.ParameterType == typeof(CancellationToken),
+                }),
+        ];
     }
 
     private static IEnumerable<ConsumerExecutorDescriptor> _FindConsumersFromControllerTypes()
@@ -226,13 +219,15 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
         var cacheKey = _CreateWildcardCacheKey(executeDescriptor);
         if (!_cacheList.TryGetValue(cacheKey, out var tmpList))
         {
-            tmpList = executeDescriptor
-                .Select(x => new RegexExecuteDescriptor<ConsumerExecutorDescriptor>
+            tmpList =
+            [
+                .. executeDescriptor.Select(x => new RegexExecuteDescriptor<ConsumerExecutorDescriptor>
                 {
                     Name = Helper.WildcardToRegex(x.MessageName),
                     Descriptor = x,
-                })
-                .ToList();
+                }),
+            ];
+
             _cacheList.TryAdd(cacheKey, tmpList);
         }
 
@@ -256,7 +251,7 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
         {
             if (executeDescriptor[i].IntentType != intentType)
             {
-                return new WildcardCacheKey(group, null);
+                return new WildcardCacheKey(group, IntentType: null);
             }
         }
 

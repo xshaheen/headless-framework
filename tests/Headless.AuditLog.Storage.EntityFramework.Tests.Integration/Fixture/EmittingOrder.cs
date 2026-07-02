@@ -17,9 +17,9 @@ public sealed class EmittingOrder : IAuditTracked, IIntegrationEventEmitter
 
     public string Name { get; set; } = "";
 
-    public void AddIntegrationEvent(IIntegrationEvent message)
+    public void AddIntegrationEvent(IIntegrationEvent integrationEvent)
     {
-        _messages.Add(message);
+        _messages.Add(integrationEvent);
     }
 
     public void ClearIntegrationEvents()

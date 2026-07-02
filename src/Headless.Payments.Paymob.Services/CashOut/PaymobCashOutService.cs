@@ -16,14 +16,17 @@ namespace Headless.Payments.Paymob.Services.CashOut;
 /// mobile wallets (Vodafone, Etisalat, Orange), bank wallets, bank accounts, and Aman kiosks.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Each overload builds the appropriate <c>CashOutDisburseRequest</c>, calls the broker's
 /// <c>Disburse</c> method, and maps the raw response to a domain result. Transport errors are
 /// caught and returned as <c>CashOutResult.Failure</c> with a structured error descriptor rather
 /// than propagated as exceptions, so callers do not need try/catch for Paymob API failures.
-///
+/// </para>
+/// <para>
 /// Inspect <c>CashOutResult.Succeeded</c> to determine the outcome. When false, <c>Error</c>
 /// carries a localised, code-tagged descriptor. When true, <c>Data</c> contains the transaction
 /// ID and status.
+/// </para>
 /// </remarks>
 public interface ICashOutService
 {

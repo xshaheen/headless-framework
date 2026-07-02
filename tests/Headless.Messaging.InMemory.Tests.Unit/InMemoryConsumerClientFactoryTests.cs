@@ -167,8 +167,8 @@ public sealed class InMemoryConsumerClientFactoryTests : TestBase
         await cts.CancelAsync();
 
         // then - both clients should receive the message
-        messages1.Should().HaveCount(1);
-        messages2.Should().HaveCount(1);
+        messages1.Should().ContainSingle();
+        messages2.Should().ContainSingle();
 
         await client1.DisposeAsync();
         await client2.DisposeAsync();

@@ -214,7 +214,7 @@ public static class SetupAzureEmail
         if (name is null)
         {
             services.AddSingleton(static sp =>
-                _CreateClient(sp.GetRequiredService<IOptionsMonitor<AzureCommunicationEmailOptions>>().Get(null))
+                _CreateClient(sp.GetRequiredService<IOptionsMonitor<AzureCommunicationEmailOptions>>().Get(name: null))
             );
 
             services.AddSingleton<IEmailSender, AzureCommunicationEmailSender>();

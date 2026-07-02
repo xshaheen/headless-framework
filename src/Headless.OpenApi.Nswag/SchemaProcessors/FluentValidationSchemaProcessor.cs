@@ -247,7 +247,7 @@ public sealed class FluentValidationSchemaProcessor(
 
             // Create validation context of generic type
             // Equivalent to: new ValidationContext<object>(null);
-            var validationContext = Activator.CreateInstance(adapterMethod.GetParameters()[0].ParameterType, [null!]);
+            var validationContext = Activator.CreateInstance(adapterMethod.GetParameters()[0].ParameterType, [null]);
 
             if (adapterMethod.Invoke(adapter, [validationContext, null]) is not IValidator includeValidator)
             {

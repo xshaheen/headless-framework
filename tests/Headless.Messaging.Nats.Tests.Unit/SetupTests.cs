@@ -146,7 +146,7 @@ public sealed class SetupTests : TestBase
         // then
         act.Should()
             .Throw<InvalidOperationException>()
-            .WithMessage("*_ShardTestConsumer*")
+            .WithMessage("*ShardTestConsumer*")
             .And.Message.Should()
             .Contain("UseNats");
     }

@@ -3,11 +3,11 @@
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Sms;
 
-/// <summary>Describes a single SMS message to be sent through <see cref="ISmsSender"/>.</summary>
+/// <summary>Describes a single SMS message to one recipient, sent through <see cref="ISmsSender"/>.</summary>
 /// <remarks>
-/// A request targets one or more recipients via <see cref="Destinations"/>. When more than one destination
-/// is specified the request is treated as a batch send (<see cref="IsBatch"/> is <see langword="true"/>);
-/// providers that do not support batch sends natively will reject such requests with a failed response.
+/// Each request targets exactly one recipient (<see cref="Destination"/>). To send the same text to many
+/// recipients in one provider call, use a provider that implements <see cref="IBulkSmsSender"/> and its
+/// <see cref="SendBulkSmsRequest"/> instead.
 /// </remarks>
 [PublicAPI]
 public sealed class SendSingleSmsRequest
@@ -20,10 +20,10 @@ public sealed class SendSingleSmsRequest
     public string? MessageId { get; init; }
 
     /// <summary>
-    /// One or more recipients. Each entry contains a dial-code (<see cref="SmsRequestDestination.Code"/>) and
-    /// a local subscriber number (<see cref="SmsRequestDestination.Number"/>).
+    /// The single recipient: a dial-code (<see cref="SmsRequestDestination.Code"/>) and a local subscriber
+    /// number (<see cref="SmsRequestDestination.Number"/>).
     /// </summary>
-    public required IReadOnlyList<SmsRequestDestination> Destinations { get; init; }
+    public required SmsRequestDestination Destination { get; init; }
 
     /// <summary>The plain-text body of the SMS message.</summary>
     public required string Text { get; init; }
@@ -33,13 +33,6 @@ public sealed class SendSingleSmsRequest
     /// from this dictionary; unrecognized keys are ignored.
     /// </summary>
     public IDictionary<string, object>? Properties { get; init; }
-
-    /// <summary>
-    /// <see langword="true"/> when the request targets more than one recipient; <see langword="false"/> for
-    /// single-recipient sends. Providers that do not support batch sends natively will return a failed
-    /// response for batch requests.
-    /// </summary>
-    public bool IsBatch => Destinations.Count > 1;
 }
 
 /// <summary>A single SMS recipient identified by a dial code and a subscriber number.</summary>

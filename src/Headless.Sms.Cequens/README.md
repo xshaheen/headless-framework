@@ -8,7 +8,7 @@ Provides SMS sending via the Cequens API, a regional MENA gateway that authentic
 
 ## Key Features
 
-- `CequensSmsSender` — `ISmsSender` implementation backed by the Cequens REST API.
+- `CequensSmsSender` — implements `ISmsSender` (single recipient) and `IBulkSmsSender` (multi-recipient bulk), backed by the Cequens REST API.
 - JWT token-based auth with automatic token acquisition from `TokenEndpoint`.
 - Optional pre-configured `Token` to skip the sign-in flow.
 - Configurable `SingleSmsEndpoint` and `TokenEndpoint` (defaults point to the Cequens production API).

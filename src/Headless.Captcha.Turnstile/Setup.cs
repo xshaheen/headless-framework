@@ -187,7 +187,7 @@ public static class SetupTurnstile
                 name,
                 (sp, key) =>
                     new TurnstileSiteVerify(
-                        (string)key!,
+                        (string)key,
                         sp.GetRequiredService<IOptionsMonitor<TurnstileOptions>>(),
                         sp.GetRequiredService<IHttpClientFactory>(),
                         sp.GetService<ILogger<TurnstileSiteVerify>>()

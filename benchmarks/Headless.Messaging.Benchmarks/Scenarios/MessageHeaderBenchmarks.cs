@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Globalization;
 using BenchmarkDotNet.Attributes;
 
 namespace Headless.Messaging.Benchmarks.Scenarios;
@@ -24,7 +25,10 @@ public class MessageHeaderBenchmarks
 
         for (var i = 0; i < HeaderCount; i++)
         {
-            _headers[$"header-{i}"] = $"value-{i}";
+            _headers[string.Create(CultureInfo.InvariantCulture, $"header-{i}")] = string.Create(
+                CultureInfo.InvariantCulture,
+                $"value-{i}"
+            );
         }
     }
 

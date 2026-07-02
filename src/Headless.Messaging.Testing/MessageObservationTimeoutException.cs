@@ -48,7 +48,9 @@ public sealed class MessageObservationTimeoutException : TimeoutException
     )
     {
         var sb = new StringBuilder();
+
         sb.AppendLine(
+            CultureInfo.InvariantCulture,
             $"Timed out after {elapsed.TotalSeconds.ToString("F1", CultureInfo.InvariantCulture)}s waiting for {observationType} of {expectedType.Name}."
         );
 

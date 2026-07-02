@@ -74,7 +74,7 @@ public sealed class BufferCacheExtensionsTests
     /// <summary>
     /// Reads the (key, value, options) of every <c>UpsertEntryAsync</c> call. Inspecting recorded calls sidesteps
     /// NSubstitute's argument-matcher engine, which mis-binds specs on this generic method; the unconfigured
-    /// <see cref="ValueTask{Boolean}"/> return is a completed <c>false</c> the helper ignores.
+    /// <see cref="ValueTask{Boolean}"/> return is a completed <see langword="false"/> the helper ignores.
     /// </summary>
     private IReadOnlyList<(string Key, byte[] Value, CacheEntryOptions Options)> _UpsertCalls() =>
         _cache

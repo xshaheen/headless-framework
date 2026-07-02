@@ -12,8 +12,8 @@ internal static class AzureServiceBusMessageBuilder
         // full payload copy via Body.ToArray() on every publish.
         var message = new ServiceBusMessage(BinaryData.FromBytes(transportMessage.Body))
         {
-            MessageId = transportMessage.GetId(),
-            Subject = transportMessage.GetName(),
+            MessageId = transportMessage.Id,
+            Subject = transportMessage.Name,
             CorrelationId = transportMessage.GetCorrelationId(),
         };
 
@@ -24,7 +24,7 @@ internal static class AzureServiceBusMessageBuilder
             {
                 transportMessage.Headers.TryGetValue(AzureServiceBusHeaders.PartitionKey, out var fallbackPartitionKey);
                 message.SessionId = string.IsNullOrWhiteSpace(fallbackPartitionKey)
-                    ? transportMessage.GetId()
+                    ? transportMessage.Id
                     : fallbackPartitionKey;
             }
             else

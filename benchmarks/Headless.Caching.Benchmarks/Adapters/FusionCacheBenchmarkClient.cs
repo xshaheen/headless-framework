@@ -30,7 +30,7 @@ internal sealed class FusionCacheBenchmarkClient(
     public async ValueTask<BenchmarkPayload?> GetAsync(string key, CancellationToken cancellationToken)
     {
         return await cache
-            .GetOrDefaultAsync<BenchmarkPayload?>(key, null, token: cancellationToken)
+            .GetOrDefaultAsync<BenchmarkPayload?>(key, defaultValue: null, token: cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -42,7 +42,7 @@ internal sealed class FusionCacheBenchmarkClient(
     )
     {
         return await cache
-            .GetOrSetAsync<BenchmarkPayload>(
+            .GetOrSetAsync(
                 key,
                 async (_, ct) => await factory(ct).ConfigureAwait(false),
                 MaybeValue<BenchmarkPayload>.None,
@@ -68,8 +68,10 @@ internal sealed class FusionCacheBenchmarkClient(
         return ValueTask.CompletedTask;
     }
 
-    private static FusionCacheEntryOptions _CreateOptions(TimeSpan expiration) =>
-        new FusionCacheEntryOptions(expiration)
-            .SetFailSafe(true, TimeSpan.FromMinutes(5), TimeSpan.FromSeconds(1))
+    private static FusionCacheEntryOptions _CreateOptions(TimeSpan expiration)
+    {
+        return new FusionCacheEntryOptions(expiration)
+            .SetFailSafe(isEnabled: true, TimeSpan.FromMinutes(5), TimeSpan.FromSeconds(1))
             .SetEagerRefresh(0.8f);
+    }
 }

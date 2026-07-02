@@ -6,13 +6,14 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Tests.Fixture;
 
 /// <summary>
-/// EF options extension that registers test doubles into EF's internal service provider.
-///
+/// <para>EF options extension that registers test doubles into EF's internal service provider.</para>
+/// <para>
 /// When <c>HeadlessDbContext.this.GetService&lt;T&gt;()</c> is called, it resolves from EF's
 /// internal service provider (populated by <c>ApplyServices</c> on each
 /// <c>IDbContextOptionsExtension</c>), NOT from the application DI scope. This extension injects
 /// the test doubles so that <c>IClock</c>, <c>ICurrentUser</c>, <c>ICurrentTenant</c> etc.
 /// resolve to our controlled implementations.
+/// </para>
 /// </summary>
 internal sealed class TestHeadlessServicesOptionsExtension(
     TestClock clock,

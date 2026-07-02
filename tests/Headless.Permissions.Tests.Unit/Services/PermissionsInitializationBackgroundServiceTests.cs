@@ -349,7 +349,7 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
         for (var i = 0; i < 20; i++)
         {
             _timeProvider.Advance(TimeSpan.FromMinutes(5));
-            await Task.Delay(50);
+            await Task.Delay(50, AbortToken);
         }
 
         // then - should have exactly 11 attempts (1 initial + 10 retries)
@@ -412,7 +412,8 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
         cancelledTask.Should().Be(saveCancelled.Task, "cancellation token should cancel the background task");
 
         // Wait for task completion before dispose
-        await Task.WhenAny(taskCompleted.Task, Task.Delay(TimeSpan.FromSeconds(1), AbortToken));
+        var completedTask = await Task.WhenAny(taskCompleted.Task, Task.Delay(TimeSpan.FromSeconds(1), AbortToken));
+        completedTask.Should().Be(taskCompleted.Task);
     }
 
     #endregion

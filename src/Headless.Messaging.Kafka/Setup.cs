@@ -32,10 +32,7 @@ public static class SetupKafkaMessaging
         /// <returns>The same <paramref name="setup"/> builder for chaining.</returns>
         public MessagingSetupBuilder UseKafka(string bootstrapServers)
         {
-            return setup.UseKafka(opt =>
-            {
-                opt.Servers = bootstrapServers;
-            });
+            return setup.UseKafka(opt => opt.Servers = bootstrapServers);
         }
 
         /// <summary>

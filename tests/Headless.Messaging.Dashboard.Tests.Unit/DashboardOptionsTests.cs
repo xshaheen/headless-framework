@@ -120,7 +120,9 @@ public sealed class DashboardOptionsTests : TestBase
     public void WithCustomAuth_should_set_mode_and_validator()
     {
         // given & when
-        var builder = new MessagingDashboardOptionsBuilder().WithCustomAuth((token, _) => token == "valid");
+        var builder = new MessagingDashboardOptionsBuilder().WithCustomAuth(
+            (token, _) => string.Equals(token, "valid", StringComparison.Ordinal)
+        );
 
         // then
         builder.Auth.Mode.Should().Be(AuthMode.Custom);

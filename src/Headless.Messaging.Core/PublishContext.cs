@@ -136,23 +136,19 @@ public abstract class PublishContext
 
 /// <summary>Strongly-typed publish context for middleware registered against a specific message type.</summary>
 /// <typeparam name="TMessage">The message type being published.</typeparam>
+/// <remarks>Initializes a new instance of the <see cref="PublishingContext{TMessage}"/> class.</remarks>
 [PublicAPI]
-public sealed class PublishingContext<TMessage> : PublishContext, ICompletablePublishContext
+public sealed class PublishingContext<TMessage>(
+    TMessage? content,
+    IntentType intentType,
+    MessageOptions? options,
+    TimeSpan? delayTime,
+    bool isTransactional = false,
+    CancellationToken cancellationToken = default
+)
+    : PublishContext(content, typeof(TMessage), intentType, options, delayTime, cancellationToken),
+        ICompletablePublishContext
 {
-    /// <summary>Initializes a new instance of the <see cref="PublishingContext{TMessage}"/> class.</summary>
-    public PublishingContext(
-        TMessage? content,
-        IntentType intentType,
-        MessageOptions? options,
-        TimeSpan? delayTime,
-        bool isTransactional = false,
-        CancellationToken cancellationToken = default
-    )
-        : base(content, typeof(TMessage), intentType, options, delayTime, cancellationToken)
-    {
-        IsTransactional = isTransactional;
-    }
-
     /// <summary>Gets the strongly-typed message payload being published. May be <see langword="null"/>.</summary>
     public new TMessage? Content => (TMessage?)base.Content;
 
@@ -176,7 +172,7 @@ public sealed class PublishingContext<TMessage> : PublishContext, ICompletablePu
     /// <summary>
     /// Gets a value indicating whether the publish is buffered inside an ambient outbox transaction.
     /// </summary>
-    public bool IsTransactional { get; init; }
+    public bool IsTransactional { get; init; } = isTransactional;
 
     /// <summary>
     /// Marks this context as completed, making all mutator properties and methods throw

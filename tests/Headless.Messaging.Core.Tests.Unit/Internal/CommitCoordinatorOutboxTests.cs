@@ -24,7 +24,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
     [Fact]
     public async Task should_buffer_message_on_commit_coordinator_and_dispatch_after_commit()
     {
-        var transaction = new TestDbTransaction();
+        await using var transaction = new TestDbTransaction();
         var stack = new CommitScopeStack();
         var scope = new CommitScopeFactory(stack).Begin(
             new EmptyServiceProvider(),

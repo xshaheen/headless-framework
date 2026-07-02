@@ -9,7 +9,7 @@ internal static class BenchmarkRunConfig
 {
     private static readonly string _ArtifactsPath = Path.Combine("artifacts", "benchmark", "messaging");
 
-    public static IConfig Create(string[] args)
+    public static IConfig Create()
     {
         // DefaultConfig.Instance already registers the GitHub markdown + HTML exporters; re-adding them triggers
         // a "exporter already present" config warning and duplicate output, so only the diagnoser is added here.

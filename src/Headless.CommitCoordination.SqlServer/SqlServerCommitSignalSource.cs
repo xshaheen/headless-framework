@@ -68,7 +68,6 @@ public sealed partial class SqlServerCommitSignalSource(
     /// The provider transaction key — the <c>ClientConnectionId</c> of the connection passed to
     /// <c>SqlConnection.EnlistCommitCoordination</c>.
     /// </param>
-    /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>A task that completes when the drain has finished.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="providerTransactionKey" /> is <see langword="null" />.</exception>
     [SuppressMessage(
@@ -76,7 +75,7 @@ public sealed partial class SqlServerCommitSignalSource(
         "CA2000:Dispose objects before losing scope",
         Justification = "The enlisting caller owns the scope lifetime and disposes it; the signal source signals and drains only, never disposing or popping the ambient frame."
     )]
-    public ValueTask SignalCommittedAsync(object providerTransactionKey, CancellationToken cancellationToken)
+    public ValueTask SignalCommittedAsync(object providerTransactionKey)
     {
         Argument.IsNotNull(providerTransactionKey);
 
@@ -102,7 +101,6 @@ public sealed partial class SqlServerCommitSignalSource(
     /// The provider transaction key — the <c>ClientConnectionId</c> of the connection passed to
     /// <c>SqlConnection.EnlistCommitCoordination</c>.
     /// </param>
-    /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>A task that completes when the drain has finished.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="providerTransactionKey" /> is <see langword="null" />.</exception>
     [SuppressMessage(
@@ -110,7 +108,7 @@ public sealed partial class SqlServerCommitSignalSource(
         "CA2000:Dispose objects before losing scope",
         Justification = "The enlisting caller owns the scope lifetime and disposes it; the signal source signals and drains only, never disposing or popping the ambient frame."
     )]
-    public ValueTask SignalRolledBackAsync(object providerTransactionKey, CancellationToken cancellationToken)
+    public ValueTask SignalRolledBackAsync(object providerTransactionKey)
     {
         Argument.IsNotNull(providerTransactionKey);
 

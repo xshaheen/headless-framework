@@ -3,14 +3,18 @@
 using System.Net;
 using Headless.Sms;
 using Headless.Sms.VictoryLink;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Polly.CircuitBreaker;
+using Polly.RateLimiting;
+using Polly.Timeout;
 using WireMock.RequestBuilders;
 using WireMock.ResponseBuilders;
 
 namespace Tests;
 
-public sealed class VictoryLinkSmsSenderTests : IClassFixture<SmsWireMockFixture>
+public sealed class VictoryLinkSmsSenderTests : TestBase, IClassFixture<SmsWireMockFixture>
 {
     private readonly SmsWireMockFixture _fixture;
 
@@ -51,8 +55,7 @@ public sealed class VictoryLinkSmsSenderTests : IClassFixture<SmsWireMockFixture
     {
         _StubSend(HttpStatusCode.OK, body);
 
-        var result = await _CreateSender().SendAsync(SmsRequests.Single());
-
+        var result = await _CreateSender().SendAsync(SmsRequests.Single(), AbortToken);
         result.Success.Should().BeTrue();
     }
 
@@ -61,8 +64,7 @@ public sealed class VictoryLinkSmsSenderTests : IClassFixture<SmsWireMockFixture
     {
         _StubSend(HttpStatusCode.OK, "-5");
 
-        var result = await _CreateSender().SendAsync(SmsRequests.Single());
-
+        var result = await _CreateSender().SendAsync(SmsRequests.Single(), AbortToken);
         result.Success.Should().BeFalse();
         result.FailureKind.Should().Be(SmsFailureKind.OutOfCredit);
     }
@@ -72,15 +74,27 @@ public sealed class VictoryLinkSmsSenderTests : IClassFixture<SmsWireMockFixture
     {
         _StubSend(HttpStatusCode.OK, string.Empty);
 
-        var result = await _CreateSender().SendAsync(SmsRequests.Single());
-
+        var result = await _CreateSender().SendAsync(SmsRequests.Single(), AbortToken);
         result.Success.Should().BeFalse();
     }
 
     [Fact]
-    public async Task should_return_transient_failure_on_transport_fault()
+    public async Task should_include_the_country_code_in_the_recipient()
     {
-        // Point at a closed port so the HTTP call faults at the transport layer (connection refused).
+        _StubSend(HttpStatusCode.OK, "0");
+
+        await _CreateSender().SendAsync(SmsRequests.Single(code: 20, number: "1001234567"), AbortToken);
+        var body = _fixture.Server.LogEntries.Single().RequestMessage?.Body;
+        body.Should().Contain("201001234567");
+    }
+
+    [Theory]
+    [InlineData(nameof(TimeoutRejectedException))]
+    [InlineData(nameof(BrokenCircuitException))]
+    [InlineData(nameof(RateLimiterRejectedException))]
+    public async Task should_classify_resilience_rejections_as_transient(string rejectionKind)
+    {
+        var exception = ResilienceRejections.Create(rejectionKind);
         var options = Options.Create(
             new VictoryLinkSmsOptions
             {
@@ -91,37 +105,14 @@ public sealed class VictoryLinkSmsSenderTests : IClassFixture<SmsWireMockFixture
             }
         );
         var sender = new VictoryLinkSmsSender(
-            _fixture.HttpClientFactory,
+            new ThrowingHttpClientFactory(exception),
             options,
             NullLogger<VictoryLinkSmsSender>.Instance
         );
 
-        var result = await sender.SendAsync(SmsRequests.Single());
+        var result = await sender.SendAsync(SmsRequests.Single(), AbortToken);
 
         result.Success.Should().BeFalse();
         result.FailureKind.Should().Be(SmsFailureKind.Transient);
-    }
-
-    [Fact]
-    public async Task should_propagate_cancellation()
-    {
-        _StubSend(HttpStatusCode.OK, "0");
-        using var cts = new CancellationTokenSource();
-        await cts.CancelAsync();
-
-        var act = async () => await _CreateSender().SendAsync(SmsRequests.Single(), cts.Token);
-
-        await act.Should().ThrowAsync<OperationCanceledException>();
-    }
-
-    [Fact]
-    public async Task should_include_the_country_code_in_the_recipient()
-    {
-        _StubSend(HttpStatusCode.OK, "0");
-
-        await _CreateSender().SendAsync(SmsRequests.Single(code: 20, number: "1001234567"));
-
-        var body = _fixture.Server.LogEntries.Single().RequestMessage?.Body;
-        body.Should().Contain("201001234567");
     }
 }

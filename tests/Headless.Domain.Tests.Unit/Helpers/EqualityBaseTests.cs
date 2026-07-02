@@ -24,7 +24,7 @@ public sealed class EqualityBaseTests
         public int Value { get; init; }
 
         protected override bool EqualityComponentsEqual(CompositeEqualityItem other) =>
-            Name == other.Name && Value == other.Value;
+            string.Equals(Name, other.Name, StringComparison.Ordinal) && Value == other.Value;
 
         protected override void BuildHashCode(ref HashCode hash)
         {

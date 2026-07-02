@@ -104,8 +104,6 @@ public sealed class MessagingBuilder(IServiceCollection services, MessagingOptio
     /// </remarks>
     public IServiceCollection Services { get; } = services;
 
-    private readonly MessagingOptions? _options = options;
-
     /// <summary>Registers publish middleware that intercepts every publish operation on the bus lane.</summary>
     /// <typeparam name="T">
     /// The middleware implementation type. Must implement <see cref="IPublishMiddleware{TContext}"/> with a
@@ -184,7 +182,7 @@ public sealed class MessagingBuilder(IServiceCollection services, MessagingOptio
 
         var contextType = typeof(ConsumeContext<TMessage>);
         var serviceType = typeof(IConsumeMiddleware<>).MakeGenericType(contextType);
-        var resolvedGroupName = _options?.ApplyGroupNamePrefix(groupName) ?? groupName;
+        var resolvedGroupName = options?.ApplyGroupNamePrefix(groupName) ?? groupName;
 
         return _AddMiddleware<TMiddleware>(
             MiddlewareDirection.Consume,

@@ -145,7 +145,7 @@ public sealed class AzureBlobStorage(
             return [];
         }
 
-        var items = paths as IReadOnlyList<string> ?? [.. paths];
+        var items = paths.AsIReadOnlyList();
         var results = new BlobBulkResult[items.Count];
 
         // First pass: build the location (validates) and resolve the container + key through the single seam, then
@@ -220,12 +220,12 @@ public sealed class AzureBlobStorage(
     {
         if (!response.IsError)
         {
-            return Result<bool, Exception>.Ok(true);
+            return Result<bool, Exception>.Ok(value: true);
         }
 
         if (response.Status == 404)
         {
-            return Result<bool, Exception>.Ok(false);
+            return Result<bool, Exception>.Ok(value: false);
         }
 
         return Result<bool, Exception>.Fail(new RequestFailedException(response.Status, response.ReasonPhrase));

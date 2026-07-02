@@ -19,6 +19,7 @@ using Microsoft.Extensions.Time.Testing;
 using HeadlessApiExceptionHandler = Headless.Api.Middlewares.HeadlessApiExceptionHandler;
 using JsonOptions = Microsoft.AspNetCore.Http.Json.JsonOptions;
 
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
 namespace Tests;
 
 public sealed class HeadlessApiExceptionHandlerTests : TestBase
@@ -84,7 +85,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         problemDetailsService.TryWriteAsync(Arg.Any<ProblemDetailsContext>()).Returns(true);
         var handler = _CreateHandler(problemDetailsService, _CreateRealCreator());
         var httpContext = new DefaultHttpContext();
-        var errors = new[] { new ErrorDescriptor("conflict_code", @"conflict description") };
+        var errors = new[] { new ErrorDescriptor("conflict_code", "conflict description") };
 
         // when
         var result = await handler.TryHandleAsync(

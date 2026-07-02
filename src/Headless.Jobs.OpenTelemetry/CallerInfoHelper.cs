@@ -15,7 +15,7 @@ internal static class CallerInfoHelper
     {
         try
         {
-            var stackTrace = new StackTrace(true);
+            var stackTrace = new StackTrace(fNeedFileInfo: true);
             var frame = stackTrace.GetFrame(skipFrames);
 
             if (frame != null)
@@ -49,7 +49,10 @@ internal static class CallerInfoHelper
                     if (!string.IsNullOrEmpty(fileName))
                     {
                         var shortFileName = Path.GetFileName(fileName);
-                        return $"{className}.{methodName} ({shortFileName}:{lineNumber})";
+                        return string.Create(
+                            CultureInfo.InvariantCulture,
+                            $"{className}.{methodName} ({shortFileName}:{lineNumber})"
+                        );
                     }
 
                     return $"{className}.{methodName}";
@@ -75,7 +78,7 @@ internal static class CallerInfoHelper
     {
         try
         {
-            var stackTrace = new StackTrace(false);
+            var stackTrace = new StackTrace(fNeedFileInfo: false);
             var frame = stackTrace.GetFrame(skipFrames);
 
             if (frame?.GetMethod() is { } method)

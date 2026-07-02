@@ -18,7 +18,7 @@ public sealed class ApiResultExtensionsTests : TestBase
     {
         // given
         var creator = _CreateProblemDetailsCreator();
-        var expectedValue = "test-value";
+        const string expectedValue = "test-value";
         var result = ApiResult<string>.Ok(expectedValue);
 
         // when

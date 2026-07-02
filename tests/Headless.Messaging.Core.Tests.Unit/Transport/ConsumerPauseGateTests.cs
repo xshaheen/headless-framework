@@ -1,10 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging.Transport;
+using Headless.Testing.Tests;
 
 namespace Tests.Transport;
 
-public sealed class ConsumerPauseGateTests
+public sealed class ConsumerPauseGateTests : TestBase
 {
     [Fact]
     public async Task wait_if_paused_async_should_complete_immediately_when_not_paused()
@@ -13,7 +14,7 @@ public sealed class ConsumerPauseGateTests
         var gate = new ConsumerPauseGate();
 
         // when
-        var act = async () => await gate.WaitIfPausedAsync(CancellationToken.None);
+        var act = async () => await gate.WaitIfPausedAsync(AbortToken);
 
         // then
         await act.Should().NotThrowAsync();
@@ -28,15 +29,15 @@ public sealed class ConsumerPauseGateTests
         await gate.PauseAsync().AsTask();
 
         // when
-        var waitTask = gate.WaitIfPausedAsync(CancellationToken.None).AsTask();
-        await Task.Delay(50);
+        var waitTask = gate.WaitIfPausedAsync(AbortToken).AsTask();
+        await Task.Delay(50, AbortToken);
 
         // then
         waitTask.IsCompleted.Should().BeFalse();
         gate.IsPaused.Should().BeTrue();
 
         await gate.ResumeAsync().AsTask();
-        await waitTask.WaitAsync(TimeSpan.FromSeconds(1));
+        await waitTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
         gate.IsPaused.Should().BeFalse();
     }
 
@@ -82,13 +83,13 @@ public sealed class ConsumerPauseGateTests
         // given
         var gate = new ConsumerPauseGate();
         await gate.PauseAsync();
-        var waitTask = gate.WaitIfPausedAsync(CancellationToken.None).AsTask();
+        var waitTask = gate.WaitIfPausedAsync(AbortToken).AsTask();
 
         // when
         gate.Release();
 
         // then
-        await waitTask.WaitAsync(TimeSpan.FromSeconds(1));
+        await waitTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
         (await gate.PauseAsync()).Should().BeFalse();
         (await gate.ResumeAsync()).Should().BeFalse();
         gate.IsPaused.Should().BeFalse();

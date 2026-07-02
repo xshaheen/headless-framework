@@ -184,7 +184,7 @@ public sealed class AwsBlobStorage(
             return [];
         }
 
-        var items = paths as IReadOnlyList<string> ?? [.. paths];
+        var items = paths.AsIReadOnlyList();
         var results = new BlobBulkResult[items.Count];
 
         var batchEntries = new List<(int Index, BlobLocation Location, string Bucket, string Key)>(items.Count);
@@ -239,7 +239,7 @@ public sealed class AwsBlobStorage(
                         {
                             results[entry.Index] = new BlobBulkResult(
                                 entry.Location,
-                                Result<bool, Exception>.Ok(false)
+                                Result<bool, Exception>.Ok(value: false)
                             );
                         }
                     }
@@ -288,14 +288,17 @@ public sealed class AwsBlobStorage(
                                 entry.Location,
                                 Result<bool, Exception>.Fail(_ToDeleteException(error))
                             )
-                            : new BlobBulkResult(entry.Location, Result<bool, Exception>.Ok(true));
+                            : new BlobBulkResult(entry.Location, Result<bool, Exception>.Ok(value: true));
                     }
                 }
                 catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.NotFound)
                 {
                     foreach (var entry in chunk)
                     {
-                        results[entry.Index] = new BlobBulkResult(entry.Location, Result<bool, Exception>.Ok(false));
+                        results[entry.Index] = new BlobBulkResult(
+                            entry.Location,
+                            Result<bool, Exception>.Ok(value: false)
+                        );
                     }
                 }
                 catch (Exception e) when (e is not OperationCanceledException)
@@ -894,7 +897,7 @@ public sealed class AwsBlobStorage(
 
         // The S3 client is built per-store by the DI factory and handed to this engine to own (it is not a
         // container-tracked service), so this instance is responsible for releasing its HTTP handler/sockets.
-        (s3 as IDisposable)?.Dispose();
+        s3?.Dispose();
 
         return ValueTask.CompletedTask;
     }

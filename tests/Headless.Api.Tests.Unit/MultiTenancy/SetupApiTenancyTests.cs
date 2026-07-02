@@ -33,9 +33,8 @@ public sealed class SetupApiTenancyTests
         // a HttpContext.Items marker, not by decorating the result handler. Verifying the absence
         // guards against regressing back into the ordering-sensitive design.
         builder
-            .Services.Where(descriptor => descriptor.ServiceType == typeof(IAuthorizationMiddlewareResultHandler))
-            .Should()
-            .BeEmpty();
+            .Services.Should()
+            .NotContain(descriptor => descriptor.ServiceType == typeof(IAuthorizationMiddlewareResultHandler));
 
         var manifest = _GetManifest(builder.Services);
         var seam = manifest.GetSeam(HeadlessAuthorizationTenancyBuilder.Seam);
@@ -135,13 +134,16 @@ public sealed class SetupApiTenancyTests
     {
         // given
         var services = new ServiceCollection();
-        services.AddAuthorization(options =>
-        {
-            options.DefaultPolicy = new AuthorizationPolicyBuilder()
-                .RequireAuthenticatedUser()
-                .AddRequirements(new TenantRequirement())
-                .Build();
-        });
+
+        services
+            .AddAuthorizationBuilder()
+            .SetDefaultPolicy(
+                new AuthorizationPolicyBuilder()
+                    .RequireAuthenticatedUser()
+                    .AddRequirements(new TenantRequirement())
+                    .Build()
+            );
+
         var manifest = new TenantPostureManifest();
         manifest.RecordSeam(HeadlessAuthorizationTenancyBuilder.Seam, TenantPostureStatus.Enforcing);
         using var serviceProvider = services.BuildServiceProvider();
@@ -159,13 +161,16 @@ public sealed class SetupApiTenancyTests
     {
         // given
         var services = new ServiceCollection();
-        services.AddAuthorization(options =>
-        {
-            options.FallbackPolicy = new AuthorizationPolicyBuilder()
-                .RequireAuthenticatedUser()
-                .AddRequirements(new TenantRequirement())
-                .Build();
-        });
+
+        services
+            .AddAuthorizationBuilder()
+            .SetFallbackPolicy(
+                new AuthorizationPolicyBuilder()
+                    .RequireAuthenticatedUser()
+                    .AddRequirements(new TenantRequirement())
+                    .Build()
+            );
+
         var manifest = new TenantPostureManifest();
         manifest.RecordSeam(HeadlessAuthorizationTenancyBuilder.Seam, TenantPostureStatus.Enforcing);
         using var serviceProvider = services.BuildServiceProvider();

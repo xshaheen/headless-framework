@@ -257,7 +257,7 @@ public abstract class TransportTestsBase : TestBase
 
         // then
         result.Succeeded.Should().BeTrue();
-        message.GetId().Should().Be(expectedId);
+        message.Id.Should().Be(expectedId);
     }
 
     public virtual async Task should_include_message_name_in_headers()
@@ -272,7 +272,7 @@ public abstract class TransportTestsBase : TestBase
 
         // then
         result.Succeeded.Should().BeTrue();
-        message.GetName().Should().Be(expectedName);
+        message.Name.Should().Be(expectedName);
     }
 
     public virtual async Task should_handle_special_characters_in_message_body()

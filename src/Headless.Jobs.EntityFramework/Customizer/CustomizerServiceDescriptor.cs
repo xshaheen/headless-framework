@@ -27,16 +27,11 @@ public static class ServiceBuilder
         {
             if (configurationType == ConfigurationType.UseModelCustomizer)
             {
-                var originalDescriptor = services.FirstOrDefault(descriptor =>
-                    descriptor.ServiceType == typeof(DbContextOptions<TContext>)
-                );
-
-                if (originalDescriptor == null)
-                {
-                    throw new InvalidOperationException(
+                var originalDescriptor =
+                    services.FirstOrDefault(descriptor => descriptor.ServiceType == typeof(DbContextOptions<TContext>))
+                    ?? throw new InvalidOperationException(
                         $"Job: Cannot use UseModelCustomizer with empty {typeof(TContext).Name} configurations"
                     );
-                }
 
                 if (originalDescriptor.ImplementationFactory == null)
                 {

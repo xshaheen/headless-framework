@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Mvc.Abstractions;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Net.Http.Headers;
 
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.AspNetCore.Http;
 
 [PublicAPI]
@@ -74,11 +74,10 @@ public static class HttpContextExtensions
 
                 break;
             default:
-                var message = string.Create(
-                    CultureInfo.InvariantCulture,
+                var exception = new NotSupportedException(
                     $"Unknown {nameof(ResponseCacheLocation)}: {cacheProfile.Location}"
                 );
-                var exception = new NotSupportedException(message);
+
                 Debug.Fail(exception.ToString());
 
                 throw exception;

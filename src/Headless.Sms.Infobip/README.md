@@ -8,7 +8,7 @@ Provides SMS sending via Infobip's REST API, a global messaging platform with de
 
 ## Key Features
 
-- `InfobipSmsSender` — `ISmsSender` implementation backed by the Infobip REST API.
+- `InfobipSmsSender` — implements `ISmsSender` (single recipient) and `IBulkSmsSender` (multi-recipient bulk, with per-recipient message ids), backed by the Infobip REST API.
 - API key authentication via HTTP `Authorization` header.
 - `BasePath` — Infobip-assigned base URL for your account (varies per account; not a shared endpoint).
 - `Sender` — alphanumeric or numeric sender shown to recipients.

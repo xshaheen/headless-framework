@@ -8,15 +8,18 @@ using Microsoft.Extensions.Time.Testing;
 namespace Tests;
 
 /// <summary>
+/// <para>
 /// The headline guarantee: a tag evicted through the store on node A makes node B's cached entry a miss, carried
 /// by the backplane. Uses the engine's two-node convergence pattern (a synchronous in-memory bus over two
 /// <see cref="HybridCache"/> nodes sharing one L2 backend) wrapped in <see cref="HeadlessOutputCacheStore"/>, so
 /// no broker / Testcontainers is needed — the new surface under test is only the store wrapper over each node.
-///
+/// </para>
+/// <para>
 /// Each node caches its own response via its own <c>SetAsync</c> — the real per-instance output-cache behavior,
 /// where every app instance renders and stores the response under the same key+tags. The engine's logical tag
 /// invalidation version-pins entries by their own node's write (a plain key read-backfill does not re-tag the
 /// promoted L1 copy), so the cluster guarantee is proven against entries each node wrote itself.
+/// </para>
 /// </summary>
 public sealed class OutputCacheClusterEvictionTests
 {
@@ -91,11 +94,17 @@ internal sealed class TwoNodeStoreHarness : IAsyncDisposable
 {
     private readonly InMemoryCache _sharedL2Backend;
 
+    // The HybridCache nodes do not own their injected L1/L2 stores, so the harness owns teardown for every
+    // disposable it creates. Registration order is the disposal order: each cache is disposed before its backing
+    // L1, and the shared L2 backend is disposed last (a node's dispose may drain into L2).
+    private readonly List<object> _disposables = [];
+
     public TwoNodeStoreHarness()
     {
         _sharedL2Backend = new InMemoryCache(Time, new InMemoryCacheOptions { CloneValues = true });
         A = _CreateNode("node-a");
         B = _CreateNode("node-b");
+        _disposables.Add(_sharedL2Backend);
         Bus.Attach(A.Cache);
         Bus.Attach(B.Cache);
     }
@@ -122,16 +131,28 @@ internal sealed class TwoNodeStoreHarness : IAsyncDisposable
         );
         var store = new HeadlessOutputCacheStore(cache, Options.Create(new HeadlessOutputCacheStoreOptions()));
 
+        _disposables.Add(cache);
+        _disposables.Add(l1);
+
         return new StoreNode(cache, l1, store);
     }
 
     public async ValueTask DisposeAsync()
     {
-        await A.Cache.DisposeAsync();
-        await B.Cache.DisposeAsync();
-        A.L1.Dispose();
-        B.L1.Dispose();
-        _sharedL2Backend.Dispose();
+        foreach (var disposable in _disposables)
+        {
+            switch (disposable)
+            {
+                case IAsyncDisposable asyncDisposable:
+                    await asyncDisposable.DisposeAsync().ConfigureAwait(false);
+                    break;
+                case IDisposable syncDisposable:
+                    syncDisposable.Dispose();
+                    break;
+            }
+        }
+
+        _disposables.Clear();
     }
 }
 

@@ -28,7 +28,7 @@ public sealed class ReCaptchaV3ScoreTests : TestBase
         var stub = stubSiteVerifyHandler.EnqueueJson(HttpStatusCode.OK, _fixture.SuccessResponseBody);
         var verifier = _fixture.CreateV3Verifier(stub);
 
-        var result = await verifier.VerifyAsync(new CaptchaVerifyRequest { Response = "token" });
+        var result = await verifier.VerifyAsync(new CaptchaVerifyRequest { Response = "token" }, AbortToken);
 
         result.Score.Should().BeApproximately(0.9f, 0.0001f);
     }
@@ -40,7 +40,7 @@ public sealed class ReCaptchaV3ScoreTests : TestBase
         var stub = stubSiteVerifyHandler.EnqueueJson(HttpStatusCode.OK, _fixture.SuccessResponseBody);
         var verifier = _fixture.CreateVerifier(stub);
 
-        var result = await verifier.VerifyAsync(new CaptchaVerifyRequest { Response = "token" });
+        var result = await verifier.VerifyAsync(new CaptchaVerifyRequest { Response = "token" }, AbortToken);
 
         // The base contract exposes pass/fail only; the score is reachable only by casting to the v3 result.
         result.Success.Should().BeTrue();

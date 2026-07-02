@@ -113,6 +113,8 @@ internal static class DiagnosticDescriptors
         );
     }
 
-    private static LocalizableString _Resource(string resourceName) =>
-        new LocalizableResourceString(resourceName, _Resources, typeof(DiagnosticDescriptors));
+    private static LocalizableResourceString _Resource(string resourceName)
+    {
+        return new(resourceName, _Resources, typeof(DiagnosticDescriptors));
+    }
 }

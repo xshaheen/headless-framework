@@ -244,7 +244,10 @@ public static partial class Argument
         throw new ArgumentOutOfRangeException(
             paramName,
             message
-                ?? $"The argument {paramName.ToAssertString()} must contain exactly {count} item(s) (Actual count {actual})."
+                ?? string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"The argument {paramName.ToAssertString()} must contain exactly {count} item(s) (Actual count {actual})."
+                )
         );
     }
 
@@ -254,7 +257,10 @@ public static partial class Argument
         throw new ArgumentOutOfRangeException(
             paramName,
             message
-                ?? $"The argument {paramName.ToAssertString()} must contain at least {minCount} item(s) (Actual count {actual})."
+                ?? string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"The argument {paramName.ToAssertString()} must contain at least {minCount} item(s) (Actual count {actual})."
+                )
         );
     }
 
@@ -264,7 +270,10 @@ public static partial class Argument
         throw new ArgumentOutOfRangeException(
             paramName,
             message
-                ?? $"The argument {paramName.ToAssertString()} must contain at most {maxCount} item(s) (Actual count {actual})."
+                ?? string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"The argument {paramName.ToAssertString()} must contain at most {maxCount} item(s) (Actual count {actual})."
+                )
         );
     }
 
@@ -280,7 +289,10 @@ public static partial class Argument
         throw new ArgumentOutOfRangeException(
             paramName,
             message
-                ?? $"The argument {paramName.ToAssertString()} must contain between {minCount} and {maxCount} item(s) (Actual count {actual})."
+                ?? string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"The argument {paramName.ToAssertString()} must contain between {minCount} and {maxCount} item(s) (Actual count {actual})."
+                )
         );
     }
 }

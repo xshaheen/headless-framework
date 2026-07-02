@@ -121,11 +121,11 @@ public sealed class AwsBlobStorageEngineTests : TestBase
         using var cts = new CancellationTokenSource();
 
         _s3.PutObjectAsync(Arg.Any<PutObjectRequest>(), Arg.Any<CancellationToken>())
-            .Returns(_ =>
+            .Returns(async _ =>
             {
-                cts.Cancel();
+                await cts.CancelAsync();
 
-                return Task.FromException<PutObjectResponse>(new OperationCanceledException(cts.Token));
+                return await Task.FromException<PutObjectResponse>(new OperationCanceledException(cts.Token));
             });
 
         var sut = _CreateSut();
@@ -248,11 +248,11 @@ public sealed class AwsBlobStorageEngineTests : TestBase
         _s3.GetObjectMetadataAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(new GetObjectMetadataResponse { HttpStatusCode = HttpStatusCode.OK });
         _s3.DeleteObjectsAsync(Arg.Any<DeleteObjectsRequest>(), Arg.Any<CancellationToken>())
-            .Returns(_ =>
+            .Returns(async _ =>
             {
-                cts.Cancel();
+                await cts.CancelAsync();
 
-                return Task.FromException<DeleteObjectsResponse>(new OperationCanceledException(cts.Token));
+                return await Task.FromException<DeleteObjectsResponse>(new OperationCanceledException(cts.Token));
             });
 
         var sut = _CreateSut();

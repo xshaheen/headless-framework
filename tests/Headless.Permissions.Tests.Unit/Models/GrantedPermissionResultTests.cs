@@ -41,7 +41,7 @@ public sealed class GrantedPermissionResultTests : TestBase
         result.Providers.Add(provider);
 
         // then
-        result.Providers.Should().HaveCount(1);
+        result.Providers.Should().ContainSingle();
         result.Providers.Should().Contain(provider);
         provider.Name.Should().Be("Role");
         provider.Keys.Should().Contain("admin");

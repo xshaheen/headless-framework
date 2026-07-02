@@ -144,7 +144,7 @@ public sealed partial class TusAzureStore : ITusPipelineStore
             {
                 // With checksum - store chunk info for later verification. The digest is prefixed with the
                 // algorithm so VerifyChecksumAsync can confirm the requested algorithm matches the staged one.
-                azureFile.Metadata.LastChunkBlocks = chunkBlockIds.ToArray();
+                azureFile.Metadata.LastChunkBlocks = [.. chunkBlockIds];
                 azureFile.Metadata.LastChunkChecksum =
                     $"{checksumInfo!.Algorithm}:{hasher.GetHashAndReset().ToBase64()}";
                 await _UpdateMetadataAsync(blobClient, azureFile, cancellationToken).ConfigureAwait(false);

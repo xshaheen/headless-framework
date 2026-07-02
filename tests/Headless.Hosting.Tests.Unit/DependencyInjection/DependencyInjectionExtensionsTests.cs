@@ -810,8 +810,8 @@ public sealed class DependencyInjectionExtensionsTests
         var provider = services.BuildServiceProvider();
 
         // then — no duplicates
-        provider.GetServices<IInitializer>().OfType<MyInitializerService>().Should().HaveCount(1);
-        provider.GetServices<IHostedService>().OfType<MyInitializerService>().Should().HaveCount(1);
+        provider.GetServices<IInitializer>().OfType<MyInitializerService>().Should().ContainSingle();
+        provider.GetServices<IHostedService>().OfType<MyInitializerService>().Should().ContainSingle();
     }
 
     [Fact]

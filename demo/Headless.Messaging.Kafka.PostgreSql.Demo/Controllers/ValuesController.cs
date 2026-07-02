@@ -59,7 +59,11 @@ public class ValuesController(IOutboxQueue producer, IServiceProvider services) 
     [Route("~/coordinated/adonet")]
     public async Task<IActionResult> CoordinatedAdoNet()
     {
-        var person = new Person { Name = $"adonet-{Random.Shared.Next(1000, 9999)}", Age = Random.Shared.Next(10, 99) };
+        var person = new Person
+        {
+            Name = string.Create(CultureInfo.InvariantCulture, $"adonet-{Random.Shared.Next(1000, 9999)}"),
+            Age = Random.Shared.Next(10, 99),
+        };
         var ct = HttpContext.RequestAborted;
 
         await using var connection = new NpgsqlConnection(AppConstants.DbConnectionString);
@@ -99,7 +103,11 @@ public class ValuesController(IOutboxQueue producer, IServiceProvider services) 
     [Route("~/coordinated/ef")]
     public async Task<IActionResult> CoordinatedEntityFramework([FromServices] AppDbContext dbContext)
     {
-        var person = new Person { Name = $"ef-{Random.Shared.Next(1000, 9999)}", Age = Random.Shared.Next(10, 99) };
+        var person = new Person
+        {
+            Name = string.Create(CultureInfo.InvariantCulture, $"ef-{Random.Shared.Next(1000, 9999)}"),
+            Age = Random.Shared.Next(10, 99),
+        };
 
         await dbContext.ExecuteCoordinatedTransactionAsync(
             async (ctx, ct) =>
@@ -128,7 +136,7 @@ public class ValuesController(IOutboxQueue producer, IServiceProvider services) 
     {
         var person = new Person
         {
-            Name = $"rollback-{Random.Shared.Next(1000, 9999)}",
+            Name = string.Create(CultureInfo.InvariantCulture, $"rollback-{Random.Shared.Next(1000, 9999)}"),
             Age = Random.Shared.Next(10, 99),
         };
 
@@ -165,7 +173,11 @@ public class ValuesController(IOutboxQueue producer, IServiceProvider services) 
     [Route("~/coordinated/delay/{delaySeconds:int}")]
     public async Task<IActionResult> CoordinatedDelay(int delaySeconds, [FromServices] AppDbContext dbContext)
     {
-        var person = new Person { Name = $"delay-{Random.Shared.Next(1000, 9999)}", Age = Random.Shared.Next(10, 99) };
+        var person = new Person
+        {
+            Name = string.Create(CultureInfo.InvariantCulture, $"delay-{Random.Shared.Next(1000, 9999)}"),
+            Age = Random.Shared.Next(10, 99),
+        };
 
         await dbContext.ExecuteCoordinatedTransactionAsync(
             async (ctx, ct) =>
@@ -183,7 +195,12 @@ public class ValuesController(IOutboxQueue producer, IServiceProvider services) 
             cancellationToken: HttpContext.RequestAborted
         );
 
-        return Ok($"Inserted {person}; delayed enqueue ({delaySeconds}s) bound to the commit.");
+        return Ok(
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"Inserted {person}; delayed enqueue ({delaySeconds}s) bound to the commit."
+            )
+        );
     }
 }
 
@@ -193,9 +210,7 @@ public sealed class KafkaMessageConsumer : IConsume<KafkaMessage>
 {
     public ValueTask ConsumeAsync(ConsumeContext<KafkaMessage> context, CancellationToken cancellationToken)
     {
-        Console.WriteLine(
-            $@"Subscriber output message: {context.Message.Value.ToString(CultureInfo.InvariantCulture)}"
-        );
+        Console.WriteLine($"Subscriber output message: {context.Message.Value.ToString(CultureInfo.InvariantCulture)}");
         return ValueTask.CompletedTask;
     }
 }

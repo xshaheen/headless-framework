@@ -74,9 +74,9 @@ public enum DeliveryStatus
     PackageReturned,
 }
 
-internal static class DeliveryStatusExtensions
+public static class DeliveryStatusExtensions
 {
-    internal static DeliveryStatus ToDeliveryStatus(this string status)
+    public static DeliveryStatus ToDeliveryStatus(this string status)
     {
         return status switch
         {
@@ -86,9 +86,9 @@ internal static class DeliveryStatusExtensions
             "Courier Received" => DeliveryStatus.CourierReceived,
             "At Warehouse" => DeliveryStatus.AtWarehouse,
             "Agent Out" => DeliveryStatus.AgentOut,
-            "On Route" => DeliveryStatus.AgentOut,
-            "At Customer" => DeliveryStatus.AgentOut,
-            "Delivered" => DeliveryStatus.AgentOut,
+            "On Route" => DeliveryStatus.OnRoute,
+            "At Customer" => DeliveryStatus.AtCustomer,
+            "Delivered" => DeliveryStatus.Delivered,
             "Canceled" => DeliveryStatus.Canceled,
             "Delivery Failed" => DeliveryStatus.DeliveryFailed,
             "Return Scheduled" => DeliveryStatus.ReturnScheduled,

@@ -15,7 +15,7 @@ public sealed class AzureCommunicationEmailOptionsValidatorTests
         // given
         var options = new AzureCommunicationEmailOptions { ConnectionString = "endpoint=https://x;accesskey=k" };
 
-        // when / then
+        // when & then
         _validator.Validate(options).IsValid.Should().BeTrue();
     }
 
@@ -29,7 +29,7 @@ public sealed class AzureCommunicationEmailOptionsValidatorTests
             AccessKey = "the-key",
         };
 
-        // when / then
+        // when & then
         _validator.Validate(options).IsValid.Should().BeTrue();
     }
 
@@ -43,7 +43,7 @@ public sealed class AzureCommunicationEmailOptionsValidatorTests
             TokenCredential = Substitute.For<TokenCredential>(),
         };
 
-        // when / then
+        // when & then
         _validator.Validate(options).IsValid.Should().BeTrue();
     }
 
@@ -53,7 +53,7 @@ public sealed class AzureCommunicationEmailOptionsValidatorTests
         // given
         var options = new AzureCommunicationEmailOptions();
 
-        // when / then
+        // when & then
         _validator.Validate(options).IsValid.Should().BeFalse();
     }
 
@@ -66,7 +66,7 @@ public sealed class AzureCommunicationEmailOptionsValidatorTests
             Endpoint = new Uri("https://my-resource.communication.azure.com"),
         };
 
-        // when / then
+        // when & then
         _validator.Validate(options).IsValid.Should().BeFalse();
     }
 
@@ -81,7 +81,7 @@ public sealed class AzureCommunicationEmailOptionsValidatorTests
             AccessKey = "the-key",
         };
 
-        // when / then
+        // when & then
         _validator.Validate(options).IsValid.Should().BeFalse();
     }
 
@@ -96,7 +96,7 @@ public sealed class AzureCommunicationEmailOptionsValidatorTests
             TokenCredential = Substitute.For<TokenCredential>(),
         };
 
-        // when / then
+        // when & then
         _validator.Validate(options).IsValid.Should().BeFalse();
     }
 
@@ -114,7 +114,7 @@ public sealed class AzureCommunicationEmailOptionsValidatorTests
             AccessKey = "super-secret-key",
         };
 
-        // when / then
+        // when & then
         options.ToString().Should().NotContain("super-secret");
         keyOptions.ToString().Should().NotContain("super-secret-key");
     }

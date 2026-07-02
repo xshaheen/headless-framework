@@ -45,7 +45,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
     private static ConsumerExecutorDescriptor _CreateDescriptor()
     {
         var consumeMethod = typeof(IConsume<CancellationExecutorTestMessage>).GetMethod(
-            nameof(IConsume<CancellationExecutorTestMessage>.ConsumeAsync),
+            nameof(IConsume<>.ConsumeAsync),
             BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
             null,
             [typeof(ConsumeContext<CancellationExecutorTestMessage>), typeof(CancellationToken)],

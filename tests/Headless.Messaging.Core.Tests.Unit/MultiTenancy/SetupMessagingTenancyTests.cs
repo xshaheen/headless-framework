@@ -124,7 +124,11 @@ public sealed class SetupMessagingTenancyTests : TestBase
         rootBuilder
             .Services.Where(descriptor =>
                 descriptor.ServiceType == typeof(IHeadlessTenancyValidator)
-                && descriptor.ImplementationType?.Name == "TenantPropagationStartupValidator"
+                && string.Equals(
+                    descriptor.ImplementationType?.Name,
+                    "TenantPropagationStartupValidator",
+                    StringComparison.Ordinal
+                )
             )
             .Should()
             .ContainSingle();
@@ -144,7 +148,9 @@ public sealed class SetupMessagingTenancyTests : TestBase
         provider.GetRequiredService<ICurrentTenant>().Should().BeOfType<CurrentTenant>();
         var validator = provider
             .GetServices<IHeadlessTenancyValidator>()
-            .Single(v => v.GetType().Name == "TenantPropagationStartupValidator");
+            .Single(v =>
+                string.Equals(v.GetType().Name, "TenantPropagationStartupValidator", StringComparison.Ordinal)
+            );
         var manifest = provider.GetRequiredService<TenantPostureManifest>();
         var context = new HeadlessTenancyValidationContext(provider, manifest);
 
@@ -173,7 +179,9 @@ public sealed class SetupMessagingTenancyTests : TestBase
         await using var provider = builder.Services.BuildServiceProvider();
         var validator = provider
             .GetServices<IHeadlessTenancyValidator>()
-            .Single(v => v.GetType().Name == "TenantPropagationStartupValidator");
+            .Single(v =>
+                string.Equals(v.GetType().Name, "TenantPropagationStartupValidator", StringComparison.Ordinal)
+            );
         var manifest = provider.GetRequiredService<TenantPostureManifest>();
         var context = new HeadlessTenancyValidationContext(provider, manifest);
 

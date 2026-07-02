@@ -33,11 +33,11 @@ internal sealed class PulsarConsumerClientFactory : IIntentAwareConsumerClientFa
         return CreateAsync(groupName, groupConcurrent, IntentType.Bus);
     }
 
-    public Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent, IntentType intentType)
+    public async Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent, IntentType intentType)
     {
         try
         {
-            var client = _connection.RentClient();
+            var client = await _connection.RentClientAsync().ConfigureAwait(false);
             var consumerClient = new PulsarConsumerClient(
                 _pulsarOptions,
                 client,
@@ -45,7 +45,7 @@ internal sealed class PulsarConsumerClientFactory : IIntentAwareConsumerClientFa
                 groupConcurrent,
                 intentType
             );
-            return Task.FromResult<IConsumerClient>(consumerClient);
+            return consumerClient;
         }
         catch (Exception e)
         {

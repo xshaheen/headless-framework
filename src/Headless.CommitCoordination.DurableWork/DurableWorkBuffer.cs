@@ -116,7 +116,7 @@ public abstract partial class DurableWorkBuffer<TRow>(
         throw new InvalidOperationException(
             $"Durable commit work for '{typeof(TRow).Name}' was enlisted without an {nameof(IRelationalCommitContext)} "
                 + $"and this buffer does not override {nameof(EnlistWithoutRelationalContextAsync)} to provide a durable "
-                + $"fallback. Provide a relational context, override the fallback, or use "
+                + "fallback. Provide a relational context, override the fallback, or use "
                 + $"{nameof(DurableWorkProviderMismatchPolicy)}.{nameof(DurableWorkProviderMismatchPolicy.Throw)}."
         );
     }

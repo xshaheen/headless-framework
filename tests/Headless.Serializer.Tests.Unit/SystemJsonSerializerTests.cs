@@ -230,9 +230,8 @@ public sealed class SystemJsonSerializerTests
         // then
         result.Should().NotBeNull();
         result.Should().BeOfType<TestClass>();
-        var typedResult = (TestClass)result!;
-        typedResult.Name.Should().Be("John");
-        typedResult.Age.Should().Be(42);
+        result.Name.Should().Be("John");
+        result.Age.Should().Be(42);
     }
 
     [Fact]

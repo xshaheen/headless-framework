@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
+#pragma warning disable IDE0060 // Remove unused parameter
 namespace Tests;
 
 public sealed class RuntimeSubscriberTests : TestBase

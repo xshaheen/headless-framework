@@ -20,16 +20,13 @@ public static class SetupAuditLogSqlServer
         /// Configures the audit log to persist entries to SQL Server using the provided
         /// connection string.
         /// </summary>
-        /// <param name="connectionString">Microsoft.Data.SqlClient connection string. Must not be <c>null</c> or whitespace.</param>
-        /// <exception cref="ArgumentException"><paramref name="connectionString"/> is <c>null</c> or whitespace.</exception>
+        /// <param name="connectionString">Microsoft.Data.SqlClient connection string. Must not be <see langword="null"/> or whitespace.</param>
+        /// <exception cref="ArgumentException"><paramref name="connectionString"/> is <see langword="null"/> or whitespace.</exception>
         public HeadlessAuditLogSetupBuilder UseSqlServer(string connectionString)
         {
             Argument.IsNotNullOrWhiteSpace(connectionString);
 
-            return setup.UseSqlServer(options =>
-            {
-                options.ConnectionString = connectionString;
-            });
+            return setup.UseSqlServer(options => options.ConnectionString = connectionString);
         }
 
         /// <summary>
@@ -40,13 +37,13 @@ public static class SetupAuditLogSqlServer
         /// <remarks>
         /// The provider self-initializes the schema and table on startup (serialized with
         /// <c>sp_getapplock</c> across replicas) unless
-        /// <see cref="AuditLogStorageOptions.InitializeOnStartup"/> is <c>false</c>. Audit rows
+        /// <see cref="AuditLogStorageOptions.InitializeOnStartup"/> is <see langword="false"/>. Audit rows
         /// are written via batched <c>INSERT … VALUES</c> statements (up to 100 rows per command).
         /// When an <see cref="IAmbientDbTransactionAccessor"/> is registered and the calling
         /// <c>DbContext</c> has an open <c>SqlTransaction</c>, writes enroll atomically in
         /// that transaction; otherwise they commit on a separate connection.
         /// </remarks>
-        /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <c>null</c>.</exception>
+        /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
         public HeadlessAuditLogSetupBuilder UseSqlServer(Action<SqlServerAuditLogOptions> configure)
         {
             Argument.IsNotNull(configure);

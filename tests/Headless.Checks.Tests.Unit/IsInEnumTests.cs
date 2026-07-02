@@ -93,7 +93,9 @@ public sealed class IsInEnumTests
 
         // when & then
         Argument.IsInEnum(composite).Should().Be(composite);
+#pragma warning disable RCS1257 // Use enum field explicitly
         Argument.IsInEnum(Permissions.Read | Permissions.Write | Permissions.Execute).Should().Be((Permissions)7);
+#pragma warning restore RCS1257
     }
 
     [Fact]

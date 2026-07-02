@@ -18,7 +18,7 @@ public sealed class ApiResultMvcExtensionsTests : TestBase
         // given
         var controller = _CreateController();
         var creator = _CreateProblemDetailsCreator();
-        var expectedValue = "test-value";
+        const string expectedValue = "test-value";
         var result = ApiResult<string>.Ok(expectedValue);
 
         // when

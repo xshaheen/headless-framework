@@ -147,7 +147,11 @@ internal static class NamespaceCollector
     /// </summary>
     private static void _CollectExistingUsingNamespaces(SyntaxTree syntaxTree, HashSet<string> namespaces)
     {
+        // Roslyn source generators run synchronously; there is no async pipeline to await GetRootAsync on,
+        // so MA0045 (use GetRootAsync) does not apply here.
+#pragma warning disable MA0045
         var root = syntaxTree.GetRoot();
+#pragma warning restore MA0045
 
         // Collect regular using directives (exclude static, alias, and global usings)
         var usingDirectives = root.DescendantNodes().OfType<UsingDirectiveSyntax>();
@@ -253,7 +257,7 @@ internal static class NamespaceCollector
         var namespaceName = typeSymbol.ContainingNamespace?.ToDisplayString();
         if (
             !string.IsNullOrEmpty(namespaceName)
-            && namespaceName != "<global namespace>"
+            && !string.Equals(namespaceName, "<global namespace>", StringComparison.Ordinal)
             && _IsValidNamespace(namespaceName)
         )
         {
@@ -267,11 +271,11 @@ internal static class NamespaceCollector
     private static bool _IsValidNamespace(string? namespaceName)
     {
         return !string.IsNullOrWhiteSpace(namespaceName)
-            && namespaceName != "System"
+            && !string.Equals(namespaceName, "System", StringComparison.Ordinal)
             && // Avoid duplicate System namespace
             !namespaceName!.StartsWith("System.Runtime", StringComparison.Ordinal)
-            && !namespaceName.Contains("<")
-            && !namespaceName.Contains(">")
+            && !namespaceName.Contains('<')
+            && !namespaceName.Contains('>')
             && namespaceName.Length > 1;
     }
 

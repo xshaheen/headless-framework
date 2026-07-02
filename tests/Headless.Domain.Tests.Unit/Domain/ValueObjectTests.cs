@@ -12,7 +12,9 @@ public sealed class ValueObjectTests
 
         public required string City { get; init; }
 
-        protected override bool EqualityComponentsEqual(Address other) => Street == other.Street && City == other.City;
+        protected override bool EqualityComponentsEqual(Address other) =>
+            string.Equals(Street, other.Street, StringComparison.Ordinal)
+            && string.Equals(City, other.City, StringComparison.Ordinal);
 
         protected override void BuildHashCode(ref HashCode hash)
         {

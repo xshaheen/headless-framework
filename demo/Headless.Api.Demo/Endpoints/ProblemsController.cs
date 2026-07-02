@@ -53,7 +53,7 @@ public sealed class ProblemsController : ApiControllerBase
     [ProducesResponseType(StatusCodes.Status200OK)]
     public ActionResult GetConflict()
     {
-        throw new ConflictException(new ErrorDescriptor("error-code", @"Error message"));
+        throw new ConflictException(new ErrorDescriptor("error-code", "Error message"));
     }
 
     [HttpPost("unprocessable-entity")]

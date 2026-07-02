@@ -74,10 +74,7 @@ public static class SetupMessagingDashboard
                 config.CustomMiddleware?.Invoke(dashboardApp);
 
                 // Map Minimal API endpoints
-                dashboardApp.UseEndpoints(endpoints =>
-                {
-                    endpoints.MapMessagingDashboardEndpoints(config);
-                });
+                dashboardApp.UseEndpoints(endpoints => endpoints.MapMessagingDashboardEndpoints(config));
 
                 // Execute post-dashboard middleware
                 config.PostDashboardMiddleware?.Invoke(dashboardApp);
@@ -110,7 +107,7 @@ public static class SetupMessagingDashboard
     }
 
     private static string _ReplaceBasePath(
-        string htmlContent,
+        string? htmlContent,
         HttpContext httpContext,
         string basePath,
         MessagingDashboardOptionsBuilder config

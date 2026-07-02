@@ -33,12 +33,11 @@ public sealed class SetupIdempotencyTests
         services.AddIdempotency(_ => { });
 
         services
-            .Any(s =>
+            .Should()
+            .Contain(s =>
                 s.ServiceType == typeof(IValidateOptions<IdempotencyOptions>)
                 && s.ImplementationType == typeof(IdempotencyOptionsDiValidator)
-            )
-            .Should()
-            .BeTrue();
+            );
     }
 
     [Fact]

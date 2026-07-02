@@ -45,7 +45,7 @@ public sealed class ResultErrorTests
         error.Message.Should().Be("One or more validation errors occurred.");
         error.FieldErrors.Should().HaveCount(2);
         error.FieldErrors["email"].Should().HaveCount(2);
-        error.FieldErrors["name"].Should().HaveCount(1);
+        error.FieldErrors["name"].Should().ContainSingle();
     }
 
     [Fact]

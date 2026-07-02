@@ -19,7 +19,7 @@ public sealed class PostgreSqlAuditLogFailureModesTests(PostgreSqlAuditLogFixtur
             "Host=127.0.0.1;Port=1;Database=missing;Username=postgres;Password=placeholder-never-used;Timeout=2";
         using var host = _CreateHost(unreachable);
 
-        // when / then — wrapped in HostFailedToStartException by the host pipeline; inner is NpgsqlException
+        // when & then — wrapped in HostFailedToStartException by the host pipeline; inner is NpgsqlException
         await FluentActions
             .Awaiting(() => host.StartAsync(TestContext.Current.CancellationToken))
             .Should()
@@ -45,7 +45,7 @@ public sealed class PostgreSqlAuditLogFailureModesTests(PostgreSqlAuditLogFixtur
         }.ToString();
         using var host = _CreateHost(badAuth);
 
-        // when / then
+        // when & then
         var startThrew = await FluentActions
             .Awaiting(() => host.StartAsync(TestContext.Current.CancellationToken))
             .Should()
@@ -127,8 +127,8 @@ public sealed class PostgreSqlAuditLogFailureModesTests(PostgreSqlAuditLogFixtur
             """,
             connection
         );
-        command.Parameters.AddWithValue("schema", schema);
-        command.Parameters.AddWithValue("table", table);
+        command.Parameters.AddWithValue(nameof(schema), schema);
+        command.Parameters.AddWithValue(nameof(table), table);
 
         return Convert.ToInt32(
             await command.ExecuteScalarAsync(TestContext.Current.CancellationToken),
@@ -150,8 +150,8 @@ public sealed class PostgreSqlAuditLogFailureModesTests(PostgreSqlAuditLogFixtur
             """,
             connection
         );
-        command.Parameters.AddWithValue("schema", schema);
-        command.Parameters.AddWithValue("table", table);
+        command.Parameters.AddWithValue(nameof(schema), schema);
+        command.Parameters.AddWithValue(nameof(table), table);
 
         return Convert.ToInt32(
             await command.ExecuteScalarAsync(TestContext.Current.CancellationToken),

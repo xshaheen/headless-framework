@@ -33,10 +33,7 @@ public static class SetupRabbitMqMessaging
         /// <exception cref="ArgumentNullException"><paramref name="hostName"/> is <see langword="null"/>.</exception>
         public MessagingSetupBuilder UseRabbitMq(string hostName)
         {
-            return setup.UseRabbitMq(opt =>
-            {
-                opt.HostName = hostName;
-            });
+            return setup.UseRabbitMq(opt => opt.HostName = hostName);
         }
 
         /// <summary>

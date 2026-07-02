@@ -26,7 +26,7 @@ internal sealed class AmazonSnsBusTransport(
         {
             await _FetchExistingTopicArns(cancellationToken).ConfigureAwait(false);
 
-            var normalizeForAws = message.GetName().NormalizeForAws();
+            var normalizeForAws = message.Name.NormalizeForAws();
             var (success, arn) = await _TryGetOrCreateTopicArnAsync(normalizeForAws, cancellationToken)
                 .ConfigureAwait(false);
 

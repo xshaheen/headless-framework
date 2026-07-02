@@ -52,7 +52,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
     private static ConsumerExecutorDescriptor _CreateDescriptor()
     {
         var consumeMethod = typeof(IConsume<CbTestMessage>).GetMethod(
-            nameof(IConsume<CbTestMessage>.ConsumeAsync),
+            nameof(IConsume<>.ConsumeAsync),
             BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
             null,
             [typeof(ConsumeContext<CbTestMessage>), typeof(CancellationToken)],
@@ -155,10 +155,10 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         var (executor, cbMock) = _CreateExecutor(invoker, storage);
 
         // when
-        await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), CancellationToken.None);
+        await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), AbortToken);
 
         // then
-        await cbMock.Received(1).ReportFailureAsync(_CircuitBreakerGroupName, original);
+        await cbMock.Received(1).ReportFailureAsync(_CircuitBreakerGroupName, original, AbortToken);
     }
 
     [Fact]
@@ -174,10 +174,10 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         var (executor, cbMock) = _CreateExecutor(invoker, storage);
 
         // when
-        await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), CancellationToken.None);
+        await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), AbortToken);
 
         // then
-        await cbMock.Received(1).ReportSuccessAsync(_CircuitBreakerGroupName);
+        await cbMock.Received(1).ReportSuccessAsync(_CircuitBreakerGroupName, CancellationToken.None);
     }
 
     [Fact]
@@ -195,12 +195,16 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         var (executor, cbMock) = _CreateExecutor(invoker, storage);
 
         // when
-        await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), CancellationToken.None);
+        await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), AbortToken);
 
         // then — must receive HttpRequestException, not SubscriberExecutionFailedException
         await cbMock
             .Received(1)
-            .ReportFailureAsync(_CircuitBreakerGroupName, Arg.Is<Exception>(e => e is HttpRequestException));
+            .ReportFailureAsync(
+                _CircuitBreakerGroupName,
+                Arg.Is<Exception>(e => e is HttpRequestException),
+                AbortToken
+            );
     }
 
     [Fact]
@@ -217,7 +221,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         var (executor, _) = _CreateExecutor(invoker, storage);
 
         // when
-        await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), CancellationToken.None);
+        await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), AbortToken);
 
         // then — DB state must still be persisted
         await storage
@@ -245,12 +249,12 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
             .Returns(ValueTask.FromResult(false));
 
         // when
-        await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), CancellationToken.None);
+        await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), AbortToken);
 
         // then
         cbMock.Received(1).ReleaseHalfOpenProbe(_CircuitBreakerGroupName);
-        await cbMock.DidNotReceiveWithAnyArgs().ReportSuccessAsync(default!);
-        await cbMock.DidNotReceiveWithAnyArgs().ReportFailureAsync(default!, default!);
+        await cbMock.DidNotReceiveWithAnyArgs().ReportSuccessAsync(default!, AbortToken);
+        await cbMock.DidNotReceiveWithAnyArgs().ReportFailureAsync(default!, default!, AbortToken);
     }
 
     [Fact]
@@ -277,12 +281,12 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         var (executor, cbMock) = _CreateExecutor(invoker, storage);
 
         // when
-        await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), CancellationToken.None);
+        await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), AbortToken);
 
         // then
         cbMock.Received(1).ReleaseHalfOpenProbe(_CircuitBreakerGroupName);
-        await cbMock.DidNotReceiveWithAnyArgs().ReportSuccessAsync(default!);
-        await cbMock.DidNotReceiveWithAnyArgs().ReportFailureAsync(default!, default!);
+        await cbMock.DidNotReceiveWithAnyArgs().ReportSuccessAsync(default!, AbortToken);
+        await cbMock.DidNotReceiveWithAnyArgs().ReportFailureAsync(default!, default!, AbortToken);
     }
 
     [Fact]
@@ -298,7 +302,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         var (executor, cbMock) = _CreateExecutor(invoker, storage);
 
         // when
-        await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), CancellationToken.None);
+        await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), AbortToken);
 
         // then — both DB persistence and circuit breaker reporting happen
         await storage
@@ -311,7 +315,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             );
-        await cbMock.Received(1).ReportSuccessAsync(_CircuitBreakerGroupName);
+        await cbMock.Received(1).ReportSuccessAsync(_CircuitBreakerGroupName, CancellationToken.None);
     }
 }
 

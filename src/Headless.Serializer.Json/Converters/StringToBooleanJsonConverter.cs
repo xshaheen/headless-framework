@@ -7,7 +7,7 @@ namespace Headless.Serializer.Converters;
 
 /// <summary>
 /// Converts <see cref="bool"/> values that arrive as JSON strings (e.g., <c>"true"</c>, <c>"false"</c>)
-/// in addition to the native JSON boolean tokens <c>true</c>/<c>false</c>.
+/// in addition to the native JSON boolean tokens <see langword="true"/>/<see langword="false"/>.
 /// </summary>
 public sealed class StringToBooleanJsonConverter : JsonConverter<bool>
 {

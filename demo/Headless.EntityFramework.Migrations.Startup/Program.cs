@@ -36,7 +36,20 @@ builder.AddHeadless(encryption =>
     encryption.DefaultSalt = "DemoSalt"u8.ToArray();
 });
 
-addRedisDistributedLock(builder.Services);
+// Redis connection (required by Headless.DistributedLocks.Redis)
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
+builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect("localhost:6379"));
+#pragma warning restore MA0045
+
+// Messages
+builder.Services.AddHeadlessMessaging(setup =>
+{
+    setup.UseInMemory();
+    setup.UseInMemoryStorage();
+});
+
+// Resource Locks
+builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
 
 const string connectionString = "Host=localhost;Database=Headless;Username=postgres;Password=postgres";
 
@@ -44,47 +57,20 @@ builder.Services.AddDbContextFactory<PermissionsMigrationDbContext>(options =>
     options.UseNpgsql(connectionString, b => b.MigrationsAssembly(Assembly.GetExecutingAssembly().FullName))
 );
 
-builder.Services.AddHeadlessPermissions(setup =>
-{
-    setup.UseEntityFramework<PermissionsMigrationDbContext>();
-});
+builder.Services.AddHeadlessPermissions(setup => setup.UseEntityFramework<PermissionsMigrationDbContext>());
 
 builder.Services.AddDbContextFactory<SettingsMigrationDbContext>(options =>
     options.UseNpgsql(connectionString, b => b.MigrationsAssembly(Assembly.GetExecutingAssembly().FullName))
 );
 
-builder.Services.AddHeadlessSettings(setup =>
-{
-    setup.UseEntityFramework<SettingsMigrationDbContext>();
-});
+builder.Services.AddHeadlessSettings(setup => setup.UseEntityFramework<SettingsMigrationDbContext>());
 
 builder.Services.AddDbContextFactory<FeaturesMigrationDbContext>(options =>
     options.UseNpgsql(connectionString, b => b.MigrationsAssembly(Assembly.GetExecutingAssembly().FullName))
 );
 
-builder.Services.AddHeadlessFeatures(setup =>
-{
-    setup.UseEntityFramework<FeaturesMigrationDbContext>();
-});
+builder.Services.AddHeadlessFeatures(setup => setup.UseEntityFramework<FeaturesMigrationDbContext>());
 
 var app = builder.Build();
 
 await app.RunAsync();
-
-return;
-
-static void addRedisDistributedLock(IServiceCollection services)
-{
-    // Redis connection (required by Headless.DistributedLocks.Redis)
-    services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect("localhost:6379"));
-
-    // Messages
-    services.AddHeadlessMessaging(setup =>
-    {
-        setup.UseInMemory();
-        setup.UseInMemoryStorage();
-    });
-
-    // Resource Locks
-    services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
-}

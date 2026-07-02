@@ -47,7 +47,7 @@ public static class NswagSwaggerGenOptionsExtensions
     public static void AddAllPrimitivesSwaggerMappings(this JsonSchemaGeneratorSettings options)
     {
         var assemblies = AssemblyHelper.GetCurrentAssemblies(
-            acceptPredicate: assembly => assembly.GetCustomAttribute<PrimitiveAssemblyAttribute>() is not null,
+            acceptPredicate: assembly => Attribute.IsDefined(assembly, typeof(PrimitiveAssemblyAttribute)),
             excludePredicate: AssemblyHelper.IsSystemAssemblyName
         );
 

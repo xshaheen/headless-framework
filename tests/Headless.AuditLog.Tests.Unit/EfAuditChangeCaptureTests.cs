@@ -133,7 +133,9 @@ public sealed class EfAuditChangeCaptureTests : TestBase
         configure?.Invoke(builder);
 
         var db = new TestDbContext(builder.Options);
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
         db.Database.EnsureCreated();
+#pragma warning restore MA0045
         return (db, conn);
     }
 
@@ -154,7 +156,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
 
     private static IReadOnlyList<AuditLogEntryData> _Capture(EfAuditChangeCapture sut, TestDbContext db)
     {
-        var entries = db.ChangeTracker.Entries().Select(e => (object)e);
+        var entries = db.ChangeTracker.Entries().Cast<object>();
         return sut.CaptureChanges(entries, _UserId, _AccountId, _TenantId, _CorrelationId, _Timestamp);
     }
 
@@ -183,7 +185,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             var result = _Capture(sut, db);
 
             // then
-            result.Should().HaveCount(1);
+            result.Should().ContainSingle();
             var entry = result[0];
             entry.Action.Should().Be(AuditActionNames.Created);
             entry.ChangeType.Should().Be(AuditChangeType.Created);
@@ -210,7 +212,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
                 Phone = "555",
             };
             db.Orders.Add(order);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(AbortToken);
 
             // when
             order.CustomerName = "Bob";
@@ -220,7 +222,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             var result = _Capture(sut, db);
 
             // then
-            result.Should().HaveCount(1);
+            result.Should().ContainSingle();
             var entry = result[0];
             entry.Action.Should().Be(AuditActionNames.Updated);
             entry.ChangeType.Should().Be(AuditChangeType.Updated);
@@ -246,7 +248,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
                 Phone = "555",
             };
             db.Orders.Add(order);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(AbortToken);
 
             // when
             db.Orders.Remove(order);
@@ -255,7 +257,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             var result = _Capture(sut, db);
 
             // then
-            result.Should().HaveCount(1);
+            result.Should().ContainSingle();
             var entry = result[0];
             entry.Action.Should().Be(AuditActionNames.Deleted);
             entry.ChangeType.Should().Be(AuditChangeType.Deleted);
@@ -282,7 +284,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
                 LastComputedAt = DateTime.UtcNow,
             };
             db.Orders.Add(order);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(AbortToken);
 
             order.CustomerName = "Bob";
             order.LastComputedAt = DateTime.UtcNow.AddMinutes(1);
@@ -294,7 +296,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             var result = _Capture(sut, db);
 
             // then
-            result.Should().HaveCount(1);
+            result.Should().ContainSingle();
             var entry = result[0];
             entry.ChangedFields.Should().NotContain("LastComputedAt");
             entry.OldValues.Should().NotContainKey("LastComputedAt");
@@ -325,7 +327,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             var result = _Capture(sut, db);
 
             // then
-            result.Should().HaveCount(1);
+            result.Should().ContainSingle();
             var entry = result[0];
             entry.NewValues.Should().ContainKey("Email").WhoseValue.Should().Be("***");
         }
@@ -354,7 +356,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             var result = _Capture(sut, db);
 
             // then
-            result.Should().HaveCount(1);
+            result.Should().ContainSingle();
             var entry = result[0];
             entry.NewValues.Should().NotContainKey("Phone");
         }
@@ -387,7 +389,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             var result = _Capture(sut, db);
 
             // then
-            result.Should().HaveCount(1);
+            result.Should().ContainSingle();
             var entry = result[0];
             // Email uses [AuditSensitive] without explicit strategy, so falls back to global Transform
             entry.NewValues.Should().ContainKey("Email").WhoseValue.Should().Be("[MASKED:Email]");
@@ -453,7 +455,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             var result = _Capture(sut, db);
 
             // then
-            result.Should().HaveCount(1);
+            result.Should().ContainSingle();
             result[0].EntityType.Should().Contain(nameof(Product));
         }
     }
@@ -523,13 +525,15 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             };
             db.Orders.Add(order);
 
-            var sut = _CreateSut(opts => opts.PropertyFilter = (_, name) => name == "CustomerName");
+            var sut = _CreateSut(opts =>
+                opts.PropertyFilter = (_, name) => string.Equals(name, "CustomerName", StringComparison.Ordinal)
+            );
 
             // when
             var result = _Capture(sut, db);
 
             // then
-            result.Should().HaveCount(1);
+            result.Should().ContainSingle();
             result[0].NewValues.Should().NotContainKey("CustomerName");
         }
     }
@@ -558,7 +562,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             // then - should capture both Customer and the owned Address
             result.Should().NotBeEmpty();
             var addressEntry = result.FirstOrDefault(e =>
-                e.EntityType != null && e.EntityType.Contains(nameof(Address), StringComparison.Ordinal)
+                e.EntityType?.Contains(nameof(Address), StringComparison.Ordinal) == true
             );
             addressEntry.Should().NotBeNull();
         }
@@ -580,7 +584,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
                 Address = new Address { Street = "Main", City = "Town" },
             };
             db.Customers.Add(customer);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(AbortToken);
 
             customer.Address.Street = "New St";
             db.ChangeTracker.DetectChanges();
@@ -591,7 +595,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             var result = _Capture(sut, db);
 
             // then - address update is captured because owner (Customer) is IAuditTracked
-            result.Should().HaveCount(1);
+            result.Should().ContainSingle();
             var addressEntry = result[0];
             addressEntry.EntityType.Should().Contain(nameof(Address));
             addressEntry.EntityId.Should().Be(customerId.ToString());
@@ -615,7 +619,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
                 IsDeleted = false,
             };
             db.Orders.Add(order);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(AbortToken);
 
             // when
             order.IsDeleted = true;
@@ -625,7 +629,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             var result = _Capture(sut, db);
 
             // then
-            result.Should().HaveCount(1);
+            result.Should().ContainSingle();
             result[0].Action.Should().Be(AuditActionNames.SoftDeleted);
         }
     }
@@ -647,7 +651,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
                 IsDeleted = true,
             };
             db.Orders.Add(order);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(AbortToken);
 
             // when
             order.IsDeleted = false;
@@ -657,7 +661,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             var result = _Capture(sut, db);
 
             // then
-            result.Should().HaveCount(1);
+            result.Should().ContainSingle();
             result[0].Action.Should().Be(AuditActionNames.Restored);
         }
     }
@@ -679,7 +683,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
                 IsSuspended = false,
             };
             db.Orders.Add(order);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(AbortToken);
 
             // when
             order.IsSuspended = true;
@@ -689,7 +693,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             var result = _Capture(sut, db);
 
             // then
-            result.Should().HaveCount(1);
+            result.Should().ContainSingle();
             result[0].Action.Should().Be(AuditActionNames.Suspended);
         }
     }
@@ -711,7 +715,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
                 IsSuspended = true,
             };
             db.Orders.Add(order);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(AbortToken);
 
             // when
             order.IsSuspended = false;
@@ -721,7 +725,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             var result = _Capture(sut, db);
 
             // then
-            result.Should().HaveCount(1);
+            result.Should().ContainSingle();
             result[0].Action.Should().Be(AuditActionNames.Unsuspended);
         }
     }
@@ -803,7 +807,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             var result = _Capture(sut, db);
 
             // then
-            result.Should().HaveCount(1);
+            result.Should().ContainSingle();
             var entry = result[0];
             entry.NewValues.Should().ContainKey("Name");
             entry.NewValues.Should().NotContainKey("DateCreated");
@@ -832,7 +836,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             var result = _Capture(sut, db);
 
             // then
-            result.Should().HaveCount(1);
+            result.Should().ContainSingle();
             result[0].NewValues.Should().ContainKey("DateCreated");
         }
     }
@@ -864,7 +868,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
                 }
             );
             _ = _Capture(sut, db);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(AbortToken);
 
             db.Orders.Add(
                 new Order
@@ -909,7 +913,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
                 }
             );
             _ = _Capture(sut, db);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(AbortToken);
 
             db.Orders.Add(
                 new Order
@@ -958,7 +962,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             var result = _Capture(sut, db);
 
             // then
-            result.Should().HaveCount(1);
+            result.Should().ContainSingle();
             result[0].NewValues.Should().ContainKey("Email").WhoseValue.Should().Be("***");
             logger.ReceivedCalls().Should().ContainSingle(call => _IsTransformerWarningLog(call));
         }
@@ -986,7 +990,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             var result = _Capture(sut, db);
 
             // then
-            result.Should().HaveCount(1);
+            result.Should().ContainSingle();
             result[0].EntityId.Should().Be("[\"tenant,a\",\"order,1\"]");
         }
     }
@@ -1011,12 +1015,12 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             var sut = _CreateSut();
 
             // inject non-EntityEntry objects alongside real entries
-            var validEntries = db.ChangeTracker.Entries().Select(e => (object)e);
+            var validEntries = db.ChangeTracker.Entries().Cast<object>();
             var mixedEntries = validEntries.Concat(["not-an-entity-entry", 42]);
             var result = sut.CaptureChanges(mixedEntries, _UserId, _AccountId, _TenantId, _CorrelationId, _Timestamp);
 
             // then - non-EntityEntry objects are silently skipped; valid entry is captured
-            result.Should().HaveCount(1);
+            result.Should().ContainSingle();
             result[0].Action.Should().Be(AuditActionNames.Created);
         }
     }

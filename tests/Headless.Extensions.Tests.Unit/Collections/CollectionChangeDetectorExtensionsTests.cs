@@ -118,7 +118,7 @@ public sealed class CollectionChangeDetectorExtensionsTests
         // then - matched as the same entity despite case
         added.Should().BeEmpty();
         removed.Should().BeEmpty();
-        exist.Should().HaveCount(1);
+        exist.Should().ContainSingle();
     }
 
     [Fact]

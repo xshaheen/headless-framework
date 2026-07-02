@@ -76,7 +76,7 @@ public static class SetupAuditLogEntityFramework
             RuleFor(x => x.Schema).IsValidCrossProviderIdentifier();
             RuleFor(x => x.TableName).IsValidCrossProviderIdentifier();
             RuleFor(x => x.JsonColumnType).IsInEnum().When(x => x.JsonColumnType.HasValue);
-            RuleFor(x => x.CreatedAtColumnType!)
+            RuleFor(x => x.CreatedAtColumnType)
                 .MaximumLength(64)
                 .Matches(@"^[A-Za-z][A-Za-z0-9 ]*(\([0-9]+\))?$")
                 .When(x => !string.IsNullOrEmpty(x.CreatedAtColumnType));

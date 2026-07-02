@@ -7,7 +7,7 @@ using StackExchange.Redis;
 
 namespace Headless.Messaging.Redis;
 
-internal class RedisStreamManager(
+internal sealed class RedisStreamManager(
     IRedisConnectionPool connectionsPool,
     IOptions<MessagingRedisOptions> options,
     ILogger<RedisStreamManager> logger
