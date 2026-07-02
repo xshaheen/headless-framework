@@ -47,7 +47,7 @@ Three packages compose the TUS domain:
 
 | Package | Role |
 |---|---|
-| `Headless.Tus` | Base dependency: wires `tusdotnet` into ASP.NET Core; all TUS packages depend on this. |
+| `Headless.Tus` | Base dependency: contains no code; pins and shares the `tusdotnet` + `Headless.Hosting` references so all TUS packages align on one version. |
 | `Headless.Tus.Azure` | Storage backend: `TusAzureStore` stores upload chunks in Azure Blob Storage using block blobs. |
 | `Headless.Tus.DistributedLocks` | Locking add-on: `DistributedLockTusLockProvider` prevents concurrent PATCH corruption across nodes. |
 
@@ -72,7 +72,7 @@ app.MapTus("/files", async _ => new DefaultTusConfiguration { Store = store, Url
 ## Agent Instructions
 
 - `Headless.Tus` is a base dependency only — it has no store implementation. Always add `Headless.Tus.Azure` for upload storage.
-- `TusAzureStore` must be constructed manually (`new TusAzureStore(blobServiceClient, options)`); it is not registered automatically in DI. Construct it where you build `DefaultTusConfiguration`.
+- `TusAzureStore` is constructed manually (`new TusAzureStore(blobServiceClient, options)`) by design — tusdotnet composes stores inside `DefaultTusConfiguration` factories, so the package deliberately ships no DI `Setup` surface. Construct it where you build `DefaultTusConfiguration`.
 - For multi-instance deployments, always add `Headless.Tus.DistributedLocks` and call `services.AddDistributedLockTusLockProvider()`. Without it, concurrent PATCH requests for the same file from different nodes can corrupt block lists.
 - The distributed lock add-on requires `IDistributedLock` in DI. Register a Headless distributed lock provider first, for example: `services.AddHeadlessDistributedLocks(setup => setup.UseRedis())`.
 - Set `FileLockProvider` in your `DefaultTusConfiguration` factory to the `ITusFileLockProvider` resolved from DI — it is not wired automatically. A single-node deployment can omit it and use tusdotnet's in-process lock.

@@ -148,4 +148,4 @@ Chunk size selection: uploads < 10 MB use `min(BlobDefaultChunkSize, fileSize)`;
 ## Side Effects
 
 - Synchronously calls `BlobContainerClient.CreateIfNotExists` during `TusAzureStore` construction when `CreateContainerIfNotExists = true`.
-- No DI registrations — `TusAzureStore` is constructed manually. For cross-node PATCH locking, register `Headless.Tus.DistributedLocks`.
+- No DI registrations by design — tusdotnet composes stores inside `DefaultTusConfiguration` factories, so `TusAzureStore` is constructed manually where the configuration is built. For cross-node PATCH locking, register `Headless.Tus.DistributedLocks`.

@@ -11,8 +11,9 @@ namespace Headless.Tus.Services;
 /// <remarks>
 /// Implement this interface and register it in DI to customize the <c>BlobHttpHeaders</c> set when
 /// <c>TusAzureStore</c> creates a new blob. The <c>metadata</c> parameter contains the
-/// user-supplied TUS metadata key/value pairs (system keys such as <c>tus_upload_length</c> are
-/// already stripped), allowing header derivation from file name or content-type hints.
+/// user-supplied TUS metadata as decoded key/value pairs — the client's original keys (casing
+/// preserved) with UTF-8 decoded values; the store's internal <c>tus_*</c> tracking keys are
+/// never included — allowing header derivation from file name or content-type hints.
 /// </remarks>
 [PublicAPI]
 public interface ITusAzureBlobHttpHeadersProvider

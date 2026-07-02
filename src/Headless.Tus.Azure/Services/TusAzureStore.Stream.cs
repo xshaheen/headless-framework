@@ -126,16 +126,20 @@ public sealed partial class TusAzureStore
             {
                 if (stream.CanSeek)
                 {
+                    // Only the bytes from the current position are staged; count them the same way.
+                    var remaining = stream.Length - stream.Position;
+                    _AssertNotToMuchData(currentOffset, remaining, fileUploadLength);
                     await blockBlobClient
                         .StageBlockAsync(blockId, stream, cancellationToken: cancellationToken)
                         .ConfigureAwait(false);
-                    return ([blockId], stream.Length);
+                    return ([blockId], remaining);
                 }
 
                 // A non-seekable request body has no Length; buffer it so StageBlock has a content length and
                 // we can report the exact bytes staged without ever calling Stream.Length on a forward-only stream.
                 await using var buffered = new MemoryStream();
                 await stream.CopyToAsync(buffered, cancellationToken).ConfigureAwait(false);
+                _AssertNotToMuchData(currentOffset, buffered.Length, fileUploadLength);
                 buffered.Position = 0;
                 await blockBlobClient
                     .StageBlockAsync(blockId, buffered, cancellationToken: cancellationToken)
@@ -148,6 +152,7 @@ public sealed partial class TusAzureStore
             var capacity = stream is { CanSeek: true, Length: > 0 } ? (int)Math.Min(stream.Length, int.MaxValue) : 0;
             await using var memoryStream = new MemoryStream(capacity);
             await stream.CopyToAsync(memoryStream, cancellationToken).ConfigureAwait(false);
+            _AssertNotToMuchData(currentOffset, memoryStream.Length, fileUploadLength);
 
             hasher.AppendData(memoryStream.GetBuffer().AsSpan(0, (int)memoryStream.Length));
 
@@ -170,8 +175,7 @@ public sealed partial class TusAzureStore
 
         await foreach (var chunk in _SplitStreamAsync(stream, maxChunkSize, cancellationToken).ConfigureAwait(false))
         {
-            // Reject data beyond the declared upload length, mirroring the pipeline path's guard. (The
-            // no-split branch above cannot pre-check length; that is the EnableChunkSplitting=false path.)
+            // Reject data beyond the declared upload length, mirroring the pipeline path's guard.
             _AssertNotToMuchData(currentOffset + bytesWritten, chunk.Count, fileUploadLength);
 
             var blockId = _GenerateBlockId(blockToken, nextBlockNumber++);
