@@ -14,11 +14,18 @@ public sealed partial class TusAzureStore : ITusExpirationStore
     /// </summary>
     /// <param name="fileId">the TUS file identifier</param>
     /// <param name="expires">the UTC instant after which the upload is considered expired</param>
-    /// <param name="cancellationToken">token to cancel the operation</param>
+    /// <param name="cancellationToken">unused; see remarks</param>
     /// <remarks>
     /// If the blob does not exist, the call is silently ignored and a warning is logged. The
     /// expiration value is persisted in the <c>tus_expiration</c> blob metadata key and evaluated
     /// during <c>GetExpiredFilesAsync</c> and <c>RemoveExpiredFilesAsync</c>.
+    /// <para>
+    /// <paramref name="cancellationToken"/> is deliberately ignored (mirroring
+    /// <c>TusDiskStore</c>, whose store operations are non-cancellable): tusdotnet refreshes the
+    /// sliding expiration <em>after</em> a PATCH using the request's token, which is already
+    /// cancelled when the client paused or disconnected mid-request — exactly when the just
+    /// -committed partial data still needs its expiration window extended so the client can resume.
+    /// </para>
     /// </remarks>
     public async Task SetExpirationAsync(string fileId, DateTimeOffset expires, CancellationToken cancellationToken)
     {
@@ -28,7 +35,8 @@ public sealed partial class TusAzureStore : ITusExpirationStore
 
         try
         {
-            var azureFile = await _GetTusFileInfoAsync(blobClient, fileId, cancellationToken).ConfigureAwait(false);
+            var azureFile = await _GetTusFileInfoAsync(blobClient, fileId, CancellationToken.None)
+                .ConfigureAwait(false);
 
             if (azureFile == null)
             {
@@ -38,7 +46,7 @@ public sealed partial class TusAzureStore : ITusExpirationStore
             }
 
             azureFile.Metadata.DateExpiration = expires;
-            await _UpdateMetadataAsync(blobClient, azureFile, cancellationToken).ConfigureAwait(false);
+            await _UpdateMetadataAsync(blobClient, azureFile, CancellationToken.None).ConfigureAwait(false);
 
             _logger.ExpirationSet(fileId, expires);
         }

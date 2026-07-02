@@ -218,6 +218,28 @@ public sealed class ExpirationCleanupTests : TestBase
         (await _store.FileExistAsync(fileId, AbortToken)).Should().BeFalse();
     }
 
+    /* Test: SetExpiration must complete even with a cancelled request token */
+
+    [Fact]
+    public async Task should_set_expiration_even_when_request_token_is_cancelled()
+    {
+        // given - tusdotnet refreshes the sliding expiration AFTER a PATCH with the request's
+        // token, which is already cancelled when the client paused/disconnected mid-request —
+        // exactly when the committed partial data still needs its window extended to resume later
+        var fileId = await _CreateIncompleteUploadAsync(1_000, uploadedBytes: 500);
+        var expires = DateTimeOffset.UtcNow.AddMinutes(30);
+
+        using var cancelled = new CancellationTokenSource();
+        await cancelled.CancelAsync();
+
+        // when
+        await _store.SetExpirationAsync(fileId, expires, cancelled.Token);
+
+        // then
+        var stored = await _store.GetExpirationAsync(fileId, AbortToken);
+        stored.Should().BeCloseTo(expires, TimeSpan.FromSeconds(1));
+    }
+
     /* Test: GetExpiredFilesAsync returns correct files */
 
     [Fact]
