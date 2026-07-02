@@ -28,7 +28,8 @@ internal sealed class AwsBlobContainerManager : IBlobContainerManager, IDisposab
 
     // Buckets this instance has already ensured exist, so the ensure round trip runs at most once per bucket. A
     // bucket is recorded only after a successful ensure, so a failed ensure is naturally retried (L5). The per-bucket
-    // lock serializes concurrent first-time ensures of the same bucket while letting distinct buckets run in parallel.
+    // lock serializes concurrent first-time ensures of the same bucket while letting distinct buckets run in
+    // parallel, and DeleteContainerAsync takes the same lock so an ensure never races a delete of the same bucket.
     private readonly ConcurrentDictionary<string, byte> _ensuredBuckets = new(StringComparer.Ordinal);
     private readonly KeyedAsyncLock _ensureBucketLock = new();
 
@@ -71,30 +72,32 @@ internal sealed class AwsBlobContainerManager : IBlobContainerManager, IDisposab
     {
         var bucket = _NormalizeContainer(container);
 
-        // S3 refuses to delete a non-empty bucket, so drain its objects first. A missing bucket reports not-found.
-        if (!await _EmptyBucketAsync(bucket, cancellationToken).ConfigureAwait(false))
+        // Serialize with the ensure path's per-bucket lock and evict the ensured-cache entry BEFORE touching the
+        // backend. Evicting only after the backend delete leaves a window where a concurrent ensure fast-path sees
+        // the stale entry and reports success for a bucket mid-deletion; holding the lock makes a concurrent
+        // first-time ensure wait and re-create the bucket only after this delete completes.
+        using (await _ensureBucketLock.LockAsync(bucket, cancellationToken).ConfigureAwait(false))
         {
             _ensuredBuckets.TryRemove(bucket, out _);
 
-            return false;
+            // S3 refuses to delete a non-empty bucket, so drain its objects first. A missing bucket reports not-found.
+            if (!await _EmptyBucketAsync(bucket, cancellationToken).ConfigureAwait(false))
+            {
+                return false;
+            }
+
+            try
+            {
+                await _s3.DeleteBucketAsync(new DeleteBucketRequest { BucketName = bucket }, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.NotFound)
+            {
+                return false;
+            }
+
+            return true;
         }
-
-        try
-        {
-            await _s3.DeleteBucketAsync(new DeleteBucketRequest { BucketName = bucket }, cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.NotFound)
-        {
-            _ensuredBuckets.TryRemove(bucket, out _);
-
-            return false;
-        }
-
-        // Drop from the ensured cache so a later EnsureContainerAsync re-creates rather than assuming it exists.
-        _ensuredBuckets.TryRemove(bucket, out _);
-
-        return true;
     }
 
     private async ValueTask<bool> _EmptyBucketAsync(string bucket, CancellationToken cancellationToken)

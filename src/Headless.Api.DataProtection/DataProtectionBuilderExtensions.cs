@@ -21,6 +21,16 @@ public static class DataProtectionBuilderExtensions
     /// Optional logger factory passed to the repository; when <see langword="null"/>, logging is suppressed.
     /// </param>
     /// <returns>The <paramref name="builder"/> so that additional calls can be chained.</returns>
+    /// <remarks>
+    /// <b>The <c>DataProtection</c> container is NOT ensured by this overload.</b> The blob data plane treats a
+    /// missing container as an error rather than auto-creating it, so on a fresh Azure/S3/file-system deployment the
+    /// first key write fails unless the container already exists. Pre-provision it — via
+    /// <see cref="IBlobContainerManager.EnsureContainerAsync"/> at startup or out-of-band (portal, CLI, IaC) — or
+    /// prefer
+    /// <see cref="PersistKeysToBlobStorage(IDataProtectionBuilder, IBlobStorage, IBlobContainerManager, ILoggerFactory)"/>
+    /// which ensures the container before writes. Reserve this overload for providers that deliberately ship no
+    /// container manager, such as Cloudflare R2 (object-scoped tokens cannot create buckets).
+    /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="builder"/> or <paramref name="storage"/> is <see langword="null"/>.
     /// </exception>

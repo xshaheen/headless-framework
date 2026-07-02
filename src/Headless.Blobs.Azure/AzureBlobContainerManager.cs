@@ -27,7 +27,8 @@ internal sealed class AzureBlobContainerManager : IBlobContainerManager, IDispos
     // Containers this instance has already ensured exist, so CreateIfNotExists runs at most once per container. A
     // container is recorded only after a successful create, so a failed ensure is naturally retried (L5). The
     // per-container lock serializes concurrent first-time ensures of the same container while letting distinct
-    // containers run in parallel.
+    // containers run in parallel, and DeleteContainerAsync takes the same lock so an ensure never races a delete of
+    // the same container.
     private readonly ConcurrentDictionary<string, byte> _ensuredContainers = new(StringComparer.Ordinal);
     private readonly KeyedAsyncLock _ensureContainerLock = new();
 
@@ -65,15 +66,21 @@ internal sealed class AzureBlobContainerManager : IBlobContainerManager, IDispos
     {
         var name = _NormalizeContainer(container);
 
-        var response = await _blobServiceClient
-            .GetBlobContainerClient(name)
-            .DeleteIfExistsAsync(cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
+        // Serialize with the ensure path's per-container lock and evict the ensured-cache entry BEFORE touching the
+        // backend. Evicting only after the backend delete leaves a window where a concurrent ensure fast-path sees
+        // the stale entry and reports success for a container mid-deletion; holding the lock makes a concurrent
+        // first-time ensure wait and re-create the container only after this delete completes.
+        using (await _ensureContainerLock.LockAsync(name, cancellationToken).ConfigureAwait(false))
+        {
+            _ensuredContainers.TryRemove(name, out _);
 
-        // Drop from the ensured cache so a later EnsureContainerAsync re-creates rather than assuming it exists.
-        _ensuredContainers.TryRemove(name, out _);
+            var response = await _blobServiceClient
+                .GetBlobContainerClient(name)
+                .DeleteIfExistsAsync(cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
 
-        return response.Value;
+            return response.Value;
+        }
     }
 
     private async Task _EnsureContainerOnceAsync(string container, CancellationToken cancellationToken)

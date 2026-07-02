@@ -133,4 +133,44 @@ public sealed class AwsBlobContainerManagerTests : TestBase
 
         (await sut.DeleteContainerAsync("missing")).Should().BeFalse();
     }
+
+    [Fact]
+    public async Task delete_container_blocks_concurrent_ensure_until_delete_completes()
+    {
+        _s3.PutBucketAsync(Arg.Any<PutBucketRequest>(), Arg.Any<CancellationToken>()).Returns(new PutBucketResponse());
+        _s3.ListObjectsV2Async(Arg.Any<ListObjectsV2Request>(), Arg.Any<CancellationToken>())
+            .Returns(new ListObjectsV2Response());
+
+        var deleteBucketCalled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseDelete = new TaskCompletionSource<DeleteBucketResponse>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        _s3.DeleteBucketAsync(Arg.Any<DeleteBucketRequest>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                deleteBucketCalled.TrySetResult();
+
+                return releaseDelete.Task;
+            });
+
+        var sut = _CreateSut();
+        await sut.EnsureContainerAsync("bucket");
+
+        // Start the delete and park it inside the backend call; the ensured-cache entry was already evicted under
+        // the per-bucket lock before the backend delete began.
+        var deleteTask = sut.DeleteContainerAsync("bucket").AsTask();
+        await deleteBucketCalled.Task;
+
+        // A concurrent ensure must not be served from the stale cache entry: it misses and waits on the per-bucket
+        // lock held by the in-flight delete instead of reporting success for a bucket mid-deletion.
+        var ensureTask = sut.EnsureContainerAsync("bucket").AsTask();
+        ensureTask.IsCompleted.Should().BeFalse();
+
+        releaseDelete.SetResult(new DeleteBucketResponse());
+        (await deleteTask).Should().BeTrue();
+        await ensureTask;
+
+        // The post-delete ensure re-created the bucket rather than trusting the pre-delete cache entry.
+        await _s3.Received(2).PutBucketAsync(Arg.Any<PutBucketRequest>(), Arg.Any<CancellationToken>());
+    }
 }

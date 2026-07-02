@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Xml.Linq;
 using Headless.Api;
 using Headless.Blobs;
 using Headless.Testing.Tests;
@@ -85,6 +86,43 @@ public sealed class DataProtectionBuilderExtensionsTests : TestBase
 
         // then
         result.Should().BeSameAs(builder);
+    }
+
+    #endregion
+
+    #region PersistKeysToBlobStorage(storage, containerManager) Tests
+
+    [Fact]
+    public async Task should_ensure_container_via_manager_before_first_store()
+    {
+        // given
+        var services = new ServiceCollection();
+        var builder = services.AddDataProtection();
+        var storage = Substitute.For<IBlobStorage>();
+        var containerManager = Substitute.For<IBlobContainerManager>();
+
+        // when
+        builder.PersistKeysToBlobStorage(storage, containerManager);
+
+        // then
+        using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<KeyManagementOptions>>().Value;
+
+        options.XmlRepository.Should().BeOfType<BlobStorageDataProtectionXmlRepository>();
+
+        // The first key write must ensure the DataProtection container through the supplied manager: the blob data
+        // plane treats a missing container as an error, so a fresh deployment would otherwise fail right here.
+        options.XmlRepository!.StoreElement(new XElement("key"), "friendly");
+
+        await containerManager.Received(1).EnsureContainerAsync("DataProtection", Arg.Any<CancellationToken>());
+        await storage
+            .Received(1)
+            .UploadAsync(
+                new BlobLocation("DataProtection", "friendly.xml"),
+                Arg.Any<Stream>(),
+                metadata: null,
+                Arg.Any<CancellationToken>()
+            );
     }
 
     #endregion
