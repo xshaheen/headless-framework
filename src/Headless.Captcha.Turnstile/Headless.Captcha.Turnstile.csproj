@@ -8,7 +8,7 @@
   </ItemGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
-    <ProjectReference Include="..\Headless.Captcha.Abstractions\Headless.Captcha.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Captcha.Core\Headless.Captcha.Core.csproj" />
     <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
   </ItemGroup>

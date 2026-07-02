@@ -127,6 +127,7 @@
     </Folder>
     <Folder Name="/Captcha/">
         <Project Path="src/Headless.Captcha.Abstractions/Headless.Captcha.Abstractions.csproj" />
+        <Project Path="src/Headless.Captcha.Core/Headless.Captcha.Core.csproj" />
         <Project Path="src/Headless.Captcha.ReCaptcha/Headless.Captcha.ReCaptcha.csproj" />
         <Project Path="src/Headless.Captcha.Turnstile/Headless.Captcha.Turnstile.csproj" />
         <Project Path="tests/Headless.Captcha.Tests.Harness/Headless.Captcha.Tests.Harness.csproj" />
