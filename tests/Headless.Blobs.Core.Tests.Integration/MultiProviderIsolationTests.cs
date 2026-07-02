@@ -114,6 +114,9 @@ public sealed class MultiProviderIsolationTests
         var scratch = provider.GetStorage("scratch");
         var location = new BlobLocation("bucket", "a.txt");
 
+        // The data plane never auto-creates containers, so provision the default store's container first.
+        await sp.GetRequiredService<IBlobContainerManager>().EnsureContainerAsync("bucket");
+
         // when
         await defaultStorage.UploadContentAsync(location, "hello");
 
