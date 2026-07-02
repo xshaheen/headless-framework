@@ -43,14 +43,20 @@ export function HookUploadCard({ id, file, onRemove }: HookUploadCardProps) {
     });
   }, [file, invalidateUploads, setUpload]);
 
-  const state = isSuccess ? "done" : error ? "error" : isAborted ? "paused" : isUploading ? "uploading" : "starting";
+  // isUploading is checked before error so a resumed/retrying upload shows "uploading" (and the Pause
+  // button) instead of the stale "Failed" state — use-tus's onStart resets isUploading but never clears
+  // error (only remove() does, which this card never calls).
+  const state = isSuccess ? "done" : isUploading ? "uploading" : error ? "error" : isAborted ? "paused" : "starting";
   const stateLabel = { done: "Completed", error: "Failed", paused: "Paused", uploading: "Uploading", starting: "Starting…" }[
     state
   ];
   const percent = formatPercent(isSuccess ? file.size : uploadedBytes, file.size);
 
   const handleCancel = () => {
-    void upload?.abort(true); // tus DELETE — the server discards the partial upload
+    // tus DELETE — the server discards the partial upload. abort(true) rejects with a DetailedError for
+    // any non-204 terminate response (e.g. an already-deleted 404) once retries are exhausted; catch it so
+    // a failed/duplicate cancel does not surface as an unhandled promise rejection.
+    upload?.abort(true).catch((err) => console.error("Failed to terminate upload", err));
     onRemove(id);
   };
 
