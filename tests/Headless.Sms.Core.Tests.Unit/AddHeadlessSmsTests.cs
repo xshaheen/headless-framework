@@ -60,7 +60,7 @@ public sealed class AddHeadlessSmsTests
         var act = () => services.AddHeadlessSms(static _ => { });
 
         // then
-        act.Should().Throw<InvalidOperationException>().WithMessage("*exactly one provider*");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*exactly one default provider*");
     }
 
     [Fact]
@@ -73,7 +73,7 @@ public sealed class AddHeadlessSmsTests
         var act = () => services.AddHeadlessSms(static setup => setup.UseNoop().UseNoop());
 
         // then
-        act.Should().Throw<InvalidOperationException>().WithMessage("*exactly one provider*");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*exactly one default provider*");
     }
 
     [Fact]
@@ -87,6 +87,6 @@ public sealed class AddHeadlessSmsTests
         var act = () => services.AddHeadlessSms(setup => setup.UseNoop());
 
         // then
-        act.Should().Throw<InvalidOperationException>().WithMessage("*exactly one provider*");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*already called on this service collection*");
     }
 }
