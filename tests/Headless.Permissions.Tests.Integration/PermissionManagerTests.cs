@@ -219,7 +219,7 @@ public sealed class PermissionManagerTests(PermissionsTestFixture fixture) : Per
     }
 
     [Fact]
-    public async Task should_serve_cached_permission_when_grant_is_deleted_directly_bypassing_the_manager()
+    public async Task should_invalidate_cached_permission_end_to_end_when_repository_deletes_grant()
     {
         // given
         await Fixture.ResetAsync();
@@ -254,12 +254,10 @@ public sealed class PermissionManagerTests(PermissionsTestFixture fixture) : Per
         // when
         await grantRepository.DeleteAsync(record!, AbortToken);
 
-        // then — deleting the grant straight from the repository bypasses IPermissionManager, so the store
-        // cache is NOT invalidated and the manager keeps reporting the grant it cached earlier (documented
-        // contract: callers must mutate through the manager for cache invalidation to fire).
+        // then
         (await permissionManager.GetAsync(permissionName, currentUser, cancellationToken: AbortToken))
             .IsGranted.Should()
-            .BeTrue();
+            .BeFalse();
     }
 
     [Fact]

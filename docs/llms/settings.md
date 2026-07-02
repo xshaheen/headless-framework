@@ -98,7 +98,7 @@ Define settings via `ISettingDefinitionProvider.Define()`. Read via `ISettingMan
 - For EF storage: register `AddDbContextFactory<TContext>()` and call `modelBuilder.AddHeadlessSettings(this)` in `OnModelCreating` before calling `setup.UseEntityFramework<TContext>()`. The `(SettingsStorageOptions)` overload exists when you already hold the options object.
 - Required services before `AddHeadlessSettings(...)`: `TimeProvider`, caching (`ICache`), distributed lock (`IDistributedLock`), and `IStringEncryptionService`. The core throws `InvalidOperationException` on startup if encryption is missing.
 - `DeleteAsync(providerName, providerKey)` removes all setting values for a given provider and key — use it when cleaning up a deleted tenant or user.
-- Bypassing `ISettingManager` to write directly to `ISettingValueRecordRepository` will not invalidate cached values. Always write through `ISettingManager`.
+- Both `ISettingManager` and direct `ISettingValueRecordRepository` writes invalidate cached values (the repository removes the affected key after `SaveChangesAsync`). Only writes that bypass the repository entirely (raw SQL, direct `DbContext`) leave the cache stale.
 - `SettingDefinition.IsInherited = false` disables fallback for that setting: if no value exists at the requested provider, `null` is returned regardless of lower-priority providers.
 - Custom value providers must implement `ISettingValueReadProvider` (read-only) or `ISettingValueProvider` (read-write). Register with `services.AddSettingValueProvider<T>()`. The last-registered provider has the highest resolution priority.
 
@@ -118,7 +118,7 @@ The *static store* (`IStaticSettingDefinitionStore`) builds the setting catalog 
 
 ### Setting Value Caching
 
-`SettingValueStore` caches resolved setting values to avoid repeated database reads. The cache is backed by the registered `ICache`. When `ISettingManager.SetAsync` or `DeleteAsync` writes or removes a value, `SettingValueStore` updates or evicts the affected cache entries directly through `ICache` (a distributed cache propagates the eviction across nodes via `CacheInvalidationMessage`). Bypassing `ISettingManager` to write values directly to the repository breaks this invalidation path.
+`SettingValueStore` caches resolved setting values to avoid repeated database reads. The cache is backed by the registered `ICache`. When `ISettingManager.SetAsync` or `DeleteAsync` writes or removes a value, `SettingValueStore` updates or evicts the affected cache entries directly through `ICache` (a distributed cache propagates the eviction across nodes via `CacheInvalidationMessage`). Direct `ISettingValueRecordRepository` writes also evict the affected cache entry (removed after `SaveChangesAsync`), so a repository-level write is reflected on the next read. Only writes that bypass the repository entirely (raw SQL, direct `DbContext`) leave the cache stale.
 
 ### Startup Initialization
 
