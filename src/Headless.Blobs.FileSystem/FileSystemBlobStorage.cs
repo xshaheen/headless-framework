@@ -282,7 +282,7 @@ public sealed class FileSystemBlobStorage : IBlobStorage
         cancellationToken.ThrowIfCancellationRequested();
 
         var (_, _, sourcePath) = _ResolveLocation(source);
-        var (_, _, destinationPath) = _ResolveLocation(destination);
+        var (destinationContainer, _, destinationPath) = _ResolveLocation(destination);
 
         if (string.Equals(sourcePath, destinationPath, StringComparison.Ordinal))
         {
@@ -295,6 +295,15 @@ public sealed class FileSystemBlobStorage : IBlobStorage
         if (!File.Exists(sourcePath))
         {
             return ValueTask.FromResult(false);
+        }
+
+        // Same data-plane rule as UploadAsync: never auto-create the top-level container. Without this guard the
+        // intermediate-directory creation below would silently provision the destination container.
+        if (!Directory.Exists(_ContainerDirectory(destinationContainer)))
+        {
+            throw new DirectoryNotFoundException(
+                $"Blob container '{destinationContainer}' does not exist. Ensure it through IBlobContainerManager before copying."
+            );
         }
 
         var destinationDirectory = Path.GetDirectoryName(destinationPath);

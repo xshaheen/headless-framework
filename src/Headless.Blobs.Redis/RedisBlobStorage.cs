@@ -560,7 +560,7 @@ public sealed class RedisBlobStorage : IBlobStorage
 
         var stream = new MemoryStream(fileContent!);
 
-        return new BlobDownloadResult(stream, location.Path, blobInfo?.Metadata);
+        return new BlobDownloadResult(stream, location.Path, BlobStorageHelpers.ToUserMetadata(blobInfo?.Metadata));
     }
 
     public async ValueTask<BlobInfo?> GetBlobInfoAsync(
@@ -588,7 +588,7 @@ public sealed class RedisBlobStorage : IBlobStorage
             Created = blobInfo.Created,
             Modified = blobInfo.Modified,
             Size = blobInfo.Size,
-            Metadata = blobInfo.Metadata,
+            Metadata = BlobStorageHelpers.ToUserMetadata(blobInfo.Metadata),
         };
     }
 
@@ -732,7 +732,7 @@ public sealed class RedisBlobStorage : IBlobStorage
                     Created = info.Created,
                     Modified = info.Modified,
                     Size = info.Size,
-                    Metadata = includeMetadata ? info.Metadata : null,
+                    Metadata = includeMetadata ? BlobStorageHelpers.ToUserMetadata(info.Metadata) : null,
                 }
             );
         }

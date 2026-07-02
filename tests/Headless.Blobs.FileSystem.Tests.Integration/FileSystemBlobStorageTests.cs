@@ -258,6 +258,26 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
     }
 
     [Fact]
+    public async Task copy_to_missing_container_throws_instead_of_provisioning_it()
+    {
+        await using var storage = GetStorage();
+        await ResetAsync(storage);
+
+        var source = new BlobLocation(ContainerName, "copy-source.txt");
+        await storage.UploadContentAsync(source, "payload", AbortToken);
+
+        var missingContainer = "missing-" + Guid.NewGuid().ToString("N");
+        var destination = new BlobLocation(missingContainer, "copy-target.txt");
+
+        var act = async () => await storage.CopyAsync(source, destination, AbortToken);
+
+        // Copy is a data-plane operation: like UploadAsync it must refuse — not silently provision — a destination
+        // container that was never ensured through IBlobContainerManager.
+        await act.Should().ThrowAsync<DirectoryNotFoundException>();
+        Directory.Exists(Path.Combine(_baseDirectoryPath, missingContainer)).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task container_manager_rejects_container_that_normalizes_to_storage_root()
     {
         var manager = GetContainerManager();

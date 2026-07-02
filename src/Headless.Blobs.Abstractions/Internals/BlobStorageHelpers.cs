@@ -146,9 +146,10 @@ public static class BlobStorageHelpers
     /// <see cref="BlobBulkResult"/> per input indexed to its enumeration position (so <c>results[i]</c> always
     /// describes <c>items[i]</c> even though the parallel bodies start out of order). For each item it builds the
     /// validated <see cref="BlobLocation"/> from <paramref name="container"/> + <paramref name="pathSelector"/>, runs
-    /// <paramref name="body"/>, and records <c>Ok(value)</c>; an unaddressable key or any non-cancellation throw fails
-    /// that one item (<c>Fail</c>) without aborting the batch. This is the shared orchestration for the providers'
-    /// <c>BulkUpload</c>/<c>BulkDelete</c> per-item paths.
+    /// <paramref name="body"/>, and records <c>Ok(value)</c>; an unaddressable key or any throw other than the
+    /// caller's cancellation — including a backend-internal timeout <see cref="OperationCanceledException"/> that does
+    /// not carry the caller's token — fails that one item (<c>Fail</c>) without aborting the batch. This is the shared
+    /// orchestration for the providers' <c>BulkUpload</c>/<c>BulkDelete</c> per-item paths.
     /// </summary>
     public static async ValueTask<IReadOnlyList<BlobBulkResult>> RunBulkAsync<T>(
         string container,
@@ -191,7 +192,15 @@ public static class BlobStorageHelpers
                         var value = await body(location, item, ct).ConfigureAwait(false);
                         results[i] = new BlobBulkResult(location, Result<bool, Exception>.Ok(value));
                     }
-                    catch (Exception e) when (e is not OperationCanceledException)
+                    catch (OperationCanceledException oce)
+                        when (oce.CancellationToken == cancellationToken || oce.CancellationToken == ct)
+                    {
+                        // Only the caller's cancellation aborts the batch (ct is the loop token linked to it). A
+                        // backend-internal timeout also surfaces as an OCE (e.g. HttpClient's TaskCanceledException)
+                        // but carries a foreign/default token — that is the item's failure, not a batch abort.
+                        throw;
+                    }
+                    catch (Exception e)
                     {
                         results[i] = new BlobBulkResult(container, path, Result<bool, Exception>.Fail(e));
                     }

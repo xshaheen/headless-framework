@@ -115,15 +115,57 @@ public sealed class AwsBlobStorageEngineTests : TestBase
     [Fact]
     public async Task bulk_upload_propagates_cancellation()
     {
+        // Cooperative caller cancellation: the caller's token fires mid-flight and the SDK throws an OCE carrying
+        // it. Only that shape aborts the batch — a foreign/token-less OCE is a per-item failure (see
+        // bulk_upload_records_backend_timeout_cancellation_as_that_items_failure).
+        using var cts = new CancellationTokenSource();
+
         _s3.PutObjectAsync(Arg.Any<PutObjectRequest>(), Arg.Any<CancellationToken>())
-            .ThrowsAsync(new OperationCanceledException());
+            .Returns(_ =>
+            {
+                cts.Cancel();
+
+                return Task.FromException<PutObjectResponse>(new OperationCanceledException(cts.Token));
+            });
 
         var sut = _CreateSut();
         IReadOnlyCollection<BlobUploadRequest> blobs = [new("cancel.txt", new MemoryStream("x"u8.ToArray()))];
 
-        var act = async () => await sut.BulkUploadAsync("bucket", blobs, AbortToken);
+        var act = async () => await sut.BulkUploadAsync("bucket", blobs, cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task bulk_upload_records_backend_timeout_cancellation_as_that_items_failure()
+    {
+        // A token-less TaskCanceledException is a backend-internal timeout (HttpClient's shape), not the caller's
+        // cancellation: it must fail only the item it hit, leaving the rest of the batch to complete.
+        using var cts = new CancellationTokenSource();
+
+        _s3.PutObjectAsync(Arg.Any<PutObjectRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+                ci.Arg<PutObjectRequest>().Key == "timeout.txt"
+                    ? Task.FromException<PutObjectResponse>(new TaskCanceledException())
+                    : Task.FromResult(new PutObjectResponse { HttpStatusCode = HttpStatusCode.OK })
+            );
+
+        var sut = _CreateSut();
+
+        IReadOnlyCollection<BlobUploadRequest> blobs =
+        [
+            new("timeout.txt", new MemoryStream("x"u8.ToArray())),
+            new("ok.txt", new MemoryStream("x"u8.ToArray())),
+        ];
+
+        var results = await sut.BulkUploadAsync("bucket", blobs, cts.Token);
+
+        results.Should().HaveCount(2);
+        results[0].Path.Should().Be("timeout.txt");
+        results[0].Result.IsFailure.Should().BeTrue();
+        results[0].Result.Error.Should().BeOfType<TaskCanceledException>();
+        results[1].Path.Should().Be("ok.txt");
+        results[1].Result.Value.Should().BeTrue();
     }
 
     [Fact]
@@ -199,14 +241,23 @@ public sealed class AwsBlobStorageEngineTests : TestBase
     [Fact]
     public async Task bulk_delete_propagates_cancellation()
     {
+        // Cooperative caller cancellation, mirroring bulk_upload_propagates_cancellation: the OCE carries the
+        // caller's fired token.
+        using var cts = new CancellationTokenSource();
+
         _s3.GetObjectMetadataAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(new GetObjectMetadataResponse { HttpStatusCode = HttpStatusCode.OK });
         _s3.DeleteObjectsAsync(Arg.Any<DeleteObjectsRequest>(), Arg.Any<CancellationToken>())
-            .ThrowsAsync(new OperationCanceledException());
+            .Returns(_ =>
+            {
+                cts.Cancel();
+
+                return Task.FromException<DeleteObjectsResponse>(new OperationCanceledException(cts.Token));
+            });
 
         var sut = _CreateSut();
 
-        var act = async () => await sut.BulkDeleteAsync("bucket", ["cancel.txt"], AbortToken);
+        var act = async () => await sut.BulkDeleteAsync("bucket", ["cancel.txt"], cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
