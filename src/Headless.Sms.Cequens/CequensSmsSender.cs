@@ -17,8 +17,10 @@ namespace Headless.Sms.Cequens;
  */
 internal sealed class CequensSmsSender(
     IHttpClientFactory httpClientFactory,
+    string httpClientName,
     TimeProvider timeProvider,
-    IOptions<CequensSmsOptions> optionsAccessor,
+    IOptionsMonitor<CequensSmsOptions> optionsMonitor,
+    string? optionsName,
     ILogger<CequensSmsSender> logger
 ) : ISmsSender, IBulkSmsSender, IDisposable
 {
@@ -28,7 +30,9 @@ internal sealed class CequensSmsSender(
         TypeInfoResolver = CequensJsonSerializerContext.Default,
     };
 
-    private readonly CequensSmsOptions _options = optionsAccessor.Value;
+    // Snapshot for this instance's options name — never CurrentValue, which binds the default options and
+    // would bleed configuration across keyed instances.
+    private readonly CequensSmsOptions _options = optionsMonitor.Get(optionsName);
     private readonly SemaphoreSlim _tokenLock = new(1, 1);
 
     public async ValueTask<SendSingleSmsResponse> SendAsync(
@@ -107,7 +111,7 @@ internal sealed class CequensSmsSender(
         CancellationToken cancellationToken
     )
     {
-        using var httpClient = httpClientFactory.CreateClient(SetupCequens.HttpClientName);
+        using var httpClient = httpClientFactory.CreateClient(httpClientName);
 
         var apiRequest = new SendSmsRequest
         {

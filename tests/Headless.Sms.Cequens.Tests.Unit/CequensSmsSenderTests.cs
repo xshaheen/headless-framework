@@ -27,7 +27,7 @@ public sealed class CequensSmsSenderTests : TestBase, IClassFixture<SmsWireMockF
 
     private CequensSmsSender _CreateSender(FakeTimeProvider time, string? staticToken = null)
     {
-        var options = Options.Create(
+        var options = new OptionsMonitorWrapper<CequensSmsOptions>(
             new CequensSmsOptions
             {
                 SingleSmsEndpoint = $"{_fixture.BaseUrl}/sms",
@@ -39,7 +39,14 @@ public sealed class CequensSmsSenderTests : TestBase, IClassFixture<SmsWireMockF
             }
         );
 
-        return new CequensSmsSender(_fixture.HttpClientFactory, time, options, NullLogger<CequensSmsSender>.Instance);
+        return new CequensSmsSender(
+            _fixture.HttpClientFactory,
+            SetupCequens.HttpClientName,
+            time,
+            options,
+            optionsName: null,
+            NullLogger<CequensSmsSender>.Instance
+        );
     }
 
     private void _StubTokenOk(string token)
@@ -194,7 +201,7 @@ public sealed class CequensSmsSenderTests : TestBase, IClassFixture<SmsWireMockF
     public async Task should_classify_resilience_rejections_as_transient(string rejectionKind)
     {
         var exception = ResilienceRejections.Create(rejectionKind);
-        var options = Options.Create(
+        var options = new OptionsMonitorWrapper<CequensSmsOptions>(
             new CequensSmsOptions
             {
                 SingleSmsEndpoint = "http://localhost:1/sms",
@@ -207,8 +214,10 @@ public sealed class CequensSmsSenderTests : TestBase, IClassFixture<SmsWireMockF
         );
         using var sender = new CequensSmsSender(
             new ThrowingHttpClientFactory(exception),
+            SetupCequens.HttpClientName,
             new FakeTimeProvider(),
             options,
+            optionsName: null,
             NullLogger<CequensSmsSender>.Instance
         );
 
