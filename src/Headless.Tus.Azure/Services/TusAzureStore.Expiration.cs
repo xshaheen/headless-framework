@@ -110,7 +110,9 @@ public sealed partial class TusAzureStore : ITusExpirationStore
     /// uploads routinely carry a past expiration. They are excluded here (matching
     /// <c>TusDiskStore</c>) so cleanup can never destroy data the application has not consumed
     /// yet. An upload with no declared length (Creation-Defer-Length in progress) counts as
-    /// incomplete.
+    /// incomplete. A cancelled <paramref name="cancellationToken"/> returns the files found so
+    /// far instead of throwing (<c>TusDiskStore</c> parity: the caller is typically a cleanup job
+    /// shutting down, and the next pass picks up the remainder).
     /// </remarks>
     public async Task<IEnumerable<string>> GetExpiredFilesAsync(CancellationToken cancellationToken)
     {
@@ -154,6 +156,10 @@ public sealed partial class TusAzureStore : ITusExpirationStore
                 }
             }
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Cleanup-job shutdown: return what was found so far rather than throwing.
+        }
         catch (Exception e)
         {
             _logger.GetExpiredFilesFailed(e);
@@ -174,7 +180,11 @@ public sealed partial class TusAzureStore : ITusExpirationStore
     /// <remarks>
     /// Individual deletion failures are logged at <c>Error</c> level and do not abort the
     /// remaining deletions. The method always returns the count of files that were actually
-    /// removed rather than throwing on partial failure.
+    /// removed rather than throwing on partial failure. Deletions run on
+    /// <c>CancellationToken.None</c> (<c>TusDiskStore</c> parity, and the store's mutations-are-
+    /// must-complete policy): once a file is enumerated as expired, its delete finishes even when
+    /// the caller's token cancels mid-pass — otherwise a shutdown would abandon the remainder
+    /// with spurious per-file errors. The token still bounds the enumeration itself.
     /// </remarks>
     public async Task<int> RemoveExpiredFilesAsync(CancellationToken cancellationToken)
     {
@@ -185,7 +195,7 @@ public sealed partial class TusAzureStore : ITusExpirationStore
         {
             try
             {
-                await DeleteFileAsync(fileId, cancellationToken).ConfigureAwait(false);
+                await DeleteFileAsync(fileId, CancellationToken.None).ConfigureAwait(false);
                 removedCount++;
             }
             catch (Exception e)

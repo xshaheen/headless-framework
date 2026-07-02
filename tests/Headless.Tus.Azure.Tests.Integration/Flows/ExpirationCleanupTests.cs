@@ -287,6 +287,26 @@ public sealed class ExpirationCleanupTests : TestBase
         expiredFiles.Should().NotContain(activeFileId);
     }
 
+    /* Test: cancellation during a cleanup pass degrades gracefully */
+
+    [Fact]
+    public async Task should_return_partial_results_instead_of_throwing_when_cancelled()
+    {
+        // given - a cleanup pass whose token is already cancelled (host shutdown mid-pass);
+        // TusDiskStore parity: the enumeration returns what it found so far and never throws,
+        // so the service exits quietly and the next pass reclaims the remainder
+        using var cancelled = new CancellationTokenSource();
+        await cancelled.CancelAsync();
+
+        // when
+        var listAct = async () => await _store.GetExpiredFilesAsync(cancelled.Token);
+        var removeAct = async () => _ = await _store.RemoveExpiredFilesAsync(cancelled.Token);
+
+        // then
+        await listAct.Should().NotThrowAsync();
+        await removeAct.Should().NotThrowAsync();
+    }
+
     private async Task<string> _CreateAndUploadFileAsync(byte[] content)
     {
         var fileName = Faker.System.FileName();
