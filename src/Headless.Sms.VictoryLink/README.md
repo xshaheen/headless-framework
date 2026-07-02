@@ -37,6 +37,13 @@ builder.Services.AddHeadlessSms(setup =>
         options.Sender = "MyApp";
     })
 );
+
+// Named instance — an isolated HttpClient and options (keyed "otp"):
+builder.Services.AddHeadlessSms(setup =>
+{
+    setup.UseVictoryLink(builder.Configuration.GetSection("Sms:VictoryLink")); // default (required)
+    setup.AddNamed("otp", i => i.UseVictoryLink(builder.Configuration.GetSection("Sms:VictoryLinkOtp")));
+});
 ```
 
 ## Configuration
@@ -67,10 +74,10 @@ builder.Services.AddHeadlessSms(setup =>
 
 ## Dependencies
 
-- `Headless.Sms.Abstractions`
+- `Headless.Sms.Core`
 - `Microsoft.Extensions.Http.Resilience`
 
 ## Side Effects
 
-- Registers `ISmsSender` as singleton (`VictoryLinkSmsSender`).
-- Registers a named `HttpClient` (`Headless:VictoryLinkSms`) with a standard resilience handler (retry disabled).
+- Default: registers `ISmsSender` (`VictoryLinkSmsSender`) and `IBulkSmsSender` (forwarding to the same instance) as unkeyed singletons, plus a named `HttpClient` (`Headless:VictoryLinkSms`) with a standard resilience handler (retry disabled).
+- Named (`AddNamed(name, i => i.UseVictoryLink(…))`): registers a keyed `ISmsSender` and keyed `IBulkSmsSender` (same instance), named options, and a per-name `HttpClient` (`Headless:VictoryLinkSms:{name}`) with its own resilience pipeline.

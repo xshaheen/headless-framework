@@ -11,7 +11,6 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-#pragma warning disable CA1708 // multiple extension blocks emit marker members differing only by case
 namespace Headless.Caching;
 
 [PublicAPI]
@@ -35,7 +34,7 @@ public static class SetupRedisCache
                 services =>
                 {
                     services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(setupAction);
-                    services._AddCacheCore(isDefault: true);
+                    _AddCacheCore(services, isDefault: true);
                 }
             );
 
@@ -57,7 +56,7 @@ public static class SetupRedisCache
                 services =>
                 {
                     services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(setupAction);
-                    services._AddCacheCore(isDefault: true);
+                    _AddCacheCore(services, isDefault: true);
                 }
             );
 
@@ -80,7 +79,7 @@ public static class SetupRedisCache
                 services =>
                 {
                     services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(configuration);
-                    services._AddCacheCore(isDefault: true);
+                    _AddCacheCore(services, isDefault: true);
                 }
             );
 
@@ -103,7 +102,7 @@ public static class SetupRedisCache
                 services =>
                 {
                     services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(setupAction);
-                    services._AddCacheCore(isDefault: false);
+                    _AddCacheCore(services, isDefault: false);
                 }
             );
 
@@ -125,7 +124,7 @@ public static class SetupRedisCache
                 services =>
                 {
                     services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(setupAction);
-                    services._AddCacheCore(isDefault: false);
+                    _AddCacheCore(services, isDefault: false);
                 }
             );
 
@@ -147,7 +146,7 @@ public static class SetupRedisCache
                 services =>
                 {
                     services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(configuration);
-                    services._AddCacheCore(isDefault: false);
+                    _AddCacheCore(services, isDefault: false);
                 }
             );
 
@@ -155,6 +154,118 @@ public static class SetupRedisCache
         }
     }
 
+    internal static IServiceCollection AddNamedCacheCore(
+        IServiceCollection services,
+        HeadlessCacheInstanceBuilder instance
+    )
+    {
+        _AddSerializerCore(services);
+        services.AddCacheProvider();
+
+        var name = instance.Name;
+        var loaderKey = RedisCacheServiceKeys.NamedScriptsLoader(name);
+        var initializerKey = RedisCacheServiceKeys.NamedScriptsInitializer(name);
+
+        if (instance.SerializerFactory is { } serializerFactory)
+        {
+            services.AddKeyedSingleton<ISerializer>(name, (sp, _) => serializerFactory(sp));
+        }
+
+        services.TryAddKeyedSingleton(
+            loaderKey,
+            (sp, _) =>
+                new HeadlessRedisScriptsLoader(
+                    sp.GetRequiredService<IOptionsMonitor<RedisCacheOptions>>().Get(name).ConnectionMultiplexer,
+                    sp.GetService<TimeProvider>(),
+                    sp.GetService<ILogger<HeadlessRedisScriptsLoader>>()
+                )
+        );
+
+        // Per-instance scripts preload: the same shared singleton is forwarded as IInitializer and
+        // IHostedService (mirrors AddInitializerHostedService, which cannot be reused because each named
+        // instance needs its own initializer bound to its own loader).
+        services.TryAddKeyedSingleton(
+            initializerKey,
+            (sp, _) =>
+                new RedisCacheScriptsInitializer(sp.GetRequiredKeyedService<HeadlessRedisScriptsLoader>(loaderKey))
+        );
+        services.AddSingleton<IInitializer>(sp =>
+            sp.GetRequiredKeyedService<RedisCacheScriptsInitializer>(initializerKey)
+        );
+        services.AddSingleton<IHostedService>(sp =>
+            sp.GetRequiredKeyedService<RedisCacheScriptsInitializer>(initializerKey)
+        );
+
+        services.AddKeyedSingleton<ICache>(
+            name,
+            (sp, _) =>
+                new RedisCache(
+                    sp.GetKeyedService<ISerializer>(name) ?? sp.GetRequiredService<ISerializer>(),
+                    sp.GetRequiredService<TimeProvider>(),
+                    sp.GetRequiredService<IOptionsMonitor<RedisCacheOptions>>().Get(name),
+                    sp.GetRequiredKeyedService<HeadlessRedisScriptsLoader>(loaderKey),
+                    sp.GetService<ILogger<RedisCache>>(),
+                    sp.GetService<ICacheFactoryLockProvider>()
+                )
+        );
+
+        return services;
+    }
+
+    private static IServiceCollection _AddSerializerCore(IServiceCollection services)
+    {
+        services.TryAddSingleton<IJsonOptionsProvider>(new DefaultJsonOptionsProvider());
+        services.TryAddSingleton<IJsonSerializer>(sp => new SystemJsonSerializer(
+            sp.GetRequiredService<IJsonOptionsProvider>()
+        ));
+        services.TryAddSingleton<ISerializer>(sp => sp.GetRequiredService<IJsonSerializer>());
+
+        return services;
+    }
+
+    private static IServiceCollection _AddCacheCore(IServiceCollection services, bool isDefault)
+    {
+        _AddSerializerCore(services);
+        services.AddCacheProvider();
+
+        services.AddSingletonOptionValue<RedisCacheOptions>();
+        services.TryAddKeyedSingleton(
+            RedisCacheServiceKeys.ScriptsLoader,
+            (sp, _) =>
+                new HeadlessRedisScriptsLoader(
+                    sp.GetRequiredService<RedisCacheOptions>().ConnectionMultiplexer,
+                    sp.GetService<TimeProvider>(),
+                    sp.GetService<ILogger<HeadlessRedisScriptsLoader>>()
+                )
+        );
+        services.AddInitializerHostedService<RedisCacheScriptsInitializer>();
+        services.TryAddSingleton<IRemoteCache, RedisCache>();
+        services.TryAddSingleton(typeof(ICache<>), typeof(Cache<>));
+
+        if (!isDefault)
+        {
+            services.AddKeyedSingleton<ICache>(
+                CacheConstants.RemoteCacheProvider,
+                provider => provider.GetRequiredService<IRemoteCache>()
+            );
+        }
+        else
+        {
+            services.TryAddSingleton<ICache>(provider => provider.GetRequiredService<IRemoteCache>());
+            services.AddKeyedSingleton(CacheConstants.RemoteCacheProvider, x => x.GetRequiredService<ICache>());
+        }
+
+        return services;
+    }
+}
+
+/// <summary>
+/// Extension members for selecting the Redis cache as a named cache instance on
+/// <see cref="HeadlessCacheInstanceBuilder"/>.
+/// </summary>
+[PublicAPI]
+public static class SetupRedisCacheNamed
+{
     extension(HeadlessCacheInstanceBuilder instance)
     {
         /// <summary>
@@ -174,7 +285,7 @@ public static class SetupRedisCache
             instance.RegisterProvider(services =>
             {
                 services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(setupAction, name);
-                services._AddNamedCacheCore(instance);
+                SetupRedisCache.AddNamedCacheCore(services, instance);
             });
 
             return instance;
@@ -195,7 +306,7 @@ public static class SetupRedisCache
             instance.RegisterProvider(services =>
             {
                 services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(setupAction, name);
-                services._AddNamedCacheCore(instance);
+                SetupRedisCache.AddNamedCacheCore(services, instance);
             });
 
             return instance;
@@ -216,114 +327,10 @@ public static class SetupRedisCache
             instance.RegisterProvider(services =>
             {
                 services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(configuration, name);
-                services._AddNamedCacheCore(instance);
+                SetupRedisCache.AddNamedCacheCore(services, instance);
             });
 
             return instance;
-        }
-    }
-
-    extension(IServiceCollection services)
-    {
-        private IServiceCollection _AddNamedCacheCore(HeadlessCacheInstanceBuilder instance)
-        {
-            services._AddSerializerCore();
-            services.AddCacheProvider();
-
-            var name = instance.Name;
-            var loaderKey = RedisCacheServiceKeys.NamedScriptsLoader(name);
-            var initializerKey = RedisCacheServiceKeys.NamedScriptsInitializer(name);
-
-            if (instance.SerializerFactory is { } serializerFactory)
-            {
-                services.AddKeyedSingleton<ISerializer>(name, (sp, _) => serializerFactory(sp));
-            }
-
-            services.TryAddKeyedSingleton(
-                loaderKey,
-                (sp, _) =>
-                    new HeadlessRedisScriptsLoader(
-                        sp.GetRequiredService<IOptionsMonitor<RedisCacheOptions>>().Get(name).ConnectionMultiplexer,
-                        sp.GetService<TimeProvider>(),
-                        sp.GetService<ILogger<HeadlessRedisScriptsLoader>>()
-                    )
-            );
-
-            // Per-instance scripts preload: the same shared singleton is forwarded as IInitializer and
-            // IHostedService (mirrors AddInitializerHostedService, which cannot be reused because each named
-            // instance needs its own initializer bound to its own loader).
-            services.TryAddKeyedSingleton(
-                initializerKey,
-                (sp, _) =>
-                    new RedisCacheScriptsInitializer(sp.GetRequiredKeyedService<HeadlessRedisScriptsLoader>(loaderKey))
-            );
-            services.AddSingleton<IInitializer>(sp =>
-                sp.GetRequiredKeyedService<RedisCacheScriptsInitializer>(initializerKey)
-            );
-            services.AddSingleton<IHostedService>(sp =>
-                sp.GetRequiredKeyedService<RedisCacheScriptsInitializer>(initializerKey)
-            );
-
-            services.AddKeyedSingleton<ICache>(
-                name,
-                (sp, _) =>
-                    new RedisCache(
-                        sp.GetKeyedService<ISerializer>(name) ?? sp.GetRequiredService<ISerializer>(),
-                        sp.GetRequiredService<TimeProvider>(),
-                        sp.GetRequiredService<IOptionsMonitor<RedisCacheOptions>>().Get(name),
-                        sp.GetRequiredKeyedService<HeadlessRedisScriptsLoader>(loaderKey),
-                        sp.GetService<ILogger<RedisCache>>(),
-                        sp.GetService<ICacheFactoryLockProvider>()
-                    )
-            );
-
-            return services;
-        }
-
-        private IServiceCollection _AddSerializerCore()
-        {
-            services.TryAddSingleton<IJsonOptionsProvider>(new DefaultJsonOptionsProvider());
-            services.TryAddSingleton<IJsonSerializer>(sp => new SystemJsonSerializer(
-                sp.GetRequiredService<IJsonOptionsProvider>()
-            ));
-            services.TryAddSingleton<ISerializer>(sp => sp.GetRequiredService<IJsonSerializer>());
-
-            return services;
-        }
-
-        private IServiceCollection _AddCacheCore(bool isDefault)
-        {
-            services._AddSerializerCore();
-            services.AddCacheProvider();
-
-            services.AddSingletonOptionValue<RedisCacheOptions>();
-            services.TryAddKeyedSingleton(
-                RedisCacheServiceKeys.ScriptsLoader,
-                (sp, _) =>
-                    new HeadlessRedisScriptsLoader(
-                        sp.GetRequiredService<RedisCacheOptions>().ConnectionMultiplexer,
-                        sp.GetService<TimeProvider>(),
-                        sp.GetService<ILogger<HeadlessRedisScriptsLoader>>()
-                    )
-            );
-            services.AddInitializerHostedService<RedisCacheScriptsInitializer>();
-            services.TryAddSingleton<IRemoteCache, RedisCache>();
-            services.TryAddSingleton(typeof(ICache<>), typeof(Cache<>));
-
-            if (!isDefault)
-            {
-                services.AddKeyedSingleton<ICache>(
-                    CacheConstants.RemoteCacheProvider,
-                    provider => provider.GetRequiredService<IRemoteCache>()
-                );
-            }
-            else
-            {
-                services.TryAddSingleton<ICache>(provider => provider.GetRequiredService<IRemoteCache>());
-                services.AddKeyedSingleton(CacheConstants.RemoteCacheProvider, x => x.GetRequiredService<ICache>());
-            }
-
-            return services;
         }
     }
 }

@@ -11,7 +11,9 @@ namespace Headless.Sms.VictoryLink;
 
 internal sealed class VictoryLinkSmsSender(
     IHttpClientFactory httpClientFactory,
-    IOptions<VictoryLinkSmsOptions> optionsAccessor,
+    string httpClientName,
+    IOptionsMonitor<VictoryLinkSmsOptions> optionsMonitor,
+    string? optionsName,
     ILogger<VictoryLinkSmsSender> logger
 ) : ISmsSender, IBulkSmsSender
 {
@@ -21,8 +23,10 @@ internal sealed class VictoryLinkSmsSender(
         TypeInfoResolver = VictoryLinkJsonSerializerContext.Default,
     };
 
-    private readonly VictoryLinkSmsOptions _options = optionsAccessor.Value;
-    private readonly Uri _uri = new(optionsAccessor.Value.Endpoint);
+    // Snapshot for this instance's options name — never CurrentValue, which binds the default options and
+    // would bleed configuration across keyed instances.
+    private readonly VictoryLinkSmsOptions _options = optionsMonitor.Get(optionsName);
+    private readonly Uri _uri = new(optionsMonitor.Get(optionsName).Endpoint);
 
     public async ValueTask<SendSingleSmsResponse> SendAsync(
         SendSingleSmsRequest request,
@@ -96,7 +100,7 @@ internal sealed class VictoryLinkSmsSender(
             SmsReceiver = string.Join(',', destinations.Select(x => x.ToString())),
         };
 
-        using var httpClient = httpClientFactory.CreateClient(SetupVictoryLink.HttpClientName);
+        using var httpClient = httpClientFactory.CreateClient(httpClientName);
         using var response = await httpClient
             .PostAsJsonAsync(_uri, victoryLinkRequest, _JsonOptions, cancellationToken)
             .ConfigureAwait(false);

@@ -39,7 +39,7 @@ public sealed class VodafoneBulkSmsConformanceTests : SmsBulkSenderConformanceTe
 
     private VodafoneSmsSender _CreateSender(string endpoint)
     {
-        var options = Options.Create(
+        var options = new OptionsMonitorWrapper<VodafoneSmsOptions>(
             new VodafoneSmsOptions
             {
                 SendSmsEndpoint = endpoint,
@@ -50,7 +50,13 @@ public sealed class VodafoneBulkSmsConformanceTests : SmsBulkSenderConformanceTe
             }
         );
 
-        return new VodafoneSmsSender(_fixture.HttpClientFactory, options, NullLogger<VodafoneSmsSender>.Instance);
+        return new VodafoneSmsSender(
+            _fixture.HttpClientFactory,
+            SetupVodafone.HttpClientName,
+            options,
+            optionsName: null,
+            NullLogger<VodafoneSmsSender>.Instance
+        );
     }
 
     [Fact]

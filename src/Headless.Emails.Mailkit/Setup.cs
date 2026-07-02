@@ -8,12 +8,11 @@ using Microsoft.Extensions.ObjectPool;
 using Microsoft.Extensions.Options;
 using SmtpClient = MailKit.Net.Smtp.SmtpClient;
 
-#pragma warning disable CA1708 // multiple extension blocks emit marker members differing only by case
 namespace Headless.Emails.Mailkit;
 
 /// <summary>
-/// Extension members for selecting MailKit/SMTP as a Headless email provider — the default (unkeyed) sender
-/// on <see cref="HeadlessEmailsSetupBuilder"/> or a named sender on <see cref="HeadlessEmailInstanceBuilder"/>.
+/// Extension members for selecting MailKit/SMTP as the default (unkeyed) Headless email sender on
+/// <see cref="HeadlessEmailsSetupBuilder"/>.
 /// </summary>
 [PublicAPI]
 public static class SetupMailkit
@@ -32,7 +31,7 @@ public static class SetupMailkit
             Argument.IsNotNull(config);
 
             setup.RegisterDefaultProvider(services =>
-                _AddEmailsCore(
+                AddEmailsCore(
                     services,
                     name: null,
                     (s, n) => s.Configure<MailkitSmtpOptions, MailkitSmtpOptionsValidator>(config, n)
@@ -54,7 +53,7 @@ public static class SetupMailkit
             Argument.IsNotNull(configure);
 
             setup.RegisterDefaultProvider(services =>
-                _AddEmailsCore(
+                AddEmailsCore(
                     services,
                     name: null,
                     (s, n) => s.Configure<MailkitSmtpOptions, MailkitSmtpOptionsValidator>(configure, n)
@@ -76,7 +75,7 @@ public static class SetupMailkit
             Argument.IsNotNull(configure);
 
             setup.RegisterDefaultProvider(services =>
-                _AddEmailsCore(
+                AddEmailsCore(
                     services,
                     name: null,
                     (s, n) => s.Configure<MailkitSmtpOptions, MailkitSmtpOptionsValidator>(configure, n)
@@ -87,82 +86,6 @@ public static class SetupMailkit
         }
     }
 
-    extension(HeadlessEmailInstanceBuilder instance)
-    {
-        /// <summary>
-        /// Uses MailKit/SMTP for this named instance, binding <see cref="MailkitSmtpOptions"/> from the supplied
-        /// configuration section. The instance owns its own keyed SMTP client pool, pool policy, and named
-        /// options; it never shares them with the default sender or other named instances.
-        /// </summary>
-        /// <param name="config">The configuration section that maps to <see cref="MailkitSmtpOptions"/> properties.</param>
-        /// <returns>The instance builder for chaining.</returns>
-        /// <exception cref="ArgumentNullException">Thrown when <paramref name="config"/> is <see langword="null"/>.</exception>
-        public HeadlessEmailInstanceBuilder UseMailkit(IConfiguration config)
-        {
-            Argument.IsNotNull(config);
-
-            var name = instance.Name;
-
-            instance.RegisterProvider(services =>
-                _AddEmailsCore(
-                    services,
-                    name,
-                    (s, n) => s.Configure<MailkitSmtpOptions, MailkitSmtpOptionsValidator>(config, n)
-                )
-            );
-
-            return instance;
-        }
-
-        /// <summary>
-        /// Uses MailKit/SMTP for this named instance, configuring <see cref="MailkitSmtpOptions"/> via a setup
-        /// delegate.
-        /// </summary>
-        /// <param name="configure">Delegate that populates the options.</param>
-        /// <returns>The instance builder for chaining.</returns>
-        /// <exception cref="ArgumentNullException">Thrown when <paramref name="configure"/> is <see langword="null"/>.</exception>
-        public HeadlessEmailInstanceBuilder UseMailkit(Action<MailkitSmtpOptions> configure)
-        {
-            Argument.IsNotNull(configure);
-
-            var name = instance.Name;
-
-            instance.RegisterProvider(services =>
-                _AddEmailsCore(
-                    services,
-                    name,
-                    (s, n) => s.Configure<MailkitSmtpOptions, MailkitSmtpOptionsValidator>(configure, n)
-                )
-            );
-
-            return instance;
-        }
-
-        /// <summary>
-        /// Uses MailKit/SMTP for this named instance, configuring <see cref="MailkitSmtpOptions"/> via a setup
-        /// delegate that also receives the <see cref="IServiceProvider"/>.
-        /// </summary>
-        /// <param name="configure">Delegate that populates the options using DI-resolved services.</param>
-        /// <returns>The instance builder for chaining.</returns>
-        /// <exception cref="ArgumentNullException">Thrown when <paramref name="configure"/> is <see langword="null"/>.</exception>
-        public HeadlessEmailInstanceBuilder UseMailkit(Action<MailkitSmtpOptions, IServiceProvider> configure)
-        {
-            Argument.IsNotNull(configure);
-
-            var name = instance.Name;
-
-            instance.RegisterProvider(services =>
-                _AddEmailsCore(
-                    services,
-                    name,
-                    (s, n) => s.Configure<MailkitSmtpOptions, MailkitSmtpOptionsValidator>(configure, n)
-                )
-            );
-
-            return instance;
-        }
-    }
-
     /// <summary>
     /// Registers the MailKit email sender. <paramref name="name"/> <see langword="null"/> registers the default
     /// (unkeyed) pool, policy, and sender; a non-null name registers a keyed pool, policy, and sender plus named
@@ -170,7 +93,7 @@ public static class SetupMailkit
     /// keyed SMTP settings never bleed across instances — keyed DI does not cascade the key to ctor
     /// dependencies, and a keyed sender/policy must not read <c>CurrentValue</c> (which binds the default).
     /// </summary>
-    private static void _AddEmailsCore(
+    internal static void AddEmailsCore(
         IServiceCollection services,
         string? name,
         Action<IServiceCollection, string?> configureOptions
@@ -232,5 +155,89 @@ public static class SetupMailkit
                     sp.GetRequiredService<ILogger<MailkitEmailSender>>()
                 )
         );
+    }
+}
+
+/// <summary>
+/// Extension members for selecting MailKit/SMTP as a named Headless email sender on
+/// <see cref="HeadlessEmailInstanceBuilder"/>.
+/// </summary>
+[PublicAPI]
+public static class SetupMailkitNamed
+{
+    extension(HeadlessEmailInstanceBuilder instance)
+    {
+        /// <summary>
+        /// Uses MailKit/SMTP for this named instance, binding <see cref="MailkitSmtpOptions"/> from the supplied
+        /// configuration section. The instance owns its own keyed SMTP client pool, pool policy, and named
+        /// options; it never shares them with the default sender or other named instances.
+        /// </summary>
+        /// <param name="config">The configuration section that maps to <see cref="MailkitSmtpOptions"/> properties.</param>
+        /// <returns>The instance builder for chaining.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="config"/> is <see langword="null"/>.</exception>
+        public HeadlessEmailInstanceBuilder UseMailkit(IConfiguration config)
+        {
+            Argument.IsNotNull(config);
+
+            var name = instance.Name;
+
+            instance.RegisterProvider(services =>
+                SetupMailkit.AddEmailsCore(
+                    services,
+                    name,
+                    (s, n) => s.Configure<MailkitSmtpOptions, MailkitSmtpOptionsValidator>(config, n)
+                )
+            );
+
+            return instance;
+        }
+
+        /// <summary>
+        /// Uses MailKit/SMTP for this named instance, configuring <see cref="MailkitSmtpOptions"/> via a setup
+        /// delegate.
+        /// </summary>
+        /// <param name="configure">Delegate that populates the options.</param>
+        /// <returns>The instance builder for chaining.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="configure"/> is <see langword="null"/>.</exception>
+        public HeadlessEmailInstanceBuilder UseMailkit(Action<MailkitSmtpOptions> configure)
+        {
+            Argument.IsNotNull(configure);
+
+            var name = instance.Name;
+
+            instance.RegisterProvider(services =>
+                SetupMailkit.AddEmailsCore(
+                    services,
+                    name,
+                    (s, n) => s.Configure<MailkitSmtpOptions, MailkitSmtpOptionsValidator>(configure, n)
+                )
+            );
+
+            return instance;
+        }
+
+        /// <summary>
+        /// Uses MailKit/SMTP for this named instance, configuring <see cref="MailkitSmtpOptions"/> via a setup
+        /// delegate that also receives the <see cref="IServiceProvider"/>.
+        /// </summary>
+        /// <param name="configure">Delegate that populates the options using DI-resolved services.</param>
+        /// <returns>The instance builder for chaining.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="configure"/> is <see langword="null"/>.</exception>
+        public HeadlessEmailInstanceBuilder UseMailkit(Action<MailkitSmtpOptions, IServiceProvider> configure)
+        {
+            Argument.IsNotNull(configure);
+
+            var name = instance.Name;
+
+            instance.RegisterProvider(services =>
+                SetupMailkit.AddEmailsCore(
+                    services,
+                    name,
+                    (s, n) => s.Configure<MailkitSmtpOptions, MailkitSmtpOptionsValidator>(configure, n)
+                )
+            );
+
+            return instance;
+        }
     }
 }

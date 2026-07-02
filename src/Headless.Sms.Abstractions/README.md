@@ -10,6 +10,7 @@ Provides a provider-agnostic SMS sending API so application code stays decoupled
 
 - `ISmsSender` — single-recipient send: `SendAsync(SendSingleSmsRequest, CancellationToken) : ValueTask<SendSingleSmsResponse>`.
 - `IBulkSmsSender` — optional capability for multi-recipient sends: `SendBulkAsync(SendBulkSmsRequest, CancellationToken) : ValueTask<SendBulkSmsResponse>`. Implemented only by providers with native bulk support.
+- `ISmsSenderProvider` — resolves named senders by name: `GetSender(name)` (throws when unregistered) and `GetSenderOrNull(name)` (returns `null`). Backed by the container's keyed `ISmsSender` registrations; the concrete implementation and the `AddHeadlessSms` registration entry point live in `Headless.Sms.Core`.
 - `SendSingleSmsRequest` — single-recipient contract with `Destination` (one `SmsRequestDestination`), `Text`, optional `MessageId`, and optional `Properties`.
 - `SendBulkSmsRequest` — bulk contract with `Destinations` (list), `Text`, optional `MessageId`/`Properties`.
 - `SmsRequestDestination(int Code, string Number)` — phone number with separate country calling code and subscriber number.
@@ -57,4 +58,4 @@ None.
 
 ## Side Effects
 
-None.
+None. This is an abstractions package. Registration lives in `Headless.Sms.Core`.

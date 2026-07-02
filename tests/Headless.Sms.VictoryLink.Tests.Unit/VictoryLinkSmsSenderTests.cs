@@ -26,7 +26,7 @@ public sealed class VictoryLinkSmsSenderTests : TestBase, IClassFixture<SmsWireM
 
     private VictoryLinkSmsSender _CreateSender()
     {
-        var options = Options.Create(
+        var options = new OptionsMonitorWrapper<VictoryLinkSmsOptions>(
             new VictoryLinkSmsOptions
             {
                 Endpoint = $"{_fixture.BaseUrl}/send",
@@ -36,7 +36,13 @@ public sealed class VictoryLinkSmsSenderTests : TestBase, IClassFixture<SmsWireM
             }
         );
 
-        return new VictoryLinkSmsSender(_fixture.HttpClientFactory, options, NullLogger<VictoryLinkSmsSender>.Instance);
+        return new VictoryLinkSmsSender(
+            _fixture.HttpClientFactory,
+            SetupVictoryLink.HttpClientName,
+            options,
+            optionsName: null,
+            NullLogger<VictoryLinkSmsSender>.Instance
+        );
     }
 
     private void _StubSend(HttpStatusCode statusCode, string body)
@@ -95,7 +101,7 @@ public sealed class VictoryLinkSmsSenderTests : TestBase, IClassFixture<SmsWireM
     public async Task should_classify_resilience_rejections_as_transient(string rejectionKind)
     {
         var exception = ResilienceRejections.Create(rejectionKind);
-        var options = Options.Create(
+        var options = new OptionsMonitorWrapper<VictoryLinkSmsOptions>(
             new VictoryLinkSmsOptions
             {
                 Endpoint = "http://localhost:1/send",
@@ -106,7 +112,9 @@ public sealed class VictoryLinkSmsSenderTests : TestBase, IClassFixture<SmsWireM
         );
         var sender = new VictoryLinkSmsSender(
             new ThrowingHttpClientFactory(exception),
+            SetupVictoryLink.HttpClientName,
             options,
+            optionsName: null,
             NullLogger<VictoryLinkSmsSender>.Instance
         );
 

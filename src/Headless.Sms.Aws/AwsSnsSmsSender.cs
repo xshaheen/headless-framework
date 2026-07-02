@@ -11,11 +11,14 @@ namespace Headless.Sms.Aws;
 
 internal sealed class AwsSnsSmsSender(
     IAmazonSimpleNotificationService client,
-    IOptions<AwsSnsSmsOptions> optionsAccessor,
+    IOptionsMonitor<AwsSnsSmsOptions> optionsMonitor,
+    string? optionsName,
     ILogger<AwsSnsSmsSender> logger
 ) : ISmsSender
 {
-    private readonly AwsSnsSmsOptions _options = optionsAccessor.Value;
+    // Snapshot for this instance's options name — never CurrentValue, which binds the default options and
+    // would bleed configuration across keyed instances.
+    private readonly AwsSnsSmsOptions _options = optionsMonitor.Get(optionsName);
 
     public async ValueTask<SendSingleSmsResponse> SendAsync(
         SendSingleSmsRequest request,

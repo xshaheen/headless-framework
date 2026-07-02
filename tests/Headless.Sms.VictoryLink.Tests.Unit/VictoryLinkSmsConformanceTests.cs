@@ -38,7 +38,7 @@ public sealed class VictoryLinkSmsConformanceTests : SmsSenderConformanceTests, 
 
     private VictoryLinkSmsSender _CreateSender(string endpoint)
     {
-        var options = Options.Create(
+        var options = new OptionsMonitorWrapper<VictoryLinkSmsOptions>(
             new VictoryLinkSmsOptions
             {
                 Endpoint = endpoint,
@@ -48,7 +48,13 @@ public sealed class VictoryLinkSmsConformanceTests : SmsSenderConformanceTests, 
             }
         );
 
-        return new VictoryLinkSmsSender(_fixture.HttpClientFactory, options, NullLogger<VictoryLinkSmsSender>.Instance);
+        return new VictoryLinkSmsSender(
+            _fixture.HttpClientFactory,
+            SetupVictoryLink.HttpClientName,
+            options,
+            optionsName: null,
+            NullLogger<VictoryLinkSmsSender>.Instance
+        );
     }
 
     [Fact]

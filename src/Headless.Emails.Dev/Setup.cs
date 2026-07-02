@@ -3,13 +3,11 @@
 using Headless.Checks;
 using Microsoft.Extensions.DependencyInjection;
 
-#pragma warning disable CA1708 // multiple extension blocks emit marker members differing only by case
 namespace Headless.Emails.Dev;
 
 /// <summary>
-/// Extension members for selecting the development (file-writing) or no-op email providers — the default
-/// (unkeyed) sender on <see cref="HeadlessEmailsSetupBuilder"/> or a named sender on
-/// <see cref="HeadlessEmailInstanceBuilder"/>.
+/// Extension members for selecting the development (file-writing) or no-op email providers as the default
+/// (unkeyed) Headless email sender on <see cref="HeadlessEmailsSetupBuilder"/>.
 /// </summary>
 [PublicAPI]
 public static class SetupDevEmail
@@ -52,7 +50,15 @@ public static class SetupDevEmail
             return setup;
         }
     }
+}
 
+/// <summary>
+/// Extension members for selecting the development (file-writing) or no-op email providers as a named Headless
+/// email sender on <see cref="HeadlessEmailInstanceBuilder"/>.
+/// </summary>
+[PublicAPI]
+public static class SetupDevEmailNamed
+{
     extension(HeadlessEmailInstanceBuilder instance)
     {
         /// <summary>

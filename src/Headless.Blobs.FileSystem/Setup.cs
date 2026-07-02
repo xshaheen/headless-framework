@@ -7,7 +7,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
-#pragma warning disable CA1708 // multiple extension blocks emit marker members differing only by case
 namespace Headless.Blobs.FileSystem;
 
 /// <summary>Extension methods to register the file-system blob storage provider.</summary>
@@ -24,7 +23,7 @@ public static class SetupFileSystemBlob
             setup.RegisterDefaultProvider(services =>
             {
                 services.Configure<FileSystemBlobStorageOptions, FileSystemBlobStorageOptionsValidator>(setupAction);
-                services._AddBlobsDefaultCore();
+                _AddBlobsDefaultCore(services);
             });
 
             return setup;
@@ -40,7 +39,7 @@ public static class SetupFileSystemBlob
             setup.RegisterDefaultProvider(services =>
             {
                 services.Configure<FileSystemBlobStorageOptions, FileSystemBlobStorageOptionsValidator>(setupAction);
-                services._AddBlobsDefaultCore();
+                _AddBlobsDefaultCore(services);
             });
 
             return setup;
@@ -54,13 +53,47 @@ public static class SetupFileSystemBlob
             setup.RegisterDefaultProvider(services =>
             {
                 services.Configure<FileSystemBlobStorageOptions, FileSystemBlobStorageOptionsValidator>(configuration);
-                services._AddBlobsDefaultCore();
+                _AddBlobsDefaultCore(services);
             });
 
             return setup;
         }
     }
 
+    private static IServiceCollection _AddBlobsDefaultCore(IServiceCollection services)
+    {
+        services.AddSingleton<IBlobStorage>(serviceProvider => new FileSystemBlobStorage(
+            serviceProvider.GetRequiredService<IOptions<FileSystemBlobStorageOptions>>(),
+            new CrossOsNamingNormalizer(),
+            serviceProvider.GetService<ILogger<FileSystemBlobStorage>>() ?? NullLogger<FileSystemBlobStorage>.Instance
+        ));
+
+        return services;
+    }
+
+    internal static IServiceCollection AddBlobsNamedCore(IServiceCollection services, string name)
+    {
+        services.AddKeyedSingleton<IBlobStorage>(
+            name,
+            (serviceProvider, _) =>
+                new FileSystemBlobStorage(
+                    Options.Create(
+                        serviceProvider.GetRequiredService<IOptionsMonitor<FileSystemBlobStorageOptions>>().Get(name)
+                    ),
+                    new CrossOsNamingNormalizer(),
+                    serviceProvider.GetService<ILogger<FileSystemBlobStorage>>()
+                        ?? NullLogger<FileSystemBlobStorage>.Instance
+                )
+        );
+
+        return services;
+    }
+}
+
+/// <summary>Extension methods to register the file-system blob storage provider as a named store.</summary>
+[PublicAPI]
+public static class SetupFileSystemBlobNamed
+{
     extension(HeadlessBlobInstanceBuilder instance)
     {
         /// <summary>Uses the file system for this named instance, resolvable as a keyed <see cref="IBlobStorage"/> or through <see cref="IBlobStorageProvider"/>.</summary>
@@ -76,7 +109,7 @@ public static class SetupFileSystemBlob
                     setupAction,
                     name
                 );
-                services._AddBlobsNamedCore(name);
+                SetupFileSystemBlob.AddBlobsNamedCore(services, name);
             });
 
             return instance;
@@ -97,7 +130,7 @@ public static class SetupFileSystemBlob
                     setupAction,
                     name
                 );
-                services._AddBlobsNamedCore(name);
+                SetupFileSystemBlob.AddBlobsNamedCore(services, name);
             });
 
             return instance;
@@ -116,45 +149,10 @@ public static class SetupFileSystemBlob
                     configuration,
                     name
                 );
-                services._AddBlobsNamedCore(name);
+                SetupFileSystemBlob.AddBlobsNamedCore(services, name);
             });
 
             return instance;
-        }
-    }
-
-    extension(IServiceCollection services)
-    {
-        private IServiceCollection _AddBlobsDefaultCore()
-        {
-            services.AddSingleton<IBlobStorage>(serviceProvider => new FileSystemBlobStorage(
-                serviceProvider.GetRequiredService<IOptions<FileSystemBlobStorageOptions>>(),
-                new CrossOsNamingNormalizer(),
-                serviceProvider.GetService<ILogger<FileSystemBlobStorage>>()
-                    ?? NullLogger<FileSystemBlobStorage>.Instance
-            ));
-
-            return services;
-        }
-
-        private IServiceCollection _AddBlobsNamedCore(string name)
-        {
-            services.AddKeyedSingleton<IBlobStorage>(
-                name,
-                (serviceProvider, _) =>
-                    new FileSystemBlobStorage(
-                        Options.Create(
-                            serviceProvider
-                                .GetRequiredService<IOptionsMonitor<FileSystemBlobStorageOptions>>()
-                                .Get(name)
-                        ),
-                        new CrossOsNamingNormalizer(),
-                        serviceProvider.GetService<ILogger<FileSystemBlobStorage>>()
-                            ?? NullLogger<FileSystemBlobStorage>.Instance
-                    )
-            );
-
-            return services;
         }
     }
 }

@@ -57,7 +57,7 @@ public sealed class InfobipSmsConformanceTests : SmsSenderConformanceTests, ICla
 
     private InfobipSmsSender _CreateSender(string basePath)
     {
-        var options = Options.Create(
+        var options = new OptionsMonitorWrapper<InfobipSmsOptions>(
             new InfobipSmsOptions
             {
                 Sender = "SENDER",
@@ -66,7 +66,13 @@ public sealed class InfobipSmsConformanceTests : SmsSenderConformanceTests, ICla
             }
         );
 
-        return new InfobipSmsSender(_fixture.HttpClientFactory, options, NullLogger<InfobipSmsSender>.Instance);
+        return new InfobipSmsSender(
+            _fixture.HttpClientFactory,
+            SetupInfobip.HttpClientName,
+            options,
+            optionsName: null,
+            NullLogger<InfobipSmsSender>.Instance
+        );
     }
 
     [Fact]
