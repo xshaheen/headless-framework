@@ -194,6 +194,50 @@ public sealed class TusProtocolTests(TusAzureFixture fixture) : TestBase
         (await _GetCommittedBlockCountAsync(location)).Should().Be(1);
     }
 
+    [Fact]
+    public async Task patch_with_chunk_splitting_disabled_and_matching_checksum_commits_a_single_block()
+    {
+        // given - chunk splitting OFF plus an Upload-Checksum header: the no-split path stages the whole
+        // body as one deferred block and hashes it in a single pass, then VerifyChecksumAsync commits it
+        using var host = await _CreateHostAsync(enableChunkSplitting: false, blobDefaultChunkSize: 256);
+        using var client = host.GetTestClient();
+
+        var content = Faker.Random.Bytes(1024); // spans multiple 256-byte windows, yet stays one block
+        var location = await _CreateUploadAsync(client, content.Length, metadata: null);
+
+        // when - the PATCH carries the correct digest of the whole body
+        using var patched = await _PatchAsync(client, location, content, offset: 0, checksum: SHA256.HashData(content));
+
+        // then - the chunk is accepted and committed as exactly one block
+        patched.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        patched.Headers.GetValues("Upload-Offset").Should().ContainSingle().Which.Should().Be("1024");
+        (await _GetCommittedBlockCountAsync(location)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task patch_with_chunk_splitting_disabled_and_mismatching_checksum_discards_the_chunk()
+    {
+        // given - chunk splitting OFF with a digest that does not match the body
+        using var host = await _CreateHostAsync(enableChunkSplitting: false, blobDefaultChunkSize: 256);
+        using var client = host.GetTestClient();
+
+        var content = Faker.Random.Bytes(1024);
+        var location = await _CreateUploadAsync(client, content.Length, metadata: null);
+
+        // when - the single staged block fails verification
+        var wrongDigest = SHA256.HashData(Faker.Random.Bytes(1024));
+        using var patched = await _PatchAsync(client, location, content, offset: 0, checksum: wrongDigest);
+
+        // then - 460 (checksum mismatch); the deferred block is left uncommitted, so the offset stays 0
+        ((int)patched.StatusCode)
+            .Should()
+            .Be(460);
+        (await _GetCommittedBlockCountAsync(location)).Should().Be(0);
+
+        using var head = await _HeadAsync(client, location);
+        head.Headers.GetValues("Upload-Offset").Should().ContainSingle().Which.Should().Be("0");
+    }
+
     private async Task<int> _GetCommittedBlockCountAsync(string location)
     {
         var fileId = location[(location.LastIndexOf('/') + 1)..];
