@@ -266,4 +266,25 @@ internal static partial class SftpLoggerExtensions
         Message = "Container {Container} not found for deletion"
     )]
     public static partial void LogDeleteContainerNotFound(this ILogger logger, string container);
+
+    [LoggerMessage(
+        EventId = 33,
+        EventName = "MoveKeptDestinationSourceGone",
+        Level = LogLevel.Warning,
+        Message = "Move source blob {Path} was already gone after its delete faulted; kept the destination copy (a stale sidecar {SidecarPath} may remain)"
+    )]
+    public static partial void LogMoveKeptDestinationSourceGone(
+        this ILogger logger,
+        Exception exception,
+        string path,
+        string sidecarPath
+    );
+
+    [LoggerMessage(
+        EventId = 34,
+        EventName = "MoveSourceCheckFailed",
+        Level = LogLevel.Warning,
+        Message = "Could not verify move source {Path} after its delete faulted; skipping the destination rollback (both copies may remain)"
+    )]
+    public static partial void LogMoveSourceCheckFailed(this ILogger logger, Exception exception, string path);
 }

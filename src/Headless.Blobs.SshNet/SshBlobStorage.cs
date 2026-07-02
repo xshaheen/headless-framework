@@ -297,52 +297,44 @@ public sealed class SshBlobStorage(
     {
         // Move is a non-atomic copy-then-delete (folds L4) that rejects an occupied destination: an existing
         // destination is never overwritten (Move returns false), and the source is removed only after the copy
-        // succeeds. If deleting the source fails after a successful copy, a best-effort rollback deletes the
-        // destination copy to preserve the original — safe because reject-occupied guarantees that copy is the one
-        // this Move just created. The metadata sidecar moves with the blob (CopyAsync copies it, DeleteAsync removes
-        // the source's).
-        if (
-            string.Equals(_ResolvePaths(source).BlobPath, _ResolvePaths(destination).BlobPath, StringComparison.Ordinal)
-        )
+        // succeeds. The metadata sidecar moves with the blob (CopyAsync copies it, DeleteAsync removes the
+        // source's). The source delete is two-step (blob file, then sidecar), so a sidecar-second fault can leave
+        // the source blob already gone — the shared helper rolls the destination copy back only when the source
+        // blob is confirmed intact (see MoveViaCopyThenDeleteAsync).
+        var (sourceBlobPath, sourceSidecarPath) = _ResolvePaths(source);
+
+        if (string.Equals(sourceBlobPath, _ResolvePaths(destination).BlobPath, StringComparison.Ordinal))
         {
             // A resolved self-move is a no-op: copy-then-delete on the same path would zero then delete the blob.
             return true;
         }
 
-        if (await ExistsAsync(destination, cancellationToken).ConfigureAwait(false))
-        {
-            // Reject an occupied destination: Move never overwrites. Keeps the rollback below safe by construction —
-            // the compensating delete can only ever remove the copy this Move just created, never prior content.
-            return false;
-        }
+        return await BlobStorageHelpers
+            .MoveViaCopyThenDeleteAsync(
+                destinationExistsAsync: ct => ExistsAsync(destination, ct),
+                copyAsync: ct => CopyAsync(source, destination, ct),
+                deleteSourceAsync: ct => DeleteAsync(source, ct),
+                sourceExistsAsync: ct => ExistsAsync(source, ct),
+                rollbackDestinationAsync: async deleteException =>
+                {
+                    logger.LogMoveRollback(deleteException, source.ToString(), destination.ToString());
 
-        if (!await CopyAsync(source, destination, cancellationToken).ConfigureAwait(false))
-        {
-            return false;
-        }
-
-        try
-        {
-            await DeleteAsync(source, cancellationToken).ConfigureAwait(false);
-
-            return true;
-        }
-        catch (Exception e)
-        {
-            logger.LogMoveRollback(e, source.ToString(), destination.ToString());
-
-            // Compensating delete so the original is preserved; swallow a rollback failure (best-effort).
-            try
-            {
-                await DeleteAsync(destination, CancellationToken.None).ConfigureAwait(false);
-            }
-            catch (Exception rollbackError)
-            {
-                logger.LogMoveRollbackFailed(rollbackError, destination.ToString());
-            }
-
-            throw;
-        }
+                    // Compensating delete so the original is preserved; swallow a rollback failure (best-effort).
+                    try
+                    {
+                        await DeleteAsync(destination, CancellationToken.None).ConfigureAwait(false);
+                    }
+                    catch (Exception rollbackError)
+                    {
+                        logger.LogMoveRollbackFailed(rollbackError, destination.ToString());
+                    }
+                },
+                logDestinationKeptSourceGone: e =>
+                    logger.LogMoveKeptDestinationSourceGone(e, sourceBlobPath, sourceSidecarPath),
+                logSourceCheckFailed: e => logger.LogMoveSourceCheckFailed(e, sourceBlobPath),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     #endregion

@@ -315,9 +315,16 @@ public sealed class AwsBlobStorageEngineTests : TestBase
     [Fact]
     public async Task move_rolls_back_destination_copy_when_source_delete_throws()
     {
-        // Destination reads as absent so the move passes the reject-occupied pre-check and proceeds to copy+delete.
+        // Destination reads as absent so the move passes the reject-occupied pre-check and proceeds to copy+delete;
+        // the source reads as intact so the post-fault re-check confirms rolling back cannot lose data.
         _s3.GetObjectMetadataAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .ThrowsAsync(new AmazonS3Exception("not found") { StatusCode = HttpStatusCode.NotFound });
+            .Returns(ci =>
+                ci.ArgAt<string>(1) == "target.txt"
+                    ? Task.FromException<GetObjectMetadataResponse>(
+                        new AmazonS3Exception("not found") { StatusCode = HttpStatusCode.NotFound }
+                    )
+                    : Task.FromResult(new GetObjectMetadataResponse { HttpStatusCode = HttpStatusCode.OK })
+            );
 
         _s3.CopyObjectAsync(Arg.Any<CopyObjectRequest>(), Arg.Any<CancellationToken>())
             .Returns(new CopyObjectResponse { HttpStatusCode = HttpStatusCode.OK });

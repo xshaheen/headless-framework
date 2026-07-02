@@ -476,44 +476,28 @@ public sealed class AwsBlobStorage(
             return true;
         }
 
-        if (await _ExistsAsync(destinationBucket, destinationKey, cancellationToken).ConfigureAwait(false))
-        {
-            // Reject an occupied destination: Move never overwrites. Keeps the rollback below safe by construction —
-            // the compensating delete can only ever remove the copy this Move just created, never prior content.
-            return false;
-        }
+        // Non-atomic copy-then-delete; the shared helper owns reject-occupied and rolls the destination copy back
+        // only when the source delete throws with the source confirmed intact (see MoveViaCopyThenDeleteAsync).
+        return await BlobStorageHelpers
+            .MoveViaCopyThenDeleteAsync(
+                destinationExistsAsync: ct => _ExistsAsync(destinationBucket, destinationKey, ct),
+                copyAsync: ct => CopyAsync(source, destination, ct),
+                deleteSourceAsync: async ct =>
+                {
+                    var deleteRequest = new DeleteObjectRequest { BucketName = sourceBucket, Key = sourceKey };
+                    var deleteResponse = await s3.DeleteObjectAsync(deleteRequest, ct).ConfigureAwait(false);
 
-        // Non-atomic copy-then-delete with best-effort destination rollback if the source delete fails.
-        if (!await CopyAsync(source, destination, cancellationToken).ConfigureAwait(false))
-        {
-            return false;
-        }
-
-        var (oldBucket, oldKey) = BlobLocationResolver.Resolve(source, normalizer);
-
-        var deleteRequest = new DeleteObjectRequest { BucketName = oldBucket, Key = oldKey };
-        DeleteObjectResponse deleteResponse;
-
-        try
-        {
-            deleteResponse = await s3.DeleteObjectAsync(deleteRequest, cancellationToken).ConfigureAwait(false);
-        }
-        catch
-        {
-            await _RollbackMoveCopyAsync(destination).ConfigureAwait(false);
-            throw;
-        }
-
-        if (!deleteResponse.HttpStatusCode.IsSuccessStatusCode())
-        {
-            _logger.LogFailedToDeleteOriginalRollback(oldBucket, oldKey);
-
-            await _RollbackMoveCopyAsync(destination).ConfigureAwait(false);
-
-            return false;
-        }
-
-        return true;
+                    // S3 DeleteObject returns 204 even for a missing key (the SDK signals real failures by
+                    // throwing), so a source-already-absent race is unobservable here in practice.
+                    return deleteResponse.HttpStatusCode.IsSuccessStatusCode();
+                },
+                sourceExistsAsync: ct => _ExistsAsync(sourceBucket, sourceKey, ct),
+                rollbackDestinationAsync: _ => _RollbackMoveCopyAsync(destination),
+                logDestinationKeptSourceGone: e => _logger.LogMoveKeptDestinationSourceGone(e, sourceBucket, sourceKey),
+                logSourceCheckFailed: e => _logger.LogMoveSourceCheckFailed(e, sourceBucket, sourceKey),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     private async ValueTask _RollbackMoveCopyAsync(BlobLocation destination)
@@ -963,11 +947,16 @@ internal static partial class AwsBlobStorageLog
 
     [LoggerMessage(
         EventId = 4,
-        EventName = "FailedToDeleteOriginalRollback",
-        Level = LogLevel.Error,
-        Message = "Failed to delete original object {OldBucket}/{OldKey} after copy, rolling back"
+        EventName = "MoveKeptDestinationSourceGone",
+        Level = LogLevel.Warning,
+        Message = "Move source {Bucket}/{Key} was already gone after its delete faulted; kept the destination copy"
     )]
-    public static partial void LogFailedToDeleteOriginalRollback(this ILogger logger, string oldBucket, string oldKey);
+    public static partial void LogMoveKeptDestinationSourceGone(
+        this ILogger logger,
+        Exception exception,
+        string bucket,
+        string key
+    );
 
     [LoggerMessage(
         EventId = 5,
@@ -976,4 +965,17 @@ internal static partial class AwsBlobStorageLog
         Message = "Move rollback failed for {Blob}: could not delete the copied blob; a duplicate may remain"
     )]
     public static partial void LogMoveRollbackFailed(this ILogger logger, Exception exception, string blob);
+
+    [LoggerMessage(
+        EventId = 6,
+        EventName = "MoveSourceCheckFailed",
+        Level = LogLevel.Warning,
+        Message = "Could not verify move source {Bucket}/{Key} after its delete faulted; skipping the destination rollback (both copies may remain)"
+    )]
+    public static partial void LogMoveSourceCheckFailed(
+        this ILogger logger,
+        Exception exception,
+        string bucket,
+        string key
+    );
 }

@@ -202,6 +202,104 @@ public static class BlobStorageHelpers
         return results;
     }
 
+    /// <summary>
+    /// Shared control flow for providers whose Move is a non-atomic copy-then-delete (AWS, Azure, file system,
+    /// SFTP; Redis moves atomically server-side and does not use this). The caller resolves both endpoints and
+    /// short-circuits its provider-specific self-move check first — resolved-identifier equality is
+    /// backend-specific (bucket+key, container+key, full path) and is never derived here. The helper owns the
+    /// shared semantics: reject an occupied destination, copy, delete the source, and compensate on a faulted
+    /// source delete:
+    /// <list type="bullet">
+    /// <item><description>The source delete returning <see langword="false"/> (source already absent — a concurrent
+    /// delete raced the move) is a completed move: the destination holds the data, so it is kept and the move
+    /// reports success.</description></item>
+    /// <item><description>The source delete throwing triggers a rollback guarded by re-checking the source: the
+    /// destination copy is rolled back only when the source is confirmed intact; when the source is confirmed gone
+    /// the destination is the sole surviving copy and is kept; when the re-check itself fails, data-safety bias
+    /// skips the rollback (worst case two copies survive, never zero) and the delete exception propagates.
+    /// </description></item>
+    /// </list>
+    /// </summary>
+    /// <param name="destinationExistsAsync">Checks whether the destination blob already exists.</param>
+    /// <param name="copyAsync">Copies source to destination; <see langword="false"/> when the source is missing.</param>
+    /// <param name="deleteSourceAsync">Deletes the source blob; <see langword="false"/> when it was already absent.</param>
+    /// <param name="sourceExistsAsync">Re-checks the source blob after a faulted delete. Invoked with
+    /// <see cref="CancellationToken.None"/> so compensation still runs when the move itself was cancelled.</param>
+    /// <param name="rollbackDestinationAsync">Best-effort delete of the destination copy, receiving the
+    /// source-delete exception; it must swallow (and log) its own failure.</param>
+    /// <param name="logDestinationKeptSourceGone">Logs that a faulted source delete left the source gone and the
+    /// destination copy was kept (source residue such as a metadata sidecar may remain).</param>
+    /// <param name="logSourceCheckFailed">Logs that the source re-check failed and the rollback was skipped.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns><see langword="true"/> when the blob now lives at the destination and is gone from the source.</returns>
+    public static async ValueTask<bool> MoveViaCopyThenDeleteAsync(
+        Func<CancellationToken, ValueTask<bool>> destinationExistsAsync,
+        Func<CancellationToken, ValueTask<bool>> copyAsync,
+        Func<CancellationToken, ValueTask<bool>> deleteSourceAsync,
+        Func<CancellationToken, ValueTask<bool>> sourceExistsAsync,
+        Func<Exception, ValueTask> rollbackDestinationAsync,
+        Action<Exception> logDestinationKeptSourceGone,
+        Action<Exception> logSourceCheckFailed,
+        CancellationToken cancellationToken
+    )
+    {
+        if (await destinationExistsAsync(cancellationToken).ConfigureAwait(false))
+        {
+            // Reject an occupied destination: Move never overwrites. This also guarantees the compensating delete
+            // below can only ever remove the copy this Move just created, never prior destination content.
+            return false;
+        }
+
+        if (!await copyAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return false;
+        }
+
+        try
+        {
+            // The delete result is intentionally not acted on: false means the source was already absent (a
+            // concurrent delete raced the move), and the destination already holds the data — the move is complete.
+            // Rolling back here would destroy the only remaining copy.
+            _ = await deleteSourceAsync(cancellationToken).ConfigureAwait(false);
+
+            return true;
+        }
+        catch (Exception deleteException)
+        {
+            bool? sourceIntact = null;
+
+            try
+            {
+                // CancellationToken.None: compensation must still run when the move itself was cancelled.
+                sourceIntact = await sourceExistsAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception checkException)
+            {
+                logSourceCheckFailed(checkException);
+            }
+
+            if (sourceIntact is false)
+            {
+                // The delete faulted after the source blob was already removed (e.g. on sidecar residue): the
+                // destination is the sole surviving copy — keep it; rolling back would leave zero copies.
+                logDestinationKeptSourceGone(deleteException);
+
+                return true;
+            }
+
+            if (sourceIntact is true)
+            {
+                // Roll back only on a confirmed-intact source: the original remains authoritative, so deleting the
+                // copy this Move just created cannot lose data.
+                await rollbackDestinationAsync(deleteException).ConfigureAwait(false);
+            }
+
+            // sourceIntact is null (the re-check failed): data-safety bias — skip the rollback so the worst case is
+            // two surviving copies, never zero.
+            throw;
+        }
+    }
+
     /// <summary>Counts successful deletes and throws when a bulk delete returned per-entry failures.</summary>
     public static int CountDeletedOrThrow(IReadOnlyCollection<BlobBulkResult> results, string operation)
     {

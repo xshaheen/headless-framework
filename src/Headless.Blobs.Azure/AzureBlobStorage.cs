@@ -421,46 +421,22 @@ public sealed class AzureBlobStorage(
             return true;
         }
 
-        var destinationClient = blobServiceClient
-            .GetBlobContainerClient(destinationContainer)
-            .GetBlobClient(destinationKey);
-
-        if (await destinationClient.ExistsAsync(cancellationToken).ConfigureAwait(false))
-        {
-            // Reject an occupied destination: Move never overwrites. Keeps the rollback below safe by construction —
-            // the compensating delete can only ever remove the copy this Move just created, never prior content.
-            return false;
-        }
-
-        // Non-atomic copy-then-delete with best-effort destination rollback if deleting the source fails.
-        if (!await CopyAsync(source, destination, cancellationToken).ConfigureAwait(false))
-        {
-            return false;
-        }
-
-        bool deleted;
-
-        try
-        {
-            deleted = await DeleteAsync(source, cancellationToken).ConfigureAwait(false);
-        }
-        catch
-        {
-            // The copy already succeeded but deleting the source threw (e.g. cancellation or a transient error);
-            // roll back the copy so we never leave both source and destination behind.
-            await _RollbackMoveCopyAsync(destination).ConfigureAwait(false);
-
-            throw;
-        }
-
-        if (!deleted)
-        {
-            await _RollbackMoveCopyAsync(destination).ConfigureAwait(false);
-
-            return false;
-        }
-
-        return true;
+        // Non-atomic copy-then-delete; the shared helper owns reject-occupied, treats a false source delete (the
+        // source was already gone — a concurrent delete raced the move) as a completed move, and rolls the
+        // destination copy back only when the source delete throws with the source confirmed intact (see
+        // MoveViaCopyThenDeleteAsync).
+        return await BlobStorageHelpers
+            .MoveViaCopyThenDeleteAsync(
+                destinationExistsAsync: ct => ExistsAsync(destination, ct),
+                copyAsync: ct => CopyAsync(source, destination, ct),
+                deleteSourceAsync: ct => DeleteAsync(source, ct),
+                sourceExistsAsync: ct => ExistsAsync(source, ct),
+                rollbackDestinationAsync: async _ => await _RollbackMoveCopyAsync(destination).ConfigureAwait(false),
+                logDestinationKeptSourceGone: e => logger.LogMoveKeptDestinationSourceGone(e, source.ToString()),
+                logSourceCheckFailed: e => logger.LogMoveSourceCheckFailed(e, source.ToString()),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     // Best-effort rollback of a move's copy. Uses CancellationToken.None so cleanup still runs even when the move
@@ -825,4 +801,20 @@ internal static partial class AzureBlobStorageLog
         string container,
         string? prefix
     );
+
+    [LoggerMessage(
+        EventId = 5,
+        EventName = "MoveKeptDestinationSourceGone",
+        Level = LogLevel.Warning,
+        Message = "Move source {Blob} was already gone after its delete faulted; kept the destination copy"
+    )]
+    public static partial void LogMoveKeptDestinationSourceGone(this ILogger logger, Exception exception, string blob);
+
+    [LoggerMessage(
+        EventId = 6,
+        EventName = "MoveSourceCheckFailed",
+        Level = LogLevel.Warning,
+        Message = "Could not verify move source {Blob} after its delete faulted; skipping the destination rollback (both copies may remain)"
+    )]
+    public static partial void LogMoveSourceCheckFailed(this ILogger logger, Exception exception, string blob);
 }

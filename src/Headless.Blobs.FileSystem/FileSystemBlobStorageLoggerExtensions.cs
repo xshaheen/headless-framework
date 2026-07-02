@@ -66,4 +66,25 @@ internal static partial class FileSystemBlobStorageLoggerExtensions
         Message = "Rejected path traversal attempt on {ParamName}: resolved path '{ResolvedPath}' escapes the base directory"
     )]
     public static partial void LogPathTraversalRejected(this ILogger logger, string paramName, string resolvedPath);
+
+    [LoggerMessage(
+        EventId = 9,
+        EventName = "MoveKeptDestinationSourceGone",
+        Level = LogLevel.Warning,
+        Message = "Move source blob {Path} was already gone after its delete faulted; kept the destination copy (a stale sidecar {SidecarPath} may remain)"
+    )]
+    public static partial void LogMoveKeptDestinationSourceGone(
+        this ILogger logger,
+        Exception exception,
+        string path,
+        string sidecarPath
+    );
+
+    [LoggerMessage(
+        EventId = 10,
+        EventName = "MoveSourceCheckFailed",
+        Level = LogLevel.Warning,
+        Message = "Could not verify move source {Path} after its delete faulted; skipping the destination rollback (both copies may remain)"
+    )]
+    public static partial void LogMoveSourceCheckFailed(this ILogger logger, Exception exception, string path);
 }
