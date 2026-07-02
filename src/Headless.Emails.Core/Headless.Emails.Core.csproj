@@ -8,8 +8,12 @@
     <PackageReference Include="MailKit" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
     <ProjectReference Include="..\Headless.Emails.Abstractions\Headless.Emails.Abstractions.csproj" />
-    <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
+    <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Emails.Aws" />

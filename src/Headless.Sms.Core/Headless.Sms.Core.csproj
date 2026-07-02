@@ -7,7 +7,10 @@
     <InternalsVisibleTo Include="Headless.Sms.Core.Tests.Unit" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
     <ProjectReference Include="..\Headless.Sms.Abstractions\Headless.Sms.Abstractions.csproj" />
   </ItemGroup>
 </Project>
