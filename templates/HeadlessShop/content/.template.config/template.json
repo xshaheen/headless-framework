@@ -1,0 +1,34 @@
+{
+  "$schema": "http://json.schemastore.org/template",
+  "author": "Headless Framework",
+  "classifications": [
+    "Web",
+    "API",
+    "Headless",
+    "Modular Monolith"
+  ],
+  "identity": "Headless.Templates.HeadlessShop",
+  "name": "Headless Shop Capability Tour",
+  "shortName": "headless-shop",
+  "sourceName": "HeadlessShop",
+  "defaultName": "HeadlessShop",
+  "preferNameDirectory": true,
+  "tags": {
+    "language": "C#",
+    "type": "solution"
+  },
+  "primaryOutputs": [
+    {
+      "path": "HeadlessShop.slnx"
+    }
+  ],
+  "symbols": {
+    "HeadlessPackageVersion": {
+      "type": "parameter",
+      "datatype": "text",
+      "defaultValue": "0.4.14-preview.0.1",
+      "replaces": "0.4.14-preview.0.1",
+      "description": "Headless package version to pin in generated central package management."
+    }
+  }
+}
