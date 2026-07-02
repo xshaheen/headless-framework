@@ -3,6 +3,7 @@
 using System.Buffers;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
+using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using Azure.Storage.Blobs.Specialized;
 using Headless.Checks;
@@ -78,23 +79,69 @@ public sealed partial class TusAzureStore
             return 0;
         }
 
-        // ATOMIC: Commit blocks + update metadata in single operation for non-checksum uploads.
+        // Commit the staged blocks now (no checksum) or defer them for a later checksum-trailer
+        // verification. The commit / defer / rollback-offset protocol lives in one shared helper so the
+        // Stream and PipeReader append paths cannot diverge (see _CommitOrDeferChunkAsync).
+        var deferred = await _CommitOrDeferChunkAsync(
+                blobClient,
+                blockBlobClient,
+                azureFile,
+                committedBlocks,
+                chunkBlockIds,
+                blockToken,
+                chunkStartOffset: currentOffset,
+                hasher,
+                checksumAlgorithm: hasher is null ? null : stream.GetUploadChecksumInfo()!.Algorithm
+            )
+            .ConfigureAwait(false);
+
+        if (deferred)
+        {
+            _logger.StoredStreamChunkMetadata(fileId, chunkBlockIds.Count);
+        }
+
+        return bytesWritten;
+    }
+
+    /// <summary>
+    /// Commits the staged blocks now (no checksum) or defers them for a later checksum-trailer
+    /// verification, applying the must-complete (<see cref="CancellationToken.None"/>) commit and the
+    /// rollback-offset bookkeeping. Shared by both <c>AppendDataAsync</c> overloads so the
+    /// commit / defer / rollback contract has exactly one implementation and cannot diverge between the
+    /// <c>Stream</c> and <c>PipeReader</c> entry points.
+    /// </summary>
+    /// <returns>
+    /// <see langword="true"/> when the chunk was deferred (a checksum is pending verification);
+    /// <see langword="false"/> when the blocks were committed immediately.
+    /// </returns>
+    private static async Task<bool> _CommitOrDeferChunkAsync(
+        BlobClient blobClient,
+        BlockBlobClient blockBlobClient,
+        TusAzureFile azureFile,
+        List<BlobBlock> committedBlocks,
+        List<string> chunkBlockIds,
+        string blockToken,
+        long chunkStartOffset,
+        IncrementalHash? hasher,
+        string? checksumAlgorithm
+    )
+    {
         // Must-complete (CancellationToken.None): on client disconnect the request token is already
         // cancelled, but the received bytes have to become durable so the client resumes from them
         // instead of re-uploading (TusDiskStore parity: reads use the live token, writes use None).
-        if (hasher == null)
+        if (hasher is null)
         {
+            // No checksum: commit atomically. Record the pre-append offset as the rollback point — when
+            // the client sent Upload-Checksum as an HTTP trailer this store cannot see it during the
+            // append (no ChecksumAware wrapper), so the data commits now and VerifyChecksumAsync verifies
+            // — and possibly rolls back — the [LastChunkOffset, end) range afterwards. Also clear any
+            // stale checksum-tracking state from a previous failed verification.
             List<string> allBlockIds = [.. committedBlocks.Select(b => b.Name), .. chunkBlockIds];
             _EnsureWithinBlockLimit(allBlockIds.Count);
 
-            // Record the pre-append offset as the rollback point: when the client sent Upload-Checksum
-            // as an HTTP trailer, this store cannot see it during the append (no ChecksumAware wrapper),
-            // so the data commits now and VerifyChecksumAsync verifies — and possibly rolls back — the
-            // [LastChunkOffset, end) range afterwards. Also clear any stale checksum-tracking state from
-            // a previous failed verification.
             azureFile.Metadata.LastChunkBlocks = null;
             azureFile.Metadata.LastChunkChecksum = null;
-            azureFile.Metadata.LastChunkOffset = currentOffset;
+            azureFile.Metadata.LastChunkOffset = chunkStartOffset;
 
             // HttpHeaders must be re-supplied: Put Block List clears any x-ms-blob-* property omitted
             // from the request, which would wipe headers set at creation (custom content type, cache
@@ -108,28 +155,24 @@ public sealed partial class TusAzureStore
                 .CommitBlockListAsync(allBlockIds, options, CancellationToken.None)
                 .ConfigureAwait(false);
 
-            return bytesWritten;
+            return false;
         }
 
-        // Track the staged block range for this chunk (token + consecutive indices reconstruct the
-        // exact block IDs at commit time) - these are the blocks that will need to be committed or
-        // discarded. The digest is prefixed with the algorithm so VerifyChecksumAsync can confirm
-        // the requested algorithm matches the one actually used to stage the data.
-        var algorithm = stream.GetUploadChecksumInfo()!.Algorithm;
+        // With checksum: stage only and track the block range (token + consecutive indices reconstruct
+        // the exact block IDs at commit time) for a later VerifyChecksumAsync. The digest is prefixed
+        // with the algorithm so verification can confirm the requested algorithm matches the one used to
+        // stage the data. On disconnect the partial digest will not match the client's, so verification
+        // discards the staged blocks — which is why this metadata write itself must still complete.
         azureFile.Metadata.LastChunkBlocks = new TusStagedBlocks(
             blockToken,
             FirstIndex: committedBlocks.Count,
             chunkBlockIds.Count
         );
-        azureFile.Metadata.LastChunkChecksum = $"{algorithm}:{hasher.GetHashAndReset().ToBase64()}";
-        azureFile.Metadata.LastChunkOffset = currentOffset;
-        // Must-complete: on disconnect the partial digest will not match the client's, so
-        // verification discards the staged blocks — but only if this metadata write landed.
+        azureFile.Metadata.LastChunkChecksum = $"{checksumAlgorithm}:{hasher.GetHashAndReset().ToBase64()}";
+        azureFile.Metadata.LastChunkOffset = chunkStartOffset;
         await _UpdateMetadataAsync(blobClient, azureFile, CancellationToken.None).ConfigureAwait(false);
 
-        _logger.StoredStreamChunkMetadata(fileId, chunkBlockIds.Count);
-
-        return bytesWritten;
+        return true;
     }
 
     /// <summary>
