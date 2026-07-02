@@ -3,9 +3,6 @@
 using Headless.Checks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Polly.CircuitBreaker;
-using Polly.RateLimiting;
-using Polly.Timeout;
 using Twilio.Clients;
 using Twilio.Rest.Api.V2010.Account;
 using Twilio.Types;
@@ -72,12 +69,7 @@ internal sealed class TwilioSmsSender(
         {
             logger.LogSmsSendException(e, destinationCount: 1);
 
-            // The standard resilience pipeline surfaces its timeout, open-circuit, and rate-limiter
-            // rejections as Polly-specific exceptions; all are transport faults a retry may clear, so
-            // classify them as transient instead of letting them fall through as Unknown.
-            return e is TimeoutRejectedException or BrokenCircuitException or RateLimiterRejectedException
-                ? SendSingleSmsResponse.FromException(e, SmsFailureKind.Transient)
-                : SendSingleSmsResponse.FromException(e);
+            return SendSingleSmsResponse.FromException(e);
         }
     }
 }
