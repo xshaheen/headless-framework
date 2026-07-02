@@ -8,6 +8,7 @@ using Headless.Tus.Options;
 using Headless.Tus.Services;
 using Tests.TestSetup;
 using tusdotnet.Helpers;
+using TusAzureMetadata = Headless.Tus.Models.TusAzureMetadata;
 
 namespace Tests.Checksum;
 
@@ -22,6 +23,7 @@ namespace Tests.Checksum;
 public sealed class ChecksumTrailerTests : TestBase
 {
     private readonly TusAzureStore _store;
+    private readonly BlobContainerClient _containerClient;
     private const string _ContainerName = "tustrailer";
     private const string _BlobPrefix = "tustrailer/";
 
@@ -42,6 +44,7 @@ public sealed class ChecksumTrailerTests : TestBase
         };
 
         _store = new TusAzureStore(blobServiceClient, storeOptions, loggerFactory: LoggerFactory);
+        _containerClient = blobServiceClient.GetBlobContainerClient(_ContainerName);
     }
 
     [Fact]
@@ -225,6 +228,57 @@ public sealed class ChecksumTrailerTests : TestBase
         await using var downloaded = new MemoryStream();
         await contentStream.CopyToAsync(downloaded, AbortToken);
         downloaded.ToArray().Should().BeEquivalentTo(chunk1.Concat(retryChunk).ToArray());
+    }
+
+    [Fact]
+    public async Task verify_throws_when_committed_blocks_do_not_align_with_the_recorded_chunk_offset()
+    {
+        // given - a committed chunk split across several 256-byte blocks (boundaries at 256/512/700)
+        var content = Faker.Random.Bytes(700);
+        var fileId = await _store.CreateFileAsync(content.Length, metadata: null, AbortToken);
+
+        await using (var body = new MemoryStream(content))
+        {
+            await _store.AppendDataAsync(fileId, body, AbortToken);
+        }
+
+        // and - the recorded rollback offset is corrupted out-of-band to a value that lands mid-block
+        // (300 falls between the 256 and 512 boundaries), simulating drift between the committed Azure
+        // block boundaries and tus_last_chunk_offset
+        await _CorruptLastChunkOffsetAsync(fileId, offset: 300);
+
+        // when - a faulty-trailer fallback forces a rollback of the last chunk
+        var (algorithm, hash) = _GetTrailerFallbackSentinel();
+        var act = async () => await _store.VerifyChecksumAsync(fileId, algorithm, hash, AbortToken);
+
+        // then - the guard refuses to guess a rollback point and throws rather than corrupting the blob
+        (await act.Should().ThrowAsync<tusdotnet.Models.TusStoreException>())
+            .Which.Message.Should()
+            .Contain("do not align")
+            .And.Contain("300");
+
+        // and - the blob is left untouched (no partial/incorrect rollback committed)
+        (await _store.GetUploadOffsetAsync(fileId, AbortToken))
+            .Should()
+            .Be(content.Length);
+    }
+
+    /// <summary>
+    /// Overwrites <c>tus_last_chunk_offset</c> on the blob with a value that does not fall on a
+    /// committed block boundary, preserving every other metadata entry. Simulates the store's tracked
+    /// rollback point drifting out of alignment with the committed Azure block list.
+    /// </summary>
+    private async Task _CorruptLastChunkOffsetAsync(string fileId, long offset)
+    {
+        var blobClient = _containerClient.GetBlobClient(_BlobPrefix + fileId);
+        var properties = await blobClient.GetPropertiesAsync(cancellationToken: AbortToken);
+
+        var metadata = new Dictionary<string, string>(properties.Value.Metadata, StringComparer.OrdinalIgnoreCase)
+        {
+            [TusAzureMetadata.LastChunkOffsetKey] = offset.ToInvariantString(),
+        };
+
+        await blobClient.SetMetadataAsync(metadata, cancellationToken: AbortToken);
     }
 
     /// <summary>
