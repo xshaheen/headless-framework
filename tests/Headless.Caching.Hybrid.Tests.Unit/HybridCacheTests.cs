@@ -934,6 +934,33 @@ public sealed class HybridCacheTests : TestBase
 
     #endregion
 
+    #region Numeric Operations
+
+    [Fact]
+    public async Task should_seed_l1_with_zero_when_increment_total_reaches_zero()
+    {
+        // given — a decrement that brings the running total back to exactly 0 must keep 0 in L1, not evict it.
+        // Guards against treating the increment's new total of 0 as a "no-op" (the SetIfHigher/Lower difference
+        // convention) and removing the key from L1.
+        var (cache, l1, _, _) = _CreateCache();
+        await using var _ = cache;
+
+        var key = Faker.Random.AlphaNumeric(10);
+        await cache.IncrementAsync(key, 5L, TimeSpan.FromMinutes(5), AbortToken);
+
+        // when
+        var result = await cache.IncrementAsync(key, -5L, TimeSpan.FromMinutes(5), AbortToken);
+
+        // then
+        result.Should().Be(0L);
+
+        var l1Result = await l1.GetAsync<long>(key, AbortToken);
+        l1Result.HasValue.Should().BeTrue("a 0 total is a valid stored value, not a no-op signal");
+        l1Result.Value.Should().Be(0L);
+    }
+
+    #endregion
+
     #region Dispose
 
     [Fact]
@@ -1463,6 +1490,168 @@ public sealed class HybridCacheTests : TestBase
                 Arg.Any<PublishOptions?>(),
                 Arg.Any<CancellationToken>()
             );
+    }
+
+    [Fact]
+    public async Task should_wipe_l1_when_l2_remove_fails_in_breaker_only_mode()
+    {
+        // given — circuit breaker on, auto-recovery off (RecoveryQueue null). An L2 RemoveAsync failure must not
+        // leave this node's L1 serving the value the caller asked to remove. (re-review N1)
+        using var l2 = new TogglableRemoteCache(_timeProvider);
+        var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        var publisher = Substitute.For<IBus>();
+        publisher
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+
+        var cache = new HybridCache(
+            l1,
+            l2,
+            publisher,
+            new HybridCacheOptions { DistributedCacheCircuitBreakerDuration = TimeSpan.FromSeconds(30) },
+            timeProvider: _timeProvider
+        );
+        await using var _ = cache;
+
+        var key = Faker.Random.AlphaNumeric(10);
+        await cache.UpsertAsync(key, 7, TimeSpan.FromMinutes(5), AbortToken);
+        (await l1.GetAsync<int>(key, AbortToken)).HasValue.Should().BeTrue();
+
+        // when — the L2 remove throws
+        l2.FailWrites = true;
+        var act = async () => await cache.RemoveAsync(key, AbortToken);
+
+        // then — the failure surfaces, but L1 no longer serves the removed value
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        (await l1.GetAsync<int>(key, AbortToken))
+            .HasValue.Should()
+            .BeFalse("L1 must be wiped before the L2 failure is rethrown");
+    }
+
+    [Fact]
+    public async Task should_wipe_l1_when_l2_try_replace_if_equal_fails_in_breaker_only_mode()
+    {
+        // given — an L2 CAS failure leaves the outcome unknown (the write may have landed before the fault), so
+        // this node's L1 must stop serving the pre-replace value, mirroring RemoveIfEqualAsync. (review #1)
+        var (cache, l1, l2) = _CreateBreakerOnlyCache();
+        await using var _ = cache;
+
+        var key = Faker.Random.AlphaNumeric(10);
+        await cache.UpsertAsync(key, 7, TimeSpan.FromMinutes(5), AbortToken);
+        (await l1.GetAsync<int>(key, AbortToken)).HasValue.Should().BeTrue();
+
+        l2.FailWrites = true;
+        var act = async () => await cache.TryReplaceIfEqualAsync(key, 7, 8, TimeSpan.FromMinutes(5), AbortToken);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        (await l1.GetAsync<int>(key, AbortToken))
+            .HasValue.Should()
+            .BeFalse("L1 must be wiped before the L2 CAS failure is rethrown");
+    }
+
+    [Fact]
+    public async Task should_wipe_l1_when_l2_increment_fails_in_breaker_only_mode()
+    {
+        // given — a failed L2 numeric op has an unknown outcome; L1's copy may diverge from L2, so it is wiped
+        // and re-seeded from L2 on the next read. (review #1)
+        var (cache, l1, l2) = _CreateBreakerOnlyCache();
+        await using var _ = cache;
+
+        var key = Faker.Random.AlphaNumeric(10);
+        await cache.IncrementAsync(key, 7L, TimeSpan.FromMinutes(5), AbortToken);
+        (await l1.GetAsync<long>(key, AbortToken)).HasValue.Should().BeTrue();
+
+        l2.FailWrites = true;
+        var act = async () => await cache.IncrementAsync(key, 1L, TimeSpan.FromMinutes(5), AbortToken);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        (await l1.GetAsync<long>(key, AbortToken))
+            .HasValue.Should()
+            .BeFalse("L1 must be wiped before the L2 numeric-op failure is rethrown");
+    }
+
+    [Fact]
+    public async Task should_wipe_l1_when_l2_set_add_fails_in_breaker_only_mode()
+    {
+        // given — a failed L2 set mutation has an unknown outcome; the L1 set copy may diverge from L2. (review #1)
+        var (cache, l1, l2) = _CreateBreakerOnlyCache();
+        await using var _ = cache;
+
+        var key = Faker.Random.AlphaNumeric(10);
+        await cache.SetAddAsync(key, new[] { "a", "b" }, TimeSpan.FromMinutes(5), AbortToken);
+        (await l1.GetSetAsync<string>(key, cancellationToken: AbortToken)).HasValue.Should().BeTrue();
+
+        l2.FailWrites = true;
+        var act = async () => await cache.SetAddAsync(key, new[] { "c" }, TimeSpan.FromMinutes(5), AbortToken);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        (await l1.GetSetAsync<string>(key, cancellationToken: AbortToken))
+            .HasValue.Should()
+            .BeFalse("L1 must be wiped before the L2 set-mutation failure is rethrown");
+    }
+
+    [Fact]
+    public async Task should_wipe_l1_when_l2_set_remove_fails_in_breaker_only_mode()
+    {
+        // given — a failed L2 set mutation has an unknown outcome; the L1 set copy may diverge from L2. (review #1)
+        var (cache, l1, l2) = _CreateBreakerOnlyCache();
+        await using var _ = cache;
+
+        var key = Faker.Random.AlphaNumeric(10);
+        await cache.SetAddAsync(key, new[] { "a", "b" }, TimeSpan.FromMinutes(5), AbortToken);
+        (await l1.GetSetAsync<string>(key, cancellationToken: AbortToken)).HasValue.Should().BeTrue();
+
+        l2.FailWrites = true;
+        var act = async () => await cache.SetRemoveAsync(key, new[] { "a" }, TimeSpan.FromMinutes(5), AbortToken);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        (await l1.GetSetAsync<string>(key, cancellationToken: AbortToken))
+            .HasValue.Should()
+            .BeFalse("L1 must be wiped before the L2 set-mutation failure is rethrown");
+    }
+
+    [Fact]
+    public async Task should_wipe_l1_prefix_when_l2_remove_by_prefix_fails_in_breaker_only_mode()
+    {
+        // given — a failed L2 prefix sweep may have partially landed; this node must stop serving the matching
+        // L1 entries the caller asked to delete, mirroring RemoveAllAsync's catch. (review #2)
+        var (cache, l1, l2) = _CreateBreakerOnlyCache();
+        await using var _ = cache;
+
+        var prefix = Faker.Random.AlphaNumeric(10) + ":";
+        var key = prefix + "1";
+        await cache.UpsertAsync(key, 7, TimeSpan.FromMinutes(5), AbortToken);
+        (await l1.GetAsync<int>(key, AbortToken)).HasValue.Should().BeTrue();
+
+        l2.FailWrites = true;
+        var act = async () => await cache.RemoveByPrefixAsync(prefix, AbortToken);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        (await l1.GetAsync<int>(key, AbortToken))
+            .HasValue.Should()
+            .BeFalse("matching L1 entries must be wiped before the L2 prefix-sweep failure is rethrown");
+    }
+
+    private (HybridCache cache, InMemoryCache l1, TogglableRemoteCache l2) _CreateBreakerOnlyCache()
+    {
+        // Circuit breaker on, auto-recovery off (RecoveryQueue null) — the breaker-only degraded mode the
+        // L1-consistency-on-L2-failure contract is defined for.
+        var l2 = new TogglableRemoteCache(_timeProvider);
+        var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        var publisher = Substitute.For<IBus>();
+        publisher
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+
+        var cache = new HybridCache(
+            l1,
+            l2,
+            publisher,
+            new HybridCacheOptions { DistributedCacheCircuitBreakerDuration = TimeSpan.FromSeconds(30) },
+            timeProvider: _timeProvider
+        );
+
+        return (cache, l1, l2);
     }
 
     [Fact]

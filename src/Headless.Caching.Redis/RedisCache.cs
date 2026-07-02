@@ -43,23 +43,31 @@ public sealed class RedisCache(
 
     /// <summary>
     /// Reserved namespace segment for Family-2 per-tag invalidation markers: each tag's last-invalidation
-    /// timestamp (Unix-ms string) lives at <c>{KeyPrefix}__tag:{tag}</c>. One key per tag, so tag invalidation
-    /// works on Redis Cluster. Cache entries must not be stored under keys starting with this segment.
+    /// timestamp (Unix-ms string) lives at <c>{KeyPrefix}\0__tag:{tag}</c>. One key per tag, so tag invalidation
+    /// works on Redis Cluster. The leading NUL (<c>\0</c>) keeps markers in a namespace a normal consumer key
+    /// cannot reach: consumer keys flow through <see cref="_GetKey"/> (KeyPrefix + caller key) and ordinary cache
+    /// keys do not embed a NUL byte, so an ordinary consumer key such as <c>__tag:x</c> does not collide with a
+    /// marker. Consumer keys are NOT sanitized for NUL bytes (key-content validation is delegated to callers), so
+    /// this guards against accidental collisions, not a deliberately NUL-prefixed key (see issue #555).
     /// </summary>
-    private const string _TagMarkerNamespace = "__tag:";
+    private const string _TagMarkerNamespace = "\0__tag:";
 
     /// <summary>
-    /// Reserved key for the Family-2 global clear-generation marker (Unix-ms string). Bumped by
-    /// <c>ClearAsync</c>; compared on every read. Cannot collide with the tag-marker namespace or user keys.
+    /// Reserved key for the Family-2 global clear-generation marker (Unix-ms string) at <c>{KeyPrefix}\0__clear</c>.
+    /// Bumped by <c>ClearAsync</c>; compared on every read. The leading NUL (<c>\0</c>) keeps it in the same
+    /// unreachable namespace as the tag markers, so an ordinary consumer key such as <c>__clear</c> does not
+    /// collide with it (accidental collisions only — a deliberately NUL-prefixed key is not guarded; see #555).
     /// </summary>
-    private const string _ClearMarkerSuffix = "__clear";
+    private const string _ClearMarkerSuffix = "\0__clear";
 
     /// <summary>
-    /// Reserved key for the Family-2 global remove-generation marker (Unix-ms string). Bumped by the logical
-    /// <c>FlushAsync</c>; compared on every read. Entries born before it read as a hard miss with no fail-safe
-    /// reserve (distinct from the clear marker, which preserves reserves). Cannot collide with user keys.
+    /// Reserved key for the Family-2 global remove-generation marker (Unix-ms string) at <c>{KeyPrefix}\0__remove</c>.
+    /// Bumped by the logical <c>FlushAsync</c>; compared on every read. Entries born before it read as a hard miss
+    /// with no fail-safe reserve (distinct from the clear marker, which preserves reserves). The leading NUL
+    /// (<c>\0</c>) keeps it in the same unreachable namespace, so an ordinary consumer key such as <c>__remove</c>
+    /// does not collide with it (accidental collisions only; see #555).
     /// </summary>
-    private const string _RemoveMarkerSuffix = "__remove";
+    private const string _RemoveMarkerSuffix = "\0__remove";
 
     private readonly ILogger _logger = logger ?? NullLogger<RedisCache>.Instance;
     private readonly string _keyPrefix = cacheOptions.KeyPrefix ?? "";
@@ -72,10 +80,9 @@ public sealed class RedisCache(
         StringComparer.Ordinal
     );
 
-    // Cached clear-generation marker: MarkerMs (long.MinValue = absent) and the fetch tick. Read/refreshed on
-    // every read (tagged or not) within the refresh window. Guarded by Volatile reads/writes of the tuple via a
-    // lock-free swap is unnecessary — a torn read at worst forces an extra refresh, but to keep it simple and
-    // correct we store the two longs behind a single reference cell.
+    // Cached clear-generation marker: MarkerMs (long.MinValue = absent) and the fetch tick, stored as two separate
+    // long fields read/written individually (not a single reference cell). A torn read across the two at worst
+    // forces an extra marker refresh, which is harmless, so no lock or atomic swap is used.
     private long _clearMarkerMs = long.MinValue;
     private long _clearMarkerFetchedTicks = long.MinValue;
 
@@ -591,7 +598,7 @@ public sealed class RedisCache(
     {
         Argument.IsNotNullOrEmpty(key);
         Argument.IsNotNull(value);
-        Argument.IsPositive(expiration);
+        Argument.IsPositiveOrZero(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (expiration is { Ticks: <= 0 })
@@ -673,18 +680,22 @@ public sealed class RedisCache(
             return ReadOnlyDictionary<string, CacheValue<T>>.Empty;
         }
 
+        // One round-trip (or one per hash slot on a cluster) to fetch all raw values, gathered into a single
+        // index-aligned array so the tag-marker prefetch and processing loop can run once over everything.
+        RedisValue[] rawValues;
+
         if (IsCluster)
         {
-            var result = new Dictionary<string, CacheValue<T>>(redisKeys.Count, StringComparer.Ordinal);
+            rawValues = new RedisValue[redisKeys.Count];
 
-            var pairs = new (string Original, RedisKey Redis)[originalKeys.Count];
+            var indexedKeys = new (RedisKey Redis, int Index)[redisKeys.Count];
 
-            for (var i = 0; i < originalKeys.Count; i++)
+            for (var i = 0; i < redisKeys.Count; i++)
             {
-                pairs[i] = (originalKeys[i], redisKeys[i]);
+                indexedKeys[i] = (redisKeys[i], i);
             }
 
-            var slotBuckets = _GroupBySlot(pairs, static pair => pair.Redis);
+            var slotBuckets = _GroupBySlot(indexedKeys, static entry => entry.Redis);
 
             foreach (var bucket in slotBuckets.Values)
             {
@@ -695,33 +706,116 @@ public sealed class RedisCache(
                     slotKeys[i] = bucket[i].Redis;
                 }
 
-                var values = await _database.StringGetAsync(slotKeys, cacheOptions.ReadMode).ConfigureAwait(false);
+                var slotValues = await _database.StringGetAsync(slotKeys, cacheOptions.ReadMode).ConfigureAwait(false);
 
                 for (var i = 0; i < bucket.Count; i++)
                 {
-                    result[bucket[i].Original] = await _RedisValueToCacheValueAsync<T>(
-                            bucket[i].Redis,
-                            values[i],
-                            rearm: false
-                        )
-                        .ConfigureAwait(false);
+                    rawValues[bucket[i].Index] = slotValues[i];
                 }
             }
-
-            return result.AsReadOnly();
         }
         else
         {
-            var result = new Dictionary<string, CacheValue<T>>(redisKeys.Count, StringComparer.Ordinal);
-            var values = await _database.StringGetAsync([.. redisKeys], cacheOptions.ReadMode).ConfigureAwait(false);
+            rawValues = await _database.StringGetAsync([.. redisKeys], cacheOptions.ReadMode).ConfigureAwait(false);
+        }
 
-            for (var i = 0; i < originalKeys.Count; i++)
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+
+        // #12: decode all frames up-front so every entry's stale tag markers are fetched in ONE MGET (via
+        // _PrefetchTagMarkersAsync) before the processing loop — previously the per-entry marker resolution
+        // issued one MGET per tagged entry whose markers were stale, i.e. N sequential round-trips.
+        var decodedFrames = new RedisCacheEntryFrame.DecodedFrame?[rawValues.Length];
+
+        for (var i = 0; i < rawValues.Length; i++)
+        {
+            if (rawValues[i].HasValue)
             {
-                result[originalKeys[i]] = await _RedisValueToCacheValueAsync<T>(redisKeys[i], values[i], rearm: false)
-                    .ConfigureAwait(false);
+                try
+                {
+                    decodedFrames[i] = RedisCacheEntryFrame.Decode(rawValues[i]);
+                }
+                catch (Exception e)
+                {
+                    _logger.LogDeserializationFailed(e, rawValues[i].Length(), typeof(T).FullName);
+                    throw;
+                }
+            }
+        }
+
+        // Warm _markerCache for every stale tag in one MGET so the per-entry _ResolveNewestMarkerAsync calls
+        // below all hit the local cache without additional network I/O.
+        await _PrefetchTagMarkersAsync(decodedFrames, now).ConfigureAwait(false);
+
+        var result = new Dictionary<string, CacheValue<T>>(redisKeys.Count, StringComparer.Ordinal);
+
+        for (var i = 0; i < originalKeys.Count; i++)
+        {
+            var rawValue = rawValues[i];
+
+            // Mirror the previous _RedisValueToCacheValueAsync contract: a missing key surfaces as NoValue so
+            // every requested key is present in the result.
+            result[originalKeys[i]] = rawValue.HasValue
+                ? await _DecodedToCacheValueAsync<T>(decodedFrames[i]!.Value, rawValue, now).ConfigureAwait(false)
+                : CacheValue<T>.NoValue;
+        }
+
+        return result.AsReadOnly();
+    }
+
+    /// <summary>
+    /// Bulk-read conversion from an already-decoded frame: mirrors <see cref="_RedisValueToCacheValueAsync{T}"/>
+    /// with <c>rearm: false</c> (no sliding re-arm on bulk reads) but skips the redundant re-decode. Marker
+    /// resolution hits the warm <see cref="_markerCache"/> populated by the batched
+    /// <see cref="_PrefetchTagMarkersAsync"/>, so no extra Redis round-trip is paid per entry. (#12)
+    /// </summary>
+    private async ValueTask<CacheValue<T>> _DecodedToCacheValueAsync<T>(
+        RedisCacheEntryFrame.DecodedFrame frame,
+        RedisValue redisValue,
+        DateTime now
+    )
+    {
+        try
+        {
+            if (frame.IsFramed)
+            {
+                if (
+                    _IsExpired(frame.PhysicalExpiresAt, now)
+                    || (!frame.SlidingExpiration.HasValue && _IsExpired(frame.LogicalExpiresAt, now))
+                )
+                {
+                    return CacheValue<T>.NoValue;
+                }
+
+                // Family-2 logical tag/clear invalidation: a direct read of an invalidated entry is a miss. The
+                // physically present reserve is left in place so the coordinator can still serve it stale.
+                var newestMarker = await _ResolveNewestMarkerAsync(frame.Tags).ConfigureAwait(false);
+
+                if (CacheTagInvalidation.IsInvalidated(frame.CreatedAt, newestMarker))
+                {
+                    return CacheValue<T>.NoValue;
+                }
+
+                if (frame.IsNull)
+                {
+                    return CacheValue<T>.Null;
+                }
+
+                var framedValue = _DeserializeValueSegment<T>(frame.ValueSegment);
+                return new CacheValue<T>(framedValue, true);
             }
 
-            return result.AsReadOnly();
+            if (redisValue == _NullValue)
+            {
+                return CacheValue<T>.Null;
+            }
+
+            var value = _FromRedisValue<T>(redisValue);
+            return new CacheValue<T>(value, true);
+        }
+        catch (Exception e)
+        {
+            _logger.LogDeserializationFailed(e, redisValue.Length(), typeof(T).FullName);
+            throw;
         }
     }
 
@@ -1520,13 +1614,7 @@ public sealed class RedisCache(
         var ms = RedisCacheEntryFrame.ToUnixTimeMilliseconds(invalidatedAt.UtcDateTime);
         var ticks = _StopwatchTicks();
 
-        _markerCache.AddOrUpdate(
-            tag,
-            static (_, state) => (state.ms, state.ticks),
-            static (_, existing, state) =>
-                existing.MarkerMs >= state.ms ? (existing.MarkerMs, state.ticks) : (state.ms, state.ticks),
-            (ms, ticks)
-        );
+        _RaiseTagMarker(tag, ms, ticks);
     }
 
     /// <inheritdoc />
@@ -1637,7 +1725,9 @@ public sealed class RedisCache(
     {
         Argument.IsNotNullOrEmpty(key);
         Argument.IsNotNull(value);
-        Argument.IsPositive(expiration);
+        // Zero is allowed (not just positive) so SetAddAsync's expire-immediately branch can delegate here; the
+        // expiration is not applied by removal.
+        Argument.IsPositiveOrZero(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
         var redisValues = new List<RedisValue>();
@@ -1806,9 +1896,21 @@ public sealed class RedisCache(
             .StringGetAsync((RedisKey)_GetClearMarkerKey(), cacheOptions.ReadMode)
             .ConfigureAwait(false);
         var ms = _ParseMarkerMs(value);
-        Interlocked.Exchange(ref _clearMarkerMs, ms);
+
+        // Raise-only CAS (mirrors SeedClearMarker): a stale durable read — e.g. a lagging replica — must not
+        // lower a newer clear generation a backplane push already seeded. Surface the raised max so this read
+        // does not under-invalidate either.
+        long current;
+        while ((current = Interlocked.Read(ref _clearMarkerMs)) < ms)
+        {
+            if (Interlocked.CompareExchange(ref _clearMarkerMs, ms, current) == current)
+            {
+                break;
+            }
+        }
+
         Interlocked.Exchange(ref _clearMarkerFetchedTicks, _StopwatchTicks());
-        return ms;
+        return Interlocked.Read(ref _clearMarkerMs);
     }
 
     private async ValueTask<long> _ResolveRemoveMarkerAsync()
@@ -1824,9 +1926,21 @@ public sealed class RedisCache(
             .StringGetAsync((RedisKey)_GetRemoveMarkerKey(), cacheOptions.ReadMode)
             .ConfigureAwait(false);
         var ms = _ParseMarkerMs(value);
-        Interlocked.Exchange(ref _removeMarkerMs, ms);
+
+        // Raise-only CAS (mirrors SeedRemoveMarker): a stale durable read — e.g. a lagging replica — must not
+        // lower a newer remove generation a backplane push already seeded. Surface the raised max so this read
+        // does not under-invalidate either.
+        long current;
+        while ((current = Interlocked.Read(ref _removeMarkerMs)) < ms)
+        {
+            if (Interlocked.CompareExchange(ref _removeMarkerMs, ms, current) == current)
+            {
+                break;
+            }
+        }
+
         Interlocked.Exchange(ref _removeMarkerFetchedTicks, _StopwatchTicks());
-        return ms;
+        return Interlocked.Read(ref _removeMarkerMs);
     }
 
     private async ValueTask<long> _ResolveTagMarkersAsync(IReadOnlyCollection<string> tags)
@@ -1859,17 +1973,20 @@ public sealed class RedisCache(
                 markerKeys[i] = _GetTagMarkerKey(stale[i]);
             }
 
-            var values = await _database.StringGetAsync(markerKeys, cacheOptions.ReadMode).ConfigureAwait(false);
+            var values = await _GetTagMarkerValuesAsync(markerKeys).ConfigureAwait(false);
             var fetchedTicks = _StopwatchTicks();
 
             for (var i = 0; i < stale.Count; i++)
             {
                 var ms = _ParseMarkerMs(values[i]);
-                _markerCache[stale[i]] = (ms, fetchedTicks);
 
-                if (ms > newestMs)
+                // Raise-only (mirrors SeedTagMarker): a stale durable read must not lower a newer per-tag marker
+                // a backplane push already seeded. FetchedTicks is still refreshed so the freshness window holds.
+                var resolved = _RaiseTagMarker(stale[i], ms, fetchedTicks);
+
+                if (resolved.MarkerMs > newestMs)
                 {
-                    newestMs = ms;
+                    newestMs = resolved.MarkerMs;
                 }
             }
         }
@@ -1879,6 +1996,67 @@ public sealed class RedisCache(
 
     private static long _ParseMarkerMs(RedisValue value) =>
         RedisCacheEntryFrame.TryParseMarkerMs(value) ?? _MarkerAbsent;
+
+    // Tag-marker keys carry no hash-tag braces, so distinct tags hash to arbitrary cluster slots — a single flat
+    // MGET across them fails with CROSSSLOT on Redis Cluster. Split per slot on cluster topologies (mirroring the
+    // batch-operation cluster paths); non-cluster keeps the single MGET. Returns values in input-key order.
+    private async Task<RedisValue[]> _GetTagMarkerValuesAsync(RedisKey[] markerKeys)
+    {
+        if (!IsCluster || markerKeys.Length <= 1)
+        {
+            return await _database.StringGetAsync(markerKeys, cacheOptions.ReadMode).ConfigureAwait(false);
+        }
+
+        var indexedKeys = new (RedisKey Redis, int Index)[markerKeys.Length];
+
+        for (var i = 0; i < markerKeys.Length; i++)
+        {
+            indexedKeys[i] = (markerKeys[i], i);
+        }
+
+        var values = new RedisValue[markerKeys.Length];
+        var slotBuckets = _GroupBySlot(indexedKeys, static entry => entry.Redis);
+
+        foreach (var bucket in slotBuckets.Values)
+        {
+            var slotKeys = new RedisKey[bucket.Count];
+
+            for (var i = 0; i < bucket.Count; i++)
+            {
+                slotKeys[i] = bucket[i].Redis;
+            }
+
+            var slotValues = await _database.StringGetAsync(slotKeys, cacheOptions.ReadMode).ConfigureAwait(false);
+
+            for (var i = 0; i < bucket.Count; i++)
+            {
+                values[bucket[i].Index] = slotValues[i];
+            }
+        }
+
+        return values;
+    }
+
+    /// <summary>
+    /// Raises the process-local tag marker for <paramref name="tag"/> to <paramref name="markerMs"/> when it is
+    /// newer, always refreshing the freshness stamp to <paramref name="fetchedTicks"/>. Raise-only: a stale durable
+    /// read or a backplane push can never lower a newer marker this node already observed; the freshness stamp is
+    /// refreshed in both branches so the refresh window holds. Returns the resolved (post-raise) entry. Shared by
+    /// <see cref="SeedTagMarker"/>, <see cref="_ResolveTagMarkersAsync"/>, and <see cref="_PrefetchTagMarkersAsync"/>
+    /// so the raise-only invariant lives in exactly one place.
+    /// </summary>
+    private (long MarkerMs, long FetchedTicks) _RaiseTagMarker(string tag, long markerMs, long fetchedTicks)
+    {
+        return _markerCache.AddOrUpdate(
+            tag,
+            static (_, state) => (state.markerMs, state.fetchedTicks),
+            static (_, existing, state) =>
+                existing.MarkerMs >= state.markerMs
+                    ? (existing.MarkerMs, state.fetchedTicks)
+                    : (state.markerMs, state.fetchedTicks),
+            (markerMs, fetchedTicks)
+        );
+    }
 
     /// <summary>
     /// Pre-warms <see cref="_markerCache"/> for all unique stale tag markers referenced by the supplied decoded
@@ -1912,7 +2090,7 @@ public sealed class RedisCache(
             return;
         }
 
-        // Fetch all stale tag markers in one MGET and populate the local cache.
+        // Fetch all stale tag markers in one MGET (one per hash slot on cluster) and populate the local cache.
         var staleList = new List<string>(staleTags);
         var markerKeys = new RedisKey[staleList.Count];
 
@@ -1921,13 +2099,16 @@ public sealed class RedisCache(
             markerKeys[i] = _GetTagMarkerKey(staleList[i]);
         }
 
-        var values = await _database.StringGetAsync(markerKeys, cacheOptions.ReadMode).ConfigureAwait(false);
+        var values = await _GetTagMarkerValuesAsync(markerKeys).ConfigureAwait(false);
         var fetchedTicks = _StopwatchTicks();
 
         for (var i = 0; i < staleList.Count; i++)
         {
             var ms = _ParseMarkerMs(values[i]);
-            _markerCache[staleList[i]] = (ms, fetchedTicks);
+
+            // Raise-only (mirrors SeedTagMarker): a stale durable read must not lower a newer per-tag marker a
+            // backplane push already seeded. FetchedTicks is still refreshed so the freshness window holds.
+            _RaiseTagMarker(staleList[i], ms, fetchedTicks);
         }
     }
 
@@ -2353,14 +2534,15 @@ public sealed class RedisCache(
         {
             if (entry.ExpectedConcurrencyStamp is { } expiredExpectedStamp)
             {
-                if (!_TryDecodeConcurrencyStamp(expiredExpectedStamp, out var expiredExpectedValue))
-                {
-                    return false;
-                }
-
                 var current = await _database.StringGetAsync(redisKey).ConfigureAwait(false);
 
-                if (current != expiredExpectedValue)
+                // #13: compare via the header-only stamp so this CAS-delete stays consistent with the slice the
+                // live path captures. Recomputing the stamp from the current value reuses the single stamp codec
+                // instead of re-deriving the header offset here.
+                if (
+                    !current.HasValue
+                    || !string.Equals(_ToConcurrencyStamp(current), expiredExpectedStamp, StringComparison.Ordinal)
+                )
                 {
                     return false;
                 }
@@ -2413,6 +2595,7 @@ public sealed class RedisCache(
                     value = (RedisValue)redisValue,
                     expectedValue,
                     keyTtlMs,
+                    headerLen = RedisCacheEntryFrame.HeaderLength,
                 },
                 cancellationToken // #7: was CancellationToken.None — now respects caller's token
             )
@@ -2421,7 +2604,18 @@ public sealed class RedisCache(
         return (int)result == 1;
     }
 
-    private static string _ToConcurrencyStamp(RedisValue value) => $"b64:{((byte[])value!).ToBase64()}";
+    // #13: the concurrency stamp captures only the fixed frame header (the first HeaderLength bytes) rather than
+    // base64-encoding the whole payload on every read. The header carries the per-write CreatedAt + expiry stamps
+    // that uniquely identify an entry version, so it is sufficient for CAS. Both CAS comparison sites
+    // (CacheTaggedSetScriptDefinition and the zero-expiration delete branch) compare the SAME header slice, so the
+    // stamp stays provably consistent. A shorter-than-header value (e.g. a legacy raw value) encodes in full.
+    private static string _ToConcurrencyStamp(RedisValue value)
+    {
+        var bytes = (byte[])value!;
+        var length = Math.Min(bytes.Length, RedisCacheEntryFrame.HeaderLength);
+
+        return string.Concat("b64:", Convert.ToBase64String(bytes, 0, length));
+    }
 
     private static bool _TryDecodeConcurrencyStamp(string stamp, out RedisValue value)
     {
@@ -2624,15 +2818,6 @@ public sealed class RedisCache(
         return _RearmSlidingTtlAsync(redisKey, slidingExpiration, physicalExpiresAt, now, frame.LogicalExpiresAt);
     }
 
-    // #9: Lua script for atomic TTL-check-and-conditional-PEXPIRE in a single Redis round-trip.
-    // KEYS[1]=key, ARGV[1]=rearmThresholdMs (long), ARGV[2]=newTtlMs (long).
-    // Returns 1 if PEXPIRE was issued, 0 if the key already had enough TTL or is persistent (PTTL=-1).
-    private const string _SlidingRearmLua = """
-        local ttl = redis.call('PTTL', KEYS[1])
-        if ttl < 0 or ttl > tonumber(ARGV[1]) then return 0 end
-        return redis.call('PEXPIRE', KEYS[1], tonumber(ARGV[2]))
-        """;
-
     private async ValueTask _RearmSlidingTtlAsync(
         RedisKey redisKey,
         TimeSpan slidingExpiration,
@@ -2660,14 +2845,23 @@ public sealed class RedisCache(
 
         try
         {
-            // #9: single-RTT atomic TTL-check-and-conditional-PEXPIRE via inline Lua.
-            // Previously issued KeyTimeToLiveAsync then (conditionally) KeyExpireAsync — 2 sequential RTTs.
+            // #9: single-RTT atomic TTL-check-and-conditional-PEXPIRE via the loaded SlidingRearm script (EVALSHA
+            // with NOSCRIPT recovery). Previously issued KeyTimeToLiveAsync then (conditionally) KeyExpireAsync.
             var expiresIn = _Min(slidingExpiration, remainingToCap);
             var rearmThresholdMs = (long)rearmThreshold.TotalMilliseconds;
             var newTtlMs = (long)expiresIn.TotalMilliseconds;
 
-            await _database
-                .ScriptEvaluateAsync(_SlidingRearmLua, [redisKey], [rearmThresholdMs, newTtlMs])
+            await scriptsLoader
+                .EvaluateAsync(
+                    _database,
+                    SlidingRearmScriptDefinition.Instance,
+                    new
+                    {
+                        key = redisKey,
+                        rearmThresholdMs = (RedisValue)rearmThresholdMs,
+                        newTtlMs = (RedisValue)newTtlMs,
+                    }
+                )
                 .ConfigureAwait(false);
         }
         catch (Exception exception)

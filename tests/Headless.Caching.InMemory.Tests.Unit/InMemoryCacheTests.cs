@@ -39,7 +39,6 @@ public sealed class InMemoryCacheTests : TestBase
                     _GetEntryProperty<DateTime?>(entry, "LogicalExpiresAt"),
                     _GetEntryProperty<DateTime?>(entry, "PhysicalExpiresAt"),
                     _GetEntryProperty<TimeSpan?>(entry, "SlidingExpiration"),
-                    _GetEntryProperty<object?>(entry, "LastFactoryError"),
                     _GetEntryProperty<IReadOnlySet<string>?>(entry, "Tags")
                 );
             }
@@ -60,9 +59,6 @@ public sealed class InMemoryCacheTests : TestBase
         var entryType = typeof(InMemoryCache).GetNestedType("CacheEntry", BindingFlags.NonPublic);
         entryType.Should().NotBeNull();
 
-        var lastFactoryErrorType = typeof(InMemoryCache).GetNestedType("LastFactoryError", BindingFlags.NonPublic);
-        lastFactoryErrorType.Should().NotBeNull();
-
         // Binds the CacheEntry constructor by exact signature. Each M1 envelope PR (#373 fail-safe,
         // #378 tags) adds parameters here; when that happens GetConstructor returns null and the NotBeNull
         // assertion below fails with a descriptive message instead of an opaque NRE at Invoke.
@@ -78,7 +74,6 @@ public sealed class InMemoryCacheTests : TestBase
                 typeof(bool),
                 typeof(bool),
                 typeof(long),
-                lastFactoryErrorType!,
                 typeof(IReadOnlyCollection<string>),
                 typeof(DateTime?),
                 typeof(string),
@@ -103,7 +98,6 @@ public sealed class InMemoryCacheTests : TestBase
             false,
             true,
             0L,
-            null,
             null,
             null,
             null,
@@ -159,7 +153,6 @@ public sealed class InMemoryCacheTests : TestBase
         envelope.LogicalExpiresAt.Should().Be(expectedExpiration);
         envelope.PhysicalExpiresAt.Should().Be(expectedExpiration);
         envelope.SlidingExpiration.Should().BeNull();
-        envelope.LastFactoryError.Should().BeNull();
         envelope.Tags.Should().BeNull();
     }
 
@@ -167,7 +160,6 @@ public sealed class InMemoryCacheTests : TestBase
         DateTime? LogicalExpiresAt,
         DateTime? PhysicalExpiresAt,
         TimeSpan? SlidingExpiration,
-        object? LastFactoryError,
         IReadOnlySet<string>? Tags
     );
 
@@ -228,17 +220,19 @@ public sealed class InMemoryCacheTests : TestBase
     }
 
     [Fact]
-    public async Task should_throw_when_expiration_is_zero()
+    public async Task should_evict_when_expiration_is_zero()
     {
-        // given
+        // given - non-positive duration is "expire immediately" across every provider (matches Redis)
         using var cache = _CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
 
         // when
-        var act = async () => await cache.UpsertAsync(key, 42, TimeSpan.Zero, AbortToken);
+        var result = await cache.UpsertAsync(key, 42, TimeSpan.Zero, AbortToken);
 
         // then
-        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+        result.Should().BeFalse();
+        var cached = await cache.GetAsync<int>(key, AbortToken);
+        cached.HasValue.Should().BeFalse();
     }
 
     [Fact]
@@ -279,7 +273,6 @@ public sealed class InMemoryCacheTests : TestBase
         envelope.LogicalExpiresAt.Should().Be(now.Add(duration));
         envelope.PhysicalExpiresAt.Should().Be(now.Add(duration));
         envelope.SlidingExpiration.Should().BeNull();
-        envelope.LastFactoryError.Should().BeNull();
         envelope.Tags.Should().BeNull();
     }
 
@@ -435,7 +428,6 @@ public sealed class InMemoryCacheTests : TestBase
 
         // then
         var envelope = _GetEntryEnvelope(cache, key);
-        envelope.LastFactoryError.Should().BeNull();
         envelope.Tags.Should().BeNull();
     }
 
@@ -804,17 +796,19 @@ public sealed class InMemoryCacheTests : TestBase
     }
 
     [Fact]
-    public async Task should_throw_when_double_increment_expiration_is_zero()
+    public async Task should_evict_and_return_zero_when_double_increment_expiration_is_zero()
     {
-        // given
+        // given - non-positive duration is "expire immediately" across every provider (matches Redis)
         using var cache = _CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
 
         // when
-        var act = async () => await cache.IncrementAsync(key, 5.5, TimeSpan.Zero, AbortToken);
+        var result = await cache.IncrementAsync(key, 5.5, TimeSpan.Zero, AbortToken);
 
         // then
-        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+        result.Should().Be(0);
+        var cached = await cache.GetAsync<double>(key, AbortToken);
+        cached.HasValue.Should().BeFalse();
     }
 
     #endregion
@@ -866,17 +860,19 @@ public sealed class InMemoryCacheTests : TestBase
     }
 
     [Fact]
-    public async Task should_throw_when_long_increment_expiration_is_zero()
+    public async Task should_evict_and_return_zero_when_long_increment_expiration_is_zero()
     {
-        // given
+        // given - non-positive duration is "expire immediately" across every provider (matches Redis)
         using var cache = _CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
 
         // when
-        var act = async () => await cache.IncrementAsync(key, 5L, TimeSpan.Zero, AbortToken);
+        var result = await cache.IncrementAsync(key, 5L, TimeSpan.Zero, AbortToken);
 
         // then
-        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+        result.Should().Be(0L);
+        var cached = await cache.GetAsync<long>(key, AbortToken);
+        cached.HasValue.Should().BeFalse();
     }
 
     #endregion
@@ -1124,6 +1120,23 @@ public sealed class InMemoryCacheTests : TestBase
     }
 
     [Fact]
+    public async Task should_count_only_newly_added_members_when_some_already_exist()
+    {
+        // SetAddAsync returns the count of members actually added (mirrors Redis ZADD), excluding members already
+        // present in the set.
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        await cache.SetAddAsync(key, new[] { 1, 2 }, TimeSpan.FromMinutes(5), AbortToken);
+
+        // when - re-add 2 (already present) plus 3 (new)
+        var result = await cache.SetAddAsync(key, new[] { 2, 3 }, TimeSpan.FromMinutes(5), AbortToken);
+
+        // then
+        result.Should().Be(1);
+    }
+
+    [Fact]
     public async Task should_add_string_to_set()
     {
         // given
@@ -1208,7 +1221,7 @@ public sealed class InMemoryCacheTests : TestBase
     }
 
     [Fact]
-    public async Task should_return_empty_when_set_does_not_exist()
+    public async Task should_return_no_value_when_set_does_not_exist()
     {
         // given
         using var cache = _CreateCache();
@@ -1217,9 +1230,9 @@ public sealed class InMemoryCacheTests : TestBase
         // when
         var result = await cache.GetSetAsync<object>(key, cancellationToken: AbortToken);
 
-        // then
+        // then - an absent key returns CacheValue<T>.NoValue (Value is null, not an empty collection)
         result.HasValue.Should().BeFalse();
-        result.Value.Should().BeEmpty();
+        result.Value.Should().BeNull();
     }
 
     [Fact]
@@ -1359,20 +1372,26 @@ public sealed class InMemoryCacheTests : TestBase
     }
 
     [Fact]
-    public async Task should_deduplicate_string_set_case_insensitively()
+    public async Task should_treat_string_set_members_case_sensitively()
     {
-        // The string branch uses StringComparer.OrdinalIgnoreCase; the last value wins for the key bucket.
+        // String members use StringComparer.Ordinal (case-sensitive), matching Redis byte-exact set membership.
         // given
         using var cache = _CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
 
         // when
-        await cache.SetAddAsync(key, new[] { "Hello", "HELLO", "world" }, TimeSpan.FromMinutes(5), AbortToken);
+        var added = await cache.SetAddAsync(
+            key,
+            new[] { "Hello", "HELLO", "world" },
+            TimeSpan.FromMinutes(5),
+            AbortToken
+        );
         var result = await cache.GetSetAsync<string>(key, cancellationToken: AbortToken);
 
         // then
+        added.Should().Be(3); // all three are distinct under ordinal comparison
         result.HasValue.Should().BeTrue();
-        result.Value.Should().HaveCount(2);
+        result.Value.Should().HaveCount(3);
     }
 
     [Fact]

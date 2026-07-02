@@ -94,15 +94,9 @@ internal static class RedisCacheEntryFrame
     {
         // Frame length must index a byte[]: surface an oversized payload as a clear contract error rather than the
         // implicit OverflowException a checked cast would throw (Redis itself caps a value at 512 MB regardless).
-        if (!isNull && payload.Length > Array.MaxLength)
+        if (!isNull)
         {
-            throw new ArgumentException(
-                string.Create(
-                    CultureInfo.InvariantCulture,
-                    $"Cache payload of {payload.Length} bytes exceeds the maximum supported size of {Array.MaxLength} bytes."
-                ),
-                nameof(payload)
-            );
+            Argument.IsLessThanOrEqualTo(payload.Length, (long)Array.MaxLength, paramName: nameof(payload));
         }
 
         var length = isNull ? 0 : (int)payload.Length;

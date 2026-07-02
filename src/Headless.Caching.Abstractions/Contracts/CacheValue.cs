@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
+
 #pragma warning disable CA1000 // Do not declare static members on generic types
 // CA1815: equality is intentionally not part of CacheValue's contract — it is a read-result envelope,
 // not a comparable key. Implementing it would compare cached payloads (EqualityComparer<T>.Default),
@@ -29,10 +31,7 @@ public readonly struct CacheValue<T>
     /// <param name="isStale">If set to <see langword="true"/>, the value was served from a fail-safe reserve.</param>
     public CacheValue(T? value, bool hasValue, bool isStale = false)
     {
-        if (isStale && !hasValue)
-        {
-            throw new ArgumentException("IsStale requires HasValue.", nameof(isStale));
-        }
+        Argument.IsTrue(!isStale || hasValue, "IsStale requires HasValue.", nameof(isStale));
 
         Value = value;
         HasValue = hasValue;

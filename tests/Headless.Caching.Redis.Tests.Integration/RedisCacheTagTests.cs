@@ -7,9 +7,9 @@ namespace Tests;
 
 public sealed class RedisCacheTagTests(RedisCacheFixture fixture) : RedisCacheTestBase(fixture)
 {
-    private const string _TagMarkerNamespace = "__tag:";
-    private const string _ClearMarkerSuffix = "__clear";
-    private const string _RemoveMarkerSuffix = "__remove";
+    private const string _TagMarkerNamespace = "\0__tag:";
+    private const string _ClearMarkerSuffix = "\0__clear";
+    private const string _RemoveMarkerSuffix = "\0__remove";
 
     private IDatabase Database => Fixture.ConnectionMultiplexer.GetDatabase();
 

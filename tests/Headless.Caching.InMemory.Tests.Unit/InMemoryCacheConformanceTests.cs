@@ -175,6 +175,22 @@ public sealed class InMemoryCacheConformanceTests : CacheConformanceTestsBase
     public override Task should_drop_reserves_with_flush_async() => base.should_drop_reserves_with_flush_async();
 
     [Fact]
+    public override Task should_add_only_new_set_members_and_compare_strings_case_sensitively() =>
+        base.should_add_only_new_set_members_and_compare_strings_case_sensitively();
+
+    [Fact]
+    public override Task should_evict_set_members_when_set_add_uses_zero_expiration() =>
+        base.should_evict_set_members_when_set_add_uses_zero_expiration();
+
+    [Fact]
+    public override Task should_keep_zero_total_after_decrementing_to_zero() =>
+        base.should_keep_zero_total_after_decrementing_to_zero();
+
+    [Fact]
+    public override Task should_preserve_ttl_when_set_if_higher_is_a_no_op() =>
+        base.should_preserve_ttl_when_set_if_higher_is_a_no_op();
+
+    [Fact]
     public override Task should_round_trip_raw_payload_via_buffer_path() =>
         base.should_round_trip_raw_payload_via_buffer_path();
 

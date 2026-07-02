@@ -26,6 +26,8 @@ Tag and clear invalidation are Family-2 logical: `RemoveByTagAsync` stamps a per
 
 Long `FailSafeMaxDuration` values and long sliding absolute caps can retain more entries in process memory. Use `MaxItems`, `MaxMemorySize`, and LRU compaction to bound direct in-memory deployments. Soft-timeout and eager background refreshes also hold values in process while the detached factory runs; `BackgroundFactoryCeiling` (infinite by default) optionally bounds how long a cooperative refresh keeps the per-key lock when set to a finite value.
 
+Set members (`SetAddAsync`/`SetRemoveAsync`/`GetSetAsync`) compare strings with ordinal (case-sensitive) equality, matching the distributed providers' byte-exact membership; non-string members compare with default `Equals` here, while Redis compares serialized bytes — custom `Equals` overrides can behave differently across providers.
+
 `Memory` in Headless caching docs means this package, `Headless.Caching.InMemory`, not `Microsoft.Extensions.Caching.Memory`.
 
 ## Installation

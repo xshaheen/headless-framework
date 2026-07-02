@@ -201,6 +201,19 @@ public static class SetupHybridCache
                     )
             );
 
+            // Startup advisor for THIS named instance: it inspects the named options (the default-path advisor in
+            // _AddCacheCore only ever sees the default options). AddSingleton (not TryAddEnumerable) so one advisor
+            // per named instance coexists with the default one instead of being deduped by implementation type.
+            var capturedServices = services;
+            services.AddSingleton<IHostedService>(provider => new HybridCacheBestPracticesAdvisor(
+                provider.GetRequiredService<IOptionsMonitor<HybridCacheOptions>>().Get(name),
+                provider.GetRequiredService<ILogger<HybridCacheBestPracticesAdvisor>>(),
+                invalidationConsumerRegistered: capturedServices.Any(static d =>
+                    d.ServiceType == typeof(IConsume<CacheInvalidationMessage>)
+                ),
+                instanceName: name
+            ));
+
             return services;
         }
 
