@@ -1519,7 +1519,7 @@ public sealed class HybridCacheTests : TestBase
 
         // when — the L2 remove throws
         l2.FailWrites = true;
-        Func<Task> act = () => cache.RemoveAsync(key, AbortToken).AsTask();
+        var act = async () => await cache.RemoveAsync(key, AbortToken);
 
         // then — the failure surfaces, but L1 no longer serves the removed value
         await act.Should().ThrowAsync<InvalidOperationException>();
@@ -1541,7 +1541,7 @@ public sealed class HybridCacheTests : TestBase
         (await l1.GetAsync<int>(key, AbortToken)).HasValue.Should().BeTrue();
 
         l2.FailWrites = true;
-        Func<Task> act = () => cache.TryReplaceIfEqualAsync(key, 7, 8, TimeSpan.FromMinutes(5), AbortToken).AsTask();
+        var act = async () => await cache.TryReplaceIfEqualAsync(key, 7, 8, TimeSpan.FromMinutes(5), AbortToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
         (await l1.GetAsync<int>(key, AbortToken))
@@ -1562,7 +1562,7 @@ public sealed class HybridCacheTests : TestBase
         (await l1.GetAsync<long>(key, AbortToken)).HasValue.Should().BeTrue();
 
         l2.FailWrites = true;
-        Func<Task> act = () => cache.IncrementAsync(key, 1L, TimeSpan.FromMinutes(5), AbortToken).AsTask();
+        var act = async () => await cache.IncrementAsync(key, 1L, TimeSpan.FromMinutes(5), AbortToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
         (await l1.GetAsync<long>(key, AbortToken))
@@ -1582,7 +1582,7 @@ public sealed class HybridCacheTests : TestBase
         (await l1.GetSetAsync<string>(key, cancellationToken: AbortToken)).HasValue.Should().BeTrue();
 
         l2.FailWrites = true;
-        Func<Task> act = () => cache.SetAddAsync(key, new[] { "c" }, TimeSpan.FromMinutes(5), AbortToken).AsTask();
+        var act = async () => await cache.SetAddAsync(key, new[] { "c" }, TimeSpan.FromMinutes(5), AbortToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
         (await l1.GetSetAsync<string>(key, cancellationToken: AbortToken))
@@ -1602,7 +1602,7 @@ public sealed class HybridCacheTests : TestBase
         (await l1.GetSetAsync<string>(key, cancellationToken: AbortToken)).HasValue.Should().BeTrue();
 
         l2.FailWrites = true;
-        Func<Task> act = () => cache.SetRemoveAsync(key, new[] { "a" }, TimeSpan.FromMinutes(5), AbortToken).AsTask();
+        var act = async () => await cache.SetRemoveAsync(key, new[] { "a" }, TimeSpan.FromMinutes(5), AbortToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
         (await l1.GetSetAsync<string>(key, cancellationToken: AbortToken))
@@ -1624,7 +1624,7 @@ public sealed class HybridCacheTests : TestBase
         (await l1.GetAsync<int>(key, AbortToken)).HasValue.Should().BeTrue();
 
         l2.FailWrites = true;
-        Func<Task> act = () => cache.RemoveByPrefixAsync(prefix, AbortToken).AsTask();
+        var act = async () => await cache.RemoveByPrefixAsync(prefix, AbortToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
         (await l1.GetAsync<int>(key, AbortToken))
