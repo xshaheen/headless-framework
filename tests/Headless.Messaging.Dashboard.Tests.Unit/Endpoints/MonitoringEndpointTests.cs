@@ -92,7 +92,7 @@ public sealed class MonitoringEndpointTests : TestBase
                 Tags = "api",
             },
         };
-        discoveryProvider.GetNodes(null, AbortToken).Returns(Task.FromResult<IList<Node>>(nodes));
+        discoveryProvider.GetNodes(null, Arg.Any<CancellationToken>()).Returns(Task.FromResult<IList<Node>>(nodes));
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
 
         await using var app = _CreateTestApp(_dataStorage, discoveryProvider);

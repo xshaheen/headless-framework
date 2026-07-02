@@ -177,7 +177,7 @@ public sealed class ApiKeyAuthenticationHandlerTests : TestBase
         context.Request.Headers["X-Api-Key"] = "invalid-api-key";
 
         _apiKeyStore
-            .GetActiveApiKeyUserAsync("invalid-api-key", AbortToken)
+            .GetActiveApiKeyUserAsync("invalid-api-key", Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult<TestUser?>(null));
 
         await handler.InitializeAsync(
@@ -203,7 +203,7 @@ public sealed class ApiKeyAuthenticationHandlerTests : TestBase
         context.Request.Headers["X-Api-Key"] = "valid-api-key";
 
         _apiKeyStore
-            .GetActiveApiKeyUserAsync("valid-api-key", AbortToken)
+            .GetActiveApiKeyUserAsync("valid-api-key", Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult<TestUser?>(user));
 
         _signInManager.CanSignInAsync(user).Returns(Task.FromResult(false));
@@ -231,7 +231,7 @@ public sealed class ApiKeyAuthenticationHandlerTests : TestBase
         var user = new TestUser("user-1", "testuser", "test@example.com");
         context.Request.Headers["X-Api-Key"] = "valid-api-key";
         _apiKeyStore
-            .GetActiveApiKeyUserAsync("valid-api-key", AbortToken)
+            .GetActiveApiKeyUserAsync("valid-api-key", Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult<TestUser?>(user));
         _signInManager.CanSignInAsync(user).Returns(Task.FromResult(true));
         _userManager.SupportsUserLockout.Returns(true);
@@ -262,7 +262,7 @@ public sealed class ApiKeyAuthenticationHandlerTests : TestBase
 
         context.Request.Headers["X-Api-Key"] = "valid-api-key";
         _apiKeyStore
-            .GetActiveApiKeyUserAsync("valid-api-key", AbortToken)
+            .GetActiveApiKeyUserAsync("valid-api-key", Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult<TestUser?>(user));
         _signInManager.CanSignInAsync(user).Returns(Task.FromResult(true));
         _userManager.SupportsUserLockout.Returns(false);
@@ -309,7 +309,7 @@ public sealed class ApiKeyAuthenticationHandlerTests : TestBase
         context.Request.QueryString = new QueryString("?api_key=query-api-key");
 
         _apiKeyStore
-            .GetActiveApiKeyUserAsync("header-api-key", AbortToken)
+            .GetActiveApiKeyUserAsync("header-api-key", Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult<TestUser?>(headerUser));
         _signInManager.CanSignInAsync(headerUser).Returns(Task.FromResult(true));
         _userManager.SupportsUserLockout.Returns(false);
