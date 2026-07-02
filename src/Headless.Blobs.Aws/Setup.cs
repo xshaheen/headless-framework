@@ -9,7 +9,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
-#pragma warning disable CA1708 // multiple extension blocks emit marker members differing only by case
 namespace Headless.Blobs.Aws;
 
 /// <summary>Extension methods to register the AWS S3 blob storage provider.</summary>
@@ -38,7 +37,7 @@ public static class SetupAwsS3
             setup.RegisterDefaultProvider(services =>
             {
                 services.Configure<AwsBlobStorageOptions, AwsBlobStorageOptionsValidator>(setupAction);
-                services._AddBlobsDefaultCore(awsOptions);
+                _AddBlobsDefaultCore(services, awsOptions);
             });
 
             return setup;
@@ -63,7 +62,7 @@ public static class SetupAwsS3
             setup.RegisterDefaultProvider(services =>
             {
                 services.Configure<AwsBlobStorageOptions, AwsBlobStorageOptionsValidator>(setupAction);
-                services._AddBlobsDefaultCore(awsOptions);
+                _AddBlobsDefaultCore(services, awsOptions);
             });
 
             return setup;
@@ -85,13 +84,80 @@ public static class SetupAwsS3
             setup.RegisterDefaultProvider(services =>
             {
                 services.Configure<AwsBlobStorageOptions, AwsBlobStorageOptionsValidator>(configuration);
-                services._AddBlobsDefaultCore(awsOptions);
+                _AddBlobsDefaultCore(services, awsOptions);
             });
 
             return setup;
         }
     }
 
+    private static IServiceCollection _AddBlobsDefaultCore(IServiceCollection services, AWSOptions? awsOptions)
+    {
+        services.AddSingleton<IBlobStorage>(serviceProvider =>
+        {
+            var mimeTypeProvider = serviceProvider.GetRequiredService<IMimeTypeProvider>();
+            var clock = serviceProvider.GetRequiredService<IClock>();
+            var options = serviceProvider.GetRequiredService<IOptions<AwsBlobStorageOptions>>();
+            var logger = serviceProvider.GetService<ILogger<AwsBlobStorage>>() ?? NullLogger<AwsBlobStorage>.Instance;
+            var s3Client = S3ClientFactory.Create(awsOptions);
+
+            return new AwsBlobStorage(
+                s3Client,
+                mimeTypeProvider,
+                clock,
+                options,
+                new AwsBlobNamingNormalizer(),
+                logger
+            );
+        });
+
+        return services;
+    }
+
+    internal static IServiceCollection AddBlobsNamedCore(
+        IServiceCollection services,
+        string name,
+        AWSOptions? awsOptions
+    )
+    {
+        services.AddKeyedSingleton<IBlobStorage>(
+            name,
+            (serviceProvider, _) =>
+            {
+                var mimeTypeProvider = serviceProvider.GetRequiredService<IMimeTypeProvider>();
+                var clock = serviceProvider.GetRequiredService<IClock>();
+                var options = Options.Create(
+                    serviceProvider.GetRequiredService<IOptionsMonitor<AwsBlobStorageOptions>>().Get(name)
+                );
+                var logger =
+                    serviceProvider.GetService<ILogger<AwsBlobStorage>>() ?? NullLogger<AwsBlobStorage>.Instance;
+                var s3Client = S3ClientFactory.Create(awsOptions);
+
+                return new AwsBlobStorage(
+                    s3Client,
+                    mimeTypeProvider,
+                    clock,
+                    options,
+                    new AwsBlobNamingNormalizer(),
+                    logger
+                );
+            }
+        );
+
+        services.AddKeyedSingleton<IPresignedUrlBlobStorage>(
+            name,
+            (serviceProvider, _) =>
+                (IPresignedUrlBlobStorage)serviceProvider.GetRequiredKeyedService<IBlobStorage>(name)
+        );
+
+        return services;
+    }
+}
+
+/// <summary>Extension methods to register the AWS S3 blob storage provider as a named store.</summary>
+[PublicAPI]
+public static class SetupAwsS3Named
+{
     extension(HeadlessBlobInstanceBuilder instance)
     {
         /// <summary>
@@ -115,7 +181,7 @@ public static class SetupAwsS3
             instance.RegisterProvider(services =>
             {
                 services.Configure<AwsBlobStorageOptions, AwsBlobStorageOptionsValidator>(setupAction, name);
-                services._AddBlobsNamedCore(name, awsOptions);
+                SetupAwsS3.AddBlobsNamedCore(services, name, awsOptions);
             });
 
             return instance;
@@ -141,7 +207,7 @@ public static class SetupAwsS3
             instance.RegisterProvider(services =>
             {
                 services.Configure<AwsBlobStorageOptions, AwsBlobStorageOptionsValidator>(setupAction, name);
-                services._AddBlobsNamedCore(name, awsOptions);
+                SetupAwsS3.AddBlobsNamedCore(services, name, awsOptions);
             });
 
             return instance;
@@ -164,72 +230,10 @@ public static class SetupAwsS3
             instance.RegisterProvider(services =>
             {
                 services.Configure<AwsBlobStorageOptions, AwsBlobStorageOptionsValidator>(configuration, name);
-                services._AddBlobsNamedCore(name, awsOptions);
+                SetupAwsS3.AddBlobsNamedCore(services, name, awsOptions);
             });
 
             return instance;
-        }
-    }
-
-    extension(IServiceCollection services)
-    {
-        private IServiceCollection _AddBlobsDefaultCore(AWSOptions? awsOptions)
-        {
-            services.AddSingleton<IBlobStorage>(serviceProvider =>
-            {
-                var mimeTypeProvider = serviceProvider.GetRequiredService<IMimeTypeProvider>();
-                var clock = serviceProvider.GetRequiredService<IClock>();
-                var options = serviceProvider.GetRequiredService<IOptions<AwsBlobStorageOptions>>();
-                var logger =
-                    serviceProvider.GetService<ILogger<AwsBlobStorage>>() ?? NullLogger<AwsBlobStorage>.Instance;
-                var s3Client = S3ClientFactory.Create(awsOptions);
-
-                return new AwsBlobStorage(
-                    s3Client,
-                    mimeTypeProvider,
-                    clock,
-                    options,
-                    new AwsBlobNamingNormalizer(),
-                    logger
-                );
-            });
-
-            return services;
-        }
-
-        private IServiceCollection _AddBlobsNamedCore(string name, AWSOptions? awsOptions)
-        {
-            services.AddKeyedSingleton<IBlobStorage>(
-                name,
-                (serviceProvider, _) =>
-                {
-                    var mimeTypeProvider = serviceProvider.GetRequiredService<IMimeTypeProvider>();
-                    var clock = serviceProvider.GetRequiredService<IClock>();
-                    var options = Options.Create(
-                        serviceProvider.GetRequiredService<IOptionsMonitor<AwsBlobStorageOptions>>().Get(name)
-                    );
-                    var logger =
-                        serviceProvider.GetService<ILogger<AwsBlobStorage>>() ?? NullLogger<AwsBlobStorage>.Instance;
-                    var s3Client = S3ClientFactory.Create(awsOptions);
-
-                    return new AwsBlobStorage(
-                        s3Client,
-                        mimeTypeProvider,
-                        clock,
-                        options,
-                        new AwsBlobNamingNormalizer(),
-                        logger
-                    );
-                }
-            );
-
-            services.AddKeyedSingleton<IPresignedUrlBlobStorage>(
-                name,
-                (serviceProvider, _) =>
-                    (IPresignedUrlBlobStorage)serviceProvider.GetRequiredKeyedService<IBlobStorage>(name)
-            );
-
-            return services;
         }
     }
 }
