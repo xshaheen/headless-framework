@@ -218,6 +218,33 @@ public sealed class ExpirationCleanupTests : TestBase
         (await _store.FileExistAsync(fileId, AbortToken)).Should().BeFalse();
     }
 
+    /* Test: Completed uploads report no expiration (tus HEAD/DELETE must keep working) */
+
+    [Fact]
+    public async Task should_report_no_expiration_for_completed_uploads()
+    {
+        // given - a completed upload whose sliding expiration has passed (tusdotnet refreshes the
+        // expiration on the completing PATCH, so this state is routine)
+        var content = Faker.Random.Bytes(400);
+        var fileId = await _CreateAndUploadFileAsync(content);
+        await _store.SetExpirationAsync(fileId, DateTimeOffset.UtcNow.AddMinutes(-10), AbortToken);
+
+        // when
+        var expiration = await _store.GetExpirationAsync(fileId, AbortToken);
+
+        // then - null keeps tusdotnet's FileHasNotExpired requirement from 404ing the completed
+        // upload, so HEAD and DELETE (termination) keep working after the window elapses
+        expiration.Should().BeNull();
+
+        // and an incomplete upload still reports its expiration
+        var incompleteId = await _CreateIncompleteUploadAsync(1_000, uploadedBytes: 300);
+        var expires = DateTimeOffset.UtcNow.AddMinutes(30);
+        await _store.SetExpirationAsync(incompleteId, expires, AbortToken);
+        (await _store.GetExpirationAsync(incompleteId, AbortToken))
+            .Should()
+            .BeCloseTo(expires, TimeSpan.FromSeconds(1));
+    }
+
     /* Test: SetExpiration must complete even with a cancelled request token */
 
     [Fact]

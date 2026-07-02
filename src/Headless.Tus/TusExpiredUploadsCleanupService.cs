@@ -40,8 +40,10 @@ internal sealed class TusExpiredUploadsCleanupOptionsValidator : AbstractValidat
 /// tusdotnet only sets the <c>Upload-Expires</c> header; nothing removes expired uploads unless
 /// the application runs a job like this one. Register it via
 /// <c>services.AddTusExpiredUploadsCleanup()</c> next to a store that implements
-/// <see cref="ITusExpirationStore"/>. The first pass runs one interval after startup; failures
-/// are logged and the loop continues.
+/// <see cref="ITusExpirationStore"/>. The first pass runs immediately at startup (reclaiming
+/// uploads that expired while the app was down, matching tusdotnet's sample cleanup service),
+/// then every <see cref="TusExpiredUploadsCleanupOptions.Interval"/>; failures are logged and
+/// the loop continues.
 /// </remarks>
 [PublicAPI]
 public sealed partial class TusExpiredUploadsCleanupService(
@@ -53,27 +55,35 @@ public sealed partial class TusExpiredUploadsCleanupService(
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // Immediate first pass: reclaim uploads that expired while the app was down.
+        await _RunPassAsync(stoppingToken).ConfigureAwait(false);
+
         using var timer = new PeriodicTimer(options.Value.Interval, timeProvider);
 
         while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false))
         {
-            try
-            {
-                var removed = await store.RemoveExpiredFilesAsync(stoppingToken).ConfigureAwait(false);
+            await _RunPassAsync(stoppingToken).ConfigureAwait(false);
+        }
+    }
 
-                if (removed > 0)
-                {
-                    LogRemovedExpiredUploads(logger, removed);
-                }
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+    private async Task _RunPassAsync(CancellationToken stoppingToken)
+    {
+        try
+        {
+            var removed = await store.RemoveExpiredFilesAsync(stoppingToken).ConfigureAwait(false);
+
+            if (removed > 0)
             {
-                return;
+                LogRemovedExpiredUploads(logger, removed);
             }
-            catch (Exception e)
-            {
-                LogCleanupFailed(logger, e);
-            }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception e)
+        {
+            LogCleanupFailed(logger, e);
         }
     }
 

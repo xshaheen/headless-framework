@@ -19,9 +19,17 @@ public sealed class TusCorsDefaultsTests : TestBase
                 "Tus-Resumable",
                 "Upload-Offset",
                 "Upload-Length",
+                "Upload-Defer-Length",
                 "Upload-Expires",
                 "Upload-Metadata",
             ]);
+    }
+
+    [Fact]
+    public void exposed_headers_should_be_a_superset_of_tusdotnet_cors_helper()
+    {
+        // tusdotnet ships CorsHelper.GetExposedHeaders(); ours must never expose less than it
+        TusCorsDefaults.ExposedHeaders.Should().Contain(tusdotnet.Helpers.CorsHelper.GetExposedHeaders());
     }
 
     [Fact]

@@ -60,18 +60,39 @@ public sealed partial class TusAzureStore : ITusExpirationStore
 
     /// <summary>
     /// Returns the expiration timestamp stored for the given upload, or <see langword="null"/>
-    /// if the file does not exist or no expiration has been set.
+    /// if the file does not exist, no expiration has been set, or the upload is complete.
     /// </summary>
     /// <param name="fileId">the TUS file identifier</param>
     /// <param name="cancellationToken">token to cancel the operation</param>
     /// <returns>the expiration instant, or <see langword="null"/></returns>
+    /// <remarks>
+    /// Completed uploads report no expiration — a deliberate divergence from
+    /// <c>TusDiskStore</c>, which keeps returning the stored timestamp. The TUS Expiration
+    /// extension covers <em>unfinished</em> uploads, but tusdotnet refreshes the sliding
+    /// expiration on the PATCH that completes an upload and its <c>FileHasNotExpired</c>
+    /// requirement 404s any upload whose expiration has passed — so reporting the stale
+    /// timestamp would make completed uploads unreachable through tus (no HEAD, and no
+    /// DELETE/termination) once the window elapses, even though this store never reaps them.
+    /// </remarks>
     public async Task<DateTimeOffset?> GetExpirationAsync(string fileId, CancellationToken cancellationToken)
     {
         await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
 
         var azureFile = await _GetTusFileInfoAsync(fileId, cancellationToken).ConfigureAwait(false);
 
-        return azureFile?.Metadata.DateExpiration;
+        if (azureFile is null)
+        {
+            return null;
+        }
+
+        var uploadLength = azureFile.Metadata.UploadLength;
+
+        if (uploadLength is not null && azureFile.CurrentContentLength >= uploadLength.Value)
+        {
+            return null;
+        }
+
+        return azureFile.Metadata.DateExpiration;
     }
 
     /// <summary>

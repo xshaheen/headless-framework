@@ -20,8 +20,9 @@ package aligns on one version.
 
 ## Key Features
 
-- `TusCorsDefaults` — the tus 1.0.0 CORS surface as constants: `ExposedHeaders` (response headers a
-  cross-origin client must read), `AllowedHeaders` (request headers a client sends), and
+- `TusCorsDefaults` — the tus 1.0.0 CORS surface as constants: `ExposedHeaders` (a superset of
+  tusdotnet's `CorsHelper.GetExposedHeaders()`, adding the `Upload-Defer-Length` that HEAD responses
+  carry), `AllowedHeaders` (request headers a client sends — no upstream equivalent), and
   `AllowedMethods` (includes the PATCH/DELETE that default CORS configs miss)
 - `CorsPolicyBuilder.WithTusHeaders()` — applies all three in one call; origins and credentials stay
   the caller's decision
@@ -33,9 +34,10 @@ package aligns on one version.
 
 **Cleanup targets incomplete uploads only.** The TUS Expiration extension covers unfinished
 uploads; conforming Headless stores never report completed uploads as expired, so the job cannot
-destroy finished data. The default 5-minute interval balances reclaim latency against the store
-scan each pass performs — the expiration *window* itself is configured on
-`DefaultTusConfiguration.Expiration`, not here.
+destroy finished data. The first pass runs immediately at startup (reclaiming uploads that
+expired while the app was down), then every interval; the default 5-minute interval balances
+reclaim latency against the store scan each pass performs — the expiration *window* itself is
+configured on `DefaultTusConfiguration.Expiration`, not here.
 
 **Store discovery via `ITusExpirationStore`.** The cleanup job binds to the tusdotnet capability
 interface, not a concrete store. Headless store packages forward the registration (for example

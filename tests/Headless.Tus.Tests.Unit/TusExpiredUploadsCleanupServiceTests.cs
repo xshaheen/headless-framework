@@ -44,23 +44,55 @@ public sealed class TusExpiredUploadsCleanupServiceTests : TestBase
     }
 
     [Fact]
-    public async Task should_remove_expired_uploads_each_interval()
+    public async Task should_run_a_cleanup_pass_immediately_at_startup()
     {
-        // given - signal completion deterministically instead of waiting on real time
+        // given
         var store = Substitute.For<ITusExpirationStore>();
         var firstPass = new TaskCompletionSource();
-        store.RemoveExpiredFilesAsync(Arg.Any<CancellationToken>()).Returns(3).AndDoes(_ => firstPass.TrySetResult());
+        store.RemoveExpiredFilesAsync(Arg.Any<CancellationToken>()).Returns(1).AndDoes(_ => firstPass.TrySetResult());
+
+        var timeProvider = new FakeTimeProvider();
+        using var service = _CreateService(store, timeProvider);
+
+        // when - no time is advanced at all
+        await service.StartAsync(AbortToken);
+        await firstPass.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        await service.StopAsync(AbortToken);
+
+        // then - the startup pass ran without waiting for the first interval
+        await store.Received().RemoveExpiredFilesAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_remove_expired_uploads_each_interval()
+    {
+        // given - the startup pass satisfies call #1, so the interval loop is only proven by a
+        // SECOND call that requires advancing fake time
+        var store = Substitute.For<ITusExpirationStore>();
+        var secondPass = new TaskCompletionSource();
+        var calls = 0;
+        store
+            .RemoveExpiredFilesAsync(Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                if (Interlocked.Increment(ref calls) >= 2)
+                {
+                    secondPass.TrySetResult();
+                }
+
+                return 3;
+            });
 
         var timeProvider = new FakeTimeProvider();
         using var service = _CreateService(store, timeProvider);
 
         // when
         await service.StartAsync(AbortToken);
-        await _AdvanceUntilAsync(timeProvider, firstPass.Task);
+        await _AdvanceUntilAsync(timeProvider, secondPass.Task);
         await service.StopAsync(AbortToken);
 
-        // then
-        await store.Received().RemoveExpiredFilesAsync(Arg.Any<CancellationToken>());
+        // then - startup pass + at least one interval-driven pass
+        calls.Should().BeGreaterThanOrEqualTo(2);
     }
 
     [Fact]

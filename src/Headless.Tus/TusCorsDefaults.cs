@@ -20,6 +20,12 @@ public static class TusCorsDefaults
     /// (<c>Access-Control-Expose-Headers</c>): the creation <c>Location</c>, the protocol/version
     /// negotiation headers, and every <c>Upload-*</c> state header.
     /// </summary>
+    /// <remarks>
+    /// A superset of tusdotnet's <c>CorsHelper.GetExposedHeaders()</c>: adds
+    /// <c>Upload-Defer-Length</c>, which HEAD responses carry for defer-length uploads but the
+    /// upstream helper omits. <see cref="AllowedHeaders"/>/<see cref="AllowedMethods"/> have no
+    /// upstream equivalent.
+    /// </remarks>
     public static IReadOnlyList<string> ExposedHeaders { get; } =
     [
         "Location",
@@ -32,6 +38,7 @@ public static class TusCorsDefaults
         HeaderConstants.UploadLength,
         HeaderConstants.UploadDeferLength,
         HeaderConstants.UploadMetadata,
+        HeaderConstants.UploadChecksum,
         HeaderConstants.UploadExpires,
         HeaderConstants.UploadConcat,
     ];
