@@ -6,6 +6,9 @@ using Headless.Sms.Vodafone;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Polly.CircuitBreaker;
+using Polly.RateLimiting;
+using Polly.Timeout;
 using WireMock.RequestBuilders;
 using WireMock.ResponseBuilders;
 
@@ -65,13 +68,15 @@ public sealed class VodafoneSmsSenderTests : TestBase, IClassFixture<SmsWireMock
     }
 
     [Fact]
-    public async Task should_fail_when_response_does_not_report_success()
+    public async Task should_fail_and_surface_the_response_body_when_it_does_not_report_success()
     {
-        _StubSubmit("<Response><Success>false</Success></Response>");
+        const string body = "<Response><Success>false</Success><Error>blocked</Error></Response>";
+        _StubSubmit(body);
 
         var result = await _CreateSender().SendAsync(SmsRequests.Single(), AbortToken);
 
         result.Success.Should().BeFalse();
+        result.FailureError.Should().Be(body);
     }
 
     [Fact]
@@ -95,9 +100,13 @@ public sealed class VodafoneSmsSenderTests : TestBase, IClassFixture<SmsWireMock
         body.Should().Contain("a &amp; b &lt; c");
     }
 
-    [Fact]
-    public async Task should_return_transient_failure_on_transport_fault()
+    [Theory]
+    [InlineData(nameof(TimeoutRejectedException))]
+    [InlineData(nameof(BrokenCircuitException))]
+    [InlineData(nameof(RateLimiterRejectedException))]
+    public async Task should_classify_resilience_rejections_as_transient(string rejectionKind)
     {
+        var exception = ResilienceRejections.Create(rejectionKind);
         var options = Options.Create(
             new VodafoneSmsOptions
             {
@@ -108,7 +117,11 @@ public sealed class VodafoneSmsSenderTests : TestBase, IClassFixture<SmsWireMock
                 SecureHash = "0123456789ABCDEF",
             }
         );
-        var sender = new VodafoneSmsSender(_fixture.HttpClientFactory, options, NullLogger<VodafoneSmsSender>.Instance);
+        var sender = new VodafoneSmsSender(
+            new ThrowingHttpClientFactory(exception),
+            options,
+            NullLogger<VodafoneSmsSender>.Instance
+        );
 
         var result = await sender.SendAsync(SmsRequests.Single(), AbortToken);
 

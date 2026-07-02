@@ -8,7 +8,7 @@ Provides SMS sending via the VictoryLink API, a regional gateway serving the Mid
 
 ## Key Features
 
-- `VictoryLinkSmsSender` — `ISmsSender` implementation backed by the VictoryLink REST API.
+- `VictoryLinkSmsSender` — implements `ISmsSender` (single recipient) and `IBulkSmsSender` (multi-recipient bulk), backed by the VictoryLink REST API.
 - Username + password authentication.
 - Configurable `Sender` name and `Endpoint` URL.
 - Response-code-based error detection.

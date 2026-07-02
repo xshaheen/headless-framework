@@ -154,6 +154,8 @@
     <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.16.0" />
     <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.15.1" />
     <PackageVersion Include="PdfPig" Version="0.1.15" />
+    <!-- Legacy Polly pinned only for the Infobip SDK (referenced with an alias); everything else uses Polly.Core -->
+    <PackageVersion Include="Polly" Version="7.2.4" />
     <PackageVersion Include="Polly.Core" Version="8.7.0" />
     <PackageVersion Include="Polly.Extensions" Version="8.6.4" />
     <PackageVersion Include="Polly.RateLimiting" Version="8.6.4" />
@@ -162,6 +164,8 @@
     <PackageVersion Include="RabbitMQ.Client" Version="7.2.1" />
     <PackageVersion Include="Respawn" Version="7.0.0" />
     <PackageVersion Include="Scalar.AspNetCore" Version="2.16.7" />
+    <!-- Transitive via WireMock.Net; pinned to the patched release for GHSA-24c8-4792-22hx (NU1903) -->
+    <PackageVersion Include="Scriban.Signed" Version="7.2.5" />
     <PackageVersion Include="Serilog" Version="4.3.1" />
     <PackageVersion Include="Serilog.Enrichers.ClientInfo" Version="2.9.0" />
     <PackageVersion Include="Serilog.Enrichers.Environment" Version="3.0.1" />

@@ -107,9 +107,10 @@ Register exactly one provider via `AddHeadlessSms(setup => setup.Use{Provider}(.
 - Always use `Headless.Sms.Dev` in development/test environments to avoid sending real SMS messages. Use `AddHeadlessSms(setup => setup.UseDev("sms-log.txt"))` for file logging or `AddHeadlessSms(setup => setup.UseNoop())` for silent discard.
 - Code against `ISmsSender` from `Headless.Sms.Abstractions` — never against provider-specific sender types.
 - Register exactly one provider with `services.AddHeadlessSms(setup => setup.Use{Provider}(...))` (for example `UseTwilio`, `UseAwsSns`, `UseCequens`, `UseDev`). The registration enforces an exactly-one-provider gate and throws on zero or multiple providers.
-- `SendSingleSmsRequest` uses `Destinations` (a list of `SmsRequestDestination`) and `Text` — not `To`/`Message`. Destination requires a country calling code (`Code`) and the local number (`Number`) as separate fields.
+- `SendSingleSmsRequest` targets exactly one recipient via `Destination` (a single `SmsRequestDestination`) plus `Text` — not `To`/`Message`. A destination requires a country calling code (`Code`) and the local number (`Number`) as separate fields.
+- For one message to many recipients in a single provider call, use `IBulkSmsSender.SendBulkAsync(SendBulkSmsRequest)`. It is an optional capability: Cequens, Connekio, Infobip, VictoryLink, Vodafone, and the Dev/Noop senders implement it; Twilio and AWS SNS do not (one recipient per API call), so resolving `IBulkSmsSender` for them fails. Loop `SendAsync` to fan out over a single-recipient provider.
 - `SendSingleSmsResponse` exposes `Success` (bool), optional `ProviderMessageId` (string? — the backend's message id on success when it returns one), `FailureError` (string? — non-null when `Success` is false), and `FailureKind` (the `SmsFailureKind` enum classifying failures). It does NOT have `IsSuccess` or `ErrorMessage`.
-- `ISmsSender.SendAsync` returns `ValueTask<SendSingleSmsResponse>` and never throws for provider/transport failures — only `OperationCanceledException` propagates. Always check `response.Success`.
+- `ISmsSender.SendAsync` returns `ValueTask<SendSingleSmsResponse>` and never throws for provider/transport failures — only `OperationCanceledException` (on cancellation) and argument-validation exceptions (for a null request, a null destination, or an empty body) propagate. Always check `response.Success`.
 - HTTP-backed providers (Cequens, Connekio, Infobip, Twilio, VictoryLink, Vodafone) disable auto-retry by default to prevent duplicate SMS delivery. Opt back in via the `configureResilience` parameter if the provider supports idempotency keys.
 - Exactly one provider is allowed: `AddHeadlessSms` throws an `InvalidOperationException` if zero or multiple providers are selected, or if it is called more than once on the same service collection.
 - For Twilio, the option property for the sender number is `PhoneNumber` (not `From`) and the account identifier is `Sid` (not `AccountSid`). There is no `MessagingServiceSid` option in the current API.
@@ -121,13 +122,13 @@ Register exactly one provider via `AddHeadlessSms(setup => setup.Use{Provider}(.
 
 ### Message model
 
-`SendSingleSmsRequest` is the single message type for all providers:
+`SendSingleSmsRequest` is the single-recipient message type used by `ISmsSender`:
 
 ```csharp
 new SendSingleSmsRequest
 {
     MessageId = "optional-idempotency-id",          // optional, provider-specific use
-    Destinations = [new SmsRequestDestination(20, "1234567890")], // Code = country calling code
+    Destination = new SmsRequestDestination(20, "1234567890"), // Code = country calling code
     Text = "Your OTP is 123456",
     Properties = null                               // optional, provider-specific metadata
 }
@@ -135,7 +136,7 @@ new SendSingleSmsRequest
 
 `SmsRequestDestination(int Code, string Number)` models a phone number split into country calling code and subscriber number. `ToString()` returns `"{Code}{Number}"` without a plus sign; `ToString(hasPlusPrefix: true)` returns `"+{Code}{Number}"`.
 
-`IsBatch` on the request is `true` when `Destinations.Count > 1`. Batch support varies by provider.
+For multi-recipient sends, `SendBulkSmsRequest` carries a `Destinations` list (plus `Text` and optional `MessageId`/`Properties`) and is sent via `IBulkSmsSender.SendBulkAsync`, returning a `SendBulkSmsResponse`. Bulk support varies by provider (see the capability note above).
 
 ### Result model
 
@@ -146,9 +147,12 @@ SendSingleSmsResponse.Succeeded()                                 // Success = t
 SendSingleSmsResponse.Succeeded("provider-message-id")            // carries the backend's message id
 SendSingleSmsResponse.Failed("reason")                            // Success = false, FailureKind = Unknown
 SendSingleSmsResponse.Failed("reason", SmsFailureKind.Transient)  // classified failure
+SendSingleSmsResponse.FromException(exception)                    // failure with a non-empty message, classified via SmsFailureKinds.FromException
 ```
 
-Check `response.Success` after every send. `FailureError` is guaranteed non-null when `Success` is false (enforced by `[MemberNotNullWhen(false, nameof(FailureError))]`); `Failed` throws on a null/empty reason. `ProviderMessageId` carries the backend's message id on success when the provider returns one (Twilio SID, AWS SNS message id, Infobip bulk id), and is `null` otherwise. `FailureKind` (`SmsFailureKind`: `None`, `Unknown`, `Transient`, `RateLimited`, `InvalidRecipient`, `AuthFailure`, `OutOfCredit`) classifies failures so callers can decide whether to retry or switch providers — transport/network faults are reported as `Transient`.
+Check `response.Success` after every send. `FailureError` is guaranteed non-null when `Success` is false (enforced by `[MemberNotNullWhen(false, nameof(FailureError))]`); `Failed` throws on a null/empty reason. `ProviderMessageId` carries the backend's message id on success when the provider returns one (Twilio SID, AWS SNS message id, Infobip bulk id), and is `null` otherwise. `FailureKind` (`SmsFailureKind`: `None`, `Unknown`, `Transient`, `RateLimited`, `InvalidRecipient`, `AuthFailure`, `OutOfCredit`) classifies failures so callers can decide whether to retry or switch providers — transport/network faults — including the standard resilience pipeline's timeout, open-circuit, and rate-limiter rejections — are reported as `Transient` via the shared `SmsFailureKinds.FromException` helper, and `SendSingleSmsResponse.FromException` pairs that classification with a guaranteed non-empty message (an overload takes an explicit kind). Provider-specific failures are classified from each provider's own contract — AWS SNS from its typed SDK exceptions, Infobip from its delivery status group — and stay `Unknown` when the backend documents no machine-readable signal (kinds are never inferred from generic HTTP status semantics).
+
+`IBulkSmsSender.SendBulkAsync` returns a `SendBulkSmsResponse` with one `SmsRecipientResult` (`Destination` + a per-recipient `SendSingleSmsResponse`) per recipient, plus `AllSucceeded`/`AnySucceeded` and an optional `ProviderBatchId`. Providers that return per-recipient detail (Infobip) populate each result individually; providers whose API reports a single batch status (Cequens, Connekio, VictoryLink, Vodafone) apply that one outcome to every recipient.
 
 ### Retry safety
 
@@ -181,12 +185,16 @@ Provides a provider-agnostic SMS sending API so application code stays decoupled
 
 ### Key Features
 
-- `ISmsSender` — single method `SendAsync(SendSingleSmsRequest, CancellationToken) : ValueTask<SendSingleSmsResponse>`.
-- `SendSingleSmsRequest` — message contract with `Destinations` (list of `SmsRequestDestination`), `Text`, optional `MessageId`, and optional `Properties`.
+- `ISmsSender` — single-recipient send: `SendAsync(SendSingleSmsRequest, CancellationToken) : ValueTask<SendSingleSmsResponse>`.
+- `IBulkSmsSender` — optional capability for multi-recipient sends: `SendBulkAsync(SendBulkSmsRequest, CancellationToken) : ValueTask<SendBulkSmsResponse>`. Only implemented by providers with native bulk support.
+- `SendSingleSmsRequest` — single-recipient message contract with `Destination` (one `SmsRequestDestination`), `Text`, optional `MessageId`, and optional `Properties`.
+- `SendBulkSmsRequest` — bulk message contract with `Destinations` (list), `Text`, optional `MessageId`/`Properties`.
 - `SmsRequestDestination(int Code, string Number)` — phone number with separate country calling code and subscriber number.
-- `SendSingleSmsResponse` — closed result type; `Success` (bool), optional `ProviderMessageId`, `FailureError` (string? non-null on failure), and `FailureKind` (`SmsFailureKind`).
+- `SendSingleSmsResponse` — closed result type; `Success` (bool), optional `ProviderMessageId`, `FailureError` (string? non-null on failure), and `FailureKind` (`SmsFailureKind`). Built via `Succeeded`, `Failed`, or `FromException` (which guarantees a non-empty message and classifies the failure).
+- `SendBulkSmsResponse` — per-recipient bulk result; `Results` (one `SmsRecipientResult` each), `AllSucceeded`/`AnySucceeded`, optional `ProviderBatchId`. Built via `FromResults` or `FromAggregate`.
+- `SmsFailureKinds` — shared transport classifier (`FromException`) so every provider maps network faults to the same `SmsFailureKind`; provider-specific signals are classified per provider from its own contract.
 - `AddHeadlessSms(setup => setup.Use{Provider}(...))` — root registration entry with an exactly-one-provider gate; each provider package contributes a `Use{Provider}` builder member.
-- Never throws for provider errors — only `OperationCanceledException` propagates.
+- Never throws for provider errors — only `OperationCanceledException` and argument-validation exceptions (malformed request) propagate.
 
 ### Installation
 
@@ -203,7 +211,7 @@ public sealed class OtpService(ISmsSender smsSender)
     {
         var request = new SendSingleSmsRequest
         {
-            Destinations = [new SmsRequestDestination(20, phoneNumber)], // 20 = Egypt calling code
+            Destination = new SmsRequestDestination(20, phoneNumber), // 20 = Egypt calling code
             Text = $"Your verification code is: {code}",
         };
 
@@ -411,7 +419,7 @@ Provides SMS sending via the Connekio API using basic username/password/accountI
 ### Key Features
 
 - `ConnekioSmsSender` — `ISmsSender` implementation backed by the Connekio REST API.
-- Separate `SingleSmsEndpoint` and `BatchSmsEndpoint` (auto-selected based on `IsBatch`).
+- Separate `SingleSmsEndpoint` (used by `SendAsync`) and `BatchSmsEndpoint` (used by `IBulkSmsSender.SendBulkAsync`).
 - Basic auth: `UserName` + `Password` + `AccountId`.
 - Standard resilience pipeline with auto-retry **disabled** by default.
 - Optional `configureClient` and `configureResilience` hooks.
@@ -640,6 +648,7 @@ Provides SMS sending via Twilio's REST API, the most widely supported internatio
 - `Region` + `Edge` — optional Twilio region/edge node selection for data residency or latency.
 - Standard resilience pipeline with auto-retry **disabled** by default.
 - Optional `configureClient` and `configureResilience` hooks.
+- Cancellation is honored up to the point of dispatch only: the Twilio SDK (7.x) does not accept a `CancellationToken` on its send path, so an already-cancelled token throws before the call, but cancellation mid-flight cannot interrupt the in-progress request.
 
 ### Installation
 

@@ -124,6 +124,7 @@ public static class SetupCequens
         {
             _configureOptions(services);
             services.AddSingleton<ISmsSender, CequensSmsSender>();
+            services.AddSingleton<IBulkSmsSender>(static sp => (IBulkSmsSender)sp.GetRequiredService<ISmsSender>());
 
             var httpClientBuilder = _configureClient is null
                 ? services.AddHttpClient(HttpClientName)

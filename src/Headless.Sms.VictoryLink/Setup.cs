@@ -126,6 +126,7 @@ public static class SetupVictoryLink
         {
             _configureOptions(services);
             services.AddSingleton<ISmsSender, VictoryLinkSmsSender>();
+            services.AddSingleton<IBulkSmsSender>(static sp => (IBulkSmsSender)sp.GetRequiredService<ISmsSender>());
 
             var httpClientBuilder = _configureClient is null
                 ? services.AddHttpClient(HttpClientName)

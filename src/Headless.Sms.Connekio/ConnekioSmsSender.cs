@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Encodings.Web;
 using Headless.Checks;
@@ -14,7 +15,7 @@ internal sealed class ConnekioSmsSender(
     IHttpClientFactory httpClientFactory,
     IOptions<ConnekioSmsOptions> optionsAccessor,
     ILogger<ConnekioSmsSender> logger
-) : ISmsSender
+) : ISmsSender, IBulkSmsSender
 {
     private static readonly JsonSerializerOptions _JsonOptions = new()
     {
@@ -38,12 +39,79 @@ internal sealed class ConnekioSmsSender(
     )
     {
         Argument.IsNotNull(request);
+        Argument.IsNotNull(request.Destination);
+        Argument.IsNotEmpty(request.Text);
+
+        return await _SendAsync(
+                _singleSmsEndpoint,
+                () =>
+                    JsonSerializer.Serialize(
+                        new ConnekioSingleSmsRequest
+                        {
+                            AccountId = _options.AccountId,
+                            Sender = _options.Sender,
+                            Text = request.Text,
+                            Msisdn = request.Destination.ToString(),
+                        },
+                        _JsonOptions
+                    ),
+                destinationCount: 1,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    public async ValueTask<SendBulkSmsResponse> SendBulkAsync(
+        SendBulkSmsRequest request,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(request);
+        Argument.IsNotNull(request.Destinations);
         Argument.IsNotEmpty(request.Destinations);
         Argument.IsNotEmpty(request.Text);
 
+        // Connekio has a dedicated batch endpoint that returns a single status, so the same outcome applies to
+        // every recipient.
+        var outcome = await _SendAsync(
+                _batchSmsEndpoint,
+                () =>
+                    JsonSerializer.Serialize(
+                        new ConnekioBatchSmsRequest
+                        {
+                            AccountId = _options.AccountId,
+                            Sender = _options.Sender,
+                            Text = request.Text,
+                            MobileList =
+                            [
+                                .. request.Destinations.Select(r => new ConnekioRecipient { Msisdn = r.ToString() }),
+                            ],
+                        },
+                        _JsonOptions
+                    ),
+                request.Destinations.Count,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return SendBulkSmsResponse.FromAggregate(request.Destinations, outcome);
+    }
+
+    // Both entry points share one try/catch so the never-throw contract (only OperationCanceledException and
+    // argument-validation propagate) lives in a single place. The payload is built inside the guarded region so
+    // a serialization fault is reported as a failed response rather than thrown.
+    private async ValueTask<SendSingleSmsResponse> _SendAsync(
+        Uri endpoint,
+        [InstantHandle] Func<string> payloadFactory,
+        int destinationCount,
+        CancellationToken cancellationToken
+    )
+    {
         try
         {
-            return await _SendCoreAsync(request, cancellationToken).ConfigureAwait(false);
+            var payload = payloadFactory();
+
+            return await _PostAsync(endpoint, payload, destinationCount, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -51,27 +119,25 @@ internal sealed class ConnekioSmsSender(
         }
         catch (Exception e)
         {
-            logger.LogSmsSendException(e, request.Destinations.Count);
+            logger.LogSmsSendException(e, destinationCount);
 
-            return SendSingleSmsResponse.Failed(e.Message, SmsFailureKind.Transient);
+            return SendSingleSmsResponse.FromException(e);
         }
     }
 
-    #region Helpers
-
-    private async ValueTask<SendSingleSmsResponse> _SendCoreAsync(
-        SendSingleSmsRequest request,
+    private async ValueTask<SendSingleSmsResponse> _PostAsync(
+        Uri endpoint,
+        string payload,
+        int destinationCount,
         CancellationToken cancellationToken
     )
     {
-        using var requestMessage = new HttpRequestMessage(HttpMethod.Post, _GetEndpoint(request.IsBatch));
-
-        requestMessage.Content = new StringContent(_BuildPayload(request), Encoding.UTF8, "application/json");
-
+        using var requestMessage = new HttpRequestMessage(HttpMethod.Post, endpoint);
+        requestMessage.Content = new StringContent(payload, Encoding.UTF8, "application/json");
         requestMessage.Headers.Authorization = _basicAuthHeader;
 
         using var httpClient = httpClientFactory.CreateClient(SetupConnekio.HttpClientName);
-        var response = await httpClient.SendAsync(requestMessage, cancellationToken).ConfigureAwait(false);
+        using var response = await httpClient.SendAsync(requestMessage, cancellationToken).ConfigureAwait(false);
 
         // A success status code is authoritative; only read the body to explain a failure.
         if (response.IsSuccessStatusCode)
@@ -87,42 +153,17 @@ internal sealed class ConnekioSmsSender(
         }
         else
         {
-            logger.LogFailedToSendSms(request.Destinations.Count, response.StatusCode);
+            logger.LogFailedToSendSms(destinationCount, response.StatusCode);
         }
 
-        return SendSingleSmsResponse.Failed("Failed to send.");
+        var error = string.IsNullOrWhiteSpace(rawContent) ? "Failed to send SMS using Connekio API" : rawContent;
+
+        // Connekio publishes no machine-readable error contract; a 401 against its Basic-auth endpoints is the
+        // only status with unambiguous meaning (credentials rejected). Everything else surfaces the raw body
+        // without guessing a kind.
+        var kind =
+            response.StatusCode is HttpStatusCode.Unauthorized ? SmsFailureKind.AuthFailure : SmsFailureKind.Unknown;
+
+        return SendSingleSmsResponse.Failed(error, kind);
     }
-
-    private string _BuildPayload(SendSingleSmsRequest request)
-    {
-        if (request.IsBatch)
-        {
-            var batchRequest = new ConnekioBatchSmsRequest
-            {
-                AccountId = _options.AccountId,
-                Sender = _options.Sender,
-                Text = request.Text,
-                MobileList = [.. request.Destinations.Select(r => new ConnekioRecipient { Msisdn = r.ToString() })],
-            };
-
-            return JsonSerializer.Serialize(batchRequest, _JsonOptions);
-        }
-
-        var singleRequest = new ConnekioSingleSmsRequest
-        {
-            AccountId = _options.AccountId,
-            Sender = _options.Sender,
-            Text = request.Text,
-            Msisdn = request.Destinations[0].ToString(),
-        };
-
-        return JsonSerializer.Serialize(singleRequest, _JsonOptions);
-    }
-
-    private Uri _GetEndpoint(bool isBatch)
-    {
-        return isBatch ? _batchSmsEndpoint : _singleSmsEndpoint;
-    }
-
-    #endregion
 }
