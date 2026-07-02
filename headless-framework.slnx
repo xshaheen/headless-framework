@@ -391,6 +391,7 @@
         <Project Path="src\Headless.Sms.Aws\Headless.Sms.Aws.csproj" />
         <Project Path="src\Headless.Sms.Cequens\Headless.Sms.Cequens.csproj" />
         <Project Path="src\Headless.Sms.Connekio\Headless.Sms.Connekio.csproj" />
+        <Project Path="src\Headless.Sms.Core\Headless.Sms.Core.csproj" />
         <Project Path="src\Headless.Sms.Dev\Headless.Sms.Dev.csproj" />
         <Project Path="src\Headless.Sms.Infobip\Headless.Sms.Infobip.csproj" />
         <Project Path="src\Headless.Sms.Twilio\Headless.Sms.Twilio.csproj" />
