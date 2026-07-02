@@ -89,12 +89,18 @@ public sealed class TusAzureStoreTests : TestBase
     [Fact]
     public async Task should_set_upload_length()
     {
-        // given
+        // given - tusdotnet passes -1 for Upload-Defer-Length creations
         const long initialUploadLength = -1L;
         var newUploadLength = Faker.Random.Number(100, 1_000);
         var fileName = Faker.System.FileName();
         var metadata = $"filename {fileName.ToBase64()}";
         var fileId = await _store.CreateFileAsync(initialUploadLength, metadata, CancellationToken.None);
+
+        // the -1 sentinel must not be persisted: tusdotnet decides between "Upload-Length" and
+        // "Upload-Defer-Length: 1" in HEAD responses based on GetUploadLengthAsync being null
+        (await _store.GetUploadLengthAsync(fileId, AbortToken))
+            .Should()
+            .BeNull();
 
         // when
         await _store.SetUploadLengthAsync(fileId, newUploadLength, CancellationToken.None);
@@ -104,6 +110,35 @@ public sealed class TusAzureStoreTests : TestBase
         var properties = await blobClient.GetPropertiesAsync(cancellationToken: AbortToken);
         properties.Value.Metadata.Should().ContainKey(TusAzureMetadata.UploadLengthKey);
         properties.Value.Metadata[TusAzureMetadata.UploadLengthKey].Should().Be(newUploadLength.ToInvariantString());
+    }
+
+    [Fact]
+    public async Task should_upload_data_before_upload_length_is_known()
+    {
+        // given - the standard tus defer-length flow: data PATCHes arrive BEFORE the client
+        // declares Upload-Length (tus-js-client streams of unknown size do exactly this)
+        var content = Faker.Random.Bytes(1_000);
+        var fileId = await _store.CreateFileAsync(-1L, metadata: null, AbortToken);
+
+        // when - append while the length is still unknown
+        await using (var stream = new MemoryStream(content))
+        {
+            await _store.AppendDataAsync(fileId, stream, AbortToken);
+        }
+
+        // then - the data is accepted and the offset advances
+        (await _store.GetUploadOffsetAsync(fileId, AbortToken))
+            .Should()
+            .Be(content.Length);
+
+        // and when - the client declares the final length on a later request
+        await _store.SetUploadLengthAsync(fileId, content.Length, AbortToken);
+
+        // then - the upload reads as complete
+        (await _store.GetUploadLengthAsync(fileId, AbortToken))
+            .Should()
+            .Be(content.Length);
+        (await _store.GetUploadOffsetAsync(fileId, AbortToken)).Should().Be(content.Length);
     }
 
     /* Store Core */

@@ -452,6 +452,21 @@ public sealed class TusAzureMetadataTests : TestBase
     }
 
     [Fact]
+    public void should_return_null_for_negative_upload_length()
+    {
+        // given - tusdotnet's Creation-Defer-Length sentinel (-1) persisted by an older version
+        var dict = new Dictionary<string, string>(StringComparer.Ordinal) { [TusAzureMetadata.UploadLengthKey] = "-1" };
+        var metadata = TusAzureMetadata.FromAzure(dict);
+
+        // when
+        var result = metadata.UploadLength;
+
+        // then: a negative length must read as "unknown" so HEAD reports Upload-Defer-Length,
+        // not "Upload-Length: -1", and the too-much-data guard stays inert
+        result.Should().BeNull();
+    }
+
+    [Fact]
     public void should_return_null_for_invalid_upload_length()
     {
         // given

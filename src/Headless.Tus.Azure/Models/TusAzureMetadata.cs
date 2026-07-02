@@ -85,9 +85,12 @@ internal sealed partial class TusAzureMetadata
     {
         // Missing/unparseable returns null (unknown length) rather than 0; the Creation-Defer-Length flow relies on
         // "unknown" being distinct from a zero-byte upload, and 0 would otherwise trip the upload-length guard.
+        // Negative values (tusdotnet's -1 defer-length sentinel) also map to null so a stray persisted -1 can
+        // never resurface as a real length in HEAD responses or the too-much-data guard.
         get =>
             _decodedMetadata.TryGetValue(UploadLengthKey, out var value)
             && long.TryParse(value, CultureInfo.InvariantCulture, out var length)
+            && length >= 0
                 ? length
                 : null;
         set

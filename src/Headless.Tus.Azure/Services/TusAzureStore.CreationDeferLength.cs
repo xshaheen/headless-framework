@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Microsoft.Extensions.Logging;
 using tusdotnet.Interfaces;
 
@@ -12,11 +13,16 @@ public sealed partial class TusAzureStore : ITusCreationDeferLengthStore
     /// Creation-Defer-Length extension (i.e., without an initial size declaration).
     /// </summary>
     /// <param name="fileId">the TUS file identifier</param>
-    /// <param name="uploadLength">the total upload size in bytes now known by the client</param>
+    /// <param name="uploadLength">the total upload size in bytes now known by the client; must not be negative</param>
     /// <param name="cancellationToken">token to cancel the operation</param>
     /// <exception cref="InvalidOperationException">thrown if the file does not exist</exception>
+    /// <exception cref="ArgumentOutOfRangeException">thrown if <paramref name="uploadLength"/> is negative</exception>
     public async Task SetUploadLengthAsync(string fileId, long uploadLength, CancellationToken cancellationToken)
     {
+        // A negative value would be persisted and then read back as "unknown length" (defer-length),
+        // silently re-deferring an upload the client believes is finalized.
+        Argument.IsPositiveOrZero(uploadLength);
+
         try
         {
             var blobClient = _GetBlobClient(fileId);

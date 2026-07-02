@@ -12,7 +12,12 @@ public sealed partial class TusAzureStore : ITusCreationStore
     /// Creates a new TUS upload by writing an empty block blob with upload metadata and returns
     /// the generated file identifier.
     /// </summary>
-    /// <param name="uploadLength">total number of bytes that the client will upload</param>
+    /// <param name="uploadLength">
+    /// total number of bytes that the client will upload, or <c>-1</c> when the client used the
+    /// Creation-Defer-Length extension (tusdotnet passes <c>-1</c> for deferred lengths; it is not
+    /// persisted so <c>GetUploadLengthAsync</c> reports <see langword="null"/> until the client
+    /// declares the final length)
+    /// </param>
     /// <param name="metadata">
     /// raw TUS metadata string from the Upload-Metadata header, or <see langword="null"/> if
     /// the client did not supply metadata
@@ -29,7 +34,11 @@ public sealed partial class TusAzureStore : ITusCreationStore
             var blobMetadata = TusAzureMetadata.FromTus(metadata);
 
             blobMetadata.DateCreated = _timeProvider.GetUtcNow();
-            blobMetadata.UploadLength = uploadLength;
+            // tusdotnet passes -1 for Upload-Defer-Length uploads (same contract as TusDiskStore, which
+            // skips persisting it). Storing -1 would make GetUploadLengthAsync report a real length, so
+            // HEAD would emit "Upload-Length: -1" instead of "Upload-Defer-Length: 1" and the
+            // too-much-data guard would reject every PATCH sent before the length is declared.
+            blobMetadata.UploadLength = uploadLength >= 0 ? uploadLength : null;
 
             // Create empty blob with metadata and content type
             // This ensures the blob exists and has the correct metadata from the start
