@@ -13,6 +13,8 @@ In distributed/containerized environments, ASP.NET Core Data Protection keys mus
 - Ensures the `DataProtection` container before writes when an `IBlobContainerManager` is registered or supplied
 - Supports factory-based storage resolution for DI scenarios, including keyed/named stores via a `serviceKey` overload
 - Enforces container provisioning up front: when no manager is available and the storage requires a provisioned container (`IBlobStorage.RequiresContainerProvisioning`), configuration throws unless you acknowledge out-of-band provisioning with `provisioning: BlobContainerProvisioning.PreProvisioned`
+- `ValidateKeyRingAtStartup()` — opt-in startup gate (runs before other hosted services) that exercises the key ring, verifies write access with a real sentinel write, and fails an empty key ring on read-only nodes — converting first-write/rotation failures into deploy-time failures
+- The container ensure runs inside the same retry pipeline as the key upload, and a terminal write failure surfaces as `InvalidOperationException` naming the `DataProtection` container, whether a manager was wired, and the remediation (original exception preserved as inner)
 
 ## Installation
 
@@ -25,7 +27,11 @@ dotnet add package Headless.Api.DataProtection
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddDataProtection().PersistKeysToBlobStorage();
+builder.Services.AddDataProtection()
+    .PersistKeysToBlobStorage()
+    // Opt-in: probe the key ring at startup so a missing container / bad credentials fails the deploy,
+    // not the first key write or the ~90-day rotation months later.
+    .ValidateKeyRingAtStartup();
 
 // Or with explicit storage instance (no manager: throws at config time for provisioning-requiring backends
 // unless you acknowledge out-of-band provisioning — see Configuration)
@@ -56,13 +62,46 @@ Provisioning matrix:
 | Cloudflare R2 | `provisioning: BlobContainerProvisioning.PreProvisioned` is the only option — R2 deliberately ships no `IBlobContainerManager` (object-scoped tokens cannot create buckets); create the bucket in the Cloudflare dashboard/API first |
 | Redis (`RequiresContainerProvisioning == false`) | Exempt — the backing hash materializes on first write; the storage-only overload works with no acknowledgment |
 
+### Startup validation (`ValidateKeyRingAtStartup`)
+
+Key writes are lazy: the first write happens on first boot and again at the ~90-day key rotation, so a misconfigured container, manager, or credential can stay hidden for months post-deploy and then take down data protection in production. `ValidateKeyRingAtStartup()` registers an opt-in startup gate (an `IHostedLifecycleService` whose probe runs in `StartingAsync`, **before** any registered `IHostedService.StartAsync` — including the framework's own data-protection hosted service and your application services) that surfaces this at boot:
+
+- **`KeyManagementOptions.AutoGenerateKeys == true` (default)** — the probe protects and unprotects a small payload through the real provider. On a fresh deployment this generates a key and drives the full persistence path (`StoreElement` → container ensure → blob upload), so any container/permission problem fails the deploy.
+- **`AutoGenerateKeys == false` (designated-key-writer topologies)** — the probe reads the key ring via `IKeyManager.GetAllKeys()` (exercising the repository read path) and never forces key generation. A **reachable-but-empty key ring fails validation**: the node would have no usable key for its first protected operation (has the designated key writer run? is this the right container?).
+- **Write probe (both modes, `ProbeWritePath`, default `true`)** — write access is verified with a real write: a reserved sentinel blob (`startup-write-probe.xml`) is uploaded to and deleted from the `DataProtection` container through the same ensure + retry pipeline the key writes use. This is what catches lost write permission or a deleted container when a valid key already exists (the round-trip performs no write then), and the only write-path guarantee on read-only nodes. The sentinel name is reserved and always excluded from key-ring loading, so a crash between upload and delete is harmless. When a non-blob `IXmlRepository` is configured, the write probe is skipped with a debug log.
+
+Failure handling is controlled by `DataProtectionStartupValidationOptions.Mode`:
+
+| Mode | Behavior |
+| --- | --- |
+| `StartupValidationMode.Throw` (default) | `StartingAsync` throws `InvalidOperationException` with an actionable message naming the `DataProtection` container and the provisioning/manager remediation — host start fails |
+| `StartupValidationMode.LogOnly` | The failure is logged at `Critical` level and startup continues |
+
+```csharp
+builder.Services.AddDataProtection()
+    .PersistKeysToBlobStorage(storageInstance, containerManager)
+    .ValidateKeyRingAtStartup(options =>
+    {
+        options.Mode = StartupValidationMode.LogOnly; // default: Throw
+        options.ProbeWritePath = true;                // default: true — sentinel upload+delete each boot
+    });
+```
+
+Registration is idempotent — calling `ValidateKeyRingAtStartup` twice registers a single hosted service.
+
+### Write resilience & failure context
+
+The `DataProtection` container ensure (when a manager is wired) runs inside the same Polly retry pipeline as the key upload, so transient ensure failures are retried under the same predicate as the write. When a key write terminally fails (retries exhausted or a non-retried exception), the surfaced `InvalidOperationException` names the `DataProtection` container, states whether a manager was wired (ensure ran) or not (pre-provisioned mode), and points at the remediation — with the original backend exception preserved as the inner exception. The wrap adds context only; it never guesses a failure kind from the provider exception.
+
 ## Dependencies
 
 - `Headless.Blobs.Abstractions`
 - `Headless.Checks`
 - `Azure.Extensions.AspNetCore.DataProtection.Blobs`
 - `Microsoft.AspNetCore.DataProtection`
+- `Microsoft.Extensions.Hosting.Abstractions`
 
 ## Side Effects
 
 - Configures `KeyManagementOptions.XmlRepository` to use blob storage
+- `ValidateKeyRingAtStartup()` registers an `IHostedLifecycleService` that probes the key ring in `StartingAsync`, before other hosted services start (with `AutoGenerateKeys`, the first key may be created at boot instead of at first use; with `ProbeWritePath`, a sentinel blob is written and deleted each boot)

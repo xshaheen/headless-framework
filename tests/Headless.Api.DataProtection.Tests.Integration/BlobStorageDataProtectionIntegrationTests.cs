@@ -136,9 +136,10 @@ public sealed class BlobStorageDataProtectionIntegrationTests(AzuriteFixture fix
     [Fact]
     public async Task should_preserve_xml_structure()
     {
-        // given
+        // given: the manager is required — the Azure data plane treats a missing container as an error
+        // (no auto-create), so a fresh Azurite instance needs the ensure-before-write path.
         await using var storage = _CreateStorage();
-        var repository = new BlobStorageDataProtectionXmlRepository(storage, LoggerFactory);
+        var repository = new BlobStorageDataProtectionXmlRepository(storage, _CreateContainerManager(), LoggerFactory);
 
         var keyId = Faker.Random.Guid().ToString("N");
         var complexElement = new XElement(
@@ -193,9 +194,10 @@ public sealed class BlobStorageDataProtectionIntegrationTests(AzuriteFixture fix
     [Fact]
     public async Task should_handle_concurrent_operations()
     {
-        // given
+        // given: the manager is required — the Azure data plane treats a missing container as an error
+        // (no auto-create), so a fresh Azurite instance needs the ensure-before-write path.
         await using var storage = _CreateStorage();
-        var repository = new BlobStorageDataProtectionXmlRepository(storage, LoggerFactory);
+        var repository = new BlobStorageDataProtectionXmlRepository(storage, _CreateContainerManager(), LoggerFactory);
         const int keyCount = 10;
 
         var keys = Enumerable
