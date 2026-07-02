@@ -17,6 +17,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
-    <ProjectReference Include="..\Headless.Sms.Abstractions\Headless.Sms.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Sms.Core\Headless.Sms.Core.csproj" />
   </ItemGroup>
 </Project>
