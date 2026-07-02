@@ -173,7 +173,7 @@ Metadata uses one read-only dictionary shape — `IReadOnlyDictionary<string, st
 
 Sidecar trade-offs the agent must know: write order is content-first then sidecar, and a missing sidecar reads as empty metadata, so reads stay safe across a crash window — but the pair is **non-atomic** on FileSystem/SFTP (no transaction). Sidecars are filtered from every listing, existence, count, and delete-all result, so they never surface as blobs or match a prefix/glob. Deleting a blob removes its sidecar, so re-uploading the same key without metadata cannot resurrect stale metadata. Any blob key segment that would collide with the reserved `.hlmeta` form is rejected at `BlobLocation` construction.
 
-**Listings omit metadata by default.** Across every provider, `ListAsync`/`GetBlobsAsync` return `BlobInfo.Metadata == null` unless the query opts in with `BlobQuery.IncludeMetadata = true` — matching the industry norm (jclouds `withDetails`, MinIO `WithMetadata`, Azure `BlobTraits.Metadata`), because metadata-in-listing is not free everywhere. When opted in: Azure requests the metadata trait and Redis reads its info hash (one round-trip, cheap); FileSystem and SFTP read one sidecar per returned page entry; S3 issues one `HeadObject` per returned key (parallelized to `MaxBulkParallelism`). For authoritative single-blob metadata use `GetBlobInfoAsync`.
+**Listings omit metadata by default.** Across every provider, `ListAsync`/`GetBlobsAsync` return `BlobInfo.Metadata == null` unless the query opts in with `BlobQuery.IncludeMetadata = true` — matching the industry norm (jclouds `withDetails`, MinIO `WithMetadata`, Azure `BlobTraits.Metadata`), because metadata-in-listing is not free everywhere. When opted in: Azure requests the metadata trait; Redis's scan reply already carries the metadata either way, so the flag only controls whether it is surfaced (zero marginal Redis I/O); FileSystem and SFTP read one sidecar per returned page entry; S3 issues one `HeadObject` per returned key (parallelized to `MaxBulkParallelism`). For authoritative single-blob metadata use `GetBlobInfoAsync`.
 
 ### Move, copy, and bulk results
 
@@ -236,9 +236,9 @@ Application code needs a single, provider-agnostic API for file storage so it ca
 
 ### Key Features
 
-- `IBlobStorage` — data-plane interface covering upload, download (`OpenReadStreamAsync`), copy, move (non-atomic), delete, exists, info, token-based listing (`ListAsync`), and bulk upload/delete.
+- `IBlobStorage` — data-plane interface covering upload, download (`OpenReadStreamAsync`), copy, move (non-atomic, reject-occupied — never overwrites an existing destination), delete, exists, info, token-based listing (`ListAsync`), and bulk upload/delete.
 - `BlobLocation` — validated `(Container, Path)` address value type; constructor enforces path security and offers a `params ReadOnlySpan<string>` segment overload.
-- `BlobQuery` / `BlobPage` — token-based paging primitive: a prefix-scoped page request and its result plus an opaque continuation token.
+- `BlobQuery` / `BlobPage` — token-based paging primitive: a prefix-scoped page request (with an opt-in `IncludeMetadata` flag; listings omit per-object metadata by default) and its result plus an opaque continuation token.
 - `BlobBulkResult` — identity-carrying bulk outcome (`Container` + `Path` + optional validated `BlobLocation` + `Result<bool, Exception>`).
 - `IBlobContainerManager` — optional container-lifecycle capability (Ensure/Exists/Delete), resolved from DI; implemented by AWS, Azure, FileSystem, Redis, and SSH (not R2).
 - `IPresignedUrlBlobStorage` — optional presigned GET + PUT URL capability over a `BlobLocation`; implemented only by AWS, Azure, and CloudflareR2.

@@ -258,6 +258,9 @@ public sealed class CloudflareR2BlobStorageTests : BlobStorageTestsBase
     [Fact]
     public override Task move_relocates_blob_and_metadata() => base.move_relocates_blob_and_metadata();
 
+    [Fact]
+    public override Task list_metadata_is_opt_in() => base.list_metadata_is_opt_in();
+
     #endregion
 
     #region Normalization round-trip

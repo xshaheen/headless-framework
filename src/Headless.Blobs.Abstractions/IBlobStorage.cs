@@ -38,7 +38,9 @@ public interface IBlobStorage : IAsyncDisposable
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <remarks>
     /// The top-level container must already exist; a missing container/bucket is an error, not auto-created. Use
-    /// <see cref="IBlobContainerManager.EnsureContainerAsync"/> (or out-of-band provisioning) first.
+    /// <see cref="IBlobContainerManager.EnsureContainerAsync"/> (or out-of-band provisioning) first. Exception: Redis
+    /// has no physical container to provision — the backing hash is created implicitly on first write, so an upload
+    /// against a never-ensured container succeeds there.
     /// </remarks>
     ValueTask UploadAsync(
         BlobLocation location,
@@ -188,7 +190,9 @@ public interface IBlobStorage : IAsyncDisposable
     /// A <see cref="BlobPage"/> carrying the page's blobs and a continuation token. A <see langword="null"/> token marks
     /// the last page; otherwise round-trip the token into a new <see cref="BlobQuery"/> to fetch the next page. The
     /// token is opaque and provider-specific — callers must not parse it. Prefer the <c>GetBlobsAsync</c> streaming
-    /// extension over manual paging for full enumeration.
+    /// extension over manual paging for full enumeration. Item ordering is provider-specific: AWS, Azure, FileSystem,
+    /// and SSH return keys in lexicographic order, while Redis's scan-based listing is unordered and may surface a key
+    /// twice across pages during a concurrent rehash — do not rely on ordering in provider-agnostic code.
     /// </returns>
     ValueTask<BlobPage> ListAsync(BlobQuery query, CancellationToken cancellationToken = default);
 

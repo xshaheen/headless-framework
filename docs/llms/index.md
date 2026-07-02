@@ -120,6 +120,10 @@ builder.Services.AddScoped<DocumentService>();
 
 var app = builder.Build();
 
+// Containers are never auto-created (UploadAsync treats a missing container as an error):
+// provision once at startup via the DI-resolved manager, or out-of-band (IaC/dashboard).
+await app.Services.GetRequiredService<IBlobContainerManager>().EnsureContainerAsync("documents");
+
 app.UseHeadlessDefaults(); // StatusCodePages before ExceptionHandler, then auth/tenant, then endpoints
 
 app.MapPost(

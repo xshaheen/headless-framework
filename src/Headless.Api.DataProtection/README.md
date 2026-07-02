@@ -11,7 +11,7 @@ In distributed/containerized environments, ASP.NET Core Data Protection keys mus
 - `PersistKeysToBlobStorage()` extension for `IDataProtectionBuilder`
 - Works with any `IBlobStorage` implementation
 - Ensures the `DataProtection` container before writes when an `IBlobContainerManager` is registered or supplied
-- Supports factory-based storage resolution for DI scenarios
+- Supports factory-based storage resolution for DI scenarios, including keyed/named stores via a `serviceKey` overload
 
 ## Installation
 
@@ -34,6 +34,9 @@ builder.Services.AddDataProtection().PersistKeysToBlobStorage(storageInstance, c
 
 // Or with factory
 builder.Services.AddDataProtection().PersistKeysToBlobStorage(sp => sp.GetRequiredService<IBlobStorage>());
+
+// Or against a named/keyed blob store (resolves the keyed IBlobStorage + IBlobContainerManager)
+builder.Services.AddDataProtection().PersistKeysToBlobStorage(serviceKey: "keys");
 ```
 
 ## Configuration
