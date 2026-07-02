@@ -26,7 +26,7 @@ public sealed class ConnekioSmsSenderTests : TestBase, IClassFixture<SmsWireMock
 
     private ConnekioSmsSender _CreateSender(string singlePath = "/single", string batchPath = "/batch")
     {
-        var options = Options.Create(
+        var options = new OptionsMonitorWrapper<ConnekioSmsOptions>(
             new ConnekioSmsOptions
             {
                 SingleSmsEndpoint = $"{_fixture.BaseUrl}{singlePath}",
@@ -38,7 +38,13 @@ public sealed class ConnekioSmsSenderTests : TestBase, IClassFixture<SmsWireMock
             }
         );
 
-        return new ConnekioSmsSender(_fixture.HttpClientFactory, options, NullLogger<ConnekioSmsSender>.Instance);
+        return new ConnekioSmsSender(
+            _fixture.HttpClientFactory,
+            SetupConnekio.HttpClientName,
+            options,
+            optionsName: null,
+            NullLogger<ConnekioSmsSender>.Instance
+        );
     }
 
     private void _Stub(string path, HttpStatusCode statusCode, string body)
@@ -139,7 +145,7 @@ public sealed class ConnekioSmsSenderTests : TestBase, IClassFixture<SmsWireMock
     public async Task should_classify_resilience_rejections_as_transient(string rejectionKind)
     {
         var exception = ResilienceRejections.Create(rejectionKind);
-        var options = Options.Create(
+        var options = new OptionsMonitorWrapper<ConnekioSmsOptions>(
             new ConnekioSmsOptions
             {
                 SingleSmsEndpoint = "http://localhost:1/single",
@@ -152,7 +158,9 @@ public sealed class ConnekioSmsSenderTests : TestBase, IClassFixture<SmsWireMock
         );
         var sender = new ConnekioSmsSender(
             new ThrowingHttpClientFactory(exception),
+            SetupConnekio.HttpClientName,
             options,
+            optionsName: null,
             NullLogger<ConnekioSmsSender>.Instance
         );
 
