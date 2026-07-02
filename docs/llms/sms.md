@@ -323,7 +323,8 @@ No configuration required.
 ### Dependencies
 
 - `Headless.Sms.Abstractions`
-- `Headless.Hosting`
+- `Headless.Checks`
+- `Microsoft.Extensions.DependencyInjection.Abstractions`
 
 ### Side Effects
 

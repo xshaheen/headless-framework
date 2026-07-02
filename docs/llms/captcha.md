@@ -254,7 +254,7 @@ No configuration required.
 
 - `Headless.Captcha.Abstractions`
 - `Headless.Checks`
-- `Headless.Hosting`
+- `Microsoft.Extensions.DependencyInjection.Abstractions`
 
 ### Side Effects
 

@@ -50,8 +50,10 @@ No configuration required.
 ## Dependencies
 
 - `Headless.Emails.Abstractions`
-- `Headless.Hosting`
+- `Headless.Checks`
+- `Headless.Extensions`
 - `MailKit`
+- `Microsoft.Extensions.DependencyInjection.Abstractions`
 
 ## Side Effects
 
