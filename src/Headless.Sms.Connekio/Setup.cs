@@ -123,6 +123,7 @@ public static class SetupConnekio
         {
             _configureOptions(services);
             services.AddSingleton<ISmsSender, ConnekioSmsSender>();
+            services.AddSingleton<IBulkSmsSender>(static sp => (IBulkSmsSender)sp.GetRequiredService<ISmsSender>());
 
             var httpClientBuilder = _configureClient is null
                 ? services.AddHttpClient(HttpClientName)

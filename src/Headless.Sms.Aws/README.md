@@ -8,7 +8,7 @@ Provides SMS sending via Amazon Simple Notification Service (SNS), reusing exist
 
 ## Key Features
 
-- `AwsSnsSmsSender` — `ISmsSender` implementation backed by AWS SNS.
+- `AwsSnsSmsSender` — `ISmsSender` implementation backed by AWS SNS. Single recipient per send; does not implement `IBulkSmsSender` (SNS publishes to one phone number per call).
 - `SenderId` — alphanumeric sender ID displayed to recipients (support varies by country).
 - `MaxPrice` — optional per-message USD price cap; SNS rejects sends that would exceed it.
 - Accepts any AWS credential source: environment, instance metadata, `appsettings.json` via `AWSOptions`, or explicit `BasicAWSCredentials`.

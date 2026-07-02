@@ -1,0 +1,80 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using System.Net;
+using Headless.Sms;
+using Headless.Sms.Vodafone;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using WireMock.RequestBuilders;
+using WireMock.ResponseBuilders;
+
+namespace Tests;
+
+/// <summary>Runs the <see cref="SmsBulkSenderConformanceTests"/> contract against the Vodafone bulk sender.</summary>
+public sealed class VodafoneBulkSmsConformanceTests : SmsBulkSenderConformanceTests, IClassFixture<SmsWireMockFixture>
+{
+    private readonly SmsWireMockFixture _fixture;
+
+    public VodafoneBulkSmsConformanceTests(SmsWireMockFixture fixture)
+    {
+        _fixture = fixture;
+        _fixture.Reset();
+    }
+
+    protected override IBulkSmsSender CreateSuccessfulSender()
+    {
+        _fixture
+            .Server.Given(Request.Create().WithPath("/submit").UsingPost())
+            .RespondWith(
+                Response
+                    .Create()
+                    .WithStatusCode(HttpStatusCode.OK)
+                    .WithBody("<Response><Success>true</Success></Response>")
+            );
+
+        return _CreateSender($"{_fixture.BaseUrl}/submit");
+    }
+
+    protected override IBulkSmsSender CreateFaultingSender() => _CreateSender("http://localhost:1/submit");
+
+    private VodafoneSmsSender _CreateSender(string endpoint)
+    {
+        var options = Options.Create(
+            new VodafoneSmsOptions
+            {
+                SendSmsEndpoint = endpoint,
+                Sender = "SENDER",
+                AccountId = "acc",
+                Password = "pass",
+                SecureHash = "0123456789ABCDEF",
+            }
+        );
+
+        return new VodafoneSmsSender(_fixture.HttpClientFactory, options, NullLogger<VodafoneSmsSender>.Instance);
+    }
+
+    [Fact]
+    public override Task should_reject_a_null_request() => base.should_reject_a_null_request();
+
+    [Fact]
+    public override Task should_reject_a_request_without_destinations() =>
+        base.should_reject_a_request_without_destinations();
+
+    [Fact]
+    public override Task should_reject_null_destinations() => base.should_reject_null_destinations();
+
+    [Fact]
+    public override Task should_reject_a_request_with_an_empty_body() =>
+        base.should_reject_a_request_with_an_empty_body();
+
+    [Fact]
+    public override Task should_return_a_result_for_every_recipient() =>
+        base.should_return_a_result_for_every_recipient();
+
+    [Fact]
+    public override Task should_report_a_transient_failure_on_a_transport_fault() =>
+        base.should_report_a_transient_failure_on_a_transport_fault();
+
+    [Fact]
+    public override Task should_propagate_cancellation() => base.should_propagate_cancellation();
+}

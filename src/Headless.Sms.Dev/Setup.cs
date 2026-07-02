@@ -38,6 +38,7 @@ public static class SetupDevSms
         public void AddServices(IServiceCollection services)
         {
             services.AddSingleton<ISmsSender>(_ => new DevSmsSender(filePath));
+            services.AddSingleton<IBulkSmsSender>(static sp => (IBulkSmsSender)sp.GetRequiredService<ISmsSender>());
         }
     }
 
@@ -46,6 +47,7 @@ public static class SetupDevSms
         public void AddServices(IServiceCollection services)
         {
             services.AddSingleton<ISmsSender, NoopSmsSender>();
+            services.AddSingleton<IBulkSmsSender>(static sp => (IBulkSmsSender)sp.GetRequiredService<ISmsSender>());
         }
     }
 }

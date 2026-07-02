@@ -7,6 +7,9 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute.ExceptionExtensions;
+using Polly.CircuitBreaker;
+using Polly.RateLimiting;
+using Polly.Timeout;
 using Twilio.Clients;
 using Twilio.Http;
 
@@ -40,23 +43,18 @@ public sealed class TwilioSmsSenderTests : TestBase
         result.ProviderMessageId.Should().Be("SM123");
     }
 
-    [Fact]
-    public async Task should_reject_multiple_destinations_without_calling_twilio()
+    [Theory]
+    [InlineData(nameof(TimeoutRejectedException))]
+    [InlineData(nameof(BrokenCircuitException))]
+    [InlineData(nameof(RateLimiterRejectedException))]
+    public async Task should_classify_resilience_rejections_as_transient(string rejectionKind)
     {
+        var exception = ResilienceRejections.Create(rejectionKind);
         var client = Substitute.For<ITwilioRestClient>();
-
-        var result = await _CreateSender(client).SendAsync(SmsRequests.Batch("hi", (20, "1"), (20, "2")), AbortToken);
-        result.Success.Should().BeFalse();
-        await client.DidNotReceive().RequestAsync(Arg.Any<Request>());
-    }
-
-    [Fact]
-    public async Task should_return_transient_failure_when_the_sdk_throws()
-    {
-        var client = Substitute.For<ITwilioRestClient>();
-        client.RequestAsync(Arg.Any<Request>()).ThrowsAsync(new HttpRequestException("network down"));
+        client.RequestAsync(Arg.Any<Request>()).ThrowsAsync(exception);
 
         var result = await _CreateSender(client).SendAsync(SmsRequests.Single(), AbortToken);
+
         result.Success.Should().BeFalse();
         result.FailureKind.Should().Be(SmsFailureKind.Transient);
     }

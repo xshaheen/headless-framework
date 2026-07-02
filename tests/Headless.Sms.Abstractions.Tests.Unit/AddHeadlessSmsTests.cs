@@ -23,6 +23,34 @@ public sealed class AddHeadlessSmsTests
     }
 
     [Fact]
+    public void should_register_bulk_sender_for_noop_provider()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        services.AddHeadlessSms(setup => setup.UseNoop());
+
+        // then
+        using var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<IBulkSmsSender>().Should().BeSameAs(provider.GetRequiredService<ISmsSender>());
+    }
+
+    [Fact]
+    public void should_register_bulk_sender_for_dev_provider()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        services.AddHeadlessSms(setup => setup.UseDev(Path.Combine(Path.GetTempPath(), "sms.txt")));
+
+        // then
+        using var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<IBulkSmsSender>().Should().BeSameAs(provider.GetRequiredService<ISmsSender>());
+    }
+
+    [Fact]
     public void should_throw_when_no_provider_is_selected()
     {
         // given

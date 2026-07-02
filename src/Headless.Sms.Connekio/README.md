@@ -8,8 +8,8 @@ Provides SMS sending via the Connekio API using basic username/password/accountI
 
 ## Key Features
 
-- `ConnekioSmsSender` — `ISmsSender` implementation backed by the Connekio REST API.
-- Separate `SingleSmsEndpoint` and `BatchSmsEndpoint` (auto-selected based on `IsBatch`).
+- `ConnekioSmsSender` — implements `ISmsSender` (single recipient) and `IBulkSmsSender` (multi-recipient bulk).
+- Separate `SingleSmsEndpoint` (used by `SendAsync`) and `BatchSmsEndpoint` (used by `SendBulkAsync`).
 - Basic auth: `UserName` + `Password` + `AccountId`.
 - Standard resilience pipeline with auto-retry **disabled** by default to prevent duplicate SMS.
 - Optional `configureClient` and `configureResilience` hooks for fine-grained `HttpClient` control.
