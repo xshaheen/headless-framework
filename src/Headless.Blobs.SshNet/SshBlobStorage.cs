@@ -47,6 +47,9 @@ public sealed class SshBlobStorage(
     ILogger<SshBlobStorage> logger
 ) : IBlobStorage
 {
+    // Writes create only container-relative parent directories; a missing top-level container directory throws.
+    public bool RequiresContainerProvisioning => true;
+
     #region Upload
 
     public async ValueTask UploadAsync(

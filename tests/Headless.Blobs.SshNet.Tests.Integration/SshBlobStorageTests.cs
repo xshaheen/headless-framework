@@ -238,6 +238,10 @@ public sealed class SshBlobStorageTests(SshBlobStorageFixture fixture) : BlobSto
         base.container_manager_rejects_traversal_container();
 
     [Fact]
+    public override Task requires_container_provisioning_reflects_backend_reality() =>
+        base.requires_container_provisioning_reflects_backend_reality();
+
+    [Fact]
     public async Task upload_to_missing_container_throws_until_container_manager_ensures_it()
     {
         await using var storage = GetStorage();

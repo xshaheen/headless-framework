@@ -56,6 +56,9 @@ public sealed class FileSystemBlobStorage : IBlobStorage
         _logger = logger ?? NullLogger<FileSystemBlobStorage>.Instance;
     }
 
+    // UploadAsync refuses a missing container directory (only intermediate path directories are created on write).
+    public bool RequiresContainerProvisioning => true;
+
     #region Upload
 
     public async ValueTask UploadAsync(

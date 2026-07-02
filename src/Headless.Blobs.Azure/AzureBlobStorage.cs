@@ -45,6 +45,9 @@ public sealed class AzureBlobStorage(
 
     private readonly AzureStorageOptions _option = optionAccessor.Value;
 
+    // Azure rejects writes to a missing container (ContainerNotFound) and this type never creates one.
+    public bool RequiresContainerProvisioning => true;
+
     #region Upload
 
     public async ValueTask UploadAsync(

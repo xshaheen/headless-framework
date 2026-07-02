@@ -49,6 +49,13 @@ public abstract class BlobStorageTestsBase : TestBase
     /// </summary>
     protected virtual IBlobContainerManager? GetContainerManager() => null;
 
+    /// <summary>
+    /// The value the leaf expects <see cref="IBlobStorage.RequiresContainerProvisioning"/> to report for its backend.
+    /// Defaults to <see langword="true"/> (most backends demand a provisioned container before data-plane writes);
+    /// lazily-materializing backends (Redis) override to <see langword="false"/>.
+    /// </summary>
+    protected virtual bool ExpectedRequiresContainerProvisioning => true;
+
     /// <summary>Builds a <see cref="BlobLocation"/> in <see cref="ContainerName"/> from the given path segments.</summary>
     private BlobLocation _Loc(params string[] segments) => new(ContainerName, segments);
 
@@ -956,6 +963,31 @@ public abstract class BlobStorageTestsBase : TestBase
         await ensure.Should().ThrowAsync<ArgumentException>();
         await exists.Should().ThrowAsync<ArgumentException>();
         await delete.Should().ThrowAsync<ArgumentException>();
+    }
+
+    public virtual async Task requires_container_provisioning_reflects_backend_reality()
+    {
+        await using var storage = GetStorage();
+
+        storage.RequiresContainerProvisioning.Should().Be(ExpectedRequiresContainerProvisioning);
+
+        if (storage.RequiresContainerProvisioning)
+        {
+            // The throw side (a write to a never-provisioned container fails) is pinned by the leaf
+            // upload_to_missing_container_throws_until_container_manager_ensures_it tests where the backend/env can
+            // observe it; duplicating the upload probe here would double-fail on test environments that cannot
+            // reproduce the missing-container failure (known limitation of the SFTP test image).
+            return;
+        }
+
+        // A lazy backend must honor the flag's promise: a write to a never-ensured container succeeds outright.
+        var container = "lazy-" + Guid.NewGuid().ToString("N");
+        var location = new BlobLocation(container, "probe.txt");
+
+        await storage.UploadContentAsync(location, "payload", AbortToken);
+        (await storage.GetBlobContentAsync(location, AbortToken)).Should().Be("payload");
+
+        await storage.DeleteAllAsync(new BlobQuery(container), AbortToken);
     }
 
     #endregion

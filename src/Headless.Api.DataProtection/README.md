@@ -12,6 +12,7 @@ In distributed/containerized environments, ASP.NET Core Data Protection keys mus
 - Works with any `IBlobStorage` implementation
 - Ensures the `DataProtection` container before writes when an `IBlobContainerManager` is registered or supplied
 - Supports factory-based storage resolution for DI scenarios, including keyed/named stores via a `serviceKey` overload
+- Enforces container provisioning up front: when no manager is available and the storage requires a provisioned container (`IBlobStorage.RequiresContainerProvisioning`), configuration throws unless you acknowledge out-of-band provisioning with `provisioning: BlobContainerProvisioning.PreProvisioned`
 
 ## Installation
 
@@ -26,8 +27,9 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddDataProtection().PersistKeysToBlobStorage();
 
-// Or with explicit storage instance (pre-provision-only: the DataProtection container is NOT ensured — see Configuration)
-builder.Services.AddDataProtection().PersistKeysToBlobStorage(storageInstance);
+// Or with explicit storage instance (no manager: throws at config time for provisioning-requiring backends
+// unless you acknowledge out-of-band provisioning — see Configuration)
+builder.Services.AddDataProtection().PersistKeysToBlobStorage(storageInstance, provisioning: BlobContainerProvisioning.PreProvisioned);
 
 // Or with explicit storage + container manager (ensures the DataProtection container before writes)
 builder.Services.AddDataProtection().PersistKeysToBlobStorage(storageInstance, containerManager);
@@ -43,7 +45,16 @@ builder.Services.AddDataProtection().PersistKeysToBlobStorage(serviceKey: "keys"
 
 No specific configuration. Depends on the underlying `IBlobStorage` configuration. Cloud/object-store providers should also register or pass the matching `IBlobContainerManager` so the `DataProtection` container is created before the first key write.
 
-The storage-only `PersistKeysToBlobStorage(storage)` overload is **pre-provision-only**: it never ensures the container, and the blob data plane treats a missing container as an error (not auto-created), so on a fresh deployment the first key write fails unless the `DataProtection` container already exists. Provision it via `IBlobContainerManager.EnsureContainerAsync` at startup or out-of-band (portal, CLI, IaC), or prefer the `(storage, containerManager)` overload. Cloudflare R2 is the provider where pre-provisioning is the only option — it deliberately ships no `IBlobContainerManager` (R2 object-scoped tokens cannot create buckets), so create the bucket in the Cloudflare dashboard/API first.
+The blob data plane treats a missing container as an error (not auto-created), so a repository with no `IBlobContainerManager` can never fix a missing `DataProtection` container — the first key write on a fresh deployment would fail. This is now **enforced**, not just advised: whenever the effective manager is `null` and the storage reports `IBlobStorage.RequiresContainerProvisioning == true`, configuration throws `InvalidOperationException` (at call time for the storage-instance overload; at first options resolution for the DI/factory/keyed overloads) unless you pass `provisioning: BlobContainerProvisioning.PreProvisioned` to acknowledge that the container was provisioned out-of-band (portal, CLI, IaC).
+
+Provisioning matrix:
+
+| Scenario | What to do |
+| --- | --- |
+| Manager available (registered, keyed, or passed) | Nothing — the `DataProtection` container is ensured before writes; no acknowledgment is needed |
+| No manager, provisioning-requiring backend (AWS, Azure, FileSystem, SSH) | Wire an `IBlobContainerManager` (preferred), or provision the container out-of-band and pass `provisioning: BlobContainerProvisioning.PreProvisioned` |
+| Cloudflare R2 | `provisioning: BlobContainerProvisioning.PreProvisioned` is the only option — R2 deliberately ships no `IBlobContainerManager` (object-scoped tokens cannot create buckets); create the bucket in the Cloudflare dashboard/API first |
+| Redis (`RequiresContainerProvisioning == false`) | Exempt — the backing hash materializes on first write; the storage-only overload works with no acknowledgment |
 
 ## Dependencies
 

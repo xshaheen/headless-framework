@@ -31,6 +31,9 @@ public sealed class RedisBlobStorageTests(RedisBlobStorageFixture fixture) : Blo
     protected override IBlobContainerManager GetContainerManager() =>
         new RedisBlobContainerManager(fixture.ConnectionMultiplexer, new CrossOsNamingNormalizer());
 
+    // Redis is the lazy backend: the backing hash materializes on first write, so no provisioning is ever required.
+    protected override bool ExpectedRequiresContainerProvisioning => false;
+
     #region List / Round-trip
 
     [Fact]
@@ -208,6 +211,10 @@ public sealed class RedisBlobStorageTests(RedisBlobStorageFixture fixture) : Blo
     [Fact]
     public override Task container_manager_rejects_traversal_container() =>
         base.container_manager_rejects_traversal_container();
+
+    [Fact]
+    public override Task requires_container_provisioning_reflects_backend_reality() =>
+        base.requires_container_provisioning_reflects_backend_reality();
 
     #endregion
 

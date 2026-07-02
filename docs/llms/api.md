@@ -535,6 +535,7 @@ In distributed/containerized environments, ASP.NET Core Data Protection keys mus
 - Works with any `IBlobStorage` implementation
 - Ensures the `DataProtection` container before writes when an `IBlobContainerManager` is registered or supplied
 - Supports factory-based storage resolution for DI scenarios, including keyed/named stores via a `serviceKey` overload
+- Enforces container provisioning up front: with no manager and a provisioning-requiring storage (`IBlobStorage.RequiresContainerProvisioning`), configuration throws unless `provisioning: BlobContainerProvisioning.PreProvisioned` acknowledges out-of-band provisioning
 
 ### Installation
 
@@ -549,8 +550,9 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddDataProtection().PersistKeysToBlobStorage();
 
-// Or with explicit storage instance (pre-provision-only: the DataProtection container is NOT ensured — see Configuration)
-builder.Services.AddDataProtection().PersistKeysToBlobStorage(storageInstance);
+// Or with explicit storage instance. No manager is involved, so for provisioning-requiring backends this throws
+// at config time unless you acknowledge that the DataProtection container exists — see Configuration.
+builder.Services.AddDataProtection().PersistKeysToBlobStorage(storageInstance, provisioning: BlobContainerProvisioning.PreProvisioned);
 
 // Or with explicit storage + container manager (ensures the DataProtection container before writes)
 builder.Services.AddDataProtection().PersistKeysToBlobStorage(storageInstance, containerManager);
@@ -566,7 +568,9 @@ builder.Services.AddDataProtection().PersistKeysToBlobStorage(serviceKey: "keys"
 
 No specific configuration. Depends on the underlying `IBlobStorage` configuration. Cloud/object-store providers should also register or pass the matching `IBlobContainerManager` so the `DataProtection` container is created before the first key write.
 
-The storage-only `PersistKeysToBlobStorage(storage)` overload is **pre-provision-only**: it never ensures the container, and the blob data plane treats a missing container as an error (not auto-created), so on a fresh deployment the first key write fails unless the `DataProtection` container already exists. Provision it via `IBlobContainerManager.EnsureContainerAsync` at startup or out-of-band (portal, CLI, IaC), or prefer the `(storage, containerManager)` overload. Cloudflare R2 is the provider where pre-provisioning is the only option — it deliberately ships no `IBlobContainerManager` (R2 object-scoped tokens cannot create buckets), so create the bucket in the Cloudflare dashboard/API first.
+The missing-container failure mode is **enforced at configuration time**, not just documented: whenever the effective container manager is `null` and the storage reports `IBlobStorage.RequiresContainerProvisioning == true`, `PersistKeysToBlobStorage` throws `InvalidOperationException` (at call time for the storage-instance overload; at first options resolution for the DI/factory/keyed overloads) unless `provisioning: BlobContainerProvisioning.PreProvisioned` acknowledges that the `DataProtection` container was provisioned out-of-band (portal, CLI, IaC). When a manager is present it is always used to ensure the container — `PreProvisioned` never disables it.
+
+Provisioning matrix: **managed** — a manager is registered/keyed/passed, the container is ensured before writes, no acknowledgment needed; **explicit pre-provisioned** — no manager on a provisioning-requiring backend (AWS, Azure, FileSystem, SSH — and Cloudflare R2, where this is the *only* option because R2 ships no `IBlobContainerManager`), provision the container out-of-band and pass `provisioning: BlobContainerProvisioning.PreProvisioned`; **exempt** — Redis reports `RequiresContainerProvisioning == false` (the backing hash materializes on first write), so the storage-only overload works with no acknowledgment.
 
 ### Dependencies
 

@@ -504,6 +504,9 @@ file sealed class InMemoryBlobStorage : IBlobStorage
 {
     private readonly Dictionary<string, byte[]> _store = new(StringComparer.Ordinal);
 
+    // The dictionary materializes lazily; uploads never require a provisioned container.
+    public bool RequiresContainerProvisioning => false;
+
     public async ValueTask UploadAsync(
         BlobLocation location,
         Stream content,

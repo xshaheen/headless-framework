@@ -40,6 +40,10 @@ public sealed class AwsBlobStorage(
     private readonly AwsBlobStorageOptions _options = optionsAccessor.Value;
     private readonly ILogger _logger = logger ?? NullLogger<AwsBlobStorage>.Instance;
 
+    // S3 rejects PutObject against a missing bucket (NoSuchBucket) and this type never creates one — R2 reuse
+    // depends on that (object-scoped tokens cannot create buckets).
+    public bool RequiresContainerProvisioning => true;
+
     #region Upload
 
     public async ValueTask UploadAsync(

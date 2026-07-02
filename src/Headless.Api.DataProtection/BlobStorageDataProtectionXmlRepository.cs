@@ -31,7 +31,8 @@ namespace Headless.Api;
 /// </remarks>
 internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
 {
-    private const string _Container = "DataProtection";
+    /// <summary>The top-level container all data-protection key XML blobs live in.</summary>
+    internal const string ContainerName = "DataProtection";
     private readonly IBlobStorage _storage;
     private readonly IBlobContainerManager? _containerManager;
     private readonly ILogger _logger;
@@ -86,7 +87,7 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
         _logger.LogLoadingElements();
 
         var files = new List<BlobInfo>();
-        await foreach (var blob in _storage.GetBlobsAsync(new BlobQuery(_Container), "*.xml").ConfigureAwait(false))
+        await foreach (var blob in _storage.GetBlobsAsync(new BlobQuery(ContainerName), "*.xml").ConfigureAwait(false))
         {
             files.Add(blob);
         }
@@ -106,7 +107,7 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
         {
             _logger.LogLoadingElement(file.BlobKey);
             await using var downloadResult = await _storage
-                .OpenReadStreamAsync(new BlobLocation(_Container, file.BlobKey))
+                .OpenReadStreamAsync(new BlobLocation(ContainerName, file.BlobKey))
                 .ConfigureAwait(false);
 
             if (downloadResult is null)
@@ -174,7 +175,7 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
 
             await repository
                 ._storage.UploadAsync(
-                    new BlobLocation(_Container, fileName),
+                    new BlobLocation(ContainerName, fileName),
                     memoryStream,
                     metadata: null,
                     cancellationToken
@@ -187,7 +188,7 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
     {
         if (_containerManager is not null)
         {
-            await _containerManager.EnsureContainerAsync(_Container, cancellationToken).ConfigureAwait(false);
+            await _containerManager.EnsureContainerAsync(ContainerName, cancellationToken).ConfigureAwait(false);
         }
     }
 }

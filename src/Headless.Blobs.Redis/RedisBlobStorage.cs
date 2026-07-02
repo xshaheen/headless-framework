@@ -108,6 +108,9 @@ public sealed class RedisBlobStorage : IBlobStorage
     /// <summary>The Redis database obtained from the configured <see cref="IConnectionMultiplexer"/>.</summary>
     private IDatabase Database => _options.ConnectionMultiplexer.GetDatabase();
 
+    // Redis has no physical container: the backing hash is created lazily by the first write (see type remarks).
+    public bool RequiresContainerProvisioning => false;
+
     public RedisBlobStorage(
         IOptions<RedisBlobStorageOptions> optionsAccessor,
         IJsonSerializer defaultSerializer,

@@ -26,6 +26,22 @@ namespace Headless.Blobs;
 [PublicAPI]
 public interface IBlobStorage : IAsyncDisposable
 {
+    #region Capabilities
+
+    /// <summary>
+    /// Indicates whether a top-level container must be provisioned before data-plane writes can target it.
+    /// </summary>
+    /// <remarks>
+    /// <see langword="true"/> when a missing top-level container is an error for data-plane writes (see the
+    /// <see cref="UploadAsync"/> remarks — the data plane never auto-creates it) and the container must be provisioned
+    /// first, via <see cref="IBlobContainerManager.EnsureContainerAsync"/> or out-of-band (portal, CLI, IaC).
+    /// <see langword="false"/> when the backend materializes containers lazily on first write, so writes never require
+    /// a provisioning step (for example Redis, whose backing hash is created implicitly by the first write).
+    /// </remarks>
+    bool RequiresContainerProvisioning { get; }
+
+    #endregion
+
     #region Upload
 
     /// <summary>Uploads <paramref name="content"/> as the blob identified by <paramref name="location"/>.</summary>

@@ -271,6 +271,10 @@ public sealed class AwsBlobStorageTests(AwsBlobStorageFixture fixture) : BlobSto
     public override Task container_manager_rejects_traversal_container() =>
         base.container_manager_rejects_traversal_container();
 
+    [Fact]
+    public override Task requires_container_provisioning_reflects_backend_reality() =>
+        base.requires_container_provisioning_reflects_backend_reality();
+
     #endregion
 
     #region Empty / missing container (no throw)

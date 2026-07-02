@@ -386,6 +386,12 @@ public sealed class AzureStorageTests(AzureBlobStorageFixture fixture) : BlobSto
     }
 
     [Fact]
+    public override Task requires_container_provisioning_reflects_backend_reality()
+    {
+        return base.requires_container_provisioning_reflects_backend_reality();
+    }
+
+    [Fact]
     public async Task upload_to_missing_container_throws_until_container_manager_ensures_it()
     {
         await using var storage = GetStorage();
