@@ -20,7 +20,7 @@ Centralizes the `GetOrAddAsync` state machine so memory, Redis, and hybrid provi
 - `FactoryCacheCoordinator.IsCallerCancellation` - shared predicate provider composites use so caller cancellation propagates while an unrelated/downstream `OperationCanceledException` activates fail-safe consistently.
 - `SetupCachingCore.AddHeadlessCaching` - the single registration entry point: provider packages contribute deferred extensions through `Use*`/`Add*Tier`/`AddNamed` on the setup builder, and contributions are applied only after the setup gates pass.
 - `HeadlessCachingSetupBuilder` / `HeadlessCacheInstanceBuilder` / `ICacheProviderOptionsExtension` - the builder surface provider packages extend: a default slot (exactly one `Use*`), role-keyed tier slots (at most one per reserved role), named instances (unlimited, unique non-reserved names, exactly one provider each), and cross-cutting extensions.
-- `ICacheProvider` over the container's keyed `ICache` registrations; `AddHeadlessCaching` registers it automatically.
+- `ICacheProvider` over the container's keyed `ICache` registrations; `AddHeadlessCaching` registers it automatically. `RegisteredNames` enumerates the `AddNamed` instances (default and tier role keys excluded) for validating a name before resolving.
 - Fail-safe, factory timeout, eager refresh, and background completion logs.
 
 ## Design Notes

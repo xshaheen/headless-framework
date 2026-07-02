@@ -10,7 +10,7 @@ Owns the unified captcha setup builder (`AddHeadlessCaptcha`) and the `ICaptchaP
 
 - `AddHeadlessCaptcha(Action<HeadlessCaptchaSetupBuilder>)` — the single provider-agnostic registration entry point, with an at-least-one-provider gate and a once-per-collection guard.
 - `HeadlessCaptchaSetupBuilder` — the root builder with two slots (at most one default, unlimited named); `RegisterDefault(providerKey, action)` and `RegisterNamed(name, action)` are the hooks providers extend with their `Use*` members.
-- `ICaptchaProvider` — registered automatically by the gate (keyed-service-backed via `KeyedServiceCaptchaProvider`); resolves named instances and a default provider's canonical key.
+- `ICaptchaProvider` — registered automatically by the gate (keyed-service-backed via `KeyedServiceCaptchaProvider`); resolves named instances and a default provider's canonical key, and exposes `RegisteredNames`.
 - Deferred registration: provider contributions are queued and run only after the gates pass — the default first, then each named instance — so a setup that fails a gate leaves the `IServiceCollection` unchanged.
 
 ## Design Notes

@@ -45,7 +45,7 @@ builder.Services.AddHeadlessSms(setup =>
 // Named instance — an isolated HttpClient and options (keyed "promo"):
 builder.Services.AddHeadlessSms(setup =>
 {
-    setup.UseVodafone(builder.Configuration.GetSection("Sms:Vodafone")); // default (required)
+    setup.UseVodafone(builder.Configuration.GetSection("Sms:Vodafone")); // default (optional)
     setup.AddNamed("promo", i => i.UseVodafone(builder.Configuration.GetSection("Sms:VodafonePromo")));
 });
 ```

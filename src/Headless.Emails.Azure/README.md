@@ -56,7 +56,7 @@ builder.Services.AddHeadlessEmails(setup =>
 // Named instance (keyed IEmailSender + keyed EmailClient, resolvable via IEmailSenderProvider):
 builder.Services.AddHeadlessEmails(setup =>
 {
-    setup.UseNoop(); // default (required)
+    setup.UseNoop(); // default (optional)
     setup.AddNamed("alerts", i => i.UseAzure(builder.Configuration.GetSection("AlertsEmail")));
 });
 ```

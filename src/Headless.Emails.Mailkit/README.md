@@ -60,7 +60,7 @@ builder.Services.AddHeadlessEmails(setup =>
 // Named instance — each named SMTP sender owns an isolated connection pool (keyed "marketing"):
 builder.Services.AddHeadlessEmails(setup =>
 {
-    setup.UseMailkit(builder.Configuration.GetSection("Smtp")); // default (required)
+    setup.UseMailkit(builder.Configuration.GetSection("Smtp")); // default (optional)
     setup.AddNamed("marketing", i => i.UseMailkit(builder.Configuration.GetSection("MarketingSmtp")));
 });
 ```

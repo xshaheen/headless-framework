@@ -41,7 +41,7 @@ builder.Services.AddHeadlessSms(setup =>
 // Named instance — an isolated HttpClient and options (keyed "marketing"):
 builder.Services.AddHeadlessSms(setup =>
 {
-    setup.UseInfobip(builder.Configuration.GetSection("Sms:Infobip")); // default (required)
+    setup.UseInfobip(builder.Configuration.GetSection("Sms:Infobip")); // default (optional)
     setup.AddNamed("marketing", i => i.UseInfobip(builder.Configuration.GetSection("Sms:InfobipBulk")));
 });
 ```
