@@ -2473,6 +2473,71 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
     }
 
     [Fact]
+    public async Task should_not_resurrect_removed_key_when_eager_factory_write_lands_after_mid_flight_removal()
+    {
+        // given — a fresh entry past its eager point; the detached eager factory is started and held open
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "old", now.AddMinutes(5), now.AddMinutes(5), eagerRefreshAt: now.AddSeconds(-1));
+        var coordinator = _CreateCoordinator();
+        var backgroundFinished = _WaitForBackgroundFinished(coordinator);
+        var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var factoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var options = _CreateOptions(duration: TimeSpan.FromMinutes(10), eagerRefreshThreshold: 0.5f);
+
+        async ValueTask<string?> factory(CancellationToken cancellationToken)
+        {
+            factoryStarted.SetResult();
+            return await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // when — another actor removes the key while the eager factory is running, then the factory completes
+        var result = await coordinator.GetOrAddAsync(_store, key, factory, options, AbortToken);
+        await factoryStarted.Task.WaitAsync(AbortToken);
+        _RemoveEntryDirectly(_store, key);
+        _store.GetEntry(key).Should().BeNull("the concurrent removal must be visible before the eager write lands");
+        factoryGate.SetResult("fresh");
+        await backgroundFinished;
+
+        // then — the triggering caller was served the fresh-enough value, and the late eager write is CAS-guarded
+        // against the post-gate entry snapshot, so it must not resurrect a key another actor removed mid-flight.
+        result.Value.Should().Be("old");
+        _store.GetEntry(key).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_not_clobber_concurrent_upsert_when_eager_factory_write_lands_mid_flight()
+    {
+        // given — a fresh entry past its eager point; the detached eager factory is started and held open
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "old", now.AddMinutes(5), now.AddMinutes(5), eagerRefreshAt: now.AddSeconds(-1));
+        var coordinator = _CreateCoordinator();
+        var backgroundFinished = _WaitForBackgroundFinished(coordinator);
+        var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var factoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var options = _CreateOptions(duration: TimeSpan.FromMinutes(10), eagerRefreshThreshold: 0.5f);
+
+        async ValueTask<string?> factory(CancellationToken cancellationToken)
+        {
+            factoryStarted.SetResult();
+            return await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // when — a concurrent writer replaces the entry while the eager factory is running, then it completes
+        var result = await coordinator.GetOrAddAsync(_store, key, factory, options, AbortToken);
+        await factoryStarted.Task.WaitAsync(AbortToken);
+        _store.SetEntry(key, "concurrent", now.AddMinutes(5), now.AddMinutes(5));
+        factoryGate.SetResult("fresh");
+        await backgroundFinished;
+
+        // then — the stale eager write observes the changed concurrency stamp and fails without retry, leaving
+        // the concurrent writer's newer value intact.
+        result.Value.Should().Be("old");
+        _store.GetEntry(key)!.Value.Should().Be("concurrent");
+    }
+
+    [Fact]
     public async Task should_join_in_flight_eager_refresh_instead_of_second_factory_when_entry_expires_mid_refresh()
     {
         // given — a fresh entry past its eager point; the eager refresh factory is started and held open
