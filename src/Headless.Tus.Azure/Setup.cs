@@ -85,6 +85,10 @@ public static class SetupTusAzureStore
             provider.GetService<TimeProvider>()
         ));
 
+        // Lets cross-cutting consumers (e.g. AddTusExpiredUploadsCleanup) resolve the store by
+        // its tusdotnet capability interface without knowing the provider.
+        services.TryAddSingleton<ITusExpirationStore>(provider => provider.GetRequiredService<TusAzureStore>());
+
         return services;
     }
 }

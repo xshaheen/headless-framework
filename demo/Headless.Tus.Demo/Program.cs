@@ -15,23 +15,6 @@ using tusdotnet.Models.Expiration;
 
 const string corsPolicy = "tus-demo";
 
-// tus response headers the browser client must be able to read cross-origin (Vite dev server).
-string[] tusExposedHeaders =
-[
-    "Location",
-    "Tus-Resumable",
-    "Tus-Version",
-    "Tus-Extension",
-    "Tus-Max-Size",
-    "Tus-Checksum-Algorithm",
-    "Upload-Offset",
-    "Upload-Length",
-    "Upload-Defer-Length",
-    "Upload-Metadata",
-    "Upload-Expires",
-    "Upload-Concat",
-];
-
 var builder = WebApplication.CreateBuilder(args);
 
 // Azurite by default ("UseDevelopmentStorage=true"); point ConnectionStrings:AzureStorage at a
@@ -47,7 +30,10 @@ builder.Services.AddAzureClients(clients =>
 builder.Services.AddTusAzureStore(builder.Configuration.GetSection("Tus"));
 
 builder.Services.AddSingleton<UploadDirectory>();
-builder.Services.AddHostedService<ExpiredUploadsCleanupService>();
+
+// Removes expired incomplete uploads (registered against the ITusExpirationStore that
+// AddTusAzureStore forwarded). A 1-minute interval keeps the demo snappy; the default is 5.
+builder.Services.AddTusExpiredUploadsCleanup(options => options.Interval = TimeSpan.FromMinutes(1));
 
 builder.Services.AddCors(options =>
     options.AddPolicy(
@@ -55,9 +41,9 @@ builder.Services.AddCors(options =>
         policy =>
             policy
                 .WithOrigins("http://localhost:5173") // Vite dev server
-                .AllowAnyHeader()
-                .WithMethods("GET", "POST", "PATCH", "HEAD", "DELETE", "OPTIONS")
-                .WithExposedHeaders(tusExposedHeaders)
+                // Allowed request headers, exposed response headers, and methods for the tus
+                // protocol — browsers hide Location/Upload-Offset from cross-origin JS otherwise.
+                .WithTusHeaders()
     )
 );
 

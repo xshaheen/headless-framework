@@ -47,31 +47,64 @@ Three packages compose the TUS domain:
 
 | Package | Role |
 |---|---|
-| `Headless.Tus` | Base dependency: contains no code; pins and shares the `tusdotnet` + `Headless.Hosting` references so all TUS packages align on one version. |
+| `Headless.Tus` | Base package: protocol-level pieces every deployment needs — `TusCorsDefaults`/`WithTusHeaders()` for browser clients, `AddTusExpiredUploadsCleanup()` for expired-upload removal — plus the shared `tusdotnet` + `Headless.Hosting` references. |
 | `Headless.Tus.Azure` | Storage backend: `TusAzureStore` stores upload chunks in Azure Blob Storage using block blobs. |
 | `Headless.Tus.DistributedLocks` | Locking add-on: `DistributedLockTusLockProvider` prevents concurrent PATCH corruption across nodes. |
 
-`Headless.Tus` alone is not usable for uploads — it has no store. Always pair it with `Headless.Tus.Azure` (or another future store). Add `Headless.Tus.DistributedLocks` for multi-instance deployments.
+`Headless.Tus` has no store — pair it with `Headless.Tus.Azure` (or another future store). Add `Headless.Tus.DistributedLocks` for multi-instance deployments.
 
-Minimal Azure setup:
+A complete resumable-upload backend (Azurite for local development: `docker run -d -p 10000:10000 mcr.microsoft.com/azure-storage/azurite azurite-blob --blobHost 0.0.0.0`):
 
 ```csharp
-var store = new TusAzureStore(
-    blobServiceClient,
-    new TusAzureStoreOptions
-    {
-        ContainerName = "uploads",
-        BlobPrefix = "tus/",
-        CreateContainerIfNotExists = true,
-    }
-);
+using Headless.Tus;
+using Headless.Tus.Services;
+using Microsoft.Extensions.Azure;
+using tusdotnet;
+using tusdotnet.Models;
+using tusdotnet.Models.Expiration;
 
-app.MapTus("/files", async _ => new DefaultTusConfiguration { Store = store, UrlPath = "/files" });
+var builder = WebApplication.CreateBuilder(args);
+
+// 1. The storage account ("UseDevelopmentStorage=true" targets Azurite).
+builder.Services.AddAzureClients(clients =>
+    clients.AddBlobServiceClient(builder.Configuration.GetConnectionString("AzureStorage")));
+
+// 2. The store: options from the "Tus" config section (ContainerName, BlobPrefix, ...),
+//    validated at startup.
+builder.Services.AddTusAzureStore(builder.Configuration.GetSection("Tus"));
+
+// 3. Reap expired incomplete uploads (uses the ITusExpirationStore registered above).
+builder.Services.AddTusExpiredUploadsCleanup();
+
+// 4. CORS for browser clients on another origin (tus-js-client, Uppy): expose the tus
+//    response headers or every cross-origin upload fails on the first request.
+builder.Services.AddCors(options =>
+    options.AddPolicy("tus", policy => policy.WithOrigins("https://app.example.com").WithTusHeaders()));
+
+var app = builder.Build();
+app.UseCors("tus");
+
+// 5. The tus endpoint.
+app.MapTus(
+    "/files",
+    httpContext => Task.FromResult(new DefaultTusConfiguration
+    {
+        Store = httpContext.RequestServices.GetRequiredService<TusAzureStore>(),
+        UrlPath = "/files",
+        AllowedExtensions = TusExtensions.All,
+        Expiration = new SlidingExpiration(TimeSpan.FromMinutes(30)),
+    }));
+
+app.Run();
 ```
+
+Any tus 1.0.0 client works against this endpoint (`tus-js-client`, Uppy's `@uppy/tus`, tuspy, …). A complete runnable example — this backend plus a React frontend driving the endpoint with both Uppy Dashboard and `use-tus` — lives in [demo/Headless.Tus.Demo](../../demo/Headless.Tus.Demo/README.md).
 
 ## Agent Instructions
 
-- `Headless.Tus` is a base dependency only — it has no store implementation. Always add `Headless.Tus.Azure` for upload storage.
+- `Headless.Tus` has no store implementation — always add `Headless.Tus.Azure` for upload storage. It does ship the cross-provider pieces: `TusCorsDefaults` / `WithTusHeaders()` and `AddTusExpiredUploadsCleanup()`.
+- Browser clients on another origin need the tus CORS surface: use `policy.WithTusHeaders()` (allowed request headers + exposed response headers + methods incl. PATCH/DELETE). Without the exposed headers, `tus-js-client`/Uppy cannot read `Location`/`Upload-Offset` and uploads fail on the first request.
+- Nothing removes expired uploads unless a job runs: register `services.AddTusExpiredUploadsCleanup()` (default every 5 minutes; scans the store each pass). It removes expired incomplete uploads only, and requires an `ITusExpirationStore` — `AddTusAzureStore` forwards it automatically; register manually constructed stores with `services.AddSingleton<ITusExpirationStore>(store)`. Expiration itself is enabled via `DefaultTusConfiguration.Expiration`.
 - `TusAzureStore` can be constructed manually (`new TusAzureStore(blobServiceClient, options)`) — tusdotnet composes stores inside `DefaultTusConfiguration` factories — or registered via `services.AddTusAzureStore(...)` (overloads: `IConfiguration`, `Action<TusAzureStoreOptions>`, `Action<TusAzureStoreOptions, IServiceProvider>`). The DI path requires a `BlobServiceClient` registration and resolves `ITusAzureBlobHttpHeadersProvider`/`ITusFileIdProvider` when present (TryAdd defaults otherwise); options run through FluentValidation with `ValidateOnStart`.
 - For multi-instance deployments, always add `Headless.Tus.DistributedLocks` and call `services.AddDistributedLockTusLockProvider()`. Without it, concurrent PATCH requests for the same file from different nodes can corrupt block lists.
 - The distributed lock add-on requires `IDistributedLock` in DI. Register a Headless distributed lock provider first, for example: `services.AddHeadlessDistributedLocks(setup => setup.UseRedis())`.
@@ -120,16 +153,21 @@ Register it with `services.AddDistributedLockTusLockProvider()` after registerin
 
 ## Headless.Tus
 
-Base dependency that wires `tusdotnet` into the ASP.NET Core pipeline. Contains no store; exists to share the `tusdotnet` dependency and Headless hosting infrastructure across TUS packages.
+Base package for the TUS stack: protocol-level helpers every deployment needs regardless of storage provider, plus the shared `tusdotnet` dependency.
 
 ### Problem Solved
 
-Provides a consistent `tusdotnet` integration point for all TUS store packages so each provider does not independently manage endpoint wiring and version alignment.
+Two gaps every tus deployment hits regardless of store: browsers hide tus response headers cross-origin (without the right `Access-Control-Expose-Headers`, clients cannot read `Location`/`Upload-Offset` and uploads fail immediately), and nothing removes expired uploads (tusdotnet only reports `Upload-Expires`). Also pins the shared `tusdotnet` + `Headless.Hosting` references so all TUS packages align on one version.
 
 ### Key Features
 
-- Shared `tusdotnet` dependency (all TUS packages reference this one)
-- `Headless.Hosting` wiring for ASP.NET Core middleware
+- `TusCorsDefaults` — the tus 1.0.0 CORS surface as constants: `ExposedHeaders`, `AllowedHeaders`, `AllowedMethods` (includes the PATCH/DELETE that default CORS configs miss)
+- `CorsPolicyBuilder.WithTusHeaders()` — applies all three in one call; origins/credentials stay the caller's decision
+- `TusExpiredUploadsCleanupService` + `AddTusExpiredUploadsCleanup(...)` — background job calling `ITusExpirationStore.RemoveExpiredFilesAsync` on an interval
+
+### Design Notes
+
+Cleanup targets **incomplete** uploads only — conforming Headless stores never report completed uploads as expired, so the job cannot destroy finished data. It binds to the `ITusExpirationStore` capability interface, not a concrete store; store packages forward the registration (`AddTusAzureStore` does), and manually constructed stores register with `services.AddSingleton<ITusExpirationStore>(store)`. The default 5-minute interval trades reclaim latency against the store scan each pass performs.
 
 ### Installation
 
@@ -137,13 +175,27 @@ Provides a consistent `tusdotnet` integration point for all TUS store packages s
 dotnet add package Headless.Tus
 ```
 
+Pulled in transitively by every `Headless.Tus.*` provider package.
+
 ### Quick Start
 
-`Headless.Tus` is a base package. Add `Headless.Tus.Azure` for a complete upload setup. This package does not need to be installed directly; it is pulled in transitively.
+```csharp
+using Headless.Tus;
+
+builder.Services.AddCors(options =>
+    options.AddPolicy("tus", policy =>
+        policy.WithOrigins("https://app.example.com").WithTusHeaders()));
+
+builder.Services.AddTusExpiredUploadsCleanup(); // requires an ITusExpirationStore
+```
 
 ### Configuration
 
-None.
+`TusExpiredUploadsCleanupOptions`:
+
+| Option | Default | Notes |
+|---|---|---|
+| `Interval` | `5 minutes` | How often expired incomplete uploads are removed. Each pass scans the store's uploads — prefer coarser intervals for large containers. Must be positive. |
 
 ### Dependencies
 
@@ -152,7 +204,8 @@ None.
 
 ### Side Effects
 
-None.
+- `AddTusExpiredUploadsCleanup` registers a hosted service (`TusExpiredUploadsCleanupService`) and `TimeProvider.System` (TryAdd).
+- `TusCorsDefaults` / `WithTusHeaders` are pure helpers — no registrations.
 
 ---
 
