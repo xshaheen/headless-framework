@@ -395,6 +395,101 @@ public sealed class TusAzureStoreTests : TestBase
             .WithMessage($"File {nonExistentFileId} does not exist");
     }
 
+    // -- AppendData: client disconnect must persist received bytes
+
+    [Fact]
+    public async Task should_persist_received_bytes_when_client_disconnects_mid_stream()
+    {
+        // given - a body that serves 1000 bytes, then simulates a disconnect: tusdotnet cancels the
+        // request token when the client goes away, and the next read observes it
+        var content = Faker.Random.Bytes(1_000);
+        var fileId = await _store.CreateFileAsync(4_000, metadata: null, AbortToken);
+
+        using var cts = new CancellationTokenSource();
+        await using var body = new DisconnectingReadStream(content, cts);
+
+        // when
+        var written = await _store.AppendDataAsync(fileId, body, cts.Token);
+
+        // then - the tus spec: "the Server SHOULD always attempt to store as much of the received
+        // data as possible"; the client resumes from these bytes instead of re-uploading them
+        written.Should().Be(content.Length);
+        (await _store.GetUploadOffsetAsync(fileId, AbortToken)).Should().Be(content.Length);
+    }
+
+    [Fact]
+    public async Task should_persist_received_bytes_when_pipe_read_is_cancelled()
+    {
+        // given - 1000 bytes buffered in the pipe, then the pending read is cancelled (the pipe
+        // analog of a client disconnect)
+        var content = Faker.Random.Bytes(1_000);
+        var fileId = await _store.CreateFileAsync(4_000, metadata: null, AbortToken);
+
+        var pipe = new Pipe();
+        await pipe.Writer.WriteAsync(content, AbortToken);
+        await pipe.Writer.FlushAsync(AbortToken);
+        pipe.Reader.CancelPendingRead();
+
+        // when
+        var written = await _store.AppendDataAsync(fileId, pipe.Reader, AbortToken);
+
+        // then
+        written.Should().Be(content.Length);
+        (await _store.GetUploadOffsetAsync(fileId, AbortToken)).Should().Be(content.Length);
+    }
+
+    /// <summary>
+    /// Serves the given bytes, then mimics tusdotnet's client-disconnect behavior: the request
+    /// token gets cancelled and the in-flight read surfaces <see cref="OperationCanceledException"/>.
+    /// </summary>
+    private sealed class DisconnectingReadStream(byte[] data, CancellationTokenSource cts) : Stream
+    {
+        private int _position;
+
+        public override bool CanRead => true;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => false;
+
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default
+        )
+        {
+            if (_position >= data.Length)
+            {
+                await cts.CancelAsync();
+
+                throw new OperationCanceledException(cts.Token);
+            }
+
+            var count = Math.Min(buffer.Length, data.Length - _position);
+            data.AsSpan(_position, count).CopyTo(buffer.Span);
+            _position += count;
+
+            return count;
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        public override void Flush() => throw new NotSupportedException();
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
     /* Checksum Store */
 
     // -- GetSupportedAlgorithms

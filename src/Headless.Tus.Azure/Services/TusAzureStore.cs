@@ -193,6 +193,39 @@ public sealed partial class TusAzureStore
         }
     }
 
+    /// <summary>
+    /// Clears stale chunk-tracking metadata after an append that received zero bytes. Without
+    /// this, a checksum-trailer fallback (<c>VerifyChecksumAsync</c> with tusdotnet's sentinel)
+    /// following an empty append would act on the PREVIOUS append's rollback point and discard a
+    /// chunk that was already committed and verified. Skips the write when the state is already
+    /// clean; must-complete because the caller's token is cancelled in exactly this scenario.
+    /// </summary>
+    private static async Task _RefreshChunkTrackingForEmptyAppendAsync(
+        BlobClient blobClient,
+        TusAzureFile file,
+        long currentOffset
+    )
+    {
+        var metadata = file.Metadata;
+
+        if (
+            metadata.LastChunkBlocks is null
+            && metadata.LastChunkChecksum is null
+            && metadata.LastChunkOffset == currentOffset
+        )
+        {
+            return;
+        }
+
+        metadata.LastChunkBlocks = null;
+        metadata.LastChunkChecksum = null;
+        metadata.LastChunkOffset = currentOffset;
+
+        await blobClient
+            .SetMetadataAsync(metadata.ToAzure(), cancellationToken: CancellationToken.None)
+            .ConfigureAwait(false);
+    }
+
     private BlobClient _GetBlobClient(string fileId)
     {
         return _containerClient.GetBlobClient(_GetBlobName(fileId));

@@ -78,62 +78,78 @@ public sealed partial class TusAzureStore : ITusPipelineStore
 
         ReadResult result = default;
 
+        // Accumulate read bytes into a buffer WE own (TusDiskStore's read/write-buffer design):
+        // once the client disconnects, tusdotnet's guarded reader returns only empty IsCanceled
+        // results (TryRead throws), so any bytes left inside the pipe are unrecoverable — data we
+        // have read must be in our hands to satisfy "store as much of the received data as
+        // possible".
+        var accumulationBuffer = ArrayPool<byte>.Shared.Rent(optimalChunkSize);
+        var accumulatedCount = 0;
+
         try
         {
-            while (!_PipeReadingIsDone(result, cancellationToken))
-            {
-                // Read at least optimalChunkSize bytes, or whatever remains
-                result = await pipeReader.ReadAtLeastAsync(optimalChunkSize, cancellationToken).ConfigureAwait(false);
+            var done = false;
 
-                if (result.Buffer.IsEmpty)
+            while (!done)
+            {
+                // Reads use the LIVE token: it is the only signal that the client is gone.
+                // Everything that persists already-received bytes uses CancellationToken.None —
+                // the token is exactly cancelled on disconnect (TusDiskStore parity: reads use the
+                // live token, writes/flushes use None).
+                try
                 {
+                    result = await pipeReader.ReadAsync(cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    // Client disconnected; fall through and commit what was received.
+                    _logger.UploadOperationCanceled(fileId);
+
                     break;
                 }
 
-                // Validate we're not exceeding declared upload length
-                _AssertNotToMuchData(currentOffset, result.Buffer.Length, azureFile.Metadata.UploadLength);
+                done = _PipeReadingIsDone(result, cancellationToken);
 
-                // Process the buffer in optimal-sized chunks
                 var buffer = result.Buffer;
-                var consumed = buffer.Start;
 
-                while (buffer.Length > 0)
+                while (!buffer.IsEmpty)
                 {
-                    // Take up to optimalChunkSize bytes for this block
-                    var chunkLength = (int)Math.Min(optimalChunkSize, buffer.Length);
-                    var chunk = buffer.Slice(0, chunkLength);
+                    var take = (int)Math.Min(buffer.Length, optimalChunkSize - accumulatedCount);
+                    buffer.Slice(0, take).CopyTo(accumulationBuffer.AsSpan(accumulatedCount, take));
+                    accumulatedCount += take;
+                    buffer = buffer.Slice(take);
 
-                    // Calculate hash for this chunk if checksum verification is needed
-                    if (hasher is not null)
+                    if (accumulatedCount == optimalChunkSize)
                     {
-                        _HashSequence(hasher, chunk);
+                        await stageAccumulatedAsync().ConfigureAwait(false);
                     }
-
-                    // Stage the block
-                    var blockId = _GenerateBlockId(blockToken, nextBlockNumber++);
-                    await using var chunkStream = chunk.ToStream();
-                    await blockBlobClient
-                        .StageBlockAsync(blockId, chunkStream, cancellationToken: cancellationToken)
-                        .ConfigureAwait(false);
-
-                    chunkBlockIds.Add(blockId);
-                    bytesWrittenThisRequest += chunkLength;
-                    currentOffset += chunkLength;
-
-                    // Advance to next chunk
-                    buffer = buffer.Slice(chunkLength);
-                    consumed = buffer.Start;
                 }
 
-                // Tell the PipeReader we've consumed up to this point
-                pipeReader.AdvanceTo(consumed);
+                // Everything was copied into the accumulation buffer; consume it all.
+                pipeReader.AdvanceTo(result.Buffer.End);
 
                 _logger.BlocksStaged(bytesWrittenThisRequest, fileId, chunkBlockIds.Count);
             }
 
+            // Final partial block (stream end or disconnect).
+            if (accumulatedCount > 0)
+            {
+                await stageAccumulatedAsync().ConfigureAwait(false);
+            }
+
             await pipeReader.CompleteAsync().ConfigureAwait(false);
 
-            // ATOMIC: Commit blocks + update metadata
+            if (chunkBlockIds.Count == 0)
+            {
+                await _RefreshChunkTrackingForEmptyAppendAsync(blobClient, azureFile, appendStartOffset)
+                    .ConfigureAwait(false);
+
+                return 0;
+            }
+
+            // ATOMIC: Commit blocks + update metadata. Must-complete (CancellationToken.None): on
+            // disconnect the token is already cancelled, but the received bytes have to become
+            // durable so the client resumes from them instead of re-uploading.
             if (hasher is null)
             {
                 // No checksum - commit immediately. Record the pre-append offset as the rollback point
@@ -146,23 +162,25 @@ public sealed partial class TusAzureStore : ITusPipelineStore
                 azureFile.Metadata.LastChunkOffset = appendStartOffset;
                 var options = new CommitBlockListOptions { Metadata = azureFile.Metadata.ToAzure() };
                 await blockBlobClient
-                    .CommitBlockListAsync(allBlockIds, options, cancellationToken)
+                    .CommitBlockListAsync(allBlockIds, options, CancellationToken.None)
                     .ConfigureAwait(false);
             }
             else
             {
                 // With checksum - store chunk info for later verification. The digest is prefixed with the
                 // algorithm so VerifyChecksumAsync can confirm the requested algorithm matches the staged one.
+                // On disconnect the partial digest will not match the client's, so verification discards
+                // the staged blocks — which is why the metadata write itself must still complete.
                 azureFile.Metadata.LastChunkBlocks = [.. chunkBlockIds];
                 azureFile.Metadata.LastChunkChecksum =
                     $"{checksumInfo!.Algorithm}:{hasher.GetHashAndReset().ToBase64()}";
                 azureFile.Metadata.LastChunkOffset = appendStartOffset;
-                await _UpdateMetadataAsync(blobClient, azureFile, cancellationToken).ConfigureAwait(false);
+                await _UpdateMetadataAsync(blobClient, azureFile, CancellationToken.None).ConfigureAwait(false);
 
                 _logger.StoredPipelineChunkMetadata(fileId, chunkBlockIds.Count);
             }
         }
-        catch (Exception e)
+        catch
         {
             // Clear memory and complete the reader to prevent
             // Microsoft.AspNetCore.Connections.ConnectionAbortedException inside Kestrel
@@ -178,33 +196,33 @@ public sealed partial class TusAzureStore : ITusPipelineStore
             }
 #pragma warning restore ERP022
 
-            if (e is not OperationCanceledException and not TaskCanceledException)
-            {
-                throw;
-            }
-
-            _logger.UploadOperationCanceled(fileId);
-
-            // CommitBlockListAsync / SetMetadata run only AFTER the read loop, so a cancellation mid-PATCH
-            // committed nothing durable. Report 0 rather than the staged-but-uncommitted byte count, which
-            // would otherwise tell the caller that bytes were persisted when GetUploadOffsetAsync (committed
-            // blocks only) will report the old offset. The staged blocks are discarded by Azure's block GC.
-#pragma warning disable ERP022 // Cancellation is intentionally observed and handled here, not swallowed silently.
-            return 0;
-#pragma warning restore ERP022
+            throw;
+        }
+        finally
+        {
+            // clearArray: sensitive upload data must not leak to other pool users
+            ArrayPool<byte>.Shared.Return(accumulationBuffer, clearArray: true);
         }
 
         return bytesWrittenThisRequest;
-    }
 
-    /// <summary>
-    /// Hashes a <see cref="ReadOnlySequence{T}"/> by feeding each segment's span to the incremental hash.
-    /// </summary>
-    private static void _HashSequence(IncrementalHash hasher, ReadOnlySequence<byte> sequence)
-    {
-        foreach (var segment in sequence)
+        // Stages the accumulated bytes as one block (must-complete: already received).
+        async Task stageAccumulatedAsync()
         {
-            hasher.AppendData(segment.Span);
+            _AssertNotToMuchData(currentOffset, accumulatedCount, azureFile.Metadata.UploadLength);
+
+            hasher?.AppendData(accumulationBuffer, 0, accumulatedCount);
+
+            var blockId = _GenerateBlockId(blockToken, nextBlockNumber++);
+            await using var chunkStream = new MemoryStream(accumulationBuffer, 0, accumulatedCount, writable: false);
+            await blockBlobClient
+                .StageBlockAsync(blockId, chunkStream, cancellationToken: CancellationToken.None)
+                .ConfigureAwait(false);
+
+            chunkBlockIds.Add(blockId);
+            bytesWrittenThisRequest += accumulatedCount;
+            currentOffset += accumulatedCount;
+            accumulatedCount = 0;
         }
     }
 

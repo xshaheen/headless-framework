@@ -68,7 +68,17 @@ public sealed partial class TusAzureStore
             )
             .ConfigureAwait(false);
 
-        // ATOMIC: Commit blocks + update metadata in single operation for non-checksum uploads
+        if (chunkBlockIds.Count == 0)
+        {
+            await _RefreshChunkTrackingForEmptyAppendAsync(blobClient, azureFile, currentOffset).ConfigureAwait(false);
+
+            return 0;
+        }
+
+        // ATOMIC: Commit blocks + update metadata in single operation for non-checksum uploads.
+        // Must-complete (CancellationToken.None): on client disconnect the request token is already
+        // cancelled, but the received bytes have to become durable so the client resumes from them
+        // instead of re-uploading (TusDiskStore parity: reads use the live token, writes use None).
         if (hasher == null)
         {
             List<string> allBlockIds = [.. committedBlocks.Select(b => b.Name), .. chunkBlockIds];
@@ -84,7 +94,9 @@ public sealed partial class TusAzureStore
             azureFile.Metadata.LastChunkOffset = currentOffset;
 
             var options = new CommitBlockListOptions { Metadata = azureFile.Metadata.ToAzure() };
-            await blockBlobClient.CommitBlockListAsync(allBlockIds, options, cancellationToken).ConfigureAwait(false);
+            await blockBlobClient
+                .CommitBlockListAsync(allBlockIds, options, CancellationToken.None)
+                .ConfigureAwait(false);
 
             return bytesWritten;
         }
@@ -96,7 +108,9 @@ public sealed partial class TusAzureStore
         azureFile.Metadata.LastChunkBlocks = [.. chunkBlockIds];
         azureFile.Metadata.LastChunkChecksum = $"{algorithm}:{hasher.GetHashAndReset().ToBase64()}";
         azureFile.Metadata.LastChunkOffset = currentOffset;
-        await _UpdateMetadataAsync(blobClient, azureFile, cancellationToken).ConfigureAwait(false);
+        // Must-complete: on disconnect the partial digest will not match the client's, so
+        // verification discards the staged blocks — but only if this metadata write landed.
+        await _UpdateMetadataAsync(blobClient, azureFile, CancellationToken.None).ConfigureAwait(false);
 
         _logger.StoredStreamChunkMetadata(fileId, chunkBlockIds.Count);
 
@@ -138,11 +152,26 @@ public sealed partial class TusAzureStore
                 // A non-seekable request body has no Length; buffer it so StageBlock has a content length and
                 // we can report the exact bytes staged without ever calling Stream.Length on a forward-only stream.
                 await using var buffered = new MemoryStream();
-                await stream.CopyToAsync(buffered, cancellationToken).ConfigureAwait(false);
+
+                try
+                {
+                    await stream.CopyToAsync(buffered, cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    // Client disconnected mid-copy; persist what was received (spec: store as much
+                    // of the received data as possible).
+                }
+
+                if (buffered.Length == 0)
+                {
+                    return ([], 0);
+                }
+
                 _AssertNotToMuchData(currentOffset, buffered.Length, fileUploadLength);
                 buffered.Position = 0;
                 await blockBlobClient
-                    .StageBlockAsync(blockId, buffered, cancellationToken: cancellationToken)
+                    .StageBlockAsync(blockId, buffered, cancellationToken: CancellationToken.None)
                     .ConfigureAwait(false);
                 return ([blockId], buffered.Length);
             }
@@ -151,14 +180,29 @@ public sealed partial class TusAzureStore
             // Pre-allocate capacity if stream length is known to avoid resizing (clamped to int range)
             var capacity = stream is { CanSeek: true, Length: > 0 } ? (int)Math.Min(stream.Length, int.MaxValue) : 0;
             await using var memoryStream = new MemoryStream(capacity);
-            await stream.CopyToAsync(memoryStream, cancellationToken).ConfigureAwait(false);
+
+            try
+            {
+                await stream.CopyToAsync(memoryStream, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // Client disconnected mid-copy; stage what was received — the partial digest will
+                // fail verification and the staged blocks get discarded, matching the protocol.
+            }
+
+            if (memoryStream.Length == 0)
+            {
+                return ([], 0);
+            }
+
             _AssertNotToMuchData(currentOffset, memoryStream.Length, fileUploadLength);
 
             hasher.AppendData(memoryStream.GetBuffer().AsSpan(0, (int)memoryStream.Length));
 
             memoryStream.Position = 0; // Reuse MemoryStream for upload
             await blockBlobClient
-                .StageBlockAsync(blockId, memoryStream, cancellationToken: cancellationToken)
+                .StageBlockAsync(blockId, memoryStream, cancellationToken: CancellationToken.None)
                 .ConfigureAwait(false);
             return ([blockId], memoryStream.Length);
         }
@@ -184,12 +228,13 @@ public sealed partial class TusAzureStore
             // AppendData consumes the buffer synchronously - safe with the shared pooled-buffer approach
             hasher?.AppendData(chunk.Array!, chunk.Offset, chunk.Count);
 
-            // Upload the chunk as a block
+            // Upload the chunk as a block (must-complete: the bytes were already received from
+            // the client, so staging must not abort on the disconnect-cancelled request token)
             // MemoryStream wrapper is necessary (Azure SDK requires Stream) but doesn't copy data
             // Azure SDK reads/buffers the stream synchronously - safe with shared buffer approach
             await using var chunkStream = new MemoryStream(chunk.Array!, chunk.Offset, chunk.Count, writable: false);
             await blockBlobClient
-                .StageBlockAsync(blockId, chunkStream, cancellationToken: cancellationToken)
+                .StageBlockAsync(blockId, chunkStream, cancellationToken: CancellationToken.None)
                 .ConfigureAwait(false);
 
             chunkBlockIds.Add(blockId);
@@ -260,9 +305,21 @@ public sealed partial class TusAzureStore
             {
                 while (true)
                 {
-                    var bytesRead = await sourceStream
-                        .ReadAsync(buffer.AsMemory(0, chunkSize), cancellationToken)
-                        .ConfigureAwait(false);
+                    int bytesRead;
+
+                    // The client read is the only place the live token belongs: tusdotnet's guarded
+                    // stream usually surfaces a disconnect as EOF, but a token cancelled between
+                    // reads throws — either way the bytes received so far must survive.
+                    try
+                    {
+                        bytesRead = await sourceStream
+                            .ReadAsync(buffer.AsMemory(0, chunkSize), cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        break;
+                    }
 
                     if (bytesRead == 0)
                     {
