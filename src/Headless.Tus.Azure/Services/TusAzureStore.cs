@@ -29,16 +29,18 @@ namespace Headless.Tus.Services;
 /// </para>
 /// <para>
 /// When <see cref="TusAzureStoreOptions.EnableChunkSplitting"/> is enabled (the default), incoming
-/// PATCH bodies are split into fixed-size blocks so that individual blocks never exceed Azure's
-/// 100 MB per-block limit. Without splitting, the entire PATCH body is staged as one block.
+/// PATCH bodies are split into fixed-size blocks no larger than the configured chunk size (capped
+/// at 100 MB, which also bounds per-request memory; Azure's own per-block maximum is 4,000 MiB on
+/// current service versions). Without splitting, the entire PATCH body is staged as one block.
 /// </para>
 /// <para>
 /// <b>Checksum deferred commit:</b> when a PATCH request carries a TUS-Checksum header, blocks
 /// are staged but <em>not</em> committed until <c>VerifyChecksumAsync</c> confirms the digest.
-/// The block IDs and the pre-calculated digest are stored in blob metadata
-/// (<c>tus_last_chunk_blocks</c> / <c>tus_last_chunk_checksum</c>) so verification and commit
-/// happen in a separate call. Failed verification leaves the blocks uncommitted; Azure
-/// automatically discards uncommitted blocks after seven days.
+/// The staged block range (a constant-size token/index/count triple) and the pre-calculated
+/// digest are stored in blob metadata (<c>tus_last_chunk_blocks</c> /
+/// <c>tus_last_chunk_checksum</c>) so verification and commit happen in a separate call. Failed
+/// verification leaves the blocks uncommitted; Azure automatically discards uncommitted blocks
+/// after seven days.
 /// </para>
 /// <para>
 /// When <see cref="TusAzureStoreOptions.CreateContainerIfNotExists"/> is <see langword="true"/>

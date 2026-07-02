@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using Azure.Storage.Blobs.Models;
 using Azure.Storage.Blobs.Specialized;
 using Headless.Checks;
+using Headless.Tus.Models;
 using Microsoft.Extensions.Logging;
 using tusdotnet.Extensions.Store;
 using tusdotnet.Models;
@@ -57,9 +58,11 @@ public sealed partial class TusAzureStore
         using var hasher = await _GetHasher(stream, cancellationToken).ConfigureAwait(false);
 
         // Stage blocks (with or without chunking)
+        var blockToken = _NewBlockToken();
         var (chunkBlockIds, bytesWritten) = await _StageAsync(
                 blockBlobClient,
                 stream,
+                blockToken,
                 nextBlockNumber: committedBlocks.Count,
                 azureFile.Metadata.UploadLength,
                 currentOffset,
@@ -93,7 +96,14 @@ public sealed partial class TusAzureStore
             azureFile.Metadata.LastChunkChecksum = null;
             azureFile.Metadata.LastChunkOffset = currentOffset;
 
-            var options = new CommitBlockListOptions { Metadata = azureFile.Metadata.ToAzure() };
+            // HttpHeaders must be re-supplied: Put Block List clears any x-ms-blob-* property omitted
+            // from the request, which would wipe headers set at creation (custom content type, cache
+            // control) on the first PATCH.
+            var options = new CommitBlockListOptions
+            {
+                Metadata = azureFile.Metadata.ToAzure(),
+                HttpHeaders = azureFile.HttpHeaders,
+            };
             await blockBlobClient
                 .CommitBlockListAsync(allBlockIds, options, CancellationToken.None)
                 .ConfigureAwait(false);
@@ -101,11 +111,16 @@ public sealed partial class TusAzureStore
             return bytesWritten;
         }
 
-        // Store the block IDs for this chunk - these are the blocks that will need to be committed or rolled back.
-        // The digest is prefixed with the algorithm so VerifyChecksumAsync can confirm the requested algorithm
-        // matches the one actually used to stage the data.
+        // Track the staged block range for this chunk (token + consecutive indices reconstruct the
+        // exact block IDs at commit time) - these are the blocks that will need to be committed or
+        // discarded. The digest is prefixed with the algorithm so VerifyChecksumAsync can confirm
+        // the requested algorithm matches the one actually used to stage the data.
         var algorithm = stream.GetUploadChecksumInfo()!.Algorithm;
-        azureFile.Metadata.LastChunkBlocks = [.. chunkBlockIds];
+        azureFile.Metadata.LastChunkBlocks = new TusStagedBlocks(
+            blockToken,
+            FirstIndex: committedBlocks.Count,
+            chunkBlockIds.Count
+        );
         azureFile.Metadata.LastChunkChecksum = $"{algorithm}:{hasher.GetHashAndReset().ToBase64()}";
         azureFile.Metadata.LastChunkOffset = currentOffset;
         // Must-complete: on disconnect the partial digest will not match the client's, so
@@ -123,6 +138,7 @@ public sealed partial class TusAzureStore
     private async Task<(List<string> BlockIds, long BytesWritten)> _StageAsync(
         BlockBlobClient blockBlobClient,
         Stream stream,
+        string blockToken,
         int nextBlockNumber,
         long? fileUploadLength,
         long currentOffset,
@@ -130,8 +146,6 @@ public sealed partial class TusAzureStore
         CancellationToken cancellationToken
     )
     {
-        var blockToken = _NewBlockToken();
-
         if (!_options.EnableChunkSplitting)
         {
             var blockId = _GenerateBlockId(blockToken, nextBlockNumber);
@@ -287,7 +301,8 @@ public sealed partial class TusAzureStore
     {
         Argument.IsNotNull(sourceStream);
         Argument.IsPositive(chunkSize);
-        // Validate chunk size doesn't exceed Azure's 100MB block limit
+        // The store's 100MB chunk cap (also enforced by options validation): bounds the pooled
+        // buffer below; Azure's own per-block maximum is 4,000 MiB on current service versions.
         Argument.IsLessThanOrEqualTo(chunkSize, 100 * 1024 * 1024);
 
         return enumerable(sourceStream, chunkSize, cancellationToken);
@@ -375,8 +390,9 @@ public sealed partial class TusAzureStore
     /// Block IDs are otherwise a pure function of the committed-block count, so two overlapping operations on the
     /// same blob (concurrent PATCHes, or a checksum-deferred PATCH followed by another append before the first is
     /// verified+committed) would generate identical IDs and silently overwrite each other's still-uncommitted
-    /// blocks. The per-call token makes each call's staged IDs unique. 8 hex chars keeps the comma-joined
-    /// <c>LastChunkBlocks</c> metadata well under Azure's 8&#160;KB per-blob metadata cap.
+    /// blocks. The per-call token makes each call's staged IDs unique. The token is also persisted in the
+    /// constant-size <c>LastChunkBlocks</c> triple (see <c>TusStagedBlocks</c>) so the staged IDs can be
+    /// reconstructed at commit time without storing the full ID list in blob metadata.
     /// </remarks>
     private static string _NewBlockToken()
     {

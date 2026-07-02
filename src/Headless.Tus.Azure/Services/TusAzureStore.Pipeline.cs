@@ -5,6 +5,7 @@ using System.IO.Pipelines;
 using System.Security.Cryptography;
 using Azure.Storage.Blobs.Models;
 using Headless.Checks;
+using Headless.Tus.Models;
 using Microsoft.Extensions.Logging;
 using tusdotnet.Extensions.Store;
 using tusdotnet.Interfaces;
@@ -160,18 +161,29 @@ public sealed partial class TusAzureStore : ITusPipelineStore
                 azureFile.Metadata.LastChunkBlocks = null;
                 azureFile.Metadata.LastChunkChecksum = null;
                 azureFile.Metadata.LastChunkOffset = appendStartOffset;
-                var options = new CommitBlockListOptions { Metadata = azureFile.Metadata.ToAzure() };
+                // HttpHeaders must be re-supplied: Put Block List clears any x-ms-blob-* property
+                // omitted from the request (see the Stream overload for the rationale).
+                var options = new CommitBlockListOptions
+                {
+                    Metadata = azureFile.Metadata.ToAzure(),
+                    HttpHeaders = azureFile.HttpHeaders,
+                };
                 await blockBlobClient
                     .CommitBlockListAsync(allBlockIds, options, CancellationToken.None)
                     .ConfigureAwait(false);
             }
             else
             {
-                // With checksum - store chunk info for later verification. The digest is prefixed with the
-                // algorithm so VerifyChecksumAsync can confirm the requested algorithm matches the staged one.
-                // On disconnect the partial digest will not match the client's, so verification discards
-                // the staged blocks — which is why the metadata write itself must still complete.
-                azureFile.Metadata.LastChunkBlocks = [.. chunkBlockIds];
+                // With checksum - track the staged block range (token + consecutive indices reconstruct
+                // the exact block IDs at commit time) for later verification. The digest is prefixed with
+                // the algorithm so VerifyChecksumAsync can confirm the requested algorithm matches the
+                // staged one. On disconnect the partial digest will not match the client's, so verification
+                // discards the staged blocks — which is why the metadata write itself must still complete.
+                azureFile.Metadata.LastChunkBlocks = new TusStagedBlocks(
+                    blockToken,
+                    FirstIndex: committedBlocks.Count,
+                    chunkBlockIds.Count
+                );
                 azureFile.Metadata.LastChunkChecksum =
                     $"{checksumInfo!.Algorithm}:{hasher.GetHashAndReset().ToBase64()}";
                 azureFile.Metadata.LastChunkOffset = appendStartOffset;

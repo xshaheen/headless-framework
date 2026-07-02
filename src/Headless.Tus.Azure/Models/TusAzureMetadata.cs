@@ -107,21 +107,24 @@ internal sealed class TusAzureMetadata
         }
     }
 
-    public string[]? LastChunkBlocks
+    /// <summary>
+    /// The staged-but-uncommitted block range of the most recent checksum-header append, or
+    /// <see langword="null"/> when nothing is staged. Stored as a constant-size
+    /// <c>token:firstIndex:count</c> value (see <see cref="TusStagedBlocks"/>) so the tracking can
+    /// never exceed Azure's 8&#160;KB blob-metadata cap regardless of how many blocks one PATCH stages.
+    /// </summary>
+    public TusStagedBlocks? LastChunkBlocks
     {
-        get =>
-            _decodedMetadata.TryGetValue(LastChunkBlocksKey, out var value) && !string.IsNullOrEmpty(value)
-                ? value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                : null;
+        get => _decodedMetadata.TryGetValue(LastChunkBlocksKey, out var value) ? TusStagedBlocks.Parse(value) : null;
         set
         {
-            if (value == null || value.Length == 0)
+            if (value is { Count: > 0 } staged)
             {
-                _decodedMetadata.Remove(LastChunkBlocksKey);
+                _decodedMetadata[LastChunkBlocksKey] = staged.ToMetadataValue();
             }
             else
             {
-                _decodedMetadata[LastChunkBlocksKey] = string.Join(',', value);
+                _decodedMetadata.Remove(LastChunkBlocksKey);
             }
         }
     }

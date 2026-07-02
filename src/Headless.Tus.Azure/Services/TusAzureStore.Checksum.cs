@@ -243,7 +243,7 @@ public sealed partial class TusAzureStore : ITusChecksumStore
     /// </summary>
     private async Task _DiscardLastChunkAsync(BlobClient blobClient, BlockBlobClient blockBlobClient, TusAzureFile file)
     {
-        if (file.Metadata.LastChunkBlocks is { Length: > 0 })
+        if (file.Metadata.LastChunkBlocks is { Count: > 0 })
         {
             file.Metadata.LastChunkBlocks = null;
             file.Metadata.LastChunkChecksum = null;
@@ -307,7 +307,9 @@ public sealed partial class TusAzureStore : ITusChecksumStore
         file.Metadata.LastChunkChecksum = null;
         file.Metadata.LastChunkOffset = null;
 
-        var options = new CommitBlockListOptions { Metadata = file.Metadata.ToAzure() };
+        // HttpHeaders must be re-supplied: Put Block List clears any x-ms-blob-* property omitted
+        // from the request, which would wipe creation-time headers during rollback.
+        var options = new CommitBlockListOptions { Metadata = file.Metadata.ToAzure(), HttpHeaders = file.HttpHeaders };
         await client.CommitBlockListAsync(prefix, options, CancellationToken.None).ConfigureAwait(false);
 
         _logger.LastChunkRolledBack(file.FileId, chunkStartOffset);
@@ -455,16 +457,33 @@ public sealed partial class TusAzureStore : ITusChecksumStore
         {
             var committedBlocks = await _GetCommittedBlocksAsync(client, token).ConfigureAwait(false);
 
-            // Build complete block list BEFORE clearing metadata (use LastChunkBlocks while it still has data)
-            List<string> allBlockIds = [.. committedBlocks.Select(x => x.Name), .. file.Metadata.LastChunkBlocks ?? []];
+            // Build complete block list BEFORE clearing metadata: the staged IDs are reconstructed
+            // from the persisted (token, firstIndex, count) triple — see TusStagedBlocks.
+            var staged = file.Metadata.LastChunkBlocks;
+            var allBlockIds = new List<string>(committedBlocks.Count + (staged?.Count ?? 0));
+            allBlockIds.AddRange(committedBlocks.Select(x => x.Name));
+
+            if (staged is { } stagedRange)
+            {
+                for (var i = 0; i < stagedRange.Count; i++)
+                {
+                    allBlockIds.Add(_GenerateBlockId(stagedRange.Token, stagedRange.FirstIndex + i));
+                }
+            }
+
             _EnsureWithinBlockLimit(allBlockIds.Count);
 
             // NOW clear chunk tracking metadata (after we've used it)
             file.Metadata.LastChunkBlocks = null;
             file.Metadata.LastChunkChecksum = null;
 
-            // ATOMIC: Commit blocks + update metadata in single operation
-            var options = new CommitBlockListOptions { Metadata = file.Metadata.ToAzure() };
+            // ATOMIC: Commit blocks + update metadata in single operation. HttpHeaders must be
+            // re-supplied: Put Block List clears any x-ms-blob-* property omitted from the request.
+            var options = new CommitBlockListOptions
+            {
+                Metadata = file.Metadata.ToAzure(),
+                HttpHeaders = file.HttpHeaders,
+            };
             await client.CommitBlockListAsync(allBlockIds, options, cancellationToken: token).ConfigureAwait(false);
 
             _logger.LastChunkCommitted(file.FileId, allBlockIds.Count);

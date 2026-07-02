@@ -2,6 +2,7 @@
 
 using Headless.Testing.Tests;
 using Headless.Tus.Models;
+using tusdotnet.Models;
 
 namespace Tests.Azure;
 
@@ -808,18 +809,19 @@ public sealed class TusAzureMetadataTests : TestBase
     #region LastChunkBlocks Property
 
     [Fact]
-    public void should_set_last_chunk_blocks()
+    public void should_set_last_chunk_blocks_as_constant_size_triple()
     {
         // given
         var dict = new Dictionary<string, string>(StringComparer.Ordinal);
         var metadata = TusAzureMetadata.FromAzure(dict);
 
         // when
-        metadata.LastChunkBlocks = ["block1", "block2"];
+        metadata.LastChunkBlocks = new TusStagedBlocks("1a2b3c4d", FirstIndex: 3, Count: 250_000);
 
-        // then
-        metadata.LastChunkBlocks.Should().BeEquivalentTo(["block1", "block2"]);
-        dict[TusAzureMetadata.LastChunkBlocksKey].Should().Be("block1,block2");
+        // then - the serialized value stays constant-size regardless of the block count, so the
+        // tracking can never approach Azure's 8 KB blob-metadata cap
+        metadata.LastChunkBlocks.Should().Be(new TusStagedBlocks("1a2b3c4d", 3, 250_000));
+        dict[TusAzureMetadata.LastChunkBlocksKey].Should().Be("1a2b3c4d:3:250000");
     }
 
     [Fact]
@@ -828,7 +830,7 @@ public sealed class TusAzureMetadataTests : TestBase
         // given
         var dict = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            [TusAzureMetadata.LastChunkBlocksKey] = "b1,b2,b3",
+            [TusAzureMetadata.LastChunkBlocksKey] = "deadbeef:0:3",
         };
         var metadata = TusAzureMetadata.FromAzure(dict);
 
@@ -836,7 +838,7 @@ public sealed class TusAzureMetadataTests : TestBase
         var result = metadata.LastChunkBlocks;
 
         // then
-        result.Should().BeEquivalentTo(["b1", "b2", "b3"]);
+        result.Should().Be(new TusStagedBlocks("deadbeef", 0, 3));
     }
 
     [Fact]
@@ -852,13 +854,23 @@ public sealed class TusAzureMetadataTests : TestBase
         result.Should().BeNull();
     }
 
-    [Fact]
-    public void should_return_null_when_last_chunk_blocks_is_empty_string()
+    [Theory]
+    [InlineData("")]
+    [InlineData("garbage")]
+    [InlineData("token:1")]
+    [InlineData("token:1:2:3")]
+    [InlineData(":1:2")]
+    [InlineData("token:x:2")]
+    [InlineData("token:1:x")]
+    [InlineData("token:-1:2")]
+    [InlineData("token:1:0")]
+    [InlineData("token:1:-2")]
+    public void should_return_null_when_last_chunk_blocks_is_malformed(string storedValue)
     {
-        // given
+        // given - corrupted metadata must degrade to "no staged chunk" rather than throw
         var dict = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            [TusAzureMetadata.LastChunkBlocksKey] = "",
+            [TusAzureMetadata.LastChunkBlocksKey] = storedValue,
         };
         var metadata = TusAzureMetadata.FromAzure(dict);
 
@@ -875,7 +887,7 @@ public sealed class TusAzureMetadataTests : TestBase
         // given
         var dict = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            [TusAzureMetadata.LastChunkBlocksKey] = "b1,b2",
+            [TusAzureMetadata.LastChunkBlocksKey] = "deadbeef:0:2",
         };
         var metadata = TusAzureMetadata.FromAzure(dict);
 
@@ -888,20 +900,83 @@ public sealed class TusAzureMetadataTests : TestBase
     }
 
     [Fact]
-    public void should_remove_last_chunk_blocks_when_set_to_empty_array()
+    public void should_remove_last_chunk_blocks_when_set_to_empty_range()
     {
         // given
         var dict = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            [TusAzureMetadata.LastChunkBlocksKey] = "b1,b2",
+            [TusAzureMetadata.LastChunkBlocksKey] = "deadbeef:0:2",
         };
         var metadata = TusAzureMetadata.FromAzure(dict);
 
         // when
-        metadata.LastChunkBlocks = [];
+        metadata.LastChunkBlocks = new TusStagedBlocks("deadbeef", 0, Count: 0);
 
         // then
         dict.Should().NotContainKey(TusAzureMetadata.LastChunkBlocksKey);
+    }
+
+    #endregion
+
+    #region FromTus Guard Rails
+
+    [Fact]
+    public void should_reject_metadata_with_non_ascii_characters()
+    {
+        // given - the raw Upload-Metadata string is persisted as a single Azure metadata value,
+        // which must be ASCII; a spec-conforming header (ASCII keys + base64 values) always is.
+        // tusdotnet's parser only validates structure and base64 values, so a non-ASCII KEY
+        // parses fine and must be stopped by the store's own guard.
+        const string metadata = "filename w6ZibGVy,café dmFsdWU=";
+
+        // when
+        var act = () => TusAzureMetadata.FromTus(metadata);
+
+        // then
+        act.Should().Throw<TusStoreException>().WithMessage("*printable ASCII*");
+    }
+
+    [Fact]
+    public void should_reject_metadata_with_control_characters()
+    {
+        // given
+        const string metadata = "filename\tdmFsdWU=";
+
+        // when
+        var act = () => TusAzureMetadata.FromTus(metadata);
+
+        // then
+        act.Should().Throw<TusStoreException>().WithMessage("*printable ASCII*");
+    }
+
+    [Fact]
+    public void should_reject_oversized_metadata()
+    {
+        // given - Azure caps total blob metadata at 8 KB; the store reserves headroom for its own
+        // tus_* keys and rejects raw Upload-Metadata above ~7 KB with an actionable message
+        var oversized = $"filename {Convert.ToBase64String("x"u8.ToArray())},k {new string('A', 7 * 1024)}";
+
+        // when
+        var act = () => TusAzureMetadata.FromTus(oversized);
+
+        // then
+        act.Should().Throw<TusStoreException>().WithMessage("*too large*");
+    }
+
+    [Fact]
+    public void should_accept_metadata_at_the_size_limit()
+    {
+        // given - exactly 7 KB must round-trip (the guard is exclusive); the value length is a
+        // multiple of 4 so it stays valid base64
+        var value = new string('A', 7 * 1024 - "fnm ".Length);
+        var metadata = $"fnm {value}";
+        metadata.Length.Should().Be(7 * 1024);
+
+        // when
+        var result = TusAzureMetadata.FromTus(metadata);
+
+        // then
+        result.ToTusString().Should().Be(metadata);
     }
 
     #endregion
