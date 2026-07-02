@@ -4,6 +4,8 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using Azure.Storage.Blobs;
+using Azure.Storage.Blobs.Models;
+using Azure.Storage.Blobs.Specialized;
 using Headless.Testing.Tests;
 using Headless.Tus.Options;
 using Headless.Tus.Services;
@@ -170,14 +172,66 @@ public sealed class TusProtocolTests(TusAzureFixture fixture) : TestBase
         head.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
-    private async Task<IHost> _CreateHostAsync()
+    [Fact]
+    public async Task patch_with_chunk_splitting_disabled_commits_a_single_block()
+    {
+        // given - chunk splitting OFF with a deliberately small block size, so a body spanning several
+        // BlobDefaultChunkSize windows would become multiple Azure blocks if the option were ignored on
+        // the HTTP pipeline path (the regression this pins: EnableChunkSplitting used to be honored only
+        // by the store-direct Stream overload, never by the PipeReader path every real PATCH uses)
+        using var host = await _CreateHostAsync(enableChunkSplitting: false, blobDefaultChunkSize: 256);
+        using var client = host.GetTestClient();
+
+        var content = Faker.Random.Bytes(1024); // 4x the 256-byte chunk window
+        var location = await _CreateUploadAsync(client, content.Length, metadata: null);
+
+        // when - a single PATCH delivers the whole body through the real MapTus pipeline
+        using var patched = await _PatchAsync(client, location, content, offset: 0);
+
+        // then - the upload completes and the store committed exactly ONE block (no splitting)
+        patched.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        patched.Headers.GetValues("Upload-Offset").Should().ContainSingle().Which.Should().Be("1024");
+        (await _GetCommittedBlockCountAsync(location)).Should().Be(1);
+    }
+
+    private async Task<int> _GetCommittedBlockCountAsync(string location)
+    {
+        var fileId = location[(location.LastIndexOf('/') + 1)..];
+
+        var blockBlobClient = new BlobServiceClient(
+            fixture.Container.GetConnectionString(),
+            new BlobClientOptions(BlobClientOptions.ServiceVersion.V2024_11_04)
+        )
+            .GetBlobContainerClient("tusprotocol")
+            .GetBlockBlobClient($"tusprotocol/{fileId}");
+
+        var blockList = await blockBlobClient.GetBlockListAsync(
+            BlockListTypes.Committed,
+            cancellationToken: AbortToken
+        );
+
+        return blockList.Value.CommittedBlocks.Count();
+    }
+
+    private async Task<IHost> _CreateHostAsync(bool enableChunkSplitting = true, int? blobDefaultChunkSize = null)
     {
         var blobServiceClient = new BlobServiceClient(
             fixture.Container.GetConnectionString(),
             new BlobClientOptions(BlobClientOptions.ServiceVersion.V2024_11_04)
         );
 
-        var storeOptions = new TusAzureStoreOptions { ContainerName = "tusprotocol", BlobPrefix = "tusprotocol/" };
+        var storeOptions = new TusAzureStoreOptions
+        {
+            ContainerName = "tusprotocol",
+            BlobPrefix = "tusprotocol/",
+            EnableChunkSplitting = enableChunkSplitting,
+        };
+
+        if (blobDefaultChunkSize is not null)
+        {
+            storeOptions.BlobDefaultChunkSize = blobDefaultChunkSize.Value;
+        }
+
         var store = new TusAzureStore(blobServiceClient, storeOptions, loggerFactory: LoggerFactory);
 
         var configuration = new DefaultTusConfiguration

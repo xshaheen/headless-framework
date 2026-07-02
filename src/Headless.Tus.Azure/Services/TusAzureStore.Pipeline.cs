@@ -27,6 +27,9 @@ public sealed partial class TusAzureStore : ITusPipelineStore
     /// and block IDs are stored in blob metadata so that a subsequent <c>VerifyChecksumAsync</c>
     /// call can commit or discard them. Without a checksum header, all blocks are committed
     /// atomically alongside the updated metadata before returning.
+    /// When <c>EnableChunkSplitting</c> is <see langword="false"/> the whole PATCH body is buffered
+    /// and staged as a single Azure block (matching the <c>Stream</c> overload) instead of being
+    /// split into <c>optimalChunkSize</c> blocks.
     /// </remarks>
     /// <exception cref="TusStoreException">thrown if the file id is invalid or the file does not exist</exception>
     /// <exception cref="NotSupportedException">
@@ -69,6 +72,9 @@ public sealed partial class TusAzureStore : ITusPipelineStore
             );
         }
 
+        // When EnableChunkSplitting is false the whole PATCH body is staged as ONE Azure block
+        // (mirroring the Stream overload); otherwise the body is split into optimalChunkSize blocks.
+        var enableSplitting = _options.EnableChunkSplitting;
         var optimalChunkSize = _CalculateOptimalChunkSize(azureFile.Metadata.UploadLength);
         var nextBlockNumber = committedBlocks.Count;
         var blockToken = _NewBlockToken();
@@ -81,7 +87,7 @@ public sealed partial class TusAzureStore : ITusPipelineStore
         // once the client disconnects, tusdotnet's guarded reader returns only empty IsCanceled
         // results (TryRead throws), so any bytes left inside the pipe are unrecoverable — data we
         // have read must be in our hands to satisfy "store as much of the received data as
-        // possible".
+        // possible". With splitting disabled the buffer grows to hold the entire PATCH body.
         var accumulationBuffer = ArrayPool<byte>.Shared.Rent(optimalChunkSize);
         var accumulatedCount = 0;
 
@@ -113,15 +119,28 @@ public sealed partial class TusAzureStore : ITusPipelineStore
 
                 while (!buffer.IsEmpty)
                 {
-                    var take = (int)Math.Min(buffer.Length, optimalChunkSize - accumulatedCount);
+                    // Split mode flushes a full optimalChunkSize block when the buffer fills; no-split
+                    // mode grows the buffer instead, so the whole PATCH body ends up in a single block
+                    // staged after the loop.
+                    var capacity = enableSplitting ? optimalChunkSize : accumulationBuffer.Length;
+
+                    if (accumulatedCount == capacity)
+                    {
+                        if (enableSplitting)
+                        {
+                            await stageAccumulatedAsync().ConfigureAwait(false);
+                        }
+                        else
+                        {
+                            growAccumulationBuffer();
+                            capacity = accumulationBuffer.Length;
+                        }
+                    }
+
+                    var take = (int)Math.Min(buffer.Length, capacity - accumulatedCount);
                     buffer.Slice(0, take).CopyTo(accumulationBuffer.AsSpan(accumulatedCount, take));
                     accumulatedCount += take;
                     buffer = buffer.Slice(take);
-
-                    if (accumulatedCount == optimalChunkSize)
-                    {
-                        await stageAccumulatedAsync().ConfigureAwait(false);
-                    }
                 }
 
                 // Everything was copied into the accumulation buffer; consume it all.
@@ -210,6 +229,25 @@ public sealed partial class TusAzureStore : ITusPipelineStore
             bytesWrittenThisRequest += accumulatedCount;
             currentOffset += accumulatedCount;
             accumulatedCount = 0;
+        }
+
+        // Doubles the owned buffer (no-split mode only) so the entire PATCH body fits in one block.
+        void growAccumulationBuffer()
+        {
+            if (accumulationBuffer.Length >= Array.MaxLength)
+            {
+                throw new TusStoreException(
+                    "A single PATCH body exceeds the maximum size that can be buffered with chunk splitting "
+                        + "disabled. Enable chunk splitting or send the upload in smaller PATCH requests."
+                );
+            }
+
+            var newSize = (int)Math.Min((long)accumulationBuffer.Length * 2, Array.MaxLength);
+            var larger = ArrayPool<byte>.Shared.Rent(newSize);
+            accumulationBuffer.AsSpan(0, accumulatedCount).CopyTo(larger);
+            // clearArray: the discarded buffer held upload data that must not leak to other pool users.
+            ArrayPool<byte>.Shared.Return(accumulationBuffer, clearArray: true);
+            accumulationBuffer = larger;
         }
     }
 
