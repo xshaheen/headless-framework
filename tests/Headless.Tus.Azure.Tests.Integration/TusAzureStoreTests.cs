@@ -414,27 +414,38 @@ public sealed class TusAzureStoreTests : TestBase
 
     // -- VerifyChecksum
     // Note: Full checksum two-phase commit flow requires tusdotnet's internal ChecksumAwareStream wrapper.
-    // These tests verify API behavior; full E2E testing requires the tusdotnet middleware.
+    // These tests verify API behavior; the header flow is covered in ChecksumRoundTripTests and the
+    // trailer flow (verify-after-commit) in ChecksumTrailerTests.
 
     [Fact]
-    public async Task should_return_false_when_no_checksum_metadata_exists()
+    public async Task should_verify_committed_data_when_checksum_arrives_after_append()
     {
-        // given - upload without checksum request (blocks committed immediately, no checksum metadata)
+        // given - an append without checksum info, as a checksum-trailer PATCH looks to the store
         var dataToAppend = Faker.Random.Bytes(3_000);
-        var uploadLength = dataToAppend.Length;
-        var fileName = Faker.System.FileName();
-        var metadata = $"filename {fileName.ToBase64()}";
-        var fileId = await _store.CreateFileAsync(uploadLength, metadata, CancellationToken.None);
+        var fileId = await _store.CreateFileAsync(dataToAppend.Length, metadata: null, CancellationToken.None);
 
         await using var stream = new MemoryStream(dataToAppend);
         await _store.AppendDataAsync(fileId, stream, CancellationToken.None);
 
-        // when - call verify (no checksum metadata exists since none was requested during upload)
-        var anyChecksum = SHA256.HashData(dataToAppend);
+        // when - the digest arrives afterwards (trailer flow) and matches
+        var checksum = SHA256.HashData(dataToAppend);
+        var isValid = await _store.VerifyChecksumAsync(fileId, "sha256", checksum, CancellationToken.None);
+
+        // then - the store hashes the committed chunk on demand and confirms it
+        isValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_return_false_when_no_chunk_was_appended()
+    {
+        // given - a freshly created upload with no appended data
+        var fileId = await _store.CreateFileAsync(1_000, metadata: null, CancellationToken.None);
+
+        // when - verify is called without any prior append (nothing to verify)
+        var anyChecksum = SHA256.HashData(Faker.Random.Bytes(100));
         var isValid = await _store.VerifyChecksumAsync(fileId, "sha256", anyChecksum, CancellationToken.None);
 
-        // then - returns false because no pre-calculated checksum exists (fail-fast design)
-        // This is correct: VerifyChecksumAsync should only be called when client requested checksum verification
+        // then
         isValid.Should().BeFalse();
     }
 

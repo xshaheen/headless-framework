@@ -14,6 +14,7 @@ internal sealed class TusAzureMetadata
     public const string PartialUploadsKey = "tus_partial_uploads";
     public const string LastChunkBlocksKey = "tus_last_chunk_blocks";
     public const string LastChunkChecksumKey = "tus_last_chunk_checksum";
+    public const string LastChunkOffsetKey = "tus_last_chunk_offset";
 
     /// <summary>
     /// Blob-metadata key holding the client's Upload-Metadata header value <em>verbatim</em>.
@@ -137,6 +138,31 @@ internal sealed class TusAzureMetadata
             else
             {
                 _decodedMetadata[LastChunkChecksumKey] = value;
+            }
+        }
+    }
+
+    /// <summary>
+    /// The committed offset immediately <em>before</em> the most recent append — the rollback
+    /// point for discarding that chunk when a checksum-trailer verification fails.
+    /// </summary>
+    public long? LastChunkOffset
+    {
+        get =>
+            _decodedMetadata.TryGetValue(LastChunkOffsetKey, out var value)
+            && long.TryParse(value, CultureInfo.InvariantCulture, out var offset)
+            && offset >= 0
+                ? offset
+                : null;
+        set
+        {
+            if (value.HasValue)
+            {
+                _decodedMetadata[LastChunkOffsetKey] = value.Value.ToString(CultureInfo.InvariantCulture);
+            }
+            else
+            {
+                _decodedMetadata.Remove(LastChunkOffsetKey);
             }
         }
     }

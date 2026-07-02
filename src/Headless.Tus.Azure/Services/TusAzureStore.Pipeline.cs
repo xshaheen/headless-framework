@@ -52,6 +52,9 @@ public sealed partial class TusAzureStore : ITusPipelineStore
 
         var committedBlocks = await _GetCommittedBlocksAsync(blockBlobClient, cancellationToken).ConfigureAwait(false);
         var currentOffset = committedBlocks.Sum(b => b.SizeLong);
+        // currentOffset advances per staged chunk below; keep the pre-append offset as the
+        // rollback point recorded with the commit (see the Stream overload for the rationale).
+        var appendStartOffset = currentOffset;
 
         // Get checksum info if provided (from request headers via tusdotnet extension method)
         var checksumInfo = pipeReader.GetUploadChecksumInfo();
@@ -132,9 +135,14 @@ public sealed partial class TusAzureStore : ITusPipelineStore
             // ATOMIC: Commit blocks + update metadata
             if (hasher is null)
             {
-                // No checksum - commit immediately
+                // No checksum - commit immediately. Record the pre-append offset as the rollback point
+                // for a later checksum-trailer verification and clear stale checksum-tracking state
+                // (see the Stream overload for the rationale).
                 List<string> allBlockIds = [.. committedBlocks.Select(b => b.Name), .. chunkBlockIds];
                 _EnsureWithinBlockLimit(allBlockIds.Count);
+                azureFile.Metadata.LastChunkBlocks = null;
+                azureFile.Metadata.LastChunkChecksum = null;
+                azureFile.Metadata.LastChunkOffset = appendStartOffset;
                 var options = new CommitBlockListOptions { Metadata = azureFile.Metadata.ToAzure() };
                 await blockBlobClient
                     .CommitBlockListAsync(allBlockIds, options, cancellationToken)
@@ -147,6 +155,7 @@ public sealed partial class TusAzureStore : ITusPipelineStore
                 azureFile.Metadata.LastChunkBlocks = [.. chunkBlockIds];
                 azureFile.Metadata.LastChunkChecksum =
                     $"{checksumInfo!.Algorithm}:{hasher.GetHashAndReset().ToBase64()}";
+                azureFile.Metadata.LastChunkOffset = appendStartOffset;
                 await _UpdateMetadataAsync(blobClient, azureFile, cancellationToken).ConfigureAwait(false);
 
                 _logger.StoredPipelineChunkMetadata(fileId, chunkBlockIds.Count);

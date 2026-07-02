@@ -72,6 +72,16 @@ public sealed partial class TusAzureStore
         {
             List<string> allBlockIds = [.. committedBlocks.Select(b => b.Name), .. chunkBlockIds];
             _EnsureWithinBlockLimit(allBlockIds.Count);
+
+            // Record the pre-append offset as the rollback point: when the client sent Upload-Checksum
+            // as an HTTP trailer, this store cannot see it during the append (no ChecksumAware wrapper),
+            // so the data commits now and VerifyChecksumAsync verifies — and possibly rolls back — the
+            // [LastChunkOffset, end) range afterwards. Also clear any stale checksum-tracking state from
+            // a previous failed verification.
+            azureFile.Metadata.LastChunkBlocks = null;
+            azureFile.Metadata.LastChunkChecksum = null;
+            azureFile.Metadata.LastChunkOffset = currentOffset;
+
             var options = new CommitBlockListOptions { Metadata = azureFile.Metadata.ToAzure() };
             await blockBlobClient.CommitBlockListAsync(allBlockIds, options, cancellationToken).ConfigureAwait(false);
 
@@ -84,6 +94,7 @@ public sealed partial class TusAzureStore
         var algorithm = stream.GetUploadChecksumInfo()!.Algorithm;
         azureFile.Metadata.LastChunkBlocks = [.. chunkBlockIds];
         azureFile.Metadata.LastChunkChecksum = $"{algorithm}:{hasher.GetHashAndReset().ToBase64()}";
+        azureFile.Metadata.LastChunkOffset = currentOffset;
         await _UpdateMetadataAsync(blobClient, azureFile, cancellationToken).ConfigureAwait(false);
 
         _logger.StoredStreamChunkMetadata(fileId, chunkBlockIds.Count);

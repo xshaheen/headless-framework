@@ -906,6 +906,60 @@ public sealed class TusAzureMetadataTests : TestBase
 
     #endregion
 
+    #region LastChunkOffset Property
+
+    [Fact]
+    public void should_set_and_get_last_chunk_offset()
+    {
+        // given
+        var dict = new Dictionary<string, string>(StringComparer.Ordinal);
+        var metadata = TusAzureMetadata.FromAzure(dict);
+
+        // when
+        metadata.LastChunkOffset = 4_096L;
+
+        // then
+        metadata.LastChunkOffset.Should().Be(4_096L);
+        dict.Should().ContainKey(TusAzureMetadata.LastChunkOffsetKey).WhoseValue.Should().Be("4096");
+    }
+
+    [Fact]
+    public void should_remove_last_chunk_offset_when_set_to_null()
+    {
+        // given
+        var dict = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [TusAzureMetadata.LastChunkOffsetKey] = "100",
+        };
+        var metadata = TusAzureMetadata.FromAzure(dict);
+
+        // when
+        metadata.LastChunkOffset = null;
+
+        // then
+        metadata.LastChunkOffset.Should().BeNull();
+        dict.Should().NotContainKey(TusAzureMetadata.LastChunkOffsetKey);
+    }
+
+    [Fact]
+    public void should_return_null_for_negative_or_invalid_last_chunk_offset()
+    {
+        // given
+        var dict = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [TusAzureMetadata.LastChunkOffsetKey] = "-5",
+        };
+        var metadata = TusAzureMetadata.FromAzure(dict);
+
+        // when / then
+        metadata.LastChunkOffset.Should().BeNull();
+
+        dict[TusAzureMetadata.LastChunkOffsetKey] = "not-a-number";
+        metadata.LastChunkOffset.Should().BeNull();
+    }
+
+    #endregion
+
     #region LastChunkChecksum Property
 
     [Fact]
@@ -1004,6 +1058,7 @@ public sealed class TusAzureMetadataTests : TestBase
         TusAzureMetadata.RawMetadataKey.Should().Be("tus_metadata");
         TusAzureMetadata.LastChunkBlocksKey.Should().Be("tus_last_chunk_blocks");
         TusAzureMetadata.LastChunkChecksumKey.Should().Be("tus_last_chunk_checksum");
+        TusAzureMetadata.LastChunkOffsetKey.Should().Be("tus_last_chunk_offset");
     }
 
     #endregion
