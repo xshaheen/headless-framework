@@ -8,8 +8,8 @@ namespace Headless.Emails;
 
 /// <summary>
 /// Root builder for <c>AddHeadlessEmails</c>. Provider packages contribute deferred service registrations into
-/// two slots — the default sender (exactly one, the unkeyed <see cref="IEmailSender"/>) and named instances
-/// (unlimited, unique names, resolved as keyed <see cref="IEmailSender"/> services or through
+/// two slots — an optional default sender (at most one, the unkeyed <see cref="IEmailSender"/>) and named
+/// instances (unlimited, unique names, resolved as keyed <see cref="IEmailSender"/> services or through
 /// <see cref="IEmailSenderProvider"/>). Nothing is registered into <see cref="Services"/> until the setup
 /// gates pass; contributions are queued only.
 /// </summary>
@@ -28,6 +28,8 @@ public sealed class HeadlessEmailsSetupBuilder
     }
 
     internal IServiceCollection Services { get; }
+
+    internal IReadOnlySet<string> InstanceNames => _instanceNames;
 
     internal List<Action<IServiceCollection>> DefaultExtensions { get; } = [];
 
