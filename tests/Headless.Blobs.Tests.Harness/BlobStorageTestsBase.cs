@@ -414,6 +414,26 @@ public abstract class BlobStorageTestsBase : TestBase
         seen.Distinct(StringComparer.Ordinal).Should().BeEquivalentTo(expected);
     }
 
+    public virtual async Task list_rejects_malformed_continuation_token()
+    {
+        await using var storage = GetStorage();
+
+        await ResetAsync(storage);
+
+        // Seed one blob so the container exists — providers that short-circuit a missing container into an empty
+        // listing (e.g. the file system) must still reach the token decode.
+        await storage.UploadContentAsync(_Loc("page", "seed.txt"), "x", AbortToken);
+
+        // "###not-a-token###" is not valid base64 anywhere, so every provider's shared envelope decode must reject it
+        // as the contract's clean, catchable ArgumentException instead of leaking a raw backend exception (S3/Azure
+        // SDK error, Redis cursor error).
+        var query = new BlobQuery(ContainerName, pageSize: 10, continuationToken: "###not-a-token###");
+
+        var list = () => storage.ListAsync(query, AbortToken).AsTask();
+
+        await list.Should().ThrowAsync<ArgumentException>();
+    }
+
     #endregion
 
     #region Delete by prefix / glob

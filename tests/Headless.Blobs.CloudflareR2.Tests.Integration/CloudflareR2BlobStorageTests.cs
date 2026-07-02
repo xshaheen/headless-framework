@@ -219,6 +219,10 @@ public sealed class CloudflareR2BlobStorageTests : BlobStorageTestsBase
     public override Task token_paging_round_trips_across_serialization() =>
         base.token_paging_round_trips_across_serialization();
 
+    [Fact]
+    public override Task list_rejects_malformed_continuation_token() =>
+        base.list_rejects_malformed_continuation_token();
+
     #endregion
 
     #region Delete by prefix / glob

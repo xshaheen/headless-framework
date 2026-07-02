@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Globalization;
 using System.Text;
 using Headless.Abstractions;
 using Headless.Blobs.Internals;
@@ -625,7 +626,25 @@ public sealed class RedisBlobStorage : IBlobStorage
 
         var (_, infoHash, prefix) = _ResolveQuery(query);
         var match = _ToRedisGlobPrefixMatch(prefix);
-        var cursor = string.IsNullOrEmpty(query.ContinuationToken) ? "0" : query.ContinuationToken;
+
+        // Unwrap the shared opaque envelope before handing the cursor to HSCAN, so a malformed/forged caller token
+        // fails as a clean ArgumentException instead of surfacing a raw Redis server error.
+        var decodedCursor = BlobStorageHelpers.DecodeContinuationToken(query.ContinuationToken);
+
+        // HSCAN cursors are unsigned integers, so a decoded-but-non-numeric token is provably foreign here; reject it
+        // with the same ArgumentException shape as a malformed envelope rather than letting the server error out.
+        if (
+            decodedCursor is not null
+            && !ulong.TryParse(decodedCursor, NumberStyles.None, CultureInfo.InvariantCulture, out _)
+        )
+        {
+            throw new ArgumentException(
+                "The continuation token is not a valid opaque token produced by this provider.",
+                nameof(query)
+            );
+        }
+
+        var cursor = decodedCursor ?? "0";
 
         // HSCAN is a cursor-based scan, NOT an ordered range query: it returns fields in an unspecified,
         // non-lexicographic order and MAY yield the same field more than once if the hash is rehashed mid-scan.
@@ -637,7 +656,9 @@ public sealed class RedisBlobStorage : IBlobStorage
 
         var items = _ParseBlobInfos(entries, query.IncludeMetadata);
 
-        var continuationToken = string.Equals(nextCursor, "0", StringComparison.Ordinal) ? null : nextCursor;
+        var continuationToken = string.Equals(nextCursor, "0", StringComparison.Ordinal)
+            ? null
+            : BlobStorageHelpers.EncodeContinuationToken(nextCursor);
 
         return new BlobPage(items, continuationToken);
     }

@@ -195,6 +195,14 @@ public interface IBlobStorage : IAsyncDisposable
     /// and SSH return keys in lexicographic order, while Redis's scan-based listing is unordered and may surface a key
     /// twice across pages during a concurrent rehash — do not rely on ordering in provider-agnostic code.
     /// </returns>
+    /// <exception cref="ArgumentException">
+    /// The <see cref="BlobQuery.ContinuationToken"/> is malformed — not an opaque token produced by a provider's
+    /// <see cref="ListAsync"/>. Every provider wraps its native cursor in a shared envelope, so a forged or corrupted
+    /// token (a common risk when the token round-trips through a web pagination boundary) fails uniformly with this
+    /// catchable contract error rather than leaking a backend SDK exception. Residual: a syntactically valid token
+    /// produced by a different provider or store is indistinguishable from a real one, so the result is
+    /// backend-defined — typically an empty page or a backend error.
+    /// </exception>
     ValueTask<BlobPage> ListAsync(BlobQuery query, CancellationToken cancellationToken = default);
 
     #endregion

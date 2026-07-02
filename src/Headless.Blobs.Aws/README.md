@@ -10,7 +10,7 @@ Provides integration with AWS S3 for blob storage using the unified `IBlobStorag
 
 - Full `IBlobStorage` implementation for AWS S3, routed through the shared resolve seam.
 - Bulk upload/delete with optimized batching, returning identity-carrying `BlobBulkResult` lists.
-- Native-token paging: `ListAsync` uses the S3 `ListObjectsV2` continuation token as the opaque `BlobPage` token.
+- Native-token paging: `ListAsync` wraps the S3 `ListObjectsV2` continuation token in the shared opaque envelope as the `BlobPage` token; a malformed token throws `ArgumentException` instead of a raw `AmazonS3Exception`.
 - Two-tier name normalization: bucket name normalized to S3 rules; object-key path segments validated and preserved.
 - Metadata support; `GetBlobInfoAsync` reads metadata from the HEAD response. (The list API omits per-object metadata, and its `Created` falls back to `LastModified`.)
 - Presigned download/upload URLs over a `BlobLocation` via `IPresignedUrlBlobStorage` (named stores only; feature-detect via cast for the default store).

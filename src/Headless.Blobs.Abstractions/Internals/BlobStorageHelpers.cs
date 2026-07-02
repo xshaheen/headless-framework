@@ -109,10 +109,14 @@ public static class BlobStorageHelpers
         return wildcardIndex < 0 ? pattern : pattern[..wildcardIndex];
     }
 
-    /// <summary>Encodes a continuation token that carries the last key returned by a sorted provider page.</summary>
-    public static string EncodeContinuationToken(string startAfterKey)
+    /// <summary>
+    /// Wraps a provider's native listing cursor (a sorted page's start-after key, a native S3/Azure continuation
+    /// token, or a Redis scan cursor) in the shared opaque token envelope, so every provider's malformed-token
+    /// failure shape is the same clean <see cref="ArgumentException"/> from <see cref="DecodeContinuationToken"/>.
+    /// </summary>
+    public static string EncodeContinuationToken(string nativeCursor)
     {
-        return Convert.ToBase64String(Encoding.UTF8.GetBytes(startAfterKey));
+        return Convert.ToBase64String(Encoding.UTF8.GetBytes(nativeCursor));
     }
 
     /// <summary>Decodes a continuation token produced by <see cref="EncodeContinuationToken"/>.</summary>

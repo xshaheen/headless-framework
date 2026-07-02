@@ -563,7 +563,11 @@ public sealed class AzureBlobStorage(
         // no metadata, so _ToBlobInfo yields a null Metadata.
         var traits = query.IncludeMetadata ? BlobTraits.Metadata : BlobTraits.None;
 
-        // Request one native Azure page sized to PageSize, resuming from the opaque continuation token when present.
+        // Unwrap the shared opaque envelope before handing the native cursor to the SDK, so a malformed/forged caller
+        // token fails as a clean ArgumentException instead of surfacing a raw RequestFailedException.
+        var nativeToken = BlobStorageHelpers.DecodeContinuationToken(query.ContinuationToken);
+
+        // Request one native Azure page sized to PageSize, resuming from the native continuation token when present.
         var pages = containerClient
             .GetBlobsAsync(
                 traits: traits,
@@ -571,7 +575,7 @@ public sealed class AzureBlobStorage(
                 prefix: prefix,
                 cancellationToken: cancellationToken
             )
-            .AsPages(query.ContinuationToken, query.PageSize);
+            .AsPages(nativeToken, query.PageSize);
 
         await using var enumerator = pages.GetAsyncEnumerator(cancellationToken);
 
@@ -597,9 +601,11 @@ public sealed class AzureBlobStorage(
             items.Add(_ToBlobInfo(blobItem));
         }
 
-        // Pass Azure's native ContinuationToken straight through as the opaque BlobPage token; an empty/null token
-        // marks the last page. The token is round-tripped by callers into a new BlobQuery.
-        var continuationToken = string.IsNullOrEmpty(page.ContinuationToken) ? null : page.ContinuationToken;
+        // Wrap Azure's native ContinuationToken in the shared opaque envelope (symmetric with the decode above); an
+        // empty/null native token marks the last page. The token is round-tripped by callers into a new BlobQuery.
+        var continuationToken = string.IsNullOrEmpty(page.ContinuationToken)
+            ? null
+            : BlobStorageHelpers.EncodeContinuationToken(page.ContinuationToken);
 
         return new BlobPage(items, continuationToken);
     }

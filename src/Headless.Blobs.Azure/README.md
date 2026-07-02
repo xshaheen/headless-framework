@@ -10,7 +10,7 @@ Provides integration with Azure Blob Storage using the unified `IBlobStorage` ab
 
 - Full `IBlobStorage` implementation for Azure Blob Storage, routed through the shared resolve seam.
 - Bulk operations with the Azure Batch API, returning identity-carrying `BlobBulkResult` lists.
-- Native-token paging: `ListAsync` uses the Azure `Pageable` continuation token as the opaque `BlobPage` token.
+- Native-token paging: `ListAsync` wraps the Azure `Pageable` continuation token in the shared opaque envelope as the `BlobPage` token; a malformed token throws `ArgumentException` instead of a raw `RequestFailedException`.
 - Metadata support; `GetBlobInfoAsync` reads metadata from `GetPropertiesAsync` consistent with list metadata.
 - Presigned download/upload URLs over a `BlobLocation` via `IPresignedUrlBlobStorage` (SAS-based; named stores only — feature-detect via cast for the default store).
 - Container lifecycle via a dedicated `AzureBlobContainerManager` resolved from DI (ensured-container cache retained). `UploadAsync` no longer auto-creates a missing container — that is an error.

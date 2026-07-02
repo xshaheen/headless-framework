@@ -659,7 +659,9 @@ public sealed class AwsBlobStorage(
             BucketName = bucket,
             Prefix = prefix,
             MaxKeys = query.PageSize,
-            ContinuationToken = query.ContinuationToken,
+            // Unwrap the shared opaque envelope before handing the native cursor to S3, so a malformed/forged caller
+            // token fails as a clean ArgumentException instead of surfacing a raw AmazonS3Exception.
+            ContinuationToken = BlobStorageHelpers.DecodeContinuationToken(query.ContinuationToken),
         };
 
         ListObjectsV2Response response;
@@ -693,8 +695,12 @@ public sealed class AwsBlobStorage(
             }
         }
 
-        // Pass S3's NextContinuationToken straight through as the opaque BlobPage token; null when not truncated.
-        var continuationToken = response.IsTruncated is true ? response.NextContinuationToken : null;
+        // Wrap S3's NextContinuationToken in the shared opaque envelope (symmetric with the decode above); null when
+        // not truncated.
+        var continuationToken =
+            response.IsTruncated is true && response.NextContinuationToken is not null
+                ? BlobStorageHelpers.EncodeContinuationToken(response.NextContinuationToken)
+                : null;
 
         // ListObjectsV2 cannot return user metadata; populate it with a per-object HEAD only when the caller opts in
         // via BlobQuery.IncludeMetadata (the documented per-object cost on object stores). The default listing path
