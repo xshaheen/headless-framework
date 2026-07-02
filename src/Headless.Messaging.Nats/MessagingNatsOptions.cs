@@ -26,15 +26,15 @@ public sealed class MessagingNatsOptions
     public int ConnectionPoolSize { get; set; } = 10;
 
     /// <summary>
-    /// When <see langword="true"/> (default), consumer clients auto-create JetStream streams with
-    /// a wildcard subject (for example <c>orders.&gt;</c>) derived from <see cref="NormalizeStreamName"/>
-    /// on first startup. Individual consumers then use a <c>FilterSubject</c> for precise matching.
+    /// When <see langword="true"/> (default), consumer clients auto-create JetStream streams on first
+    /// startup, deriving the stream name from <see cref="NormalizeStreamName"/> and declaring the subjects
+    /// their consumers listen on. Individual consumers then use a <c>FilterSubject</c> for precise matching.
     /// </summary>
     /// <remarks>
-    /// Auto-creation is multi-instance safe: all instances declare the same wildcard stream, so
-    /// concurrent startups do not overwrite each other's subject configuration.
-    /// Set to <see langword="false"/> to manage streams externally via the NATS CLI or
-    /// infrastructure-as-code tooling when fine-grained stream subject control is needed.
+    /// Auto-creation is additive: each client unions its subjects with the stream's existing subjects rather
+    /// than replacing them, so consumer groups (or instances) that share a stream name do not clobber each
+    /// other's subject configuration. Set to <see langword="false"/> to manage streams externally via the
+    /// NATS CLI or infrastructure-as-code tooling when fine-grained stream subject control is needed.
     /// </remarks>
     public bool EnableSubscriberClientStreamAndSubjectCreation { get; set; } = true;
 
