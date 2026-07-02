@@ -3,10 +3,12 @@
 using System.Net;
 using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
+using Headless.Sms;
 using Headless.Sms.Aws;
 using Headless.Sms.Testing;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using NSubstitute.ExceptionExtensions;
 
 namespace Tests;
 
@@ -59,5 +61,36 @@ public sealed class AwsSnsSmsSenderTests
         var result = await CreateSender(client).SendAsync(SmsRequests.Single());
 
         result.Success.Should().BeFalse();
+
+        // SNS signals errors as typed exceptions; a non-throwing non-success status has no documented meaning.
+        result.FailureKind.Should().Be(SmsFailureKind.Unknown);
+    }
+
+    public static TheoryData<Exception, SmsFailureKind> TypedSnsFailures { get; } =
+        new()
+        {
+            { new AuthorizationErrorException("denied"), SmsFailureKind.AuthFailure },
+            { new InvalidSecurityException("bad signature"), SmsFailureKind.AuthFailure },
+            { new ThrottledException("slow down"), SmsFailureKind.RateLimited },
+            { new OptedOutException("recipient opted out"), SmsFailureKind.InvalidRecipient },
+            { new InternalErrorException("internal error"), SmsFailureKind.Transient },
+            { new InvalidParameterException("bad request"), SmsFailureKind.Unknown },
+        };
+
+    [Theory]
+    [MemberData(nameof(TypedSnsFailures))]
+    public async Task should_classify_failures_from_the_sns_typed_exception_contract(
+        Exception exception,
+        SmsFailureKind expected
+    )
+    {
+        var client = Substitute.For<IAmazonSimpleNotificationService>();
+        client.PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>()).ThrowsAsync(exception);
+
+        var result = await CreateSender(client).SendAsync(SmsRequests.Single());
+
+        result.Success.Should().BeFalse();
+        result.FailureError.Should().Be(exception.Message);
+        result.FailureKind.Should().Be(expected);
     }
 }

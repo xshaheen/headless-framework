@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Encodings.Web;
 using Headless.Checks;
@@ -156,6 +157,12 @@ internal sealed class ConnekioSmsSender(
 
         var error = string.IsNullOrWhiteSpace(rawContent) ? "Failed to send SMS using Connekio API" : rawContent;
 
-        return SendSingleSmsResponse.Failed(error, SmsFailureKinds.FromHttpStatusCode(response.StatusCode));
+        // Connekio publishes no machine-readable error contract; a 401 against its Basic-auth endpoints is the
+        // only status with unambiguous meaning (credentials rejected). Everything else surfaces the raw body
+        // without guessing a kind.
+        var kind =
+            response.StatusCode is HttpStatusCode.Unauthorized ? SmsFailureKind.AuthFailure : SmsFailureKind.Unknown;
+
+        return SendSingleSmsResponse.Failed(error, kind);
     }
 }

@@ -57,7 +57,7 @@ public sealed class ConnekioSmsSenderTests : IClassFixture<SmsWireMockFixture>
     }
 
     [Fact]
-    public async Task should_surface_the_response_body_and_classify_a_server_error()
+    public async Task should_surface_the_response_body_without_guessing_a_kind_on_a_server_error()
     {
         Stub("/single", HttpStatusCode.InternalServerError, "boom");
 
@@ -65,7 +65,9 @@ public sealed class ConnekioSmsSenderTests : IClassFixture<SmsWireMockFixture>
 
         result.Success.Should().BeFalse();
         result.FailureError.Should().Be("boom");
-        result.FailureKind.Should().Be(SmsFailureKind.Transient);
+
+        // Connekio documents no error contract, so a 5xx is not assumed to be retryable.
+        result.FailureKind.Should().Be(SmsFailureKind.Unknown);
     }
 
     [Fact]

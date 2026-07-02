@@ -144,4 +144,39 @@ public sealed class CequensSmsSenderTests : IClassFixture<SmsWireMockFixture>
         result.Success.Should().BeFalse();
         result.FailureKind.Should().Be(SmsFailureKind.AuthFailure);
     }
+
+    [Fact]
+    public async Task should_classify_a_persistent_unauthorized_as_an_auth_failure()
+    {
+        var time = new FakeTimeProvider();
+        StubTokenOk("tok");
+        _fixture
+            .Server.Given(Request.Create().WithPath("/sms").UsingPost())
+            .RespondWith(Response.Create().WithStatusCode(HttpStatusCode.Unauthorized).WithBody("unauthorized"));
+
+        var result = await CreateSender(time).SendAsync(SmsRequests.Single());
+
+        result.Success.Should().BeFalse();
+        result.FailureError.Should().Be("unauthorized");
+        result.FailureKind.Should().Be(SmsFailureKind.AuthFailure);
+        SendCalls().Should().Be(2); // the 401, then the re-authenticated retry that also got a 401
+    }
+
+    [Fact]
+    public async Task should_surface_the_error_body_without_guessing_a_kind_on_a_server_error()
+    {
+        var time = new FakeTimeProvider();
+        StubTokenOk("tok");
+        _fixture
+            .Server.Given(Request.Create().WithPath("/sms").UsingPost())
+            .RespondWith(Response.Create().WithStatusCode(HttpStatusCode.InternalServerError).WithBody("down"));
+
+        var result = await CreateSender(time).SendAsync(SmsRequests.Single());
+
+        result.Success.Should().BeFalse();
+        result.FailureError.Should().Be("down");
+
+        // Cequens documents no error contract, so a 5xx is not assumed to be retryable.
+        result.FailureKind.Should().Be(SmsFailureKind.Unknown);
+    }
 }

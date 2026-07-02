@@ -68,9 +68,11 @@ internal sealed class AwsSnsSmsSender(
 
             logger.LogSmsSendFailed(destinationCount: 1, publishResponse.HttpStatusCode);
 
+            // SNS signals errors as typed exceptions; a non-success status on a non-throwing response has no
+            // documented meaning, so it is not classified.
             return SendSingleSmsResponse.Failed(
                 $"Failed to send SMS using AWS with status code {publishResponse.HttpStatusCode}",
-                SmsFailureKinds.FromHttpStatusCode(publishResponse.HttpStatusCode)
+                SmsFailureKind.Unknown
             );
         }
         catch (OperationCanceledException)
@@ -81,7 +83,18 @@ internal sealed class AwsSnsSmsSender(
         {
             logger.LogSmsSendException(e, destinationCount: 1);
 
-            return SendSingleSmsResponse.FromException(e);
+            // Classify from the SNS SDK's typed exception contract; anything unlisted falls back to the
+            // shared transport classifier.
+            var kind = e switch
+            {
+                AuthorizationErrorException or InvalidSecurityException => SmsFailureKind.AuthFailure,
+                ThrottledException => SmsFailureKind.RateLimited,
+                OptedOutException => SmsFailureKind.InvalidRecipient,
+                InternalErrorException => SmsFailureKind.Transient,
+                _ => SmsFailureKinds.FromException(e),
+            };
+
+            return SendSingleSmsResponse.FromException(e, kind);
         }
     }
 }

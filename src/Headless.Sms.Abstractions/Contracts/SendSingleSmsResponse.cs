@@ -68,11 +68,24 @@ public sealed class SendSingleSmsResponse
     /// <exception cref="ArgumentNullException"><paramref name="exception"/> is <see langword="null"/>.</exception>
     public static SendSingleSmsResponse FromException(Exception exception)
     {
+        return FromException(exception, SmsFailureKinds.FromException(exception));
+    }
+
+    /// <summary>
+    /// Creates a failed response from a caught exception with an explicitly classified kind, for providers
+    /// whose backend signals errors as typed exceptions (for example the AWS SNS SDK). Carries the same
+    /// non-empty-message guarantee as <see cref="FromException(Exception)"/>.
+    /// </summary>
+    /// <param name="exception">The caught exception. Must not be <see langword="null"/>.</param>
+    /// <param name="failureKind">The failure classification derived from the provider's own contract.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="exception"/> is <see langword="null"/>.</exception>
+    public static SendSingleSmsResponse FromException(Exception exception, SmsFailureKind failureKind)
+    {
         Argument.IsNotNull(exception);
 
         var message = string.IsNullOrWhiteSpace(exception.Message) ? exception.GetType().Name : exception.Message;
 
-        return Failed(message, SmsFailureKinds.FromException(exception));
+        return Failed(message, failureKind);
     }
 }
 

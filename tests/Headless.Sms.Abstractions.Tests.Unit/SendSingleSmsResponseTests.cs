@@ -90,10 +90,35 @@ public sealed class SendSingleSmsResponseTests
     }
 
     [Fact]
+    public void should_build_a_failure_with_an_explicitly_classified_kind()
+    {
+        // when
+        var response = SendSingleSmsResponse.FromException(
+            new InvalidOperationException("throttled"),
+            SmsFailureKind.RateLimited
+        );
+
+        // then
+        response.Success.Should().BeFalse();
+        response.FailureError.Should().Be("throttled");
+        response.FailureKind.Should().Be(SmsFailureKind.RateLimited);
+    }
+
+    [Fact]
     public void should_reject_a_null_exception()
     {
         // when
         var act = () => SendSingleSmsResponse.FromException(null!);
+
+        // then
+        act.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public void should_reject_a_null_exception_with_an_explicit_kind()
+    {
+        // when
+        var act = () => SendSingleSmsResponse.FromException(null!, SmsFailureKind.Transient);
 
         // then
         act.Should().Throw<ArgumentNullException>();

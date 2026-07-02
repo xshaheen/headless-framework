@@ -155,7 +155,15 @@ internal sealed class CequensSmsSender(
             var rawContent = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
             var error = string.IsNullOrEmpty(rawContent) ? "Failed to send SMS using Cequens API" : rawContent;
 
-            return SendSingleSmsResponse.Failed(error, SmsFailureKinds.FromHttpStatusCode(response.StatusCode));
+            // Cequens publishes no machine-readable error contract for this endpoint; the only status with
+            // unambiguous meaning is the 401 the re-auth path above already keys on (bearer token rejected).
+            // Everything else surfaces the raw body without guessing a kind.
+            var kind =
+                response.StatusCode is HttpStatusCode.Unauthorized
+                    ? SmsFailureKind.AuthFailure
+                    : SmsFailureKind.Unknown;
+
+            return SendSingleSmsResponse.Failed(error, kind);
         }
     }
 

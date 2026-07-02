@@ -1,29 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Net;
 using Headless.Sms;
 
 namespace Tests;
 
 public sealed class SmsFailureKindsTests
 {
-    [Theory]
-    [InlineData(HttpStatusCode.OK, SmsFailureKind.None)]
-    [InlineData(HttpStatusCode.Accepted, SmsFailureKind.None)]
-    [InlineData(HttpStatusCode.Unauthorized, SmsFailureKind.AuthFailure)]
-    [InlineData(HttpStatusCode.Forbidden, SmsFailureKind.AuthFailure)]
-    [InlineData(HttpStatusCode.PaymentRequired, SmsFailureKind.OutOfCredit)]
-    [InlineData(HttpStatusCode.TooManyRequests, SmsFailureKind.RateLimited)]
-    [InlineData(HttpStatusCode.RequestTimeout, SmsFailureKind.Transient)]
-    [InlineData(HttpStatusCode.InternalServerError, SmsFailureKind.Transient)]
-    [InlineData(HttpStatusCode.ServiceUnavailable, SmsFailureKind.Transient)]
-    [InlineData(HttpStatusCode.BadRequest, SmsFailureKind.Unknown)]
-    [InlineData(HttpStatusCode.NotFound, SmsFailureKind.Unknown)]
-    public void should_classify_http_status_codes(HttpStatusCode statusCode, SmsFailureKind expected)
-    {
-        SmsFailureKinds.FromHttpStatusCode(statusCode).Should().Be(expected);
-    }
-
     [Fact]
     public void should_classify_transport_exceptions_as_transient()
     {
