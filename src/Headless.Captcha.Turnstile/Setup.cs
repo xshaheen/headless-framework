@@ -8,7 +8,6 @@ using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-#pragma warning disable CA1708 // multiple extension blocks emit marker members differing only by case
 namespace Headless.Captcha;
 
 [PublicAPI]
@@ -34,7 +33,7 @@ public static class SetupTurnstile
                         setupAction,
                         CaptchaConstants.TurnstileProvider
                     );
-                    services._AddTurnstileCore(CaptchaConstants.TurnstileProvider, isDefault: true);
+                    _AddTurnstileCore(services, CaptchaConstants.TurnstileProvider, isDefault: true);
                 }
             );
 
@@ -59,7 +58,7 @@ public static class SetupTurnstile
                         setupAction,
                         CaptchaConstants.TurnstileProvider
                     );
-                    services._AddTurnstileCore(CaptchaConstants.TurnstileProvider, isDefault: true);
+                    _AddTurnstileCore(services, CaptchaConstants.TurnstileProvider, isDefault: true);
                 }
             );
 
@@ -83,7 +82,7 @@ public static class SetupTurnstile
                         configuration,
                         CaptchaConstants.TurnstileProvider
                     );
-                    services._AddTurnstileCore(CaptchaConstants.TurnstileProvider, isDefault: true);
+                    _AddTurnstileCore(services, CaptchaConstants.TurnstileProvider, isDefault: true);
                 }
             );
 
@@ -107,7 +106,7 @@ public static class SetupTurnstile
                 services =>
                 {
                     services.Configure<TurnstileOptions, TurnstileOptionsValidator>(setupAction, name);
-                    services._AddTurnstileCore(name, isDefault: false);
+                    _AddTurnstileCore(services, name, isDefault: false);
                 }
             );
 
@@ -134,7 +133,7 @@ public static class SetupTurnstile
                 services =>
                 {
                     services.Configure<TurnstileOptions, TurnstileOptionsValidator>(setupAction, name);
-                    services._AddTurnstileCore(name, isDefault: false);
+                    _AddTurnstileCore(services, name, isDefault: false);
                 }
             );
 
@@ -157,7 +156,7 @@ public static class SetupTurnstile
                 services =>
                 {
                     services.Configure<TurnstileOptions, TurnstileOptionsValidator>(configuration, name);
-                    services._AddTurnstileCore(name, isDefault: false);
+                    _AddTurnstileCore(services, name, isDefault: false);
                 }
             );
 
@@ -165,48 +164,43 @@ public static class SetupTurnstile
         }
     }
 
-    extension(IServiceCollection services)
+    private static IServiceCollection _AddTurnstileCore(IServiceCollection services, string name, bool isDefault)
     {
-        private IServiceCollection _AddTurnstileCore(string name, bool isDefault)
-        {
-            services.TryAddTransient<ITurnstileLanguageCodeProvider, CultureInfoTurnstileLanguageCodeProvider>();
+        services.TryAddTransient<ITurnstileLanguageCodeProvider, CultureInfoTurnstileLanguageCodeProvider>();
 
-            services
-                .AddHttpClient(
-                    name,
-                    (sp, client) =>
-                    {
-                        var options = sp.GetRequiredService<IOptionsMonitor<TurnstileOptions>>().Get(name);
-                        client.BaseAddress = new Uri(options.VerifyBaseUrl);
-                    }
+        services
+            .AddHttpClient(
+                name,
+                (sp, client) =>
+                {
+                    var options = sp.GetRequiredService<IOptionsMonitor<TurnstileOptions>>().Get(name);
+                    client.BaseAddress = new Uri(options.VerifyBaseUrl);
+                }
+            )
+            // Turnstile tokens are single-use — disable retry on POST to avoid replaying them.
+            .AddStandardResilienceHandler(options => options.Retry.DisableForUnsafeHttpMethods());
+
+        services.AddKeyedSingleton<ITurnstileVerifier>(
+            name,
+            (sp, key) =>
+                new TurnstileSiteVerify(
+                    (string)key,
+                    sp.GetRequiredService<IOptionsMonitor<TurnstileOptions>>(),
+                    sp.GetRequiredService<IHttpClientFactory>(),
+                    sp.GetService<ILogger<TurnstileSiteVerify>>()
                 )
-                // Turnstile tokens are single-use — disable retry on POST to avoid replaying them.
-                .AddStandardResilienceHandler(options => options.Retry.DisableForUnsafeHttpMethods());
+        );
+        services.AddKeyedSingleton<ICaptchaVerifier>(
+            name,
+            (sp, key) => sp.GetRequiredKeyedService<ITurnstileVerifier>(key)
+        );
 
-            services.AddKeyedSingleton<ITurnstileVerifier>(
-                name,
-                (sp, key) =>
-                    new TurnstileSiteVerify(
-                        (string)key,
-                        sp.GetRequiredService<IOptionsMonitor<TurnstileOptions>>(),
-                        sp.GetRequiredService<IHttpClientFactory>(),
-                        sp.GetService<ILogger<TurnstileSiteVerify>>()
-                    )
-            );
-            services.AddKeyedSingleton<ICaptchaVerifier>(
-                name,
-                (sp, key) => sp.GetRequiredKeyedService<ITurnstileVerifier>(key)
-            );
-
-            if (isDefault)
-            {
-                services.TryAddSingleton<ITurnstileVerifier>(sp =>
-                    sp.GetRequiredKeyedService<ITurnstileVerifier>(name)
-                );
-                services.TryAddSingleton<ICaptchaVerifier>(sp => sp.GetRequiredKeyedService<ITurnstileVerifier>(name));
-            }
-
-            return services;
+        if (isDefault)
+        {
+            services.TryAddSingleton<ITurnstileVerifier>(sp => sp.GetRequiredKeyedService<ITurnstileVerifier>(name));
+            services.TryAddSingleton<ICaptchaVerifier>(sp => sp.GetRequiredKeyedService<ITurnstileVerifier>(name));
         }
+
+        return services;
     }
 }

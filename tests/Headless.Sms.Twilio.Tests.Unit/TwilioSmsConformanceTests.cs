@@ -38,7 +38,7 @@ public sealed class TwilioSmsConformanceTests : SmsSenderConformanceTests
 
     private static TwilioSmsSender _CreateSender(ITwilioRestClient client)
     {
-        var options = Options.Create(
+        var options = new OptionsMonitorWrapper<TwilioSmsOptions>(
             new TwilioSmsOptions
             {
                 Sid = "AC0000000000000000000000000000000",
@@ -47,7 +47,7 @@ public sealed class TwilioSmsConformanceTests : SmsSenderConformanceTests
             }
         );
 
-        return new TwilioSmsSender(client, options, NullLogger<TwilioSmsSender>.Instance);
+        return new TwilioSmsSender(client, options, optionsName: null, NullLogger<TwilioSmsSender>.Instance);
     }
 
     [Fact]

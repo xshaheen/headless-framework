@@ -38,7 +38,7 @@ public sealed class ConnekioSmsConformanceTests : SmsSenderConformanceTests, ICl
 
     private ConnekioSmsSender _CreateSender(string baseUrl)
     {
-        var options = Options.Create(
+        var options = new OptionsMonitorWrapper<ConnekioSmsOptions>(
             new ConnekioSmsOptions
             {
                 SingleSmsEndpoint = $"{baseUrl}/single",
@@ -50,7 +50,13 @@ public sealed class ConnekioSmsConformanceTests : SmsSenderConformanceTests, ICl
             }
         );
 
-        return new ConnekioSmsSender(_fixture.HttpClientFactory, options, NullLogger<ConnekioSmsSender>.Instance);
+        return new ConnekioSmsSender(
+            _fixture.HttpClientFactory,
+            SetupConnekio.HttpClientName,
+            options,
+            optionsName: null,
+            NullLogger<ConnekioSmsSender>.Instance
+        );
     }
 
     [Fact]

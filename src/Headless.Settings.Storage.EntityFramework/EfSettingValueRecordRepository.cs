@@ -1,7 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Caching;
 using Headless.Settings.Entities;
 using Headless.Settings.Repositories;
+using Headless.Settings.Values;
 using Microsoft.EntityFrameworkCore;
 
 namespace Headless.Settings;
@@ -12,8 +14,14 @@ namespace Headless.Settings;
 /// </summary>
 /// <typeparam name="TContext">The <see cref="DbContext"/> type registered with the DI container.</typeparam>
 /// <param name="dbFactory">Factory used to create <typeparamref name="TContext"/> instances per operation.</param>
-public sealed class EfSettingValueRecordRepository<TContext>(IDbContextFactory<TContext> dbFactory)
-    : ISettingValueRecordRepository
+/// <param name="cache">
+/// The setting-value cache shared with <c>SettingValueStore</c>. A write here removes the affected cache key
+/// so a direct repository write (bypassing <c>ISettingManager</c>) is reflected on the next read.
+/// </param>
+public sealed class EfSettingValueRecordRepository<TContext>(
+    IDbContextFactory<TContext> dbFactory,
+    ICache<SettingValueCacheItem> cache
+) : ISettingValueRecordRepository
     where TContext : DbContext
 {
     /// <inheritdoc/>
@@ -100,6 +108,7 @@ public sealed class EfSettingValueRecordRepository<TContext>(IDbContextFactory<T
 
         db.Set<SettingValueRecord>().Add(setting);
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await cache.RemoveAsync(_CacheKey(setting), cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -109,6 +118,7 @@ public sealed class EfSettingValueRecordRepository<TContext>(IDbContextFactory<T
 
         db.Set<SettingValueRecord>().Update(setting);
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await cache.RemoveAsync(_CacheKey(setting), cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -121,5 +131,11 @@ public sealed class EfSettingValueRecordRepository<TContext>(IDbContextFactory<T
 
         db.Set<SettingValueRecord>().RemoveRange(settings);
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await cache.RemoveAllAsync(settings.Select(_CacheKey), cancellationToken).ConfigureAwait(false);
+    }
+
+    private static string _CacheKey(SettingValueRecord setting)
+    {
+        return SettingValueCacheItem.CalculateCacheKey(setting.Name, setting.ProviderName, setting.ProviderKey);
     }
 }

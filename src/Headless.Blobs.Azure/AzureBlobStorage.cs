@@ -694,7 +694,10 @@ public sealed class AzureBlobStorage(
             Resource = "b",
             ExpiresOn = clock.UtcNow.Add(expiry),
             // The SAS is a bearer credential; restrict it to HTTPS so it can't be replayed over plaintext HTTP.
-            Protocol = SasProtocol.Https,
+            // When the client targets an http:// endpoint (an emulator such as Azurite), allow http too — the
+            // emulator rejects an https-only (spr=https) SAS. Real Azure endpoints are https, so this stays
+            // HTTPS-only in production.
+            Protocol = blobClient.Uri.Scheme == Uri.UriSchemeHttps ? SasProtocol.Https : SasProtocol.HttpsAndHttp,
         };
 
         builder.SetPermissions(permissions);

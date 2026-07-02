@@ -13,7 +13,9 @@ namespace Headless.Sms.Connekio;
 
 internal sealed class ConnekioSmsSender(
     IHttpClientFactory httpClientFactory,
-    IOptions<ConnekioSmsOptions> optionsAccessor,
+    string httpClientName,
+    IOptionsMonitor<ConnekioSmsOptions> optionsMonitor,
+    string? optionsName,
     ILogger<ConnekioSmsSender> logger
 ) : ISmsSender, IBulkSmsSender
 {
@@ -23,14 +25,16 @@ internal sealed class ConnekioSmsSender(
         TypeInfoResolver = ConnekioJsonSerializerContext.Default,
     };
 
-    private readonly ConnekioSmsOptions _options = optionsAccessor.Value;
-    private readonly Uri _singleSmsEndpoint = new(optionsAccessor.Value.SingleSmsEndpoint);
-    private readonly Uri _batchSmsEndpoint = new(optionsAccessor.Value.BatchSmsEndpoint);
+    // Snapshot for this instance's options name — never CurrentValue, which binds the default options and
+    // would bleed configuration across keyed instances.
+    private readonly ConnekioSmsOptions _options = optionsMonitor.Get(optionsName);
+    private readonly Uri _singleSmsEndpoint = new(optionsMonitor.Get(optionsName).SingleSmsEndpoint);
+    private readonly Uri _batchSmsEndpoint = new(optionsMonitor.Get(optionsName).BatchSmsEndpoint);
 
     // Credentials are fixed at construction, so build the (immutable) Basic auth header once instead of
     // re-interpolating + base64-encoding it on every send.
     private readonly AuthenticationHeaderValue _basicAuthHeader = AuthenticationHeaderFactory.CreateBasic(
-        $"{optionsAccessor.Value.UserName}:{optionsAccessor.Value.Password}:{optionsAccessor.Value.AccountId}"
+        $"{optionsMonitor.Get(optionsName).UserName}:{optionsMonitor.Get(optionsName).Password}:{optionsMonitor.Get(optionsName).AccountId}"
     );
 
     public async ValueTask<SendSingleSmsResponse> SendAsync(
@@ -136,7 +140,7 @@ internal sealed class ConnekioSmsSender(
         requestMessage.Content = new StringContent(payload, Encoding.UTF8, "application/json");
         requestMessage.Headers.Authorization = _basicAuthHeader;
 
-        using var httpClient = httpClientFactory.CreateClient(SetupConnekio.HttpClientName);
+        using var httpClient = httpClientFactory.CreateClient(httpClientName);
         using var response = await httpClient.SendAsync(requestMessage, cancellationToken).ConfigureAwait(false);
 
         // A success status code is authoritative; only read the body to explain a failure.

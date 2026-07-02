@@ -1,7 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Caching;
 using Headless.Features.Entities;
 using Headless.Features.Repositories;
+using Headless.Features.Values;
 using Microsoft.EntityFrameworkCore;
 
 namespace Headless.Features;
@@ -9,7 +11,11 @@ namespace Headless.Features;
 /// <summary>EF Core implementation of <see cref="IFeatureValueRecordRepository"/>.</summary>
 /// <typeparam name="TContext">The <see cref="DbContext"/> type that owns the feature value entities.</typeparam>
 /// <param name="dbFactory">Factory used to create <typeparamref name="TContext"/> instances per operation.</param>
-public sealed class EfFeatureValueRecordRepository<TContext>(IDbContextFactory<TContext> dbFactory)
+/// <param name="cache">
+/// The feature-value cache shared with <c>FeatureValueStore</c>. A write here removes the affected cache key
+/// so a direct repository write (bypassing <c>IFeatureManager</c>) is reflected on the next read.
+/// </param>
+public sealed class EfFeatureValueRecordRepository<TContext>(IDbContextFactory<TContext> dbFactory, ICache cache)
     : IFeatureValueRecordRepository
     where TContext : DbContext
 {
@@ -80,6 +86,7 @@ public sealed class EfFeatureValueRecordRepository<TContext>(IDbContextFactory<T
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
         db.Set<FeatureValueRecord>().Add(featureValue);
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await cache.RemoveAsync(_CacheKey(featureValue), cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -88,6 +95,7 @@ public sealed class EfFeatureValueRecordRepository<TContext>(IDbContextFactory<T
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
         db.Set<FeatureValueRecord>().Update(featureValue);
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await cache.RemoveAsync(_CacheKey(featureValue), cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -99,5 +107,15 @@ public sealed class EfFeatureValueRecordRepository<TContext>(IDbContextFactory<T
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
         db.Set<FeatureValueRecord>().RemoveRange(featureValues);
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await cache.RemoveAllAsync(featureValues.Select(_CacheKey), cancellationToken).ConfigureAwait(false);
+    }
+
+    private static string _CacheKey(FeatureValueRecord featureValue)
+    {
+        return FeatureValueCacheItem.CalculateCacheKey(
+            featureValue.Name,
+            featureValue.ProviderName,
+            featureValue.ProviderKey
+        );
     }
 }

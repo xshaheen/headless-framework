@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Caching;
 using Headless.Permissions.Entities;
+using Headless.Permissions.Grants;
 using Headless.Permissions.Repositories;
 using Microsoft.EntityFrameworkCore;
 
@@ -16,8 +18,14 @@ namespace Headless.Permissions;
 /// </remarks>
 /// <typeparam name="TContext">The consumer's <see cref="DbContext"/> that maps the permissions entities.</typeparam>
 /// <param name="dbFactory">Factory used to create <typeparamref name="TContext"/> instances per operation.</param>
-public sealed class EfPermissionGrantRepository<TContext>(IDbContextFactory<TContext> dbFactory)
-    : IPermissionGrantRepository
+/// <param name="cache">
+/// The permission-grant cache shared with <c>PermissionGrantStore</c>. A write here removes the affected cache
+/// key so a direct repository write (bypassing <c>IPermissionManager</c>) is reflected on the next read.
+/// </param>
+public sealed class EfPermissionGrantRepository<TContext>(
+    IDbContextFactory<TContext> dbFactory,
+    ICache<PermissionGrantCacheItem> cache
+) : IPermissionGrantRepository
     where TContext : DbContext
 {
     /// <summary>
@@ -85,6 +93,7 @@ public sealed class EfPermissionGrantRepository<TContext>(IDbContextFactory<TCon
 
         db.Set<PermissionGrantRecord>().Add(permissionGrant);
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await cache.RemoveAsync(_CacheKey(permissionGrant), cancellationToken).ConfigureAwait(false);
     }
 
     public async Task InsertManyAsync(
@@ -92,10 +101,13 @@ public sealed class EfPermissionGrantRepository<TContext>(IDbContextFactory<TCon
         CancellationToken cancellationToken = default
     )
     {
+        var grants = permissionGrants as IReadOnlyCollection<PermissionGrantRecord> ?? [.. permissionGrants];
+
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
 
-        db.Set<PermissionGrantRecord>().AddRange(permissionGrants);
+        db.Set<PermissionGrantRecord>().AddRange(grants);
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await cache.RemoveAllAsync(grants.Select(_CacheKey), cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Deletes the grant record.</summary>
@@ -105,6 +117,7 @@ public sealed class EfPermissionGrantRepository<TContext>(IDbContextFactory<TCon
 
         db.Set<PermissionGrantRecord>().Remove(permissionGrant);
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await cache.RemoveAsync(_CacheKey(permissionGrant), cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Deletes all supplied grant records.</summary>
@@ -117,5 +130,15 @@ public sealed class EfPermissionGrantRepository<TContext>(IDbContextFactory<TCon
 
         db.Set<PermissionGrantRecord>().RemoveRange(permissionGrants);
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await cache.RemoveAllAsync(permissionGrants.Select(_CacheKey), cancellationToken).ConfigureAwait(false);
+    }
+
+    private static string _CacheKey(PermissionGrantRecord permissionGrant)
+    {
+        return PermissionGrantCacheItem.CalculateCacheKey(
+            permissionGrant.Name,
+            permissionGrant.ProviderName,
+            permissionGrant.ProviderKey
+        );
     }
 }

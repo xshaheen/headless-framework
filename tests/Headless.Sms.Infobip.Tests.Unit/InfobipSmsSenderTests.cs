@@ -39,7 +39,7 @@ public sealed class InfobipSmsSenderTests : TestBase, IClassFixture<SmsWireMockF
 
     private InfobipSmsSender _CreateSender(string? basePath = null)
     {
-        var options = Options.Create(
+        var options = new OptionsMonitorWrapper<InfobipSmsOptions>(
             new InfobipSmsOptions
             {
                 Sender = "SENDER",
@@ -48,7 +48,13 @@ public sealed class InfobipSmsSenderTests : TestBase, IClassFixture<SmsWireMockF
             }
         );
 
-        return new InfobipSmsSender(_fixture.HttpClientFactory, options, NullLogger<InfobipSmsSender>.Instance);
+        return new InfobipSmsSender(
+            _fixture.HttpClientFactory,
+            SetupInfobip.HttpClientName,
+            options,
+            optionsName: null,
+            NullLogger<InfobipSmsSender>.Instance
+        );
     }
 
     [Fact]
@@ -330,7 +336,7 @@ public sealed class InfobipSmsSenderTests : TestBase, IClassFixture<SmsWireMockF
     public async Task should_classify_resilience_rejections_as_transient(string rejectionKind)
     {
         var exception = ResilienceRejections.Create(rejectionKind);
-        var options = Options.Create(
+        var options = new OptionsMonitorWrapper<InfobipSmsOptions>(
             new InfobipSmsOptions
             {
                 Sender = "SENDER",
@@ -340,7 +346,9 @@ public sealed class InfobipSmsSenderTests : TestBase, IClassFixture<SmsWireMockF
         );
         var sender = new InfobipSmsSender(
             new ThrowingHttpClientFactory(exception),
+            SetupInfobip.HttpClientName,
             options,
+            optionsName: null,
             NullLogger<InfobipSmsSender>.Instance
         );
 
@@ -357,7 +365,7 @@ public sealed class InfobipSmsSenderTests : TestBase, IClassFixture<SmsWireMockF
     public async Task should_classify_bulk_resilience_rejections_as_transient(string rejectionKind)
     {
         var exception = ResilienceRejections.Create(rejectionKind);
-        var options = Options.Create(
+        var options = new OptionsMonitorWrapper<InfobipSmsOptions>(
             new InfobipSmsOptions
             {
                 Sender = "SENDER",
@@ -367,7 +375,9 @@ public sealed class InfobipSmsSenderTests : TestBase, IClassFixture<SmsWireMockF
         );
         var sender = new InfobipSmsSender(
             new ThrowingHttpClientFactory(exception),
+            SetupInfobip.HttpClientName,
             options,
+            optionsName: null,
             NullLogger<InfobipSmsSender>.Instance
         );
 

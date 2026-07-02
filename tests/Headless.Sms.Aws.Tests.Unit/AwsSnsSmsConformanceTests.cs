@@ -46,9 +46,11 @@ public sealed class AwsSnsSmsConformanceTests : SmsSenderConformanceTests
 
     private static AwsSnsSmsSender _CreateSender(IAmazonSimpleNotificationService client)
     {
-        var options = Options.Create(new AwsSnsSmsOptions { SenderId = "SENDER", MaxPrice = null });
+        var options = new OptionsMonitorWrapper<AwsSnsSmsOptions>(
+            new AwsSnsSmsOptions { SenderId = "SENDER", MaxPrice = null }
+        );
 
-        return new AwsSnsSmsSender(client, options, NullLogger<AwsSnsSmsSender>.Instance);
+        return new AwsSnsSmsSender(client, options, optionsName: null, NullLogger<AwsSnsSmsSender>.Instance);
     }
 
     [Fact]

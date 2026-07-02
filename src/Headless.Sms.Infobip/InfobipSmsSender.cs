@@ -11,11 +11,15 @@ namespace Headless.Sms.Infobip;
 
 internal sealed class InfobipSmsSender(
     IHttpClientFactory httpClientFactory,
-    IOptions<InfobipSmsOptions> optionsAccessor,
+    string httpClientName,
+    IOptionsMonitor<InfobipSmsOptions> optionsMonitor,
+    string? optionsName,
     ILogger<InfobipSmsSender> logger
 ) : ISmsSender, IBulkSmsSender
 {
-    private readonly InfobipSmsOptions _options = optionsAccessor.Value;
+    // Snapshot for this instance's options name — never CurrentValue, which binds the default options and
+    // would bleed configuration across keyed instances.
+    private readonly InfobipSmsOptions _options = optionsMonitor.Get(optionsName);
 
     public async ValueTask<SendSingleSmsResponse> SendAsync(
         SendSingleSmsRequest request,
@@ -139,7 +143,7 @@ internal sealed class InfobipSmsSender(
         var smsMessage = new SmsMessage(_options.Sender, destinations, new SmsMessageContent(new SmsTextContent(text)));
         var smsRequest = new SmsRequest([smsMessage]);
 
-        using var httpClient = httpClientFactory.CreateClient(SetupInfobip.HttpClientName);
+        using var httpClient = httpClientFactory.CreateClient(httpClientName);
         using var smsApi = new SmsApi(
             httpClient,
             new Configuration { BasePath = _options.BasePath, ApiKey = _options.ApiKey }

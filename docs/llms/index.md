@@ -446,7 +446,8 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Settings.Storage.SqlServer` — SQL Server raw storage.
 
 ### SMS
-- `Headless.Sms.Abstractions` — SMS sending interface.
+- `Headless.Sms.Abstractions` — SMS sending interface and `ISmsSenderProvider`.
+- `Headless.Sms.Core` — `AddHeadlessSms` setup builder and named `ISmsSenderProvider` resolution.
 - `Headless.Sms.Aws` — AWS SNS.
 - `Headless.Sms.Cequens` — Cequens.
 - `Headless.Sms.Connekio` — Connekio.

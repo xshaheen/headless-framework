@@ -9,7 +9,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
-#pragma warning disable CA1708 // multiple extension blocks emit marker members differing only by case
 namespace Headless.Blobs.CloudflareR2;
 
 /// <summary>Extension methods to register the Cloudflare R2 blob storage provider.</summary>
@@ -26,7 +25,7 @@ public static class SetupCloudflareR2Blob
             setup.RegisterDefaultProvider(services =>
             {
                 services.Configure<R2BlobStorageOptions, R2BlobStorageOptionsValidator>(setupAction);
-                services._AddBlobsDefaultCore();
+                _AddBlobsDefaultCore(services);
             });
 
             return setup;
@@ -40,7 +39,7 @@ public static class SetupCloudflareR2Blob
             setup.RegisterDefaultProvider(services =>
             {
                 services.Configure<R2BlobStorageOptions, R2BlobStorageOptionsValidator>(setupAction);
-                services._AddBlobsDefaultCore();
+                _AddBlobsDefaultCore(services);
             });
 
             return setup;
@@ -54,13 +53,91 @@ public static class SetupCloudflareR2Blob
             setup.RegisterDefaultProvider(services =>
             {
                 services.Configure<R2BlobStorageOptions, R2BlobStorageOptionsValidator>(configuration);
-                services._AddBlobsDefaultCore();
+                _AddBlobsDefaultCore(services);
             });
 
             return setup;
         }
     }
 
+    private static IServiceCollection _AddBlobsDefaultCore(IServiceCollection services)
+    {
+        services.AddSingleton<IBlobStorage>(serviceProvider =>
+        {
+            var r2Options = serviceProvider.GetRequiredService<IOptions<R2BlobStorageOptions>>();
+            var mimeTypeProvider = serviceProvider.GetRequiredService<IMimeTypeProvider>();
+            var clock = serviceProvider.GetRequiredService<IClock>();
+            var awsOptions = new AwsBlobStorageOptions();
+            _ApplyR2ForcedDefaults(awsOptions);
+            var logger = serviceProvider.GetService<ILogger<AwsBlobStorage>>() ?? NullLogger<AwsBlobStorage>.Instance;
+            var s3Client = R2ClientFactory.Create(r2Options.Value);
+
+            return new AwsBlobStorage(
+                s3Client,
+                mimeTypeProvider,
+                clock,
+                Options.Create(awsOptions),
+                new R2BlobNamingNormalizer(),
+                logger
+            );
+        });
+
+        // Deliberately NO IBlobContainerManager registration: R2's object-scoped tokens cannot create or manage
+        // buckets, and ensuring a missing bucket would not make a later upload succeed. Because container
+        // management is a separately-resolved DI capability (not a cast from IBlobStorage), omitting the
+        // registration makes GetService/GetKeyedService<IBlobContainerManager> honestly return null for R2
+        // (KTD5 / U12). R2 bucket provisioning is out of band (IaC/dashboard). Do not copy the AWS registration.
+        return services;
+    }
+
+    internal static IServiceCollection AddBlobsNamedCore(IServiceCollection services, string name)
+    {
+        // R2-safe behavior bound per-instance (named AwsBlobStorageOptions) so coexisting AWS stores are
+        // never affected by R2's forced defaults.
+        services.Configure<AwsBlobStorageOptions>(name, _ApplyR2ForcedDefaults);
+
+        services.AddKeyedSingleton<IBlobStorage>(
+            name,
+            (serviceProvider, _) =>
+                new AwsBlobStorage(
+                    R2ClientFactory.Create(
+                        serviceProvider.GetRequiredService<IOptionsMonitor<R2BlobStorageOptions>>().Get(name)
+                    ),
+                    serviceProvider.GetRequiredService<IMimeTypeProvider>(),
+                    serviceProvider.GetRequiredService<IClock>(),
+                    Options.Create(
+                        serviceProvider.GetRequiredService<IOptionsMonitor<AwsBlobStorageOptions>>().Get(name)
+                    ),
+                    new R2BlobNamingNormalizer(),
+                    serviceProvider.GetService<ILogger<AwsBlobStorage>>() ?? NullLogger<AwsBlobStorage>.Instance
+                )
+        );
+
+        services.AddKeyedSingleton<IPresignedUrlBlobStorage>(
+            name,
+            (serviceProvider, _) =>
+                (IPresignedUrlBlobStorage)serviceProvider.GetRequiredKeyedService<IBlobStorage>(name)
+        );
+
+        // Presigned URLs are a cast from the same instance (R2 supports SigV4 presigning), but container
+        // management is not: no keyed IBlobContainerManager is registered for this named R2 instance, so
+        // GetKeyedService<IBlobContainerManager>(name) honestly returns null (KTD5 / U12). Do not add one.
+        return services;
+    }
+
+    private static void _ApplyR2ForcedDefaults(AwsBlobStorageOptions options)
+    {
+        // R2 has no ACLs and rejects chunked/payload signing.
+        options.CannedAcl = null;
+        options.UseChunkEncoding = false;
+        options.DisablePayloadSigning = true;
+    }
+}
+
+/// <summary>Extension methods to register the Cloudflare R2 blob storage provider as a named store.</summary>
+[PublicAPI]
+public static class SetupCloudflareR2BlobNamed
+{
     extension(HeadlessBlobInstanceBuilder instance)
     {
         /// <summary>Uses Cloudflare R2 for this named instance, resolvable as a keyed <see cref="IBlobStorage"/> or through <see cref="IBlobStorageProvider"/>.</summary>
@@ -73,7 +150,7 @@ public static class SetupCloudflareR2Blob
             instance.RegisterProvider(services =>
             {
                 services.Configure<R2BlobStorageOptions, R2BlobStorageOptionsValidator>(setupAction, name);
-                services._AddBlobsNamedCore(name);
+                SetupCloudflareR2Blob.AddBlobsNamedCore(services, name);
             });
 
             return instance;
@@ -89,7 +166,7 @@ public static class SetupCloudflareR2Blob
             instance.RegisterProvider(services =>
             {
                 services.Configure<R2BlobStorageOptions, R2BlobStorageOptionsValidator>(setupAction, name);
-                services._AddBlobsNamedCore(name);
+                SetupCloudflareR2Blob.AddBlobsNamedCore(services, name);
             });
 
             return instance;
@@ -105,87 +182,10 @@ public static class SetupCloudflareR2Blob
             instance.RegisterProvider(services =>
             {
                 services.Configure<R2BlobStorageOptions, R2BlobStorageOptionsValidator>(configuration, name);
-                services._AddBlobsNamedCore(name);
+                SetupCloudflareR2Blob.AddBlobsNamedCore(services, name);
             });
 
             return instance;
         }
-    }
-
-    extension(IServiceCollection services)
-    {
-        private IServiceCollection _AddBlobsDefaultCore()
-        {
-            services.AddSingleton<IBlobStorage>(serviceProvider =>
-            {
-                var r2Options = serviceProvider.GetRequiredService<IOptions<R2BlobStorageOptions>>();
-                var mimeTypeProvider = serviceProvider.GetRequiredService<IMimeTypeProvider>();
-                var clock = serviceProvider.GetRequiredService<IClock>();
-                var awsOptions = new AwsBlobStorageOptions();
-                _ApplyR2ForcedDefaults(awsOptions);
-                var logger =
-                    serviceProvider.GetService<ILogger<AwsBlobStorage>>() ?? NullLogger<AwsBlobStorage>.Instance;
-                var s3Client = R2ClientFactory.Create(r2Options.Value);
-
-                return new AwsBlobStorage(
-                    s3Client,
-                    mimeTypeProvider,
-                    clock,
-                    Options.Create(awsOptions),
-                    new R2BlobNamingNormalizer(),
-                    logger
-                );
-            });
-
-            // Deliberately NO IBlobContainerManager registration: R2's object-scoped tokens cannot create or manage
-            // buckets, and ensuring a missing bucket would not make a later upload succeed. Because container
-            // management is a separately-resolved DI capability (not a cast from IBlobStorage), omitting the
-            // registration makes GetService/GetKeyedService<IBlobContainerManager> honestly return null for R2
-            // (KTD5 / U12). R2 bucket provisioning is out of band (IaC/dashboard). Do not copy the AWS registration.
-            return services;
-        }
-
-        private IServiceCollection _AddBlobsNamedCore(string name)
-        {
-            // R2-safe behavior bound per-instance (named AwsBlobStorageOptions) so coexisting AWS stores are
-            // never affected by R2's forced defaults.
-            services.Configure<AwsBlobStorageOptions>(name, _ApplyR2ForcedDefaults);
-
-            services.AddKeyedSingleton<IBlobStorage>(
-                name,
-                (serviceProvider, _) =>
-                    new AwsBlobStorage(
-                        R2ClientFactory.Create(
-                            serviceProvider.GetRequiredService<IOptionsMonitor<R2BlobStorageOptions>>().Get(name)
-                        ),
-                        serviceProvider.GetRequiredService<IMimeTypeProvider>(),
-                        serviceProvider.GetRequiredService<IClock>(),
-                        Options.Create(
-                            serviceProvider.GetRequiredService<IOptionsMonitor<AwsBlobStorageOptions>>().Get(name)
-                        ),
-                        new R2BlobNamingNormalizer(),
-                        serviceProvider.GetService<ILogger<AwsBlobStorage>>() ?? NullLogger<AwsBlobStorage>.Instance
-                    )
-            );
-
-            services.AddKeyedSingleton<IPresignedUrlBlobStorage>(
-                name,
-                (serviceProvider, _) =>
-                    (IPresignedUrlBlobStorage)serviceProvider.GetRequiredKeyedService<IBlobStorage>(name)
-            );
-
-            // Presigned URLs are a cast from the same instance (R2 supports SigV4 presigning), but container
-            // management is not: no keyed IBlobContainerManager is registered for this named R2 instance, so
-            // GetKeyedService<IBlobContainerManager>(name) honestly returns null (KTD5 / U12). Do not add one.
-            return services;
-        }
-    }
-
-    private static void _ApplyR2ForcedDefaults(AwsBlobStorageOptions options)
-    {
-        // R2 has no ACLs and rejects chunked/payload signing.
-        options.CannedAcl = null;
-        options.UseChunkEncoding = false;
-        options.DisablePayloadSigning = true;
     }
 }
