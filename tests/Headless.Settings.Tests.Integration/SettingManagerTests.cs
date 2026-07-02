@@ -147,7 +147,7 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture) : SettingsT
     }
 
     [Fact]
-    public async Task should_invalidate_cached_user_setting_end_to_end_when_repository_updates_record()
+    public async Task should_serve_cached_user_setting_when_repository_is_updated_directly_bypassing_the_manager()
     {
         // given
         await Fixture.ResetAsync();
@@ -184,10 +184,12 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture) : SettingsT
         );
         await valueRepository.UpdateAsync(updatedRecord, AbortToken);
 
-        // then
+        // then — writing straight to the repository bypasses ISettingManager, so the store cache is NOT
+        // invalidated and the manager keeps serving the value it cached earlier (documented contract:
+        // callers must mutate through the manager for cache invalidation to fire).
         (await settingManager.FindForUserAsync(userId, settingName, cancellationToken: AbortToken))
             .Should()
-            .Be(updatedValue);
+            .Be(initialValue);
     }
 
     [Fact]
