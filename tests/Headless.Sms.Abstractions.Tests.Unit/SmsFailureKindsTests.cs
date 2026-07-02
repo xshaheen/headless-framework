@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Net.Sockets;
 using Headless.Sms;
 
 namespace Tests;
@@ -12,6 +13,7 @@ public sealed class SmsFailureKindsTests
         SmsFailureKinds.FromException(new HttpRequestException("x")).Should().Be(SmsFailureKind.Transient);
         SmsFailureKinds.FromException(new TimeoutException()).Should().Be(SmsFailureKind.Transient);
         SmsFailureKinds.FromException(new IOException()).Should().Be(SmsFailureKind.Transient);
+        SmsFailureKinds.FromException(new SocketException()).Should().Be(SmsFailureKind.Transient);
     }
 
     [Fact]

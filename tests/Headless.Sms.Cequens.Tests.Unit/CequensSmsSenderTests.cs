@@ -7,6 +7,8 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
+using Polly.CircuitBreaker;
+using Polly.RateLimiting;
 using Polly.Timeout;
 using WireMock.RequestBuilders;
 using WireMock.ResponseBuilders;
@@ -181,8 +183,17 @@ public sealed class CequensSmsSenderTests : TestBase, IClassFixture<SmsWireMockF
         result.FailureKind.Should().Be(SmsFailureKind.Unknown);
     }
 
-    [Fact]
-    public async Task should_classify_a_resilience_timeout_as_transient()
+    public static TheoryData<Exception> ResilienceRejections { get; } =
+        new()
+        {
+            new TimeoutRejectedException("pipeline timeout"),
+            new BrokenCircuitException("circuit open"),
+            new RateLimiterRejectedException("rate limiter rejected"),
+        };
+
+    [Theory]
+    [MemberData(nameof(ResilienceRejections))]
+    public async Task should_classify_resilience_rejections_as_transient(Exception exception)
     {
         var options = Options.Create(
             new CequensSmsOptions
@@ -196,7 +207,7 @@ public sealed class CequensSmsSenderTests : TestBase, IClassFixture<SmsWireMockF
             }
         );
         using var sender = new CequensSmsSender(
-            new ThrowingHttpClientFactory(new TimeoutRejectedException("pipeline timeout")),
+            new ThrowingHttpClientFactory(exception),
             new FakeTimeProvider(),
             options,
             NullLogger<CequensSmsSender>.Instance

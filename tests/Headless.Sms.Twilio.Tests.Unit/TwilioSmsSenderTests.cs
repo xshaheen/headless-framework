@@ -7,6 +7,8 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute.ExceptionExtensions;
+using Polly.CircuitBreaker;
+using Polly.RateLimiting;
 using Polly.Timeout;
 using Twilio.Clients;
 using Twilio.Http;
@@ -41,11 +43,20 @@ public sealed class TwilioSmsSenderTests : TestBase
         result.ProviderMessageId.Should().Be("SM123");
     }
 
-    [Fact]
-    public async Task should_classify_a_resilience_timeout_as_transient()
+    public static TheoryData<Exception> ResilienceRejections { get; } =
+        new()
+        {
+            new TimeoutRejectedException("pipeline timeout"),
+            new BrokenCircuitException("circuit open"),
+            new RateLimiterRejectedException("rate limiter rejected"),
+        };
+
+    [Theory]
+    [MemberData(nameof(ResilienceRejections))]
+    public async Task should_classify_resilience_rejections_as_transient(Exception exception)
     {
         var client = Substitute.For<ITwilioRestClient>();
-        client.RequestAsync(Arg.Any<Request>()).ThrowsAsync(new TimeoutRejectedException("pipeline timeout"));
+        client.RequestAsync(Arg.Any<Request>()).ThrowsAsync(exception);
 
         var result = await _CreateSender(client).SendAsync(SmsRequests.Single(), AbortToken);
 

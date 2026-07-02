@@ -6,6 +6,8 @@ using Headless.Sms.Vodafone;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Polly.CircuitBreaker;
+using Polly.RateLimiting;
 using Polly.Timeout;
 using WireMock.RequestBuilders;
 using WireMock.ResponseBuilders;
@@ -98,8 +100,17 @@ public sealed class VodafoneSmsSenderTests : TestBase, IClassFixture<SmsWireMock
         body.Should().Contain("a &amp; b &lt; c");
     }
 
-    [Fact]
-    public async Task should_classify_a_resilience_timeout_as_transient()
+    public static TheoryData<Exception> ResilienceRejections { get; } =
+        new()
+        {
+            new TimeoutRejectedException("pipeline timeout"),
+            new BrokenCircuitException("circuit open"),
+            new RateLimiterRejectedException("rate limiter rejected"),
+        };
+
+    [Theory]
+    [MemberData(nameof(ResilienceRejections))]
+    public async Task should_classify_resilience_rejections_as_transient(Exception exception)
     {
         var options = Options.Create(
             new VodafoneSmsOptions
@@ -112,7 +123,7 @@ public sealed class VodafoneSmsSenderTests : TestBase, IClassFixture<SmsWireMock
             }
         );
         var sender = new VodafoneSmsSender(
-            new ThrowingHttpClientFactory(new TimeoutRejectedException("pipeline timeout")),
+            new ThrowingHttpClientFactory(exception),
             options,
             NullLogger<VodafoneSmsSender>.Instance
         );

@@ -7,6 +7,7 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Polly.CircuitBreaker;
+using Polly.RateLimiting;
 using Polly.Timeout;
 using WireMock.RequestBuilders;
 using WireMock.ResponseBuilders;
@@ -132,7 +133,12 @@ public sealed class ConnekioSmsSenderTests : TestBase, IClassFixture<SmsWireMock
     }
 
     public static TheoryData<Exception> ResilienceRejections { get; } =
-        new() { new TimeoutRejectedException("pipeline timeout"), new BrokenCircuitException("circuit open") };
+        new()
+        {
+            new TimeoutRejectedException("pipeline timeout"),
+            new BrokenCircuitException("circuit open"),
+            new RateLimiterRejectedException("rate limiter rejected"),
+        };
 
     [Theory]
     [MemberData(nameof(ResilienceRejections))]

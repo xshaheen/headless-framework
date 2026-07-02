@@ -7,6 +7,7 @@ using Infobip.Api.Client.Model;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Polly.CircuitBreaker;
+using Polly.RateLimiting;
 using Polly.Timeout;
 
 namespace Headless.Sms.Infobip;
@@ -77,10 +78,10 @@ internal sealed class InfobipSmsSender(
         {
             logger.LogSmsSendException(e, destinationCount: 1);
 
-            // The standard resilience pipeline surfaces its timeout and open-circuit rejections as
-            // Polly-specific exceptions; both are transport faults a retry may clear, so classify them
-            // as transient instead of letting them fall through as Unknown.
-            return e is TimeoutRejectedException or BrokenCircuitException
+            // The standard resilience pipeline surfaces its timeout, open-circuit, and rate-limiter
+            // rejections as Polly-specific exceptions; all are transport faults a retry may clear, so
+            // classify them as transient instead of letting them fall through as Unknown.
+            return e is TimeoutRejectedException or BrokenCircuitException or RateLimiterRejectedException
                 ? SendSingleSmsResponse.FromException(e, SmsFailureKind.Transient)
                 : SendSingleSmsResponse.FromException(e);
         }
@@ -133,10 +134,10 @@ internal sealed class InfobipSmsSender(
         {
             logger.LogSmsSendException(e, request.Destinations.Count);
 
-            // The standard resilience pipeline surfaces its timeout and open-circuit rejections as
-            // Polly-specific exceptions; both are transport faults a retry may clear, so classify them
-            // as transient instead of letting them fall through as Unknown.
-            var outcome = e is TimeoutRejectedException or BrokenCircuitException
+            // The standard resilience pipeline surfaces its timeout, open-circuit, and rate-limiter
+            // rejections as Polly-specific exceptions; all are transport faults a retry may clear, so
+            // classify them as transient instead of letting them fall through as Unknown.
+            var outcome = e is TimeoutRejectedException or BrokenCircuitException or RateLimiterRejectedException
                 ? SendSingleSmsResponse.FromException(e, SmsFailureKind.Transient)
                 : SendSingleSmsResponse.FromException(e);
 
