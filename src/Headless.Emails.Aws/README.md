@@ -49,7 +49,7 @@ builder.Services.AddHeadlessEmails(setup => setup.UseAwsSes(null));
 // Named instance (keyed IEmailSender, resolvable via IEmailSenderProvider):
 builder.Services.AddHeadlessEmails(setup =>
 {
-    setup.UseNoop(); // default (required)
+    setup.UseNoop(); // default (optional)
     setup.AddNamed("ses", i => i.UseAwsSes(awsOptions)); // keyed "ses"
 });
 ```

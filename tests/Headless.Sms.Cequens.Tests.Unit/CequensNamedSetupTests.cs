@@ -130,7 +130,9 @@ public sealed class CequensNamedSetupTests
         first.Should().NotBeSameAs(second);
 
         // when / then - container disposal disposes both instances without double-dispose errors.
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
         var dispose = () => provider.Dispose();
+#pragma warning restore MA0045
         dispose.Should().NotThrow();
         dispose.Should().NotThrow();
     }

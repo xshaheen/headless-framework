@@ -48,7 +48,7 @@ if (builder.Environment.IsDevelopment())
 // Keyed ISmsSender "audit" writes to a file while the default sends for real:
 builder.Services.AddHeadlessSms(setup =>
 {
-    setup.UseTwilio(builder.Configuration.GetSection("Sms:Twilio")); // default (required)
+    setup.UseTwilio(builder.Configuration.GetSection("Sms:Twilio")); // default (optional)
     setup.AddNamed("audit", i => i.UseDevelopment("audit-sms.txt"));
 });
 ```

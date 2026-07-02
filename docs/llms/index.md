@@ -325,7 +325,8 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Caching.Hybrid` — L1 (memory) + L2 (distributed) cache.
 
 ### Captcha
-- `Headless.Captcha.Abstractions` — `ICaptchaVerifier`, request/result contracts, the `AddHeadlessCaptcha` builder, and `ICaptchaProvider`.
+- `Headless.Captcha.Abstractions` — `ICaptchaVerifier`, request/result contracts, and `ICaptchaProvider`.
+- `Headless.Captcha.Core` — `AddHeadlessCaptcha` setup builder, registration gates, and keyed `ICaptchaProvider` resolution.
 - `Headless.Captcha.ReCaptcha` — Google reCAPTCHA v2 (checkbox) and v3 (invisible score) verification with Razor tag helpers.
 - `Headless.Captcha.Turnstile` — Cloudflare Turnstile verification (pass/fail, `idempotency_key`, `cdata`) with Razor tag helpers.
 

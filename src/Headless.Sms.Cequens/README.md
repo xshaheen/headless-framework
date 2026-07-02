@@ -45,7 +45,7 @@ builder.Services.AddHeadlessSms(setup =>
 // Named instance — an isolated HttpClient, token cache, and options (keyed "otp"):
 builder.Services.AddHeadlessSms(setup =>
 {
-    setup.UseCequens(builder.Configuration.GetSection("Sms:Cequens")); // default (required)
+    setup.UseCequens(builder.Configuration.GetSection("Sms:Cequens")); // default (optional)
     setup.AddNamed("otp", i => i.UseCequens(builder.Configuration.GetSection("Sms:CequensOtp")));
 });
 ```

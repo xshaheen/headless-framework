@@ -41,7 +41,7 @@ builder.Services.AddHeadlessSms(setup =>
 // Named instance — an isolated HttpClient and options (keyed "otp"):
 builder.Services.AddHeadlessSms(setup =>
 {
-    setup.UseVictoryLink(builder.Configuration.GetSection("Sms:VictoryLink")); // default (required)
+    setup.UseVictoryLink(builder.Configuration.GetSection("Sms:VictoryLink")); // default (optional)
     setup.AddNamed("otp", i => i.UseVictoryLink(builder.Configuration.GetSection("Sms:VictoryLinkOtp")));
 });
 ```

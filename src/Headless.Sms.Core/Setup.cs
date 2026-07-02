@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Frozen;
 using Headless.Checks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -18,18 +19,18 @@ public static class SetupSmsCore
         /// Registers Headless SMS senders from a single setup builder. Provider packages contribute the
         /// default (unkeyed) sender through <c>Use*</c> extensions on <see cref="HeadlessSmsSetupBuilder"/>
         /// (for example <c>UseTwilio</c>, <c>UseAwsSns</c>, <c>UseCequens</c>, <c>UseDevelopment</c>, <c>UseNoop</c>)
-        /// and named senders through <c>setup.AddNamed(name, i =&gt; i.Use*(…))</c>. Exactly one default
-        /// sender is required; named senders are optional and unbounded. Contributions are queued and not run
-        /// until the setup gates pass, so a setup that fails a gate leaves the service collection unchanged
+        /// and named senders through <c>setup.AddNamed(name, i =&gt; i.Use*(…))</c>. A default sender is
+        /// optional (at most one); named senders are optional and unbounded. Contributions are queued and not
+        /// run until the setup gates pass, so a setup that fails a gate leaves the service collection unchanged
         /// (provider <c>Use*</c> members also validate their inputs synchronously before queuing).
         /// </summary>
         /// <param name="configure">Delegate that selects the default sender and any named senders.</param>
         /// <returns>The same <see cref="IServiceCollection"/> for chaining.</returns>
         /// <exception cref="ArgumentNullException">Thrown when <paramref name="configure"/> is <see langword="null"/>.</exception>
         /// <exception cref="InvalidOperationException">
-        /// Thrown when the delegate registers zero or more than one default provider, configures a named
-        /// instance with zero or multiple providers, reuses a name, or when <c>AddHeadlessSms</c> has
-        /// already been called on the same <see cref="IServiceCollection"/>.
+        /// Thrown when the delegate registers more than one default provider, configures a named instance with
+        /// zero or multiple providers, reuses a name, or when <c>AddHeadlessSms</c> has already been called on
+        /// the same <see cref="IServiceCollection"/>.
         /// </exception>
         public IServiceCollection AddHeadlessSms(Action<HeadlessSmsSetupBuilder> configure)
         {
@@ -40,31 +41,15 @@ public static class SetupSmsCore
 
             return _AddSmsProviderCore(services, setup);
         }
-
-        /// <summary>
-        /// Registers <see cref="ISmsSenderProvider"/> backed by the container's keyed <see cref="ISmsSender"/>
-        /// registrations. Called by the setup gate so the provider is available whenever any sender is
-        /// registered. Safe to call multiple times.
-        /// </summary>
-        /// <returns>The service collection for chaining.</returns>
-        internal IServiceCollection AddSmsSenderProvider()
-        {
-            services.TryAddSingleton<ISmsSenderProvider>(provider => new KeyedServiceSmsSenderProvider(provider));
-
-            return services;
-        }
     }
 
     private static IServiceCollection _AddSmsProviderCore(IServiceCollection services, HeadlessSmsSetupBuilder setup)
     {
-        if (setup.DefaultExtensions.Count != 1)
+        if (setup.DefaultExtensions.Count > 1)
         {
             throw new InvalidOperationException(
-                setup.DefaultExtensions.Count == 0
-                    ? "Headless.Sms requires exactly one default provider. Call one of `UseAwsSns`, `UseCequens`, "
-                        + "`UseConnekio`, `UseDevelopment`, `UseInfobip`, `UseNoop`, `UseTwilio`, `UseVictoryLink`, or "
-                        + "`UseVodafone`."
-                    : "Headless.Sms requires exactly one default provider. Multiple default providers were configured."
+                "Headless.Sms allows at most one default SMS provider. Multiple default providers were "
+                    + "configured — register the additional senders as named instances with `AddNamed`."
             );
         }
 
@@ -78,10 +63,17 @@ public static class SetupSmsCore
 
         services.AddSingleton(new SmsProviderRegistration());
 
-        services.AddSmsSenderProvider();
+        var registeredNames = setup.InstanceNames.ToFrozenSet(StringComparer.Ordinal);
+        services.TryAddSingleton<ISmsSenderProvider>(provider => new KeyedServiceSmsSenderProvider(
+            provider,
+            registeredNames
+        ));
 
         // Default first, then each named instance — nothing touched `services` until the gates above passed.
-        setup.DefaultExtensions[0](services);
+        foreach (var action in setup.DefaultExtensions)
+        {
+            action(services);
+        }
 
         foreach (var (_, action) in setup.NamedExtensions)
         {

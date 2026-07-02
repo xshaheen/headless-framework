@@ -9,45 +9,56 @@ namespace Tests;
 public sealed class SmsSetupBuilderTests
 {
     [Fact]
-    public void should_reject_setup_when_default_provider_is_missing()
+    public void should_allow_setup_with_no_default_and_register_provider()
+    {
+        // given - the default slot is optional (at most one); an empty setup still registers the factory.
+        var services = new ServiceCollection();
+
+        // when
+        services.AddHeadlessSms(static _ => { });
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        provider.GetService<ISmsSender>().Should().BeNull();
+        provider.GetRequiredService<ISmsSenderProvider>().RegisteredNames.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void named_only_setup_should_not_register_default_sms_sender()
     {
         // given
         var services = new ServiceCollection();
 
         // when
-        var action = () => services.AddHeadlessSms(static _ => { });
+        services.AddHeadlessSms(static setup => setup.AddNamed("audit", static instance => instance.UseNoop()));
+        using var provider = services.BuildServiceProvider();
 
-        // then
-        action
-            .Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage("*exactly one default provider*")
-            .WithMessage("*UseAwsSns*")
-            .WithMessage("*UseCequens*")
-            .WithMessage("*UseConnekio*")
-            .WithMessage("*UseDevelopment*")
-            .WithMessage("*UseInfobip*")
-            .WithMessage("*UseNoop*")
-            .WithMessage("*UseTwilio*")
-            .WithMessage("*UseVictoryLink*")
-            .WithMessage("*UseVodafone*");
+        // then - the named instance resolves while the unkeyed default stays unregistered.
+        provider.GetService<ISmsSender>().Should().BeNull();
+        provider.GetRequiredService<ISmsSenderProvider>().GetSender("audit").Should().NotBeNull();
+        provider.GetRequiredKeyedService<ISmsSender>("audit").Should().NotBeNull();
     }
 
     [Fact]
     public void throwing_setup_should_leave_the_service_collection_unchanged()
     {
-        // given - a collection with unrelated registrations plus a setup that fails the default gate even
-        // though it queued a named instance.
+        // given - a collection with unrelated registrations plus a setup that fails the at-most-one-default
+        // gate even though it queued a named instance.
         var services = new ServiceCollection();
         services.AddLogging();
         var countBefore = services.Count;
 
         // when
         var action = () =>
-            services.AddHeadlessSms(static setup => setup.AddNamed("audit", static instance => instance.UseNoop()));
+            services.AddHeadlessSms(static setup =>
+            {
+                setup.UseNoop();
+                setup.UseDevelopment("sms.txt");
+                setup.AddNamed("audit", static instance => instance.UseNoop());
+            });
 
         // then - registration is deferred, so nothing touched the collection.
-        action.Should().Throw<InvalidOperationException>().WithMessage("*exactly one default provider*");
+        action.Should().Throw<InvalidOperationException>().WithMessage("*at most one default*");
         services.Should().HaveCount(countBefore);
         services.Should().NotContain(static d => d.ServiceType == typeof(ISmsSender));
         services.Should().NotContain(static d => d.ServiceType == typeof(ISmsSenderProvider));
@@ -68,7 +79,11 @@ public sealed class SmsSetupBuilderTests
             });
 
         // then
-        action.Should().Throw<InvalidOperationException>().WithMessage("*Multiple default providers*");
+        action
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*at most one default*")
+            .WithMessage("*AddNamed*");
     }
 
     [Fact]

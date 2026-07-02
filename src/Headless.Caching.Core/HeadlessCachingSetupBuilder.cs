@@ -23,6 +23,8 @@ public sealed class HeadlessCachingSetupBuilder
 
     internal IServiceCollection Services { get; }
 
+    internal IReadOnlySet<string> InstanceNames => _instanceNames;
+
     internal List<(string RoleKey, Action<IServiceCollection> Action)> DefaultExtensions { get; } = [];
 
     internal List<(string RoleKey, Action<IServiceCollection> Action)> TierExtensions { get; } = [];
