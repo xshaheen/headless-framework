@@ -16,7 +16,7 @@ public sealed class DevSetupTests
         var path = Path.Combine(Path.GetTempPath(), $"sms-{Guid.NewGuid():N}.txt");
 
         // when
-        services.AddHeadlessSms(setup => setup.UseDev(path));
+        services.AddHeadlessSms(setup => setup.UseDevelopment(path));
         using var provider = services.BuildServiceProvider();
 
         // then
@@ -52,7 +52,7 @@ public sealed class DevSetupTests
         services.AddHeadlessSms(setup =>
         {
             setup.UseNoop();
-            setup.AddNamed("audit", instance => instance.UseDev(path));
+            setup.AddNamed("audit", instance => instance.UseDevelopment(path));
         });
         using var provider = services.BuildServiceProvider();
 
@@ -75,7 +75,7 @@ public sealed class DevSetupTests
         services.AddHeadlessSms(setup =>
         {
             setup.UseNoop();
-            setup.AddNamed("audit", instance => instance.UseDev(path));
+            setup.AddNamed("audit", instance => instance.UseDevelopment(path));
         });
         using var provider = services.BuildServiceProvider();
 
@@ -118,8 +118,8 @@ public sealed class DevSetupTests
         services.AddHeadlessSms(setup =>
         {
             setup.UseNoop();
-            setup.AddNamed("first", instance => instance.UseDev(firstPath));
-            setup.AddNamed("second", instance => instance.UseDev(secondPath));
+            setup.AddNamed("first", instance => instance.UseDevelopment(firstPath));
+            setup.AddNamed("second", instance => instance.UseDevelopment(secondPath));
         });
         using var provider = services.BuildServiceProvider();
 

@@ -19,7 +19,7 @@ internal sealed class KeyedServiceSmsSenderProvider(IServiceProvider serviceProv
             ?? throw new InvalidOperationException(
                 $"No SMS sender is registered under the name '{name}'. Register a named instance first — for "
                     + $"example setup.AddNamed(\"{name}\", i => i.UseTwilio(…)), i.UseAwsSns(…), i.UseCequens(…), "
-                    + "i.UseConnekio(…), i.UseInfobip(…), i.UseVictoryLink(…), i.UseVodafone(…), i.UseDev(…), "
+                    + "i.UseConnekio(…), i.UseInfobip(…), i.UseVictoryLink(…), i.UseVodafone(…), i.UseDevelopment(…), "
                     + "or i.UseNoop()."
             );
     }

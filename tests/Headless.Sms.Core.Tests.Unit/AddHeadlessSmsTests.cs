@@ -43,7 +43,7 @@ public sealed class AddHeadlessSmsTests
         var services = new ServiceCollection();
 
         // when
-        services.AddHeadlessSms(setup => setup.UseDev(Path.Combine(Path.GetTempPath(), "sms.txt")));
+        services.AddHeadlessSms(setup => setup.UseDevelopment(Path.Combine(Path.GetTempPath(), "sms.txt")));
 
         // then
         using var provider = services.BuildServiceProvider();

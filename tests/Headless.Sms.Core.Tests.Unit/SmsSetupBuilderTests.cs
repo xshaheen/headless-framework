@@ -25,7 +25,7 @@ public sealed class SmsSetupBuilderTests
             .WithMessage("*UseAwsSns*")
             .WithMessage("*UseCequens*")
             .WithMessage("*UseConnekio*")
-            .WithMessage("*UseDev*")
+            .WithMessage("*UseDevelopment*")
             .WithMessage("*UseInfobip*")
             .WithMessage("*UseNoop*")
             .WithMessage("*UseTwilio*")
@@ -64,7 +64,7 @@ public sealed class SmsSetupBuilderTests
             services.AddHeadlessSms(static setup =>
             {
                 setup.UseNoop();
-                setup.UseDev("sms.txt");
+                setup.UseDevelopment("sms.txt");
             });
 
         // then
@@ -107,7 +107,7 @@ public sealed class SmsSetupBuilderTests
         services.AddHeadlessSms(static setup =>
         {
             setup.UseNoop();
-            setup.AddNamed("sink", static instance => instance.UseDev("out.txt"));
+            setup.AddNamed("sink", static instance => instance.UseDevelopment("out.txt"));
         });
 
         // when

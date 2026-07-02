@@ -10,7 +10,7 @@ namespace Headless.Sms;
 /// Builder for a single named SMS sender inside <c>AddHeadlessSms</c>. Provider packages contribute
 /// exactly one provider per instance through <see cref="RegisterProvider"/> (called by each instance-scoped
 /// <c>Use*</c> extension, for example <c>UseTwilio</c>, <c>UseAwsSns</c>, <c>UseCequens</c>,
-/// <c>UseVodafone</c>, <c>UseDev</c>, <c>UseNoop</c>).
+/// <c>UseVodafone</c>, <c>UseDevelopment</c>, <c>UseNoop</c>).
 /// </summary>
 [PublicAPI]
 public sealed class HeadlessSmsInstanceBuilder

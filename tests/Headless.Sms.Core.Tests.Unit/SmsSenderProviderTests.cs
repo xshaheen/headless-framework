@@ -14,7 +14,10 @@ public sealed class SmsSenderProviderTests
         services.AddHeadlessSms(static setup =>
         {
             setup.UseNoop();
-            setup.AddNamed("audit", static instance => instance.UseDev(Path.Combine(Path.GetTempPath(), "sms.txt")));
+            setup.AddNamed(
+                "audit",
+                static instance => instance.UseDevelopment(Path.Combine(Path.GetTempPath(), "sms.txt"))
+            );
         });
 
         return services.BuildServiceProvider();

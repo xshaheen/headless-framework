@@ -78,7 +78,7 @@ public sealed class HeadlessSmsSetupBuilder
         {
             throw new InvalidOperationException(
                 $"Named SMS sender '{name}' requires exactly one provider. "
-                    + "Call one of `UseAwsSns`, `UseCequens`, `UseConnekio`, `UseDev`, `UseInfobip`, "
+                    + "Call one of `UseAwsSns`, `UseCequens`, `UseConnekio`, `UseDevelopment`, `UseInfobip`, "
                     + "`UseNoop`, `UseTwilio`, `UseVictoryLink`, or `UseVodafone`."
             );
         }

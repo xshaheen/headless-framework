@@ -17,7 +17,7 @@ public static class SetupSmsCore
         /// <summary>
         /// Registers Headless SMS senders from a single setup builder. Provider packages contribute the
         /// default (unkeyed) sender through <c>Use*</c> extensions on <see cref="HeadlessSmsSetupBuilder"/>
-        /// (for example <c>UseTwilio</c>, <c>UseAwsSns</c>, <c>UseCequens</c>, <c>UseDev</c>, <c>UseNoop</c>)
+        /// (for example <c>UseTwilio</c>, <c>UseAwsSns</c>, <c>UseCequens</c>, <c>UseDevelopment</c>, <c>UseNoop</c>)
         /// and named senders through <c>setup.AddNamed(name, i =&gt; i.Use*(…))</c>. Exactly one default
         /// sender is required; named senders are optional and unbounded. Contributions are queued and not run
         /// until the setup gates pass, so a setup that fails a gate leaves the service collection unchanged
@@ -62,7 +62,7 @@ public static class SetupSmsCore
             throw new InvalidOperationException(
                 setup.DefaultExtensions.Count == 0
                     ? "Headless.Sms requires exactly one default provider. Call one of `UseAwsSns`, `UseCequens`, "
-                        + "`UseConnekio`, `UseDev`, `UseInfobip`, `UseNoop`, `UseTwilio`, `UseVictoryLink`, or "
+                        + "`UseConnekio`, `UseDevelopment`, `UseInfobip`, `UseNoop`, `UseTwilio`, `UseVictoryLink`, or "
                         + "`UseVodafone`."
                     : "Headless.Sms requires exactly one default provider. Multiple default providers were configured."
             );

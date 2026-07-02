@@ -20,7 +20,7 @@ public static class SetupDevSms
         /// <returns>The same builder for chaining.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="filePath"/> is <see langword="null"/>.</exception>
         /// <exception cref="ArgumentException"><paramref name="filePath"/> is an empty string.</exception>
-        public HeadlessSmsSetupBuilder UseDev(string filePath)
+        public HeadlessSmsSetupBuilder UseDevelopment(string filePath)
         {
             Argument.IsNotNullOrEmpty(filePath);
 
@@ -66,7 +66,7 @@ public static class SetupDevSmsNamed
         /// <returns>The instance builder for chaining.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="filePath"/> is <see langword="null"/>.</exception>
         /// <exception cref="ArgumentException"><paramref name="filePath"/> is an empty string.</exception>
-        public HeadlessSmsInstanceBuilder UseDev(string filePath)
+        public HeadlessSmsInstanceBuilder UseDevelopment(string filePath)
         {
             Argument.IsNotNullOrEmpty(filePath);
 

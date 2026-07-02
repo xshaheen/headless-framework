@@ -27,7 +27,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 if (builder.Environment.IsDevelopment())
 {
-    builder.Services.AddHeadlessSms(setup => setup.UseDev("sms-log.txt"));
+    builder.Services.AddHeadlessSms(setup => setup.UseDevelopment("sms-log.txt"));
 }
 ```
 
@@ -49,7 +49,7 @@ if (builder.Environment.IsDevelopment())
 builder.Services.AddHeadlessSms(setup =>
 {
     setup.UseTwilio(builder.Configuration.GetSection("Sms:Twilio")); // default (required)
-    setup.AddNamed("audit", i => i.UseDev("audit-sms.txt"));
+    setup.AddNamed("audit", i => i.UseDevelopment("audit-sms.txt"));
 });
 ```
 
@@ -64,4 +64,4 @@ No configuration required.
 ## Side Effects
 
 - Default: registers `ISmsSender` and `IBulkSmsSender` (the bulk sender forwards to the same instance) as unkeyed singletons. `DevSmsSender` appends to the specified file on each send; `NoopSmsSender` discards silently.
-- Named (`AddNamed(name, i => i.UseDev(path))` / `i.UseNoop()`): registers the same sender as a keyed `ISmsSender` (and keyed `IBulkSmsSender`) under the instance name.
+- Named (`AddNamed(name, i => i.UseDevelopment(path))` / `i.UseNoop()`): registers the same sender as a keyed `ISmsSender` (and keyed `IBulkSmsSender`) under the instance name.

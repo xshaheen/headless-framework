@@ -52,7 +52,7 @@ public sealed class CrossProviderSmsMixingTests : TestBase
         services.AddHeadlessSms(setup =>
         {
             setup.UseNoop();
-            setup.AddNamed("sink", static instance => instance.UseDev("out.txt"));
+            setup.AddNamed("sink", static instance => instance.UseDevelopment("out.txt"));
             setup.AddNamed(
                 "cequens",
                 instance =>

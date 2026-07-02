@@ -106,7 +106,7 @@ packages: Sms.Abstractions, Sms.Core, Sms.Aws, Sms.Cequens, Sms.Connekio, Sms.De
 
 Install `Headless.Sms.Abstractions` plus one provider package. Register with `AddHeadlessSms(setup => setup.Use…())` — exactly one **default** `Use*` provider per call, plus any number of **named** senders via `setup.AddNamed(name, i => i.Use…())`. Code against `ISmsSender` (single recipient) or `IBulkSmsSender` (multi-recipient, where supported) for the default; resolve named senders with `ISmsSenderProvider.GetSender("name")` or `[FromKeyedServices("name")] ISmsSender`. Never reference provider-specific sender types in application code — swap providers by changing DI registration only.
 
-- **Development/testing**: `Headless.Sms.Dev` — `UseDev(path)` appends messages to a local file or `UseNoop()` discards them. No external calls.
+- **Development/testing**: `Headless.Sms.Dev` — `UseDevelopment(path)` appends messages to a local file or `UseNoop()` discards them. No external calls.
 - **International**: `Headless.Sms.Twilio` (most popular), `Headless.Sms.Aws` (AWS SNS), `Headless.Sms.Infobip` (global platform).
 - **MENA regional**: `Headless.Sms.Cequens`, `Headless.Sms.Connekio`, `Headless.Sms.VictoryLink`, `Headless.Sms.Vodafone`.
 
@@ -116,13 +116,13 @@ Register additional **named** senders alongside the required default: `setup.Add
 
 ## Agent Instructions
 
-- Register exactly one **default** provider per container: `services.AddHeadlessSms(setup => setup.Use…())`. Zero default providers, multiple default providers in one delegate, or a repeated `AddHeadlessSms` on the same `IServiceCollection` throws `InvalidOperationException` at registration time. The available default `Use*` calls are `UseTwilio`, `UseAwsSns`, `UseInfobip`, `UseCequens`, `UseConnekio`, `UseVictoryLink`, `UseVodafone`, `UseDev`, `UseNoop` — the same set is available on each named instance.
+- Register exactly one **default** provider per container: `services.AddHeadlessSms(setup => setup.Use…())`. Zero default providers, multiple default providers in one delegate, or a repeated `AddHeadlessSms` on the same `IServiceCollection` throws `InvalidOperationException` at registration time. The available default `Use*` calls are `UseTwilio`, `UseAwsSns`, `UseInfobip`, `UseCequens`, `UseConnekio`, `UseVictoryLink`, `UseVodafone`, `UseDevelopment`, `UseNoop` — the same set is available on each named instance.
 - Add **named** senders in the same call: `setup.AddNamed("name", i => i.Use…())`. Names must be non-whitespace and ordinal-unique within the call, and each named instance must select exactly one provider — a duplicate name, whitespace name, or zero/multiple providers throws at registration time. The default sender remains required; named-only (no default) is not supported.
 - Resolve a named sender with `ISmsSenderProvider.GetSender("name")` (throws `InvalidOperationException` naming `AddNamed` when unregistered) / `GetSenderOrNull("name")` (returns `null`), or raw keyed DI (`[FromKeyedServices("name")] ISmsSender`, `GetRequiredKeyedService<ISmsSender>(name)`). Both `GetSender` and `GetSenderOrNull` throw `ArgumentException` on a null/whitespace name. The default (unkeyed) `ISmsSender` is **not** exposed through `ISmsSenderProvider`.
 - Registration is deferred: provider contributions are queued and nothing touches the `IServiceCollection` until the gates pass, so a setup that throws leaves the collection unchanged. The same provider can back two different names with fully independent options.
 - Each named instance isolates its own options (validated per name via FluentValidation + `ValidateOnStart`), its own HttpClient (`Headless:{Provider}Sms:{name}`) with its own resilience pipeline (HTTP providers), and its own backend state. Keyed DI does not cascade the key to constructor dependencies, so named senders never read the default configuration.
 - Code against `ISmsSender` from `Headless.Sms.Abstractions` — never against provider-specific sender types (`TwilioSmsSender`, `AwsSnsSmsSender`, `CequensSmsSender`, etc.).
-- Always use `Headless.Sms.Dev` in development/test environments to avoid sending real SMS messages. Use `AddHeadlessSms(setup => setup.UseDev("sms-log.txt"))` for file logging or `AddHeadlessSms(setup => setup.UseNoop())` for silent discard.
+- Always use `Headless.Sms.Dev` in development/test environments to avoid sending real SMS messages. Use `AddHeadlessSms(setup => setup.UseDevelopment("sms-log.txt"))` for file logging or `AddHeadlessSms(setup => setup.UseNoop())` for silent discard.
 - `SendSingleSmsRequest` targets exactly one recipient via `Destination` (a single `SmsRequestDestination`) plus `Text` — not `To`/`Message`. A destination requires a country calling code (`Code`) and the local number (`Number`) as separate fields.
 - Bulk capability is per instance: `IBulkSmsSender.SendBulkAsync(SendBulkSmsRequest)` is implemented by Cequens, Connekio, Infobip, VictoryLink, Vodafone, and the Dev/Noop senders; Twilio and AWS SNS do not (one recipient per API call), so resolving `IBulkSmsSender` for them fails — loop `SendAsync` instead. For a bulk-capable **named** instance, resolve the keyed `IBulkSmsSender` (`[FromKeyedServices("name")] IBulkSmsSender`); it forwards to the same instance as the keyed `ISmsSender`.
 - `SendSingleSmsResponse` exposes `Success` (bool), optional `ProviderMessageId` (string? — the backend's message id on success when it returns one), `FailureError` (string? — non-null when `Success` is false), and `FailureKind` (the `SmsFailureKind` enum classifying failures). It does NOT have `IsSuccess` or `ErrorMessage`.
@@ -633,7 +633,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 if (builder.Environment.IsDevelopment())
 {
-    builder.Services.AddHeadlessSms(setup => setup.UseDev("sms-log.txt"));
+    builder.Services.AddHeadlessSms(setup => setup.UseDevelopment("sms-log.txt"));
 }
 ```
 
@@ -655,13 +655,13 @@ if (builder.Environment.IsDevelopment())
 builder.Services.AddHeadlessSms(setup =>
 {
     setup.UseTwilio(builder.Configuration.GetSection("Sms:Twilio")); // default (required)
-    setup.AddNamed("audit", i => i.UseDev("audit-sms.txt"));
+    setup.AddNamed("audit", i => i.UseDevelopment("audit-sms.txt"));
 });
 ```
 
 ### Configuration
 
-No configuration required. The file path is passed directly to `UseDev`.
+No configuration required. The file path is passed directly to `UseDevelopment`.
 
 ### Dependencies
 
@@ -670,7 +670,7 @@ No configuration required. The file path is passed directly to `UseDev`.
 ### Side Effects
 
 - Default: registers `ISmsSender` and `IBulkSmsSender` (the bulk sender forwards to the same instance) as unkeyed singletons. `DevSmsSender` appends to the specified file on each send; `NoopSmsSender` discards silently.
-- Named (`AddNamed(name, i => i.UseDev(path))` / `i.UseNoop()`): registers the same sender as a keyed `ISmsSender` (and keyed `IBulkSmsSender`) under the instance name.
+- Named (`AddNamed(name, i => i.UseDevelopment(path))` / `i.UseNoop()`): registers the same sender as a keyed `ISmsSender` (and keyed `IBulkSmsSender`) under the instance name.
 
 ---
 
