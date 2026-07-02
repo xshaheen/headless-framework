@@ -932,6 +932,18 @@ public sealed class AwsBlobStorage(
             Expires = clock.UtcNow.Add(expiry).UtcDateTime,
         };
 
+        // Honor the configured endpoint scheme. When the client targets a plaintext http:// endpoint (an
+        // S3-compatible emulator such as LocalStack/MinIO), the SDK would otherwise rewrite the signed URL
+        // scheme to https:// and the request would fail against the http endpoint. Real S3 is https, so the
+        // default HTTPS is preserved there.
+        if (
+            s3.Config.ServiceURL is { Length: > 0 } serviceUrl
+            && serviceUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+        )
+        {
+            request.Protocol = Protocol.HTTP;
+        }
+
         var url = await s3.GetPreSignedURLAsync(request).ConfigureAwait(false);
 
         return new Uri(url);
