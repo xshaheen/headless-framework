@@ -10,6 +10,10 @@ namespace Tests;
 [Collection(nameof(RedisCacheFixture))]
 public sealed class RedisCacheConformanceTests(RedisCacheFixture fixture) : CacheConformanceTestsBase
 {
+    // Sliding expiry for Redis is enforced by the live Redis TTL (re-armed on read), not the injected clock, so
+    // it cannot be driven off a FakeTimeProvider — these tests must pass real time. To stay robust under
+    // parallel load, the sliding-timing scenarios are overridden below with a large window read at ~mid-window
+    // (margins in whole seconds), so scheduler/Redis-I/O jitter (tens of ms) never crosses an expiry boundary.
     protected override ICache CreateCache(string keyPrefix) => _CreateCache(keyPrefix, new SystemJsonSerializer());
 
     private ICache _CreateCache(string keyPrefix, ISerializer serializer)
@@ -114,17 +118,60 @@ public sealed class RedisCacheConformanceTests(RedisCacheFixture fixture) : Cach
     public override Task should_not_stampede_eager_refresh_across_concurrent_readers() =>
         base.should_not_stampede_eager_refresh_across_concurrent_readers();
 
+    // Overridden with a large (whole-second) window instead of the base's sub-second one: Redis sliding rides
+    // the live Redis TTL (real time), so ~1s of slack each side keeps this deterministic under parallel load.
     [Fact]
-    public override Task should_keep_sliding_entry_alive_when_read_within_idle_window() =>
-        base.should_keep_sliding_entry_alive_when_read_within_idle_window();
+    public override async Task should_keep_sliding_entry_alive_when_read_within_idle_window()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        var sliding = TimeSpan.FromSeconds(2);
+        var options = new CacheEntryOptions { Duration = TimeSpan.FromSeconds(30), SlidingExpiration = sliding };
+
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
+
+        await Task.Delay(TimeSpan.FromSeconds(1), AbortToken);
+        var firstRead = await cache.GetAsync<string>(key, AbortToken);
+
+        await Task.Delay(TimeSpan.FromSeconds(1), AbortToken);
+        var secondRead = await cache.GetAsync<string>(key, AbortToken);
+
+        // Idle a full window past the last read so the entry lapses.
+        await Task.Delay(sliding + TimeSpan.FromSeconds(1), AbortToken);
+        var idleRead = await cache.GetAsync<string>(key, AbortToken);
+
+        firstRead.Value.Should().Be("value");
+        secondRead.Value.Should().Be("value");
+        idleRead.HasValue.Should().BeFalse();
+    }
 
     [Fact]
     public override Task should_expire_sliding_entry_at_absolute_duration_cap() =>
         base.should_expire_sliding_entry_at_absolute_duration_cap();
 
+    // Overridden with a whole-second window (see note above): ExistsAsync must not extend the window, so after
+    // the original 2s window lapses the entry is gone despite the mid-window metadata read.
     [Fact]
-    public override Task should_not_rearm_sliding_entry_when_metadata_is_read() =>
-        base.should_not_rearm_sliding_entry_when_metadata_is_read();
+    public override async Task should_not_rearm_sliding_entry_when_metadata_is_read()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        var sliding = TimeSpan.FromSeconds(2);
+        var options = new CacheEntryOptions { Duration = TimeSpan.FromSeconds(30), SlidingExpiration = sliding };
+
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
+
+        await Task.Delay(TimeSpan.FromSeconds(1), AbortToken);
+        (await cache.ExistsAsync(key, AbortToken)).Should().BeTrue();
+
+        // Past the original window (metadata read did not re-arm) -> expired.
+        await Task.Delay(sliding, AbortToken);
+        var expired = await cache.GetAsync<string>(key, AbortToken);
+
+        expired.HasValue.Should().BeFalse();
+    }
 
     [Fact]
     public override Task should_not_rearm_non_sliding_entry() => base.should_not_rearm_non_sliding_entry();
