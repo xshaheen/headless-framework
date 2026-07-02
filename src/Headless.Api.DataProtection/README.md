@@ -14,6 +14,7 @@ In distributed/containerized environments, ASP.NET Core Data Protection keys mus
 - Supports factory-based storage resolution for DI scenarios, including keyed/named stores via a `serviceKey` overload
 - Enforces container provisioning up front: when no manager is available and the storage requires a provisioned container (`IBlobStorage.RequiresContainerProvisioning`), configuration throws unless you acknowledge out-of-band provisioning with `provisioning: BlobContainerProvisioning.PreProvisioned`
 - `ValidateKeyRingAtStartup()` — opt-in startup gate (runs before other hosted services) that exercises the key ring, verifies write access with a real sentinel write, and fails an empty key ring on read-only nodes — converting first-write/rotation failures into deploy-time failures
+- `AddDataProtectionKeyRing()` — opt-in readiness health check, the continuous complement to the startup gate: re-validates the key-ring store on every health probe, catching a container deleted or write permission revoked after boot. The default probe is the definitive sentinel write (so `Healthy` uniformly means "the key ring can be persisted"); `KeyRingProbeStyle.ContainerExistence` is a cheap explicit opt-down that does not verify write access
 - The container ensure runs inside the same retry pipeline as the key upload, and a terminal write failure surfaces as `InvalidOperationException` naming the `DataProtection` container, whether a manager was wired, and the remediation (original exception preserved as inner)
 
 ## Installation
@@ -32,6 +33,10 @@ builder.Services.AddDataProtection()
     // Opt-in: probe the key ring at startup so a missing container / bad credentials fails the deploy,
     // not the first key write or the ~90-day rotation months later.
     .ValidateKeyRingAtStartup();
+
+// Opt-in continuous complement to the startup gate: a readiness health check that re-validates the
+// key-ring store on every health probe — see "Key-ring health check" below.
+builder.Services.AddHealthChecks().AddDataProtectionKeyRing();
 
 // Or with explicit storage instance (no manager: throws at config time for provisioning-requiring backends
 // unless you acknowledge out-of-band provisioning — see Configuration)
@@ -89,6 +94,36 @@ builder.Services.AddDataProtection()
 
 Registration is idempotent — calling `ValidateKeyRingAtStartup` twice registers a single hosted service.
 
+### Key-ring health check (`AddDataProtectionKeyRing`)
+
+`ValidateKeyRingAtStartup` is a one-shot boot gate — it cannot see a container deleted or write permission revoked AFTER the host started. `AddDataProtectionKeyRing()` is the opt-in continuous complement: a readiness health check that re-validates the key-ring store on every health probe.
+
+```csharp
+builder.Services.AddHealthChecks()
+    // Defaults: name "dataprotection-keyring", failure status Unhealthy, no tags,
+    // probeStyle KeyRingProbeStyle.WriteProbe (the definitive probe).
+    .AddDataProtectionKeyRing();
+```
+
+The probe is selected by `KeyRingProbeStyle`, not by the wiring, so `Healthy` has one meaning per registration (each probe reports a distinct description so operators can tell which ran):
+
+| Style | Probe | Guarantee | Cost |
+| --- | --- | --- | --- |
+| `KeyRingProbeStyle.WriteProbe` (default) | Sentinel write probe — the reserved `startup-write-probe.xml` blob is uploaded and deleted through the same ensure + retry pipeline the key writes use, manager or not (crash-safe; the sentinel is always excluded from key-ring loading) | `Healthy` = the key ring can actually be persisted — exactly what the ~90-day rotation needs | One real write + delete per probe |
+| `KeyRingProbeStyle.ContainerExistence` (explicit opt-down) | `ContainerExistsAsync("DataProtection")` via the wired `IBlobContainerManager` — a missing container fails the check ("key rotation will fail") | Existence only — does **not** verify write access: revoked write permission still reports `Healthy` while the next rotation write would fail | Cheap existence check |
+
+With `ContainerExistence` and no manager wired (pre-provisioned mode), the check falls back to the write probe — the only probe possible — and says so in its description; that legitimate wiring does not report `Degraded`.
+
+Statuses:
+
+| Status | Meaning |
+| --- | --- |
+| `Healthy` | The probe that ran succeeded — with the default style that means the full persistence path is verified |
+| `Degraded` | `KeyManagementOptions.XmlRepository` is not the blob-backed repository — registration misuse (nothing to check), not an outage |
+| `Unhealthy` (default failure status; override via `failureStatus:`) | Container missing, the existence check threw, or the sentinel write failed — the probe exception is attached to the result |
+
+**Probe interval note** — the default write probe performs a real write + delete per readiness ping, which can be chatty on tight probe intervals. Pair it with a probe interval you are comfortable with, or opt down to `probeStyle: KeyRingProbeStyle.ContainerExistence` and accept its weaker guarantee. The check deliberately does no caching or throttling of its own.
+
 ### Write resilience & failure context
 
 The `DataProtection` container ensure (when a manager is wired) runs inside the same Polly retry pipeline as the key upload, so transient ensure failures are retried under the same predicate as the write. When a key write terminally fails (retries exhausted or a non-retried exception), the surfaced `InvalidOperationException` names the `DataProtection` container, states whether a manager was wired (ensure ran) or not (pre-provisioned mode), and points at the remediation — with the original backend exception preserved as the inner exception. The wrap adds context only; it never guesses a failure kind from the provider exception.
@@ -99,9 +134,11 @@ The `DataProtection` container ensure (when a manager is wired) runs inside the 
 - `Headless.Checks`
 - `Azure.Extensions.AspNetCore.DataProtection.Blobs`
 - `Microsoft.AspNetCore.DataProtection`
+- `Microsoft.Extensions.Diagnostics.HealthChecks`
 - `Microsoft.Extensions.Hosting.Abstractions`
 
 ## Side Effects
 
 - Configures `KeyManagementOptions.XmlRepository` to use blob storage
 - `ValidateKeyRingAtStartup()` registers an `IHostedLifecycleService` that probes the key ring in `StartingAsync`, before other hosted services start (with `AutoGenerateKeys`, the first key may be created at boot instead of at first use; with `ProbeWritePath`, a sentinel blob is written and deleted each boot)
+- `AddDataProtectionKeyRing()` adds an `IHealthCheck` registration (default name `dataprotection-keyring`); with the default `KeyRingProbeStyle.WriteProbe`, each probe writes and deletes the sentinel blob

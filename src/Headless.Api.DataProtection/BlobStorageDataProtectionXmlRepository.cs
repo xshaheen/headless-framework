@@ -47,7 +47,6 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
     internal const string WriteProbeBlobName = "startup-write-probe.xml";
 
     private readonly IBlobStorage _storage;
-    private readonly IBlobContainerManager? _containerManager;
     private readonly ILogger _logger;
 
     private static readonly ResiliencePipeline _RetryPipeline = new ResiliencePipelineBuilder()
@@ -84,9 +83,16 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
     {
         Argument.IsNotNull(storage);
         _storage = storage;
-        _containerManager = containerManager;
+        ContainerManager = containerManager;
         _logger = loggerFactory?.CreateLogger(typeof(BlobStorageDataProtectionXmlRepository)) ?? NullLogger.Instance;
     }
+
+    /// <summary>
+    /// The container manager wired for ensure/existence probing, or <see langword="null"/> in pre-provisioned mode.
+    /// Exposed so the key-ring health check can pivot between the cheap container-existence probe (manager wired)
+    /// and the sentinel write probe (no manager).
+    /// </summary>
+    internal IBlobContainerManager? ContainerManager { get; }
 
     /// <inheritdoc />
     /// <remarks>Sync-over-async: <see cref="IXmlRepository"/> is a synchronous interface; <see cref="Async.RunSync"/> bridges to the async implementation.</remarks>
@@ -278,7 +284,7 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
     /// </summary>
     private string _BuildTerminalStoreFailureMessage(string fileName)
     {
-        var ensureContext = _containerManager is not null
+        var ensureContext = ContainerManager is not null
             ? "An IBlobContainerManager was wired, so the container ensure ran inside the same retry pipeline as the write."
             : "No IBlobContainerManager is wired (pre-provisioned mode), so the container was not ensured before the write.";
 
@@ -291,9 +297,9 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
 
     private async ValueTask _EnsureContainerAsync(CancellationToken cancellationToken)
     {
-        if (_containerManager is not null)
+        if (ContainerManager is not null)
         {
-            await _containerManager.EnsureContainerAsync(ContainerName, cancellationToken).ConfigureAwait(false);
+            await ContainerManager.EnsureContainerAsync(ContainerName, cancellationToken).ConfigureAwait(false);
         }
     }
 }
