@@ -11,7 +11,20 @@ public sealed class ThrowingHttpClientFactory(Exception exception) : IHttpClient
 {
     public HttpClient CreateClient(string name)
     {
-        return new HttpClient(new ThrowingHandler(exception));
+        ThrowingHandler? handler = null;
+
+        try
+        {
+            handler = new ThrowingHandler(exception);
+            var client = new HttpClient(handler, disposeHandler: true);
+            handler = null; // ownership transferred to the client
+
+            return client;
+        }
+        finally
+        {
+            handler?.Dispose();
+        }
     }
 
     private sealed class ThrowingHandler(Exception exception) : HttpMessageHandler

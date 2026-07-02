@@ -63,24 +63,19 @@ public sealed class AwsSnsSmsSenderTests : TestBase
         result.FailureKind.Should().Be(SmsFailureKind.Unknown);
     }
 
-    public static TheoryData<Exception, SmsFailureKind> TypedSnsFailures { get; } =
-        new()
-        {
-            { new AuthorizationErrorException("denied"), SmsFailureKind.AuthFailure },
-            { new InvalidSecurityException("bad signature"), SmsFailureKind.AuthFailure },
-            { new ThrottledException("slow down"), SmsFailureKind.RateLimited },
-            { new OptedOutException("recipient opted out"), SmsFailureKind.InvalidRecipient },
-            { new InternalErrorException("internal error"), SmsFailureKind.Transient },
-            { new InvalidParameterException("bad request"), SmsFailureKind.Unknown },
-        };
-
     [Theory]
-    [MemberData(nameof(TypedSnsFailures))]
+    [InlineData(nameof(AuthorizationErrorException), SmsFailureKind.AuthFailure)]
+    [InlineData(nameof(InvalidSecurityException), SmsFailureKind.AuthFailure)]
+    [InlineData(nameof(ThrottledException), SmsFailureKind.RateLimited)]
+    [InlineData(nameof(OptedOutException), SmsFailureKind.InvalidRecipient)]
+    [InlineData(nameof(InternalErrorException), SmsFailureKind.Transient)]
+    [InlineData(nameof(InvalidParameterException), SmsFailureKind.Unknown)]
     public async Task should_classify_failures_from_the_sns_typed_exception_contract(
-        Exception exception,
+        string exceptionKind,
         SmsFailureKind expected
     )
     {
+        var exception = _CreateSnsException(exceptionKind);
         var client = Substitute.For<IAmazonSimpleNotificationService>();
         client.PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>()).ThrowsAsync(exception);
 
@@ -89,5 +84,19 @@ public sealed class AwsSnsSmsSenderTests : TestBase
         result.Success.Should().BeFalse();
         result.FailureError.Should().Be(exception.Message);
         result.FailureKind.Should().Be(expected);
+    }
+
+    private static AmazonSimpleNotificationServiceException _CreateSnsException(string exceptionKind)
+    {
+        return exceptionKind switch
+        {
+            nameof(AuthorizationErrorException) => new AuthorizationErrorException("denied"),
+            nameof(InvalidSecurityException) => new InvalidSecurityException("bad signature"),
+            nameof(ThrottledException) => new ThrottledException("slow down"),
+            nameof(OptedOutException) => new OptedOutException("recipient opted out"),
+            nameof(InternalErrorException) => new InternalErrorException("internal error"),
+            nameof(InvalidParameterException) => new InvalidParameterException("bad request"),
+            _ => throw new ArgumentOutOfRangeException(nameof(exceptionKind), exceptionKind, message: null),
+        };
     }
 }
