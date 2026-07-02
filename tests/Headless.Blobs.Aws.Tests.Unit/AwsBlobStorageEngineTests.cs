@@ -355,6 +355,50 @@ public sealed class AwsBlobStorageEngineTests : TestBase
     }
 
     [Fact]
+    public async Task move_keeps_destination_and_returns_true_when_source_delete_reports_non_success()
+    {
+        // Destination reads as absent so the move passes the reject-occupied pre-check and proceeds to copy+delete.
+        // The source delete completes without throwing but reports a non-2xx status — AwsBlobStorage maps that to
+        // the helper's delete-false branch (source already absent / concurrent-delete race): the destination
+        // already holds the data, so the move is complete. No rollback, no source re-check.
+        _s3.GetObjectMetadataAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+                ci.ArgAt<string>(1) == "target.txt"
+                    ? Task.FromException<GetObjectMetadataResponse>(
+                        new AmazonS3Exception("not found") { StatusCode = HttpStatusCode.NotFound }
+                    )
+                    : Task.FromResult(new GetObjectMetadataResponse { HttpStatusCode = HttpStatusCode.OK })
+            );
+
+        _s3.CopyObjectAsync(Arg.Any<CopyObjectRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new CopyObjectResponse { HttpStatusCode = HttpStatusCode.OK });
+
+        _s3.DeleteObjectAsync(Arg.Any<DeleteObjectRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new DeleteObjectResponse { HttpStatusCode = HttpStatusCode.InternalServerError });
+
+        var sut = _CreateSut();
+
+        var moved = await sut.MoveAsync(
+            new BlobLocation("bucket", "source.txt"),
+            new BlobLocation("bucket", "target.txt")
+        );
+
+        moved.Should().BeTrue();
+
+        // Exactly one delete — the source. The destination copy is kept: no rollback delete of target.txt.
+        await _s3.Received(1).DeleteObjectAsync(Arg.Any<DeleteObjectRequest>(), Arg.Any<CancellationToken>());
+        await _s3.Received(1)
+            .DeleteObjectAsync(
+                Arg.Is<DeleteObjectRequest>(request => request.BucketName == "bucket" && request.Key == "source.txt"),
+                Arg.Any<CancellationToken>()
+            );
+
+        // The delete-false branch never re-checks the source; only the destination pre-check hits metadata.
+        await _s3.Received(1).GetObjectMetadataAsync("bucket", "target.txt", Arg.Any<CancellationToken>());
+        await _s3.DidNotReceive().GetObjectMetadataAsync("bucket", "source.txt", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task exists_returns_false_when_bucket_missing()
     {
         _s3.GetObjectMetadataAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
