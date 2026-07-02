@@ -16,7 +16,7 @@ public readonly record struct RetryDecision
     /// <summary>The high-level outcome of a retry computation.</summary>
     /// <remarks>
     /// New values may be added in future minor versions when the retry pipeline grows a new
-    /// terminal state. Consumers that <c>switch</c> on <see cref="Outcome"/> should include a
+    /// terminal state. Consumers that <see langword="switch"/> on <see cref="Outcome"/> should include a
     /// <c>default:</c> branch (treat unknown values as terminal) rather than relying on an
     /// exhaustive arm-per-value match.
     /// </remarks>

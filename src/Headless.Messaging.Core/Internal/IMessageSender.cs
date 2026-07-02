@@ -153,7 +153,10 @@ internal sealed class MessageSender : IMessageSender
         if (!Enum.IsDefined(message.IntentType))
         {
             var ex = new InvalidOperationException(
-                $"Stored message {message.StorageId} has unsupported IntentType value '{(short)message.IntentType}'."
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Stored message {message.StorageId} has unsupported IntentType value '{(short)message.IntentType}'."
+                )
             );
             await _MarkUnsupportedIntentFailedAsync(message, ex).ConfigureAwait(false);
             return (null, OperateResult.Failed(ex));
@@ -386,7 +389,7 @@ internal sealed class MessageSender : IMessageSender
             var eventData = new MessageEventDataPubSend
             {
                 OperationTimestamp = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds(),
-                Operation = message.GetName(),
+                Operation = message.Name,
                 BrokerAddress = broker,
                 TransportMessage = message,
                 IntentType = intentType,
@@ -415,7 +418,7 @@ internal sealed class MessageSender : IMessageSender
             var eventData = new MessageEventDataPubSend
             {
                 OperationTimestamp = now,
-                Operation = message.GetName(),
+                Operation = message.Name,
                 BrokerAddress = broker,
                 TransportMessage = message,
                 IntentType = intentType,
@@ -444,7 +447,7 @@ internal sealed class MessageSender : IMessageSender
             var eventData = new MessageEventDataPubSend
             {
                 OperationTimestamp = now,
-                Operation = message.GetName(),
+                Operation = message.Name,
                 BrokerAddress = broker,
                 TransportMessage = message,
                 IntentType = intentType,

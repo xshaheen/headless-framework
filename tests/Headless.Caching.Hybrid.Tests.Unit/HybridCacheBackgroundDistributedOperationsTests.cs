@@ -227,7 +227,7 @@ public sealed class HybridCacheBackgroundDistributedOperationsTests : TestBase
 
         // and — let the background tail run to completion so a swallowed-vs-unobserved difference would surface
         await _WaitUntilAsync(() => new ValueTask<bool>(l2.UpsertAttempts > 0));
-        l2.UpsertAttempts.Should().BeGreaterThan(0, "the background write was attempted against L2");
+        l2.UpsertAttempts.Should().BePositive("the background write was attempted against L2");
     }
 
     [Fact]
@@ -277,10 +277,9 @@ public sealed class HybridCacheBackgroundDistributedOperationsTests : TestBase
         // other tests cover: when the flag is on, the invalidation broadcast runs in the detached tail, so the
         // caller must not block on it (FusionCache CanExecuteBackgroundBackplaneOperations analog — our framework
         // backgrounds the publish together with the L2 write under the single flag rather than a separate one).
-        var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
-        var l2 = new InMemoryRemoteCacheAdapter(
-            new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true })
-        );
+        using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l2Inner = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        var l2 = new InMemoryRemoteCacheAdapter(l2Inner);
 
         var publishGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var publishStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

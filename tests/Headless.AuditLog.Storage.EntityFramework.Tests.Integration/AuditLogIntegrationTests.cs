@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Tests.Fixture;
 
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
 namespace Tests;
 
 public sealed class AuditLogIntegrationTests : TestBase
@@ -107,7 +108,7 @@ public sealed class AuditLogIntegrationTests : TestBase
         await db.SaveChangesAsync(acceptAllChangesOnSuccess: false, AbortToken);
 
         // then
-        order.Id.Should().BeGreaterThan(0);
+        order.Id.Should().BePositive();
         db.Entry(order).State.Should().Be(EntityState.Added);
         db.ChangeTracker.Entries<AuditLogEntry>().Should().BeEmpty();
 
@@ -449,13 +450,13 @@ public sealed class AuditLogIntegrationTests : TestBase
         order.Emit(new TestDistributedMessage(Guid.NewGuid().ToString("N")));
         db.EmittingOrders.Add(order);
 
-        // when / then
+        // when & then
         var act = async () => await db.SaveChangesAsync(AbortToken);
         (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage(
             ThrowingPublishAuditTestDbContext.PublishFailureMessage
         );
 
-        db.ChangeTracker.Entries<AuditLogEntry>().Where(e => e.State == EntityState.Added).Should().BeEmpty();
+        db.ChangeTracker.Entries<AuditLogEntry>().Should().NotContain(e => e.State == EntityState.Added);
     }
 
     [Fact]
@@ -485,11 +486,11 @@ public sealed class AuditLogIntegrationTests : TestBase
             }
         );
 
-        // when / then
+        // when & then
         var act = async () => await db.SaveChangesAsync(AbortToken);
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("Simulated audit save failure.");
 
-        db.ChangeTracker.Entries<AuditLogEntry>().Where(e => e.State == EntityState.Added).Should().BeEmpty();
+        db.ChangeTracker.Entries<AuditLogEntry>().Should().NotContain(e => e.State == EntityState.Added);
     }
 
     [Fact]
@@ -518,11 +519,11 @@ public sealed class AuditLogIntegrationTests : TestBase
             }
         );
 
-        // when / then
+        // when & then
         var act = () => db.SaveChanges();
         act.Should().Throw<InvalidOperationException>().WithMessage("Simulated audit save failure.");
 
-        db.ChangeTracker.Entries<AuditLogEntry>().Where(e => e.State == EntityState.Added).Should().BeEmpty();
+        db.ChangeTracker.Entries<AuditLogEntry>().Should().NotContain(e => e.State == EntityState.Added);
     }
 
     [Fact]
@@ -570,7 +571,7 @@ public sealed class AuditLogIntegrationTests : TestBase
         var saved = await db.SaveChangesAsync(AbortToken);
 
         // then
-        saved.Should().BeGreaterThan(0);
+        saved.Should().BePositive();
         var auditCount = await db.Set<AuditLogEntry>().AsNoTracking().CountAsync(AbortToken);
         auditCount.Should().Be(0);
     }
@@ -611,7 +612,7 @@ public sealed class AuditLogIntegrationTests : TestBase
             InterceptionResult<int> result
         )
         {
-            ThrowIfAuditSave(eventData.Context);
+            _ThrowIfAuditSave(eventData.Context);
             return base.SavingChanges(eventData, result);
         }
 
@@ -621,11 +622,11 @@ public sealed class AuditLogIntegrationTests : TestBase
             CancellationToken cancellationToken = default
         )
         {
-            ThrowIfAuditSave(eventData.Context);
+            _ThrowIfAuditSave(eventData.Context);
             return base.SavingChangesAsync(eventData, result, cancellationToken);
         }
 
-        private void ThrowIfAuditSave(DbContext? context)
+        private void _ThrowIfAuditSave(DbContext? context)
         {
             if (_hasThrown || context is null)
             {

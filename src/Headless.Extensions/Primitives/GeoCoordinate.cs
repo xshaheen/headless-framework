@@ -88,7 +88,7 @@ public sealed class GeoCoordinate : IEquatable<GeoCoordinate>
     /// <returns><see langword="true"/> if the coordinates are equal (including both being <see langword="null"/>); otherwise, <see langword="false"/>.</returns>
     public static bool operator ==(GeoCoordinate? left, GeoCoordinate? right)
     {
-        return left?.Equals(right) ?? right is null;
+        return left?.Equals(right) ?? (right is null);
     }
 
     /// <summary>Determines whether two coordinates are different.</summary>

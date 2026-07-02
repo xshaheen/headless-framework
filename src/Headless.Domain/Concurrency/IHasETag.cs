@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-#pragma warning disable IDE0130 // Namespace does not match folder structure
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Domain;
 
 /// <summary>Marks an entity that exposes a binary ETag for HTTP-level and storage-level concurrency control.</summary>

@@ -64,7 +64,7 @@ public sealed class PostgresConnectionDeathTests(PostgresDistributedLockFixture 
         // Resolve the exact advisory key the provider used so only the lock-holding backend is
         // terminated (avoids collateral termination of other connections in the shared container).
         var key = PostgresAdvisoryLockKey.FromString(_KeyPrefix + resource, allowHashing: true);
-        var keys = key.Keys;
+        var (key1, key2) = key.Keys;
 
         await using var admin = new NpgsqlConnection(fixture.ConnectionString);
         await admin.OpenAsync(AbortToken);
@@ -80,8 +80,8 @@ public sealed class PostgresConnectionDeathTests(PostgresDistributedLockFixture 
               AND l.objsubid = @objSubId
               AND l.pid <> pg_backend_pid()
             """;
-        command.Parameters.AddWithValue("classId", keys.Key1);
-        command.Parameters.AddWithValue("objId", keys.Key2);
+        command.Parameters.AddWithValue("classId", key1);
+        command.Parameters.AddWithValue("objId", key2);
         command.Parameters.AddWithValue("objSubId", (short)(key.HasSingleKey ? 1 : 2));
 
         // Capture the result: if no backend matched (null/no rows) or termination failed (false), the

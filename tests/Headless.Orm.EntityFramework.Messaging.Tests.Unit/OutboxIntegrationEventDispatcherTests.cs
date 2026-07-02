@@ -4,9 +4,7 @@ using Headless.CommitCoordination;
 using Headless.Domain;
 using Headless.EntityFramework;
 using Headless.Messaging;
-using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
-using NSubstitute;
 
 namespace Tests;
 
@@ -19,7 +17,7 @@ public sealed class OutboxIntegrationEventDispatcherTests
     private sealed record PaymentCaptured(string UniqueId) : IIntegrationEvent;
 
     // An ambient coordinator (Current != null) models the save pipeline having opened a coordinated transaction.
-    private static ICurrentCommitCoordinator AmbientCoordinator()
+    private static ICurrentCommitCoordinator _AmbientCoordinator()
     {
         var current = Substitute.For<ICurrentCommitCoordinator>();
         current.Current.Returns(Substitute.For<ICommitCoordinator>());
@@ -118,7 +116,7 @@ public sealed class OutboxIntegrationEventDispatcherTests
         var bus = new RecordingOutboxBus();
         var dispatcher = new OutboxIntegrationEventDispatcher(
             bus,
-            AmbientCoordinator(),
+            _AmbientCoordinator(),
             new IntegrationEventPublishInvokerCache()
         );
         // when
@@ -136,7 +134,7 @@ public sealed class OutboxIntegrationEventDispatcherTests
         var bus = new RecordingOutboxBus();
         var dispatcher = new OutboxIntegrationEventDispatcher(
             bus,
-            AmbientCoordinator(),
+            _AmbientCoordinator(),
             new IntegrationEventPublishInvokerCache()
         );
         IReadOnlyList<IIntegrationEvent> events = [new OrderPlaced("order-1"), new PaymentCaptured("payment-1")];
@@ -157,7 +155,7 @@ public sealed class OutboxIntegrationEventDispatcherTests
         var bus = new ThrowingOutboxBus();
         var dispatcher = new OutboxIntegrationEventDispatcher(
             bus,
-            AmbientCoordinator(),
+            _AmbientCoordinator(),
             new IntegrationEventPublishInvokerCache()
         );
         IReadOnlyList<IIntegrationEvent> events = [new OrderPlaced("order-1")];
@@ -177,7 +175,7 @@ public sealed class OutboxIntegrationEventDispatcherTests
         var bus = new RecordingOutboxBus();
         var dispatcher = new OutboxIntegrationEventDispatcher(
             bus,
-            AmbientCoordinator(),
+            _AmbientCoordinator(),
             new IntegrationEventPublishInvokerCache()
         );
         IReadOnlyList<IIntegrationEvent> events = [new OrderPlaced("order-1")];
@@ -199,7 +197,7 @@ public sealed class OutboxIntegrationEventDispatcherTests
         var bus = new RecordingOutboxBus();
         var dispatcher = new OutboxIntegrationEventDispatcher(
             bus,
-            AmbientCoordinator(),
+            _AmbientCoordinator(),
             new IntegrationEventPublishInvokerCache()
         );
         IReadOnlyList<IIntegrationEvent> events = [new OrderPlaced("order-1")];

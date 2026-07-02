@@ -71,13 +71,13 @@ internal sealed class AzureServiceBusConsumerClient(
             allRuleNames.Add(rule.Name);
         }
 
-        var messageNamesList = messageNames.Concat(_asbOptions.SqlFilters?.Select(o => o.Key) ?? []).ToList();
+        var messageNamesList = messageNames.Concat(_asbOptions.SqlFilters.Select(o => o.Key)).ToList();
 
         foreach (var newRule in messageNamesList.Except(allRuleNames, StringComparer.Ordinal))
         {
             var isSqlRule =
                 _asbOptions
-                    .SqlFilters?.FirstOrDefault(o => string.Equals(o.Key, newRule, StringComparison.Ordinal))
+                    .SqlFilters.FirstOrDefault(o => string.Equals(o.Key, newRule, StringComparison.Ordinal))
                     .Value
                 is not null;
 
@@ -86,7 +86,7 @@ internal sealed class AzureServiceBusConsumerClient(
             if (isSqlRule)
             {
                 var sqlExpression = _asbOptions
-                    .SqlFilters?.FirstOrDefault(o => string.Equals(o.Key, newRule, StringComparison.Ordinal))
+                    .SqlFilters.FirstOrDefault(o => string.Equals(o.Key, newRule, StringComparison.Ordinal))
                     .Value;
                 currentRuleToAdd = new SqlRuleFilter(sqlExpression);
             }
@@ -518,7 +518,7 @@ internal sealed class AzureServiceBusConsumerClient(
 
     internal static void CheckValidSubscriptionName(string subscriptionName)
     {
-        const string pathDelimiter = "/";
+        const char pathDelimiter = '/';
         const int ruleNameMaximumLength = 50;
         char[] invalidEntityPathCharacters = ['@', '?', '#', '*'];
 
@@ -529,7 +529,7 @@ internal sealed class AzureServiceBusConsumerClient(
 
         // "\" will be converted to "/" on the REST path anyway. Gateway/REST do not
         // have to worry about the begin/end slash problem, so this is purely a client side check.
-        var tmpName = subscriptionName.Replace(@"\", pathDelimiter, StringComparison.Ordinal);
+        var tmpName = subscriptionName.Replace('\\', pathDelimiter);
         if (tmpName.Length > ruleNameMaximumLength)
         {
             throw new ArgumentOutOfRangeException(
@@ -538,10 +538,7 @@ internal sealed class AzureServiceBusConsumerClient(
             );
         }
 
-        if (
-            tmpName.StartsWith(pathDelimiter, StringComparison.Ordinal)
-            || tmpName.EndsWith(pathDelimiter, StringComparison.Ordinal)
-        )
+        if (tmpName.StartsWith(pathDelimiter) || tmpName.EndsWith(pathDelimiter))
         {
             throw new ArgumentException(
                 $"The subscribe name cannot contain '/' as prefix or suffix. The supplied value is '{subscriptionName}'.",
@@ -571,7 +568,7 @@ internal sealed class AzureServiceBusConsumerClient(
 
     internal static void CheckValidQueueName(string queueName)
     {
-        const string pathDelimiter = "/";
+        const char pathDelimiter = '/';
         const int queueNameMaximumLength = 260;
         char[] invalidEntityPathCharacters = ['@', '?', '#', '*'];
 
@@ -580,7 +577,7 @@ internal sealed class AzureServiceBusConsumerClient(
             throw new ArgumentException("Queue name cannot be null or whitespace.", nameof(queueName));
         }
 
-        var tmpName = queueName.Replace(@"\", pathDelimiter, StringComparison.Ordinal);
+        var tmpName = queueName.Replace('\\', pathDelimiter);
         if (tmpName.Length > queueNameMaximumLength)
         {
             throw new ArgumentOutOfRangeException(
@@ -589,10 +586,7 @@ internal sealed class AzureServiceBusConsumerClient(
             );
         }
 
-        if (
-            tmpName.StartsWith(pathDelimiter, StringComparison.Ordinal)
-            || tmpName.EndsWith(pathDelimiter, StringComparison.Ordinal)
-        )
+        if (tmpName.StartsWith(pathDelimiter) || tmpName.EndsWith(pathDelimiter))
         {
             throw new ArgumentException(
                 $"The queue name cannot contain '/' as prefix or suffix. The supplied value is '{queueName}'.",

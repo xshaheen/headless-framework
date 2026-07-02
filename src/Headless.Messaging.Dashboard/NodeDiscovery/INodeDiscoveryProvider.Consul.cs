@@ -24,7 +24,12 @@ public class ConsulNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cac
             using var consul = new ConsulClient(config =>
             {
                 config.WaitTime = TimeSpan.FromSeconds(5);
-                config.Address = new Uri($"http://{options.DiscoveryServerHostName}:{options.DiscoveryServerPort}");
+                config.Address = new Uri(
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"http://{options.DiscoveryServerHostName}:{options.DiscoveryServerPort}"
+                    )
+                );
             });
             var serviceCatalog = await consul
                 .Catalog.Service(nodeName, "messaging", cancellationToken)
@@ -61,7 +66,12 @@ public class ConsulNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cac
             using var consul = new ConsulClient(config =>
             {
                 config.WaitTime = TimeSpan.FromSeconds(5);
-                config.Address = new Uri($"http://{options.DiscoveryServerHostName}:{options.DiscoveryServerPort}");
+                config.Address = new Uri(
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"http://{options.DiscoveryServerHostName}:{options.DiscoveryServerPort}"
+                    )
+                );
             });
 
             var services = await consul.Catalog.Services(cancellationToken).ConfigureAwait(false);
@@ -112,24 +122,34 @@ public class ConsulNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cac
 
             if (options.Scheme.Equals("http", StringComparison.OrdinalIgnoreCase))
             {
-                healthCheck.HTTP =
-                    $"http://{options.CurrentNodeHostName}:{options.CurrentNodePort}{options.MatchPath}/api/health";
+                healthCheck.HTTP = string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"http://{options.CurrentNodeHostName}:{options.CurrentNodePort}{options.MatchPath}/api/health"
+                );
             }
             else if (options.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase))
             {
-                healthCheck.TCP = $"{options.CurrentNodeHostName}:{options.CurrentNodePort}";
+                healthCheck.TCP = string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"{options.CurrentNodeHostName}:{options.CurrentNodePort}"
+                );
             }
 
             var tags = new[] { "Headless", "Messaging", "Client", "Dashboard" };
             if (options.CustomTags is { Length: > 0 })
             {
-                tags = tags.Union(options.CustomTags, StringComparer.Ordinal).ToArray();
+                tags = [.. tags.Union(options.CustomTags, StringComparer.Ordinal)];
             }
 
             using var consul = new ConsulClient(config =>
             {
                 config.WaitTime = TimeSpan.FromSeconds(5);
-                config.Address = new Uri($"http://{options.DiscoveryServerHostName}:{options.DiscoveryServerPort}");
+                config.Address = new Uri(
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"http://{options.DiscoveryServerHostName}:{options.DiscoveryServerPort}"
+                    )
+                );
             });
 
             var result = await consul

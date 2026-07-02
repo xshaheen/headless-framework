@@ -15,27 +15,28 @@ using Headless.Blobs.Aws;
 using Headless.Blobs.Azure;
 using Headless.Blobs.CloudflareR2;
 using Headless.Blobs.FileSystem;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Tests;
 
-public sealed class MultiProviderIsolationTests
+public sealed class MultiProviderIsolationTests : TestBase
 {
-    private static AWSOptions DummyAwsOptions() =>
+    private static AWSOptions _DummyAwsOptions() =>
         new() { Region = RegionEndpoint.USEast1, Credentials = new BasicAWSCredentials("k", "s") };
 
-    private static BlobServiceClient DummyAzureClient() =>
+    private static BlobServiceClient _DummyAzureClient() =>
         new(new Uri("https://devstoreaccount1.blob.core.windows.net/"));
 
-    private static void ConfigureR2(R2BlobStorageOptions options)
+    private static void _ConfigureR2(R2BlobStorageOptions options)
     {
         options.AccountId = "acct";
         options.AccessKeyId = "ak";
         options.SecretAccessKey = "sk";
     }
 
-    private static ServiceProvider BuildMixedProvider(string defaultDir, string scratchDir)
+    private static ServiceProvider _BuildMixedProvider(string defaultDir, string scratchDir)
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -46,12 +47,12 @@ public sealed class MultiProviderIsolationTests
         services.AddHeadlessBlobs(blobs =>
         {
             blobs.UseFileSystem(options => options.BaseDirectoryPath = defaultDir); // default, non-presigned
-            blobs.AddNamed("s3", instance => instance.UseAws(options => { }, DummyAwsOptions()));
+            blobs.AddNamed("s3", instance => instance.UseAws(options => { }, _DummyAwsOptions()));
             blobs.AddNamed(
                 "azure",
-                instance => instance.UseAzure(setupAction: options => { }, clientFactory: _ => DummyAzureClient())
+                instance => instance.UseAzure(setupAction: options => { }, clientFactory: _ => _DummyAzureClient())
             );
-            blobs.AddNamed("r2", instance => instance.UseCloudflareR2(ConfigureR2));
+            blobs.AddNamed("r2", instance => instance.UseCloudflareR2(_ConfigureR2));
             blobs.AddNamed(
                 "scratch",
                 instance => instance.UseFileSystem(options => options.BaseDirectoryPath = scratchDir)
@@ -67,7 +68,7 @@ public sealed class MultiProviderIsolationTests
         // given
         var defaultDir = Directory.CreateTempSubdirectory().FullName;
         var scratchDir = Directory.CreateTempSubdirectory().FullName;
-        await using var sp = BuildMixedProvider(defaultDir, scratchDir);
+        await using var sp = _BuildMixedProvider(defaultDir, scratchDir);
         var provider = sp.GetRequiredService<IBlobStorageProvider>();
 
         // when
@@ -92,7 +93,7 @@ public sealed class MultiProviderIsolationTests
         // given
         var defaultDir = Directory.CreateTempSubdirectory().FullName;
         var scratchDir = Directory.CreateTempSubdirectory().FullName;
-        await using var sp = BuildMixedProvider(defaultDir, scratchDir);
+        await using var sp = _BuildMixedProvider(defaultDir, scratchDir);
 
         // then — presign-capable providers expose keyed IPresignedUrlBlobStorage; FileSystem stores do not
         sp.GetKeyedService<IPresignedUrlBlobStorage>("s3").Should().NotBeNull();
@@ -108,19 +109,19 @@ public sealed class MultiProviderIsolationTests
         // given
         var defaultDir = Directory.CreateTempSubdirectory().FullName;
         var scratchDir = Directory.CreateTempSubdirectory().FullName;
-        await using var sp = BuildMixedProvider(defaultDir, scratchDir);
+        await using var sp = _BuildMixedProvider(defaultDir, scratchDir);
         var provider = sp.GetRequiredService<IBlobStorageProvider>();
         var defaultStorage = sp.GetRequiredService<IBlobStorage>();
         var scratch = provider.GetStorage("scratch");
         string[] container = ["bucket"];
 
         // when
-        await defaultStorage.UploadContentAsync(container, "a.txt", "hello");
+        await defaultStorage.UploadContentAsync(container, "a.txt", "hello", cancellationToken: AbortToken);
 
         // then
-        (await defaultStorage.GetBlobContentAsync(container, "a.txt"))
+        (await defaultStorage.GetBlobContentAsync(container, "a.txt", cancellationToken: AbortToken))
             .Should()
             .Be("hello");
-        (await scratch.GetBlobContentAsync(container, "a.txt")).Should().BeNull();
+        (await scratch.GetBlobContentAsync(container, "a.txt", cancellationToken: AbortToken)).Should().BeNull();
     }
 }

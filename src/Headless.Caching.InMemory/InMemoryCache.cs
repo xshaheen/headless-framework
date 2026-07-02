@@ -10,6 +10,9 @@ using Nito.AsyncEx;
 
 namespace Headless.Caching;
 
+#pragma warning disable MA0106 // ConcurrentDictionary delegates intentionally capture mutation result state.
+#pragma warning disable RCS1229 // Several ValueTask members complete synchronously by design.
+
 /// <summary>
 /// Process-local in-memory cache implementing <see cref="IInMemoryCache"/> (the L1 tier), with capacity-capped
 /// LRU eviction, background expiry maintenance, Family-2 logical tag/clear-generation invalidation, fail-safe
@@ -187,7 +190,7 @@ public sealed class InMemoryCache
         if (expiration is { Ticks: <= 0 })
         {
             _RemoveExpiredKey(key);
-            return new ValueTask<bool>(false);
+            return new ValueTask<bool>(result: false);
         }
 
         // Single clock read reused for the expiry, the entry's last-access stamp, and maintenance scheduling —
@@ -200,7 +203,7 @@ public sealed class InMemoryCache
 
         if (!_ValidateEntrySize(entrySize))
         {
-            return new ValueTask<bool>(false);
+            return new ValueTask<bool>(result: false);
         }
 
         var entry = new CacheEntry(
@@ -228,7 +231,7 @@ public sealed class InMemoryCache
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        await (this).UpsertEntryAsync(key, value, options, _timeProvider, cancellationToken).ConfigureAwait(false);
+        await this.UpsertEntryAsync(key, value, options, _timeProvider, cancellationToken).ConfigureAwait(false);
 
         return true;
     }
@@ -351,7 +354,7 @@ public sealed class InMemoryCache
         if (expiration is { Ticks: <= 0 })
         {
             _RemoveExpiredKey(key);
-            return new ValueTask<bool>(false);
+            return new ValueTask<bool>(result: false);
         }
 
         // Single clock read reused for the expiry, the entry's birth/last-access stamp, and maintenance
@@ -364,7 +367,7 @@ public sealed class InMemoryCache
 
         if (!_ValidateEntrySize(entrySize))
         {
-            return new ValueTask<bool>(false);
+            return new ValueTask<bool>(result: false);
         }
 
         var entry = new CacheEntry(
@@ -450,7 +453,10 @@ public sealed class InMemoryCache
         if (wasReplaced)
         {
             if (sizeDelta != 0)
+            {
                 Interlocked.Add(ref _currentMemorySize, sizeDelta);
+            }
+
             _TrackUpdate(expiresAt);
         }
 
@@ -536,7 +542,10 @@ public sealed class InMemoryCache
         if (wasExpectedValue)
         {
             if (sizeDelta != 0)
+            {
                 Interlocked.Add(ref _currentMemorySize, sizeDelta);
+            }
+
             _TrackUpdate(expiresAt);
         }
 
@@ -1011,7 +1020,7 @@ public sealed class InMemoryCache
 
         if (!_memory.TryGetValue(key, out var existingEntry))
         {
-            return new ValueTask<bool>(false);
+            return new ValueTask<bool>(result: false);
         }
 
         var now = _timeProvider.GetUtcNow().UtcDateTime;
@@ -1137,8 +1146,8 @@ public sealed class InMemoryCache
                 .ToArray();
 
             return liveMembers.Length is 0
-                ? new CacheValue<ICollection<T>>([], false)
-                : new CacheValue<ICollection<T>>(liveMembers, true);
+                ? new CacheValue<ICollection<T>>([], hasValue: false)
+                : new CacheValue<ICollection<T>>(liveMembers, hasValue: true);
         }
 
         // Paginated: stream a single pass instead of materializing the full set then Skip/Take-ing it. Skip the
@@ -1173,7 +1182,9 @@ public sealed class InMemoryCache
             }
         }
 
-        return anyLiveMember ? new CacheValue<ICollection<T>>(page, true) : new CacheValue<ICollection<T>>([], false);
+        return anyLiveMember
+            ? new CacheValue<ICollection<T>>(page, hasValue: true)
+            : new CacheValue<ICollection<T>>([], hasValue: false);
     }
 
     /// <summary>
@@ -1199,7 +1210,7 @@ public sealed class InMemoryCache
 
         if (!_memory.TryGetValue(key, out var existingEntry))
         {
-            return new ValueTask<bool>(false);
+            return new ValueTask<bool>(result: false);
         }
 
         // Single clock read for the whole hit path; misses above pay none. Mirrors GetAsync.
@@ -1208,7 +1219,7 @@ public sealed class InMemoryCache
         if (existingEntry.IsExpiredAt(now))
         {
             _TryRemoveExpiredEntry(key, existingEntry);
-            return new ValueTask<bool>(false);
+            return new ValueTask<bool>(result: false);
         }
 
         if (existingEntry.IsLogicallyExpiredAt(now))
@@ -1218,14 +1229,14 @@ public sealed class InMemoryCache
                 _TryRemoveExpiredEntry(key, existingEntry);
             }
 
-            return new ValueTask<bool>(false);
+            return new ValueTask<bool>(result: false);
         }
 
         // Logical tag/clear invalidation: a direct read of a tag-invalidated entry is a miss. The physically
         // present reserve is left in place so the coordinator's TryGetEntryAsync can still serve it stale.
         if (_IsTagInvalidated(existingEntry))
         {
-            return new ValueTask<bool>(false);
+            return new ValueTask<bool>(result: false);
         }
 
         try
@@ -1237,17 +1248,17 @@ public sealed class InMemoryCache
             // reads as a miss for the buffer path. Nothing is written.
             if (value is null)
             {
-                return new ValueTask<bool>(false);
+                return new ValueTask<bool>(result: false);
             }
 
             // The single copy: stored array -> caller-provided buffer.
             destination.Write(value);
-            return new ValueTask<bool>(true);
+            return new ValueTask<bool>(result: true);
         }
         catch (Exception ex) when (!_shouldThrowOnSerializationError)
         {
             _logger.LogDeserializationError(ex, string.GetHashCode(key, StringComparison.Ordinal));
-            return new ValueTask<bool>(false);
+            return new ValueTask<bool>(result: false);
         }
     }
 
@@ -1314,7 +1325,7 @@ public sealed class InMemoryCache
 
         if (!_memory.TryRemove(key, out var entry))
         {
-            return new ValueTask<bool>(false);
+            return new ValueTask<bool>(result: false);
         }
 
         Interlocked.Add(ref _currentMemorySize, -entry.Size);
@@ -1331,13 +1342,13 @@ public sealed class InMemoryCache
 
         if (!_memory.TryGetValue(key, out var existingEntry))
         {
-            return new ValueTask<bool>(false);
+            return new ValueTask<bool>(result: false);
         }
 
         if (existingEntry.IsExpired)
         {
             _TryRemoveExpiredEntry(key, existingEntry);
-            return new ValueTask<bool>(false);
+            return new ValueTask<bool>(result: false);
         }
 
         var now = _timeProvider.GetUtcNow().UtcDateTime;
@@ -1362,7 +1373,7 @@ public sealed class InMemoryCache
                 _TrackUpdate(expiredEntry.TrackedExpiresAt);
             }
 
-            return new ValueTask<bool>(true);
+            return new ValueTask<bool>(result: true);
         }
 
         // No reserve to preserve: removing avoids manufacturing a phantom reserve that headless's per-call
@@ -1372,7 +1383,7 @@ public sealed class InMemoryCache
             Interlocked.Add(ref _currentMemorySize, -existingEntry.Size);
         }
 
-        return new ValueTask<bool>(true);
+        return new ValueTask<bool>(result: true);
     }
 
     public async ValueTask<bool> RemoveIfEqualAsync<T>(
@@ -1613,11 +1624,9 @@ public sealed class InMemoryCache
             var stringsToRemove = value.Where(v => v is not null).Select(v => (string)(object)v!).ToList();
             return new ValueTask<long>(_SetRemoveItems(key, stringsToRemove, StringComparer.Ordinal));
         }
-        else
-        {
-            var valuesToRemove = value.Where(v => v is not null).Select(v => (object)v!).ToList();
-            return new ValueTask<long>(_SetRemoveItems<object>(key, valuesToRemove, comparer: null));
-        }
+
+        var valuesToRemove = value.Where(v => v is not null).Cast<object>().ToList();
+        return new ValueTask<long>(_SetRemoveItems<object>(key, valuesToRemove, comparer: null));
     }
 
     // Shared set-remove path for both the string (case-insensitive) and object (default-comparer) member
@@ -1759,7 +1768,7 @@ public sealed class InMemoryCache
         if (_IsTagInvalidated(existingEntry))
         {
             var now = _timeProvider.GetUtcNow().UtcDateTime;
-            logicalExpiresAt = logicalExpiresAt.HasValue && logicalExpiresAt.Value < now ? logicalExpiresAt : now;
+            logicalExpiresAt = logicalExpiresAt < now ? logicalExpiresAt : now;
             slidingExpiration = null;
         }
 
@@ -2368,7 +2377,10 @@ public sealed class InMemoryCache
         if (_shouldThrowOnMaxEntrySizeExceeded)
         {
             throw new MaxEntrySizeExceededException(
-                $"Entry size {entrySize} exceeds maximum allowed size of {_maxEntrySize.Value} bytes."
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Entry size {entrySize} exceeds maximum allowed size of {_maxEntrySize.Value} bytes."
+                )
             );
         }
 
@@ -2552,12 +2564,12 @@ public sealed class InMemoryCache
 
         /// <summary>Physical-expiry check against a caller-supplied <paramref name="now"/>, so a hot read path can
         /// fetch the clock once and reuse it across the expiry/logical-expiry/sliding-rearm checks.</summary>
-        internal bool IsExpiredAt(DateTime now) => PhysicalExpiresAt.HasValue && PhysicalExpiresAt.Value <= now;
+        internal bool IsExpiredAt(DateTime now) => PhysicalExpiresAt <= now;
 
         internal bool IsLogicallyExpired => IsLogicallyExpiredAt(_timeProvider.GetUtcNow().UtcDateTime);
 
         /// <summary>Logical-expiry check against a caller-supplied <paramref name="now"/> (see <see cref="IsExpiredAt"/>).</summary>
-        internal bool IsLogicallyExpiredAt(DateTime now) => LogicalExpiresAt.HasValue && LogicalExpiresAt.Value <= now;
+        internal bool IsLogicallyExpiredAt(DateTime now) => LogicalExpiresAt <= now;
 
         internal bool ShouldRemoveAt(long expiresAtTicks)
         {
@@ -2797,3 +2809,5 @@ file static class ConcurrentDictionaryExtensions
         return false;
     }
 }
+
+#pragma warning restore RCS1229, MA0106

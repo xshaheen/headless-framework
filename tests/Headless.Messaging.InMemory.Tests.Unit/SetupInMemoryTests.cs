@@ -63,10 +63,7 @@ public sealed class SetupInMemoryTests : TestBase
         var services = new ServiceCollection();
         services.AddLogging();
 
-        services.AddHeadlessMessaging(options =>
-        {
-            options.UseInMemory();
-        });
+        services.AddHeadlessMessaging(options => options.UseInMemory());
 
         await using var provider = services.BuildServiceProvider();
 

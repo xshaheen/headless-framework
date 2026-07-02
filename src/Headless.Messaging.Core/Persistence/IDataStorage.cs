@@ -52,7 +52,7 @@ public interface IDataStorage
     /// </param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>
-    /// <c>true</c> when the row was updated; <c>false</c> when the row was already in a terminal state
+    /// <see langword="true"/> when the row was updated; <see langword="false"/> when the row was already in a terminal state
     /// (<see cref="StatusName.Failed"/> or <see cref="StatusName.Succeeded"/> with no scheduled retry),
     /// the row was not found, or the optimistic <paramref name="originalRetries"/> predicate did not match.
     /// </returns>
@@ -74,9 +74,9 @@ public interface IDataStorage
     /// <param name="lockedUntil">UTC timestamp at which the lease expires.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>
-    /// <c>true</c> when the lease was written; <c>false</c> when the row was already in a terminal
+    /// <see langword="true"/> when the lease was written; <see langword="false"/> when the row was already in a terminal
     /// state (<see cref="StatusName.Failed"/> or <see cref="StatusName.Succeeded"/> with no scheduled
-    /// retry) or the row was not found. Callers must stop the attempt path on <c>false</c>.
+    /// retry) or the row was not found. Callers must stop the attempt path on <see langword="false"/>.
     /// </returns>
     ValueTask<bool> LeasePublishAsync(
         MediumMessage message,
@@ -106,7 +106,7 @@ public interface IDataStorage
     /// </param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>
-    /// <c>true</c> when the row was updated; <c>false</c> when the row was already in a terminal state
+    /// <see langword="true"/> when the row was updated; <see langword="false"/> when the row was already in a terminal state
     /// (<see cref="StatusName.Failed"/> or <see cref="StatusName.Succeeded"/> with no scheduled retry),
     /// the row was not found, or the optimistic <paramref name="originalRetries"/> predicate did not match.
     /// </returns>
@@ -127,9 +127,9 @@ public interface IDataStorage
     /// <param name="lockedUntil">UTC timestamp at which the lease expires.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>
-    /// <c>true</c> when the lease was written; <c>false</c> when the row was already in a terminal
+    /// <see langword="true"/> when the lease was written; <see langword="false"/> when the row was already in a terminal
     /// state (<see cref="StatusName.Failed"/> or <see cref="StatusName.Succeeded"/> with no scheduled
-    /// retry) or the row was not found. Callers must stop the attempt path on <c>false</c>.
+    /// retry) or the row was not found. Callers must stop the attempt path on <see langword="false"/>.
     /// </returns>
     ValueTask<bool> LeaseReceiveAsync(
         MediumMessage message,

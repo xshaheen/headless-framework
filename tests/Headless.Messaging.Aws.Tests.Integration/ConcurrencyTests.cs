@@ -3,7 +3,6 @@
 using Amazon.SimpleNotificationService;
 using Headless.Messaging;
 using Headless.Messaging.Aws;
-using Headless.Messaging.Messages;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -13,7 +12,6 @@ using StringComparer = System.StringComparer;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 [Collection<LocalStackTestFixture>]
 public sealed class ConcurrencyTests(LocalStackTestFixture fixture) : TestBase
 {

@@ -2,7 +2,6 @@
 
 using Headless.Coordination;
 using Headless.Testing.Tests;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 

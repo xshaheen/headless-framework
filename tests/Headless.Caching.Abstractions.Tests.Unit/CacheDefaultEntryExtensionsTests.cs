@@ -91,22 +91,22 @@ public sealed class CacheDefaultEntryExtensionsTests : TestBase
         var key = Faker.Random.AlphaNumeric(10);
         var factoryCalls = 0;
 
-        ValueTask<string?> Factory(CancellationToken cancellationToken)
+        ValueTask<string?> factory(CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref factoryCalls);
             return ValueTask.FromResult<string?>("value");
         }
 
         // when / then — within the default duration the entry stays fresh (factory not re-invoked)…
-        await cache.GetOrAddAsync(key, Factory, AbortToken);
+        await cache.GetOrAddAsync(key, factory, AbortToken);
         timeProvider.Advance(TimeSpan.FromMinutes(4));
-        var withinDefault = await cache.GetOrAddAsync(key, Factory, AbortToken);
+        var withinDefault = await cache.GetOrAddAsync(key, factory, AbortToken);
         withinDefault.Value.Should().Be("value");
         factoryCalls.Should().Be(1, "the entry must still be fresh within the default 5-minute duration");
 
         // …and right after it the entry expires, proving the DEFAULT duration actually governed the write
         timeProvider.Advance(TimeSpan.FromMinutes(2));
-        await cache.GetOrAddAsync(key, Factory, AbortToken);
+        await cache.GetOrAddAsync(key, factory, AbortToken);
         factoryCalls.Should().Be(2, "the default duration must bound the entry's lifetime");
     }
 
@@ -126,7 +126,7 @@ public sealed class CacheDefaultEntryExtensionsTests : TestBase
         var perCallOptions = new CacheEntryOptions { Duration = TimeSpan.FromMinutes(1) };
         var factoryCalls = 0;
 
-        ValueTask<string?> Factory(CancellationToken cancellationToken)
+        ValueTask<string?> factory(CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref factoryCalls);
             return ValueTask.FromResult<string?>("value");
@@ -134,9 +134,9 @@ public sealed class CacheDefaultEntryExtensionsTests : TestBase
 
         // when — the write goes through the options overload, then time passes beyond the per-call duration
         // but well within the instance default
-        await cache.GetOrAddAsync(key, Factory, perCallOptions, AbortToken);
+        await cache.GetOrAddAsync(key, factory, perCallOptions, AbortToken);
         timeProvider.Advance(TimeSpan.FromMinutes(2));
-        await cache.GetOrAddAsync(key, Factory, perCallOptions, AbortToken);
+        await cache.GetOrAddAsync(key, factory, perCallOptions, AbortToken);
 
         // then — the factory re-ran: the per-call 1-minute duration governed, not the 10-minute default
         factoryCalls.Should().Be(2);

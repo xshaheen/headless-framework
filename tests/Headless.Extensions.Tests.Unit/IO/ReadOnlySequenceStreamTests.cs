@@ -2,6 +2,7 @@ using System.Buffers;
 using Headless.IO;
 using Headless.Testing.Tests;
 
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
 namespace Tests.IO;
 
 public sealed class ReadOnlySequenceStreamTests : TestBase
@@ -20,187 +21,211 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
     [Fact]
     public void Read_EmptySequence()
     {
-        Assert.Equal(0, _defaultStream.Read(new byte[1], 0, 1));
+        _defaultStream.Read(new byte[1], 0, 1).Should().Be(0);
     }
 
     [Fact]
     public void Length()
     {
-        Assert.Equal(0, _defaultStream.Length);
+        _defaultStream.Length.Should().Be(0);
         _defaultStream.Dispose();
-        Assert.Throws<ObjectDisposedException>(() => _defaultStream.Length);
+        var act = () => _ = _defaultStream.Length;
+        act.Should().Throw<ObjectDisposedException>();
     }
 
     [Fact]
     public void SetLength()
     {
-        Assert.Throws<NotSupportedException>(() => _defaultStream.SetLength(0));
+        var act = () => _defaultStream.SetLength(0);
+        act.Should().Throw<NotSupportedException>();
         _defaultStream.Dispose();
-        Assert.Throws<ObjectDisposedException>(() => _defaultStream.SetLength(0));
+        act.Should().Throw<ObjectDisposedException>();
     }
 
     [Fact]
     public void CanSeek()
     {
-        Assert.True(_defaultStream.CanSeek);
+        _defaultStream.CanSeek.Should().BeTrue();
         _defaultStream.Dispose();
-        Assert.False(_defaultStream.CanSeek);
+        _defaultStream.CanSeek.Should().BeFalse();
     }
 
     [Fact]
     public void CanRead()
     {
-        Assert.True(_defaultStream.CanRead);
+        _defaultStream.CanRead.Should().BeTrue();
         _defaultStream.Dispose();
-        Assert.False(_defaultStream.CanRead);
+        _defaultStream.CanRead.Should().BeFalse();
     }
 
     [Fact]
     public void CanWrite()
     {
-        Assert.False(_defaultStream.CanWrite);
+        _defaultStream.CanWrite.Should().BeFalse();
         _defaultStream.Dispose();
-        Assert.False(_defaultStream.CanWrite);
+        _defaultStream.CanWrite.Should().BeFalse();
     }
 
     [Fact]
     public void CanTimeout()
     {
-        Assert.False(_defaultStream.CanTimeout);
+        _defaultStream.CanTimeout.Should().BeFalse();
         _defaultStream.Dispose();
-        Assert.False(_defaultStream.CanTimeout);
+        _defaultStream.CanTimeout.Should().BeFalse();
     }
 
     [Fact]
     public void Position()
     {
-        Assert.Equal(0, _defaultStream.Position);
-        Assert.Throws<ArgumentOutOfRangeException>(() => _defaultStream.Position = 1);
+        _defaultStream.Position.Should().Be(0);
+        var act = () => _defaultStream.Position = 1;
+        act.Should().Throw<ArgumentOutOfRangeException>();
 
         var simpleStream = _SimpleSequence.ToStream();
-        Assert.Equal(0, simpleStream.Position);
+        simpleStream.Position.Should().Be(0);
         simpleStream.Position++;
-        Assert.Equal(1, simpleStream.Position);
+        simpleStream.Position.Should().Be(1);
 
         var multiBlockStream = _MultiBlockSequence.ToStream();
-        Assert.Equal(0, multiBlockStream.Position = 0);
+        (multiBlockStream.Position = 0).Should().Be(0);
 
-        Assert.Equal(multiBlockStream.Position + 1, multiBlockStream.ReadByte());
+        // ReadByte advances past the pre-read position, so the expected value must be captured first.
+        var expected = (int)multiBlockStream.Position + 1;
+        multiBlockStream.ReadByte().Should().Be(expected);
 
-        Assert.Equal(4, multiBlockStream.Position = 4);
-        Assert.Equal(multiBlockStream.Position + 1, multiBlockStream.ReadByte());
+        (multiBlockStream.Position = 4).Should().Be(4);
+        expected = (int)multiBlockStream.Position + 1;
+        multiBlockStream.ReadByte().Should().Be(expected);
 
-        Assert.Equal(5, multiBlockStream.Position = 5);
-        Assert.Equal(multiBlockStream.Position + 1, multiBlockStream.ReadByte());
+        (multiBlockStream.Position = 5).Should().Be(5);
+        expected = (int)multiBlockStream.Position + 1;
+        multiBlockStream.ReadByte().Should().Be(expected);
 
-        Assert.Equal(0, multiBlockStream.Position = 0);
-        Assert.Equal(multiBlockStream.Position + 1, multiBlockStream.ReadByte());
+        (multiBlockStream.Position = 0).Should().Be(0);
+        expected = (int)multiBlockStream.Position + 1;
+        multiBlockStream.ReadByte().Should().Be(expected);
 
-        Assert.Equal(9, multiBlockStream.Position = 9);
-        Assert.Equal(-1, multiBlockStream.ReadByte());
+        (multiBlockStream.Position = 9).Should().Be(9);
+        multiBlockStream.ReadByte().Should().Be(-1);
 
-        Assert.Throws<ArgumentOutOfRangeException>(() => multiBlockStream.Position = 10);
-        Assert.Throws<ArgumentOutOfRangeException>(() => multiBlockStream.Position = -1);
+        var actTooHigh = () => multiBlockStream.Position = 10;
+        actTooHigh.Should().Throw<ArgumentOutOfRangeException>();
+        var actNegative = () => multiBlockStream.Position = -1;
+        actNegative.Should().Throw<ArgumentOutOfRangeException>();
     }
 
     [Fact]
     public void Flush()
     {
-        Assert.Throws<NotSupportedException>(() => _defaultStream.Flush());
+        var act = () => _defaultStream.Flush();
+        act.Should().Throw<NotSupportedException>();
         _defaultStream.Dispose();
-        Assert.Throws<ObjectDisposedException>(() => _defaultStream.Flush());
+        act.Should().Throw<ObjectDisposedException>();
     }
 
     [Fact]
     public async Task FlushAsync()
     {
-        await Assert.ThrowsAsync<NotSupportedException>(() => _defaultStream.FlushAsync(AbortToken));
+        var act = () => _defaultStream.FlushAsync(AbortToken);
+        await act.Should().ThrowAsync<NotSupportedException>();
         await _defaultStream.DisposeAsync();
-        await Assert.ThrowsAsync<ObjectDisposedException>(() => _defaultStream.FlushAsync(AbortToken));
+        await act.Should().ThrowAsync<ObjectDisposedException>();
     }
 
     [Fact]
     public void Write()
     {
-        Assert.Throws<NotSupportedException>(() => _defaultStream.Write(new byte[1], 0, 1));
+        var act = () => _defaultStream.Write(new byte[1], 0, 1);
+        act.Should().Throw<NotSupportedException>();
         _defaultStream.Dispose();
-        Assert.Throws<ObjectDisposedException>(() => _defaultStream.Write(new byte[1], 0, 1));
+        act.Should().Throw<ObjectDisposedException>();
     }
 
     [Fact]
     public async Task WriteAsync()
     {
-        await Assert.ThrowsAsync<NotSupportedException>(() => _defaultStream.WriteAsync(new byte[1], 0, 1, AbortToken));
+        var act = () => _defaultStream.WriteAsync(new byte[1], 0, 1, AbortToken);
+        await act.Should().ThrowAsync<NotSupportedException>();
         await _defaultStream.DisposeAsync();
-        await Assert.ThrowsAsync<ObjectDisposedException>(() =>
-            _defaultStream.WriteAsync(new byte[1], 0, 1, AbortToken)
-        );
+        await act.Should().ThrowAsync<ObjectDisposedException>();
     }
 
     [Fact]
     public void WriteByte()
     {
-        Assert.Throws<NotSupportedException>(() => _defaultStream.WriteByte(1));
+        var act = () => _defaultStream.WriteByte(1);
+        act.Should().Throw<NotSupportedException>();
         _defaultStream.Dispose();
-        Assert.Throws<ObjectDisposedException>(() => _defaultStream.WriteByte(1));
+        act.Should().Throw<ObjectDisposedException>();
     }
 
     [Fact]
     public void Seek_EmptyStream()
     {
         var stream = _DefaultSequence.ToStream();
-        Assert.Equal(0, stream.Seek(0, SeekOrigin.Begin));
-        Assert.Equal(0, stream.Seek(0, SeekOrigin.Current));
-        Assert.Equal(0, stream.Seek(0, SeekOrigin.End));
+        stream.Seek(0, SeekOrigin.Begin).Should().Be(0);
+        stream.Seek(0, SeekOrigin.Current).Should().Be(0);
+        stream.Seek(0, SeekOrigin.End).Should().Be(0);
     }
 
     [Fact]
     public void Seek()
     {
         var stream = _MultiBlockSequence.ToStream();
-        Assert.Equal(0, stream.Seek(0, SeekOrigin.Begin));
-        Assert.Equal(0, stream.Position);
-        Assert.Equal(stream.Position + 1, stream.ReadByte());
+        stream.Seek(0, SeekOrigin.Begin).Should().Be(0);
+        stream.Position.Should().Be(0);
+        // ReadByte advances past the pre-read position, so the expected value must be captured first.
+        var expected = (int)stream.Position + 1;
+        stream.ReadByte().Should().Be(expected);
 
-        Assert.Equal(4, stream.Seek(4, SeekOrigin.Begin));
-        Assert.Equal(4, stream.Position);
-        Assert.Equal(stream.Position + 1, stream.ReadByte());
+        stream.Seek(4, SeekOrigin.Begin).Should().Be(4);
+        stream.Position.Should().Be(4);
+        expected = (int)stream.Position + 1;
+        stream.ReadByte().Should().Be(expected);
 
-        Assert.Equal(7, stream.Seek(7, SeekOrigin.Begin));
-        Assert.Equal(7, stream.Position);
-        Assert.Equal(stream.Position + 1, stream.ReadByte());
+        stream.Seek(7, SeekOrigin.Begin).Should().Be(7);
+        stream.Position.Should().Be(7);
+        expected = (int)stream.Position + 1;
+        stream.ReadByte().Should().Be(expected);
 
-        Assert.Equal(9, stream.Seek(1, SeekOrigin.Current));
-        Assert.Equal(9, stream.Position);
+        stream.Seek(1, SeekOrigin.Current).Should().Be(9);
+        stream.Position.Should().Be(9);
 
-        Assert.Equal(1, stream.Seek(-8, SeekOrigin.Current));
-        Assert.Equal(1, stream.Position);
-        Assert.Equal(stream.Position + 1, stream.ReadByte());
+        stream.Seek(-8, SeekOrigin.Current).Should().Be(1);
+        stream.Position.Should().Be(1);
+        expected = (int)stream.Position + 1;
+        stream.ReadByte().Should().Be(expected);
 
-        Assert.Equal(5, stream.Seek(3, SeekOrigin.Current));
-        Assert.Equal(5, stream.Position);
-        Assert.Equal(stream.Position + 1, stream.ReadByte());
+        stream.Seek(3, SeekOrigin.Current).Should().Be(5);
+        stream.Position.Should().Be(5);
+        expected = (int)stream.Position + 1;
+        stream.ReadByte().Should().Be(expected);
 
         stream.Position = 0;
-        Assert.Equal(9, stream.Seek(0, SeekOrigin.End));
-        Assert.Equal(9, stream.Position);
-        Assert.Equal(-1, stream.ReadByte());
+        stream.Seek(0, SeekOrigin.End).Should().Be(9);
+        stream.Position.Should().Be(9);
+        stream.ReadByte().Should().Be(-1);
 
         stream.Position = 0;
-        Assert.Equal(8, stream.Seek(-1, SeekOrigin.End));
-        Assert.Equal(8, stream.Position);
-        Assert.Equal(stream.Position + 1, stream.ReadByte());
+        stream.Seek(-1, SeekOrigin.End).Should().Be(8);
+        stream.Position.Should().Be(8);
+        expected = (int)stream.Position + 1;
+        stream.ReadByte().Should().Be(expected);
 
-        Assert.Equal(5, stream.Seek(-4, SeekOrigin.End));
-        Assert.Equal(5, stream.Position);
-        Assert.Equal(stream.Position + 1, stream.ReadByte());
+        stream.Seek(-4, SeekOrigin.End).Should().Be(5);
+        stream.Position.Should().Be(5);
+        expected = (int)stream.Position + 1;
+        stream.ReadByte().Should().Be(expected);
 
-        Assert.Throws<ArgumentOutOfRangeException>(() => stream.Seek(1, SeekOrigin.End));
+        var actPastEnd = () => stream.Seek(1, SeekOrigin.End);
+        actPastEnd.Should().Throw<ArgumentOutOfRangeException>();
         // Seeking before the beginning now surfaces as an IOException (was ArgumentOutOfRangeException).
-        Assert.Throws<IOException>(() => stream.Seek(-1, SeekOrigin.Begin));
+        var actBeforeBegin = () => stream.Seek(-1, SeekOrigin.Begin);
+        actBeforeBegin.Should().Throw<IOException>();
 
         stream.Dispose();
-        Assert.Throws<ObjectDisposedException>(() => stream.Seek(0, SeekOrigin.Begin));
+        var actDisposed = () => stream.Seek(0, SeekOrigin.Begin);
+        actDisposed.Should().Throw<ObjectDisposedException>();
     }
 
     [Fact]
@@ -209,14 +234,17 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
         var stream = _MultiBlockSequence.ToStream();
 
         // Begin with a negative offset.
-        Assert.Throws<IOException>(() => stream.Seek(-1, SeekOrigin.Begin));
+        var actBegin = () => stream.Seek(-1, SeekOrigin.Begin);
+        actBegin.Should().Throw<IOException>();
 
         // Current that underflows past the start.
         stream.Position = 2;
-        Assert.Throws<IOException>(() => stream.Seek(-5, SeekOrigin.Current));
+        var actCurrent = () => stream.Seek(-5, SeekOrigin.Current);
+        actCurrent.Should().Throw<IOException>();
 
         // End that underflows past the start.
-        Assert.Throws<IOException>(() => stream.Seek(-(_MultiBlockSequence.Length + 1), SeekOrigin.End));
+        var actEnd = () => stream.Seek(-(_MultiBlockSequence.Length + 1), SeekOrigin.End);
+        actEnd.Should().Throw<IOException>();
     }
 
     [Fact]
@@ -226,11 +254,11 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
 
         for (var i = 0; i < _MultiBlockSequence.Length; i++)
         {
-            Assert.Equal(i + 1, stream.ReadByte());
+            stream.ReadByte().Should().Be(i + 1);
         }
 
-        Assert.Equal(-1, stream.ReadByte());
-        Assert.Equal(-1, stream.ReadByte());
+        stream.ReadByte().Should().Be(-1);
+        stream.ReadByte().Should().Be(-1);
     }
 
     [Fact]
@@ -238,27 +266,27 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
     {
         var stream = _MultiBlockSequence.ToStream();
         var buffer = new byte[_MultiBlockSequence.Length + 2];
-        Assert.Equal(2, stream.Read(buffer, 0, 2));
-        Assert.Equal(new byte[] { 1, 2, 0 }, buffer.Take(3));
-        Assert.Equal(2, stream.Position);
+        stream.Read(buffer, 0, 2).Should().Be(2);
+        buffer.Take(3).Should().Equal([1, 2, 0]);
+        stream.Position.Should().Be(2);
 
-        Assert.Equal(2, stream.Read(buffer, 3, 2));
-        Assert.Equal(new byte[] { 1, 2, 0, 3, 4, 0 }, buffer.Take(6));
+        stream.Read(buffer, 3, 2).Should().Be(2);
+        buffer.Take(6).Should().Equal([1, 2, 0, 3, 4, 0]);
 
-        Assert.Equal(5, stream.Read(buffer, 5, buffer.Length - 5));
-        Assert.Equal(new byte[] { 1, 2, 0, 3, 4, 5, 6, 7, 8, 9, 0 }, buffer);
-        Assert.Equal(9, stream.Position);
+        stream.Read(buffer, 5, buffer.Length - 5).Should().Be(5);
+        buffer.Should().Equal([1, 2, 0, 3, 4, 5, 6, 7, 8, 9, 0]);
+        stream.Position.Should().Be(9);
 
-        Assert.Equal(0, stream.Read(buffer, 0, buffer.Length));
-        Assert.Equal(0, stream.Read(buffer, 0, buffer.Length));
-        Assert.Equal(9, stream.Position);
+        stream.Read(buffer, 0, buffer.Length).Should().Be(0);
+        stream.Read(buffer, 0, buffer.Length).Should().Be(0);
+        stream.Position.Should().Be(9);
     }
 
     [Fact]
     public void ReadAsync_ReturnsSynchronously()
     {
         var stream = _SimpleSequence.ToStream();
-        Assert.True(stream.ReadAsync(new byte[1], 0, 1, AbortToken).IsCompleted);
+        stream.ReadAsync(new byte[1], 0, 1, AbortToken).IsCompleted.Should().BeTrue();
     }
 
     [Fact]
@@ -267,13 +295,13 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
         var stream = _MultiBlockSequence.ToStream();
         var task1 = stream.ReadAsync(new byte[1], 0, 1, AbortToken);
         var task2 = stream.ReadAsync(new byte[1], 0, 1, AbortToken);
-        Assert.Same(task1, task2);
-        Assert.Equal(1, await task1);
+        task2.Should().BeSameAs(task1);
+        (await task1).Should().Be(1);
 
         var task3 = stream.ReadAsync(new byte[2], 0, 2, AbortToken);
         var task4 = stream.ReadAsync(new byte[2], 0, 2, AbortToken);
-        Assert.Same(task3, task4);
-        Assert.Equal(2, await task3);
+        task4.Should().BeSameAs(task3);
+        (await task3).Should().Be(2);
     }
 
     [Fact]
@@ -281,19 +309,19 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
     {
         var stream = _MultiBlockSequence.ToStream();
         var buffer = new byte[_MultiBlockSequence.Length + 2];
-        Assert.Equal(2, await stream.ReadAsync(buffer.AsMemory(0, 2), AbortToken));
-        Assert.Equal(new byte[] { 1, 2, 0 }, buffer.Take(3));
-        Assert.Equal(2, stream.Position);
+        (await stream.ReadAsync(buffer.AsMemory(0, 2), AbortToken)).Should().Be(2);
+        buffer.Take(3).Should().Equal([1, 2, 0]);
+        stream.Position.Should().Be(2);
 
-        Assert.Equal(2, await stream.ReadAsync(buffer.AsMemory(3, 2), AbortToken));
-        Assert.Equal(new byte[] { 1, 2, 0, 3, 4, 0 }, buffer.Take(6));
+        (await stream.ReadAsync(buffer.AsMemory(3, 2), AbortToken)).Should().Be(2);
+        buffer.Take(6).Should().Equal([1, 2, 0, 3, 4, 0]);
 
-        Assert.Equal(5, await stream.ReadAsync(buffer.AsMemory(5, buffer.Length - 5), AbortToken));
-        Assert.Equal(new byte[] { 1, 2, 0, 3, 4, 5, 6, 7, 8, 9, 0 }, buffer);
-        Assert.Equal(9, stream.Position);
+        (await stream.ReadAsync(buffer.AsMemory(5, buffer.Length - 5), AbortToken)).Should().Be(5);
+        buffer.Should().Equal([1, 2, 0, 3, 4, 5, 6, 7, 8, 9, 0]);
+        stream.Position.Should().Be(9);
 
-        Assert.Equal(0, await stream.ReadAsync(buffer, AbortToken));
-        Assert.Equal(9, stream.Position);
+        (await stream.ReadAsync(buffer, AbortToken)).Should().Be(0);
+        stream.Position.Should().Be(9);
     }
 
     [Fact]
@@ -302,7 +330,7 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
         var stream = _MultiBlockSequence.ToStream();
         var ms = new MemoryStream();
         await stream.CopyToAsync(ms, AbortToken);
-        Assert.Equal(_MultiBlockSequence.ToArray(), ms.ToArray());
+        ms.ToArray().Should().Equal(_MultiBlockSequence.ToArray());
     }
 
     [Fact]
@@ -310,15 +338,15 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
     {
         var stream = _MultiBlockSequence.ToStream();
         var head = new byte[3];
-        Assert.Equal(3, await stream.ReadAsync(head.AsMemory(0, 3), AbortToken));
-        Assert.Equal(3, stream.Position);
+        (await stream.ReadAsync(head.AsMemory(0, 3), AbortToken)).Should().Be(3);
+        stream.Position.Should().Be(3);
 
         var ms = new MemoryStream();
         await stream.CopyToAsync(ms, AbortToken);
 
         // Only the unread remainder is copied, and the stream is drained to the end.
-        Assert.Equal(new byte[] { 4, 5, 6, 7, 8, 9 }, ms.ToArray());
-        Assert.Equal(_MultiBlockSequence.Length, stream.Position);
+        ms.ToArray().Should().Equal([4, 5, 6, 7, 8, 9]);
+        stream.Position.Should().Be(_MultiBlockSequence.Length);
     }
 
     [Fact]
@@ -335,7 +363,8 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
     {
         var stream = _MultiBlockSequence.ToStream();
         stream.Dispose();
-        Assert.Throws<ObjectDisposedException>(() => stream.Read(new byte[1], 0, 1));
+        var act = () => stream.Read(new byte[1], 0, 1);
+        act.Should().Throw<ObjectDisposedException>();
     }
 
     [Fact]
@@ -343,7 +372,8 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
     {
         var stream = _MultiBlockSequence.ToStream();
         stream.Dispose();
-        Assert.Throws<ObjectDisposedException>(() => stream.Read(new byte[1].AsSpan()));
+        var act = () => stream.Read(new byte[1].AsSpan());
+        act.Should().Throw<ObjectDisposedException>();
     }
 
     [Fact]
@@ -351,7 +381,8 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
     {
         var stream = _MultiBlockSequence.ToStream();
         stream.Dispose();
-        Assert.Throws<ObjectDisposedException>(() => stream.ReadByte());
+        var act = () => stream.ReadByte();
+        act.Should().Throw<ObjectDisposedException>();
     }
 
     [Fact]
@@ -359,7 +390,8 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
     {
         var stream = _MultiBlockSequence.ToStream();
         await stream.DisposeAsync();
-        await Assert.ThrowsAsync<ObjectDisposedException>(() => stream.ReadAsync(new byte[1], 0, 1, AbortToken));
+        var act = () => stream.ReadAsync(new byte[1], 0, 1, AbortToken);
+        await act.Should().ThrowAsync<ObjectDisposedException>();
     }
 
     [Fact]
@@ -376,7 +408,8 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
     {
         var stream = _MultiBlockSequence.ToStream();
         stream.Dispose();
-        Assert.Throws<ObjectDisposedException>(() => stream.Position);
+        var act = () => _ = stream.Position;
+        act.Should().Throw<ObjectDisposedException>();
     }
 
     [Fact]
@@ -384,7 +417,8 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
     {
         var stream = _MultiBlockSequence.ToStream();
         stream.Dispose();
-        Assert.Throws<ObjectDisposedException>(() => stream.Position = 0);
+        var act = () => stream.Position = 0;
+        act.Should().Throw<ObjectDisposedException>();
     }
 
     [Fact]
@@ -393,7 +427,8 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
         var stream = _MultiBlockSequence.ToStream();
         await stream.DisposeAsync();
         var ms = new MemoryStream();
-        await Assert.ThrowsAsync<ObjectDisposedException>(() => stream.CopyToAsync(ms, AbortToken));
+        var act = () => stream.CopyToAsync(ms, AbortToken);
+        await act.Should().ThrowAsync<ObjectDisposedException>();
     }
 
     private sealed class SeqSegment : ReadOnlySequenceSegment<byte>

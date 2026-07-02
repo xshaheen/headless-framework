@@ -68,7 +68,7 @@ public sealed class SetupTests : TestBase
         options.ConnectionString.Should().Contain("Host=localhost");
         options.ConnectionString.Should().Contain("Database=entity");
         options.Schema.Should().Be("custom_schema");
-        _GetInternalType(options, "DbContextType").Should().Be(typeof(TestMessagingDbContext));
+        _GetInternalType(options, "DbContextType").Should().Be<TestMessagingDbContext>();
         _GetInternalString(options, "Version").Should().Be("v9");
     }
 

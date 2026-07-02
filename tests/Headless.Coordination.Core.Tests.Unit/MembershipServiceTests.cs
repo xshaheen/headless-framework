@@ -14,7 +14,7 @@ public sealed class MembershipServiceTests : TestBase
     {
         // given
         var store = new FakeMembershipStore { NextIncarnation = new NodeIncarnation(3) };
-        var sut = _CreateService(store, nodeId: "node-a");
+        using var sut = _CreateService(store, nodeId: "node-a");
 
         // when
         var identity = await sut.RegisterAsync(AbortToken);
@@ -54,7 +54,8 @@ public sealed class MembershipServiceTests : TestBase
                 new Dictionary<string, string>(StringComparer.Ordinal)
             )
         );
-        var sut = _CreateService(store);
+
+        using var sut = _CreateService(store);
 
         // when
         var liveNodes = await sut.GetLiveNodesAsync(AbortToken);
@@ -71,7 +72,7 @@ public sealed class MembershipServiceTests : TestBase
         // given
         var store = new FakeMembershipStore();
         var lifetime = new FakeHostApplicationLifetime();
-        var sut = _CreateService(store, lifetime: lifetime);
+        using var sut = _CreateService(store, lifetime: lifetime);
         var identity = await sut.RegisterAsync(AbortToken);
         store.HeartbeatAccepted = false;
         using var watcherCts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
@@ -98,7 +99,7 @@ public sealed class MembershipServiceTests : TestBase
         var options = new CoordinationOptions { MembershipLostBehavior = MembershipLostBehavior.StopMembershipOnly };
         var store = new FakeMembershipStore();
         var lifetime = new FakeHostApplicationLifetime();
-        var sut = _CreateService(store, options, lifetime);
+        using var sut = _CreateService(store, options, lifetime);
         await sut.RegisterAsync(AbortToken);
         store.HeartbeatAccepted = false;
 
@@ -116,7 +117,7 @@ public sealed class MembershipServiceTests : TestBase
     {
         // given
         var store = new FakeMembershipStore();
-        var sut = _CreateService(store);
+        using var sut = _CreateService(store);
 
         // when
         var accepted = await sut.HeartbeatAsync(AbortToken);
@@ -132,7 +133,7 @@ public sealed class MembershipServiceTests : TestBase
     {
         // given
         var store = new FakeMembershipStore();
-        var sut = _CreateService(store);
+        using var sut = _CreateService(store);
         await sut.RegisterAsync(AbortToken);
         await sut.LeaveAsync(AbortToken);
         store.Heartbeats.Clear();
@@ -156,7 +157,8 @@ public sealed class MembershipServiceTests : TestBase
         var store = new FakeMembershipStore();
         var identity = new NodeIdentity(new NodeId("node-a"), new NodeIncarnation(1));
         store.NodeStates[identity] = state;
-        var sut = _CreateService(store);
+
+        using var sut = _CreateService(store);
 
         // when
         var alive = await sut.IsAliveAsync(identity, AbortToken);
@@ -171,7 +173,7 @@ public sealed class MembershipServiceTests : TestBase
         // given
         var store = new FakeMembershipStore();
         var identity = new NodeIdentity(new NodeId("node-a"), new NodeIncarnation(1));
-        var sut = _CreateService(store);
+        using var sut = _CreateService(store);
 
         // when — identity was never configured in the store, so it resolves to absent (null)
         var alive = await sut.IsAliveAsync(identity, AbortToken);
@@ -187,7 +189,7 @@ public sealed class MembershipServiceTests : TestBase
         var store = new FakeMembershipStore();
         var identity = new NodeIdentity(new NodeId("node-a"), new NodeIncarnation(1));
         store.NodeStates[identity] = NodeLivenessState.Alive;
-        var sut = _CreateService(store);
+        using var sut = _CreateService(store);
 
         // when
         await sut.IsAliveAsync(identity, AbortToken);
@@ -203,7 +205,7 @@ public sealed class MembershipServiceTests : TestBase
         // given
         var store = new FakeMembershipStore();
         var identity = new NodeIdentity(new NodeId("node-a"), new NodeIncarnation(1));
-        var sut = _CreateService(store);
+        using var sut = _CreateService(store);
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 

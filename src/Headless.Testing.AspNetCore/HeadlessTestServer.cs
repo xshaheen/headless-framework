@@ -144,9 +144,9 @@ public sealed class HeadlessTestServer<TProgram>(
     /// </summary>
     /// <exception cref="InvalidOperationException">
     /// Thrown when <see cref="ConfigureDatabaseReset"/> was not called or
-    /// <see cref="DatabaseResetOptions.ConnectionProvider"/> is <c>null</c>.
+    /// <see cref="DatabaseResetOptions.ConnectionProvider"/> is <see langword="null"/>.
     /// </exception>
-    public async Task ResetDatabaseAsync()
+    public async Task ResetDatabaseAsync(CancellationToken cancellationToken = default)
     {
         if (_configureDatabaseReset is null)
         {
@@ -157,7 +157,7 @@ public sealed class HeadlessTestServer<TProgram>(
 
         Ensure.NotDisposed(_disposed, this);
 
-        await _resetGate.WaitAsync().ConfigureAwait(false);
+        await _resetGate.WaitAsync(cancellationToken).ConfigureAwait(false);
 
         try
         {
@@ -176,7 +176,7 @@ public sealed class HeadlessTestServer<TProgram>(
                 }
 
                 _resetConnection = options.ConnectionProvider(Services);
-                await _resetConnection.OpenAsync().ConfigureAwait(false);
+                await _resetConnection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
                 _databaseReset = await DatabaseReset.CreateAsync(_resetConnection, options).ConfigureAwait(false);
             }
@@ -193,12 +193,13 @@ public sealed class HeadlessTestServer<TProgram>(
                 catch (DbException) when (retries > 1)
                 {
                     retries--;
-                    await Task.Delay(TimeSpan.FromMilliseconds(100)).ConfigureAwait(false);
+                    await Task.Delay(TimeSpan.FromMilliseconds(100), System.TimeProvider.System, cancellationToken)
+                        .ConfigureAwait(false);
 
                     // Re-open if closed or broken
                     if (_resetConnection!.State != System.Data.ConnectionState.Open)
                     {
-                        await _resetConnection.OpenAsync().ConfigureAwait(false);
+                        await _resetConnection.OpenAsync(cancellationToken).ConfigureAwait(false);
                     }
                 }
                 catch (DbException ex)
@@ -329,7 +330,10 @@ public sealed class HeadlessTestServer<TProgram>(
                 catch (OperationCanceledException) when (cts.IsCancellationRequested)
                 {
                     throw new TimeoutException(
-                        $"Initializer '{initializer.GetType().Name}' did not complete within {_initializerTimeout.TotalSeconds:F0}s."
+                        string.Create(
+                            CultureInfo.InvariantCulture,
+                            $"Initializer '{initializer.GetType().Name}' did not complete within {_initializerTimeout.TotalSeconds:F0}s."
+                        )
                     );
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
@@ -352,7 +356,12 @@ public sealed class HeadlessTestServer<TProgram>(
                 }
                 catch (OperationCanceledException) when (cts.IsCancellationRequested)
                 {
-                    throw new TimeoutException($"Readiness check timed out after {timeout.TotalSeconds:F0}s.");
+                    throw new TimeoutException(
+                        string.Create(
+                            CultureInfo.InvariantCulture,
+                            $"Readiness check timed out after {timeout.TotalSeconds:F0}s."
+                        )
+                    );
                 }
             }
 

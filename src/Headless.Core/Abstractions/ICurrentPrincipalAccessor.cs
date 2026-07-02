@@ -14,7 +14,7 @@ namespace Headless.Abstractions;
 public interface ICurrentPrincipalAccessor
 {
     /// <summary>
-    /// Gets the current <see cref="ClaimsPrincipal"/>, or <c>null</c> when no principal has
+    /// Gets the current <see cref="ClaimsPrincipal"/>, or <see langword="null"/> when no principal has
     /// been set for the current execution context.
     /// </summary>
     ClaimsPrincipal? Principal { get; }
@@ -25,13 +25,13 @@ public interface ICurrentPrincipalAccessor
     /// is disposed.
     /// </summary>
     /// <param name="principal">
-    /// The principal to activate for the current scope, or <c>null</c> to remove the override
+    /// The principal to activate for the current scope, or <see langword="null"/> to remove the override
     /// and fall back to the implementation's default resolution (for example
     /// <see cref="Thread.CurrentPrincipal"/>).
     /// </param>
     /// <returns>
     /// A scope handle that restores the previous principal when disposed.
-    /// Always dispose this value — prefer a <c>using</c> declaration.
+    /// Always dispose this value — prefer a <see langword="using"/> declaration.
     /// </returns>
     [MustDisposeResource]
     IDisposable Change(ClaimsPrincipal? principal);
@@ -60,7 +60,7 @@ public abstract class CurrentPrincipalAccessor : ICurrentPrincipalAccessor
     /// async context. Derived classes resolve the principal from their specific source
     /// (for example, <see cref="Thread.CurrentPrincipal"/> or an HTTP context).
     /// </summary>
-    /// <returns>The fallback <see cref="ClaimsPrincipal"/>, or <c>null</c>.</returns>
+    /// <returns>The fallback <see cref="ClaimsPrincipal"/>, or <see langword="null"/>.</returns>
     protected abstract ClaimsPrincipal? GetClaimsPrincipal();
 
     /// <inheritdoc/>

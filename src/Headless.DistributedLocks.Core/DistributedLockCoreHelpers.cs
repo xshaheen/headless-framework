@@ -120,7 +120,9 @@ internal static class DistributedLockCoreHelpers
     {
         var delayMs = _MinRetryDelay.TotalMilliseconds * (1 << Math.Min(attempt, 6));
         var cappedDelayMs = Math.Min(delayMs, _MaxRetryDelay.TotalMilliseconds);
+#pragma warning disable CA5394 // Non-security jitter for retry backoff; cryptographic RNG is unnecessary here.
         var jitter = cappedDelayMs * ((Random.Shared.NextDouble() * 0.5) - 0.25);
+#pragma warning restore CA5394
 
         return TimeSpan.FromMilliseconds(cappedDelayMs + jitter);
     }

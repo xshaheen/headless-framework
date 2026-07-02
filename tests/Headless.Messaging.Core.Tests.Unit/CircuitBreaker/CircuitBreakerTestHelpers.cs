@@ -6,11 +6,19 @@ namespace Tests.CircuitBreaker;
 
 internal static class CircuitBreakerTestHelpers
 {
-    public static IMeterFactory CreateMeterFactory()
+    /// <summary>
+    /// Creates a real <see cref="IMeterFactory"/> that owns the served meter and disposes it when
+    /// the factory is disposed — mirroring the DI-container ownership model used in production.
+    /// Callers own the returned factory and must dispose it.
+    /// </summary>
+    public static IMeterFactory CreateMeterFactory() => new TestMeterFactory();
+
+    private sealed class TestMeterFactory : IMeterFactory
     {
-        var meter = new Meter("Headless.Messaging.Test");
-        var factory = Substitute.For<IMeterFactory>();
-        factory.Create(Arg.Any<MeterOptions>()).Returns(meter);
-        return factory;
+        private readonly Meter _meter = new("Headless.Messaging.Test");
+
+        public Meter Create(MeterOptions options) => _meter;
+
+        public void Dispose() => _meter.Dispose();
     }
 }

@@ -35,7 +35,7 @@ public sealed class JsonUtf8SerializerTests : TestBase
 
         // then
         transport.Headers.Should().BeSameAs(headers);
-        transport.Body.Length.Should().BeGreaterThan(0);
+        transport.Body.Length.Should().BePositive();
 
         // verify it's valid JSON
         var json = Encoding.UTF8.GetString(transport.Body.Span);

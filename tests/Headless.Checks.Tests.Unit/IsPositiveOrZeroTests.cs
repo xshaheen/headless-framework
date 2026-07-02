@@ -26,31 +26,42 @@ public sealed class IsPositiveOrZeroTests
         Argument.IsPositiveOrZero(_validValues.TimeSpanValue).Should().Be(_validValues.TimeSpanValue);
     }
 
-    public static readonly TheoryData<object> NegativeData =
+    public enum NumericKind
+    {
+        Short,
+        Int,
+        Long,
+        Float,
+        Double,
+        TimeSpan,
+    }
+
+    // Serializable enum discriminator (xUnit1045) instead of a mixed-type TheoryData<object>; each
+    // kind is mapped to the typed guard call inside the test so Test Explorer can enumerate the rows.
+    public static readonly TheoryData<NumericKind> NegativeData =
     [
-        (short)-3,
-        -3,
-        -5L,
-        -5.5f,
-        -7.5,
-        -7.5d,
-        TimeSpan.Parse("-00:00:10", CultureInfo.InvariantCulture),
+        NumericKind.Short,
+        NumericKind.Int,
+        NumericKind.Long,
+        NumericKind.Float,
+        NumericKind.Double,
+        NumericKind.TimeSpan,
     ];
 
     [Theory]
     [MemberData(nameof(NegativeData))]
-    public void is_positive_or_zero_should_throw_argument_out_of_range_exception_when_negative(object argument)
+    public void is_positive_or_zero_should_throw_argument_out_of_range_exception_when_negative(NumericKind kind)
     {
-        Action action = argument switch
+        Action action = kind switch
         {
-            short => () => Argument.IsPositiveOrZero((short)argument),
-            int => () => Argument.IsPositiveOrZero((int)argument),
-            long => () => Argument.IsPositiveOrZero((long)argument),
-            float => () => Argument.IsPositiveOrZero((float)argument),
-            double => () => Argument.IsPositiveOrZero((double)argument),
-            decimal => () => Argument.IsPositiveOrZero((decimal)argument),
-            TimeSpan => () => Argument.IsPositiveOrZero((TimeSpan)argument),
-            _ => throw new InvalidOperationException("Unsupported argument type"),
+            NumericKind.Short => () => Argument.IsPositiveOrZero((short)-3),
+            NumericKind.Int => () => Argument.IsPositiveOrZero(-3),
+            NumericKind.Long => () => Argument.IsPositiveOrZero(-5L),
+            NumericKind.Float => () => Argument.IsPositiveOrZero(-5.5f),
+            NumericKind.Double => () => Argument.IsPositiveOrZero(-7.5),
+            NumericKind.TimeSpan => () =>
+                Argument.IsPositiveOrZero(TimeSpan.Parse("-00:00:10", CultureInfo.InvariantCulture)),
+            _ => throw new ArgumentOutOfRangeException(nameof(kind)),
         };
 
         action.Should().ThrowExactly<ArgumentOutOfRangeException>();

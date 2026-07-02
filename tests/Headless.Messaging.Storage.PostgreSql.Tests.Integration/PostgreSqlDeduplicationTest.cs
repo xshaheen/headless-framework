@@ -1,5 +1,4 @@
 using Headless.Abstractions;
-using Headless.Core;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Messages;

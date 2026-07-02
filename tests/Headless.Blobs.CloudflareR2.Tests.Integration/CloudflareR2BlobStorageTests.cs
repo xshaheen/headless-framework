@@ -90,10 +90,11 @@ public sealed class CloudflareR2BlobStorageTests : BlobStorageTestsBase
             new R2BlobNamingNormalizer()
         );
 
-        var url = await ((IPresignedUrlBlobStorage)storage).GetPresignedDownloadUrlAsync(
+        var url = await storage.GetPresignedDownloadUrlAsync(
             ["bucket"],
             "file.txt",
-            TimeSpan.FromMinutes(5)
+            TimeSpan.FromMinutes(5),
+            AbortToken
         );
 
         url.Host.Should().Be("testacc.r2.cloudflarestorage.com");
@@ -107,7 +108,7 @@ public sealed class CloudflareR2BlobStorageTests : BlobStorageTestsBase
         var container = new[] { $"presign-{Guid.NewGuid():N}" };
         var content = "presigned-content"u8.ToArray();
 
-        using (var stream = new MemoryStream(content))
+        await using (var stream = new MemoryStream(content))
         {
             await ((IBlobStorage)storage).UploadAsync(container, "file.txt", stream, cancellationToken: AbortToken);
         }
@@ -153,7 +154,7 @@ public sealed class CloudflareR2BlobStorageTests : BlobStorageTestsBase
         var readBack = await ((IBlobStorage)storage).OpenReadStreamAsync(container, "file.txt", AbortToken);
         readBack.Should().NotBeNull();
 
-        using var buffer = new MemoryStream();
+        await using var buffer = new MemoryStream();
         await readBack!.Stream.CopyToAsync(buffer, AbortToken);
         buffer.ToArray().Should().Equal(content);
     }
@@ -164,7 +165,7 @@ public sealed class CloudflareR2BlobStorageTests : BlobStorageTestsBase
         var storage = (IPresignedUrlBlobStorage)GetStorage();
         var container = new[] { $"presign-{Guid.NewGuid():N}" };
 
-        using (var stream = new MemoryStream("expiring"u8.ToArray()))
+        await using (var stream = new MemoryStream("expiring"u8.ToArray()))
         {
             await ((IBlobStorage)storage).UploadAsync(container, "file.txt", stream, cancellationToken: AbortToken);
         }

@@ -122,10 +122,14 @@ public sealed class ConsumerContextTests : TestBase
 
 public sealed record ContextTestMessage(string Value);
 
+#pragma warning disable MA0036 // MA0036: registered as a consumer by type via reflection (ImplTypeInfo); a static class can't be used there.
 public sealed class ConsumerContextTestConsumer
 {
     public static ValueTask Consume(ContextTestMessage message, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+        Console.WriteLine($"Consumed message with value: {message.Value}");
         return ValueTask.CompletedTask;
     }
 }
+#pragma warning restore MA0036

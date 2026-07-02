@@ -5,7 +5,6 @@ using Headless.Emails.Mailkit;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.ObjectPool;
 using Microsoft.Extensions.Options;
-using NSubstitute;
 using SmtpClient = MailKit.Net.Smtp.SmtpClient;
 
 namespace Tests;
@@ -70,7 +69,7 @@ public sealed class SmtpClientPooledObjectPolicyTests
     public void return_should_discard_a_disconnected_client()
     {
         var policy = _Policy(TimeSpan.FromSeconds(5));
-        var client = new SmtpClient();
+        using var client = new SmtpClient();
 
         policy.Return(client).Should().BeFalse();
     }

@@ -16,9 +16,12 @@ namespace Tests;
 /// </summary>
 public sealed class HybridCacheRecoveryQueueMinExpiryStaleTests : TestBase
 {
-    private static readonly TimeSpan _Delay = TimeSpan.FromSeconds(5);
-
     private readonly FakeTimeProvider _timeProvider = new();
+
+    // The HybridCache returned here is disposed per test via `await using`, but it does not own the injected
+    // L1/L2 stores. This fixture collects those disposable backends (InMemoryCache L1 and TogglableRemoteCache L2)
+    // and disposes them at teardown.
+    private readonly List<object> _disposables = [];
 
     private (HybridCache cache, TogglableRemoteCache l2) _CreateCache(int maxItems)
     {
@@ -34,15 +37,37 @@ public sealed class HybridCacheRecoveryQueueMinExpiryStaleTests : TestBase
 
         var cache = new HybridCache(l1, l2, publisher, options, timeProvider: _timeProvider);
 
+        _disposables.Add(l1);
+        _disposables.Add(l2);
+
         return (cache, l2);
+    }
+
+    protected override async ValueTask DisposeAsyncCore()
+    {
+        foreach (var disposable in _disposables)
+        {
+            switch (disposable)
+            {
+                case IAsyncDisposable asyncDisposable:
+                    await asyncDisposable.DisposeAsync().ConfigureAwait(false);
+                    break;
+                case IDisposable syncDisposable:
+                    syncDisposable.Dispose();
+                    break;
+            }
+        }
+
+        _disposables.Clear();
+        await base.DisposeAsyncCore().ConfigureAwait(false);
     }
 
     [Fact]
     public async Task count_must_not_overshoot_max_items_after_expiry_sweep_removes_tracked_minimum()
     {
         // given — capacity of 3; L2 is down so every write queues a recovery item
-        const int max_items = 3;
-        var (cache, l2) = _CreateCache(max_items);
+        const int maxItems = 3;
+        var (cache, l2) = _CreateCache(maxItems);
         await using var _ = cache;
 
         l2.FailWrites = true;
@@ -54,7 +79,7 @@ public sealed class HybridCacheRecoveryQueueMinExpiryStaleTests : TestBase
         await cache.GetOrAddAsync("key-long-a", _ => new ValueTask<int?>(2), TimeSpan.FromMinutes(10), AbortToken);
         await cache.GetOrAddAsync("key-long-b", _ => new ValueTask<int?>(3), TimeSpan.FromMinutes(10), AbortToken);
 
-        cache.RecoveryQueue!.Count.Should().Be(max_items);
+        cache.RecoveryQueue!.Count.Should().Be(maxItems);
         cache.RecoveryQueue.Contains("key-short").Should().BeTrue("the short-TTL item must be in the queue");
 
         // when — advance time past the short item's recovery window so the sweep inside ProcessAsync
@@ -76,7 +101,7 @@ public sealed class HybridCacheRecoveryQueueMinExpiryStaleTests : TestBase
         cache
             .RecoveryQueue.Count.Should()
             .BeLessThanOrEqualTo(
-                max_items,
+                maxItems,
                 "the queue must not overshoot AutoRecoveryMaxItems after the expiry sweep removes the tracked minimum"
             );
     }

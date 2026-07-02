@@ -2,7 +2,6 @@
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class ConcurrencyTests(RedisCacheFixture fixture) : RedisCacheTestBase(fixture)
 {
     [Fact]

@@ -139,13 +139,13 @@ public sealed class AzureServiceBusOptionsTests
     }
 
     [Fact]
-    public void should_have_null_sql_filters_by_default()
+    public void should_have_empty_sql_filters_by_default()
     {
         // given, when
         var options = new AzureServiceBusOptions();
 
         // then
-        options.SqlFilters.Should().BeNull();
+        options.SqlFilters.Should().BeEmpty();
     }
 
     [Fact]
@@ -158,7 +158,7 @@ public sealed class AzureServiceBusOptionsTests
         options.ConfigureCustomProducer<EntityCreated>(cfg => cfg.UseTopic("entity-created"));
 
         // then
-        options.CustomProducers.Should().HaveCount(1);
+        options.CustomProducers.Should().ContainSingle();
         var producer = options.CustomProducers.Single();
         producer.TopicPath.Should().Be("entity-created");
         producer.MessageTypeName.Should().Be(nameof(EntityCreated));
@@ -244,14 +244,11 @@ public sealed class AzureServiceBusOptionsTests
     public void should_allow_setting_sql_filters()
     {
         // given, when
-        var options = new AzureServiceBusOptions
-        {
-            SqlFilters =
-            [
-                new KeyValuePair<string, string>("priority-filter", "priority > 5"),
-                new KeyValuePair<string, string>("type-filter", "type = 'order'"),
-            ],
-        };
+        var options = new AzureServiceBusOptions();
+        options.SqlFilters.AddRange([
+            new KeyValuePair<string, string>("priority-filter", "priority > 5"),
+            new KeyValuePair<string, string>("type-filter", "type = 'order'"),
+        ]);
 
         // then
         options.SqlFilters.Should().HaveCount(2);

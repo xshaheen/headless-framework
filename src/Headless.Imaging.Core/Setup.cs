@@ -25,7 +25,7 @@ public static class SetupCore
         {
             services.Configure<ImagingOptions, ImagingOptionsValidator>(config);
 
-            return _AddCore(services);
+            return _AddImagingCore(services);
         }
 
         /// <summary>
@@ -43,7 +43,7 @@ public static class SetupCore
         {
             services.Configure<ImagingOptions, ImagingOptionsValidator>(setupAction);
 
-            return _AddCore(services);
+            return _AddImagingCore(services);
         }
 
         /// <summary>
@@ -60,11 +60,11 @@ public static class SetupCore
         {
             services.Configure<ImagingOptions, ImagingOptionsValidator>(setupAction);
 
-            return _AddCore(services);
+            return _AddImagingCore(services);
         }
     }
 
-    private static AddImagingBuilder _AddCore(IServiceCollection services)
+    private static AddImagingBuilder _AddImagingCore(IServiceCollection services)
     {
         services.AddSingleton<IImageResizer, ImageResizer>();
         services.AddSingleton<IImageCompressor, ImageCompressor>();

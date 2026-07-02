@@ -16,5 +16,6 @@
     <ProjectReference Include="..\..\src\Headless.Jobs.EntityFramework\Headless.Jobs.EntityFramework.csproj" />
     <ProjectReference Include="..\..\src\Headless.DistributedLocks.Core\Headless.DistributedLocks.Core.csproj" />
     <ProjectReference Include="..\..\src\Headless.DistributedLocks.InMemory\Headless.DistributedLocks.InMemory.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
   </ItemGroup>
 </Project>

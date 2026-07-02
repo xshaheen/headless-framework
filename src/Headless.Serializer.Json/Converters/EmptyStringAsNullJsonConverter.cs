@@ -6,7 +6,7 @@ namespace Headless.Serializer.Converters;
 
 /// <summary>
 /// Treats an empty JSON string (<c>""</c>) as <see langword="null"/> during deserialization, and writes
-/// <see langword="null"/> (or an empty string value) as a JSON <c>null</c> token during serialization.
+/// <see langword="null"/> (or an empty string value) as a JSON <see langword="null"/> token during serialization.
 /// </summary>
 /// <remarks>
 /// To avoid infinite recursion the converter internally clones the active <see cref="JsonSerializerOptions"/>

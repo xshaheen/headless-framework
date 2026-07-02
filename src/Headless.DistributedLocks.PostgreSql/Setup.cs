@@ -2,7 +2,6 @@
 
 using Headless.Abstractions;
 using Headless.Checks;
-using Headless.Core;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -40,10 +39,7 @@ public static class SetupPostgreSqlDistributedLocks
         {
             Argument.IsNotNullOrWhiteSpace(connectionString);
 
-            return setup.UsePostgreSql(options =>
-            {
-                options.ConnectionString = connectionString;
-            });
+            return setup.UsePostgreSql(options => options.ConnectionString = connectionString);
         }
 
         /// <summary>

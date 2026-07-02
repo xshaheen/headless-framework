@@ -809,7 +809,7 @@ public static class GeoExtensions
 
         return g switch
         {
-            GeometryCollection c => c.Geometries.SelectMany(x => x.Flatten()).ToArray(),
+            GeometryCollection c => [.. c.Geometries.SelectMany(x => x.Flatten())],
             _ => [g],
         };
     }
@@ -826,7 +826,7 @@ public static class GeoExtensions
         return g switch
         {
             Polygon => [g],
-            GeometryCollection c => c.Geometries.SelectMany(x => x.GetPolygonsOrEmpty()).ToArray(),
+            GeometryCollection c => [.. c.Geometries.SelectMany(x => x.GetPolygonsOrEmpty())],
             _ => [],
         };
     }
@@ -846,7 +846,7 @@ public static class GeoExtensions
         return g switch
         {
             Point or LineString => [g],
-            GeometryCollection c => c.Geometries.SelectMany(x => x.GetSimpleGeometryOrEmpty()).ToArray(),
+            GeometryCollection c => [.. c.Geometries.SelectMany(x => x.GetSimpleGeometryOrEmpty())],
             _ => [],
         };
     }

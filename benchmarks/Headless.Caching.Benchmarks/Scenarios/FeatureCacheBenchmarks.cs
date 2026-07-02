@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Globalization;
 using BenchmarkDotNet.Attributes;
 
 namespace Headless.Caching.Benchmarks.Scenarios;
@@ -57,7 +58,12 @@ public class FeatureCacheBenchmarks
     public async ValueTask<BenchmarkPayload?> FeatureColdGetOrAddAsync()
     {
         return await Client
-            .GetOrAddAsync($"feature:cold:{_index++}", _CreatePayloadAsync, _expiration, CancellationToken.None)
+            .GetOrAddAsync(
+                string.Create(CultureInfo.InvariantCulture, $"feature:cold:{_index++}"),
+                _CreatePayloadAsync,
+                _expiration,
+                CancellationToken.None
+            )
             .ConfigureAwait(false);
     }
 

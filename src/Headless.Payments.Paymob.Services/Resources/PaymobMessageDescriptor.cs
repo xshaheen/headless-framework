@@ -48,7 +48,7 @@ public static class PaymobMessageDescriptor
     {
         public static ErrorDescriptor ProviderConnectionFailed()
         {
-            return new("cashIn:provider_connection_failed", CashInMessages.CashInProviderConnectionFailed);
+            return new("cash_in:provider_connection_failed", CashInMessages.CashInProviderConnectionFailed);
         }
     }
 

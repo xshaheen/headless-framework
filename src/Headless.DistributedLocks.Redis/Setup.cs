@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.DistributedLocks.Redis.Scripts;
 using Headless.Hosting.Initialization;
 using Headless.Messaging;
 using Headless.Redis;

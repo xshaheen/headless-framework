@@ -59,7 +59,8 @@ public sealed class DistributedLockExtensionsTests : TestBase
             {
                 workExecuted = true;
                 return Task.CompletedTask;
-            }
+            },
+            cancellationToken: AbortToken
         );
 
         // then
@@ -87,7 +88,8 @@ public sealed class DistributedLockExtensionsTests : TestBase
             {
                 workExecuted = true;
                 return Task.CompletedTask;
-            }
+            },
+            cancellationToken: AbortToken
         );
 
         // then

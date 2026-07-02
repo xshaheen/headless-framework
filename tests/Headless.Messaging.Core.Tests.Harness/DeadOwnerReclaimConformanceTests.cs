@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Globalization;
 using Headless.Coordination;
-using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
@@ -196,10 +194,10 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
         );
 
         // Second host: shares the same store (same InMemory instance, or same SQL database via the connection string).
-        var second = await _BuildStackAsync(SharesStorageInstanceForConcurrency ? storage : null);
+        var (secondProvider, _) = await _BuildStackAsync(SharesStorageInstanceForConcurrency ? storage : null);
 
         await _StartBridgeAsync(_providers[0]);
-        await _StartBridgeAsync(second.Provider);
+        await _StartBridgeAsync(secondProvider);
 
         (await _BecomesRetriableAsync(storage, dead.Published, published: true)).Should().BeTrue();
         (await _BecomesRetriableAsync(storage, dead.Received, published: false)).Should().BeTrue();

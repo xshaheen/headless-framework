@@ -12,7 +12,15 @@ namespace Headless.DistributedLocks;
 /// reuse a connection that is already holding a lock for the same connection string, and prunes idle/disposable
 /// instances to bound memory growth.
 /// </summary>
-internal sealed class MultiplexedConnectionLockPool
+/// <remarks>
+/// Initializes the pool with the given connection factory.
+/// </remarks>
+/// <param name="connectionFactory">
+/// Factory that creates a <see cref="DatabaseConnection"/> for a given connection string. Called
+/// when the pool has no idle lock to reuse for that connection string.
+/// </param>
+/// <exception cref="ArgumentNullException">Thrown when <paramref name="connectionFactory"/> is <see langword="null"/>.</exception>
+internal sealed class MultiplexedConnectionLockPool(Func<string, DatabaseConnection> connectionFactory)
 {
     // Only LockAsync is needed here (no zero-wait/timed acquire), so Nito.AsyncEx.AsyncLock is appropriate.
     private readonly AsyncLock _lock = new();
@@ -26,21 +34,8 @@ internal sealed class MultiplexedConnectionLockPool
     // Number of MultiplexedConnectionLock instances currently stored across all pools.
     private uint _pooledLockCount;
 
-    /// <summary>
-    /// Initializes the pool with the given connection factory.
-    /// </summary>
-    /// <param name="connectionFactory">
-    /// Factory that creates a <see cref="DatabaseConnection"/> for a given connection string. Called
-    /// when the pool has no idle lock to reuse for that connection string.
-    /// </param>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="connectionFactory"/> is <see langword="null"/>.</exception>
-    public MultiplexedConnectionLockPool(Func<string, DatabaseConnection> connectionFactory)
-    {
-        ConnectionFactory = Argument.IsNotNull(connectionFactory);
-    }
-
     /// <summary>The factory used to create new connections for a given connection string.</summary>
-    internal Func<string, DatabaseConnection> ConnectionFactory { get; }
+    internal Func<string, DatabaseConnection> ConnectionFactory { get; } = Argument.IsNotNull(connectionFactory);
 
     /// <summary>
     /// Attempts to acquire an advisory lock for <paramref name="name"/> on a pooled connection for
@@ -75,7 +70,7 @@ internal sealed class MultiplexedConnectionLockPool
 
             try
             {
-                var opportunisticResult = await _TryAcquireAsync(existingLock, opportunistic: true)
+                var opportunisticResult = await tryAcquireAsync(existingLock, opportunistic: true)
                     .ConfigureAwait(false);
 
                 if (opportunisticResult.Handle is not null)
@@ -91,7 +86,7 @@ internal sealed class MultiplexedConnectionLockPool
                     case MultiplexedConnectionLockRetry.NoRetry:
                         return null;
                     case MultiplexedConnectionLockRetry.RetryOnThisLock:
-                        var retryOnThisLockResult = await _TryAcquireAsync(existingLock, opportunistic: false)
+                        var retryOnThisLockResult = await tryAcquireAsync(existingLock, opportunistic: false)
                             .ConfigureAwait(false);
                         canSafelyDisposeExistingLock = retryOnThisLockResult.CanSafelyDispose;
 
@@ -122,7 +117,7 @@ internal sealed class MultiplexedConnectionLockPool
 
         try
         {
-            result = await _TryAcquireAsync(@lock, opportunistic: false).ConfigureAwait(false);
+            result = await tryAcquireAsync(@lock, opportunistic: false).ConfigureAwait(false);
             Debug.Assert(
                 result.Value.Retry == MultiplexedConnectionLockRetry.NoRetry,
                 "Acquire on a fresh lock should not recommend a retry."
@@ -137,7 +132,7 @@ internal sealed class MultiplexedConnectionLockPool
 
         return result.Value.Handle;
 
-        ValueTask<MultiplexedConnectionLock.Result> _TryAcquireAsync(
+        ValueTask<MultiplexedConnectionLock.Result> tryAcquireAsync(
             MultiplexedConnectionLock instance,
             bool opportunistic
         ) => instance.TryAcquireAsync(name, timeout, strategy, keepaliveCadence, opportunistic, cancellationToken);

@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 using Headless.Redis;
 using StackExchange.Redis;
 
-namespace Headless.DistributedLocks.Redis;
+namespace Headless.DistributedLocks.Redis.Scripts;
 
 /// <summary>Atomically acquires a writer lock or plants the caller's writer-waiting marker.</summary>
 internal sealed class TryAcquireWriteLockScriptDefinition : RedisScriptDefinition

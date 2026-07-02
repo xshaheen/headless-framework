@@ -62,7 +62,7 @@ public sealed class HeadlessCachingSetupBuilder
                 + $"'{CacheConstants.HybridCacheProvider}')."
         );
 
-        if (TierExtensions.Any(tier => string.Equals(tier.RoleKey, roleKey, StringComparison.Ordinal)))
+        if (TierExtensions.Exists(tier => string.Equals(tier.RoleKey, roleKey, StringComparison.Ordinal)))
         {
             throw new InvalidOperationException($"A tier provider is already registered for the role key '{roleKey}'.");
         }

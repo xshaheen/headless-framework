@@ -1,10 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.IO;
+using Headless.Testing.Tests;
 
 namespace Tests.IO;
 
-public sealed class FileHelperTests
+public sealed class FileHelperTests : TestBase
 {
     [Theory]
     [InlineData("../escape.txt")]
@@ -17,9 +18,9 @@ public sealed class FileHelperTests
 
         try
         {
-            using var stream = new MemoryStream("data"u8.ToArray());
+            await using var stream = new MemoryStream("data"u8.ToArray());
 
-            var act = async () => await stream.SaveToLocalFileAsync(maliciousName, directory);
+            var act = async () => await stream.SaveToLocalFileAsync(maliciousName, directory, AbortToken);
 
             await act.Should().ThrowAsync<ArgumentException>();
         }
@@ -39,13 +40,13 @@ public sealed class FileHelperTests
 
         try
         {
-            using var stream = new MemoryStream("data"u8.ToArray());
+            await using var stream = new MemoryStream("data"u8.ToArray());
 
-            await stream.SaveToLocalFileAsync("safe.txt", directory);
+            await stream.SaveToLocalFileAsync("safe.txt", directory, AbortToken);
 
             var savedPath = Path.Combine(directory, "safe.txt");
             File.Exists(savedPath).Should().BeTrue();
-            (await File.ReadAllTextAsync(savedPath)).Should().Be("data");
+            (await File.ReadAllTextAsync(savedPath, AbortToken)).Should().Be("data");
         }
         finally
         {

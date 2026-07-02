@@ -14,7 +14,7 @@ internal sealed class RedisPubSubConnectionProvider(IOptions<RedisPubSubOptions>
     : IRedisPubSubConnectionProvider
 {
     private readonly SemaphoreSlim _lock = new(1, 1);
-    private IConnectionMultiplexer? _connection;
+    private ConnectionMultiplexer? _connection;
 
     public async Task<IConnectionMultiplexer> ConnectAsync()
     {

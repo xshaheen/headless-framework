@@ -34,7 +34,10 @@ internal static class DistributedLockTestSupport
 
         listener.InstrumentPublished = (instrument, l) =>
         {
-            if (instrument.Meter.Name == "Headless.DistributedLocks" && instrument.Name == instrumentName)
+            if (
+                string.Equals(instrument.Meter.Name, "Headless.DistributedLocks", StringComparison.Ordinal)
+                && string.Equals(instrument.Name, instrumentName, StringComparison.Ordinal)
+            )
             {
                 l.EnableMeasurementEvents(instrument);
             }

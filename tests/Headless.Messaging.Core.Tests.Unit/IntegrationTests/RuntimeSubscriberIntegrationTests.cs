@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Headless.Checks;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Testing.Tests;
@@ -79,7 +80,7 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
     [Fact]
     public async Task should_restart_consumers_for_runtime_subscription_added_after_consumer_register_is_ready()
     {
-        var blocker = new BlockingProcessingServer();
+        await using var blocker = new BlockingProcessingServer();
         await using var provider = _CreateProvider(blocker);
         var bootstrapper = provider.GetRequiredService<IBootstrapper>();
         var runtimeSubscriber = provider.GetRequiredService<IRuntimeSubscriber>();
@@ -199,6 +200,7 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
             CancellationToken cancellationToken
         )
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var dependency = services.GetRequiredService<ScopedRuntimeDependency>();
             ScopedDependencyIds.Enqueue(dependency.Id);
             _messageReceived.TrySetResult(context);
@@ -225,6 +227,7 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
             CancellationToken cancellationToken
         )
         {
+            Argument.IsNotNull(services);
             _started.TrySetResult();
             await _release.Task.WaitAsync(cancellationToken);
             ProcessedMessageIds.Enqueue(context.Message.Id);

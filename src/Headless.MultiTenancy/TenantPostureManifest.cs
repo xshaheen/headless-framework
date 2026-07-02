@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Immutable;
 using Headless.Checks;
 
 namespace Headless.MultiTenancy;
@@ -50,7 +49,7 @@ public sealed class TenantPostureManifest
     /// <paramref name="seam"/> or <paramref name="capabilities"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException"><paramref name="seam"/> is empty or white space.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">
+    /// <exception cref="System.ComponentModel.InvalidEnumArgumentException">
     /// <paramref name="status"/> is not a defined <see cref="TenantPostureStatus"/> value (validated when
     /// merged with an existing seam posture).
     /// </exception>
@@ -83,22 +82,10 @@ public sealed class TenantPostureManifest
         // The enum ordinal IS the posture precedence (see TenantPostureStatus). Reject undefined
         // values — an out-of-range cast or a future member that bypassed this path — loudly instead
         // of silently down-ranking them to the weakest posture.
-        _EnsureDefined(left);
-        _EnsureDefined(right);
+        Argument.IsInEnum(left);
+        Argument.IsInEnum(right);
 
         return left >= right ? left : right;
-    }
-
-    private static void _EnsureDefined(TenantPostureStatus status)
-    {
-        if (!Enum.IsDefined(status))
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(status),
-                status,
-                $"Unknown {nameof(TenantPostureStatus)} value."
-            );
-        }
     }
 
     /// <summary>Marks a runtime step, such as a middleware call, as applied for the seam.</summary>

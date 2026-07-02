@@ -109,8 +109,8 @@ public sealed class HeadlessServiceDefaultsOpenTelemetryOptions
     public Action<TracerProviderBuilder>? ConfigureTracing { get; set; }
 
     /// <summary>
-    /// Predicate that decides whether a request is traced. Return <c>true</c> to trace, <c>false</c> to skip.
-    /// When <c>null</c> (the default), the framework skips the operational health and liveness endpoints
+    /// Predicate that decides whether a request is traced. Return <see langword="true"/> to trace, <see langword="false"/> to skip.
+    /// When <see langword="null"/> (the default), the framework skips the operational health and liveness endpoints
     /// (paths sourced from <see cref="HeadlessApiDefaultEndpointOptions.HealthPath"/> and
     /// <see cref="HeadlessApiDefaultEndpointOptions.AlivePath"/> at <c>MapHeadlessEndpoints()</c> time, or
     /// from the <see cref="HeadlessApiDefaultEndpointOptions.DefaultHealthPath"/> /
@@ -123,7 +123,7 @@ public sealed class HeadlessServiceDefaultsOpenTelemetryOptions
     public Func<HttpContext, bool>? Filter { get; set; }
 
     /// <summary>
-    /// Default skip predicate: returns <c>true</c> when the request targets a mapped operational endpoint
+    /// Default skip predicate: returns <see langword="true"/> when the request targets a mapped operational endpoint
     /// (health or alive). Set by <c>MapHeadlessEndpoints()</c> once the actual paths are known; available
     /// immediately with the default paths (<see cref="HeadlessApiDefaultEndpointOptions.DefaultHealthPath"/> /
     /// <see cref="HeadlessApiDefaultEndpointOptions.DefaultAlivePath"/>) until then.
@@ -149,7 +149,7 @@ public sealed class HeadlessServiceDefaultsOpenTelemetryOptions
     /// </summary>
     public Action<AspNetCoreTraceInstrumentationOptions>? ConfigureAspNetCoreInstrumentation { get; set; }
 
-    /// <summary>Whether to record exceptions on spans. Defaults to <c>true</c>.</summary>
+    /// <summary>Whether to record exceptions on spans. Defaults to <see langword="true"/>.</summary>
     public bool RecordException { get; set; } = true;
 
     internal static Func<HttpContext, bool> BuildSkipFunc(
@@ -207,7 +207,7 @@ public sealed class HeadlessServiceDefaultsHttpClientOptions
 [PublicAPI]
 public sealed class HeadlessServiceDefaultsAntiforgeryOptions
 {
-    /// <summary>Whether <c>AddHeadless()</c> should register the antiforgery service. Default: <c>false</c>.</summary>
+    /// <summary>Whether <c>AddHeadless()</c> should register the antiforgery service. Default: <see langword="false"/>.</summary>
     public bool Enabled { get; set; }
 }
 

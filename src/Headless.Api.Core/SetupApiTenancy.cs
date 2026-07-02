@@ -111,15 +111,12 @@ public static class SetupApiTenancy
     {
         Argument.IsNotNull(application);
 
-        var manifest = application.ApplicationServices.GetService<TenantPostureManifest>();
-
-        if (manifest is null)
-        {
-            throw new InvalidOperationException(
+        var manifest =
+            application.ApplicationServices.GetService<TenantPostureManifest>()
+            ?? throw new InvalidOperationException(
                 "UseHeadlessTenancy() requires AddHeadlessTenancy(...). Configure HTTP tenancy with "
                     + "builder.AddHeadlessTenancy(tenancy => tenancy.Http(http => http.ResolveFromClaims()))."
             );
-        }
 
         if (!manifest.IsConfigured(HeadlessHttpTenancyBuilder.Seam))
         {

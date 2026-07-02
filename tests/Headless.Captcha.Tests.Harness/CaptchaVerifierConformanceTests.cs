@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
-using System.Net.Http;
 using Headless.Captcha;
 using Headless.Testing.Tests;
 
@@ -13,21 +12,15 @@ namespace Tests;
 /// HTTP failure, null-body deserialization failure, cancellation, and conditional <c>remoteip</c> encoding.
 /// </summary>
 /// <typeparam name="TFixture">The provider's conformance fixture.</typeparam>
-public abstract class CaptchaVerifierConformanceTests<TFixture> : TestBase, IClassFixture<TFixture>
+public abstract class CaptchaVerifierConformanceTests<TFixture>(TFixture fixture) : TestBase, IClassFixture<TFixture>
     where TFixture : class, ICaptchaVerifierFixture
 {
-    private readonly TFixture _fixture;
-
-    protected CaptchaVerifierConformanceTests(TFixture fixture)
-    {
-        _fixture = fixture;
-    }
-
     [Fact]
     public async Task valid_token_returns_success_with_common_fields()
     {
-        var stub = new StubSiteVerifyHandler().EnqueueJson(HttpStatusCode.OK, _fixture.SuccessResponseBody);
-        var verifier = _fixture.CreateVerifier(stub);
+        using var stubSiteVerifyHandler = new StubSiteVerifyHandler();
+        var stub = stubSiteVerifyHandler.EnqueueJson(HttpStatusCode.OK, fixture.SuccessResponseBody);
+        var verifier = fixture.CreateVerifier(stub);
 
         var result = await verifier.VerifyAsync(new CaptchaVerifyRequest { Response = "valid-token" }, AbortToken);
 
@@ -39,8 +32,9 @@ public abstract class CaptchaVerifierConformanceTests<TFixture> : TestBase, ICla
     [Fact]
     public async Task rejected_token_returns_failure_with_error_codes()
     {
-        var stub = new StubSiteVerifyHandler().EnqueueJson(HttpStatusCode.OK, _fixture.RejectedResponseBody);
-        var verifier = _fixture.CreateVerifier(stub);
+        using var stubSiteVerifyHandler = new StubSiteVerifyHandler();
+        var stub = stubSiteVerifyHandler.EnqueueJson(HttpStatusCode.OK, fixture.RejectedResponseBody);
+        var verifier = fixture.CreateVerifier(stub);
 
         var result = await verifier.VerifyAsync(new CaptchaVerifyRequest { Response = "rejected-token" }, AbortToken);
 
@@ -52,8 +46,9 @@ public abstract class CaptchaVerifierConformanceTests<TFixture> : TestBase, ICla
     public async Task non_success_http_status_throws_http_request_exception()
     {
         // 400 is not retried by the standard resilience handler, so the failure surfaces immediately.
-        var stub = new StubSiteVerifyHandler().EnqueueJson(HttpStatusCode.BadRequest, "{}");
-        var verifier = _fixture.CreateVerifier(stub);
+        using var stubSiteVerifyHandler = new StubSiteVerifyHandler();
+        var stub = stubSiteVerifyHandler.EnqueueJson(HttpStatusCode.BadRequest, "{}");
+        var verifier = fixture.CreateVerifier(stub);
 
         var act = async () => await verifier.VerifyAsync(new CaptchaVerifyRequest { Response = "token" }, AbortToken);
 
@@ -63,8 +58,9 @@ public abstract class CaptchaVerifierConformanceTests<TFixture> : TestBase, ICla
     [Fact]
     public async Task null_json_body_throws_invalid_operation()
     {
-        var stub = new StubSiteVerifyHandler().EnqueueJson(HttpStatusCode.OK, "null");
-        var verifier = _fixture.CreateVerifier(stub);
+        using var stubSiteVerifyHandler = new StubSiteVerifyHandler();
+        var stub = stubSiteVerifyHandler.EnqueueJson(HttpStatusCode.OK, "null");
+        var verifier = fixture.CreateVerifier(stub);
 
         var act = async () => await verifier.VerifyAsync(new CaptchaVerifyRequest { Response = "token" }, AbortToken);
 
@@ -77,8 +73,9 @@ public abstract class CaptchaVerifierConformanceTests<TFixture> : TestBase, ICla
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
-        var stub = new StubSiteVerifyHandler().EnqueueJson(HttpStatusCode.OK, _fixture.SuccessResponseBody);
-        var verifier = _fixture.CreateVerifier(stub);
+        using var stubSiteVerifyHandler = new StubSiteVerifyHandler();
+        var stub = stubSiteVerifyHandler.EnqueueJson(HttpStatusCode.OK, fixture.SuccessResponseBody);
+        var verifier = fixture.CreateVerifier(stub);
 
         var act = async () => await verifier.VerifyAsync(new CaptchaVerifyRequest { Response = "token" }, cts.Token);
 
@@ -91,8 +88,9 @@ public abstract class CaptchaVerifierConformanceTests<TFixture> : TestBase, ICla
     {
         // A non-JSON HTTP 200 (e.g. an HTML error page) must surface as InvalidOperationException, not a raw
         // JsonException — callers only need to handle the documented exception contract.
-        var stub = new StubSiteVerifyHandler().EnqueueJson(HttpStatusCode.OK, "<html>oops</html>");
-        var verifier = _fixture.CreateVerifier(stub);
+        using var stubSiteVerifyHandler = new StubSiteVerifyHandler();
+        var stub = stubSiteVerifyHandler.EnqueueJson(HttpStatusCode.OK, "<html>oops</html>");
+        var verifier = fixture.CreateVerifier(stub);
 
         var act = async () => await verifier.VerifyAsync(new CaptchaVerifyRequest { Response = "token" }, AbortToken);
 
@@ -102,8 +100,9 @@ public abstract class CaptchaVerifierConformanceTests<TFixture> : TestBase, ICla
     [Fact]
     public async Task remote_ip_included_only_when_supplied()
     {
-        var withIpStub = new StubSiteVerifyHandler().EnqueueJson(HttpStatusCode.OK, _fixture.SuccessResponseBody);
-        var withIpVerifier = _fixture.CreateVerifier(withIpStub);
+        using var stub1 = new StubSiteVerifyHandler();
+        var withIpStub = stub1.EnqueueJson(HttpStatusCode.OK, fixture.SuccessResponseBody);
+        var withIpVerifier = fixture.CreateVerifier(withIpStub);
         await withIpVerifier.VerifyAsync(
             new CaptchaVerifyRequest { Response = "token", RemoteIp = "203.0.113.5" },
             AbortToken
@@ -112,8 +111,9 @@ public abstract class CaptchaVerifierConformanceTests<TFixture> : TestBase, ICla
         withIpStub.LastRequestBody.Should().Contain("remoteip");
         withIpStub.LastRequestBody.Should().Contain("203.0.113.5");
 
-        var withoutIpStub = new StubSiteVerifyHandler().EnqueueJson(HttpStatusCode.OK, _fixture.SuccessResponseBody);
-        var withoutIpVerifier = _fixture.CreateVerifier(withoutIpStub);
+        using var stub2 = new StubSiteVerifyHandler();
+        var withoutIpStub = stub2.EnqueueJson(HttpStatusCode.OK, fixture.SuccessResponseBody);
+        var withoutIpVerifier = fixture.CreateVerifier(withoutIpStub);
         await withoutIpVerifier.VerifyAsync(new CaptchaVerifyRequest { Response = "token" }, AbortToken);
 
         withoutIpStub.LastRequestBody.Should().NotContain("remoteip");

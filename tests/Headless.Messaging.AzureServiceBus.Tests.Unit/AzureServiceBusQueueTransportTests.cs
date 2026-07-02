@@ -5,14 +5,12 @@ using System.Reflection;
 using Azure.Messaging.ServiceBus;
 using Headless.Messaging;
 using Headless.Messaging.AzureServiceBus;
-using Headless.Messaging.Messages;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute.ExceptionExtensions;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class AzureServiceBusQueueTransportTests
 {
     private static readonly IOptions<AzureServiceBusOptions> _Options = Options.Create(

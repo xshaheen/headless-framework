@@ -12,8 +12,8 @@ public sealed class MessageExtensionTest
         var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId };
         var message = new Message(header, null);
 
-        message.GetId().Should().NotBeNull();
-        message.GetId().Should().Be(msgId);
+        message.Id.Should().NotBeNull();
+        message.Id.Should().Be(msgId);
     }
 
     [Fact]
@@ -23,8 +23,8 @@ public sealed class MessageExtensionTest
         var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageName] = msgName };
         var message = new Message(header, null);
 
-        message.GetName().Should().NotBeNull();
-        message.GetName().Should().Be(msgName);
+        message.Name.Should().NotBeNull();
+        message.Name.Should().Be(msgName);
     }
 
     [Fact]

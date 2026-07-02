@@ -3,7 +3,6 @@
 using Confluent.Kafka;
 using Headless.Messaging;
 using Headless.Messaging.Kafka;
-using Headless.Messaging.Messages;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -86,7 +85,7 @@ public sealed class KafkaTransportTests : TestBase
             .Returns(deliveryResult);
 
         // when
-        var result = await transport.SendAsync(message);
+        var result = await transport.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeTrue();
@@ -117,7 +116,7 @@ public sealed class KafkaTransportTests : TestBase
             .Returns(deliveryResult);
 
         // when
-        await transport.SendAsync(message);
+        await transport.SendAsync(message, AbortToken);
 
         // then
         _pool.Received(1).Return(_producer);
@@ -147,7 +146,7 @@ public sealed class KafkaTransportTests : TestBase
             );
 
         // when
-        var result = await transport.SendAsync(message);
+        var result = await transport.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeFalse();
@@ -179,7 +178,7 @@ public sealed class KafkaTransportTests : TestBase
             .Returns(deliveryResult);
 
         // when
-        await transport.SendAsync(message);
+        await transport.SendAsync(message, AbortToken);
 
         // then
         await _producer
@@ -216,7 +215,7 @@ public sealed class KafkaTransportTests : TestBase
             .Returns(deliveryResult);
 
         // when
-        await transport.SendAsync(message);
+        await transport.SendAsync(message, AbortToken);
 
         // then
         await _producer
@@ -253,7 +252,7 @@ public sealed class KafkaTransportTests : TestBase
             .Returns(deliveryResult);
 
         // when
-        await transport.SendAsync(message);
+        await transport.SendAsync(message, AbortToken);
 
         // then
         await _producer
@@ -290,7 +289,7 @@ public sealed class KafkaTransportTests : TestBase
             .Returns(deliveryResult);
 
         // when
-        await transport.SendAsync(message);
+        await transport.SendAsync(message, AbortToken);
 
         // then
         await _producer
@@ -327,7 +326,7 @@ public sealed class KafkaTransportTests : TestBase
             .Returns(deliveryResult);
 
         // when
-        var result = await transport.SendAsync(message);
+        var result = await transport.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeTrue();
@@ -357,7 +356,7 @@ public sealed class KafkaTransportTests : TestBase
             .Returns(deliveryResult);
 
         // when
-        var result = await transport.SendAsync(message);
+        var result = await transport.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeTrue();
@@ -387,7 +386,7 @@ public sealed class KafkaTransportTests : TestBase
             .Returns(deliveryResult);
 
         // when
-        var result = await transport.SendAsync(message);
+        var result = await transport.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeFalse();
@@ -419,7 +418,7 @@ public sealed class KafkaTransportTests : TestBase
             .Returns(deliveryResult);
 
         // when
-        await transport.SendAsync(message);
+        await transport.SendAsync(message, AbortToken);
 
         // then
         _pool.Received(1).Return(_producer);

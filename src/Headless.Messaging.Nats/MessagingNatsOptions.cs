@@ -41,7 +41,7 @@ public sealed class MessagingNatsOptions
     /// <summary>
     /// Customises the underlying NATS connection options. Because <c>NatsOpts</c> is a record,
     /// use the <c>with</c> expression pattern:
-    /// <code>opt.ConfigureConnection = o => o with { ConnectTimeout = TimeSpan.FromSeconds(10) };</code>
+    /// <c>opt.ConfigureConnection = o => o with { ConnectTimeout = TimeSpan.FromSeconds(10) };</c>
     /// <see cref="Servers"/> is applied as <c>Url</c> before this callback runs, so the callback
     /// can safely override or extend it.
     /// </summary>

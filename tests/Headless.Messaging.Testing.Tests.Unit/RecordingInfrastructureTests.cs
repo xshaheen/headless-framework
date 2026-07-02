@@ -7,7 +7,6 @@ using Headless.Messaging.Messages;
 using Headless.Messaging.Serialization;
 using Headless.Messaging.Testing;
 using Headless.Messaging.Testing.Internal;
-using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 
 namespace Tests;
@@ -229,7 +228,7 @@ public sealed class RecordingInfrastructureTests : TestBase
 
         // then — still records, just with fallback type
         store.Published.Should().ContainSingle();
-        store.Published.Single().MessageType.Should().Be(typeof(TransportMessage));
+        store.Published.Single().MessageType.Should().Be<TransportMessage>();
     }
 
     [Fact]
@@ -329,9 +328,12 @@ public sealed class RecordingInfrastructureTests : TestBase
         {
             await pipeline.ExecuteAsync(context, payload, typeof(SimplePayload), AbortToken);
         }
+#pragma warning disable ERP022 // Unobserved exception in generic exception handler
         catch
-        { /* expected */
+        {
+            /* expected */
         }
+#pragma warning restore ERP022
 
         // then
         store.Faulted.Single().Exception.Should().BeSameAs(ex);
@@ -390,7 +392,7 @@ public sealed class RecordingInfrastructureTests : TestBase
         await pipeline.ExecuteAsync(context, payload, typeof(SimplePayload), AbortToken);
 
         // then
-        store.Consumed.Single().MessageType.Should().Be(typeof(SimplePayload));
+        store.Consumed.Single().MessageType.Should().Be<SimplePayload>();
     }
 
     [Fact]

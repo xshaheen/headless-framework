@@ -317,7 +317,7 @@ public static class SetupReCaptcha
                 name,
                 (sp, key) =>
                     new ReCaptchaSiteVerifyV3(
-                        (string)key!,
+                        (string)key,
                         sp.GetRequiredService<IOptionsMonitor<ReCaptchaOptions>>(),
                         sp.GetRequiredService<IHttpClientFactory>(),
                         sp.GetService<ILogger<ReCaptchaSiteVerifyV3>>()
@@ -361,7 +361,7 @@ public static class SetupReCaptcha
                 name,
                 (sp, key) =>
                     new ReCaptchaSiteVerifyV2(
-                        (string)key!,
+                        (string)key,
                         sp.GetRequiredService<IOptionsMonitor<ReCaptchaOptions>>(),
                         sp.GetRequiredService<IHttpClientFactory>(),
                         sp.GetService<ILogger<ReCaptchaSiteVerifyV2>>()

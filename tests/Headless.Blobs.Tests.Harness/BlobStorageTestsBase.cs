@@ -7,7 +7,6 @@ using Headless.Core;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 
-// ReSharper disable AccessToDisposedClosure
 namespace Tests;
 
 public abstract class BlobStorageTestsBase : TestBase
@@ -196,7 +195,6 @@ public abstract class BlobStorageTestsBase : TestBase
 
         var container = Container;
 
-        // ReSharper disable once AccessToDisposedClosure
         Func<Task> action = async () => _ = await storage.GetBlobInfoAsync(container, null!);
         await action.Should().ThrowExactlyAsync<ArgumentNullException>();
         (await storage.GetBlobInfoAsync(container, Guid.NewGuid().ToString())).Should().BeNull();
@@ -570,7 +568,6 @@ public abstract class BlobStorageTestsBase : TestBase
 
         string[] container = [Faker.Random.String2(5, 25)];
 
-        // ReSharper disable once AccessToDisposedClosure
         var action = () => storage.DeleteAllAsync(container).AsTask();
 
         await action.Should().NotThrowAsync();
@@ -585,7 +582,6 @@ public abstract class BlobStorageTestsBase : TestBase
         string[] container = [Faker.Random.String2(5, 25)];
         var blobName = Faker.Random.String2(5, 25);
 
-        // ReSharper disable once AccessToDisposedClosure
         var action = () => storage.DeleteAsync(container, blobName).AsTask();
 
         await action.Should().NotThrowAsync();
@@ -600,7 +596,6 @@ public abstract class BlobStorageTestsBase : TestBase
         string[] container = [Faker.Random.String2(5, 25)];
         string[] blobNames = [Faker.Random.String2(5, 25)];
 
-        // ReSharper disable once AccessToDisposedClosure
         var action = () => storage.BulkDeleteAsync(container, blobNames).AsTask();
 
         await action.Should().NotThrowAsync();
@@ -617,7 +612,6 @@ public abstract class BlobStorageTestsBase : TestBase
         var blobName = Faker.Random.String2(5, 25);
         var newBlobName = Faker.Random.String2(5, 25);
 
-        // ReSharper disable once AccessToDisposedClosure
         var action = () => storage.RenameAsync(sourceContainer, blobName, destinationContainer, newBlobName).AsTask();
 
         await action.Should().NotThrowAsync();
@@ -634,7 +628,6 @@ public abstract class BlobStorageTestsBase : TestBase
         var blobName = Faker.Random.String2(5, 25);
         var newBlobName = Faker.Random.String2(5, 25);
 
-        // ReSharper disable once AccessToDisposedClosure
         var action = () => storage.CopyAsync(sourceContainer, blobName, destinationContainer, newBlobName).AsTask();
 
         await action.Should().NotThrowAsync();
@@ -649,7 +642,6 @@ public abstract class BlobStorageTestsBase : TestBase
         string[] container = [Faker.Random.String2(5, 25)];
         var blobName = Faker.Random.String2(5, 25);
 
-        // ReSharper disable once AccessToDisposedClosure
         var action = () => storage.ExistsAsync(container, blobName).AsTask();
 
         await action.Should().NotThrowAsync();
@@ -664,7 +656,6 @@ public abstract class BlobStorageTestsBase : TestBase
         string[] container = [Faker.Random.String2(5, 25)];
         var blobName = Faker.Random.String2(5, 25);
 
-        // ReSharper disable once AccessToDisposedClosure
         var action = () => storage.OpenReadStreamAsync(container, blobName).AsTask();
 
         await action.Should().NotThrowAsync();
@@ -679,7 +670,6 @@ public abstract class BlobStorageTestsBase : TestBase
         string[] container = [Faker.Random.String2(5, 25)];
         var blobName = Faker.Random.String2(5, 25);
 
-        // ReSharper disable once AccessToDisposedClosure
         var action = () => storage.GetBlobInfoAsync(container, blobName).AsTask();
 
         await action.Should().NotThrowAsync();
@@ -693,7 +683,6 @@ public abstract class BlobStorageTestsBase : TestBase
 
         string[] container = [Faker.Random.String2(5, 25)];
 
-        // ReSharper disable once AccessToDisposedClosure
         var action = () => storage.GetPagedListAsync(container).AsTask();
 
         await action.Should().NotThrowAsync();

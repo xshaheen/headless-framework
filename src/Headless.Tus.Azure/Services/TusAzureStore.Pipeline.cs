@@ -5,7 +5,6 @@ using System.IO.Pipelines;
 using System.Security.Cryptography;
 using Azure.Storage.Blobs.Models;
 using Headless.Checks;
-using Headless.Tus.Internal;
 using Microsoft.Extensions.Logging;
 using tusdotnet.Extensions.Store;
 using tusdotnet.Interfaces;
@@ -108,7 +107,7 @@ public sealed partial class TusAzureStore : ITusPipelineStore
 
                     // Stage the block
                     var blockId = _GenerateBlockId(blockToken, nextBlockNumber++);
-                    await using var chunkStream = new ReadOnlySequenceStream(chunk);
+                    await using var chunkStream = chunk.ToStream();
                     await blockBlobClient
                         .StageBlockAsync(blockId, chunkStream, cancellationToken: cancellationToken)
                         .ConfigureAwait(false);
@@ -145,7 +144,7 @@ public sealed partial class TusAzureStore : ITusPipelineStore
             {
                 // With checksum - store chunk info for later verification. The digest is prefixed with the
                 // algorithm so VerifyChecksumAsync can confirm the requested algorithm matches the staged one.
-                azureFile.Metadata.LastChunkBlocks = chunkBlockIds.ToArray();
+                azureFile.Metadata.LastChunkBlocks = [.. chunkBlockIds];
                 azureFile.Metadata.LastChunkChecksum =
                     $"{checksumInfo!.Algorithm}:{hasher.GetHashAndReset().ToBase64()}";
                 await _UpdateMetadataAsync(blobClient, azureFile, cancellationToken).ConfigureAwait(false);

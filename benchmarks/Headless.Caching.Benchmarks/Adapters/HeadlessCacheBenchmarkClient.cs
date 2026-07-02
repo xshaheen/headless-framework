@@ -4,7 +4,7 @@ namespace Headless.Caching.Benchmarks.Adapters;
 
 internal sealed class HeadlessCacheBenchmarkClient(
     CacheBenchmarkClientDescriptor descriptor,
-    Headless.Caching.ICache cache,
+    ICache cache,
     params object[] ownedResources
 ) : ICacheBenchmarkClient
 {

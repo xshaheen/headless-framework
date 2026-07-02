@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text.Json.Serialization.Metadata;
-using Headless.Serializer;
-using Headless.Serializer.Converters;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace Headless.EntityFramework.Configurations;
@@ -14,7 +12,7 @@ namespace Headless.EntityFramework.Configurations;
 public sealed class JsonValueConverter<TPropertyType>()
     : ValueConverter<TPropertyType, string>(d => _SerializeObject(d), s => _DeserializeObject(s))
 {
-    private static readonly JsonSerializerOptions _Options = _CreateJsonOptions();
+    private static readonly JsonSerializerOptions _Options = EfCoreJsonOptions.Instance;
 
     private static string _SerializeObject(TPropertyType d)
     {
@@ -24,16 +22,6 @@ public sealed class JsonValueConverter<TPropertyType>()
     private static TPropertyType _DeserializeObject(string s)
     {
         return JsonSerializer.Deserialize<TPropertyType>(s, _Options)!;
-    }
-
-    private static JsonSerializerOptions _CreateJsonOptions()
-    {
-        var option = new JsonSerializerOptions();
-
-        JsonConstants.ConfigureInternalJsonOptions(option);
-        option.Converters.Add(new ObjectToInferredTypesJsonConverter());
-
-        return option;
     }
 }
 

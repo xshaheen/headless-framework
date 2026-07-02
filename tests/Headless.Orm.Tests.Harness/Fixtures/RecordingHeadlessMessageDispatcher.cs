@@ -2,7 +2,6 @@
 
 using Headless.Domain;
 using Headless.EntityFramework;
-using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests.Fixtures;

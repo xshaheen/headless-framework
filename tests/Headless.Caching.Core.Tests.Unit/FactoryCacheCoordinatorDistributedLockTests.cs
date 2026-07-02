@@ -18,10 +18,13 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
     public async Task should_throw_before_store_access_when_option_enabled_without_provider()
     {
         // given — a coordinator constructed WITHOUT a factory lock provider
-        var coordinator = new FactoryCacheCoordinator(_timeProvider, NullLogger<FactoryCacheCoordinator>.Instance);
+        using var coordinator = new FactoryCacheCoordinator(
+            _timeProvider,
+            NullLogger<FactoryCacheCoordinator>.Instance
+        );
         var factoryCalls = 0;
 
-        ValueTask<string?> Factory(CancellationToken cancellationToken)
+        ValueTask<string?> factory(CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref factoryCalls);
             return ValueTask.FromResult<string?>("fresh");
@@ -29,7 +32,7 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
 
         // when
         var act = async () =>
-            await coordinator.GetOrAddAsync(_store, "no-provider", Factory, _CreateOptions(), AbortToken);
+            await coordinator.GetOrAddAsync(_store, "no-provider", factory, _CreateOptions(), AbortToken);
 
         // then — fails in the validation phase, before any store access or factory run
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Headless.Caching.DistributedLocks*");
@@ -42,17 +45,17 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
     {
         // given
         var key = Faker.Random.AlphaNumeric(8);
-        var coordinator = _CreateCoordinator();
+        using var coordinator = _CreateCoordinator();
         var heldDuringFactory = false;
 
-        ValueTask<string?> Factory(CancellationToken cancellationToken)
+        ValueTask<string?> factory(CancellationToken cancellationToken)
         {
             heldDuringFactory = _lockProvider.IsHeld(key);
             return ValueTask.FromResult<string?>("fresh");
         }
 
         // when
-        var result = await coordinator.GetOrAddAsync(_store, key, Factory, _CreateOptions(), AbortToken);
+        var result = await coordinator.GetOrAddAsync(_store, key, factory, _CreateOptions(), AbortToken);
 
         // then
         result.Value.Should().Be("fresh");
@@ -70,7 +73,7 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
         using var hold = _lockProvider.Hold(key);
-        var coordinator = _CreateCoordinator();
+        using var coordinator = _CreateCoordinator();
         var factoryCalls = 0;
         // Required now: fail-safe + finite soft timeout needs a finite ceiling (lock-hold guard).
         var options = _CreateOptions(
@@ -79,14 +82,14 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
             backgroundFactoryCeiling: TimeSpan.FromSeconds(5)
         );
 
-        ValueTask<string?> Factory(CancellationToken cancellationToken)
+        ValueTask<string?> factory(CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref factoryCalls);
             return ValueTask.FromResult<string?>("fresh");
         }
 
         // when
-        var result = await coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken);
+        var result = await coordinator.GetOrAddAsync(_store, key, factory, options, AbortToken);
 
         // then — the soft-timeout degradation serves the stale reserve and never runs the factory
         result.Value.Should().Be("stale");
@@ -103,18 +106,18 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
         // per-key lock is free, so only the distributed acquisition times out.
         var key = Faker.Random.AlphaNumeric(8);
         using var hold = _lockProvider.Hold(key);
-        var coordinator = _CreateCoordinator();
+        using var coordinator = _CreateCoordinator();
         var factoryCalls = 0;
         var options = _CreateOptions(lockTimeout: TimeSpan.FromMilliseconds(50));
 
-        ValueTask<string?> Factory(CancellationToken cancellationToken)
+        ValueTask<string?> factory(CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref factoryCalls);
             return ValueTask.FromResult<string?>("fresh");
         }
 
         // when
-        var result = await coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken);
+        var result = await coordinator.GetOrAddAsync(_store, key, factory, options, AbortToken);
 
         // then
         result.HasValue.Should().BeFalse();
@@ -127,13 +130,13 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
     {
         // given — two coordinators (two "nodes") sharing one store and one lock provider
         var key = Faker.Random.AlphaNumeric(8);
-        var coordinatorA = _CreateCoordinator();
-        var coordinatorB = _CreateCoordinator();
+        using var coordinatorA = _CreateCoordinator();
+        using var coordinatorB = _CreateCoordinator();
         var factoryCalls = 0;
         var winnerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        async ValueTask<string?> factory(CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref factoryCalls);
             winnerStarted.TrySetResult();
@@ -142,9 +145,9 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
         }
 
         // when — the winner enters its factory holding the distributed lock, then the loser piles up on it
-        var first = coordinatorA.GetOrAddAsync(_store, key, Factory, _CreateOptions(), AbortToken).AsTask();
+        var first = coordinatorA.GetOrAddAsync(_store, key, factory, _CreateOptions(), AbortToken).AsTask();
         await winnerStarted.Task.WaitAsync(AbortToken);
-        var second = coordinatorB.GetOrAddAsync(_store, key, Factory, _CreateOptions(), AbortToken).AsTask();
+        var second = coordinatorB.GetOrAddAsync(_store, key, factory, _CreateOptions(), AbortToken).AsTask();
 
         while (_lockProvider.AcquireAttempts < 2)
         {
@@ -169,7 +172,7 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
         var key = Faker.Random.AlphaNumeric(8);
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
-        var coordinator = _CreateCoordinator();
+        using var coordinator = _CreateCoordinator();
         var backgroundFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         coordinator.BackgroundOperationFinished = () => backgroundFinished.TrySetResult();
         var timeoutRegistered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -183,14 +186,14 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
             backgroundFactoryCeiling: TimeSpan.FromSeconds(5)
         );
 
-        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        async ValueTask<string?> factory(CancellationToken cancellationToken)
         {
             factoryStarted.SetResult();
             return await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
 
         // when — the caller gets the stale value while the lease rides with the detached factory
-        var resultTask = coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken).AsTask();
+        var resultTask = coordinator.GetOrAddAsync(_store, key, factory, options, AbortToken).AsTask();
         await factoryStarted.Task.WaitAsync(AbortToken);
         await timeoutRegistered.Task.WaitAsync(AbortToken);
         _timeProvider.Advance(TimeSpan.FromSeconds(1));
@@ -219,14 +222,14 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
         var key = Faker.Random.AlphaNumeric(8);
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
-        var coordinator = _CreateCoordinator();
+        using var coordinator = _CreateCoordinator();
         var options = _CreateOptions(isFailSafeEnabled: true);
 
-        static ValueTask<string?> Factory(CancellationToken cancellationToken) =>
+        static ValueTask<string?> factory(CancellationToken cancellationToken) =>
             throw new InvalidOperationException("boom");
 
         // when
-        var result = await coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken);
+        var result = await coordinator.GetOrAddAsync(_store, key, factory, options, AbortToken);
 
         // then — fail-safe serves the stale reserve and the lease is released
         result.Value.Should().Be("stale");
@@ -241,14 +244,14 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
     {
         // given — a cold key, so there is no fail-safe fallback
         var key = Faker.Random.AlphaNumeric(8);
-        var coordinator = _CreateCoordinator();
+        using var coordinator = _CreateCoordinator();
 
-        static ValueTask<string?> Factory(CancellationToken cancellationToken) =>
+        static ValueTask<string?> factory(CancellationToken cancellationToken) =>
             throw new InvalidOperationException("boom");
 
         // when
         var act = async () =>
-            await coordinator.GetOrAddAsync(_store, key, Factory, _CreateOptions(isFailSafeEnabled: true), AbortToken);
+            await coordinator.GetOrAddAsync(_store, key, factory, _CreateOptions(isFailSafeEnabled: true), AbortToken);
 
         // then
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("boom");
@@ -265,20 +268,20 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
         var eagerRefreshAt = now.AddSeconds(-1);
         _store.SetEntry(key, "old", now.AddMinutes(5), now.AddMinutes(5), eagerRefreshAt: eagerRefreshAt);
         using var hold = _lockProvider.Hold(key);
-        var coordinator = _CreateCoordinator();
+        using var coordinator = _CreateCoordinator();
         var backgroundFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         coordinator.BackgroundOperationFinished = () => backgroundFinished.TrySetResult();
         var factoryCalls = 0;
         var options = _CreateOptions(duration: TimeSpan.FromMinutes(10), eagerRefreshThreshold: 0.5f);
 
-        ValueTask<string?> Factory(CancellationToken cancellationToken)
+        ValueTask<string?> factory(CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref factoryCalls);
             return ValueTask.FromResult<string?>("fresh");
         }
 
         // when
-        var result = await coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken);
+        var result = await coordinator.GetOrAddAsync(_store, key, factory, options, AbortToken);
         await backgroundFinished.Task.WaitAsync(AbortToken);
 
         // then — the still-fresh value is served and the entry (including its eager stamp) is untouched
@@ -299,20 +302,20 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
         var key = Faker.Random.AlphaNumeric(8);
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         _store.SetEntry(key, "old", now.AddMinutes(5), now.AddMinutes(5), eagerRefreshAt: now.AddSeconds(-1));
-        var coordinator = _CreateCoordinator();
+        using var coordinator = _CreateCoordinator();
         var backgroundFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         coordinator.BackgroundOperationFinished = () => backgroundFinished.TrySetResult();
         var factoryCalls = 0;
         var options = _CreateOptions(duration: TimeSpan.FromMinutes(10), eagerRefreshThreshold: 0.5f);
 
-        ValueTask<string?> Factory(CancellationToken cancellationToken)
+        ValueTask<string?> factory(CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref factoryCalls);
             return ValueTask.FromResult<string?>("fresh");
         }
 
         // when
-        var result = await coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken);
+        var result = await coordinator.GetOrAddAsync(_store, key, factory, options, AbortToken);
         await backgroundFinished.Task.WaitAsync(AbortToken);
 
         // then — the caller got the still-fresh value while the refresh ran under the lease and released it
@@ -329,7 +332,7 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
     {
         // given
         var key = Faker.Random.AlphaNumeric(8);
-        var coordinator = _CreateCoordinator();
+        using var coordinator = _CreateCoordinator();
         var options = _CreateOptions(useDistributedFactoryLock: false);
 
         // when
@@ -355,10 +358,10 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
         var key = Faker.Random.AlphaNumeric(8);
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         _store.SetEntry(key, "cached", now.AddMinutes(5), now.AddMinutes(5));
-        var coordinator = _CreateCoordinator();
+        using var coordinator = _CreateCoordinator();
         var factoryCalls = 0;
 
-        ValueTask<string?> Factory(CancellationToken cancellationToken)
+        ValueTask<string?> factory(CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref factoryCalls);
             return ValueTask.FromResult<string?>("fresh");
@@ -368,7 +371,7 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
         var result = await coordinator.GetOrAddAsync(
             _store,
             key,
-            Factory,
+            factory,
             _CreateOptions(skipCacheRead: true),
             AbortToken
         );
@@ -395,18 +398,18 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
         _lockProvider.AcquireFault = () => new InvalidOperationException("lock backend unavailable");
         var logger = Substitute.For<ILogger<FactoryCacheCoordinator>>();
         logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
-        var coordinator = new FactoryCacheCoordinator(_timeProvider, logger, _lockProvider);
+        using var coordinator = new FactoryCacheCoordinator(_timeProvider, logger, _lockProvider);
         var factoryCalls = 0;
         var options = _CreateOptions(isFailSafeEnabled: true);
 
-        ValueTask<string?> Factory(CancellationToken cancellationToken)
+        ValueTask<string?> factory(CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref factoryCalls);
             return ValueTask.FromResult<string?>("fresh");
         }
 
         // when
-        var result = await coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken);
+        var result = await coordinator.GetOrAddAsync(_store, key, factory, options, AbortToken);
 
         // then — stale beats failure: the reserve is served, the factory never runs, and the throttle restamp
         // shields the down backend from per-call retries
@@ -423,7 +426,7 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
             {
                 var arguments = call.GetArguments();
 
-                return call.GetMethodInfo().Name == nameof(ILogger.Log)
+                return string.Equals(call.GetMethodInfo().Name, nameof(ILogger.Log), StringComparison.Ordinal)
                     && arguments[0] is LogLevel.Warning
                     && arguments[1] is EventId { Id: 13, Name: "CacheFactoryLockAcquireFailed" };
             });
@@ -437,10 +440,10 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
         // given — no stale reserve exists, so there is nothing to degrade to
         var key = Faker.Random.AlphaNumeric(8);
         _lockProvider.AcquireFault = () => new InvalidOperationException("lock backend unavailable");
-        var coordinator = _CreateCoordinator();
+        using var coordinator = _CreateCoordinator();
         var factoryCalls = 0;
 
-        ValueTask<string?> Factory(CancellationToken cancellationToken)
+        ValueTask<string?> factory(CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref factoryCalls);
             return ValueTask.FromResult<string?>("fresh");
@@ -448,7 +451,7 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
 
         // when
         var act = async () =>
-            await coordinator.GetOrAddAsync(_store, key, Factory, _CreateOptions(isFailSafeEnabled: true), AbortToken);
+            await coordinator.GetOrAddAsync(_store, key, factory, _CreateOptions(isFailSafeEnabled: true), AbortToken);
 
         // then
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("lock backend unavailable");
@@ -463,10 +466,10 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
         _lockProvider.AcquireFault = () => new InvalidOperationException("lock backend unavailable");
-        var coordinator = _CreateCoordinator();
+        using var coordinator = _CreateCoordinator();
         var factoryCalls = 0;
 
-        ValueTask<string?> Factory(CancellationToken cancellationToken)
+        ValueTask<string?> factory(CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref factoryCalls);
             return ValueTask.FromResult<string?>("fresh");
@@ -474,7 +477,7 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
 
         // when
         var act = async () =>
-            await coordinator.GetOrAddAsync(_store, key, Factory, _CreateOptions(isFailSafeEnabled: false), AbortToken);
+            await coordinator.GetOrAddAsync(_store, key, factory, _CreateOptions(isFailSafeEnabled: false), AbortToken);
 
         // then
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("lock backend unavailable");
@@ -491,7 +494,7 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
         _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
         using var callerCts = new CancellationTokenSource(); // not cancelled — identity match must suffice
         _lockProvider.AcquireFault = () => new OperationCanceledException(callerCts.Token);
-        var coordinator = _CreateCoordinator();
+        using var coordinator = _CreateCoordinator();
 
         // when
         var act = async () =>
@@ -518,7 +521,7 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
         using var callerCts = new CancellationTokenSource(); // not cancelled
         using var internalCts = new CancellationTokenSource();
         _lockProvider.AcquireFault = () => new OperationCanceledException(internalCts.Token);
-        var coordinator = _CreateCoordinator();
+        using var coordinator = _CreateCoordinator();
 
         // when
         var result = await coordinator.GetOrAddAsync<string>(
@@ -542,7 +545,7 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
         _lockProvider.ReleaseFault = () => new InvalidOperationException("release failed");
         var logger = Substitute.For<ILogger<FactoryCacheCoordinator>>();
         logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
-        var coordinator = new FactoryCacheCoordinator(_timeProvider, logger, _lockProvider);
+        using var coordinator = new FactoryCacheCoordinator(_timeProvider, logger, _lockProvider);
 
         // when — the release failure must never mask the operation's outcome
         var result = await coordinator.GetOrAddAsync<string>(
@@ -566,7 +569,7 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
             {
                 var arguments = call.GetArguments();
 
-                return call.GetMethodInfo().Name == nameof(ILogger.Log)
+                return string.Equals(call.GetMethodInfo().Name, nameof(ILogger.Log), StringComparison.Ordinal)
                     && arguments[0] is LogLevel.Warning
                     && arguments[1] is EventId { Id: 12, Name: "CacheFactoryLockReleaseFailed" };
             });

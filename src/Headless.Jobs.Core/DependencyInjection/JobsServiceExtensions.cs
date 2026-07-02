@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Abstractions;
 using Headless.Checks;
 using Headless.CommitCoordination;
 using Headless.Coordination;
@@ -64,6 +65,11 @@ public static class JobsServiceExtensions
 
         // Configure whether job request payloads should use GZip compression
         JobsHelper.UseGZipCompression = optionInstance.RequestGZipCompressionEnabled;
+
+        // Persisted job/cron primary keys are stamped via IGuidGenerator (Version7 default) instead of random
+        // Guid.NewGuid() so they stay index-friendly. Idempotent: TryAdd-based, so a host that already registered it wins.
+        services.AddHeadlessGuidGenerator();
+
         services.AddSingleton<ITimeJobManager<TTimeJob>, JobsManager<TTimeJob, TCronJob>>();
         services.AddSingleton<ICronJobManager<TCronJob>, JobsManager<TTimeJob, TCronJob>>();
         services.AddSingleton<IInternalJobManager, InternalJobsManager<TTimeJob, TCronJob>>();
@@ -104,9 +110,8 @@ public static class JobsServiceExtensions
             services.AddSingleton(sp =>
             {
                 var notification = sp.GetRequiredService<IJobsNotificationHubSender>();
-                var notifyDebounce = new SoftSchedulerNotifyDebounce(
-                    (value) => notification.UpdateActiveThreads(value)
-                );
+                var notifyDebounce = new SoftSchedulerNotifyDebounce(notification.UpdateActiveThreads);
+
                 return new JobsTaskScheduler(
                     schedulerOptionsBuilder.MaxConcurrency,
                     schedulerOptionsBuilder.IdleWorkerTimeOut,

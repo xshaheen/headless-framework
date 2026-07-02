@@ -2,8 +2,8 @@
 
 using System.Net;
 using Headless.Sms;
-using Headless.Sms.Testing;
 using Headless.Sms.Twilio;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute.ExceptionExtensions;
@@ -12,9 +12,9 @@ using Twilio.Http;
 
 namespace Tests;
 
-public sealed class TwilioSmsSenderTests
+public sealed class TwilioSmsSenderTests : TestBase
 {
-    private static TwilioSmsSender CreateSender(ITwilioRestClient client)
+    private static TwilioSmsSender _CreateSender(ITwilioRestClient client)
     {
         var options = Options.Create(
             new TwilioSmsOptions
@@ -35,8 +35,7 @@ public sealed class TwilioSmsSenderTests
         var response = new Response(HttpStatusCode.Created, """{"sid":"SM123","status":"queued"}""");
         client.RequestAsync(Arg.Any<Request>()).Returns(response);
 
-        var result = await CreateSender(client).SendAsync(SmsRequests.Single());
-
+        var result = await _CreateSender(client).SendAsync(SmsRequests.Single(), AbortToken);
         result.Success.Should().BeTrue();
         result.ProviderMessageId.Should().Be("SM123");
     }
@@ -46,8 +45,7 @@ public sealed class TwilioSmsSenderTests
     {
         var client = Substitute.For<ITwilioRestClient>();
 
-        var result = await CreateSender(client).SendAsync(SmsRequests.Batch("hi", (20, "1"), (20, "2")));
-
+        var result = await _CreateSender(client).SendAsync(SmsRequests.Batch("hi", (20, "1"), (20, "2")), AbortToken);
         result.Success.Should().BeFalse();
         await client.DidNotReceive().RequestAsync(Arg.Any<Request>());
     }
@@ -58,8 +56,7 @@ public sealed class TwilioSmsSenderTests
         var client = Substitute.For<ITwilioRestClient>();
         client.RequestAsync(Arg.Any<Request>()).ThrowsAsync(new HttpRequestException("network down"));
 
-        var result = await CreateSender(client).SendAsync(SmsRequests.Single());
-
+        var result = await _CreateSender(client).SendAsync(SmsRequests.Single(), AbortToken);
         result.Success.Should().BeFalse();
         result.FailureKind.Should().Be(SmsFailureKind.Transient);
     }

@@ -21,8 +21,7 @@ public sealed class HeadlessCoordinationSetupBuilder
 
     internal IServiceCollection Services { get; }
 
-    internal IList<ICoordinationProviderOptionsExtension> Extensions { get; } =
-        new List<ICoordinationProviderOptionsExtension>();
+    internal IList<ICoordinationProviderOptionsExtension> Extensions { get; } = [];
 
     /// <summary>Binds <see cref="CoordinationOptions"/> from the supplied <see cref="IConfiguration"/> section.</summary>
     /// <param name="configuration">The configuration section to bind from.</param>

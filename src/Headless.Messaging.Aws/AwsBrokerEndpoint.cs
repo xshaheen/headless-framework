@@ -11,7 +11,9 @@ internal static class AwsBrokerEndpoint
             && !string.IsNullOrWhiteSpace(serviceUri.Host)
         )
         {
-            return serviceUri.IsDefaultPort ? serviceUri.Host : $"{serviceUri.Host}:{serviceUri.Port}";
+            return serviceUri.IsDefaultPort
+                ? serviceUri.Host
+                : string.Create(CultureInfo.InvariantCulture, $"{serviceUri.Host}:{serviceUri.Port}");
         }
 
         return $"{serviceName}.{options.Region.SystemName}.{options.Region.PartitionDnsSuffix}";

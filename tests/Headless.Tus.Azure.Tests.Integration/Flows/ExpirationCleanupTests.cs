@@ -105,8 +105,9 @@ public sealed class ExpirationCleanupTests : TestBase
         }
         (await _store.FileExistAsync(noExpirationFileId, AbortToken)).Should().BeTrue();
 
-        // when - run expiration cleanup
-        var removedCount = await _store.RemoveExpiredFilesAsync(AbortToken);
+        // when - run expiration cleanup (return value intentionally ignored; the assertions below
+        // verify our active files are preserved, not the removed count)
+        _ = await _store.RemoveExpiredFilesAsync(AbortToken);
 
         // then - no active files should be removed (may be 0 or more if other expired files exist)
         // The key assertion is that OUR active files are preserved

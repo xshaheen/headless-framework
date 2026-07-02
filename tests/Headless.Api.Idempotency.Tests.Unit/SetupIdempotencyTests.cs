@@ -33,12 +33,11 @@ public sealed class SetupIdempotencyTests
         services.AddIdempotency(_ => { });
 
         services
-            .Any(s =>
-                s.ServiceType == typeof(IValidateOptions<IdempotencyOptions>)
-                && s.ImplementationType == typeof(IdempotencyOptionsDIValidator)
-            )
             .Should()
-            .BeTrue();
+            .Contain(s =>
+                s.ServiceType == typeof(IValidateOptions<IdempotencyOptions>)
+                && s.ImplementationType == typeof(IdempotencyOptionsDiValidator)
+            );
     }
 
     [Fact]
@@ -122,7 +121,7 @@ public sealed class SetupIdempotencyTests
     public void di_validator_should_pass_for_reject_strategy_without_lock_provider()
     {
         var sp = new ServiceCollection().BuildServiceProvider();
-        var validator = new IdempotencyOptionsDIValidator(sp);
+        var validator = new IdempotencyOptionsDiValidator(sp);
 
         var result = validator.Validate(
             name: null,
@@ -138,7 +137,7 @@ public sealed class SetupIdempotencyTests
         var services = new ServiceCollection();
         services.AddSingleton(Substitute.For<IDistributedLock>());
         var sp = services.BuildServiceProvider();
-        var validator = new IdempotencyOptionsDIValidator(sp);
+        var validator = new IdempotencyOptionsDiValidator(sp);
 
         var result = validator.Validate(
             name: null,
@@ -152,7 +151,7 @@ public sealed class SetupIdempotencyTests
     public void di_validator_should_fail_for_wait_and_replay_without_lock_provider()
     {
         var sp = new ServiceCollection().BuildServiceProvider();
-        var validator = new IdempotencyOptionsDIValidator(sp);
+        var validator = new IdempotencyOptionsDiValidator(sp);
 
         var result = validator.Validate(
             name: null,

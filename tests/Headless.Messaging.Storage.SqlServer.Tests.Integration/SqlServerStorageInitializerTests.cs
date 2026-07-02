@@ -58,7 +58,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
 
         // then
         await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync();
+        await connection.OpenAsync(AbortToken);
 
         var columns = await connection.QueryAsync<string>(
             """
@@ -93,7 +93,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
 
         // then
         await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync();
+        await connection.OpenAsync(AbortToken);
 
         var columns = await connection.QueryAsync<string>(
             """
@@ -361,7 +361,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         const string schema = "table_names";
         var initializer = _CreateInitializer(schema, useStorageLock: true);
 
-        // when / then
+        // when & then
         initializer.GetPublishedTableName().Should().Be($"{schema}.Published");
         initializer.GetReceivedTableName().Should().Be($"{schema}.Received");
     }

@@ -99,7 +99,9 @@ public static class DbContextOptionsBuilderExtensions
         }
 
         private static SequentialGuidType _GetKey(string? providerName) =>
-            providerName == _SqlServerProviderName ? SequentialGuidType.SqlServer : SequentialGuidType.Version7;
+            string.Equals(providerName, _SqlServerProviderName, StringComparison.Ordinal)
+                ? SequentialGuidType.SqlServer
+                : SequentialGuidType.Version7;
 
         private static IGuidGenerator _GetFallback(SequentialGuidType key) =>
             key == SequentialGuidType.SqlServer ? _SqlServerGuidGenerator : _Version7GuidGenerator;

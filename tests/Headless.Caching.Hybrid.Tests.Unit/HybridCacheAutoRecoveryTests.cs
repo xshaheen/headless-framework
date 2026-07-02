@@ -397,7 +397,7 @@ public sealed class HybridCacheAutoRecoveryTests : TestBase
     public async Task should_replace_queued_publish_when_value_op_queued_for_same_key()
     {
         // given — a backplane-only outage queues a publish for the key
-        var failPublish = true;
+        const bool failPublish = true;
         var publisher = Substitute.For<IBus>();
         publisher
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
@@ -533,7 +533,7 @@ public sealed class HybridCacheAutoRecoveryTests : TestBase
         var publishAttempts = publisher.ReceivedCalls().Count();
         _timeProvider.Advance(_Delay);
         await cache.RecoveryQueue.ProcessAsync(AbortToken);
-        publisher.ReceivedCalls().Count().Should().Be(publishAttempts, "the dropped residual must not be retried");
+        publisher.ReceivedCalls().Should().HaveCount(publishAttempts, "the dropped residual must not be retried");
     }
 
     [Fact]

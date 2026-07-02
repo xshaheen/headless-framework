@@ -15,7 +15,7 @@ namespace Tests;
 /// </summary>
 public sealed class JobsDistributedLockWiringTests
 {
-    private static int CountJobsLockDescriptors(IServiceCollection services) =>
+    private static int _CountJobsLockDescriptors(IServiceCollection services) =>
         services.Count(d =>
             d.ServiceType == typeof(IDistributedLock)
             && d.IsKeyedService
@@ -76,7 +76,7 @@ public sealed class JobsDistributedLockWiringTests
         });
 
         // Exactly one keyed slot (the last-wins provider); the Null fallback is suppressed by TryAdd.
-        CountJobsLockDescriptors(services).Should().Be(1);
+        _CountJobsLockDescriptors(services).Should().Be(1);
 
         using var sp = services.BuildServiceProvider();
         sp.GetRequiredKeyedService<IDistributedLock>(JobsKeys.LockProvider).Should().BeSameAs(second);
@@ -95,7 +95,7 @@ public sealed class JobsDistributedLockWiringTests
             o.UseDistributedLock(instance);
         });
 
-        CountJobsLockDescriptors(services).Should().Be(1);
+        _CountJobsLockDescriptors(services).Should().Be(1);
 
         using var sp = services.BuildServiceProvider();
         sp.GetRequiredKeyedService<IDistributedLock>(JobsKeys.LockProvider).Should().BeSameAs(instance);
@@ -114,7 +114,7 @@ public sealed class JobsDistributedLockWiringTests
             o.UseDistributedLock(_ => factoryOutput);
         });
 
-        CountJobsLockDescriptors(services).Should().Be(1);
+        _CountJobsLockDescriptors(services).Should().Be(1);
 
         using var sp = services.BuildServiceProvider();
         sp.GetRequiredKeyedService<IDistributedLock>(JobsKeys.LockProvider).Should().BeSameAs(factoryOutput);

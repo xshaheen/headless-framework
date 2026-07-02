@@ -11,19 +11,14 @@ namespace Headless.Caching;
 /// value, or <see cref="Modified(T, string?, DateTime?)"/> to replace it.
 /// </summary>
 /// <typeparam name="T">The cached value type.</typeparam>
+/// <remarks>Initializes a new instance of the <see cref="CacheFactoryContext{T}"/> class.</remarks>
+/// <param name="staleValue">
+/// The last-known-good cached value, or <see cref="CacheValue{T}.NoValue"/> when no physically-retained entry
+/// exists. Contexts are normally created by the factory cache coordinator, one per factory execution.
+/// </param>
 [PublicAPI]
-public sealed class CacheFactoryContext<T>
+public sealed class CacheFactoryContext<T>(CacheValue<T> staleValue)
 {
-    /// <summary>Initializes a new instance of the <see cref="CacheFactoryContext{T}"/> class.</summary>
-    /// <param name="staleValue">
-    /// The last-known-good cached value, or <see cref="CacheValue{T}.NoValue"/> when no physically-retained entry
-    /// exists. Contexts are normally created by the factory cache coordinator, one per factory execution.
-    /// </param>
-    public CacheFactoryContext(CacheValue<T> staleValue)
-    {
-        StaleValue = staleValue;
-    }
-
     /// <summary>Gets the cache key being populated, as seen by the underlying store (including any key scoping).</summary>
     public required string Key { get; init; }
 
@@ -38,7 +33,7 @@ public sealed class CacheFactoryContext<T>
     /// <see cref="CacheValue{T}.HasValue"/> <see langword="true"/> and a <see langword="null"/>
     /// <see cref="CacheValue{T}.Value"/>), or <see cref="CacheValue{T}.NoValue"/> when none exists.
     /// </summary>
-    public CacheValue<T> StaleValue { get; }
+    public CacheValue<T> StaleValue { get; } = staleValue;
 
     /// <summary>Gets the opaque entity tag stored with the existing entry, if any.</summary>
     public string? ETag { get; init; }

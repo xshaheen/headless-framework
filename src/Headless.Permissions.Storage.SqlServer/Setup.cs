@@ -29,10 +29,7 @@ public static class SetupPermissionsSqlServer
         {
             Argument.IsNotNullOrWhiteSpace(connectionString);
 
-            return setup.UseSqlServer(options =>
-            {
-                options.ConnectionString = connectionString;
-            });
+            return setup.UseSqlServer(options => options.ConnectionString = connectionString);
         }
 
         /// <summary>

@@ -4,6 +4,7 @@ using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using Headless.Caching.Scripts;
 using Headless.Checks;
 using Headless.Redis;
 using Headless.Serializer;
@@ -30,7 +31,7 @@ namespace Headless.Caching;
 public sealed class RedisCache(
     ISerializer serializer,
     TimeProvider timeProvider,
-    RedisCacheOptions options,
+    RedisCacheOptions cacheOptions,
     [FromKeyedServices(RedisCacheServiceKeys.ScriptsLoader)] HeadlessRedisScriptsLoader scriptsLoader,
     ILogger<RedisCache>? logger = null,
     ICacheFactoryLockProvider? factoryLockProvider = null
@@ -69,7 +70,7 @@ public sealed class RedisCache(
     private const string _RemoveMarkerSuffix = "\0__remove";
 
     private readonly ILogger _logger = logger ?? NullLogger<RedisCache>.Instance;
-    private readonly string _keyPrefix = options.KeyPrefix ?? "";
+    private readonly string _keyPrefix = cacheOptions.KeyPrefix ?? "";
 
     // Process-local marker cache for Family-2 logical tag-version invalidation. Each entry is the resolved
     // marker (Unix-ms; long.MinValue = "absent in Redis") plus the monotonic tick at which it was fetched, so a
@@ -92,15 +93,17 @@ public sealed class RedisCache(
     private const long _MarkerAbsent = long.MinValue;
 
     /// <inheritdoc />
-    public CacheEntryOptions? DefaultEntryOptions { get; } = options.DefaultEntryOptions;
+    public CacheEntryOptions? DefaultEntryOptions { get; } = cacheOptions.DefaultEntryOptions;
 
     private readonly FactoryCacheCoordinator _coordinator = new(timeProvider, logger, factoryLockProvider);
 
     // #37: collapsed two volatile bool fields (_supportsMsetEx + _supportsMsetExChecked) into a single
     // Lazy<bool> to make the check-and-set atomic, matching the _isClusterLazy pattern.
-    private readonly Lazy<bool> _supportsMsetExLazy = new(() => _DetectMsetexSupport(options.ConnectionMultiplexer));
-    private readonly Lazy<bool> _isClusterLazy = new(() => _CheckIsCluster(options.ConnectionMultiplexer));
-    private readonly IDatabase _database = options.ConnectionMultiplexer.GetDatabase();
+    private readonly Lazy<bool> _supportsMsetExLazy = new(() =>
+        _DetectMsetexSupport(cacheOptions.ConnectionMultiplexer)
+    );
+    private readonly Lazy<bool> _isClusterLazy = new(() => _CheckIsCluster(cacheOptions.ConnectionMultiplexer));
+    private readonly IDatabase _database = cacheOptions.ConnectionMultiplexer.GetDatabase();
 
     private bool IsCluster => _isClusterLazy.Value;
 
@@ -168,7 +171,7 @@ public sealed class RedisCache(
                     redisKey,
                     0,
                     RedisCacheEntryFrame.HeaderLength + sizeof(long) - 1,
-                    options.ReadMode
+                    cacheOptions.ReadMode
                 )
                 .ConfigureAwait(false);
 
@@ -212,7 +215,7 @@ public sealed class RedisCache(
         {
             if (_logger.IsEnabled(LogLevel.Warning))
             {
-                _logger.LogSlidingExpirationRefreshFailed(exception, redisKey.ToString());
+                _logger.LogSlidingExpirationRefreshFailed(exception, redisKey);
             }
         }
     }
@@ -221,7 +224,7 @@ public sealed class RedisCache(
     // full frame and resolve per-tag invalidation markers before re-arming.
     private async ValueTask _RefreshSlidingFromFullFrameAsync(RedisKey redisKey, DateTime now)
     {
-        var redisValue = await _database.StringGetAsync(redisKey, options.ReadMode).ConfigureAwait(false);
+        var redisValue = await _database.StringGetAsync(redisKey, cacheOptions.ReadMode).ConfigureAwait(false);
 
         if (!redisValue.HasValue)
         {
@@ -272,7 +275,7 @@ public sealed class RedisCache(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        await (this).UpsertEntryAsync(key, value, options, timeProvider, cancellationToken).ConfigureAwait(false);
+        await this.UpsertEntryAsync(key, value, options, timeProvider, cancellationToken).ConfigureAwait(false);
 
         return true;
     }
@@ -427,7 +430,7 @@ public sealed class RedisCache(
         var raw = await _RunNumericScriptAsync(
                 IncrementWithExpireScriptDefinition.Instance,
                 key,
-                (RedisValue)amount,
+                amount,
                 expiration,
                 cancellationToken
             )
@@ -457,7 +460,7 @@ public sealed class RedisCache(
         var raw = await _RunNumericScriptAsync(
                 IncrementWithExpireScriptDefinition.Instance,
                 key,
-                (RedisValue)amount,
+                amount,
                 expiration,
                 cancellationToken
             )
@@ -487,7 +490,7 @@ public sealed class RedisCache(
         var raw = await _RunNumericScriptAsync(
                 SetIfHigherScriptDefinition.Instance,
                 key,
-                (RedisValue)value,
+                value,
                 expiration,
                 cancellationToken
             )
@@ -517,7 +520,7 @@ public sealed class RedisCache(
         var raw = await _RunNumericScriptAsync(
                 SetIfHigherScriptDefinition.Instance,
                 key,
-                (RedisValue)value,
+                value,
                 expiration,
                 cancellationToken
             )
@@ -547,7 +550,7 @@ public sealed class RedisCache(
         var raw = await _RunNumericScriptAsync(
                 SetIfLowerScriptDefinition.Instance,
                 key,
-                (RedisValue)value,
+                value,
                 expiration,
                 cancellationToken
             )
@@ -577,7 +580,7 @@ public sealed class RedisCache(
         var raw = await _RunNumericScriptAsync(
                 SetIfLowerScriptDefinition.Instance,
                 key,
-                (RedisValue)value,
+                value,
                 expiration,
                 cancellationToken
             )
@@ -650,7 +653,7 @@ public sealed class RedisCache(
         cancellationToken.ThrowIfCancellationRequested();
 
         var redisKey = _GetKey(key);
-        var redisValue = await _database.StringGetAsync(redisKey, options.ReadMode).ConfigureAwait(false);
+        var redisValue = await _database.StringGetAsync(redisKey, cacheOptions.ReadMode).ConfigureAwait(false);
         return await _RedisValueToCacheValueAsync<T>(redisKey, redisValue).ConfigureAwait(false);
     }
 
@@ -703,7 +706,7 @@ public sealed class RedisCache(
                     slotKeys[i] = bucket[i].Redis;
                 }
 
-                var slotValues = await _database.StringGetAsync(slotKeys, options.ReadMode).ConfigureAwait(false);
+                var slotValues = await _database.StringGetAsync(slotKeys, cacheOptions.ReadMode).ConfigureAwait(false);
 
                 for (var i = 0; i < bucket.Count; i++)
                 {
@@ -713,7 +716,7 @@ public sealed class RedisCache(
         }
         else
         {
-            rawValues = await _database.StringGetAsync([.. redisKeys], options.ReadMode).ConfigureAwait(false);
+            rawValues = await _database.StringGetAsync([.. redisKeys], cacheOptions.ReadMode).ConfigureAwait(false);
         }
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
@@ -870,7 +873,7 @@ public sealed class RedisCache(
                     slotKeys[i] = bucket[i].Redis;
                 }
 
-                var slotValues = await _database.StringGetAsync(slotKeys, options.ReadMode).ConfigureAwait(false);
+                var slotValues = await _database.StringGetAsync(slotKeys, cacheOptions.ReadMode).ConfigureAwait(false);
 
                 for (var i = 0; i < bucket.Count; i++)
                 {
@@ -880,7 +883,7 @@ public sealed class RedisCache(
         }
         else
         {
-            rawValues = await _database.StringGetAsync([.. redisKeys], options.ReadMode).ConfigureAwait(false);
+            rawValues = await _database.StringGetAsync([.. redisKeys], cacheOptions.ReadMode).ConfigureAwait(false);
         }
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
@@ -978,7 +981,7 @@ public sealed class RedisCache(
                     else
                     {
                         var framedValue = _DeserializeValueSegment<T>(frame.ValueSegment);
-                        cacheValue = new CacheValue<T>(framedValue, true);
+                        cacheValue = new CacheValue<T>(framedValue, hasValue: true);
                     }
 
                     result[originalKeys[i]] = new CacheValueWithExpiration<T>(cacheValue, logicalRemaining);
@@ -986,16 +989,7 @@ public sealed class RedisCache(
                 else
                 {
                     // Non-framed (legacy) entry: no embedded expiration metadata — needs live TTL probe.
-                    T? legacyValue;
-
-                    if (rawValue == _NullValue)
-                    {
-                        legacyValue = default;
-                    }
-                    else
-                    {
-                        legacyValue = _FromRedisValue<T>(rawValue);
-                    }
+                    var legacyValue = rawValue == _NullValue ? default : _FromRedisValue<T>(rawValue);
 
                     (slidingOrLegacyHits ??= []).Add((i, redisKeys[i], legacyValue));
                 }
@@ -1016,7 +1010,7 @@ public sealed class RedisCache(
 
             for (var j = 0; j < slidingOrLegacyHits.Count; j++)
             {
-                ttlTasks[j] = batch.KeyTimeToLiveAsync(slidingOrLegacyHits[j].RedisKey, options.ReadMode);
+                ttlTasks[j] = batch.KeyTimeToLiveAsync(slidingOrLegacyHits[j].RedisKey, cacheOptions.ReadMode);
             }
 
             batch.Execute();
@@ -1039,11 +1033,11 @@ public sealed class RedisCache(
                     continue;
                 }
 
-                var cacheVal = val is null ? CacheValue<T>.Null : new CacheValue<T>(val, true);
+                var cacheVal = val is null ? CacheValue<T>.Null : new CacheValue<T>(val, hasValue: true);
 
                 // ttl is null  → persistent key, no expiry → Expiration = null (valid hit)
                 // ttl.Value > 0 → remaining TTL → Expiration = ttl
-                result[originalKeys[idx]] = new CacheValueWithExpiration<T>(cacheVal, ttl);
+                result[originalKeys[idx]] = new CacheValueWithExpiration<T>(cacheVal, expiration: ttl);
             }
         }
 
@@ -1072,11 +1066,11 @@ public sealed class RedisCache(
         var stripLength = _keyPrefix.Length;
         var keys = new List<string>();
 
-        var endpoints = options.ConnectionMultiplexer.GetEndPoints();
+        var endpoints = cacheOptions.ConnectionMultiplexer.GetEndPoints();
 
         foreach (var endpoint in endpoints)
         {
-            var server = options.ConnectionMultiplexer.GetServer(endpoint);
+            var server = cacheOptions.ConnectionMultiplexer.GetServer(endpoint);
 
             if (server.IsReplica)
             {
@@ -1103,7 +1097,7 @@ public sealed class RedisCache(
         // expiration, so the key can still exist after its LOGICAL expiration. A key-existence check would
         // report such a logically-expired reserve as present; _RedisValueIsLogicallyPresent applies the same
         // logical-expiry rule the read methods use.
-        var redisValue = await _database.StringGetAsync(_GetKey(key), options.ReadMode).ConfigureAwait(false);
+        var redisValue = await _database.StringGetAsync(_GetKey(key), cacheOptions.ReadMode).ConfigureAwait(false);
         return await _RedisValueIsLogicallyPresentAsync(redisValue).ConfigureAwait(false);
     }
 
@@ -1111,7 +1105,7 @@ public sealed class RedisCache(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var endpoints = options.ConnectionMultiplexer.GetEndPoints();
+        var endpoints = cacheOptions.ConnectionMultiplexer.GetEndPoints();
 
         if (endpoints.Length is 0)
         {
@@ -1128,7 +1122,7 @@ public sealed class RedisCache(
 
             foreach (var endpoint in endpoints)
             {
-                var server = options.ConnectionMultiplexer.GetServer(endpoint);
+                var server = cacheOptions.ConnectionMultiplexer.GetServer(endpoint);
 
                 if (server.IsReplica)
                 {
@@ -1142,7 +1136,7 @@ public sealed class RedisCache(
         {
             foreach (var endpoint in endpoints)
             {
-                var server = options.ConnectionMultiplexer.GetServer(endpoint);
+                var server = cacheOptions.ConnectionMultiplexer.GetServer(endpoint);
 
                 if (server.IsReplica)
                 {
@@ -1169,7 +1163,7 @@ public sealed class RedisCache(
 
         // #11: cache prefixed key to avoid repeated _GetKey allocations (called up to 3x previously)
         var prefixedKey = _GetKey(key);
-        var redisValue = await _database.StringGetAsync(prefixedKey, options.ReadMode).ConfigureAwait(false);
+        var redisValue = await _database.StringGetAsync(prefixedKey, cacheOptions.ReadMode).ConfigureAwait(false);
 
         if (!redisValue.HasValue)
         {
@@ -1223,11 +1217,11 @@ public sealed class RedisCache(
         cancellationToken.ThrowIfCancellationRequested();
 
         var redisKey = _GetKey(key);
-        var rawValue = await _database.StringGetAsync(redisKey, options.ReadMode).ConfigureAwait(false);
+        var rawValue = await _database.StringGetAsync(redisKey, cacheOptions.ReadMode).ConfigureAwait(false);
 
         if (!rawValue.HasValue)
         {
-            return new CacheValueWithExpiration<T>(CacheValue<T>.NoValue, null);
+            return new CacheValueWithExpiration<T>(CacheValue<T>.NoValue, expiration: null);
         }
 
         try
@@ -1239,7 +1233,7 @@ public sealed class RedisCache(
             {
                 if (_IsExpired(frame.PhysicalExpiresAt, now))
                 {
-                    return new CacheValueWithExpiration<T>(CacheValue<T>.NoValue, null);
+                    return new CacheValueWithExpiration<T>(CacheValue<T>.NoValue, expiration: null);
                 }
 
                 // Family-2: a tag/clear-invalidated entry is a miss for direct mirror reads.
@@ -1247,7 +1241,7 @@ public sealed class RedisCache(
 
                 if (CacheTagInvalidation.IsInvalidated(frame.CreatedAt, newestMarker))
                 {
-                    return new CacheValueWithExpiration<T>(CacheValue<T>.NoValue, null);
+                    return new CacheValueWithExpiration<T>(CacheValue<T>.NoValue, expiration: null);
                 }
 
                 if (frame.SlidingExpiration.HasValue)
@@ -1261,48 +1255,42 @@ public sealed class RedisCache(
 
                     if (ttl is { Ticks: <= 0 })
                     {
-                        return new CacheValueWithExpiration<T>(CacheValue<T>.NoValue, null);
+                        return new CacheValueWithExpiration<T>(CacheValue<T>.NoValue, expiration: null);
                     }
 
                     CacheValue<T> slidingValue = frame.IsNull
                         ? CacheValue<T>.Null
-                        : new CacheValue<T>(_DeserializeValueSegment<T>(frame.ValueSegment), true);
+                        : new CacheValue<T>(_DeserializeValueSegment<T>(frame.ValueSegment), hasValue: true);
 
-                    return new CacheValueWithExpiration<T>(slidingValue, ttl);
+                    return new CacheValueWithExpiration<T>(slidingValue, expiration: ttl);
                 }
 
                 if (_IsExpired(frame.LogicalExpiresAt, now))
                 {
-                    return new CacheValueWithExpiration<T>(CacheValue<T>.NoValue, null);
+                    return new CacheValueWithExpiration<T>(CacheValue<T>.NoValue, expiration: null);
                 }
 
                 TimeSpan? logicalRemaining = frame.LogicalExpiresAt?.Subtract(now);
 
                 CacheValue<T> cacheValue = frame.IsNull
                     ? CacheValue<T>.Null
-                    : new CacheValue<T>(_DeserializeValueSegment<T>(frame.ValueSegment), true);
+                    : new CacheValue<T>(_DeserializeValueSegment<T>(frame.ValueSegment), hasValue: true);
 
                 return new CacheValueWithExpiration<T>(cacheValue, logicalRemaining);
             }
 
             // Non-framed (legacy/raw) entry: value is present but carries no logical expiry metadata.
             // Fall back to the live server TTL for the expiration component.
-            CacheValue<T> legacyValue;
-
-            if (rawValue == _NullValue)
-            {
-                legacyValue = CacheValue<T>.Null;
-            }
-            else
-            {
-                legacyValue = new CacheValue<T>(_FromRedisValue<T>(rawValue), true);
-            }
+            var legacyValue =
+                rawValue == _NullValue
+                    ? CacheValue<T>.Null
+                    : new CacheValue<T>(_FromRedisValue<T>(rawValue), hasValue: true);
 
             var legacyTtl = await _database.KeyTimeToLiveAsync(redisKey).ConfigureAwait(false);
 
             if (legacyTtl is { Ticks: <= 0 })
             {
-                return new CacheValueWithExpiration<T>(CacheValue<T>.NoValue, null);
+                return new CacheValueWithExpiration<T>(CacheValue<T>.NoValue, expiration: null);
             }
 
             return new CacheValueWithExpiration<T>(legacyValue, legacyTtl);
@@ -1336,7 +1324,7 @@ public sealed class RedisCache(
                     timeProvider.GetUtcNow().ToUnixTimeMilliseconds(),
                     double.PositiveInfinity,
                     Exclude.Start,
-                    flags: options.ReadMode
+                    flags: cacheOptions.ReadMode
                 )
                 .ConfigureAwait(false);
 
@@ -1353,7 +1341,7 @@ public sealed class RedisCache(
                     Exclude.Start,
                     skip: skip,
                     take: pageSize,
-                    flags: options.ReadMode
+                    flags: cacheOptions.ReadMode
                 )
                 .ConfigureAwait(false);
 
@@ -1379,7 +1367,7 @@ public sealed class RedisCache(
         cancellationToken.ThrowIfCancellationRequested();
 
         var redisKey = _GetKey(key);
-        var redisValue = await _database.StringGetAsync(redisKey, options.ReadMode).ConfigureAwait(false);
+        var redisValue = await _database.StringGetAsync(redisKey, cacheOptions.ReadMode).ConfigureAwait(false);
 
         if (!redisValue.HasValue)
         {
@@ -1548,7 +1536,7 @@ public sealed class RedisCache(
     // RemoveByPrefixAsync (the instance prefix plus the caller's prefix) and FlushAsync (the instance prefix only).
     private async ValueTask<long> _RemoveByPatternAsync(string pattern, CancellationToken cancellationToken)
     {
-        var endpoints = options.ConnectionMultiplexer.GetEndPoints();
+        var endpoints = cacheOptions.ConnectionMultiplexer.GetEndPoints();
 
         if (endpoints.Length is 0)
         {
@@ -1560,7 +1548,7 @@ public sealed class RedisCache(
 
         foreach (var endpoint in endpoints)
         {
-            var server = options.ConnectionMultiplexer.GetServer(endpoint);
+            var server = cacheOptions.ConnectionMultiplexer.GetServer(endpoint);
 
             if (server.IsReplica)
             {
@@ -1807,7 +1795,7 @@ public sealed class RedisCache(
     )
     {
         var expiresMs = _GetExpirationMilliseconds(expiration, timeProvider.GetUtcNow());
-        var expiresArg = expiresMs.HasValue ? (RedisValue)expiresMs.Value : RedisValue.EmptyString;
+        var expiresArg = expiresMs ?? RedisValue.EmptyString;
 
         return scriptsLoader.EvaluateAsync(
             _database,
@@ -1838,7 +1826,7 @@ public sealed class RedisCache(
         }
 
         var elapsed = Stopwatch.GetElapsedTime(fetchedTicks);
-        return elapsed < options.TagMarkerRefreshWindow;
+        return elapsed < cacheOptions.TagMarkerRefreshWindow;
     }
 
     /// <summary>
@@ -1903,7 +1891,7 @@ public sealed class RedisCache(
         }
 
         var value = await _database
-            .StringGetAsync((RedisKey)_GetClearMarkerKey(), options.ReadMode)
+            .StringGetAsync((RedisKey)_GetClearMarkerKey(), cacheOptions.ReadMode)
             .ConfigureAwait(false);
         var ms = _ParseMarkerMs(value);
 
@@ -1933,7 +1921,7 @@ public sealed class RedisCache(
         }
 
         var value = await _database
-            .StringGetAsync((RedisKey)_GetRemoveMarkerKey(), options.ReadMode)
+            .StringGetAsync((RedisKey)_GetRemoveMarkerKey(), cacheOptions.ReadMode)
             .ConfigureAwait(false);
         var ms = _ParseMarkerMs(value);
 
@@ -1983,7 +1971,7 @@ public sealed class RedisCache(
                 markerKeys[i] = _GetTagMarkerKey(stale[i]);
             }
 
-            var values = await _database.StringGetAsync(markerKeys, options.ReadMode).ConfigureAwait(false);
+            var values = await _database.StringGetAsync(markerKeys, cacheOptions.ReadMode).ConfigureAwait(false);
             var fetchedTicks = _StopwatchTicks();
 
             for (var i = 0; i < stale.Count; i++)
@@ -2039,10 +2027,8 @@ public sealed class RedisCache(
         // Collect all unique stale tags across all non-expired framed entries.
         HashSet<string>? staleTags = null;
 
-        for (var i = 0; i < decodedFrames.Length; i++)
+        foreach (var frame in decodedFrames)
         {
-            var frame = decodedFrames[i];
-
             if (frame is not { IsFramed: true } f || _IsExpired(f.PhysicalExpiresAt, now) || f.Tags is null)
             {
                 continue;
@@ -2071,7 +2057,7 @@ public sealed class RedisCache(
             markerKeys[i] = _GetTagMarkerKey(staleList[i]);
         }
 
-        var values = await _database.StringGetAsync(markerKeys, options.ReadMode).ConfigureAwait(false);
+        var values = await _database.StringGetAsync(markerKeys, cacheOptions.ReadMode).ConfigureAwait(false);
         var fetchedTicks = _StopwatchTicks();
 
         for (var i = 0; i < staleList.Count; i++)
@@ -2137,7 +2123,9 @@ public sealed class RedisCache(
             return (T?)(object?)(byte[]?)redisValue;
         }
 
-        return serializer.Deserialize<T>((byte[])redisValue!);
+        // SE.Redis 3.0+ exposes the value as a ReadOnlySequence<byte> over its native storage; deserializing off
+        // the sequence skips the byte[] materialization that (byte[])redisValue forces for inline (ShortBlob) values.
+        return serializer.Deserialize<T>((ReadOnlySequence<byte>)redisValue!);
     }
 
     private async ValueTask<CacheValue<T>> _RedisValueToCacheValueAsync<T>(
@@ -2190,7 +2178,7 @@ public sealed class RedisCache(
                 }
 
                 var framedValue = _DeserializeValueSegment<T>(frame.ValueSegment);
-                return new CacheValue<T>(framedValue, true);
+                return new CacheValue<T>(framedValue, hasValue: true);
             }
 
             if (redisValue == _NullValue)
@@ -2199,7 +2187,7 @@ public sealed class RedisCache(
             }
 
             var value = _FromRedisValue<T>(redisValue);
-            return new CacheValue<T>(value, true);
+            return new CacheValue<T>(value, hasValue: true);
         }
         catch (Exception e)
         {
@@ -2225,7 +2213,7 @@ public sealed class RedisCache(
         cancellationToken.ThrowIfCancellationRequested();
 
         var redisKey = _GetKey(key);
-        var redisValue = await _database.StringGetAsync(redisKey, options.ReadMode).ConfigureAwait(false);
+        var redisValue = await _database.StringGetAsync(redisKey, cacheOptions.ReadMode).ConfigureAwait(false);
 
         if (!redisValue.HasValue)
         {
@@ -2276,7 +2264,13 @@ public sealed class RedisCache(
                 return false;
             }
 
-            destination.Write((byte[])redisValue!);
+            // Write the value straight from its native ReadOnlySequence<byte> storage (SE.Redis 3.0+), avoiding the
+            // intermediate byte[] that (byte[])redisValue would materialize — keeping this path's single-copy intent.
+            foreach (var segment in (ReadOnlySequence<byte>)redisValue!)
+            {
+                destination.Write(segment.Span);
+            }
+
             return true;
         }
         catch (Exception e)
@@ -2634,7 +2628,7 @@ public sealed class RedisCache(
 
     private async ValueTask<CacheStoreEntry<T>> _TryGetEntryAsync<T>(string key)
     {
-        var redisValue = await _database.StringGetAsync(_GetKey(key), options.ReadMode).ConfigureAwait(false);
+        var redisValue = await _database.StringGetAsync(_GetKey(key), cacheOptions.ReadMode).ConfigureAwait(false);
 
         if (!redisValue.HasValue)
         {
@@ -2682,7 +2676,7 @@ public sealed class RedisCache(
 
             if (CacheTagInvalidation.IsInvalidated(frame.CreatedAt, newestMarker))
             {
-                logicalExpiresAt = logicalExpiresAt.HasValue && logicalExpiresAt.Value < now ? logicalExpiresAt : now;
+                logicalExpiresAt = logicalExpiresAt < now ? logicalExpiresAt : now;
                 slidingExpiration = null;
             }
 
@@ -2837,7 +2831,7 @@ public sealed class RedisCache(
         }
     }
 
-    private static bool _IsExpired(DateTime? expiresAt, DateTime now) => expiresAt.HasValue && expiresAt.Value <= now;
+    private static bool _IsExpired(DateTime? expiresAt, DateTime now) => expiresAt <= now;
 
     private static TimeSpan _Min(TimeSpan left, TimeSpan right) => left <= right ? left : right;
 
@@ -3048,10 +3042,9 @@ public sealed class RedisCache(
     {
         var slotBuckets = new Dictionary<int, List<T>>();
 
-        for (var i = 0; i < items.Count; i++)
+        foreach (var item in items)
         {
-            var item = items[i];
-            var slot = options.ConnectionMultiplexer.HashSlot(keySelector(item));
+            var slot = cacheOptions.ConnectionMultiplexer.HashSlot(keySelector(item));
 
             if (!slotBuckets.TryGetValue(slot, out var bucket))
             {

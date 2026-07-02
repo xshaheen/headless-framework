@@ -56,13 +56,17 @@ internal sealed class FoundatioCacheBenchmarkClient(
 
     public async ValueTask DisposeAsync()
     {
-        if (cache is IAsyncDisposable asyncDisposable)
+        switch (cache)
         {
-            await asyncDisposable.DisposeAsync().ConfigureAwait(false);
-        }
-        else if (cache is IDisposable disposable)
-        {
-            disposable.Dispose();
+            // ReSharper disable once SuspiciousTypeConversion.Global
+            case IAsyncDisposable asyncDisposable:
+                await asyncDisposable.DisposeAsync().ConfigureAwait(false);
+
+                break;
+            case IDisposable disposable:
+                disposable.Dispose();
+
+                break;
         }
 
         foreach (var resource in ownedResources)

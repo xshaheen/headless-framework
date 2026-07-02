@@ -264,11 +264,9 @@ internal sealed class PostgreSqlStorageInitializer(
             LIMIT 1;
             """;
 
-        await using var probeCommand = new NpgsqlCommand(probeSql, connection)
-        {
-            CommandTimeout = (int)
-                Math.Min(Math.Ceiling(messagingOptions.Value.CommandTimeout.TotalSeconds), int.MaxValue),
-        };
+        await using var probeCommand = new NpgsqlCommand(probeSql, connection);
+        probeCommand.CommandTimeout = (int)
+            Math.Min(Math.Ceiling(messagingOptions.Value.CommandTimeout.TotalSeconds), int.MaxValue);
         probeCommand.Parameters.Add(new NpgsqlParameter("@IndexName", indexName));
         probeCommand.Parameters.Add(new NpgsqlParameter("@Schema", postgreSqlOptions.Value.Schema));
 
@@ -295,7 +293,9 @@ internal sealed class PostgreSqlStorageInitializer(
 
     private string _CreateDbTablesScript(string schema)
     {
-        var batchSql = $"""
+        var batchSql = string.Create(
+            CultureInfo.InvariantCulture,
+            $"""
             -- pg_trgm is required for GIN trigram indexes on the Content column (dashboard search).
             -- CREATE EXTENSION is idempotent and safe inside a transaction on PostgreSQL 9.1+.
             CREATE EXTENSION IF NOT EXISTS pg_trgm;
@@ -372,7 +372,8 @@ internal sealed class PostgreSqlStorageInitializer(
             -- dashboard statistics COUNTs.
             CREATE INDEX IF NOT EXISTS "idx_published_StatusName" ON {GetPublishedTableName()} ("StatusName");
 
-            """;
+            """
+        );
 
         return batchSql;
     }

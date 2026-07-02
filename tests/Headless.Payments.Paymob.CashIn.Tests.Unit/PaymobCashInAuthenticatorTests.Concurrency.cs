@@ -7,6 +7,7 @@ using Microsoft.Extensions.Time.Testing;
 using WireMock.RequestBuilders;
 using WireMock.ResponseBuilders;
 
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
 namespace Tests;
 
 public sealed partial class PaymobCashInAuthenticatorTests : TestBase
@@ -44,7 +45,6 @@ public sealed partial class PaymobCashInAuthenticatorTests : TestBase
             timeProvider,
             fixture.OptionsAccessor
         );
-        // ReSharper disable once AccessToDisposedClosure
         var tasks = Enumerable.Range(0, 10).Select(_ => authenticator.GetAuthenticationTokenAsync().AsTask());
         var results = await Task.WhenAll(tasks);
 
@@ -73,7 +73,6 @@ public sealed partial class PaymobCashInAuthenticatorTests : TestBase
                     .Create()
                     .WithBody(_ =>
                     {
-                        // ReSharper disable once AccessToModifiedClosure
                         Interlocked.Increment(ref callCount);
                         var response = new CashInAuthenticationTokenResponse { Token = token };
                         return JsonSerializer.Serialize(response);
@@ -91,7 +90,6 @@ public sealed partial class PaymobCashInAuthenticatorTests : TestBase
 
         // reset counter and make concurrent requests
         callCount = 0;
-        // ReSharper disable once AccessToDisposedClosure
         var tasks = Enumerable.Range(0, 10).Select(_ => authenticator.GetAuthenticationTokenAsync().AsTask());
         var results = await Task.WhenAll(tasks);
 
@@ -135,7 +133,6 @@ public sealed partial class PaymobCashInAuthenticatorTests : TestBase
         var token = cts.Token;
 
         // then
-        // ReSharper disable once AccessToDisposedClosure
         var act = () => authenticator.GetAuthenticationTokenAsync(token).AsTask();
         await act.Should().ThrowAsync<OperationCanceledException>();
     }

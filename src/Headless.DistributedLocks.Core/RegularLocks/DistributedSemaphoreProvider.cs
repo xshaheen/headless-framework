@@ -37,7 +37,7 @@ namespace Headless.DistributedLocks;
 internal sealed class DistributedSemaphoreProvider(
     IDistributedSemaphoreStorage storage,
     IOutboxBus? outboxBus,
-    DistributedLockOptions options,
+    DistributedLockOptions lockOptions,
     IGuidGenerator guidGenerator,
     TimeProvider timeProvider,
     ILogger<DistributedSemaphoreProvider> logger
@@ -56,11 +56,11 @@ internal sealed class DistributedSemaphoreProvider(
     );
     private readonly LeaseMonitorRegistry _monitorRegistry = new(logger);
     private readonly Lock _resetEventLock = new();
-    private readonly int _maxResourceNameLength = options.MaxResourceNameLength;
-    private readonly int? _maxConcurrentWaitingResources = options.MaxConcurrentWaitingResources;
-    private readonly int? _maxWaitersPerResource = options.MaxWaitersPerResource;
-    private readonly TimeSpan _disposeTimeout = options.DisposeTimeout;
-    private readonly string _keyPrefix = options.KeyPrefix;
+    private readonly int _maxResourceNameLength = lockOptions.MaxResourceNameLength;
+    private readonly int? _maxConcurrentWaitingResources = lockOptions.MaxConcurrentWaitingResources;
+    private readonly int? _maxWaitersPerResource = lockOptions.MaxWaitersPerResource;
+    private readonly TimeSpan _disposeTimeout = lockOptions.DisposeTimeout;
+    private readonly string _keyPrefix = lockOptions.KeyPrefix;
 
     public TimeSpan DefaultTimeUntilExpires { get; } = TimeSpan.FromMinutes(20);
 
@@ -123,8 +123,8 @@ internal sealed class DistributedSemaphoreProvider(
         if (acquireOptions.TimeUntilExpires == Timeout.InfiniteTimeSpan)
         {
             throw new ArgumentException(
-                "Distributed semaphore acquires require a finite timeUntilExpires; "
-                    + "Timeout.InfiniteTimeSpan is not valid because a slot is stored with a finite expiry score.",
+                // ReSharper disable once LocalizableElement
+                "Distributed semaphore acquires require a finite timeUntilExpires; Timeout.InfiniteTimeSpan is not valid because a slot is stored with a finite expiry score.",
                 nameof(acquireOptions)
             );
         }
@@ -152,7 +152,7 @@ internal sealed class DistributedSemaphoreProvider(
                 ? CancellationTokenSource.CreateLinkedTokenSource(safetyCts.Token, cancellationToken)
                 : null;
             var attemptToken = linkedCts?.Token ?? safetyCts.Token;
-            var singleResult = DistributedLockAcquireResult.Failed;
+            DistributedLockAcquireResult singleResult;
             var safetyDeadlineFired = false;
 
             try
@@ -222,7 +222,7 @@ internal sealed class DistributedSemaphoreProvider(
         ResetEventWithRefCount? autoResetEvent = null;
         var retryAttempt = 0;
         var isFirstAttempt = true;
-        DistributedLockAcquireResult result = DistributedLockAcquireResult.Failed;
+        DistributedLockAcquireResult result;
 
         try
         {
@@ -466,7 +466,7 @@ internal sealed class DistributedSemaphoreProvider(
             this,
             releaseOnDispose,
             autoExtend,
-            options,
+            lockOptions,
             timeProvider,
             _DeregisterMonitor,
             logger
@@ -505,7 +505,10 @@ internal sealed class DistributedSemaphoreProvider(
             {
                 if (_maxWaitersPerResource is { } max)
                 {
-                    Ensure.True(existing.RefCount < max, $"Maximum waiters per resource ({max}) exceeded");
+                    Ensure.True(
+                        existing.RefCount < max,
+                        string.Create(CultureInfo.InvariantCulture, $"Maximum waiters per resource ({max}) exceeded")
+                    );
                 }
 
                 existing.Increment();
@@ -517,7 +520,10 @@ internal sealed class DistributedSemaphoreProvider(
             {
                 Ensure.True(
                     _autoResetEvents.Count < maxResources,
-                    $"Maximum concurrent waiting resources ({maxResources}) exceeded"
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"Maximum concurrent waiting resources ({maxResources}) exceeded"
+                    )
                 );
             }
 
@@ -551,6 +557,9 @@ internal sealed class DistributedSemaphoreProvider(
 
     void ICanReceiveLockReleased.OnLockReleased(DistributedLockReleased message)
     {
+        // _autoResetEvents is a ConcurrentDictionary (self-synchronizing). _resetEventLock guards the compound
+        // refcount invariant (count-check+create / decrement+conditional-remove), not this lock-free read fast path.
+        // ReSharper disable once InconsistentlySynchronizedField
         if (_autoResetEvents.TryGetValue(message.Resource, out var autoResetEvent))
         {
             autoResetEvent.Target.Set();

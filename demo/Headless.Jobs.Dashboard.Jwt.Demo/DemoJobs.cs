@@ -9,7 +9,7 @@ namespace Headless.Jobs.Dashboard.Jwt.Demo;
 public sealed class DemoJobs
 {
     [JobFunction("Demo_OrderProcessing")]
-    public async Task OrderProcessingAsync(JobFunctionContext context, CancellationToken cancellationToken)
+    public async Task OrderProcessingAsync(CancellationToken cancellationToken)
     {
         await Task.Delay(Random.Shared.Next(50, 200), cancellationToken);
     }
@@ -31,13 +31,13 @@ public sealed class DemoJobs
     }
 
     [JobFunction("Demo_ReportGeneration")]
-    public async Task ReportGenerationAsync(JobFunctionContext context, CancellationToken cancellationToken)
+    public async Task ReportGenerationAsync(CancellationToken cancellationToken)
     {
         await Task.Delay(Random.Shared.Next(100, 500), cancellationToken);
     }
 
     [JobFunction("Demo_PaymentReconciliation")]
-    public async Task PaymentReconciliationAsync(JobFunctionContext context, CancellationToken cancellationToken)
+    public async Task PaymentReconciliationAsync(CancellationToken cancellationToken)
     {
         // ~20% failure rate — simulates reconciliation issues
         if (Random.Shared.Next(5) == 0)
@@ -59,13 +59,13 @@ public sealed class DemoJobs
     }
 
     [JobFunction("Demo_CleanupExpiredSessions")]
-    public async Task CleanupExpiredSessionsAsync(JobFunctionContext context, CancellationToken cancellationToken)
+    public async Task CleanupExpiredSessionsAsync(CancellationToken cancellationToken)
     {
         await Task.Delay(Random.Shared.Next(30, 100), cancellationToken);
     }
 
     [JobFunction("Demo_HealthCheck")]
-    public async Task HealthCheckAsync(JobFunctionContext context, CancellationToken cancellationToken)
+    public async Task HealthCheckAsync(CancellationToken cancellationToken)
     {
         // ~10% failure rate
         if (Random.Shared.Next(10) == 0)

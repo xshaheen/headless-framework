@@ -1,11 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Testing.Tests;
 using NATS.Client.Core;
 
 namespace Tests;
 
 [Collection("Nats")]
-public sealed class NatsConnectionTest(NatsFixture fixture)
+public sealed class NatsConnectionTest(NatsFixture fixture) : TestBase
 {
     [Fact]
     public async Task should_connect_and_ping_nats()
@@ -17,7 +18,7 @@ public sealed class NatsConnectionTest(NatsFixture fixture)
             RetryOnInitialConnect = true,
         };
         await using var conn = new NatsConnection(opts);
-        var rtt = await conn.PingAsync();
+        var rtt = await conn.PingAsync(AbortToken);
 
         rtt.TotalMilliseconds.Should().BePositive();
     }

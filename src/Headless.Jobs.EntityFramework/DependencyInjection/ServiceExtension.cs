@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Headless.Jobs.Entities;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -35,14 +36,7 @@ public static class ServiceExtension
 
         efConfiguration?.Invoke(efCoreOptionBuilder);
 
-        if (efCoreOptionBuilder.PoolSize <= 0)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(efConfiguration),
-                efCoreOptionBuilder.PoolSize,
-                "Pool size must be greater than 0"
-            );
-        }
+        Argument.IsPositive(efCoreOptionBuilder.PoolSize);
 
         // Opt into coordinated membership: the core pipeline requires a coordination provider and wires the
         // node@incarnation owner adapter + dead-node recovery bridge + registration startup gate. The old

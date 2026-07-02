@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 using Headless.Redis;
 using StackExchange.Redis;
 
-namespace Headless.DistributedLocks.Redis;
+namespace Headless.DistributedLocks.Redis.Scripts;
 
 /// <summary>Atomically acquires a reader lock when no writer holds the resource.</summary>
 internal sealed class TryAcquireReadLockScriptDefinition : RedisScriptDefinition

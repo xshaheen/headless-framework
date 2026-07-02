@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
+using Headless.Checks;
 using Headless.Serializer;
 
 namespace Headless.Coordination;
@@ -33,10 +34,9 @@ internal abstract class DatabaseMembershipStoreBase(CoordinationOptions options,
     public ValueTask UpsertDescriptorAsync(NodeDescriptor descriptor, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        Argument.IsNotNullOrEmpty(descriptor.Identity.NodeId.Value, "Descriptor identity must include a node id.");
 
-        return descriptor.Identity.NodeId.Value.Length == 0
-            ? throw new ArgumentException("Descriptor identity must include a node id.", nameof(descriptor))
-            : UpsertDescriptorCoreAsync(ClusterName, descriptor, cancellationToken);
+        return UpsertDescriptorCoreAsync(ClusterName, descriptor, cancellationToken);
     }
 
     public ValueTask<bool> HeartbeatAsync(NodeIdentity identity, CancellationToken cancellationToken = default)

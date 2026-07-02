@@ -53,10 +53,12 @@ public sealed class SettingValueTests
     {
         // given
         const string name = "App.Theme";
-        var settingValue = new SettingValue(name);
 
-        // when
-        settingValue.Value = "light";
+        var settingValue = new SettingValue(name)
+        {
+            // when
+            Value = "light",
+        };
 
         // then
         settingValue.Value.Should().Be("light");

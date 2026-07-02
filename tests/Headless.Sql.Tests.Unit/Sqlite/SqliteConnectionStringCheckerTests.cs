@@ -33,11 +33,11 @@ public sealed class SqliteConnectionStringCheckerTests
         var sut = new SqliteConnectionStringChecker(logger);
 
         // when
-        var result = await sut.CheckAsync("Data Source=:memory:");
+        var (connected, databaseExists) = await sut.CheckAsync("Data Source=:memory:");
 
         // then
-        result.Connected.Should().BeTrue();
-        result.DatabaseExists.Should().BeTrue();
+        connected.Should().BeTrue();
+        databaseExists.Should().BeTrue();
     }
 
     [Fact]
@@ -48,13 +48,13 @@ public sealed class SqliteConnectionStringCheckerTests
         var sut = new SqliteConnectionStringChecker(logger);
 
         // when
-        var result = await sut.CheckAsync(
+        var (connected, databaseExists) = await sut.CheckAsync(
             "Data Source=/nonexistent/path/that/should/not/exist/db.sqlite;Mode=ReadOnly"
         );
 
         // then
-        result.Connected.Should().BeFalse();
-        result.DatabaseExists.Should().BeFalse();
+        connected.Should().BeFalse();
+        databaseExists.Should().BeFalse();
     }
 
     [Fact]

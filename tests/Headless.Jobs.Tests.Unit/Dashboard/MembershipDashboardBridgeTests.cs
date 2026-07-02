@@ -3,7 +3,6 @@
 using System.Reflection;
 using Headless.Coordination;
 using Headless.Jobs.Coordination;
-using Headless.Jobs.DashboardDtos;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Infrastructure.Dashboard;
 using Headless.Jobs.Interfaces;
@@ -13,17 +12,17 @@ namespace Tests.Dashboard;
 
 public sealed class MembershipDashboardBridgeTests
 {
-    private static NodeIdentity Identity(string node, long incarnation) =>
+    private static NodeIdentity _Identity(string node, long incarnation) =>
         new(new NodeId(node), new NodeIncarnation(incarnation));
 
-    private static NodeLivenessSnapshot Snapshot(
+    private static NodeLivenessSnapshot _Snapshot(
         string node,
         long incarnation,
         NodeLivenessState state,
         string? role
-    ) => new(Identity(node, incarnation), state, role, new Dictionary<string, string>(StringComparer.Ordinal));
+    ) => new(_Identity(node, incarnation), state, role, new Dictionary<string, string>(StringComparer.Ordinal));
 
-    private static (MembershipDashboardBridge Bridge, IJobsNotificationHubSender Sender) Create()
+    private static (MembershipDashboardBridge Bridge, IJobsNotificationHubSender Sender) _Create()
     {
         var membership = new FakeMembership();
         var sender = Substitute.For<IJobsNotificationHubSender>();
@@ -33,7 +32,7 @@ public sealed class MembershipDashboardBridgeTests
     }
 
     // Reads a property by name off the anonymous push payload the bridge sends to the hub.
-    private static string? ReadString(object payload, string propertyName)
+    private static string? _ReadString(object payload, string propertyName)
     {
         var property = payload.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance);
 
@@ -43,51 +42,51 @@ public sealed class MembershipDashboardBridgeTests
     [Fact]
     public async Task should_push_node_state_on_node_joined()
     {
-        var (bridge, sender) = Create();
+        var (bridge, sender) = _Create();
 
-        await bridge.HandleEventAsync(new NodeJoined(Identity("node-a", 5)));
+        await bridge.HandleEventAsync(new NodeJoined(_Identity("node-a", 5)));
 
         await sender
             .Received(1)
             .UpdateNodesAsync(
-                Arg.Is<object>(p => ReadString(p, "identity") == "node-a@5" && ReadString(p, "state") == "Alive")
+                Arg.Is<object>(p => _ReadString(p, "identity") == "node-a@5" && _ReadString(p, "state") == "Alive")
             );
     }
 
     [Fact]
     public async Task should_push_node_state_on_node_left_as_dead()
     {
-        var (bridge, sender) = Create();
+        var (bridge, sender) = _Create();
 
-        await bridge.HandleEventAsync(new NodeLeft(Identity("node-b", 9)));
+        await bridge.HandleEventAsync(new NodeLeft(_Identity("node-b", 9)));
 
         await sender
             .Received(1)
             .UpdateNodesAsync(
-                Arg.Is<object>(p => ReadString(p, "identity") == "node-b@9" && ReadString(p, "state") == "Dead")
+                Arg.Is<object>(p => _ReadString(p, "identity") == "node-b@9" && _ReadString(p, "state") == "Dead")
             );
     }
 
     [Fact]
     public async Task should_push_suspected_node_with_suspected_state_not_dropped()
     {
-        var (bridge, sender) = Create();
+        var (bridge, sender) = _Create();
 
-        await bridge.HandleEventAsync(new NodeSuspected(Identity("node-c", 3)));
+        await bridge.HandleEventAsync(new NodeSuspected(_Identity("node-c", 3)));
 
         await sender
             .Received(1)
             .UpdateNodesAsync(
-                Arg.Is<object>(p => ReadString(p, "identity") == "node-c@3" && ReadString(p, "state") == "Suspected")
+                Arg.Is<object>(p => _ReadString(p, "identity") == "node-c@3" && _ReadString(p, "state") == "Suspected")
             );
     }
 
     [Fact]
     public async Task should_not_push_on_local_membership_lost()
     {
-        var (bridge, sender) = Create();
+        var (bridge, sender) = _Create();
 
-        await bridge.HandleEventAsync(new LocalMembershipLost(Identity("node-a", 5)));
+        await bridge.HandleEventAsync(new LocalMembershipLost(_Identity("node-a", 5)));
 
         await sender.DidNotReceive().UpdateNodesAsync(Arg.Any<object>());
     }
@@ -97,8 +96,8 @@ public sealed class MembershipDashboardBridgeTests
     {
         IReadOnlyList<NodeLivenessSnapshot> snapshot =
         [
-            Snapshot("node-a", 1, NodeLivenessState.Alive, "worker"),
-            Snapshot("node-b", 2, NodeLivenessState.Alive, "leader"),
+            _Snapshot("node-a", 1, NodeLivenessState.Alive, "worker"),
+            _Snapshot("node-b", 2, NodeLivenessState.Alive, "leader"),
         ];
 
         var views = JobsDashboardRepository<TimeJobEntity, CronJobEntity>.ProjectLiveNodes(snapshot);
@@ -124,7 +123,7 @@ public sealed class MembershipDashboardBridgeTests
         IReadOnlyList<NodeLivenessSnapshot> snapshot =
         [
             new NodeLivenessSnapshot(
-                Identity("node-a", 1),
+                _Identity("node-a", 1),
                 NodeLivenessState.Alive,
                 Role: null,
                 Metadata: new Dictionary<string, string>(StringComparer.Ordinal)

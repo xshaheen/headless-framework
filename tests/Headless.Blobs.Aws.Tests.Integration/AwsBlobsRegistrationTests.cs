@@ -20,14 +20,14 @@ public sealed class AwsBlobsRegistrationTests
 {
     // Dummy AWSOptions so AmazonS3Client construction succeeds without real credentials.
     // No network I/O occurs during construction; errors only surface on actual S3 calls.
-    private static AWSOptions DummyAwsOptions() =>
+    private static AWSOptions _DummyAwsOptions() =>
         new()
         {
             Region = RegionEndpoint.USEast1,
             Credentials = new BasicAWSCredentials("test-access-key", "test-secret-key"),
         };
 
-    private static ServiceCollection BuildBaseServices()
+    private static ServiceCollection _BuildBaseServices()
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -42,13 +42,13 @@ public sealed class AwsBlobsRegistrationTests
     public async Task default_store_is_injectable_and_named_stores_resolve_via_provider()
     {
         // given
-        var services = BuildBaseServices();
+        var services = _BuildBaseServices();
 
         services.AddHeadlessBlobs(blobs =>
         {
-            blobs.UseAws(options => { }, DummyAwsOptions());
-            blobs.AddNamed("media", instance => instance.UseAws(options => { }, DummyAwsOptions()));
-            blobs.AddNamed("docs", instance => instance.UseAws(options => { }, DummyAwsOptions()));
+            blobs.UseAws(options => { }, _DummyAwsOptions());
+            blobs.AddNamed("media", instance => instance.UseAws(options => { }, _DummyAwsOptions()));
+            blobs.AddNamed("docs", instance => instance.UseAws(options => { }, _DummyAwsOptions()));
         });
 
         await using var serviceProvider = services.BuildServiceProvider();
@@ -70,12 +70,12 @@ public sealed class AwsBlobsRegistrationTests
     public async Task named_stores_are_distinct_instances()
     {
         // given
-        var services = BuildBaseServices();
+        var services = _BuildBaseServices();
 
         services.AddHeadlessBlobs(blobs =>
         {
-            blobs.AddNamed("store-a", instance => instance.UseAws(options => { }, DummyAwsOptions()));
-            blobs.AddNamed("store-b", instance => instance.UseAws(options => { }, DummyAwsOptions()));
+            blobs.AddNamed("store-a", instance => instance.UseAws(options => { }, _DummyAwsOptions()));
+            blobs.AddNamed("store-b", instance => instance.UseAws(options => { }, _DummyAwsOptions()));
         });
 
         await using var serviceProvider = services.BuildServiceProvider();
@@ -94,12 +94,9 @@ public sealed class AwsBlobsRegistrationTests
     public async Task default_store_casts_to_IPresignedUrlBlobStorage()
     {
         // given
-        var services = BuildBaseServices();
+        var services = _BuildBaseServices();
 
-        services.AddHeadlessBlobs(blobs =>
-        {
-            blobs.UseAws(options => { }, DummyAwsOptions());
-        });
+        services.AddHeadlessBlobs(blobs => blobs.UseAws(options => { }, _DummyAwsOptions()));
 
         await using var serviceProvider = services.BuildServiceProvider();
 
@@ -115,12 +112,11 @@ public sealed class AwsBlobsRegistrationTests
     public async Task named_store_resolves_as_keyed_IPresignedUrlBlobStorage()
     {
         // given
-        var services = BuildBaseServices();
+        var services = _BuildBaseServices();
 
         services.AddHeadlessBlobs(blobs =>
-        {
-            blobs.AddNamed("assets", instance => instance.UseAws(options => { }, DummyAwsOptions()));
-        });
+            blobs.AddNamed("assets", instance => instance.UseAws(options => { }, _DummyAwsOptions()))
+        );
 
         await using var serviceProvider = services.BuildServiceProvider();
 
@@ -147,7 +143,7 @@ public sealed class AwsBlobsRegistrationTests
 
         try
         {
-            var services = BuildBaseServices();
+            var services = _BuildBaseServices();
             services.AddHeadlessBlobs(blobs => blobs.UseAws(options => { }));
             await using var serviceProvider = services.BuildServiceProvider();
 

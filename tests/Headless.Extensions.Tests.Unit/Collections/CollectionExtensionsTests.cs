@@ -152,7 +152,7 @@ public sealed class CollectionExtensionsTests
         // given - List<T> runtime source takes the List<T>.RemoveAll fast path; the returned list must still hold removed
         // items. Declared as ICollection<int> so the extension is invoked rather than List<T>.RemoveAll(Predicate<T>),
         // which the instance method would otherwise shadow (returning an int count).
-        ICollection<int> list = new List<int> { 1, 2, 3, 4, 5, 6 };
+        ICollection<int> list = [1, 2, 3, 4, 5, 6];
         // when
         var removed = list.RemoveAll(x => x % 2 == 0);
         // then

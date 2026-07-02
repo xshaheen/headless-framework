@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-#pragma warning disable IDE0130 // Namespace does not match folder structure
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Domain;
 
 /// <summary>
@@ -86,5 +85,7 @@ public abstract class EqualityBase<T> : IEquatable<T>
     /// same set, that <see cref="EqualityComponentsEqual"/> compares, so equal instances hash equally.
     /// </summary>
     /// <param name="hash">The hash accumulator to add components to.</param>
+#pragma warning disable CA1045 // Do not pass types by reference
     protected abstract void BuildHashCode(ref HashCode hash);
+#pragma warning restore CA1045
 }

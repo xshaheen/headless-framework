@@ -167,8 +167,8 @@ public sealed class RangeTests
         var bounded = new Range<string>("3", "5");
 
         // then
-        unboundedBelow.CompareTo(bounded).Should().BeLessThan(0);
-        bounded.CompareTo(unboundedBelow).Should().BeGreaterThan(0);
+        unboundedBelow.CompareTo(bounded).Should().BeNegative();
+        bounded.CompareTo(unboundedBelow).Should().BePositive();
     }
 
     [Fact]
@@ -179,8 +179,8 @@ public sealed class RangeTests
         var bounded = new Range<string>("3", "5");
 
         // then
-        unboundedAbove.CompareTo(bounded).Should().BeGreaterThan(0);
-        bounded.CompareTo(unboundedAbove).Should().BeLessThan(0);
+        unboundedAbove.CompareTo(bounded).Should().BePositive();
+        bounded.CompareTo(unboundedAbove).Should().BeNegative();
     }
 
     [Fact]

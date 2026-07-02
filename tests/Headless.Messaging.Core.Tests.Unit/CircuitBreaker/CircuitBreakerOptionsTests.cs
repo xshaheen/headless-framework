@@ -1,10 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging.CircuitBreaker;
-using Headless.Messaging.Configuration;
 using Headless.Testing.Tests;
-using Microsoft.Extensions.Options;
 
+#pragma warning disable MA0015 // Specify the parameter name in ArgumentException
 namespace Tests.CircuitBreaker;
 
 public sealed class CircuitBreakerOptionsTests : TestBase

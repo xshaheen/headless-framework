@@ -13,7 +13,6 @@ namespace Tests.Fakes;
 /// </summary>
 internal sealed class FakeDbCommand(FakeDbConnection connection) : DbCommand
 {
-    private readonly FakeDbConnection _connection = connection;
     private readonly FakeParameterCollection _parameters = new();
 
     [AllowNull]
@@ -35,12 +34,12 @@ internal sealed class FakeDbCommand(FakeDbConnection connection) : DbCommand
 
     public override async Task<int> ExecuteNonQueryAsync(CancellationToken cancellationToken)
     {
-        return await _connection.OnExecuteNonQueryAsync(this, cancellationToken).ConfigureAwait(false);
+        return await connection.OnExecuteNonQueryAsync(this, cancellationToken).ConfigureAwait(false);
     }
 
     public override int ExecuteNonQuery() => throw new NotSupportedException("Async-only fake.");
 
-    public override object? ExecuteScalar() => throw new NotSupportedException("Async-only fake.");
+    public override object ExecuteScalar() => throw new NotSupportedException("Async-only fake.");
 
     public override void Prepare() { }
 

@@ -5,7 +5,7 @@ using System.Diagnostics.Tracing;
 namespace Headless.Messaging.Diagnostics;
 
 [EventSource(Name = MessageDiagnosticListenerNames.MetricListenerName)]
-public class MessageEventCounterSource : EventSource
+public sealed class MessageEventCounterSource : EventSource
 {
     public static readonly MessageEventCounterSource Log = new();
 
@@ -18,9 +18,9 @@ public class MessageEventCounterSource : EventSource
 
     private MessageEventCounterSource() { }
 
-    protected override void OnEventCommand(EventCommandEventArgs args)
+    protected override void OnEventCommand(EventCommandEventArgs command)
     {
-        if (args.Command == EventCommand.Enable)
+        if (command.Command == EventCommand.Enable)
         {
             _publishPerSecondCounter ??= new IncrementingEventCounter(
                 MessageDiagnosticListenerNames.PublishedPerSec,

@@ -169,7 +169,7 @@ public sealed class FeaturesCustomSchemaTests(FeaturesTestFixture fixture) : Fea
             """,
             connection
         );
-        command.Parameters.AddWithValue("schema", schema);
+        command.Parameters.AddWithValue(nameof(schema), schema);
         command.Parameters.AddWithValue("table", tableName);
 
         return (bool)(await command.ExecuteScalarAsync(AbortToken))!;

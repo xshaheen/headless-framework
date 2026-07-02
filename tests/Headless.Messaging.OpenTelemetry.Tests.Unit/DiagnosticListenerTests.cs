@@ -7,11 +7,8 @@ using Headless.Messaging.Diagnostics;
 using Headless.Messaging.Messages;
 using Headless.Messaging.OpenTelemetry;
 using Headless.Messaging.OpenTelemetry.Internal;
-using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
-using NSubstitute;
-using NSubstitute.ExceptionExtensions;
 using DiagnosticListener = Headless.Messaging.OpenTelemetry.DiagnosticListener;
 
 namespace Tests;
@@ -176,9 +173,8 @@ public sealed class DiagnosticListenerTests : TestBase
         var failing = Substitute.For<IActivityTagEnricher>();
         failing
             .When(e =>
-            {
-                _ = e.Enrich(Arg.Any<Activity>(), Arg.Any<MessagingEnrichmentContext>(), Arg.Any<CancellationToken>());
-            })
+                _ = e.Enrich(Arg.Any<Activity>(), Arg.Any<MessagingEnrichmentContext>(), Arg.Any<CancellationToken>())
+            )
             .Throw(new InvalidOperationException("enricher failure"));
 
         var succeeding = Substitute.For<IActivityTagEnricher>();
@@ -207,9 +203,8 @@ public sealed class DiagnosticListenerTests : TestBase
         var failing = Substitute.For<IActivityTagEnricher>();
         failing
             .When(e =>
-            {
-                _ = e.Enrich(Arg.Any<Activity>(), Arg.Any<MessagingEnrichmentContext>(), Arg.Any<CancellationToken>());
-            })
+                _ = e.Enrich(Arg.Any<Activity>(), Arg.Any<MessagingEnrichmentContext>(), Arg.Any<CancellationToken>())
+            )
             .Throw(new InvalidOperationException("enricher failure"));
 
         var listener = new DiagnosticListener([failing]); // no logger
@@ -271,8 +266,9 @@ public sealed class DiagnosticListenerTests : TestBase
         listener.OnNext(new KeyValuePair<string, object?>(MessageDiagnosticListenerNames.BeforePublish, eventData));
 
         // then
-        Activity.Current?.GetTagItem(MessagingTags.Intent).Should().Be(expectedIntent);
-        Activity.Current?.GetTagItem(MessagingTags.DestinationKind).Should().Be(expectedDestinationKind);
+        Activity.Current.Should().NotBeNull();
+        Activity.Current!.GetTagItem(MessagingTags.Intent).Should().Be(expectedIntent);
+        Activity.Current.GetTagItem(MessagingTags.DestinationKind).Should().Be(expectedDestinationKind);
     }
 
     [Fact]
@@ -320,8 +316,9 @@ public sealed class DiagnosticListenerTests : TestBase
         listener.OnNext(new KeyValuePair<string, object?>(MessageDiagnosticListenerNames.BeforeConsume, eventData));
 
         // then
-        Activity.Current?.GetTagItem(MessagingTags.Intent).Should().Be(expectedIntent);
-        Activity.Current?.GetTagItem(MessagingTags.DestinationKind).Should().Be(expectedDestinationKind);
+        Activity.Current.Should().NotBeNull();
+        Activity.Current!.GetTagItem(MessagingTags.Intent).Should().Be(expectedIntent);
+        Activity.Current.GetTagItem(MessagingTags.DestinationKind).Should().Be(expectedDestinationKind);
     }
 
     [Fact]
@@ -390,9 +387,8 @@ public sealed class DiagnosticListenerTests : TestBase
         var failing = Substitute.For<IActivityTagEnricher>();
         failing
             .When(e =>
-            {
-                _ = e.Enrich(Arg.Any<Activity>(), Arg.Any<MessagingEnrichmentContext>(), Arg.Any<CancellationToken>());
-            })
+                _ = e.Enrich(Arg.Any<Activity>(), Arg.Any<MessagingEnrichmentContext>(), Arg.Any<CancellationToken>())
+            )
             .Throw(new InvalidOperationException("enricher failure"));
 
         var listener = new DiagnosticListener([failing], logger);
@@ -430,7 +426,7 @@ public sealed class DiagnosticListenerTests : TestBase
         var deadline = DateTime.UtcNow.AddSeconds(2);
         while (logger.Entries.Count == 0 && DateTime.UtcNow < deadline)
         {
-            await Task.Delay(10);
+            await Task.Delay(10, AbortToken);
         }
 
         // then - a Warning was logged for the async enricher exception
@@ -625,7 +621,8 @@ public sealed class DiagnosticListenerTests : TestBase
         );
 
         // then
-        Activity.Current?.GetTagItem(MessagingTags.RetryCount).Should().Be(3);
+        Activity.Current.Should().NotBeNull();
+        Activity.Current!.GetTagItem(MessagingTags.RetryCount).Should().Be(3);
     }
 
     [Fact]
@@ -642,7 +639,8 @@ public sealed class DiagnosticListenerTests : TestBase
         );
 
         // then
-        Activity.Current?.GetTagItem(MessagingTags.RetryCount).Should().BeNull();
+        Activity.Current.Should().NotBeNull();
+        Activity.Current!.GetTagItem(MessagingTags.RetryCount).Should().BeNull();
     }
 
     private static ActivityListener _CreateActivityListener()
@@ -725,7 +723,7 @@ public sealed class DiagnosticListenerTests : TestBase
                 binder: null,
                 types: [typeof(string), typeof(int)],
                 modifiers: null
-            )!,
+            ),
             OperationTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             RetryCount = retryCount,
         };

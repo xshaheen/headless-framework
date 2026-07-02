@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Messaging.Dashboard;
 
-internal sealed class DashboardOptionsExtension(Action<MessagingDashboardOptionsBuilder> configure)
+internal sealed class DashboardOptionsExtension(Action<MessagingDashboardOptionsBuilder>? configure)
     : IMessagesOptionsExtension
 {
     internal MessagingDashboardOptionsBuilder Builder { get; } = new();

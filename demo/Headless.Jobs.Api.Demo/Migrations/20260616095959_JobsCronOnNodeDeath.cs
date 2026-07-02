@@ -12,10 +12,10 @@ public partial class JobsCronOnNodeDeath : Migration
     {
         migrationBuilder.AddColumn<string>(
             name: "OnNodeDeath",
-            schema: "jobs",
             table: "CronJobs",
             type: "character varying(32)",
             maxLength: 32,
+            schema: "jobs",
             nullable: false,
             defaultValue: "Retry"
         );
@@ -23,6 +23,6 @@ public partial class JobsCronOnNodeDeath : Migration
 
     protected override void Down(MigrationBuilder migrationBuilder)
     {
-        migrationBuilder.DropColumn(name: "OnNodeDeath", schema: "jobs", table: "CronJobs");
+        migrationBuilder.DropColumn(name: "OnNodeDeath", table: "CronJobs", schema: "jobs");
     }
 }

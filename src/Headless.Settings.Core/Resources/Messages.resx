@@ -33,4 +33,7 @@
   <data name="setting:tenant_not_available" xml:space="preserve">
     <value>Tenant is not available to use with setting provider.</value>
   </data>
+  <data name="setting:decryption_failed" xml:space="preserve">
+    <value>Failed to decrypt setting value for setting name: {0}.</value>
+  </data>
 </root>

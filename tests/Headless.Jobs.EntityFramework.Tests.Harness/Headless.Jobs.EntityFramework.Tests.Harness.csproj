@@ -3,6 +3,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Tests</RootNamespace>
     <IsTestProject>false</IsTestProject>
+    <IsTestableProject>true</IsTestableProject>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />

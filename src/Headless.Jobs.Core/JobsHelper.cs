@@ -68,7 +68,7 @@ public static class JobsHelper
         Span<byte> compressedBytes;
         using (var memoryStream = new MemoryStream())
         {
-            using (var stream = new GZipStream(memoryStream, CompressionMode.Compress, true))
+            using (var stream = new GZipStream(memoryStream, CompressionMode.Compress, leaveOpen: true))
             {
                 stream.Write(serialized);
             }

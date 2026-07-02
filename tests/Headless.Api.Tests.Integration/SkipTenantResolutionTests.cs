@@ -2,7 +2,6 @@
 
 using System.Net;
 using System.Net.Http.Json;
-using System.Text.Json;
 using Headless.Abstractions;
 using Headless.Api;
 using Headless.Api.Middlewares;
@@ -256,13 +255,14 @@ public sealed class SkipTenantResolutionTests : TestBase
 
         if (options.RequireTenancyAuthorization)
         {
-            builder.Services.AddAuthorization(authz =>
-            {
-                authz.FallbackPolicy = new AuthorizationPolicyBuilder(HttpTenancyTestHarness.Scheme)
-                    .RequireAuthenticatedUser()
-                    .AddRequirements(new TenantRequirement())
-                    .Build();
-            });
+            builder
+                .Services.AddAuthorizationBuilder()
+                .SetFallbackPolicy(
+                    new AuthorizationPolicyBuilder(HttpTenancyTestHarness.Scheme)
+                        .RequireAuthenticatedUser()
+                        .AddRequirements(new TenantRequirement())
+                        .Build()
+                );
         }
         else
         {

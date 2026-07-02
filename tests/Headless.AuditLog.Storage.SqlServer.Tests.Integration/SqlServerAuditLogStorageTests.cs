@@ -146,7 +146,7 @@ public sealed class SqlServerAuditLogStorageTests(SqlServerAuditLogFixture fixtu
         command.Parameters.AddWithValue("@schema", _Schema);
         command.Parameters.AddWithValue("@table", tableName);
 
-        return (bool)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken))!;
+        return (bool)await command.ExecuteScalarAsync(TestContext.Current.CancellationToken);
     }
 
     private async Task<string> _JsonColumnTypeAsync(string columnName)
@@ -164,6 +164,6 @@ public sealed class SqlServerAuditLogStorageTests(SqlServerAuditLogFixture fixtu
         command.Parameters.AddWithValue("@schema", _Schema);
         command.Parameters.AddWithValue("@column", columnName);
 
-        return (string)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken))!;
+        return (string)await command.ExecuteScalarAsync(TestContext.Current.CancellationToken);
     }
 }

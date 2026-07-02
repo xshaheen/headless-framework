@@ -14,7 +14,7 @@ public sealed class TypeTests
 
         // when & then
         Argument.IsOfType<int>(testArgument);
-        Argument.IsOfType(testArgument, typeof(int));
+        Argument.IsOfType<int>(testArgument);
     }
 
     [Fact]
@@ -25,7 +25,7 @@ public sealed class TypeTests
 
         // when
         var genericAction = () => Argument.IsOfType<int>(testArgument);
-        var typeAction = () => Argument.IsOfType(testArgument, typeof(int));
+        var typeAction = () => Argument.IsOfType<int>(testArgument);
 
         // then
         const string message =
@@ -43,7 +43,7 @@ public sealed class TypeTests
 
         // when & then
         Argument.IsNotOfType<int>(testArgument);
-        Argument.IsNotOfType(testArgument, typeof(int));
+        Argument.IsNotOfType<int>(testArgument);
     }
 
     [Fact]
@@ -54,7 +54,7 @@ public sealed class TypeTests
 
         // when
         var genericAction = () => Argument.IsNotOfType<int>(testArgument);
-        var typeAction = () => Argument.IsNotOfType(testArgument, typeof(int));
+        var typeAction = () => Argument.IsNotOfType<int>(testArgument);
 
         // then
         const string message =
@@ -72,7 +72,7 @@ public sealed class TypeTests
 
         // when & then
         Argument.IsAssignableToType<string>(testArgument);
-        Argument.IsAssignableToType(testArgument, typeof(string));
+        Argument.IsAssignableToType<string>(testArgument);
     }
 
     [Fact]
@@ -83,7 +83,7 @@ public sealed class TypeTests
 
         // when
         var genericAction = () => Argument.IsAssignableToType<string>(testArgument);
-        var typeAction = () => Argument.IsAssignableToType(testArgument, typeof(string));
+        var typeAction = () => Argument.IsAssignableToType<string>(testArgument);
 
         // then
         const string message =
@@ -101,7 +101,7 @@ public sealed class TypeTests
 
         // when & then
         Argument.IsNotAssignableToType<string>(testArgument);
-        Argument.IsNotAssignableToType(testArgument, typeof(string));
+        Argument.IsNotAssignableToType<string>(testArgument);
     }
 
     [Fact]
@@ -112,7 +112,7 @@ public sealed class TypeTests
 
         // when
         var genericAction = () => Argument.IsNotAssignableToType<string>(testArgument);
-        var typeAction = () => Argument.IsNotAssignableToType(testArgument, typeof(string));
+        var typeAction = () => Argument.IsNotAssignableToType<string>(testArgument);
 
         // then
         const string message =

@@ -43,7 +43,7 @@ public sealed class MessagePublishOptionsBaseEqualityTests
             MessageType = typeof(SampleResponse),
         };
 
-        // when / then
+        // when & then
         first.Should().Be(second);
         first.GetHashCode().Should().Be(second.GetHashCode());
     }
@@ -55,7 +55,7 @@ public sealed class MessagePublishOptionsBaseEqualityTests
         var first = new PublishOptions { MessageName = "orders.placed", CorrelationId = "corr-1" };
         var second = new PublishOptions { MessageName = "orders.placed", CorrelationId = "corr-1" };
 
-        // when / then
+        // when & then
         first.Should().Be(second);
         first.GetHashCode().Should().Be(second.GetHashCode());
     }

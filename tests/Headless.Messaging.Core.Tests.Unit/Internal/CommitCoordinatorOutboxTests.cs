@@ -4,7 +4,6 @@ using System.Data;
 using System.Data.Common;
 using Headless.Abstractions;
 using Headless.CommitCoordination;
-using Headless.Generator.Primitives;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -25,7 +24,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
     [Fact]
     public async Task should_buffer_message_on_commit_coordinator_and_dispatch_after_commit()
     {
-        var transaction = new TestDbTransaction();
+        await using var transaction = new TestDbTransaction();
         var stack = new CommitScopeStack();
         var scope = new CommitScopeFactory(stack).Begin(
             new EmptyServiceProvider(),
@@ -72,7 +71,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
                 new NoopPublishMiddlewarePipeline(),
                 TimeProvider.System,
                 Options.Create(new MessagingOptions()),
-                Microsoft.Extensions.Logging.Abstractions.NullLogger<MessageOutboxBuffer>.Instance
+                NullLogger<MessageOutboxBuffer>.Instance
             );
 
             await writer.PublishAsync(
@@ -142,7 +141,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
                 new NoopPublishMiddlewarePipeline(expectTransactional: false),
                 TimeProvider.System,
                 Options.Create(new MessagingOptions()),
-                Microsoft.Extensions.Logging.Abstractions.NullLogger<MessageOutboxBuffer>.Instance
+                NullLogger<MessageOutboxBuffer>.Instance
             );
 
             await writer.PublishAsync(

@@ -1,9 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Abstractions;
 using Headless.DistributedLocks;
 using Headless.Testing.Tests;
-using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
@@ -29,7 +27,7 @@ public abstract class DistributedReadWriteLockTestsBase : TestBase
     }
 
     /// <summary>
-    /// Polls <paramref name="predicate"/> on the wall clock until it returns <c>true</c> or the deadline elapses.
+    /// Polls <paramref name="predicate"/> on the wall clock until it returns <see langword="true"/> or the deadline elapses.
     /// Used by wall-clock leaves (Redis) to absorb scheduling jitter when waiting for an asynchronous effect
     /// (e.g. the writer-waiting marker becoming visible). On fake-clock leaves (InMemory) the predicate already
     /// holds because <see cref="AdvanceTimeAsync"/> drains the thread pool, so it converges on the first probe.
@@ -404,7 +402,7 @@ public abstract class DistributedReadWriteLockTestsBase : TestBase
         await AdvanceTimeAsync(TimeSpan.FromSeconds(3), AbortToken);
         await DrainUntilAsync(() => writer.RenewalCount > 0, AbortToken);
 
-        writer.RenewalCount.Should().BeGreaterThan(0);
+        writer.RenewalCount.Should().BePositive();
         (await provider.IsWriteLockedAsync(resource, AbortToken)).Should().BeTrue();
     }
 }

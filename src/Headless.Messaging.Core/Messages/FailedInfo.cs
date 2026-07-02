@@ -58,7 +58,7 @@ public sealed class FailedInfo
 
     /// <summary>
     /// Gets the storage row identifier of the failed message. Use this together with
-    /// <c>Message.GetId()</c> to correlate dead-letter writes back to the original persisted row.
+    /// <c>Message.Id</c> to correlate dead-letter writes back to the original persisted row.
     /// </summary>
     public required Guid StorageId { get; init; }
 

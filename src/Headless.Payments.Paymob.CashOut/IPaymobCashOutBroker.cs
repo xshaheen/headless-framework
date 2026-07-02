@@ -14,16 +14,20 @@ namespace Headless.Payments.Paymob.CashOut;
 /// via mobile wallets, bank cards, or kiosk networks.
 /// </summary>
 /// <remarks>
+/// <para>
 /// All methods authenticate automatically using <c>IPaymobCashOutAuthenticator.GetAccessTokenAsync</c>.
 /// Errors from the API throw <c>PaymobCashOutException</c>, which carries the HTTP status code and
 /// raw response body.
-///
+/// </para>
+/// <para>
 /// Use the static factory methods on <c>CashOutDisburseRequest</c> (e.g., <c>CashOutDisburseRequest.Vodafone</c>,
 /// <c>CashOutDisburseRequest.BankCard</c>) to build correctly-typed disburse requests rather than
 /// constructing the record manually.
-///
+/// </para>
+/// <para>
 /// Registered as scoped by <c>SetupPaymobCashOut.AddPaymobCashOut</c>; the underlying
 /// <c>HttpClient</c> is injected by the typed-client factory.
+/// </para>
 /// </remarks>
 public interface IPaymobCashOutBroker
 {
@@ -99,7 +103,7 @@ public sealed class PaymobCashOutBroker(HttpClient httpClient, IPaymobCashOutAut
 
         if (!response.IsSuccessStatusCode)
         {
-            await PaymobCashOutException.ThrowAsync(response).ConfigureAwait(false);
+            await PaymobCashOutException.ThrowAsync(response, cancellationToken).ConfigureAwait(false);
         }
 
         return (
@@ -125,7 +129,7 @@ public sealed class PaymobCashOutBroker(HttpClient httpClient, IPaymobCashOutAut
 
         if (!response.IsSuccessStatusCode)
         {
-            await PaymobCashOutException.ThrowAsync(response).ConfigureAwait(false);
+            await PaymobCashOutException.ThrowAsync(response, cancellationToken).ConfigureAwait(false);
         }
 
         return await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
@@ -166,7 +170,7 @@ public sealed class PaymobCashOutBroker(HttpClient httpClient, IPaymobCashOutAut
 
         if (!response.IsSuccessStatusCode)
         {
-            await PaymobCashOutException.ThrowAsync(response).ConfigureAwait(false);
+            await PaymobCashOutException.ThrowAsync(response, cancellationToken).ConfigureAwait(false);
         }
 
         return await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);

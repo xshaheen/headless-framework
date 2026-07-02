@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
-using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Tests.Capabilities;
@@ -9,7 +8,6 @@ using MessagingHeaders = Headless.Messaging.Headers;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 /// <summary>Base class for consumer client implementation tests.</summary>
 [PublicAPI]
 public abstract class ConsumerClientTestsBase : TestBase

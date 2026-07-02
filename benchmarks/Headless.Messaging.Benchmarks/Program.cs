@@ -6,4 +6,4 @@ using Headless.Messaging.Benchmarks.Scenarios;
 
 BenchmarkSwitcher
     .FromTypes([typeof(ConsumeDispatchBenchmarks), typeof(MessageHeaderBenchmarks)])
-    .Run(args, BenchmarkRunConfig.Create(args));
+    .Run(args, BenchmarkRunConfig.Create());

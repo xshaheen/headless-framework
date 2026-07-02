@@ -15,7 +15,7 @@ public sealed class WithIdempotencyEndpointMetadataTests
 
         builder.WithIdempotency(o => o.IdempotencyKeyExpiration = TimeSpan.FromDays(7));
 
-        builder.CapturedMetadata.Should().HaveCount(1);
+        builder.CapturedMetadata.Should().ContainSingle();
         builder.CapturedMetadata[0].Should().BeOfType<IdempotencyMetadata>();
 
         var probe = new IdempotencyOptions();

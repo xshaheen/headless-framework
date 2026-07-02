@@ -14,8 +14,8 @@ namespace Headless.CommitCoordination.PostgreSql;
 /// Unlike SQL Server, Npgsql exposes no diagnostic listener that surfaces the native transaction commit/rollback
 /// edge, so there is no out-of-band detector. The model is therefore <b>inline (caller-driven)</b>: the caller
 /// enlists a scope keyed by the open <c>NpgsqlTransaction</c>, then drives the signal by calling
-/// <see cref="SignalCommittedAsync(object, CancellationToken)" /> or
-/// <see cref="SignalRolledBackAsync(object, CancellationToken)" /> immediately after committing or rolling that
+/// <see cref="SignalCommittedAsync(object)" /> or
+/// <see cref="SignalRolledBackAsync(object)" /> immediately after committing or rolling that
 /// transaction back. If the caller never signals, disposing the returned scope discards the enlisted work.
 /// </remarks>
 [PublicAPI]
@@ -53,7 +53,6 @@ public sealed partial class PostgreSqlCommitSignalSource(
     /// The provider transaction key — the <c>NpgsqlTransaction</c> instance passed to
     /// <c>NpgsqlConnection.EnlistCommitCoordination</c>.
     /// </param>
-    /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>A task that completes when the drain has finished.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="providerTransactionKey" /> is <see langword="null" />.</exception>
     [SuppressMessage(
@@ -61,7 +60,7 @@ public sealed partial class PostgreSqlCommitSignalSource(
         "CA2000:Dispose objects before losing scope",
         Justification = "The enlisting caller owns the scope lifetime and disposes it; the signal source signals and drains only, never disposing or popping the ambient frame."
     )]
-    public async ValueTask SignalCommittedAsync(object providerTransactionKey, CancellationToken cancellationToken)
+    public async ValueTask SignalCommittedAsync(object providerTransactionKey)
     {
         Argument.IsNotNull(providerTransactionKey);
 
@@ -81,7 +80,6 @@ public sealed partial class PostgreSqlCommitSignalSource(
     /// The provider transaction key — the <c>NpgsqlTransaction</c> instance passed to
     /// <c>NpgsqlConnection.EnlistCommitCoordination</c>.
     /// </param>
-    /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>A task that completes when the drain has finished.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="providerTransactionKey" /> is <see langword="null" />.</exception>
     [SuppressMessage(
@@ -89,7 +87,7 @@ public sealed partial class PostgreSqlCommitSignalSource(
         "CA2000:Dispose objects before losing scope",
         Justification = "The enlisting caller owns the scope lifetime and disposes it; the signal source signals and drains only, never disposing or popping the ambient frame."
     )]
-    public async ValueTask SignalRolledBackAsync(object providerTransactionKey, CancellationToken cancellationToken)
+    public async ValueTask SignalRolledBackAsync(object providerTransactionKey)
     {
         Argument.IsNotNull(providerTransactionKey);
 
@@ -106,5 +104,6 @@ public sealed partial class PostgreSqlCommitSignalSource(
         Level = LogLevel.Error,
         Message = "A PostgreSQL commit coordination scope is already attached for provider transaction key {ProviderTransactionKey}."
     )]
+    // ReSharper disable once InconsistentNaming
     private static partial void LogDuplicateScope(ILogger logger, object providerTransactionKey);
 }

@@ -11,7 +11,6 @@ using Microsoft.Extensions.Hosting;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 [Collection<SqlServerSettingsFixture>]
 public sealed class SqlServerSettingsFailureModesTests(SqlServerSettingsFixture fixture)
 {
@@ -24,7 +23,7 @@ public sealed class SqlServerSettingsFailureModesTests(SqlServerSettingsFixture 
             "Server=127.0.0.1,1;Database=missing;User Id=sa;Password=placeholder-never-used;Connect Timeout=2;TrustServerCertificate=true";
         using var host = _CreateHost(unreachable);
 
-        // when / then — wrapped in HostFailedToStartException by the host pipeline; inner is SqlException
+        // when & then — wrapped in HostFailedToStartException by the host pipeline; inner is SqlException
         await FluentActions
             .Awaiting(() => host.StartAsync(TestContext.Current.CancellationToken))
             .Should()

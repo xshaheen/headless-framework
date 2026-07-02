@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-#pragma warning disable IDE0130 // Namespace does not match folder structure
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Domain;
 
 /// <summary>
@@ -16,7 +15,7 @@ public interface IAggregateRoot<out TId> : IEntity<TId>, IAggregateRoot
 /// <summary>Base class for aggregate roots with a single primary key.</summary>
 [PublicAPI]
 public abstract class AggregateRoot<TId> : AggregateRoot, IAggregateRoot<TId>
-    where TId : notnull, IEquatable<TId>
+    where TId : IEquatable<TId>
 {
     /// <summary>Unique identifier for this entity.</summary>
     public required TId Id { get; init; }

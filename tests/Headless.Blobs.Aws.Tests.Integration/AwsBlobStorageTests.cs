@@ -70,7 +70,7 @@ public sealed class AwsBlobStorageTests(AwsBlobStorageFixture fixture) : BlobSto
         );
 
         var missingBucket = $"missing-{Guid.NewGuid():N}";
-        using var stream = new MemoryStream("hello"u8.ToArray());
+        await using var stream = new MemoryStream("hello"u8.ToArray());
 
         var act = async () => await storage.UploadAsync([missingBucket], "file.txt", stream);
 
@@ -84,7 +84,7 @@ public sealed class AwsBlobStorageTests(AwsBlobStorageFixture fixture) : BlobSto
         var container = new[] { $"presign-{Guid.NewGuid():N}" };
         var content = "presigned-content"u8.ToArray();
 
-        using (var stream = new MemoryStream(content))
+        await using (var stream = new MemoryStream(content))
         {
             await ((IBlobStorage)storage).UploadAsync(container, "file.txt", stream, cancellationToken: AbortToken);
         }
@@ -129,7 +129,7 @@ public sealed class AwsBlobStorageTests(AwsBlobStorageFixture fixture) : BlobSto
         var readBack = await ((IBlobStorage)storage).OpenReadStreamAsync(container, "file.txt", AbortToken);
         readBack.Should().NotBeNull();
 
-        using var buffer = new MemoryStream();
+        await using var buffer = new MemoryStream();
         await readBack!.Stream.CopyToAsync(buffer, AbortToken);
         buffer.ToArray().Should().Equal(content);
     }

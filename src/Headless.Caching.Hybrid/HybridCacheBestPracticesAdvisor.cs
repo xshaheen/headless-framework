@@ -99,10 +99,7 @@ internal sealed partial class HybridCacheBestPracticesAdvisor(
         // Check 4 — EagerRefreshThreshold is set very close to 1.
         // At 0.95 the background refresh window is only the last 5 % of the TTL; for a 1-minute entry
         // that is 3 seconds — barely enough to matter. The feature is effectively a no-op.
-        if (
-            entry.Value.EagerRefreshThreshold.HasValue
-            && entry.Value.EagerRefreshThreshold.Value >= _EagerRefreshThresholdLimit
-        )
+        if (entry.Value.EagerRefreshThreshold >= _EagerRefreshThresholdLimit)
         {
             logger.LogEagerRefreshThresholdTooHigh(
                 entry.Value.EagerRefreshThreshold.Value,

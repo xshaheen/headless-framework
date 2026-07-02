@@ -41,23 +41,6 @@ public sealed class JwtTokenFactoryTests : TestBase
         return new JwtTokenFactory(claimsPrincipalFactory, clock);
     }
 
-    private static IClaimsPrincipalFactory _CreateMockClaimsPrincipalFactory()
-    {
-        var mock = Substitute.For<IClaimsPrincipalFactory>();
-        mock.CreateClaimsIdentity(Arg.Any<IEnumerable<Claim>>())
-            .Returns(callInfo =>
-            {
-                var claims = callInfo.Arg<IEnumerable<Claim>>();
-                return new ClaimsIdentity(
-                    claims,
-                    AuthenticationConstants.IdentityAuthenticationType,
-                    UserClaimTypes.UserName,
-                    UserClaimTypes.Roles
-                );
-            });
-        return mock;
-    }
-
     private static List<Claim> _CreateTestClaims()
     {
         return

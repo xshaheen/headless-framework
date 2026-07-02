@@ -14,7 +14,7 @@ public sealed partial class TusAzureStore : ITusTerminationStore
     /// <param name="fileId">the TUS file identifier to delete</param>
     /// <param name="cancellationToken">token to cancel the operation</param>
     /// <remarks>
-    /// Succeeds silently if the blob does not exist (<c>DeleteIfExists</c> returns <c>false</c>).
+    /// Succeeds silently if the blob does not exist (<c>DeleteIfExists</c> returns <see langword="false"/>).
     /// A genuine Azure failure (anything other than not-found) is logged and <em>rethrown</em> so the
     /// caller does not mistake a failed deletion for success — a TUS <c>DELETE</c> must not report 204
     /// while the blob persists, and <c>RemoveExpiredFilesAsync</c> must not count an undeleted file.

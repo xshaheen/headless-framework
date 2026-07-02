@@ -87,7 +87,7 @@ public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : T
             );
 
             identities.Select(x => x.NodeId.Value).Should().OnlyContain(x => x == "node-a");
-            identities.Select(x => x.Incarnation.Value).Should().OnlyHaveUniqueItems();
+            identities.Should().OnlyHaveUniqueItems(x => x.Incarnation.Value);
             identities.Select(x => x.Incarnation.Value).Should().BeEquivalentTo([1L, 2L, 3L, 4L, 5L, 6L]);
         }
         finally

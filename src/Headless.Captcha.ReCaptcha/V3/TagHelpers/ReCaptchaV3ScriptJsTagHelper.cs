@@ -28,7 +28,7 @@ public sealed partial class ReCaptchaV3ScriptJsTagHelper(IOptionsSnapshot<ReCapt
     private readonly ReCaptchaOptions _options = optionsAccessor.Get(CaptchaConstants.ReCaptchaV3Provider);
 
     [GeneratedRegex("^[a-zA-Z_][a-zA-Z0-9_]*$", RegexOptions.Compiled, 100)]
-    private static partial Regex _ValidJsIdentifierRegex();
+    private static partial Regex ValidJsIdentifierRegex { get; }
 
     /// <summary>
     /// The reCAPTCHA action name passed to <c>grecaptcha.execute</c>. Provide a meaningful value (for
@@ -93,7 +93,7 @@ public sealed partial class ReCaptchaV3ScriptJsTagHelper(IOptionsSnapshot<ReCapt
         }
 
         // Validate Callback is a valid JS identifier to prevent XSS
-        if (!string.IsNullOrWhiteSpace(Callback) && !_ValidJsIdentifierRegex().IsMatch(Callback))
+        if (!string.IsNullOrWhiteSpace(Callback) && !ValidJsIdentifierRegex.IsMatch(Callback))
         {
             throw new InvalidOperationException(
                 $"Callback '{Callback}' is not a valid JavaScript identifier. "

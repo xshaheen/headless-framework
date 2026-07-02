@@ -8,7 +8,6 @@ using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Retry;
 using Headless.Messaging.Serialization;
-using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -16,16 +15,12 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Tests.Helpers;
 
+#pragma warning disable MA0015 // Specify the parameter name in ArgumentException
 namespace Tests;
 
 public sealed class MessageSenderTests : TestBase
 {
-    private static MediumMessage _CreateMediumMessage()
-    {
-        return _CreateMediumMessage(IntentType.Bus);
-    }
-
-    private static MediumMessage _CreateMediumMessage(IntentType intentType)
+    private static MediumMessage _CreateMediumMessage(IntentType intentType = IntentType.Bus)
     {
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
@@ -72,8 +67,8 @@ public sealed class MessageSenderTests : TestBase
         services.AddSingleton(storage);
         services.AddSingleton(serializer);
         services.AddSingleton(transport);
-        services.AddSingleton<IBusTransport>(new TestBusTransportAdapter(transport));
-        services.AddSingleton<IQueueTransport>(new TestQueueTransportAdapter(transport));
+        services.AddSingleton<IBusTransport>(_ => new TestBusTransportAdapter(transport));
+        services.AddSingleton<IQueueTransport>(_ => new TestQueueTransportAdapter(transport));
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton(Options.Create(options));
         if (lifetime is not null)
@@ -672,12 +667,16 @@ public sealed class MessageSenderTests : TestBase
         result.Succeeded.Should().BeTrue();
         busTransport
             .ReceivedCalls()
-            .Count(call => call.GetMethodInfo().Name == nameof(IBusTransport.SendAsync))
+            .Count(call =>
+                string.Equals(call.GetMethodInfo().Name, nameof(IBusTransport.SendAsync), StringComparison.Ordinal)
+            )
             .Should()
             .Be(1);
         queueTransport
             .ReceivedCalls()
-            .Count(call => call.GetMethodInfo().Name == nameof(IQueueTransport.SendAsync))
+            .Count(call =>
+                string.Equals(call.GetMethodInfo().Name, nameof(IQueueTransport.SendAsync), StringComparison.Ordinal)
+            )
             .Should()
             .Be(0);
     }
@@ -725,12 +724,16 @@ public sealed class MessageSenderTests : TestBase
         result.Succeeded.Should().BeTrue();
         queueTransport
             .ReceivedCalls()
-            .Count(call => call.GetMethodInfo().Name == nameof(IQueueTransport.SendAsync))
+            .Count(call =>
+                string.Equals(call.GetMethodInfo().Name, nameof(IQueueTransport.SendAsync), StringComparison.Ordinal)
+            )
             .Should()
             .Be(1);
         busTransport
             .ReceivedCalls()
-            .Count(call => call.GetMethodInfo().Name == nameof(IBusTransport.SendAsync))
+            .Count(call =>
+                string.Equals(call.GetMethodInfo().Name, nameof(IBusTransport.SendAsync), StringComparison.Ordinal)
+            )
             .Should()
             .Be(0);
     }
@@ -829,7 +832,9 @@ public sealed class MessageSenderTests : TestBase
             );
         queueTransport
             .ReceivedCalls()
-            .Count(call => call.GetMethodInfo().Name == nameof(IQueueTransport.SendAsync))
+            .Count(call =>
+                string.Equals(call.GetMethodInfo().Name, nameof(IQueueTransport.SendAsync), StringComparison.Ordinal)
+            )
             .Should()
             .Be(0);
     }
@@ -880,7 +885,9 @@ public sealed class MessageSenderTests : TestBase
             );
         busTransport
             .ReceivedCalls()
-            .Count(call => call.GetMethodInfo().Name == nameof(IBusTransport.SendAsync))
+            .Count(call =>
+                string.Equals(call.GetMethodInfo().Name, nameof(IBusTransport.SendAsync), StringComparison.Ordinal)
+            )
             .Should()
             .Be(0);
     }

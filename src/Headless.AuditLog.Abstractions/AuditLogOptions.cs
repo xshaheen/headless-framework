@@ -8,15 +8,15 @@ namespace Headless.AuditLog;
 public sealed class AuditLogOptions
 {
     /// <summary>
-    /// Master enable/disable switch. When <c>false</c>, no audit entries are captured.
-    /// Default: <c>true</c>.
+    /// Master enable/disable switch. When <see langword="false"/>, no audit entries are captured.
+    /// Default: <see langword="true"/>.
     /// </summary>
     public bool IsEnabled { get; set; } = true;
 
     /// <summary>
-    /// When <c>true</c>, entities are audited by default unless decorated with
+    /// When <see langword="true"/>, entities are audited by default unless decorated with
     /// <see cref="AuditIgnoreAttribute"/> at the class level.
-    /// When <c>false</c> (default), only entities implementing <see cref="IAuditTracked"/> are audited.
+    /// When <see langword="false"/> (default), only entities implementing <see cref="IAuditTracked"/> are audited.
     /// </summary>
     public bool AuditByDefault { get; set; }
 
@@ -36,14 +36,14 @@ public sealed class AuditLogOptions
     /// <summary>
     /// Predicate to exclude specific entity types from change tracking.
     /// The first result for a given entity type is cached for the capture service lifetime.
-    /// Return <c>true</c> to exclude. The predicate must be pure and deterministic.
+    /// Return <see langword="true"/> to exclude. The predicate must be pure and deterministic.
     /// </summary>
     public Func<Type, bool>? EntityFilter { get; set; }
 
     /// <summary>
     /// Predicate to exclude specific properties from change tracking.
     /// The first result for a given entity type and property name is cached for the capture
-    /// service lifetime. Return <c>true</c> to exclude. The predicate must be pure and deterministic.
+    /// service lifetime. Return <see langword="true"/> to exclude. The predicate must be pure and deterministic.
     /// Applied after attribute-based filtering and default excluded property checks.
     /// </summary>
     public Func<Type, string, bool>? PropertyFilter { get; set; }
@@ -52,7 +52,7 @@ public sealed class AuditLogOptions
     /// Framework-managed property names excluded by default during change capture.
     /// Consumers can add, remove, or clear entries to match their model.
     /// </summary>
-    public HashSet<string> DefaultExcludedProperties { get; set; } =
+    public HashSet<string> DefaultExcludedProperties { get; } =
         new(StringComparer.Ordinal)
         {
             "ConcurrencyStamp",

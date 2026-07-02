@@ -43,24 +43,18 @@ public readonly struct TransportMessage(IDictionary<string, string?> headers, Re
     public ReadOnlyMemory<byte> Body { get; } = body;
 
     /// <summary>
-    /// Retrieves the unique message identifier from the message headers.
+    /// Gets the unique message identifier from the message headers.
     /// </summary>
-    /// <returns>The message ID stored in the <see cref="Messaging.Headers.MessageId"/> header.</returns>
+    /// <value>The message ID stored in the <see cref="Messaging.Headers.MessageId"/> header.</value>
     /// <exception cref="KeyNotFoundException">Thrown if the MessageId header is not present.</exception>
-    public string GetId()
-    {
-        return Headers[Messaging.Headers.MessageId]!;
-    }
+    public string Id => Headers[Messaging.Headers.MessageId]!;
 
     /// <summary>
-    /// Retrieves the message name from the message headers.
+    /// Gets the message name from the message headers.
     /// </summary>
-    /// <returns>The message name stored in the <see cref="Messaging.Headers.MessageName"/> header.</returns>
+    /// <value>The message name stored in the <see cref="Messaging.Headers.MessageName"/> header.</value>
     /// <exception cref="KeyNotFoundException">Thrown if the MessageName header is not present.</exception>
-    public string GetName()
-    {
-        return Headers[Messaging.Headers.MessageName]!;
-    }
+    public string Name => Headers[Messaging.Headers.MessageName]!;
 
     /// <summary>
     /// Attempts to retrieve the consumer group name from the message headers.

@@ -537,7 +537,7 @@ internal static partial class LoggerExtensions
     public static partial void SkippingSuccessfulAlreadyTerminal(this ILogger logger, Guid storageId);
 
     [LoggerMessage(
-        EventId = 72,
+        EventId = 95,
         EventName = "OnExhaustedCallbackCancelledAtShutdown",
         Level = LogLevel.Debug,
         Message = "RetryPolicy.OnExhausted callback for message {StorageId} was cancelled by host shutdown."
@@ -545,7 +545,7 @@ internal static partial class LoggerExtensions
     public static partial void OnExhaustedCallbackCancelledAtShutdown(this ILogger logger, Guid storageId);
 
     [LoggerMessage(
-        EventId = 73,
+        EventId = 96,
         EventName = "OnExhaustedCallbackOrphaned",
         Level = LogLevel.Warning,
         Message = "RetryPolicy.OnExhausted callback for message {StorageId} timed out and is orphaned. Scope-bound services (FailedInfo.ServiceProvider) may become invalid once the dispatch scope disposes; cooperative callbacks should honor the supplied CancellationToken."

@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using AwesomeAssertions;
 using Headless.EntityFramework;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -16,16 +15,10 @@ namespace Tests;
 /// Inherits from harness base to verify Identity context has same filtering as HeadlessDbContext.
 /// </summary>
 [Collection<IdentityTestFixture>]
-public sealed class HeadlessIdentityDbContextGlobalFiltersTests
-    : HeadlessDbContextGlobalFiltersTestBase<IdentityTestFixture, TestIdentityDbContext>
+public sealed class HeadlessIdentityDbContextGlobalFiltersTests(IdentityTestFixture fixture)
+    : HeadlessDbContextGlobalFiltersTestBase<IdentityTestFixture, TestIdentityDbContext>(fixture)
 {
-    private readonly IdentityTestFixture _fixture;
-
-    public HeadlessIdentityDbContextGlobalFiltersTests(IdentityTestFixture fixture)
-        : base(fixture)
-    {
-        _fixture = fixture;
-    }
+    private readonly IdentityTestFixture _fixture = fixture;
 
     [Fact]
     public void add_headless_identity_db_context_should_default_identity_schema_to_version3()
@@ -73,10 +66,7 @@ public sealed class HeadlessIdentityDbContextGlobalFiltersTests
         >(_ => { });
 
         // when
-        services.Configure<IdentityOptions>(options =>
-        {
-            options.Stores.SchemaVersion = IdentitySchemaVersions.Version2;
-        });
+        services.Configure<IdentityOptions>(options => options.Stores.SchemaVersion = IdentitySchemaVersions.Version2);
 
         using var provider = services.BuildServiceProvider();
 

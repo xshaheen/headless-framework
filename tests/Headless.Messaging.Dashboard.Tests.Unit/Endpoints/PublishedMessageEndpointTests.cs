@@ -49,15 +49,15 @@ public sealed class PublishedMessageEndpointTests : TestBase
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
 
         await using var app = _CreateTestApp(_dataStorage);
-        await app.StartAsync();
+        await app.StartAsync(AbortToken);
         using var client = app.GetTestClient();
 
         // when
-        var response = await client.GetAsync($"/api/published/message/{messageId}");
+        var response = await client.GetAsync($"/api/published/message/{messageId}", AbortToken);
 
         // then
         response.StatusCode.Should().NotBe(HttpStatusCode.NotFound);
-        var payload = await response.Content.ReadFromJsonAsync<Dictionary<string, object?>>();
+        var payload = await response.Content.ReadFromJsonAsync<Dictionary<string, object?>>(AbortToken);
         payload.Should().ContainKey("storageId");
         payload.Should().ContainKey("messageId");
         payload.Should().ContainKey("intentType");
@@ -75,11 +75,11 @@ public sealed class PublishedMessageEndpointTests : TestBase
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
 
         await using var app = _CreateTestApp(_dataStorage);
-        await app.StartAsync();
+        await app.StartAsync(AbortToken);
         using var client = app.GetTestClient();
 
         // when
-        var response = await client.GetAsync($"/api/published/message/{messageId}");
+        var response = await client.GetAsync($"/api/published/message/{messageId}", AbortToken);
 
         // then
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);

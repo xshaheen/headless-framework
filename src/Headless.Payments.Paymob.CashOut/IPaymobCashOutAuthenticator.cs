@@ -13,15 +13,17 @@ namespace Headless.Payments.Paymob.CashOut;
 /// Handles OAuth 2.0 password-grant authentication against the Paymob CashOut API.
 /// </summary>
 /// <remarks>
+/// <para>
 /// The implementation obtains an access token by posting the configured username and password
 /// with a Basic-auth header (client ID/secret). The token is cached in memory and renewed
 /// proactively before expiry using <c>PaymobCashOutOptions.TokenRefreshBuffer</c> (default 10
 /// minutes). Concurrent callers during a refresh are serialised through a semaphore.
-///
+/// </para>
+/// <para>
 /// Option changes (via <c>IOptionsMonitor</c>) automatically invalidate the cached token, so the
 /// next call fetches a fresh one with the updated credentials.
-///
-/// Register with <c>SetupPaymobCashOut.AddPaymobCashOut</c>, which registers this as a singleton.
+/// </para>
+/// <para>Register with <c>SetupPaymobCashOut.AddPaymobCashOut</c>, which registers this as a singleton.</para>
 /// </remarks>
 public interface IPaymobCashOutAuthenticator
 {
@@ -130,7 +132,7 @@ public sealed class PaymobCashOutAuthenticator : IPaymobCashOutAuthenticator, ID
 
         if (!response.IsSuccessStatusCode)
         {
-            await PaymobCashOutException.ThrowAsync(response).ConfigureAwait(false);
+            await PaymobCashOutException.ThrowAsync(response, cancellationToken).ConfigureAwait(false);
         }
 
         var content = (
@@ -171,7 +173,7 @@ public sealed class PaymobCashOutAuthenticator : IPaymobCashOutAuthenticator, ID
 
         if (!response.IsSuccessStatusCode)
         {
-            await PaymobCashOutException.ThrowAsync(response).ConfigureAwait(false);
+            await PaymobCashOutException.ThrowAsync(response, cancellationToken).ConfigureAwait(false);
         }
 
         var content = (

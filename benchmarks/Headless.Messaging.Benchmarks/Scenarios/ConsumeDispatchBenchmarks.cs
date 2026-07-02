@@ -24,7 +24,7 @@ namespace Headless.Messaging.Benchmarks.Scenarios;
 public class ConsumeDispatchBenchmarks
 {
     private ServiceProvider _provider = null!;
-    private IConsumeMiddlewarePipeline _pipeline = null!;
+    private ConsumeMiddlewarePipeline _pipeline = null!;
     private ConsumerContext _context = null!;
     private BenchmarkPayload _payload = null!;
 

@@ -81,7 +81,7 @@ public sealed class CashInCallbackTransaction
     /// about the 3D and moto transactions.
     /// </summary>
     [JsonPropertyName("is_3d_secure")]
-    public bool Is3dSecure { get; init; }
+    public bool Is3DSecure { get; init; }
 
     [JsonPropertyName("is_standalone_payment")]
     public bool IsStandalonePayment { get; init; }
@@ -190,7 +190,7 @@ public sealed class CashInCallbackTransaction
             + toString(HasParentTransaction)
             + Id.ToString(CultureInfo.InvariantCulture)
             + IntegrationId.ToString(CultureInfo.InvariantCulture)
-            + toString(Is3dSecure)
+            + toString(Is3DSecure)
             + toString(IsAuth)
             + toString(IsCapture)
             + toString(IsRefunded)

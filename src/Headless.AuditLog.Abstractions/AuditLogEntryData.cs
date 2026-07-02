@@ -41,7 +41,7 @@ public sealed record AuditLogEntryData
     /// <summary>Human-readable action name (e.g., <c>"entity.created"</c>, <c>"pii.revealed"</c>).</summary>
     public required string Action { get; init; }
 
-    /// <summary>EF change type, or <c>null</c> for explicit (non-mutation) events.</summary>
+    /// <summary>EF change type, or <see langword="null"/> for explicit (non-mutation) events.</summary>
     public AuditChangeType? ChangeType { get; init; }
 
     // Entity
@@ -56,7 +56,7 @@ public sealed record AuditLogEntryData
     public string? EntityId { get; set; }
 
     // Changes
-    /// <summary>Property values before the change. <c>null</c> for Created entries.</summary>
+    /// <summary>Property values before the change. <see langword="null"/> for Created entries.</summary>
     /// <remarks>
     /// Providers may serialize CLR values on write but deserialize them as
     /// <see cref="System.Text.Json.JsonElement"/> on read. Use <c>GetDecimal()</c>,
@@ -64,7 +64,7 @@ public sealed record AuditLogEntryData
     /// </remarks>
     public Dictionary<string, object?>? OldValues { get; init; }
 
-    /// <summary>Property values after the change. <c>null</c> for Deleted entries.</summary>
+    /// <summary>Property values after the change. <see langword="null"/> for Deleted entries.</summary>
     /// <remarks>
     /// Providers may serialize CLR values on write but deserialize them as
     /// <see cref="System.Text.Json.JsonElement"/> on read. Use <c>GetDecimal()</c>,
@@ -76,7 +76,7 @@ public sealed record AuditLogEntryData
     public List<string>? ChangedFields { get; init; }
 
     // Outcome
-    /// <summary>Whether the operation succeeded. Default: <c>true</c>.</summary>
+    /// <summary>Whether the operation succeeded. Default: <see langword="true"/>.</summary>
     public bool Success { get; init; } = true;
 
     /// <summary>Error code if the operation failed.</summary>

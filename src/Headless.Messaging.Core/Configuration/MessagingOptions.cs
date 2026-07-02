@@ -5,6 +5,7 @@ using FluentValidation;
 using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Messaging.CircuitBreaker;
+using Headless.Messaging.Registration;
 
 namespace Headless.Messaging.Configuration;
 
@@ -244,7 +245,7 @@ public sealed class MessagingOptions
     /// <summary>
     /// Gets the global circuit breaker configuration that applies to all consumer groups.
     /// Individual consumers may override specific properties via
-    /// <see cref="IConsumerBuilderBase{TConsumer, TBuilder}.WithCircuitBreaker"/>.
+    /// <see cref="IConsumerBuilderBase{TConsumer,TBuilder}.WithCircuitBreaker"/>.
     /// </summary>
     public CircuitBreakerOptions CircuitBreaker { get; } = new();
 
@@ -351,16 +352,14 @@ public sealed class MessagingOptions
     {
         Argument.IsNotNullOrWhiteSpace(messageName);
 
-        return string.IsNullOrWhiteSpace(MessageNamePrefix)
-            ? messageName
-            : string.Concat(MessageNamePrefix, ".", messageName);
+        return string.IsNullOrWhiteSpace(MessageNamePrefix) ? messageName : $"{MessageNamePrefix}.{messageName}";
     }
 
     internal string ApplyGroupNamePrefix(string group)
     {
         Argument.IsNotNullOrWhiteSpace(group);
 
-        return string.IsNullOrWhiteSpace(GroupNamePrefix) ? group : string.Concat(GroupNamePrefix, ".", group);
+        return string.IsNullOrWhiteSpace(GroupNamePrefix) ? group : $"{GroupNamePrefix}.{group}";
     }
 
     internal static void ValidateMessageName(string messageName)
@@ -451,7 +450,7 @@ public sealed class MessagingOptions
 
         var resolvedGroup =
             !string.IsNullOrWhiteSpace(explicitGroup) ? explicitGroup
-            : !string.IsNullOrWhiteSpace(Conventions.DefaultGroup) ? Conventions.DefaultGroup!
+            : !string.IsNullOrWhiteSpace(Conventions.DefaultGroup) ? Conventions.DefaultGroup
             : IsDefaultGroupNameConfigured ? DefaultGroupName
             : Conventions.GetGroupName(handlerId);
 

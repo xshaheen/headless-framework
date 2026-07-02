@@ -413,7 +413,7 @@ public sealed class PermissionGrantStore(
                 tenantId
             ));
 
-        var permissionGrantRecords = newDenials as PermissionGrantRecord[] ?? newDenials.ToArray();
+        var permissionGrantRecords = newDenials.AsArray();
 
         if (permissionGrantRecords.Length > 0)
         {
@@ -582,9 +582,12 @@ public sealed class PermissionGrantStore(
             .GetPermissionsAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        return definitions
-            .Where(definition => names.Exists(name => string.Equals(name, definition.Name, StringComparison.Ordinal)))
-            .ToArray();
+        return
+        [
+            .. definitions.Where(definition =>
+                names.Exists(name => string.Equals(name, definition.Name, StringComparison.Ordinal))
+            ),
+        ];
     }
 
     private static string _GetPermissionNameFormCacheKey(string key)

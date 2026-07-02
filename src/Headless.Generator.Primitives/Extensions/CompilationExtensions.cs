@@ -28,7 +28,7 @@ internal static class CompilationExtensions
                 {
                     Name: AbstractionConstants.NamespacePart2,
                     ContainingNamespace:
-                    { Name: AbstractionConstants.NamespacePart1, ContainingNamespace.IsGlobalNamespace: true }
+                    { Name: AbstractionConstants.NamespacePart1, ContainingNamespace.IsGlobalNamespace: true },
                 },
             };
     }

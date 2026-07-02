@@ -32,7 +32,7 @@ public sealed partial class HybridCache
         // longer reflects the L2 response, so we optimistically populate L1 (the additive write succeeded
         // locally) and return true. Capture every value the detached lambda needs before returning so it never
         // races disposal. A failed background write routes to recovery (when enabled) or is logged and swallowed.
-        if (options.AllowBackgroundDistributedCacheOperations)
+        if (cacheOptions.AllowBackgroundDistributedCacheOperations)
         {
             var localExpiration = _GetLocalExpiration(expiration);
             await LocalCache.UpsertAsync(key, value, localExpiration, cancellationToken).ConfigureAwait(false);
@@ -63,7 +63,9 @@ public sealed partial class HybridCache
             }
             catch (Exception exception)
                 when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken)
-                    && (RecoveryQueue is not null || options.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero)
+                    && (
+                        RecoveryQueue is not null || cacheOptions.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero
+                    )
                 )
             {
                 // Degraded mode: with recovery on, queue the L2 write; with only the circuit breaker on, avoid
@@ -205,7 +207,7 @@ public sealed partial class HybridCache
 
         // The hybrid store write fans out to L2 then L1 with the full per-entry metadata (tags included) and
         // publishes the key invalidation itself: every value-write through the composite store broadcasts.
-        await (this).UpsertEntryAsync(key, value, options, _timeProvider, cancellationToken).ConfigureAwait(false);
+        await this.UpsertEntryAsync(key, value, options, _timeProvider, cancellationToken).ConfigureAwait(false);
 
         return true;
     }
@@ -239,7 +241,7 @@ public sealed partial class HybridCache
         // Bulk ops are not captured by auto-recovery (issue #440), so a failed background bulk write is purely
         // best-effort: logged and swallowed. Snapshot the dictionary and key array before detaching so the
         // background lambda owns immutable state and never observes a caller-side mutation.
-        if (options.AllowBackgroundDistributedCacheOperations)
+        if (cacheOptions.AllowBackgroundDistributedCacheOperations)
         {
             var snapshot = new Dictionary<string, T>(value, StringComparer.Ordinal);
             var keys = snapshot.Keys.ToArray();
@@ -265,7 +267,7 @@ public sealed partial class HybridCache
             }
             catch (Exception exception)
                 when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken)
-                    && options.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero
+                    && cacheOptions.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero
                 )
             {
                 _OpenDistributedCacheCircuit(exception, value.Keys.First());
@@ -286,7 +288,7 @@ public sealed partial class HybridCache
         }
 
         await _PublishInvalidationAsync(
-                new CacheInvalidationMessage { InstanceId = _instanceId, Keys = value.Keys.ToArray() },
+                new CacheInvalidationMessage { InstanceId = _instanceId, Keys = [.. value.Keys] },
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -327,7 +329,7 @@ public sealed partial class HybridCache
         }
         catch (Exception exception)
             when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken)
-                && (RecoveryQueue is not null || options.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero)
+                && (RecoveryQueue is not null || cacheOptions.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero)
             )
         {
             _OpenDistributedCacheCircuit(exception, key);
@@ -376,7 +378,7 @@ public sealed partial class HybridCache
         }
         catch (Exception exception)
             when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken)
-                && (RecoveryQueue is not null || options.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero)
+                && (RecoveryQueue is not null || cacheOptions.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero)
             )
         {
             _OpenDistributedCacheCircuit(exception, key);
@@ -434,7 +436,7 @@ public sealed partial class HybridCache
         }
         catch (Exception exception)
             when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken)
-                && (RecoveryQueue is not null || options.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero)
+                && (RecoveryQueue is not null || cacheOptions.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero)
             )
         {
             // CAS / non-replay-safe: trip the breaker so concurrent callers stop hammering a down L2, then rethrow.
@@ -654,9 +656,9 @@ public sealed partial class HybridCache
     /// Executes a numeric L2 operation, syncs the result to L1, and publishes a key invalidation. Shared by
     /// <see cref="IncrementAsync(string,double,TimeSpan?,CancellationToken)"/>,
     /// <see cref="SetIfHigherAsync(string,double,TimeSpan?,CancellationToken)"/>,
-    /// <see cref="SetIfLowerAsync(string,double,TimeSpan?,CancellationToken)"/>, and their <c>long</c> overloads.
+    /// <see cref="SetIfLowerAsync(string,double,TimeSpan?,CancellationToken)"/>, and their <see langword="long"/> overloads.
     /// </summary>
-    /// <typeparam name="TResult">Return type of the L2 operation (e.g. <c>double</c> or <c>long</c>).</typeparam>
+    /// <typeparam name="TResult">Return type of the L2 operation (e.g. <see langword="double"/> or <see langword="long"/>).</typeparam>
     /// <typeparam name="TL1">Type stored in L1 (equals <typeparamref name="TResult"/> for increment, equals the
     /// input value type for set-if-higher/lower).</typeparam>
     /// <param name="isUpdated">
@@ -681,7 +683,7 @@ public sealed partial class HybridCache
         }
         catch (Exception exception)
             when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken)
-                && (RecoveryQueue is not null || options.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero)
+                && (RecoveryQueue is not null || cacheOptions.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero)
             )
         {
             // CAS / non-replay-safe numeric op: trip the breaker so concurrent callers stop hammering a down L2,
@@ -726,7 +728,7 @@ public sealed partial class HybridCache
         Argument.IsNotNull(value);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var items = value as T[] ?? value.ToArray();
+        var items = value.AsArray();
 
         long addedCount;
 
@@ -736,7 +738,7 @@ public sealed partial class HybridCache
         }
         catch (Exception exception)
             when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken)
-                && (RecoveryQueue is not null || options.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero)
+                && (RecoveryQueue is not null || cacheOptions.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero)
             )
         {
             // CAS / non-replay-safe set mutation: trip the breaker so concurrent callers stop hammering a down L2,
@@ -786,7 +788,7 @@ public sealed partial class HybridCache
         }
         catch (Exception exception)
             when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken)
-                && (RecoveryQueue is not null || options.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero)
+                && (RecoveryQueue is not null || cacheOptions.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero)
             )
         {
             // Trip the breaker on a configured-breaker or recovery-enabled L2 failure so concurrent callers stop
@@ -841,7 +843,7 @@ public sealed partial class HybridCache
         }
         catch (Exception exception)
             when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken)
-                && (RecoveryQueue is not null || options.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero)
+                && (RecoveryQueue is not null || cacheOptions.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero)
             )
         {
             // Trip the breaker on a configured-breaker or recovery-enabled L2 failure so concurrent callers stop
@@ -906,7 +908,7 @@ public sealed partial class HybridCache
         }
         catch (Exception exception)
             when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken)
-                && (RecoveryQueue is not null || options.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero)
+                && (RecoveryQueue is not null || cacheOptions.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero)
             )
         {
             // CAS / non-replay-safe delete: trip the breaker so concurrent callers stop hammering a down L2, then
@@ -997,7 +999,7 @@ public sealed partial class HybridCache
         }
         catch (Exception exception)
             when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken)
-                && (RecoveryQueue is not null || options.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero)
+                && (RecoveryQueue is not null || cacheOptions.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero)
             )
         {
             // Non-replay-safe bulk remove: trip the breaker so concurrent callers stop hammering a down L2, then
@@ -1113,7 +1115,7 @@ public sealed partial class HybridCache
     private const string _ClearMarkerRecoveryKey = "\0hybrid-marker:clear";
     private const string _RemoveMarkerRecoveryKey = "\0hybrid-marker:remove";
 
-    private static string _TagMarkerRecoveryKey(string tag) => string.Concat("\0hybrid-marker:tag:", tag);
+    private static string _TagMarkerRecoveryKey(string tag) => $"\0hybrid-marker:tag:{tag}";
 
     /// <summary>
     /// Applies a Family-2 marker bump (tag/clear/remove) to L2 as a best-effort operation: skipped when the
@@ -1174,7 +1176,7 @@ public sealed partial class HybridCache
                 _QueueMarkerRecovery(writer, writeMarker, recoveryKey, message);
             }
 
-            if (options.ReThrowDistributedCacheExceptions)
+            if (cacheOptions.ReThrowDistributedCacheExceptions)
             {
                 throw;
             }
@@ -1194,7 +1196,7 @@ public sealed partial class HybridCache
         Argument.IsNotNull(value);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var items = value as T[] ?? value.ToArray();
+        var items = value.AsArray();
 
         long removedCount;
 
@@ -1206,7 +1208,7 @@ public sealed partial class HybridCache
         }
         catch (Exception exception)
             when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken)
-                && (RecoveryQueue is not null || options.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero)
+                && (RecoveryQueue is not null || cacheOptions.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero)
             )
         {
             // CAS / non-replay-safe set mutation: trip the breaker so concurrent callers stop hammering a down L2,

@@ -102,10 +102,7 @@ public sealed class SqlServerCoordinatedTransactionFixture(SqlServerCommitCoordi
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand("SELECT count(*) FROM probe_rows", connection);
 
-        return Convert.ToInt32(
-            await command.ExecuteScalarAsync(cancellationToken),
-            System.Globalization.CultureInfo.InvariantCulture
-        );
+        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
     }
 
     public async Task ResetAsync(CancellationToken cancellationToken)

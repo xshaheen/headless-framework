@@ -25,7 +25,7 @@ public sealed class IsCloseToTests
     [Fact]
     public void is_close_to_should_throw_when_outside_delta()
     {
-        var value = 5;
+        const int value = 5;
         var action = () => Argument.IsCloseTo(value, 10, 2);
 
         action
@@ -52,7 +52,7 @@ public sealed class IsCloseToTests
     [Fact]
     public void is_not_close_to_should_throw_when_within_delta()
     {
-        var value = 5;
+        const int value = 5;
         var action = () => Argument.IsNotCloseTo(value, 6, 2);
 
         action
@@ -91,7 +91,7 @@ public sealed class IsCloseToTests
     [Fact]
     public void is_close_to_unsigned_delta_overloads_match_message_format()
     {
-        var value = 5;
+        const int value = 5;
         var action = () => Argument.IsCloseTo(value, 10, 2u);
 
         action

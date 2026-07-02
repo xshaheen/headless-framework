@@ -2,7 +2,7 @@
 
 using Headless.Redis;
 
-namespace Headless.DistributedLocks.Redis;
+namespace Headless.DistributedLocks.Redis.Scripts;
 
 /// <summary>Atomically releases a distributed semaphore slot.</summary>
 internal sealed class ReleaseSemaphoreScriptDefinition : RedisScriptDefinition

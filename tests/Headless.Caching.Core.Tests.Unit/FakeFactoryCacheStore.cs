@@ -24,9 +24,9 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
     public Func<string, int, Entry?>? TryGetEntryOverride { get; set; }
 
     /// <summary>
-    /// Forces a <see cref="SetEntryAsync{T}"/> call to report CAS-lost (return <c>false</c>) without mutating the
+    /// Forces a <see cref="SetEntryAsync{T}"/> call to report CAS-lost (return <see langword="false"/>) without mutating the
     /// stored entry, modelling a concurrent writer winning the compare-and-swap. Invoked with the key and the
-    /// post-increment <see cref="SetEntryCalls"/> count; return <c>false</c> to fail that write, <c>true</c>
+    /// post-increment <see cref="SetEntryCalls"/> count; return <see langword="false"/> to fail that write, <see langword="true"/>
     /// (or leave unset) to commit normally.
     /// </summary>
     public Func<string, int, bool>? SetEntryCommitOverride { get; set; }

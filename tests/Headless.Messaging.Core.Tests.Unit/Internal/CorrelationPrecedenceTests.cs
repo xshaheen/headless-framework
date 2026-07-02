@@ -4,6 +4,7 @@ using Headless.Abstractions;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
+using Headless.Messaging.Registration;
 using Microsoft.Extensions.Options;
 
 namespace Tests.Internal;
@@ -46,13 +47,15 @@ public sealed class CorrelationPrecedenceTests
     public void should_reject_correlation_values_with_control_characters(string correlationId, string source)
     {
         // given
-        var accessor =
-            source == "ambient"
-                ? new AsyncLocalConsumeContextAccessor { Current = _ConsumeContext(correlationId) }
-                : null;
-        var factory =
-            source == "selector" ? _CreateFactory(selector: _ => correlationId) : _CreateFactory(accessor: accessor);
-        var options = source == "explicit" ? new PublishOptions { CorrelationId = correlationId } : null;
+        var accessor = string.Equals(source, "ambient", StringComparison.Ordinal)
+            ? new AsyncLocalConsumeContextAccessor { Current = _ConsumeContext(correlationId) }
+            : null;
+        var factory = string.Equals(source, "selector", StringComparison.Ordinal)
+            ? _CreateFactory(selector: _ => correlationId)
+            : _CreateFactory(accessor: accessor);
+        var options = string.Equals(source, "explicit", StringComparison.Ordinal)
+            ? new PublishOptions { CorrelationId = correlationId }
+            : null;
 
         // when
         var act = () => factory.Create(new TestMessage(null), options);
@@ -139,7 +142,7 @@ public sealed class CorrelationPrecedenceTests
     public void should_leave_traceparent_header_unchanged()
     {
         // given
-        var traceParent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00";
+        const string traceParent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00";
         var factory = _CreateFactory(selector: static message => message.Correlation);
 
         // when

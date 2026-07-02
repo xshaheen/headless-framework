@@ -40,7 +40,7 @@ public sealed partial class HybridCache(
     IInMemoryCache l1Cache,
     IRemoteCache l2Cache,
     IBus publisher,
-    HybridCacheOptions options,
+    HybridCacheOptions cacheOptions,
     ILogger<HybridCache>? logger = null,
     TimeProvider? timeProvider = null,
     ICacheFactoryLockProvider? factoryLockProvider = null
@@ -48,8 +48,8 @@ public sealed partial class HybridCache(
 {
     private readonly ILogger _logger = logger ?? NullLogger<HybridCache>.Instance;
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
-    private readonly string _instanceId = options.InstanceId ?? Guid.NewGuid().ToString("N");
-    private readonly string? _cacheName = options.CacheName;
+    private readonly string _instanceId = cacheOptions.InstanceId ?? Guid.NewGuid().ToString("N");
+    private readonly string? _cacheName = cacheOptions.CacheName;
     private readonly FactoryCacheCoordinator _coordinator = new(
         timeProvider ?? TimeProvider.System,
         logger,
@@ -61,7 +61,7 @@ public sealed partial class HybridCache(
     private int _isDisposed;
 
     /// <inheritdoc />
-    public CacheEntryOptions? DefaultEntryOptions { get; } = options.DefaultEntryOptions;
+    public CacheEntryOptions? DefaultEntryOptions { get; } = cacheOptions.DefaultEntryOptions;
 
     /// <summary>Gets the number of L1 cache hits.</summary>
     public long LocalCacheHits => Interlocked.Read(ref _localCacheHits);
@@ -78,9 +78,9 @@ public sealed partial class HybridCache(
     /// singleton, named keyed instances, or direct construction) and is torn down in DisposeAsync.
     /// </remarks>
     internal HybridCacheRecoveryQueue? RecoveryQueue { get; } =
-        options.EnableAutoRecovery
+        cacheOptions.EnableAutoRecovery
             ? new HybridCacheRecoveryQueue(
-                options,
+                cacheOptions,
                 timeProvider ?? TimeProvider.System,
                 logger ?? NullLogger<HybridCache>.Instance
             )
@@ -409,7 +409,7 @@ public sealed partial class HybridCache(
         Argument.IsNotNull(cacheKeys);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var keysCollection = cacheKeys as ICollection<string> ?? cacheKeys.ToList();
+        var keysCollection = cacheKeys.AsICollection();
         if (keysCollection.Count == 0)
         {
             return new Dictionary<string, CacheValue<T>>(StringComparer.Ordinal);
@@ -726,7 +726,7 @@ public sealed partial class HybridCache(
 
                     if (!value.HasValue)
                     {
-                        return new CacheValueWithExpiration<ICollection<T>>(value, null);
+                        return new CacheValueWithExpiration<ICollection<T>>(value, expiration: null);
                     }
 
                     var expiration = await l2Cache.GetExpirationAsync(key, ct).ConfigureAwait(false);
@@ -756,13 +756,13 @@ public sealed partial class HybridCache(
             // the key expires between them, the value is present but Expiration is null; seeding L1 with a null TTL
             // and no DefaultLocalExpiration ceiling would create a never-expiring local entry. Skip the L1 seed in
             // that case and return the value without caching it locally.
-            if (l2Read.Value.Expiration is not null || options.DefaultLocalExpiration.HasValue)
+            if (l2Read.Value.Expiration is not null || cacheOptions.DefaultLocalExpiration.HasValue)
             {
                 var localExpiration = _GetLocalExpiration(l2Read.Value.Expiration);
                 _logger.LogSettingLocalCacheKey(key, localExpiration);
                 // Use UpsertAsync to replace any existing L1 data (not SetAddAsync which would merge)
                 await LocalCache
-                    .UpsertAsync(key, cacheValue.Value!, localExpiration, cancellationToken)
+                    .UpsertAsync(key, cacheValue.Value, localExpiration, cancellationToken)
                     .ConfigureAwait(false);
             }
         }
@@ -909,7 +909,7 @@ public sealed partial class HybridCache(
             // Fail loud after the log + recovery queueing: self-healing still happens (the queued item replays),
             // but the caller is also informed of the backplane outage. On detached background publish paths this
             // re-throw is observed and logged by the fire-and-forget fault net rather than surfacing to a caller.
-            if (options.ReThrowBackplaneExceptions)
+            if (cacheOptions.ReThrowBackplaneExceptions)
             {
                 throw;
             }
@@ -986,14 +986,14 @@ public sealed partial class HybridCache(
 
     private TimeSpan? _GetLocalExpiration(TimeSpan? expiration)
     {
-        if (!options.DefaultLocalExpiration.HasValue)
+        if (!cacheOptions.DefaultLocalExpiration.HasValue)
         {
             return expiration;
         }
 
-        return expiration.HasValue && expiration.Value < options.DefaultLocalExpiration.Value
+        return expiration < cacheOptions.DefaultLocalExpiration.Value
             ? expiration
-            : options.DefaultLocalExpiration;
+            : cacheOptions.DefaultLocalExpiration;
     }
 
     #endregion

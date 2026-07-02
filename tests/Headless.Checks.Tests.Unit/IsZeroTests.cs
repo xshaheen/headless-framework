@@ -18,7 +18,7 @@ public sealed class IsZeroTests
     [Fact]
     public void is_zero_should_throw_when_not_zero()
     {
-        var value = 5;
+        const int value = 5;
         var action = () => Argument.IsZero(value);
 
         action
@@ -38,7 +38,7 @@ public sealed class IsZeroTests
     public void is_zero_nullable_should_pass_through_null()
     {
         Argument.IsZero((int?)null).Should().BeNull();
-        Argument.IsZero((TimeSpan?)null).Should().BeNull();
+        Argument.IsZero(null).Should().BeNull();
         Argument.IsZero((int?)0).Should().Be(0);
 
         var action = () => Argument.IsZero((int?)3);
@@ -55,7 +55,7 @@ public sealed class IsZeroTests
     [Fact]
     public void is_not_zero_should_throw_when_zero()
     {
-        var value = 0;
+        const int value = 0;
         var action = () => Argument.IsNotZero(value);
 
         action
@@ -71,7 +71,7 @@ public sealed class IsZeroTests
     public void is_not_zero_nullable_should_pass_through_null()
     {
         Argument.IsNotZero((int?)null).Should().BeNull();
-        Argument.IsNotZero((TimeSpan?)null).Should().BeNull();
+        Argument.IsNotZero(null).Should().BeNull();
         Argument.IsNotZero((int?)3).Should().Be(3);
 
         var action = () => Argument.IsNotZero((int?)0);

@@ -179,7 +179,7 @@ public sealed class PostgreSqlAuditLogAtomicityTests(PostgreSqlAuditLogFixture f
             $"""SELECT COUNT(*) FROM "{_Schema}"."audit_log" WHERE "Action" = @action;""",
             connection
         );
-        command.Parameters.AddWithValue("action", action);
+        command.Parameters.AddWithValue(nameof(action), action);
 
         return (long)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken))!;
     }

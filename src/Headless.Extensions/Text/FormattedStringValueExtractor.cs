@@ -138,7 +138,7 @@ public static class FormattedStringValueExtractor
             return false;
         }
 
-        values = result.Matches.Select(m => m.Value).ToArray();
+        values = [.. result.Matches.Select(m => m.Value)];
 
         return true;
     }

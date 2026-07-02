@@ -59,12 +59,9 @@ internal static class RedisStreamManagerExtensions
                 .StreamCreateConsumerGroupAsync(stream, consumerGroup, StreamPosition.NewMessages)
                 .ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex.GetRedisErrorType() == RedisErrorTypes.GroupAlreadyExists)
         {
-            if (ex.GetRedisErrorType() != RedisErrorTypes.GroupAlreadyExists)
-            {
-                throw;
-            }
+            // ignore, group already exists
         }
     }
 

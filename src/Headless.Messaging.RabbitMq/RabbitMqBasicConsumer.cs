@@ -168,7 +168,7 @@ public sealed class RabbitMqBasicConsumer(
     {
         if (Channel.IsOpen)
         {
-            await Channel.BasicAckAsync(deliveryTag, false).ConfigureAwait(false);
+            await Channel.BasicAckAsync(deliveryTag, multiple: false).ConfigureAwait(false);
         }
     }
 
@@ -176,7 +176,7 @@ public sealed class RabbitMqBasicConsumer(
     {
         if (Channel.IsOpen)
         {
-            await Channel.BasicRejectAsync(deliveryTag, true).ConfigureAwait(false);
+            await Channel.BasicRejectAsync(deliveryTag, requeue: true).ConfigureAwait(false);
         }
     }
 
@@ -187,7 +187,7 @@ public sealed class RabbitMqBasicConsumer(
         var args = new LogMessageEventArgs
         {
             LogType = MqLogType.ConsumerCancelled,
-            Reason = string.Join(",", consumerTags),
+            Reason = string.Join(',', consumerTags),
         };
 
         logCallback(args);

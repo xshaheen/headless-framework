@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
-using Headless.Messaging.Messages;
 using Headless.Messaging.Redis;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
@@ -11,7 +10,6 @@ using StackExchange.Redis;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 // ReSharper disable DisposeOnUsingVariable
 /// <summary>
 /// Unit tests for <see cref="RedisConsumerClient"/>.
@@ -139,8 +137,8 @@ public sealed class RedisConsumerClientTests : TestBase
         await using var client = new RedisConsumerClient("test-group", 1, _mockStreamManager, _options, logger);
 
         // when
-        await client.PauseAsync();
-        await client.PauseAsync();
+        await client.PauseAsync(AbortToken);
+        await client.PauseAsync(AbortToken);
 
         // then — no exception
     }
@@ -153,7 +151,7 @@ public sealed class RedisConsumerClientTests : TestBase
         await using var client = new RedisConsumerClient("test-group", 1, _mockStreamManager, _options, logger);
 
         // when
-        await client.ResumeAsync();
+        await client.ResumeAsync(AbortToken);
 
         // then — no exception
     }
@@ -166,8 +164,8 @@ public sealed class RedisConsumerClientTests : TestBase
         await using var client = new RedisConsumerClient("test-group", 1, _mockStreamManager, _options, logger);
 
         // when
-        await client.PauseAsync();
-        await client.ResumeAsync();
+        await client.PauseAsync(AbortToken);
+        await client.ResumeAsync(AbortToken);
 
         // then — no exception
     }

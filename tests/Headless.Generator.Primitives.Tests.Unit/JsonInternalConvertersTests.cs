@@ -1,5 +1,6 @@
 using Headless.Generator.Primitives;
 
+#pragma warning disable CA2225 // Operator overloads have named alternates
 namespace Tests;
 
 public sealed class JsonInternalConvertersTests

@@ -15,7 +15,7 @@ public sealed class StringLengthTests
     [Fact]
     public void has_length_should_throw_when_not_exact()
     {
-        var value = "abc";
+        const string value = "abc";
         var action = () => Argument.HasLength(value, 4);
 
         action
@@ -41,7 +41,7 @@ public sealed class StringLengthTests
     [Fact]
     public void has_min_length_should_throw_when_too_short()
     {
-        var value = "a";
+        const string value = "a";
         var action = () => Argument.HasMinLength(value, 2);
         action.Should().ThrowExactly<ArgumentOutOfRangeException>().WithMessage("*at least 2*Actual length 1*");
     }
@@ -56,7 +56,7 @@ public sealed class StringLengthTests
     [Fact]
     public void has_max_length_should_throw_when_too_long()
     {
-        var value = "abcd";
+        const string value = "abcd";
         var action = () => Argument.HasMaxLength(value, 3);
         action.Should().ThrowExactly<ArgumentOutOfRangeException>().WithMessage("*at most 3*Actual length 4*");
     }
@@ -91,7 +91,7 @@ public sealed class StringLengthTests
     {
         Argument.HasLengthGreaterThan("abcd", 3).Should().Be("abcd");
 
-        var value = "abc";
+        const string value = "abc";
         var equalAction = () => Argument.HasLengthGreaterThan(value, 3);
         equalAction
             .Should()

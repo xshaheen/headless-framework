@@ -34,11 +34,13 @@ public sealed class NpgsqlConnectionStringCheckerTests
         var sut = new NpgsqlConnectionStringChecker(logger);
 
         // when
-        var result = await sut.CheckAsync("Host=invalid-host-that-does-not-exist;Database=test;Timeout=1");
+        var (connected, databaseExists) = await sut.CheckAsync(
+            "Host=invalid-host-that-does-not-exist;Database=test;Timeout=1"
+        );
 
         // then
-        result.Connected.Should().BeFalse();
-        result.DatabaseExists.Should().BeFalse();
+        connected.Should().BeFalse();
+        databaseExists.Should().BeFalse();
     }
 
     [Fact]

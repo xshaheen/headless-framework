@@ -78,9 +78,7 @@ public sealed class KafkaConnectionPool : IKafkaConnectionPool, IDisposable
         config.MessageTimeoutMs ??= 5000;
         config.RequestTimeoutMs ??= 3000;
 
-        producer = _BuildProducer(config);
-
-        return producer;
+        return _BuildProducer(config);
     }
 
     public bool Return(IProducer<string, byte[]> producer)

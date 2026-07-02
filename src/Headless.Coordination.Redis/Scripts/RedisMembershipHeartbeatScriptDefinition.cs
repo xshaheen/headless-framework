@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 using Headless.Redis;
 using StackExchange.Redis;
 
-namespace Headless.Coordination.Redis;
+namespace Headless.Coordination.Redis.Scripts;
 
 /// <summary>Stores a guarded coordination heartbeat using Redis server time.</summary>
 internal sealed class RedisMembershipHeartbeatScriptDefinition : RedisScriptDefinition

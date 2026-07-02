@@ -2,7 +2,7 @@
 
 using Headless.Redis;
 
-namespace Headless.Caching;
+namespace Headless.Caching.Scripts;
 
 /// <summary>
 /// Compare-and-set write: verifies the live value matches the caller's expected concurrency stamp before writing

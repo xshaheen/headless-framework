@@ -8,16 +8,14 @@ namespace Tests;
 // or supplement with broker/authenticator coverage mirroring the CashIn sibling.
 public sealed class PaymobCashOutFixtureTests(PaymobCashOutFixture fixture) : IClassFixture<PaymobCashOutFixture>
 {
-    private readonly PaymobCashOutFixture _fixture = fixture;
-
     [Fact]
     public void fixture_wires_up_wiremock_server_and_options()
     {
-        _fixture.Server.IsStarted.Should().BeTrue();
-        _fixture.Server.Urls.Should().NotBeEmpty();
-        _fixture.CashOutOptions.ApiBaseUrl.Should().Be(_fixture.Server.Urls[0]);
-        _fixture.OptionsAccessor.CurrentValue.Should().BeSameAs(_fixture.CashOutOptions);
-        _fixture.HttpClient.Should().NotBeNull();
-        _fixture.TimeProvider.Should().BeSameAs(TimeProvider.System);
+        fixture.Server.IsStarted.Should().BeTrue();
+        fixture.Server.Urls.Should().NotBeEmpty();
+        fixture.CashOutOptions.ApiBaseUrl.Should().Be(fixture.Server.Urls[0]);
+        fixture.OptionsAccessor.CurrentValue.Should().BeSameAs(fixture.CashOutOptions);
+        fixture.HttpClient.Should().NotBeNull();
+        fixture.TimeProvider.Should().BeSameAs(TimeProvider.System);
     }
 }

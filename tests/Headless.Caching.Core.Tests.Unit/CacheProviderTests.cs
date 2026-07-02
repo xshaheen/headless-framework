@@ -20,7 +20,7 @@ public sealed class CacheProviderTests : TestBase
         await using var provider = services.BuildServiceProvider();
         var cacheProvider = provider.GetRequiredService<ICacheProvider>();
 
-        // when / then
+        // when & then
         cacheProvider.GetCache("orders").Should().BeSameAs(named);
         cacheProvider.GetCacheOrNull("orders").Should().BeSameAs(named);
     }
@@ -38,7 +38,7 @@ public sealed class CacheProviderTests : TestBase
         await using var provider = services.BuildServiceProvider();
         var cacheProvider = provider.GetRequiredService<ICacheProvider>();
 
-        // when / then
+        // when & then
         cacheProvider.GetCache(CacheConstants.MemoryCacheProvider).Should().BeSameAs(memory);
         cacheProvider.GetCache(CacheConstants.RemoteCacheProvider).Should().BeSameAs(remote);
     }
@@ -52,7 +52,7 @@ public sealed class CacheProviderTests : TestBase
         await using var provider = services.BuildServiceProvider();
         var cacheProvider = provider.GetRequiredService<ICacheProvider>();
 
-        // when / then
+        // when & then
         cacheProvider.GetCacheOrNull("unknown").Should().BeNull();
     }
 

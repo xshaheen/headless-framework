@@ -79,7 +79,7 @@ public sealed partial class FactoryCacheCoordinator
                 // Cross-node dedup mirrors the local zero-timeout TryLock: a single non-blocking attempt. When the
                 // lock is held elsewhere another node is already refreshing, so skip silently and leave the entry
                 // (including its eager stamp) untouched; that node's gate write clears the stamp for everyone.
-                distributedLease = await _factoryLockProvider!
+                distributedLease = await factoryLockProvider!
                     .TryAcquireAsync(key, TimeSpan.Zero, CancellationToken.None)
                     .ConfigureAwait(false);
 
@@ -233,7 +233,6 @@ public sealed partial class FactoryCacheCoordinator
                     // The observe lambda runs inside the awaited race; the finally below disposes internalCts only
                     // when ctsTransferred is false (the factory was observed to completion), so the closure never
                     // touches a disposed CTS.
-                    // ReSharper disable once AccessToDisposedClosure
                     () => _ObserveEagerFactoryAsync(store, key, context, sourceEntry, factoryTask, internalCts)
                 )
                 .ConfigureAwait(false);

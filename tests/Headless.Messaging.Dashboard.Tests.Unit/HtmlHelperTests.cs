@@ -204,11 +204,15 @@ public sealed class HtmlHelperTests : TestBase
 
         public async Task<string> AsyncTaskWithResultMethod() => await Task.FromResult("result");
 
+#pragma warning disable IDE0060 // Remove unused parameter
         public void MethodWithStringParam(string input) { }
+#pragma warning restore IDE0060
 
         public int IntReturningMethod() => 42;
 
+#pragma warning disable IDE0060 // Remove unused parameter
         public void MethodWithComplexParam(ComplexType param) { }
+#pragma warning restore IDE0060
 
         public string NoParamMethod() => "test";
 

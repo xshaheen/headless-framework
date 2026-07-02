@@ -101,10 +101,11 @@ public sealed class MessagingRedisOptionsTests : TestBase
     public void should_allow_setting_stream_entries_count()
     {
         // given
-        var options = new MessagingRedisOptions();
-
-        // when
-        options.StreamEntriesCount = 100;
+        var options = new MessagingRedisOptions
+        {
+            // when
+            StreamEntriesCount = 100,
+        };
 
         // then
         options.StreamEntriesCount.Should().Be(100);
@@ -114,10 +115,11 @@ public sealed class MessagingRedisOptionsTests : TestBase
     public void should_allow_setting_connection_pool_size()
     {
         // given
-        var options = new MessagingRedisOptions();
-
-        // when
-        options.ConnectionPoolSize = 20;
+        var options = new MessagingRedisOptions
+        {
+            // when
+            ConnectionPoolSize = 20,
+        };
 
         // then
         options.ConnectionPoolSize.Should().Be(20);
@@ -170,7 +172,7 @@ public sealed class MessagingRedisOptionsTests : TestBase
     {
         // Access internal Endpoint property via reflection (can't use nameof for internal members)
         var property = typeof(MessagingRedisOptions).GetProperty(
-            "DisplayEndpoint",
+            nameof(MessagingRedisOptions.DisplayEndpoint),
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         );
         return (string)property!.GetValue(options)!;

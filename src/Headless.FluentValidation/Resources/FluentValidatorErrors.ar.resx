@@ -61,4 +61,61 @@
   <data name="url:invalid_origin_format" xml:space="preserve">
     <value>عنوان الموقع "{PropertyValue}" غير صحيح. اكتب الرابط كاملًا مثل: https://example.com</value>
   </data>
+  <data name="strings:only_decimals" xml:space="preserve">
+    <value>يجب أن يكون الحقل رقمًا عشريًا صالحًا.</value>
+  </data>
+  <data name="strings:invalid_slug" xml:space="preserve">
+    <value>يجب أن يكون الحقل معرّفًا صالحًا (حروف إنجليزية صغيرة وأرقام وشرطات مفردة).</value>
+  </data>
+  <data name="strings:invalid_username" xml:space="preserve">
+    <value>يجب أن يكون اسم المستخدم صالحًا (من 3 إلى 30 حرفًا من الأحرف والأرقام و'-' و'_' و'.'، دون أن يبدأ أو ينتهي أو يكرر رمزًا خاصًا).</value>
+  </data>
+  <data name="strings:invalid_zip_code" xml:space="preserve">
+    <value>يجب أن يكون الحقل رمزًا بريديًا صالحًا.</value>
+  </data>
+  <data name="strings:invalid_hex_color" xml:space="preserve">
+    <value>يجب أن يكون الحقل لونًا سداسيًا صالحًا (مثل "#1a2b3c" أو "1a2b3c").</value>
+  </data>
+  <data name="strings:invalid_base64" xml:space="preserve">
+    <value>يجب أن يكون الحقل نصًا مُرمّزًا بصيغة Base64 صالحة.</value>
+  </data>
+  <data name="strings:not_trimmed" xml:space="preserve">
+    <value>يجب ألا يبدأ الحقل أو ينتهي بمسافة فارغة.</value>
+  </data>
+  <data name="strings:invalid_culture" xml:space="preserve">
+    <value>يجب أن يكون الحقل اسم ثقافة/لغة صالحًا (مثل "en" أو "en-US").</value>
+  </data>
+  <data name="strings:contains_scripts" xml:space="preserve">
+    <value>يجب ألا يحتوي الحقل على عناصر برمجية (script).</value>
+  </data>
+  <data name="phone_number:invalid_mobile_number" xml:space="preserve">
+    <value>"{PropertyValue}" ليس رقم هاتف محمول صالحًا.</value>
+  </data>
+  <data name="net:invalid_ipv4" xml:space="preserve">
+    <value>يجب أن يكون الحقل عنوان IPv4 صالحًا.</value>
+  </data>
+  <data name="net:invalid_ipv6" xml:space="preserve">
+    <value>يجب أن يكون الحقل عنوان IPv6 صالحًا.</value>
+  </data>
+  <data name="net:invalid_ip" xml:space="preserve">
+    <value>يجب أن يكون الحقل عنوان IP صالحًا.</value>
+  </data>
+  <data name="enum:invalid_name" xml:space="preserve">
+    <value>"{PropertyValue}" قيمة غير صالحة للحقل {PropertyName}.</value>
+  </data>
+  <data name="datetime:must_be_in_past" xml:space="preserve">
+    <value>يجب أن يكون {PropertyName} تاريخًا في الماضي.</value>
+  </data>
+  <data name="datetime:must_be_in_future" xml:space="preserve">
+    <value>يجب أن يكون {PropertyName} تاريخًا في المستقبل.</value>
+  </data>
+  <data name="datetime:must_not_be_in_past" xml:space="preserve">
+    <value>يجب ألا يكون {PropertyName} تاريخًا في الماضي.</value>
+  </data>
+  <data name="datetime:must_not_be_in_future" xml:space="preserve">
+    <value>يجب ألا يكون {PropertyName} تاريخًا في المستقبل.</value>
+  </data>
+  <data name="datetime:minimum_age" xml:space="preserve">
+    <value>يجب أن يكون {PropertyName} قبل {MinimumAge} سنوات على الأقل.</value>
+  </data>
 </root>

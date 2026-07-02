@@ -5,11 +5,27 @@ using Headless.Api;
 using Headless.Blobs;
 using Microsoft.Extensions.Logging;
 
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
 namespace Tests;
 
-// ReSharper disable NotDisposedResource
-public sealed class BlobStorageDataProtectionXmlRepositoryTests
+public sealed class BlobStorageDataProtectionXmlRepositoryTests : IAsyncLifetime
 {
+    // Paged results handed to the storage mock are owned by the test: the code under test
+    // (GetBlobsListAsync) iterates but does not dispose them, so dispose them at teardown.
+    private readonly List<PagedFileListResult> _pagedResults = [];
+
+    public ValueTask InitializeAsync() => ValueTask.CompletedTask;
+
+    public async ValueTask DisposeAsync()
+    {
+        foreach (var paged in _pagedResults)
+        {
+            await paged.DisposeAsync();
+        }
+
+        _pagedResults.Clear();
+    }
+
     #region Constructor Tests
 
     [Fact]
@@ -161,7 +177,7 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
         var blobs = new List<BlobInfo> { _CreateBlobInfo("test-key.xml") };
         _SetupStorageWithBlobs(storage, blobs);
 
-        var xmlContent = """
+        const string xmlContent = """
             <key id="test-123" version="1">
               <creationDate>2026-01-01T00:00:00Z</creationDate>
               <encryptedKey>base64data</encryptedKey>
@@ -175,13 +191,13 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
 
         var result = sut.GetAllElements();
 
-        result.Should().HaveCount(1);
+        result.Should().ContainSingle();
         var element = result.First();
         element.Name.LocalName.Should().Be("key");
-        element.Attribute("id")?.Value.Should().Be("test-123");
-        element.Attribute("version")?.Value.Should().Be("1");
-        element.Element("creationDate")?.Value.Should().Be("2026-01-01T00:00:00Z");
-        element.Element("encryptedKey")?.Value.Should().Be("base64data");
+        element.Attribute("id")?.Value.Should()?.Be("test-123");
+        element.Attribute("version")?.Value.Should()?.Be("1");
+        element.Element("creationDate")?.Value.Should()?.Be("2026-01-01T00:00:00Z");
+        element.Element("encryptedKey")?.Value.Should()?.Be("base64data");
     }
 
     [Fact]
@@ -244,7 +260,7 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
         // XXE attack attempt - external entity declaration
         // In .NET 5+, XElement.Load() has DTD processing disabled by default
         // The entity reference will be included literally, not resolved
-        var xxeXml = """
+        const string xxeXml = """
             <?xml version="1.0"?>
             <!DOCTYPE key [
               <!ENTITY xxe SYSTEM "file:///etc/passwd">
@@ -261,9 +277,9 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
 
         // Modern .NET safely ignores external entities - the key is returned
         // but the entity reference is NOT resolved (no file contents leaked)
-        result.Should().HaveCount(1);
+        result.Should().ContainSingle();
         var element = result.First();
-        element.Attribute("id")?.Value.Should().Be("malicious");
+        element.Attribute("id")?.Value.Should()?.Be("malicious");
         // The value should NOT contain /etc/passwd contents - DTD expansion is disabled
         element.Value.Should().NotContain("root:");
     }
@@ -494,7 +510,7 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
 
         foreach (var result in results)
         {
-            result.Should().HaveCount(1);
+            result.Should().ContainSingle();
         }
     }
 
@@ -541,11 +557,14 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
             .Returns(ValueTask.FromResult(PagedFileListResult.Empty));
     }
 
-    private static void _SetupStorageWithBlobs(IBlobStorage storage, IReadOnlyCollection<BlobInfo> blobs)
+    private void _SetupStorageWithBlobs(IBlobStorage storage, IReadOnlyCollection<BlobInfo> blobs)
     {
+        var paged = new PagedFileListResult(blobs);
+        _pagedResults.Add(paged);
+
         storage
             .GetPagedListAsync(Arg.Any<string[]>(), Arg.Any<string?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(ValueTask.FromResult(new PagedFileListResult(blobs)));
+            .Returns(ValueTask.FromResult(paged));
     }
 
     private static BlobInfo _CreateBlobInfo(string blobKey)

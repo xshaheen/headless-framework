@@ -4,7 +4,7 @@ using Headless.Checks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace Headless.Messaging;
+namespace Headless.Messaging.Registration;
 
 /// <summary>
 /// Configures message-level metadata and consumer registrations for a message type.
@@ -126,7 +126,7 @@ internal sealed class MessageBuilder<TMessage>(IServiceCollection services)
             _messageName,
             _correlationSelector,
             providerConfigs,
-            _consumers.Select(x => x.Build(providerConfigs)).ToList()
+            _consumers.ConvertAll(x => x.Build(providerConfigs))
         );
     }
 
