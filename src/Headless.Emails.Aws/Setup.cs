@@ -6,13 +6,11 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-#pragma warning disable CA1708 // multiple extension blocks emit marker members differing only by case
 namespace Headless.Emails.Aws;
 
 /// <summary>
-/// Extension members for selecting Amazon SES v2 as a Headless email provider — the default (unkeyed)
-/// sender on <see cref="HeadlessEmailsSetupBuilder"/> or a named sender on
-/// <see cref="HeadlessEmailInstanceBuilder"/>.
+/// Extension members for selecting Amazon SES v2 as the default (unkeyed) Headless email sender on
+/// <see cref="HeadlessEmailsSetupBuilder"/>.
 /// </summary>
 [PublicAPI]
 public static class SetupAwsSes
@@ -50,31 +48,9 @@ public static class SetupAwsSes
         /// </remarks>
         public HeadlessEmailsSetupBuilder UseAwsSes(AWSOptions? options)
         {
-            setup.RegisterDefaultProvider(services => _AddEmailsCore(services, name: null, options));
+            setup.RegisterDefaultProvider(services => AddEmailsCore(services, name: null, options));
 
             return setup;
-        }
-    }
-
-    extension(HeadlessEmailInstanceBuilder instance)
-    {
-        /// <summary>
-        /// Uses Amazon Simple Email Service v2 for this named instance. The instance owns its own keyed
-        /// <see cref="IAmazonSimpleEmailServiceV2"/> client built from <paramref name="options"/>; it never
-        /// touches the default sender.
-        /// </summary>
-        /// <param name="options">
-        /// AWS configuration (region, credentials). Pass <see langword="null"/> to use the default
-        /// <see cref="AWSOptions"/> already registered in the DI container.
-        /// </param>
-        /// <returns>The instance builder for chaining.</returns>
-        public HeadlessEmailInstanceBuilder UseAwsSes(AWSOptions? options)
-        {
-            var name = instance.Name;
-
-            instance.RegisterProvider(services => _AddEmailsCore(services, name, options));
-
-            return instance;
         }
     }
 
@@ -85,7 +61,7 @@ public static class SetupAwsSes
     /// <see cref="AWSOptions"/>. <c>TryAddAWSService</c> has no keyed overload, so the named client is
     /// constructed explicitly via <see cref="AWSOptions.CreateServiceClient{T}"/>.
     /// </summary>
-    private static void _AddEmailsCore(IServiceCollection services, string? name, AWSOptions? options)
+    internal static void AddEmailsCore(IServiceCollection services, string? name, AWSOptions? options)
     {
         if (name is null)
         {
@@ -121,5 +97,35 @@ public static class SetupAwsSes
                     sp.GetRequiredService<ILogger<AwsSesEmailSender>>()
                 )
         );
+    }
+}
+
+/// <summary>
+/// Extension members for selecting Amazon SES v2 as a named Headless email sender on
+/// <see cref="HeadlessEmailInstanceBuilder"/>.
+/// </summary>
+[PublicAPI]
+public static class SetupAwsSesNamed
+{
+    extension(HeadlessEmailInstanceBuilder instance)
+    {
+        /// <summary>
+        /// Uses Amazon Simple Email Service v2 for this named instance. The instance owns its own keyed
+        /// <see cref="IAmazonSimpleEmailServiceV2"/> client built from <paramref name="options"/>; it never
+        /// touches the default sender.
+        /// </summary>
+        /// <param name="options">
+        /// AWS configuration (region, credentials). Pass <see langword="null"/> to use the default
+        /// <see cref="AWSOptions"/> already registered in the DI container.
+        /// </param>
+        /// <returns>The instance builder for chaining.</returns>
+        public HeadlessEmailInstanceBuilder UseAwsSes(AWSOptions? options)
+        {
+            var name = instance.Name;
+
+            instance.RegisterProvider(services => SetupAwsSes.AddEmailsCore(services, name, options));
+
+            return instance;
+        }
     }
 }
