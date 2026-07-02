@@ -151,56 +151,80 @@ internal sealed class TogglableRemoteCache(TimeProvider timeProvider)
         T? value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => _cache.TryReplaceIfEqualAsync(key, expected, value, expiration, cancellationToken);
+    ) =>
+        FailWrites
+            ? throw new InvalidOperationException("L2 write failed")
+            : _cache.TryReplaceIfEqualAsync(key, expected, value, expiration, cancellationToken);
 
     public ValueTask<double> IncrementAsync(
         string key,
         double amount,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => _cache.IncrementAsync(key, amount, expiration, cancellationToken);
+    ) =>
+        FailWrites
+            ? throw new InvalidOperationException("L2 write failed")
+            : _cache.IncrementAsync(key, amount, expiration, cancellationToken);
 
     public ValueTask<long> IncrementAsync(
         string key,
         long amount,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => _cache.IncrementAsync(key, amount, expiration, cancellationToken);
+    ) =>
+        FailWrites
+            ? throw new InvalidOperationException("L2 write failed")
+            : _cache.IncrementAsync(key, amount, expiration, cancellationToken);
 
     public ValueTask<double> SetIfHigherAsync(
         string key,
         double value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => _cache.SetIfHigherAsync(key, value, expiration, cancellationToken);
+    ) =>
+        FailWrites
+            ? throw new InvalidOperationException("L2 write failed")
+            : _cache.SetIfHigherAsync(key, value, expiration, cancellationToken);
 
     public ValueTask<long> SetIfHigherAsync(
         string key,
         long value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => _cache.SetIfHigherAsync(key, value, expiration, cancellationToken);
+    ) =>
+        FailWrites
+            ? throw new InvalidOperationException("L2 write failed")
+            : _cache.SetIfHigherAsync(key, value, expiration, cancellationToken);
 
     public ValueTask<double> SetIfLowerAsync(
         string key,
         double value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => _cache.SetIfLowerAsync(key, value, expiration, cancellationToken);
+    ) =>
+        FailWrites
+            ? throw new InvalidOperationException("L2 write failed")
+            : _cache.SetIfLowerAsync(key, value, expiration, cancellationToken);
 
     public ValueTask<long> SetIfLowerAsync(
         string key,
         long value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => _cache.SetIfLowerAsync(key, value, expiration, cancellationToken);
+    ) =>
+        FailWrites
+            ? throw new InvalidOperationException("L2 write failed")
+            : _cache.SetIfLowerAsync(key, value, expiration, cancellationToken);
 
     public ValueTask<long> SetAddAsync<T>(
         string key,
         IEnumerable<T> value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => _cache.SetAddAsync(key, value, expiration, cancellationToken);
+    ) =>
+        FailWrites
+            ? throw new InvalidOperationException("L2 write failed")
+            : _cache.SetAddAsync(key, value, expiration, cancellationToken);
 
     public async ValueTask<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(
         IEnumerable<string> cacheKeys,
@@ -345,7 +369,9 @@ internal sealed class TogglableRemoteCache(TimeProvider timeProvider)
             : _cache.RemoveAllAsync(cacheKeys, cancellationToken);
 
     public ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default) =>
-        _cache.RemoveByPrefixAsync(prefix, cancellationToken);
+        FailWrites
+            ? throw new InvalidOperationException("L2 write failed")
+            : _cache.RemoveByPrefixAsync(prefix, cancellationToken);
 
     public ValueTask RemoveByTagAsync(string tag, CancellationToken cancellationToken = default) =>
         FailMarkerBumps
@@ -362,7 +388,10 @@ internal sealed class TogglableRemoteCache(TimeProvider timeProvider)
         IEnumerable<T> value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => _cache.SetRemoveAsync(key, value, expiration, cancellationToken);
+    ) =>
+        FailWrites
+            ? throw new InvalidOperationException("L2 write failed")
+            : _cache.SetRemoveAsync(key, value, expiration, cancellationToken);
 
     public ValueTask FlushAsync(CancellationToken cancellationToken = default) =>
         FailMarkerBumps

@@ -1971,7 +1971,7 @@ public sealed class RedisCache(
                 markerKeys[i] = _GetTagMarkerKey(stale[i]);
             }
 
-            var values = await _database.StringGetAsync(markerKeys, cacheOptions.ReadMode).ConfigureAwait(false);
+            var values = await _GetTagMarkerValuesAsync(markerKeys).ConfigureAwait(false);
             var fetchedTicks = _StopwatchTicks();
 
             for (var i = 0; i < stale.Count; i++)
@@ -1994,6 +1994,46 @@ public sealed class RedisCache(
 
     private static long _ParseMarkerMs(RedisValue value) =>
         RedisCacheEntryFrame.TryParseMarkerMs(value) ?? _MarkerAbsent;
+
+    // Tag-marker keys carry no hash-tag braces, so distinct tags hash to arbitrary cluster slots — a single flat
+    // MGET across them fails with CROSSSLOT on Redis Cluster. Split per slot on cluster topologies (mirroring the
+    // batch-operation cluster paths); non-cluster keeps the single MGET. Returns values in input-key order.
+    private async Task<RedisValue[]> _GetTagMarkerValuesAsync(RedisKey[] markerKeys)
+    {
+        if (!IsCluster || markerKeys.Length <= 1)
+        {
+            return await _database.StringGetAsync(markerKeys, cacheOptions.ReadMode).ConfigureAwait(false);
+        }
+
+        var indexedKeys = new (RedisKey Redis, int Index)[markerKeys.Length];
+
+        for (var i = 0; i < markerKeys.Length; i++)
+        {
+            indexedKeys[i] = (markerKeys[i], i);
+        }
+
+        var values = new RedisValue[markerKeys.Length];
+        var slotBuckets = _GroupBySlot(indexedKeys, static entry => entry.Redis);
+
+        foreach (var bucket in slotBuckets.Values)
+        {
+            var slotKeys = new RedisKey[bucket.Count];
+
+            for (var i = 0; i < bucket.Count; i++)
+            {
+                slotKeys[i] = bucket[i].Redis;
+            }
+
+            var slotValues = await _database.StringGetAsync(slotKeys, cacheOptions.ReadMode).ConfigureAwait(false);
+
+            for (var i = 0; i < bucket.Count; i++)
+            {
+                values[bucket[i].Index] = slotValues[i];
+            }
+        }
+
+        return values;
+    }
 
     /// <summary>
     /// Raises the process-local tag marker for <paramref name="tag"/> to <paramref name="markerMs"/> when it is
@@ -2048,7 +2088,7 @@ public sealed class RedisCache(
             return;
         }
 
-        // Fetch all stale tag markers in one MGET and populate the local cache.
+        // Fetch all stale tag markers in one MGET (one per hash slot on cluster) and populate the local cache.
         var staleList = new List<string>(staleTags);
         var markerKeys = new RedisKey[staleList.Count];
 
@@ -2057,7 +2097,7 @@ public sealed class RedisCache(
             markerKeys[i] = _GetTagMarkerKey(staleList[i]);
         }
 
-        var values = await _database.StringGetAsync(markerKeys, cacheOptions.ReadMode).ConfigureAwait(false);
+        var values = await _GetTagMarkerValuesAsync(markerKeys).ConfigureAwait(false);
         var fetchedTicks = _StopwatchTicks();
 
         for (var i = 0; i < staleList.Count; i++)

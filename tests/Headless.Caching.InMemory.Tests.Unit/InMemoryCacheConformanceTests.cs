@@ -183,6 +183,10 @@ public sealed class InMemoryCacheConformanceTests : CacheConformanceTestsBase
         base.should_keep_zero_total_after_decrementing_to_zero();
 
     [Fact]
+    public override Task should_preserve_ttl_when_set_if_higher_is_a_no_op() =>
+        base.should_preserve_ttl_when_set_if_higher_is_a_no_op();
+
+    [Fact]
     public override Task should_round_trip_raw_payload_via_buffer_path() =>
         base.should_round_trip_raw_payload_via_buffer_path();
 

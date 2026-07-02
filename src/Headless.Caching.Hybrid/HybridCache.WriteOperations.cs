@@ -440,9 +440,12 @@ public sealed partial class HybridCache
             )
         {
             // CAS / non-replay-safe: trip the breaker so concurrent callers stop hammering a down L2, then rethrow.
-            // Never queue recovery — the compare-and-set outcome can't be safely replayed later.
+            // Never queue recovery — the compare-and-set outcome can't be safely replayed later. Wipe L1 first so
+            // this node stops serving a value whose L2 state is now unknown (the CAS may have landed before the
+            // failure), mirroring RemoveIfEqualAsync.
             _OpenDistributedCacheCircuit(exception, key);
             _logger.LogFailedToWriteToL2Cache(exception, key);
+            await LocalCache.RemoveAsync(key, CancellationToken.None).ConfigureAwait(false);
             throw;
         }
 
@@ -687,9 +690,12 @@ public sealed partial class HybridCache
             )
         {
             // CAS / non-replay-safe numeric op: trip the breaker so concurrent callers stop hammering a down L2,
-            // then rethrow. Never queue recovery — the computed result can't be safely replayed later.
+            // then rethrow. Never queue recovery — the computed result can't be safely replayed later. Wipe L1
+            // first so this node stops serving a numeric value whose L2 state is now unknown (the op may have
+            // landed before the failure); the next read re-seeds from L2.
             _OpenDistributedCacheCircuit(exception, key);
             _logger.LogFailedToWriteToL2Cache(exception, key);
+            await LocalCache.RemoveAsync(key, CancellationToken.None).ConfigureAwait(false);
             throw;
         }
 
@@ -742,9 +748,12 @@ public sealed partial class HybridCache
             )
         {
             // CAS / non-replay-safe set mutation: trip the breaker so concurrent callers stop hammering a down L2,
-            // then rethrow. Never queue recovery — the set delta can't be safely replayed later.
+            // then rethrow. Never queue recovery — the set delta can't be safely replayed later. Wipe L1 first so
+            // this node stops serving a set whose L2 state is now unknown (the mutation may have landed before the
+            // failure); the next read re-seeds from L2.
             _OpenDistributedCacheCircuit(exception, key);
             _logger.LogFailedToWriteToL2Cache(exception, key);
+            await LocalCache.RemoveAsync(key, CancellationToken.None).ConfigureAwait(false);
             throw;
         }
 
@@ -1003,9 +1012,12 @@ public sealed partial class HybridCache
             )
         {
             // Non-replay-safe bulk remove: trip the breaker so concurrent callers stop hammering a down L2, then
-            // rethrow. Never queue recovery — the prefix sweep isn't captured by auto-recovery.
+            // rethrow. Never queue recovery — the prefix sweep isn't captured by auto-recovery. Wipe the matching
+            // L1 entries first so this node stops serving keys the caller asked to delete (the L2 sweep may have
+            // partially landed), mirroring RemoveAllAsync's catch.
             _OpenDistributedCacheCircuit(exception, prefix);
             _logger.LogFailedToWriteToL2Cache(exception, prefix);
+            await LocalCache.RemoveByPrefixAsync(prefix, CancellationToken.None).ConfigureAwait(false);
             throw;
         }
 
@@ -1212,9 +1224,12 @@ public sealed partial class HybridCache
             )
         {
             // CAS / non-replay-safe set mutation: trip the breaker so concurrent callers stop hammering a down L2,
-            // then rethrow. Never queue recovery — the set delta can't be safely replayed later.
+            // then rethrow. Never queue recovery — the set delta can't be safely replayed later. Wipe L1 first so
+            // this node stops serving a set whose L2 state is now unknown (the mutation may have landed before the
+            // failure); the next read re-seeds from L2.
             _OpenDistributedCacheCircuit(exception, key);
             _logger.LogFailedToWriteToL2Cache(exception, key);
+            await LocalCache.RemoveAsync(key, CancellationToken.None).ConfigureAwait(false);
             throw;
         }
 

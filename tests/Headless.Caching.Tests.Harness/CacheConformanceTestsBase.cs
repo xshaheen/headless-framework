@@ -1117,6 +1117,26 @@ public abstract class CacheConformanceTestsBase : TestBase
         cached.Value.Should().Be(0);
     }
 
+    public virtual async Task should_preserve_ttl_when_set_if_higher_is_a_no_op()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        var shortExpiration = TimeSpan.FromMilliseconds(250);
+
+        await cache.SetIfHigherAsync(key, 10L, TimeSpan.FromMinutes(5), AbortToken);
+
+        // A no-op (value not higher) must not re-arm the entry's TTL to the caller's newly-requested expiration —
+        // Redis's Lua issues no pexpire on the no-op branch, and InMemory must match.
+        var difference = await cache.SetIfHigherAsync(key, 5L, shortExpiration, AbortToken);
+        await AdvancePastExpirationAsync(shortExpiration);
+        var cached = await cache.GetAsync<long>(key, AbortToken);
+
+        difference.Should().Be(0);
+        cached.HasValue.Should().BeTrue("a no-op SetIfHigher must not shorten the original TTL");
+        cached.Value.Should().Be(10);
+    }
+
     // Fail-safe keeps the entry physically retained past its logical expiry, so a stale last-known-good value
     // (and its validators) is still available to the conditional factory after AdvanceAsync(Duration).
     private static CacheEntryOptions _CreateConditionalOptions() =>

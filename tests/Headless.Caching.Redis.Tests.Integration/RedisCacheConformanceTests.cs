@@ -226,4 +226,8 @@ public sealed class RedisCacheConformanceTests(RedisCacheFixture fixture) : Cach
     [Fact]
     public override Task should_keep_zero_total_after_decrementing_to_zero() =>
         base.should_keep_zero_total_after_decrementing_to_zero();
+
+    [Fact]
+    public override Task should_preserve_ttl_when_set_if_higher_is_a_no_op() =>
+        base.should_preserve_ttl_when_set_if_higher_is_a_no_op();
 }

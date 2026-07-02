@@ -196,7 +196,7 @@ public interface ICache
     /// </summary>
     /// <remarks>
     /// A <see cref="TimeSpan.Zero"/> expiration is treated as expire-immediately: the key is evicted and the method
-    /// returns <c>0</c> without storing.
+    /// returns <c>0</c> without storing. Note that a return of <c>0</c> is ambiguous when <c>0</c> is a legitimate stored value: storing <c>0</c> into an absent key also returns <c>0</c>, indistinguishable from the no-op result; callers that must tell these apart should check <see cref="ExistsAsync"/> first.
     /// </remarks>
     ValueTask<double> SetIfHigherAsync(
         string key,
@@ -213,7 +213,9 @@ public interface ICache
     /// </summary>
     /// <remarks>
     /// A <see cref="TimeSpan.Zero"/> expiration is treated as expire-immediately: the key is evicted and the method
-    /// returns <c>0</c> without storing.
+    /// returns <c>0</c> without storing. Note that a return of <c>0</c> is ambiguous when <c>0</c> is a legitimate stored value: storing <c>0</c> into an absent key also returns <c>0</c>, indistinguishable from the no-op result; callers that must tell these apart should check <see cref="ExistsAsync"/> first.
+    /// On the Redis provider the comparison and returned difference are computed in Lua with IEEE-754
+    /// doubles, so results are exact only for magnitudes up to 2^53; larger values lose precision.
     /// </remarks>
     ValueTask<long> SetIfHigherAsync(
         string key,
@@ -230,7 +232,7 @@ public interface ICache
     /// </summary>
     /// <remarks>
     /// A <see cref="TimeSpan.Zero"/> expiration is treated as expire-immediately: the key is evicted and the method
-    /// returns <c>0</c> without storing.
+    /// returns <c>0</c> without storing. Note that a return of <c>0</c> is ambiguous when <c>0</c> is a legitimate stored value: storing <c>0</c> into an absent key also returns <c>0</c>, indistinguishable from the no-op result; callers that must tell these apart should check <see cref="ExistsAsync"/> first.
     /// </remarks>
     ValueTask<double> SetIfLowerAsync(
         string key,
@@ -247,7 +249,9 @@ public interface ICache
     /// </summary>
     /// <remarks>
     /// A <see cref="TimeSpan.Zero"/> expiration is treated as expire-immediately: the key is evicted and the method
-    /// returns <c>0</c> without storing.
+    /// returns <c>0</c> without storing. Note that a return of <c>0</c> is ambiguous when <c>0</c> is a legitimate stored value: storing <c>0</c> into an absent key also returns <c>0</c>, indistinguishable from the no-op result; callers that must tell these apart should check <see cref="ExistsAsync"/> first.
+    /// On the Redis provider the comparison and returned difference are computed in Lua with IEEE-754
+    /// doubles, so results are exact only for magnitudes up to 2^53; larger values lose precision.
     /// </remarks>
     ValueTask<long> SetIfLowerAsync(
         string key,
@@ -258,7 +262,8 @@ public interface ICache
 
     /// <summary>
     /// Adds members to the set stored at <paramref name="key"/>, creating the set if absent. String members use
-    /// ordinal (case-sensitive) equality, matching the distributed providers; other types use default equality.
+    /// ordinal (case-sensitive) equality, matching the distributed providers. Non-string member equality is
+    /// provider-native: serialized-byte equality on Redis, default equality on InMemory.
     /// Null members are silently skipped. Returns the number of members actually added (duplicates excluded).
     /// </summary>
     ValueTask<long> SetAddAsync<T>(
@@ -402,7 +407,9 @@ public interface ICache
 
     /// <summary>
     /// Removes the specified members from the set stored at <paramref name="key"/>.
-    /// Returns the number of members that were present and removed.
+    /// Returns the number of members that were present and removed. String members use ordinal (case-sensitive)
+    /// equality, matching <c>SetAddAsync</c> and the distributed providers. Non-string member equality is
+    /// provider-native: serialized-byte equality on Redis, default equality on InMemory.
     /// </summary>
     ValueTask<long> SetRemoveAsync<T>(
         string key,

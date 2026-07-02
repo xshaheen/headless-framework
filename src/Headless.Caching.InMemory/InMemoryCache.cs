@@ -863,6 +863,10 @@ public sealed class InMemoryCache
             },
             (existingKey, existingEntry) =>
             {
+                // AddOrUpdate may invoke this factory multiple times under contention; reset the captured counter
+                // so a retried invocation does not accumulate counts from a discarded attempt.
+                addedCount = 0;
+
                 if (existingEntry.PeekValue() is not IDictionary<TKey, DateTime?> dictionary)
                 {
                     throw new InvalidOperationException(
@@ -1629,7 +1633,7 @@ public sealed class InMemoryCache
         return new ValueTask<long>(_SetRemoveItems<object>(key, valuesToRemove, comparer: null));
     }
 
-    // Shared set-remove path for both the string (case-insensitive) and object (default-comparer) member
+    // Shared set-remove path for both the string (ordinal, case-sensitive) and object (default-comparer) member
     // dictionaries. The caller picks TKey + comparer at the typeof(T) dispatch; the copy-remove-recompute body is
     // identical across both backings.
     private long _SetRemoveItems<TKey>(string key, List<TKey> valuesToRemove, IEqualityComparer<TKey>? comparer)
