@@ -1,21 +1,37 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text.RegularExpressions;
 using tusdotnet.Models;
 using tusdotnet.Parsers;
 
 namespace Headless.Tus.Models;
 
-internal sealed partial class TusAzureMetadata
+internal sealed class TusAzureMetadata
 {
     public const string UploadLengthKey = "tus_upload_length";
     public const string ExpirationKey = "tus_expiration";
     public const string CreatedDateKey = "tus_created";
     public const string ConcatTypeKey = "tus_concat_type";
     public const string PartialUploadsKey = "tus_partial_uploads";
-    public const string FileNameKey = "tus_filename";
     public const string LastChunkBlocksKey = "tus_last_chunk_blocks";
     public const string LastChunkChecksumKey = "tus_last_chunk_checksum";
+
+    /// <summary>
+    /// Blob-metadata key holding the client's Upload-Metadata header value <em>verbatim</em>.
+    /// </summary>
+    /// <remarks>
+    /// The TUS spec requires HEAD responses to echo Upload-Metadata "as specified by the Client",
+    /// so the raw string is stored untouched in a single value instead of being exploded into
+    /// per-key blob metadata: Azure metadata keys cannot represent arbitrary TUS keys (case,
+    /// dashes, unicode) and Azure metadata values must be ASCII, while the raw TUS string —
+    /// ASCII keys plus base64 values — always is. The decoded per-key view is derived on demand
+    /// via <see cref="ToUser"/> / <see cref="ToTus"/>.
+    /// </remarks>
+    public const string RawMetadataKey = "tus_metadata";
+
+    // Azure caps a blob's total metadata (all keys + values) at 8 KB. Leave headroom for the
+    // store's own tus_* tracking keys and reject oversized Upload-Metadata with an actionable
+    // message instead of an opaque Azure 400 at blob creation.
+    private const int _MaxRawMetadataLength = 7 * 1024;
 
     private TusAzureMetadata(IDictionary<string, string> decodedMetadata)
     {
@@ -23,22 +39,6 @@ internal sealed partial class TusAzureMetadata
     }
 
     private readonly IDictionary<string, string> _decodedMetadata;
-
-    public string? Filename
-    {
-        get => _decodedMetadata.TryGetValue(FileNameKey, out var value) ? value : null;
-        set
-        {
-            if (string.IsNullOrEmpty(value))
-            {
-                _decodedMetadata.Remove(FileNameKey);
-            }
-            else
-            {
-                _decodedMetadata[FileNameKey] = value;
-            }
-        }
-    }
 
     public DateTimeOffset? DateCreated
     {
@@ -176,66 +176,77 @@ internal sealed partial class TusAzureMetadata
         }
     }
 
+    /// <summary>The client's Upload-Metadata header value verbatim, or <see langword="null"/> when none was supplied.</summary>
+    public string? RawMetadata
+    {
+        get => _decodedMetadata.TryGetValue(RawMetadataKey, out var value) ? value : null;
+        set
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                _decodedMetadata.Remove(RawMetadataKey);
+            }
+            else
+            {
+                _decodedMetadata[RawMetadataKey] = value;
+            }
+        }
+    }
+
     #region From/To Converters
 
     public IDictionary<string, string> ToAzure() => _decodedMetadata;
 
     public static TusAzureMetadata FromAzure(IDictionary<string, string> metadata) => new(metadata);
 
+    /// <summary>
+    /// Returns the user-supplied metadata as decoded key/value pairs (UTF-8), with the client's
+    /// original keys preserved. System <c>tus_*</c> keys are never part of the result.
+    /// </summary>
+    /// <exception cref="TusStoreException">thrown if the stored metadata string is corrupted</exception>
     public Dictionary<string, string> ToUser()
     {
         var result = new Dictionary<string, string>(StringComparer.Ordinal);
 
-        foreach (var (key, value) in _decodedMetadata)
+        foreach (var (key, value) in ToTus())
         {
-            if (_IsSystemMetadataKey(key))
-            {
-                continue; // Skip non-tus metadata and system keys
-            }
-
-            result[key] = value;
+            result[key] = value.GetString(Encoding.UTF8);
         }
 
         return result;
     }
 
-    public string ToTusString()
-    {
-        if (_decodedMetadata.Count == 0)
-        {
-            return string.Empty;
-        }
+    /// <summary>
+    /// Returns the client's Upload-Metadata header value verbatim, or <see cref="string.Empty"/>
+    /// when the client supplied none — the round-trip contract for HEAD responses.
+    /// </summary>
+    public string ToTusString() => RawMetadata ?? string.Empty;
 
-        var sb = new StringBuilder();
-
-        foreach (var (key, value) in _decodedMetadata)
-        {
-            if (_IsSystemMetadataKey(key))
-            {
-                continue; // Skip non-tus metadata and system keys
-            }
-
-            if (sb.Length > 0)
-            {
-                sb.Append(',');
-            }
-
-            sb.Append(CultureInfo.InvariantCulture, $"{key} {value.ToBase64()}");
-        }
-
-        return sb.ToString();
-    }
-
+    /// <summary>
+    /// Returns the user-supplied metadata as tusdotnet <see cref="Metadata"/> values keyed by the
+    /// client's original keys.
+    /// </summary>
+    /// <exception cref="TusStoreException">thrown if the stored metadata string is corrupted</exception>
     public Dictionary<string, Metadata> ToTus()
     {
-        var text = ToTusString();
-        var parseResult = MetadataParser.ParseAndValidate(MetadataParsingStrategy.AllowEmptyValues, text);
+        var parseResult = MetadataParser.ParseAndValidate(MetadataParsingStrategy.AllowEmptyValues, ToTusString());
 
-        return parseResult.Metadata;
+        // The raw string was validated when the upload was created, so a parse failure here means
+        // the blob metadata was corrupted out-of-band; fail loudly rather than silently dropping it.
+        return parseResult.Success
+            ? parseResult.Metadata
+            : throw new TusStoreException($"Stored TUS metadata is corrupted: {parseResult.ErrorMessage}");
     }
 
     public static TusAzureMetadata FromTus(string? metadata)
     {
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        if (string.IsNullOrEmpty(metadata))
+        {
+            return new(result);
+        }
+
         var parseResult = MetadataParser.ParseAndValidate(MetadataParsingStrategy.AllowEmptyValues, metadata);
 
         if (!parseResult.Success)
@@ -243,61 +254,29 @@ internal sealed partial class TusAzureMetadata
             throw new TusStoreException(parseResult.ErrorMessage);
         }
 
-        var result = new Dictionary<string, string>(StringComparer.Ordinal);
-
-        foreach (var (key, value) in parseResult.Metadata)
+        // The raw string is persisted as a single Azure metadata value, which must be ASCII with no
+        // control characters. A spec-conforming Upload-Metadata header (ASCII keys + base64 values)
+        // always satisfies this; anything else would otherwise surface as an opaque Azure 400.
+        foreach (var c in metadata)
         {
-            var azureKey = _SanitizeAzureMetadataKey(key);
-
-            // User metadata shares the blob's metadata dictionary with the store's own tus_* tracking keys.
-            // Reject any user key that sanitizes onto a reserved key so a client cannot overwrite internal
-            // state (expiration, concat type, staged-chunk checksum, ...) via the Upload-Metadata header.
-            if (_IsSystemMetadataKey(azureKey))
+            if (c > 127 || char.IsControl(c))
             {
-                throw new TusStoreException($"Metadata key '{key}' is reserved for internal use.");
-            }
-
-            // Azure metadata keys are restricted to letters/digits/underscore, so distinct TUS keys can
-            // sanitize to the same Azure key (e.g. "a-b" and "a_b"). Reject the collision loudly rather than
-            // silently overwriting one value with another.
-            if (!result.TryAdd(azureKey, value.GetString(Encoding.UTF8)))
-            {
-                throw new TusStoreException(
-                    $"Metadata key '{key}' collides with another key after Azure key sanitization ('{azureKey}')."
-                );
+                throw new TusStoreException("Upload-Metadata must contain only printable ASCII characters.");
             }
         }
 
-        return new TusAzureMetadata(result);
-    }
-
-    #endregion
-
-    #region Azure Key Sanitization
-
-    private static string _SanitizeAzureMetadataKey(string key)
-    {
-        // Azure metadata keys: must start with letter or underscore, alphanumeric and underscore only
-        var sanitized = AzureMetadataKey.Replace(key, "_").ToLowerInvariant();
-
-        // An empty or all-invalid key sanitizes to nothing; fall back to "_" instead of indexing into an
-        // empty string below.
-        if (sanitized.Length == 0)
+        if (metadata.Length > _MaxRawMetadataLength)
         {
-            return "_";
+            throw new TusStoreException(
+                $"Upload-Metadata is too large ({metadata.Length} characters). "
+                    + $"Azure Blob Storage caps blob metadata at 8 KB; at most {_MaxRawMetadataLength} characters are supported."
+            );
         }
 
-        // Ensure it starts with a letter or underscore
-        if (!char.IsLetter(sanitized[0]) && sanitized[0] != '_')
-        {
-            sanitized = "_" + sanitized;
-        }
+        result[RawMetadataKey] = metadata;
 
-        return sanitized;
+        return new(result);
     }
-
-    [GeneratedRegex("[^a-zA-Z0-9_]", RegexOptions.None, 100)]
-    private static partial Regex AzureMetadataKey { get; }
 
     #endregion
 
@@ -312,18 +291,6 @@ internal sealed partial class TusAzureMetadata
             DateTimeStyles.AssumeUniversal,
             out date
         );
-    }
-
-    private static bool _IsSystemMetadataKey(string key)
-    {
-        return key
-            is UploadLengthKey
-                or ExpirationKey
-                or CreatedDateKey
-                or ConcatTypeKey
-                or PartialUploadsKey
-                or LastChunkBlocksKey
-                or LastChunkChecksumKey;
     }
 
     #endregion

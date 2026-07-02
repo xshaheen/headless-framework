@@ -41,7 +41,6 @@ public sealed class TusAzureStoreTests : TestBase
         var uploadLength = Faker.Random.Number(100, 1_000);
         var fileName = Faker.System.FileName();
         var metadata = $"filename {fileName.ToBase64()}";
-        const string fileKey = "filename";
 
         // when
         var fileId = await _store.CreateFileAsync(uploadLength, metadata, CancellationToken.None);
@@ -53,9 +52,9 @@ public sealed class TusAzureStoreTests : TestBase
         var exists = await blobClient.ExistsAsync(AbortToken);
         exists.Value.Should().BeTrue();
         var properties = await blobClient.GetPropertiesAsync(cancellationToken: AbortToken);
-        // Filename should be set correctly
-        properties.Value.Metadata.Should().ContainKey(fileKey);
-        properties.Value.Metadata[fileKey].Should().Be(fileName);
+        // The Upload-Metadata header value is stored verbatim in a single metadata entry
+        properties.Value.Metadata.Should().ContainKey(TusAzureMetadata.RawMetadataKey);
+        properties.Value.Metadata[TusAzureMetadata.RawMetadataKey].Should().Be(metadata);
         // Created date should be set correctly
         properties.Value.Metadata.Should().ContainKey(TusAzureMetadata.CreatedDateKey);
         // Upload length should be set correctly
@@ -80,6 +79,30 @@ public sealed class TusAzureStoreTests : TestBase
         // then
         retrievedMetadata.Should().NotBeNullOrEmpty();
         retrievedMetadata.Should().Be(metadata);
+    }
+
+    [Fact]
+    public async Task should_round_trip_metadata_with_non_ascii_values_and_mixed_case_keys()
+    {
+        // given - a non-ASCII filename and keys tusdotnet clients legitimately send; the spec
+        // requires HEAD to echo Upload-Metadata exactly as the client specified it
+        const string arabicFileName = "تقرير-2026.pdf";
+        var metadata = $"FileName {arabicFileName.ToBase64()},is_confidential,x-trace-id {"abc123".ToBase64()}";
+
+        // when - creation must not fail on the non-ASCII value (Azure metadata values are ASCII-only;
+        // the raw TUS string is stored verbatim instead of decoded)
+        var fileId = await _store.CreateFileAsync(500, metadata, AbortToken);
+
+        // then - byte-for-byte round-trip
+        var retrievedMetadata = await _store.GetUploadMetadataAsync(fileId, AbortToken);
+        retrievedMetadata.Should().Be(metadata);
+
+        // and the decoded view surfaces the original keys and UTF-8 values
+        var tusFile = await _store.GetFileAsync(fileId, AbortToken);
+        var decoded = await tusFile!.GetMetadataAsync(AbortToken);
+        decoded.Should().ContainKey("FileName");
+        decoded["FileName"].GetString(Encoding.UTF8).Should().Be(arabicFileName);
+        decoded.Should().ContainKey("is_confidential");
     }
 
     /* Creation Defer Length Store */
