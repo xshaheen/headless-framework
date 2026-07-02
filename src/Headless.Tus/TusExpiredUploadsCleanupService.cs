@@ -18,7 +18,10 @@ public sealed class TusExpiredUploadsCleanupOptions
     /// <see cref="ITusExpirationStore.RemoveExpiredFilesAsync"/>, which typically scans the
     /// store's uploads (a prefix listing for the Azure store) — prefer a coarser interval on
     /// containers with many uploads; the expiration window itself is configured on
-    /// <c>DefaultTusConfiguration.Expiration</c>.
+    /// <c>DefaultTusConfiguration.Expiration</c>. In multi-node deployments every node runs its
+    /// own loop against the same store: deletions are idempotent so this is safe, but the scan
+    /// load multiplies and the logged removal counts are per-node — wrap the service in a
+    /// distributed-lock single-flight guard if that matters.
     /// </remarks>
     public TimeSpan Interval { get; set; } = TimeSpan.FromMinutes(5);
 }

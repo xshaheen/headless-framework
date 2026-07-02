@@ -37,7 +37,10 @@ uploads; conforming Headless stores never report completed uploads as expired, s
 destroy finished data. The first pass runs immediately at startup (reclaiming uploads that
 expired while the app was down), then every interval; the default 5-minute interval balances
 reclaim latency against the store scan each pass performs — the expiration *window* itself is
-configured on `DefaultTusConfiguration.Expiration`, not here.
+configured on `DefaultTusConfiguration.Expiration`, not here. In multi-node deployments every
+node runs its own loop against the same store: deletions are idempotent so this is safe, but the
+scan load multiplies and the logged removal counts are per-node — wrap the pass in a
+distributed-lock single-flight guard if that matters.
 
 **Store discovery via `ITusExpirationStore`.** The cleanup job binds to the tusdotnet capability
 interface, not a concrete store. Headless store packages forward the registration (for example

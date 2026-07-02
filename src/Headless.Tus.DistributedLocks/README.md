@@ -9,10 +9,11 @@ The TUS protocol allows only one concurrent PATCH per file. On single-instance d
 ## Key Features
 
 - `DistributedLockTusLockProvider` — `ITusFileLockProvider` backed by `IDistributedLock`
-- `DistributedLockTusFileLock` — `ITusFileLock` that calls `TryAcquireAsync` with zero wait; returns `false` immediately if another node holds the lock (tusdotnet returns `409 Conflict` to the client)
-- Lock resource key format: `tus-file-lock-{fileId}`
+- `DistributedLockTusFileLock` — `ITusFileLock` that calls `TryAcquireAsync` with zero wait; returns `false` immediately if another node holds the lock (tusdotnet returns `423 Locked` to the client)
+- Lock resource key format: `{resourcePrefix}-{fileId}` with prefix default `tus-file-lock`; give each TUS endpoint its own prefix when several endpoints (different stores/containers) share one `IDistributedLock` backend, so equal file ids cannot contend for the same lock
 - Compatible with any `IDistributedLock` backend (Redis, in-memory, etc.)
-- Single `AddDistributedLockTusLockProvider()` extension on `IServiceCollection`
+- Single `AddDistributedLockTusLockProvider(resourcePrefix?)` extension on `IServiceCollection`
+- Best-effort mutual exclusion, not fencing: tusdotnet's `ITusFileLock` contract has no hook to observe a lease lost mid-request, so a holder that loses its lease during a backend partition keeps writing until the request ends — the auto-extending lease shrinks that window but cannot eliminate it
 
 ## Installation
 
@@ -58,7 +59,7 @@ app.Run();
 
 ## Configuration
 
-None beyond registering an `IDistributedLock` provider. The lock acquires with `AcquireTimeout = TimeSpan.Zero` (non-blocking) and `TimeUntilExpires = Timeout.InfiniteTimeSpan` (no expiry while held).
+Registering an `IDistributedLock` provider is required. Optionally pass a lock resource-key prefix — `AddDistributedLockTusLockProvider("tus-avatars")` — when several TUS endpoints share one lock backend (default `tus-file-lock`). The lock acquires with `AcquireTimeout = TimeSpan.Zero` (non-blocking) and a finite, auto-extending lease (`Monitoring = AutoExtend`, provider-default TTL): a long upload keeps the lock alive, while a crashed holder's lease expires so the file is not stuck.
 
 ## Dependencies
 

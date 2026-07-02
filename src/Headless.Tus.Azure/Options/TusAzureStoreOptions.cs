@@ -37,9 +37,11 @@ public sealed class TusAzureStoreOptions
     /// <see cref="BlobMaxChunkSize"/> before being staged as Azure block blob blocks.
     /// </summary>
     /// <remarks>
-    /// Enable this when clients may send chunks that exceed Azure Block Blob's 100 MB per-block
-    /// limit. With splitting disabled, the entire PATCH body is staged as a single block, which
-    /// fails for bodies larger than the limit.
+    /// Splitting bounds per-request memory at one chunk and keeps individual blocks small. With
+    /// splitting disabled, the entire PATCH body is staged as a single block: seekable bodies
+    /// stream directly, but non-seekable bodies (the normal ASP.NET Core request body) are fully
+    /// buffered in memory first, and a body above Azure's per-block maximum (4,000 MiB on service
+    /// version 2019-12-12 and later) fails at staging.
     /// </remarks>
     public bool EnableChunkSplitting { get; set; } = true;
 
@@ -48,12 +50,13 @@ public sealed class TusAzureStoreOptions
     /// enabled.
     /// </summary>
     /// <remarks>
-    /// Must be between 1 byte and the Azure Block Blob limit of 100 MB (104,857,600 bytes).
-    /// Defaults to 16 MB: this value is also the per-request buffering unit for uploads of
-    /// 100 MB and above (both append paths hold one block in memory at a time), so the default
-    /// bounds memory at 16 MB per concurrent large upload while still allowing 16 MB × 50,000
-    /// blocks = ~780 GB per upload. Raise it for higher single-upload throughput at the cost of
-    /// proportional memory per concurrent upload.
+    /// Must be between 1 byte and 100 MB (104,857,600 bytes) — a store-imposed cap that bounds
+    /// per-request memory, well below Azure's own per-block maximum of 4,000 MiB (service version
+    /// 2019-12-12 and later). Defaults to 16 MB: this value is also the per-request buffering
+    /// unit for uploads of 100 MB and above (both append paths hold one block in memory at a
+    /// time), so the default bounds memory at 16 MB per concurrent large upload while still
+    /// allowing 16 MB × 50,000 blocks = ~780 GB per upload. Raise it for higher single-upload
+    /// throughput at the cost of proportional memory per concurrent upload.
     /// </remarks>
     public int BlobMaxChunkSize { get; set; } = 16 * 1024 * 1024; // 16MB
 
@@ -93,7 +96,7 @@ internal sealed class TusAzureStoreOptionsValidator : AbstractValidator<TusAzure
             .WithMessage("BlockBlobMaxChunkSize must be between 1 byte and 100MB");
 
         // BlobDefaultChunkSize feeds _CalculateOptimalChunkSize/_SplitStreamAsync directly; an out-of-range value
-        // (<= 0 or > 100MB) either trips the Azure 100MB block guard or stalls staging, so validate it like the max.
+        // (<= 0 or > 100MB) either trips the store's 100MB chunk cap or stalls staging, so validate it like the max.
         RuleFor(x => x.BlobDefaultChunkSize)
             .InclusiveBetween(1, 100 * 1024 * 1024) // 100MB
             .WithMessage("BlobDefaultChunkSize must be between 1 byte and 100MB")
