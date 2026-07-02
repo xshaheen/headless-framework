@@ -68,7 +68,9 @@ public sealed class SshBlobStorage(
             content.Seek(0, SeekOrigin.Begin);
         }
 
-        var payload = _BuildSidecarPayload(metadata, location.Path);
+        // Copies the caller's metadata (never mutated) and layers the framework keys on top; uploadDate is what
+        // GetBlobInfoAsync uses to recover the blob's Created timestamp.
+        var payload = BlobStorageHelpers.BuildEffectiveMetadata(metadata, timeProvider.GetUtcNow(), location.Path);
 
         var client = await pool.AcquireAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -521,7 +523,7 @@ public sealed class SshBlobStorage(
                     continue;
                 }
 
-                var maxIndex = _IndexOfMaxBlobKey(pageWindow);
+                var maxIndex = BlobStorageHelpers.IndexOfMaxKey(pageWindow, static item => item.BlobKey);
 
                 if (string.CompareOrdinal(item.BlobKey, pageWindow[maxIndex].BlobKey) < 0)
                 {
@@ -554,7 +556,7 @@ public sealed class SshBlobStorage(
                     pageWindow[i] = new BlobInfo
                     {
                         BlobKey = current.BlobKey,
-                        Created = _GetCreated(rawMetadata, current.Modified),
+                        Created = BlobStorageHelpers.ParseUploadDate(rawMetadata, fallback: current.Modified),
                         Modified = current.Modified,
                         Size = current.Size,
                         Metadata = BlobStorageHelpers.ToUserMetadata(rawMetadata),
@@ -609,26 +611,6 @@ public sealed class SshBlobStorage(
         }
 
         return ($"{container}/{directoryPrefix}", prefix[..(lastSlash + 1)]);
-    }
-
-    private Dictionary<string, string> _BuildSidecarPayload(IReadOnlyDictionary<string, string>? metadata, string path)
-    {
-        // Copy the caller's metadata (never mutate it), then layer the framework keys on top so they are always
-        // present. uploadDate is what GetBlobInfoAsync uses to recover the blob's Created timestamp.
-        var payload = new Dictionary<string, string>(StringComparer.Ordinal);
-
-        if (metadata is not null)
-        {
-            foreach (var pair in metadata)
-            {
-                payload[pair.Key] = pair.Value;
-            }
-        }
-
-        payload[BlobStorageHelpers.UploadDateMetadataKey] = timeProvider.GetUtcNow().ToString("O");
-        payload[BlobStorageHelpers.ExtensionMetadataKey] = Path.GetExtension(path);
-
-        return payload;
     }
 
     private async Task _WriteSidecarAsync(
@@ -892,46 +874,11 @@ public sealed class SshBlobStorage(
             BlobKey = objectKey,
             // Prefer the sidecar's recorded upload date when present; otherwise SFTP only exposes the last-write time.
             // Created reads the raw sidecar (framework keys intact); the returned Metadata exposes caller keys only.
-            Created = _GetCreated(metadata, modified),
+            Created = BlobStorageHelpers.ParseUploadDate(metadata, fallback: modified),
             Modified = modified,
             Size = file.Length,
             Metadata = BlobStorageHelpers.ToUserMetadata(metadata),
         };
-    }
-
-    private static DateTimeOffset _GetCreated(IReadOnlyDictionary<string, string>? metadata, DateTimeOffset fallback)
-    {
-        if (
-            metadata is not null
-            && metadata.TryGetValue(BlobStorageHelpers.UploadDateMetadataKey, out var value)
-            && DateTimeOffset.TryParseExact(
-                value,
-                "o",
-                CultureInfo.InvariantCulture,
-                DateTimeStyles.AssumeUniversal,
-                out var parsed
-            )
-        )
-        {
-            return parsed;
-        }
-
-        return fallback;
-    }
-
-    private static int _IndexOfMaxBlobKey(List<BlobInfo> items)
-    {
-        var maxIndex = 0;
-
-        for (var i = 1; i < items.Count; i++)
-        {
-            if (string.CompareOrdinal(items[i].BlobKey, items[maxIndex].BlobKey) > 0)
-            {
-                maxIndex = i;
-            }
-        }
-
-        return maxIndex;
     }
 
     #endregion

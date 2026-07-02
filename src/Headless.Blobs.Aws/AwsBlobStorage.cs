@@ -85,19 +85,12 @@ public sealed class AwsBlobStorage(
             DisablePayloadSigning = _options.DisablePayloadSigning,
         };
 
-        // Copy the caller's metadata into the S3 request (never mutate the caller's dictionary), then layer the
-        // framework keys on top so they are always present regardless of what the caller supplied.
-        if (metadata is not null)
+        // Copy the caller's metadata + framework keys into the S3 request (the helper never mutates the caller's
+        // dictionary); S3 needs the entries in its MetadataCollection, which prefixes keys with "x-amz-meta-".
+        foreach (var pair in BlobStorageHelpers.BuildEffectiveMetadata(metadata, clock.UtcNow, location.Path))
         {
-            foreach (var pair in metadata)
-            {
-                // MetadataCollection automatically prefixes keys with "x-amz-meta-".
-                request.Metadata[pair.Key] = pair.Value;
-            }
+            request.Metadata[pair.Key] = pair.Value;
         }
-
-        request.Metadata[BlobStorageHelpers.UploadDateMetadataKey] = clock.UtcNow.ToString("O");
-        request.Metadata[BlobStorageHelpers.ExtensionMetadataKey] = Path.GetExtension(location.Path);
 
         var response = await s3.PutObjectAsync(request, cancellationToken).ConfigureAwait(false);
 
@@ -629,7 +622,8 @@ public sealed class AwsBlobStorage(
 
         response.HttpStatusCode.EnsureSuccessStatusCode();
 
-        var created = _GetUploadedDate(response.Metadata);
+        var metadata = _ToDictionary(response.Metadata);
+        var created = BlobStorageHelpers.ParseUploadDate(metadata, DateTimeOffset.MinValue);
         var modified = response.LastModified is null ? created : new(response.LastModified.Value);
 
         return new BlobInfo
@@ -640,7 +634,7 @@ public sealed class AwsBlobStorage(
             Size = response.ContentLength,
             // M2 fold: the HEAD response carries the per-object metadata; surface the caller's keys only (the
             // framework uploadDate/extension keys are stripped). The list API cannot, which is why ListAsync leaves it null.
-            Metadata = BlobStorageHelpers.ToUserMetadata(_ToDictionary(response.Metadata)),
+            Metadata = BlobStorageHelpers.ToUserMetadata(metadata),
         };
     }
 
@@ -745,13 +739,14 @@ public sealed class AwsBlobStorage(
                     try
                     {
                         var response = await s3.GetObjectMetadataAsync(request, ct).ConfigureAwait(false);
+                        var metadata = _ToDictionary(response.Metadata);
                         enriched[i] = new BlobInfo
                         {
                             BlobKey = item.BlobKey,
-                            Created = _GetUploadedDate(response.Metadata),
+                            Created = BlobStorageHelpers.ParseUploadDate(metadata, DateTimeOffset.MinValue),
                             Modified = item.Modified,
                             Size = item.Size,
-                            Metadata = BlobStorageHelpers.ToUserMetadata(_ToDictionary(response.Metadata)),
+                            Metadata = BlobStorageHelpers.ToUserMetadata(metadata),
                         };
                     }
                     catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.NotFound)
@@ -809,7 +804,10 @@ public sealed class AwsBlobStorage(
             return null;
         }
 
-        var dictionary = new Dictionary<string, string>(metadata.Count, StringComparer.Ordinal);
+        // OrdinalIgnoreCase preserves MetadataCollection's own case-insensitive key lookup: S3 lowercases metadata
+        // keys on the wire ("x-amz-meta-uploaddate"), so ParseUploadDate must still find the camelCase framework key
+        // after the prefix is stripped.
+        var dictionary = new Dictionary<string, string>(metadata.Count, StringComparer.OrdinalIgnoreCase);
 
         foreach (var awsMetadataKey in metadata.Keys)
         {
@@ -821,31 +819,6 @@ public sealed class AwsBlobStorage(
         }
 
         return dictionary;
-    }
-
-    private static DateTimeOffset _GetUploadedDate(MetadataCollection? metadata)
-    {
-        if (metadata is null || metadata.Count == 0)
-        {
-            return DateTimeOffset.MinValue;
-        }
-
-        var createdValue = metadata[BlobStorageHelpers.UploadDateMetadataKey];
-
-        if (createdValue is null)
-        {
-            return DateTimeOffset.MinValue;
-        }
-
-        return DateTimeOffset.TryParseExact(
-            createdValue,
-            "o",
-            CultureInfo.InvariantCulture,
-            DateTimeStyles.AssumeUniversal,
-            out var value
-        )
-            ? value
-            : DateTimeOffset.MinValue;
     }
 
     #endregion

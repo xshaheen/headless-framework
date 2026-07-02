@@ -184,22 +184,7 @@ internal sealed class AwsBlobContainerManager : IBlobContainerManager, IDisposab
 
     private string _NormalizeContainer(string container)
     {
-        Argument.IsNotNullOrWhiteSpace(container);
-        PathValidation.ValidatePathSegment(container);
-
-        var normalized = _normalizer.NormalizeContainerName(container);
-
-        if (string.IsNullOrWhiteSpace(normalized) || normalized is "." or "..")
-        {
-            throw new ArgumentException(
-                "The blob container resolves to the storage root after provider normalization.",
-                nameof(container)
-            );
-        }
-
-        PathValidation.ValidatePathSegment(normalized);
-
-        return normalized;
+        return BlobLocationResolver.ResolveContainer(container, _normalizer);
     }
 
     private bool _disposed;

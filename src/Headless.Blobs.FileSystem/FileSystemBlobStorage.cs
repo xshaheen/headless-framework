@@ -531,7 +531,7 @@ public sealed class FileSystemBlobStorage : IBlobStorage
                 continue;
             }
 
-            var maxIndex = _IndexOfMaxKey(pageWindow);
+            var maxIndex = BlobStorageHelpers.IndexOfMaxKey(pageWindow, static item => item.Key);
 
             if (string.CompareOrdinal(key, pageWindow[maxIndex].Key) < 0)
             {
@@ -566,21 +566,6 @@ public sealed class FileSystemBlobStorage : IBlobStorage
         return new BlobPage(items, continuationToken);
     }
 
-    private static int _IndexOfMaxKey(List<(string Key, FileInfo Info)> items)
-    {
-        var maxIndex = 0;
-
-        for (var i = 1; i < items.Count; i++)
-        {
-            if (string.CompareOrdinal(items[i].Key, items[maxIndex].Key) > 0)
-            {
-                maxIndex = i;
-            }
-        }
-
-        return maxIndex;
-    }
-
     #endregion
 
     #region Sidecar Metadata
@@ -592,20 +577,9 @@ public sealed class FileSystemBlobStorage : IBlobStorage
         CancellationToken cancellationToken
     )
     {
-        var sidecar = new Dictionary<string, string>(StringComparer.Ordinal);
-
-        // Copy the caller's metadata (never mutate it), then layer the framework keys on top so they are always
-        // present regardless of what the caller supplied — mirroring how the object-store providers store them.
-        if (metadata is not null)
-        {
-            foreach (var pair in metadata)
-            {
-                sidecar[pair.Key] = pair.Value;
-            }
-        }
-
-        sidecar[BlobStorageHelpers.UploadDateMetadataKey] = _timeProvider.GetUtcNow().ToString("O");
-        sidecar[BlobStorageHelpers.ExtensionMetadataKey] = Path.GetExtension(objectKey);
+        // Copies the caller's metadata (never mutated) and layers the framework keys on top — mirroring how the
+        // object-store providers store them.
+        var sidecar = BlobStorageHelpers.BuildEffectiveMetadata(metadata, _timeProvider.GetUtcNow(), objectKey);
 
         var payload = _serializer.SerializeToBytes(sidecar)!;
         var sidecarPath = blobFullPath + BlobStorageHelpers.SidecarSuffix;
@@ -648,7 +622,11 @@ public sealed class FileSystemBlobStorage : IBlobStorage
         return new BlobInfo
         {
             BlobKey = blobKey,
-            Created = _ResolveCreated(metadata, fileInfo),
+            // Prefer the sidecar upload-date when present (OQ6); fall back to the file creation time otherwise.
+            Created = BlobStorageHelpers.ParseUploadDate(
+                metadata,
+                fallback: new DateTimeOffset(fileInfo.CreationTimeUtc, TimeSpan.Zero)
+            ),
             Modified = new DateTimeOffset(fileInfo.LastWriteTimeUtc, TimeSpan.Zero),
             Size = fileInfo.Length,
             // Surface only the caller's metadata: the framework-internal bookkeeping keys (upload date, extension)
@@ -656,27 +634,6 @@ public sealed class FileSystemBlobStorage : IBlobStorage
             // metadata rather than resurrecting framework keys.
             Metadata = BlobStorageHelpers.ToUserMetadata(metadata),
         };
-    }
-
-    private static DateTimeOffset _ResolveCreated(IReadOnlyDictionary<string, string>? metadata, FileInfo fileInfo)
-    {
-        // Prefer the sidecar upload-date when present (OQ6); fall back to the file creation time otherwise.
-        if (
-            metadata is not null
-            && metadata.TryGetValue(BlobStorageHelpers.UploadDateMetadataKey, out var uploadDate)
-            && DateTimeOffset.TryParseExact(
-                uploadDate,
-                "o",
-                CultureInfo.InvariantCulture,
-                DateTimeStyles.AssumeUniversal,
-                out var parsed
-            )
-        )
-        {
-            return parsed;
-        }
-
-        return new DateTimeOffset(fileInfo.CreationTimeUtc, TimeSpan.Zero);
     }
 
     /// <summary>

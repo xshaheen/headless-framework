@@ -77,6 +77,89 @@ public static class BlobStorageHelpers
     }
 
     /// <summary>
+    /// Builds the effective metadata stored with an upload: a fresh copy of the caller's <paramref name="metadata"/>
+    /// — never mutated, because the caller's dictionary may be shared across a <c>BulkUploadAsync</c> batch — with
+    /// the framework bookkeeping keys (<see cref="UploadDateMetadataKey"/>, <see cref="ExtensionMetadataKey"/>)
+    /// layered on top so they are always present regardless of what the caller supplied.
+    /// </summary>
+    /// <param name="metadata">The caller-supplied metadata, if any.</param>
+    /// <param name="uploadDate">The upload timestamp recorded under <see cref="UploadDateMetadataKey"/>.</param>
+    /// <param name="path">The blob path whose extension is recorded under <see cref="ExtensionMetadataKey"/>.</param>
+    /// <returns>A new dictionary holding the caller's entries plus the two framework keys.</returns>
+    public static Dictionary<string, string> BuildEffectiveMetadata(
+        IReadOnlyDictionary<string, string>? metadata,
+        DateTimeOffset uploadDate,
+        string path
+    )
+    {
+        var effective = metadata is null
+            ? new Dictionary<string, string>(StringComparer.Ordinal)
+            : new Dictionary<string, string>(metadata, StringComparer.Ordinal);
+
+        effective[UploadDateMetadataKey] = uploadDate.ToString("O");
+        effective[ExtensionMetadataKey] = Path.GetExtension(path);
+
+        return effective;
+    }
+
+    /// <summary>
+    /// Recovers a blob's upload timestamp from its stored <paramref name="metadata"/> — the
+    /// <see cref="UploadDateMetadataKey"/> value written by <see cref="BuildEffectiveMetadata"/> in round-trip
+    /// (<c>"o"</c>) format — or returns <paramref name="fallback"/> when the key is absent or unparsable. The lookup
+    /// honors the dictionary's own key comparer, so providers whose backend changes key casing pass a
+    /// case-insensitive dictionary.
+    /// </summary>
+    /// <param name="metadata">The blob's stored metadata (framework keys intact), if any.</param>
+    /// <param name="fallback">The provider-specific fallback timestamp.</param>
+    /// <returns>The parsed upload date, or <paramref name="fallback"/>.</returns>
+    public static DateTimeOffset ParseUploadDate(IReadOnlyDictionary<string, string>? metadata, DateTimeOffset fallback)
+    {
+        if (
+            metadata is not null
+            && metadata.TryGetValue(UploadDateMetadataKey, out var value)
+            && DateTimeOffset.TryParseExact(
+                value,
+                "o",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal,
+                out var parsed
+            )
+        )
+        {
+            return parsed;
+        }
+
+        return fallback;
+    }
+
+    /// <summary>
+    /// Returns the index of the item with the ordinal-largest key in <paramref name="items"/> — the eviction
+    /// candidate in the filesystem-like providers' bounded page-window listing scans. The comparison is
+    /// <see cref="string.CompareOrdinal(string, string)"/>, matching the window's sort order.
+    /// </summary>
+    /// <typeparam name="T">The window item type.</typeparam>
+    /// <param name="items">The non-empty window.</param>
+    /// <param name="keySelector">Selects an item's sort key.</param>
+    /// <returns>The index of the max-key item.</returns>
+    public static int IndexOfMaxKey<T>(
+        IReadOnlyList<T> items,
+        [InstantHandle] [RequireStaticDelegate] Func<T, string> keySelector
+    )
+    {
+        var maxIndex = 0;
+
+        for (var i = 1; i < items.Count; i++)
+        {
+            if (string.CompareOrdinal(keySelector(items[i]), keySelector(items[maxIndex])) > 0)
+            {
+                maxIndex = i;
+            }
+        }
+
+        return maxIndex;
+    }
+
+    /// <summary>
     /// Compiles a glob <paramref name="pattern"/> (<c>*</c> = any run of characters, <c>?</c> = any single character)
     /// into a predicate that tests whole blob keys. This is the single shared client-side matcher layered over
     /// <see cref="IBlobStorage.ListAsync"/> — providers no longer own private glob regex.

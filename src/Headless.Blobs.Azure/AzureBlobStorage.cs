@@ -65,15 +65,9 @@ public sealed class AzureBlobStorage(
             CacheControl = _option.CacheControl,
         };
 
-        // Copy the caller's metadata before adding the framework keys so we never mutate the caller's dictionary
-        // (which may be shared across a BulkUploadAsync batch), then layer uploadDate/extension on top so they are
-        // always present regardless of what the caller supplied.
-        var effectiveMetadata = metadata is null
-            ? new Dictionary<string, string>(StringComparer.Ordinal)
-            : new Dictionary<string, string>(metadata, StringComparer.Ordinal);
-
-        effectiveMetadata[BlobStorageHelpers.UploadDateMetadataKey] = clock.UtcNow.ToString("O");
-        effectiveMetadata[BlobStorageHelpers.ExtensionMetadataKey] = Path.GetExtension(location.Path);
+        // Copies the caller's metadata (never mutated — it may be shared across a BulkUploadAsync batch) and layers
+        // the framework uploadDate/extension keys on top.
+        var effectiveMetadata = BlobStorageHelpers.BuildEffectiveMetadata(metadata, clock.UtcNow, location.Path);
 
         // Seekable streams are rewound to position 0 before upload. Non-seekable streams are passed straight
         // through to the Azure SDK, which streams them as-is — non-seekable handling is provider-specific and is

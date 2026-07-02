@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Blobs.Internals;
-using Headless.Checks;
 using Microsoft.Extensions.Logging;
 using Renci.SshNet;
 using Renci.SshNet.Common;
@@ -170,21 +169,6 @@ internal sealed class SshBlobContainerManager(
 
     private string _NormalizeContainer(string container)
     {
-        Argument.IsNotNullOrWhiteSpace(container);
-        PathValidation.ValidatePathSegment(container);
-
-        var normalized = normalizer.NormalizeContainerName(container);
-
-        if (string.IsNullOrWhiteSpace(normalized) || normalized is "." or "..")
-        {
-            throw new ArgumentException(
-                "The blob container resolves to the storage root after provider normalization.",
-                nameof(container)
-            );
-        }
-
-        PathValidation.ValidatePathSegment(normalized);
-
-        return normalized;
+        return BlobLocationResolver.ResolveContainer(container, normalizer);
     }
 }

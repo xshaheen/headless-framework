@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
+
 namespace Headless.Blobs.Internals;
 
 /// <summary>
@@ -61,6 +63,36 @@ public static class BlobLocationResolver
         _ValidateResolved(container, prefix);
 
         return (container, prefix);
+    }
+
+    /// <summary>
+    /// Resolves a raw top-level <paramref name="container"/> name to its backend form for container-lifecycle
+    /// operations (<see cref="IBlobContainerManager"/>), which address a container without a
+    /// <see cref="BlobLocation"/>. Runs the same validate → normalize → re-validate sequence in both directions as
+    /// <see cref="Resolve"/>: provider normalizers are lossy, so the normalized result is re-checked to keep a
+    /// container from resolving to the storage root or a traversal segment.
+    /// </summary>
+    /// <param name="container">The raw container name.</param>
+    /// <param name="normalizer">The provider's naming normalizer.</param>
+    /// <returns>The normalized backend container name.</returns>
+    public static string ResolveContainer(string container, IBlobNamingNormalizer normalizer)
+    {
+        Argument.IsNotNullOrWhiteSpace(container);
+        PathValidation.ValidatePathSegment(container);
+
+        var normalized = normalizer.NormalizeContainerName(container);
+
+        if (string.IsNullOrWhiteSpace(normalized) || normalized is "." or "..")
+        {
+            throw new ArgumentException(
+                "The blob container resolves to the storage root after provider normalization.",
+                nameof(container)
+            );
+        }
+
+        PathValidation.ValidatePathSegment(normalized);
+
+        return normalized;
     }
 
     private static string _NormalizeKey(string path, IBlobNamingNormalizer normalizer, bool allowTrailingSlash)
