@@ -51,16 +51,18 @@ public sealed class AddHeadlessSmsTests
     }
 
     [Fact]
-    public void should_throw_when_no_provider_is_selected()
+    public void should_not_register_default_sender_when_no_provider_is_selected()
     {
-        // given
+        // given - the default slot is optional; an empty setup registers only the factory.
         var services = new ServiceCollection();
 
         // when
-        var act = () => services.AddHeadlessSms(static _ => { });
+        services.AddHeadlessSms(static _ => { });
 
         // then
-        act.Should().Throw<InvalidOperationException>().WithMessage("*exactly one default provider*");
+        using var provider = services.BuildServiceProvider();
+        provider.GetService<ISmsSender>().Should().BeNull();
+        provider.GetService<ISmsSenderProvider>().Should().NotBeNull();
     }
 
     [Fact]
@@ -73,7 +75,7 @@ public sealed class AddHeadlessSmsTests
         var act = () => services.AddHeadlessSms(static setup => setup.UseNoop().UseNoop());
 
         // then
-        act.Should().Throw<InvalidOperationException>().WithMessage("*exactly one default provider*");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*at most one default*");
     }
 
     [Fact]

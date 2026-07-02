@@ -9,8 +9,13 @@ namespace Headless.Sms;
 /// <see cref="ISmsSenderProvider"/> over the container's keyed <see cref="ISmsSender"/> registrations —
 /// resolves the named instances added through <c>setup.AddNamed(name, …)</c>.
 /// </summary>
-internal sealed class KeyedServiceSmsSenderProvider(IServiceProvider serviceProvider) : ISmsSenderProvider
+internal sealed class KeyedServiceSmsSenderProvider(
+    IServiceProvider serviceProvider,
+    IReadOnlySet<string> registeredNames
+) : ISmsSenderProvider
 {
+    public IReadOnlySet<string> RegisteredNames { get; } = registeredNames;
+
     public ISmsSender GetSender(string name)
     {
         Argument.IsNotNullOrWhiteSpace(name);

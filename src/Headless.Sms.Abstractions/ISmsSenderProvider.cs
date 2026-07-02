@@ -25,4 +25,11 @@ public interface ISmsSenderProvider
     /// <returns>The resolved SMS sender, or <see langword="null"/>.</returns>
     /// <exception cref="ArgumentException">Thrown when <paramref name="name"/> is <see langword="null"/>, empty, or whitespace.</exception>
     ISmsSender? GetSenderOrNull(string name);
+
+    /// <summary>
+    /// Gets the names of all registered named SMS sender instances. Use this to validate an externally-supplied
+    /// name before resolving it, rather than probing <see cref="GetSenderOrNull"/> and handling
+    /// <see langword="null"/>. The default (unnamed) sender is not included.
+    /// </summary>
+    IReadOnlySet<string> RegisteredNames { get; }
 }

@@ -45,7 +45,7 @@ builder.Services.AddHeadlessSms(setup =>
 // Named instance — an isolated HttpClient and options (keyed "marketing"):
 builder.Services.AddHeadlessSms(setup =>
 {
-    setup.UseConnekio(builder.Configuration.GetSection("Sms:Connekio")); // default (required)
+    setup.UseConnekio(builder.Configuration.GetSection("Sms:Connekio")); // default (optional)
     setup.AddNamed("marketing", i => i.UseConnekio(builder.Configuration.GetSection("Sms:ConnekioBulk")));
 });
 ```

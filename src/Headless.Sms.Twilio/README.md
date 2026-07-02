@@ -43,7 +43,7 @@ builder.Services.AddHeadlessSms(setup =>
 // Named instance — a keyed ISmsSender plus a keyed ITwilioRestClient (resolvable via ISmsSenderProvider):
 builder.Services.AddHeadlessSms(setup =>
 {
-    setup.UseTwilio(builder.Configuration.GetSection("Sms:Twilio")); // default (required)
+    setup.UseTwilio(builder.Configuration.GetSection("Sms:Twilio")); // default (optional)
     setup.AddNamed("marketing", i => i.UseTwilio(builder.Configuration.GetSection("Sms:TwilioMarketing")));
 });
 ```

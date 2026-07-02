@@ -104,7 +104,7 @@ packages: Sms.Abstractions, Sms.Core, Sms.Aws, Sms.Cequens, Sms.Connekio, Sms.De
 
 ## Quick Orientation
 
-Install `Headless.Sms.Abstractions` plus one provider package. Register with `AddHeadlessSms(setup => setup.Use…())` — exactly one **default** `Use*` provider per call, plus any number of **named** senders via `setup.AddNamed(name, i => i.Use…())`. Code against `ISmsSender` (single recipient) or `IBulkSmsSender` (multi-recipient, where supported) for the default; resolve named senders with `ISmsSenderProvider.GetSender("name")` or `[FromKeyedServices("name")] ISmsSender`. Never reference provider-specific sender types in application code — swap providers by changing DI registration only.
+Install `Headless.Sms.Abstractions` plus one provider package. Register with `AddHeadlessSms(setup => setup.Use…())` — at most one **default** `Use*` provider per call (the default is optional; a named-only host is supported), plus any number of **named** senders via `setup.AddNamed(name, i => i.Use…())`. Code against `ISmsSender` (single recipient) or `IBulkSmsSender` (multi-recipient, where supported) for the default; resolve named senders with `ISmsSenderProvider.GetSender("name")` or `[FromKeyedServices("name")] ISmsSender`. Never reference provider-specific sender types in application code — swap providers by changing DI registration only.
 
 - **Development/testing**: `Headless.Sms.Dev` — `UseDevelopment(path)` appends messages to a local file or `UseNoop()` discards them. No external calls.
 - **International**: `Headless.Sms.Twilio` (most popular), `Headless.Sms.Aws` (AWS SNS), `Headless.Sms.Infobip` (global platform).
@@ -112,13 +112,13 @@ Install `Headless.Sms.Abstractions` plus one provider package. Register with `Ad
 
 `Headless.Sms.Core` owns registration (`AddHeadlessSms`, `HeadlessSmsSetupBuilder`, `HeadlessSmsInstanceBuilder`) and the `ISmsSenderProvider` implementation over keyed DI. Providers pull it transitively — you rarely install it directly. `Headless.Sms.Abstractions` holds contracts only (`ISmsSender`, `IBulkSmsSender`, `ISmsSenderProvider`, request/response types, `SmsFailureKinds`).
 
-Register additional **named** senders alongside the required default: `setup.AddNamed("otp", i => i.UseTwilio(…))`. Resolve them with `ISmsSenderProvider.GetSender("otp")` or `[FromKeyedServices("otp")] ISmsSender`. The default sender stays required and resolves as the unkeyed `ISmsSender`; each named sender is keyed under its name and isolates its own provider, options, HttpClient (and resilience pipeline), and backend state.
+Register additional **named** senders alongside an optional default: `setup.AddNamed("otp", i => i.UseTwilio(…))`. Resolve them with `ISmsSenderProvider.GetSender("otp")` or `[FromKeyedServices("otp")] ISmsSender`. The default sender is optional; when configured it resolves as the unkeyed `ISmsSender` (with no default, the unkeyed `ISmsSender` is simply not registered). Each named sender is keyed under its name and isolates its own provider, options, HttpClient (and resilience pipeline), and backend state.
 
 ## Agent Instructions
 
-- Register exactly one **default** provider per container: `services.AddHeadlessSms(setup => setup.Use…())`. Zero default providers, multiple default providers in one delegate, or a repeated `AddHeadlessSms` on the same `IServiceCollection` throws `InvalidOperationException` at registration time. The available default `Use*` calls are `UseTwilio`, `UseAwsSns`, `UseInfobip`, `UseCequens`, `UseConnekio`, `UseVictoryLink`, `UseVodafone`, `UseDevelopment`, `UseNoop` — the same set is available on each named instance.
-- Add **named** senders in the same call: `setup.AddNamed("name", i => i.Use…())`. Names must be non-whitespace and ordinal-unique within the call, and each named instance must select exactly one provider — a duplicate name, whitespace name, or zero/multiple providers throws at registration time. The default sender remains required; named-only (no default) is not supported.
-- Resolve a named sender with `ISmsSenderProvider.GetSender("name")` (throws `InvalidOperationException` naming `AddNamed` when unregistered) / `GetSenderOrNull("name")` (returns `null`), or raw keyed DI (`[FromKeyedServices("name")] ISmsSender`, `GetRequiredKeyedService<ISmsSender>(name)`). Both `GetSender` and `GetSenderOrNull` throw `ArgumentException` on a null/whitespace name. The default (unkeyed) `ISmsSender` is **not** exposed through `ISmsSenderProvider`.
+- Register at most one **default** provider per container: `services.AddHeadlessSms(setup => setup.Use…())`. The default is optional — zero defaults is allowed (a named-only host). Multiple default providers in one delegate, or a repeated `AddHeadlessSms` on the same `IServiceCollection`, throws `InvalidOperationException` at registration time. The available default `Use*` calls are `UseTwilio`, `UseAwsSns`, `UseInfobip`, `UseCequens`, `UseConnekio`, `UseVictoryLink`, `UseVodafone`, `UseDevelopment`, `UseNoop` — the same set is available on each named instance.
+- Add **named** senders in the same call: `setup.AddNamed("name", i => i.Use…())`. Names must be non-whitespace and ordinal-unique within the call, and each named instance must select exactly one provider — a duplicate name, whitespace name, or zero/multiple providers throws at registration time. The default sender is optional; a named-only host (no default) is supported — the unkeyed `ISmsSender` is simply not registered when no default is configured.
+- Resolve a named sender with `ISmsSenderProvider.GetSender("name")` (throws `InvalidOperationException` naming `AddNamed` when unregistered) / `GetSenderOrNull("name")` (returns `null`), or raw keyed DI (`[FromKeyedServices("name")] ISmsSender`, `GetRequiredKeyedService<ISmsSender>(name)`). Both `GetSender` and `GetSenderOrNull` throw `ArgumentException` on a null/whitespace name. The default (unkeyed) `ISmsSender` is **not** exposed through `ISmsSenderProvider`. To validate an externally supplied name before resolving, check `ISmsSenderProvider.RegisteredNames` (the registered named-instance names, an `IReadOnlySet<string>`; the default is excluded) instead of probing `GetSenderOrNull` and handling `null`.
 - Registration is deferred: provider contributions are queued and nothing touches the `IServiceCollection` until the gates pass, so a setup that throws leaves the collection unchanged. The same provider can back two different names with fully independent options.
 - Each named instance isolates its own options (validated per name via FluentValidation + `ValidateOnStart`), its own HttpClient (`Headless:{Provider}Sms:{name}`) with its own resilience pipeline (HTTP providers), and its own backend state. Keyed DI does not cascade the key to constructor dependencies, so named senders never read the default configuration.
 - Code against `ISmsSender` from `Headless.Sms.Abstractions` — never against provider-specific sender types (`TwilioSmsSender`, `AwsSnsSmsSender`, `CequensSmsSender`, etc.).
@@ -137,20 +137,20 @@ Register additional **named** senders alongside the required default: `setup.Add
 
 ### Default and named clients
 
-A host registers one **default** sender plus any number of **named** senders in a single `AddHeadlessSms` call. This mirrors the Emails feature's named-instance pattern (`IEmailSenderProvider` + `AddNamed` + keyed registrations).
+A host registers an optional **default** sender plus any number of **named** senders in a single `AddHeadlessSms` call. This mirrors the Emails feature's named-instance pattern (`IEmailSenderProvider` + `AddNamed` + keyed registrations).
 
 ```csharp
 builder.Services.AddHeadlessSms(setup =>
 {
-    setup.UseTwilio(builder.Configuration.GetSection("Sms:Twilio"));                  // default (required)
+    setup.UseTwilio(builder.Configuration.GetSection("Sms:Twilio"));                  // default (optional)
     setup.AddNamed("otp", i => i.UseCequens(builder.Configuration.GetSection("Sms:Otp")));        // named, keyed "otp"
     setup.AddNamed("marketing", i => i.UseInfobip(builder.Configuration.GetSection("Sms:Bulk"))); // named, keyed "marketing"
 });
 ```
 
-- **Default is required, named is additive.** The gate throws unless exactly one default provider is registered; named instances are unbounded and exempt from the default gate. The unkeyed `ISmsSender` therefore always resolves.
+- **Default is optional, named is additive.** The gate rejects more than one default provider but allows zero; named instances are unbounded and exempt from the default gate. The unkeyed `ISmsSender` resolves only when a default is configured — a named-only host is supported.
 - **Names are validated at registration time.** Each name must be non-whitespace and ordinal-unique within the call; each named instance must select exactly one provider. Violations throw `ArgumentException` / `InvalidOperationException`.
-- **Resolution.** Named senders resolve two ways — as keyed services (`[FromKeyedServices("otp")] ISmsSender`) and through `ISmsSenderProvider.GetSender(name)` (throws when unregistered) / `GetSenderOrNull(name)` (returns `null`). The default sender resolves as the unkeyed `ISmsSender` and is **not** exposed through `ISmsSenderProvider`.
+- **Resolution.** Named senders resolve two ways — as keyed services (`[FromKeyedServices("otp")] ISmsSender`) and through `ISmsSenderProvider.GetSender(name)` (throws when unregistered) / `GetSenderOrNull(name)` (returns `null`). `ISmsSenderProvider.RegisteredNames` enumerates the registered named instances (default excluded) for validating a name before resolving. The default sender resolves as the unkeyed `ISmsSender` and is **not** exposed through `ISmsSenderProvider`.
 - **Isolation.** Each named instance keys its options and backend under its name: per-name options (`IOptionsMonitor<TOptions>.Get(name)`, validated on start), a per-name HttpClient named `Headless:{Provider}Sms:{name}` with its own resilience pipeline (HTTP providers), and any keyed backend client (Twilio's `ITwilioRestClient`, AWS SNS's `IAmazonSimpleNotificationService`, Cequens' per-instance token cache). .NET keyed registrations do not cascade the key to a type's constructor dependencies, so every keyed sender/client is an explicit factory — named SMS never flows through the default configuration.
 - **Bulk per instance.** For bulk-capable providers each named instance also registers a keyed `IBulkSmsSender` forwarding to the same keyed sender; resolve it with `[FromKeyedServices("name")] IBulkSmsSender`. Twilio and AWS SNS register no bulk forward (default or named).
 
@@ -221,7 +221,7 @@ Provides a provider-agnostic SMS sending API so application code stays decoupled
 
 - `ISmsSender` — single-recipient send: `SendAsync(SendSingleSmsRequest, CancellationToken) : ValueTask<SendSingleSmsResponse>`.
 - `IBulkSmsSender` — optional capability for multi-recipient sends: `SendBulkAsync(SendBulkSmsRequest, CancellationToken) : ValueTask<SendBulkSmsResponse>`. Only implemented by providers with native bulk support.
-- `ISmsSenderProvider` — resolves named senders by name: `GetSender(name)` (throws when unregistered) and `GetSenderOrNull(name)` (returns `null`). Backed by the container's keyed `ISmsSender` registrations; the concrete implementation lives in `Headless.Sms.Core`.
+- `ISmsSenderProvider` — resolves named senders by name: `GetSender(name)` (throws when unregistered) and `GetSenderOrNull(name)` (returns `null`), plus `RegisteredNames` (`IReadOnlySet<string>`) listing the registered named instances (the default is excluded) so an externally supplied name can be validated before resolving. Backed by the container's keyed `ISmsSender` registrations; the concrete implementation lives in `Headless.Sms.Core`.
 - `SendSingleSmsRequest` — single-recipient message contract with `Destination` (one `SmsRequestDestination`), `Text`, optional `MessageId`, and optional `Properties`.
 - `SendBulkSmsRequest` — bulk message contract with `Destinations` (list), `Text`, optional `MessageId`/`Properties`.
 - `SmsRequestDestination(int Code, string Number)` — phone number with separate country calling code and subscriber number.
@@ -265,7 +265,11 @@ No configuration required. This is an abstractions-only package.
 
 ### Dependencies
 
-None.
+- `Headless.Checks`
+- `Polly.Core`
+- `Polly.RateLimiting`
+
+`SmsFailureKinds.FromException` classifies the standard resilience pipeline's timeout, open-circuit, and rate-limiter rejections, so the abstraction references the Polly exception types directly.
 
 ### Side Effects
 
@@ -283,14 +287,14 @@ Owns the unified SMS setup builder (`AddHeadlessSms`) and the `ISmsSenderProvide
 
 ### Key Features
 
-- `AddHeadlessSms(Action<HeadlessSmsSetupBuilder>)` — the single provider-agnostic registration entry point, with an exactly-one-default-provider gate and a once-per-collection guard.
+- `AddHeadlessSms(Action<HeadlessSmsSetupBuilder>)` — the single provider-agnostic registration entry point, with an at-most-one-default-provider gate and a once-per-collection guard.
 - `HeadlessSmsSetupBuilder` — receives the default `Use*` selection plus `AddNamed(name, …)` named instances; `HeadlessSmsInstanceBuilder` — the per-named-instance builder that providers extend with their `Use*` members.
 - `ISmsSenderProvider` — registered automatically by the gate (keyed-service-backed via `KeyedServiceSmsSenderProvider`); resolves named senders by name.
 - Deferred registration: provider contributions are queued and run only after the gates pass — the default first, then each named instance — so a setup that fails a gate leaves the `IServiceCollection` unchanged.
 
 ### Design Notes
 
-The builder carries no shared, cross-provider feature options — it is provider-selection-only; each provider binds its own options inside its `Use*` member. The gate is **per-slot**: it requires exactly one default provider (rejecting zero or multiple) while allowing unbounded ordinal-unique named instances, and rejects a repeated `AddHeadlessSms` on the same `IServiceCollection` (a marker service enforces the single-call rule). Providers contribute deferred `Action<IServiceCollection>` registrations (`RegisterDefaultProvider` for the default, `instance.RegisterProvider` for a named instance) rather than implementing a provider interface, keeping the default and named paths symmetric. `ISmsSenderProvider` resolves only named (keyed) senders — the default sender is the unkeyed `ISmsSender`, reachable directly and never by name.
+The builder carries no shared, cross-provider feature options — it is provider-selection-only; each provider binds its own options inside its `Use*` member. The gate is **per-slot**: it allows at most one default provider (rejecting a second, but permitting zero for a named-only host) while allowing unbounded ordinal-unique named instances, and rejects a repeated `AddHeadlessSms` on the same `IServiceCollection` (a marker service enforces the single-call rule). Providers contribute deferred `Action<IServiceCollection>` registrations (`RegisterDefaultProvider` for the default, `instance.RegisterProvider` for a named instance) rather than implementing a provider interface, keeping the default and named paths symmetric. `ISmsSenderProvider` resolves only named (keyed) senders — the default sender, when configured, is the unkeyed `ISmsSender`, reachable directly and never by name — and `ISmsSenderProvider.RegisteredNames` enumerates the named instances.
 
 ### Installation
 
@@ -304,7 +308,7 @@ dotnet add package Headless.Sms.Core
 // Provider-agnostic registration entry point (a provider package supplies the Use* member):
 builder.Services.AddHeadlessSms(setup =>
 {
-    setup.UseNoop();                             // default (required)
+    setup.UseNoop();                             // default (optional)
     setup.AddNamed("otp", i => i.UseNoop());     // optional named sender, keyed "otp"
 });
 
@@ -319,11 +323,12 @@ No configuration required.
 ### Dependencies
 
 - `Headless.Sms.Abstractions`
-- `Headless.Hosting`
+- `Headless.Checks`
+- `Microsoft.Extensions.DependencyInjection.Abstractions`
 
 ### Side Effects
 
-`AddHeadlessSms` registers a provider-registration marker and `ISmsSenderProvider` (keyed-service-backed), then runs the default provider's wiring (the unkeyed `ISmsSender`) followed by each named instance's wiring (keyed under the instance name). The marker enforces the single-call rule.
+`AddHeadlessSms` registers a provider-registration marker and `ISmsSenderProvider` (keyed-service-backed), then runs the default provider's wiring (the unkeyed `ISmsSender`) when a default is configured, followed by each named instance's wiring (keyed under the instance name). The marker enforces the single-call rule.
 
 ---
 
@@ -372,7 +377,7 @@ builder.Services.AddHeadlessSms(setup =>
 // Named instance (keyed ISmsSender + keyed IAmazonSimpleNotificationService, resolvable via ISmsSenderProvider):
 builder.Services.AddHeadlessSms(setup =>
 {
-    setup.UseNoop(); // default (required)
+    setup.UseNoop(); // default (optional)
     setup.AddNamed("sns", i => i.UseAwsSns(builder.Configuration.GetSection("Sms:Aws"), awsOptions)); // keyed "sns"
 });
 ```
@@ -464,7 +469,7 @@ builder.Services.AddHeadlessSms(setup =>
 // Named instance — an isolated HttpClient, token cache, and options (keyed "otp"):
 builder.Services.AddHeadlessSms(setup =>
 {
-    setup.UseCequens(builder.Configuration.GetSection("Sms:Cequens")); // default (required)
+    setup.UseCequens(builder.Configuration.GetSection("Sms:Cequens")); // default (optional)
     setup.AddNamed("otp", i => i.UseCequens(builder.Configuration.GetSection("Sms:CequensOtp")));
 });
 ```
@@ -557,7 +562,7 @@ builder.Services.AddHeadlessSms(setup =>
 // Named instance — an isolated HttpClient and options (keyed "marketing"):
 builder.Services.AddHeadlessSms(setup =>
 {
-    setup.UseConnekio(builder.Configuration.GetSection("Sms:Connekio")); // default (required)
+    setup.UseConnekio(builder.Configuration.GetSection("Sms:Connekio")); // default (optional)
     setup.AddNamed("marketing", i => i.UseConnekio(builder.Configuration.GetSection("Sms:ConnekioBulk")));
 });
 ```
@@ -654,7 +659,7 @@ if (builder.Environment.IsDevelopment())
 // Keyed ISmsSender "audit" writes to a file while the default sends for real:
 builder.Services.AddHeadlessSms(setup =>
 {
-    setup.UseTwilio(builder.Configuration.GetSection("Sms:Twilio")); // default (required)
+    setup.UseTwilio(builder.Configuration.GetSection("Sms:Twilio")); // default (optional)
     setup.AddNamed("audit", i => i.UseDevelopment("audit-sms.txt"));
 });
 ```
@@ -717,7 +722,7 @@ builder.Services.AddHeadlessSms(setup =>
 // Named instance — an isolated HttpClient and options (keyed "marketing"):
 builder.Services.AddHeadlessSms(setup =>
 {
-    setup.UseInfobip(builder.Configuration.GetSection("Sms:Infobip")); // default (required)
+    setup.UseInfobip(builder.Configuration.GetSection("Sms:Infobip")); // default (optional)
     setup.AddNamed("marketing", i => i.UseInfobip(builder.Configuration.GetSection("Sms:InfobipBulk")));
 });
 ```
@@ -803,7 +808,7 @@ builder.Services.AddHeadlessSms(setup =>
 // Named instance — a keyed ISmsSender plus a keyed ITwilioRestClient (resolvable via ISmsSenderProvider):
 builder.Services.AddHeadlessSms(setup =>
 {
-    setup.UseTwilio(builder.Configuration.GetSection("Sms:Twilio")); // default (required)
+    setup.UseTwilio(builder.Configuration.GetSection("Sms:Twilio")); // default (optional)
     setup.AddNamed("marketing", i => i.UseTwilio(builder.Configuration.GetSection("Sms:TwilioMarketing")));
 });
 ```
@@ -894,7 +899,7 @@ builder.Services.AddHeadlessSms(setup =>
 // Named instance — an isolated HttpClient and options (keyed "otp"):
 builder.Services.AddHeadlessSms(setup =>
 {
-    setup.UseVictoryLink(builder.Configuration.GetSection("Sms:VictoryLink")); // default (required)
+    setup.UseVictoryLink(builder.Configuration.GetSection("Sms:VictoryLink")); // default (optional)
     setup.AddNamed("otp", i => i.UseVictoryLink(builder.Configuration.GetSection("Sms:VictoryLinkOtp")));
 });
 ```
@@ -984,7 +989,7 @@ builder.Services.AddHeadlessSms(setup =>
 // Named instance — an isolated HttpClient and options (keyed "promo"):
 builder.Services.AddHeadlessSms(setup =>
 {
-    setup.UseVodafone(builder.Configuration.GetSection("Sms:Vodafone")); // default (required)
+    setup.UseVodafone(builder.Configuration.GetSection("Sms:Vodafone")); // default (optional)
     setup.AddNamed("promo", i => i.UseVodafone(builder.Configuration.GetSection("Sms:VodafonePromo")));
 });
 ```

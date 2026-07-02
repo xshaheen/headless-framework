@@ -43,7 +43,7 @@ builder.Services.AddHeadlessSms(setup =>
 // Named instance (keyed ISmsSender + keyed IAmazonSimpleNotificationService, resolvable via ISmsSenderProvider):
 builder.Services.AddHeadlessSms(setup =>
 {
-    setup.UseNoop(); // default (required)
+    setup.UseNoop(); // default (optional)
     setup.AddNamed("sns", i => i.UseAwsSns(builder.Configuration.GetSection("Sms:Aws"), awsOptions)); // keyed "sns"
 });
 ```
