@@ -22,6 +22,8 @@ public sealed partial class TusAzureStore : ITusExpirationStore
     /// </remarks>
     public async Task SetExpirationAsync(string fileId, DateTimeOffset expires, CancellationToken cancellationToken)
     {
+        await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
+
         var blobClient = _GetBlobClient(fileId);
 
         try
@@ -57,6 +59,8 @@ public sealed partial class TusAzureStore : ITusExpirationStore
     /// <returns>the expiration instant, or <see langword="null"/></returns>
     public async Task<DateTimeOffset?> GetExpirationAsync(string fileId, CancellationToken cancellationToken)
     {
+        await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
+
         var azureFile = await _GetTusFileInfoAsync(fileId, cancellationToken).ConfigureAwait(false);
 
         return azureFile?.Metadata.DateExpiration;

@@ -47,9 +47,15 @@ public sealed class TusAzureStoreOptions
     /// Maximum size in bytes of a single Azure block blob block used when chunk splitting is
     /// enabled.
     /// </summary>
-    /// <remarks>Must be between 1 byte and the Azure Block Blob limit of 100 MB (104,857,600 bytes).
-    /// Defaults to 100 MB.</remarks>
-    public int BlobMaxChunkSize { get; set; } = 100 * 1024 * 1024; // 100MB
+    /// <remarks>
+    /// Must be between 1 byte and the Azure Block Blob limit of 100 MB (104,857,600 bytes).
+    /// Defaults to 16 MB: this value is also the per-request buffering unit for uploads of
+    /// 100 MB and above (both append paths hold one block in memory at a time), so the default
+    /// bounds memory at 16 MB per concurrent large upload while still allowing 16 MB × 50,000
+    /// blocks = ~780 GB per upload. Raise it for higher single-upload throughput at the cost of
+    /// proportional memory per concurrent upload.
+    /// </remarks>
+    public int BlobMaxChunkSize { get; set; } = 16 * 1024 * 1024; // 16MB
 
     /// <summary>
     /// Default block size in bytes used for medium-sized uploads when chunk splitting is enabled.

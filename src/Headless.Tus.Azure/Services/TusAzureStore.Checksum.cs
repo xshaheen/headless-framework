@@ -85,6 +85,8 @@ public sealed partial class TusAzureStore : ITusChecksumStore
         CancellationToken cancellationToken
     )
     {
+        await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
+
         var blobClient = _GetBlobClient(fileId);
         var blockBlobClient = _GetBlockBlobClient(fileId);
 

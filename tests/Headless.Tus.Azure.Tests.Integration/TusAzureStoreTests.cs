@@ -176,7 +176,7 @@ public sealed class TusAzureStoreTests : TestBase
         var fileName = Faker.System.FileName();
         var metadata = $"filename {fileName.ToBase64()}";
         var fileId = await _store.CreateFileAsync(uploadLength, metadata, CancellationToken.None);
-        const string nonExistentFileId = "nonexistentfileid";
+        var nonExistentFileId = Guid.NewGuid().ToString("n");
         // when
         var exists = await _store.FileExistAsync(fileId, CancellationToken.None);
         var notExists = await _store.FileExistAsync(nonExistentFileId, CancellationToken.None);
@@ -195,7 +195,7 @@ public sealed class TusAzureStoreTests : TestBase
         var fileName = Faker.System.FileName();
         var metadata = $"filename {fileName.ToBase64()}";
         var fileId = await _store.CreateFileAsync(uploadLength, metadata, CancellationToken.None);
-        const string nonExistentFileId = "nonexistentfileid";
+        var nonExistentFileId = Guid.NewGuid().ToString("n");
         // when
         var retrievedUploadLength = await _store.GetUploadLengthAsync(fileId, CancellationToken.None);
         var notExistsUploadLength = await _store.GetUploadLengthAsync(nonExistentFileId, CancellationToken.None);
@@ -234,7 +234,7 @@ public sealed class TusAzureStoreTests : TestBase
 
         // when
         var uploadOffset = await _store.GetUploadOffsetAsync(fileId, CancellationToken.None);
-        const string nonExistentFileId = "nonexistentfileid";
+        var nonExistentFileId = Guid.NewGuid().ToString("n");
         var nonExistentOffset = await _store.GetUploadOffsetAsync(nonExistentFileId, CancellationToken.None);
 
         // then
@@ -257,7 +257,7 @@ public sealed class TusAzureStoreTests : TestBase
 
         // when
         var tusFile = await _store.GetFileAsync(fileId, CancellationToken.None);
-        const string nonExistentFileId = "nonexistentfileid";
+        var nonExistentFileId = Guid.NewGuid().ToString("n");
         var nonExistentFile = await _store.GetFileAsync(nonExistentFileId, CancellationToken.None);
 
         // then
@@ -288,7 +288,7 @@ public sealed class TusAzureStoreTests : TestBase
         // when
         await _store.DeleteFileAsync(fileId, CancellationToken.None);
         var existsAfterDeletion = await blobClient.ExistsAsync(AbortToken);
-        const string nonExistentFileId = "nonexistentfileid";
+        var nonExistentFileId = Guid.NewGuid().ToString("n");
         // Deleting a non-existent file should not throw
         var act = async () => await _store.DeleteFileAsync(nonExistentFileId, CancellationToken.None);
 
@@ -327,7 +327,7 @@ public sealed class TusAzureStoreTests : TestBase
     public async Task should_throw_when_append_data_to_nonexistent_file()
     {
         // given
-        const string nonExistentFileId = "nonexistentfileid";
+        var nonExistentFileId = Guid.NewGuid().ToString("n");
         var dataToAppend = Faker.Random.Bytes(3_000);
         await using var stream = new MemoryStream(dataToAppend);
 
@@ -336,7 +336,7 @@ public sealed class TusAzureStoreTests : TestBase
 
         // then
         await act.Should()
-            .ThrowAsync<InvalidOperationException>()
+            .ThrowAsync<tusdotnet.Models.TusStoreException>()
             .WithMessage($"File {nonExistentFileId} does not exist");
     }
 
@@ -381,7 +381,7 @@ public sealed class TusAzureStoreTests : TestBase
     public async Task should_throw_when_append_data_using_pipe_to_nonexistent_file()
     {
         // given
-        const string nonExistentFileId = "nonexistentfileid";
+        var nonExistentFileId = Guid.NewGuid().ToString("n");
         var dataToAppend = Faker.Random.Bytes(3_000);
         var pipe = PipeWriter.Create(new MemoryStream());
         await pipe.WriteAsync(dataToAppend, AbortToken);
@@ -391,7 +391,7 @@ public sealed class TusAzureStoreTests : TestBase
 
         // then
         await act.Should()
-            .ThrowAsync<InvalidOperationException>()
+            .ThrowAsync<tusdotnet.Models.TusStoreException>()
             .WithMessage($"File {nonExistentFileId} does not exist");
     }
 
@@ -453,7 +453,7 @@ public sealed class TusAzureStoreTests : TestBase
     public async Task should_return_false_for_nonexistent_file()
     {
         // given
-        const string nonExistentFileId = "nonexistentfileid";
+        var nonExistentFileId = Guid.NewGuid().ToString("n");
         var checksum = SHA256.HashData([1, 2, 3]);
 
         // when
@@ -505,7 +505,7 @@ public sealed class TusAzureStoreTests : TestBase
         await _store.SetExpirationAsync(fileId, expectedExpirationTime, CancellationToken.None);
         // when
         var retrievedExpiration = await _store.GetExpirationAsync(fileId, CancellationToken.None);
-        const string nonExistentFileId = "nonexistentfileid";
+        var nonExistentFileId = Guid.NewGuid().ToString("n");
         var nonExistentExpiration = await _store.GetExpirationAsync(nonExistentFileId, CancellationToken.None);
         // then
         retrievedExpiration.Should().BeCloseTo(expectedExpirationTime, TimeSpan.FromMinutes(1));

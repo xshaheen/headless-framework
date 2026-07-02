@@ -175,7 +175,7 @@ Provides `TusAzureStore`, a complete `ITusStore` implementation that backs resum
   - **Termination** (`ITusTerminationStore`) — `DeleteFileAsync`
   - **Readable** (`ITusReadableStore`) — `GetFileAsync` returns `ITusFile`
 - `ITusAzureBlobHttpHeadersProvider` / `DefaultTusAzureBlobHttpHeadersProvider` — per-file HTTP header customization (Content-Type, cache control)
-- Adaptive chunk sizing: automatic selection between `BlobDefaultChunkSize` (4 MB) and `BlobMaxChunkSize` (100 MB) based on declared upload size
+- Adaptive chunk sizing: automatic selection between `BlobDefaultChunkSize` (4 MB) and `BlobMaxChunkSize` (16 MB default; up to 100 MB) based on declared upload size
 - Pooled buffer stream splitting via `ArrayPool<byte>` to minimize allocations during PATCH ingestion
 
 ### Design Notes
@@ -284,7 +284,7 @@ var store = new TusAzureStore(
 | `ContainerPublicAccessType` | `PublicAccessType.None` | Access type used when creating the container. |
 | `EnableChunkSplitting` | `true` | Splits large PATCH bodies into multiple Azure blocks. |
 | `BlobDefaultChunkSize` | `4 MB` | Default block size for medium uploads. Must be 1 byte–100 MB and not exceed `BlobMaxChunkSize`. |
-| `BlobMaxChunkSize` | `100 MB` | Block size used for uploads ≥ 100 MB. |
+| `BlobMaxChunkSize` | `16 MB` | Block size used for uploads ≥ 100 MB; also the per-request memory buffering unit for large uploads. Max 100 MB (Azure block limit). |
 
 Chunk size selection logic: uploads < 10 MB use `min(BlobDefaultChunkSize, fileSize)`; uploads 10–100 MB use `BlobDefaultChunkSize`; uploads ≥ 100 MB use `BlobMaxChunkSize`.
 
@@ -292,8 +292,6 @@ Chunk size selection logic: uploads < 10 MB use `min(BlobDefaultChunkSize, fileS
 
 - `Headless.Tus`
 - `Azure.Storage.Blobs`
-- `Azure.Storage.Blobs.Batch`
-- `Microsoft.Extensions.Azure`
 - `Microsoft.Extensions.Logging.Abstractions`
 
 ### Side Effects

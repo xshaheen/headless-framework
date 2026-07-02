@@ -83,6 +83,8 @@ public sealed partial class TusAzureStore : ITusCreationStore
     /// </remarks>
     public async Task<string?> GetUploadMetadataAsync(string fileId, CancellationToken cancellationToken)
     {
+        await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
+
         var blobInfo = await _GetTusFileInfoAsync(fileId, cancellationToken).ConfigureAwait(false);
 
         return blobInfo?.Metadata.ToTusString();

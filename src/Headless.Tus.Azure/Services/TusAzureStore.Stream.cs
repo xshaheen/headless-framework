@@ -30,7 +30,7 @@ public sealed partial class TusAzureStore
     /// <see langword="true"/>, the stream is split into fixed-size blocks using a pooled
     /// buffer; otherwise the entire stream is staged as one block.
     /// </remarks>
-    /// <exception cref="InvalidOperationException">thrown if the file does not exist</exception>
+    /// <exception cref="TusStoreException">thrown if the file id is invalid or the file does not exist</exception>
     /// <exception cref="NotSupportedException">
     /// thrown if the client requests a checksum algorithm not in the supported list
     /// </exception>
@@ -41,6 +41,7 @@ public sealed partial class TusAzureStore
     {
         Argument.IsNotNull(fileId);
         Argument.IsNotNull(stream);
+        await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
 
         _logger.StreamAppendStarted(fileId);
 
@@ -49,7 +50,7 @@ public sealed partial class TusAzureStore
 
         var azureFile =
             await _GetTusFileInfoAsync(blobClient, fileId, cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException($"File {fileId} does not exist");
+            ?? throw new TusStoreException($"File {fileId} does not exist");
 
         var committedBlocks = await _GetCommittedBlocksAsync(blockBlobClient, cancellationToken).ConfigureAwait(false);
         var currentOffset = committedBlocks.Sum(b => b.SizeLong);

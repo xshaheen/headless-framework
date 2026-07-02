@@ -16,6 +16,8 @@ public sealed partial class TusAzureStore
     /// <returns><see langword="true"/> if the blob exists; <see langword="false"/> otherwise</returns>
     public async Task<bool> FileExistAsync(string fileId, CancellationToken cancellationToken)
     {
+        await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
+
         var blobClient = _GetBlobClient(fileId);
 
         try
@@ -40,6 +42,8 @@ public sealed partial class TusAzureStore
     /// <returns>declared upload length in bytes, or <see langword="null"/> if not yet known</returns>
     public async Task<long?> GetUploadLengthAsync(string fileId, CancellationToken cancellationToken)
     {
+        await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
+
         var blobInfo = await _GetTusFileInfoAsync(fileId, cancellationToken).ConfigureAwait(false);
 
         return blobInfo?.Metadata.UploadLength;
@@ -61,6 +65,8 @@ public sealed partial class TusAzureStore
     /// </remarks>
     public async Task<long> GetUploadOffsetAsync(string fileId, CancellationToken cancellationToken)
     {
+        await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
+
         var blobInfo = await _GetTusFileInfoAsync(fileId, cancellationToken).ConfigureAwait(false);
 
         if (blobInfo == null)

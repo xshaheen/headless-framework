@@ -4,6 +4,9 @@
     <RootNamespace>Demo</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Azure" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Tus.Azure\Headless.Tus.Azure.csproj" />
   </ItemGroup>
 </Project>

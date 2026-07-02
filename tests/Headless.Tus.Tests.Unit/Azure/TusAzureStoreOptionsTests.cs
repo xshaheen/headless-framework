@@ -54,13 +54,13 @@ public sealed class TusAzureStoreOptionsTests : TestBase
     }
 
     [Fact]
-    public void should_default_blob_max_chunk_size_to_100mb()
+    public void should_default_blob_max_chunk_size_to_16mb()
     {
         // when
         var options = new TusAzureStoreOptions();
 
         // then
-        options.BlobMaxChunkSize.Should().Be(100 * 1024 * 1024);
+        options.BlobMaxChunkSize.Should().Be(16 * 1024 * 1024);
     }
 
     [Fact]

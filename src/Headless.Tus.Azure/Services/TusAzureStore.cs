@@ -12,6 +12,7 @@ using Headless.Tus.Options;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using tusdotnet.Interfaces;
+using tusdotnet.Models;
 using tusdotnet.Stores.FileIdProviders;
 
 namespace Headless.Tus.Services;
@@ -175,6 +176,20 @@ public sealed partial class TusAzureStore
         catch (RequestFailedException e) when (e.Status == 404)
         {
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Validates an externally-supplied file id against the configured
+    /// <c>ITusFileIdProvider</c>, mirroring <c>TusDiskStore</c>'s <c>InternalFileId.Parse</c>.
+    /// <c>TusBlobName</c> still applies its own traversal defense when the id becomes a blob name.
+    /// </summary>
+    /// <exception cref="TusStoreException">thrown if the id fails provider validation (mapped to 400 by tusdotnet)</exception>
+    private async Task _EnsureValidFileIdAsync(string fileId)
+    {
+        if (!await _fileIdProvider.ValidateId(fileId).ConfigureAwait(false))
+        {
+            throw new TusStoreException($"Invalid TUS file id: '{fileId}'.");
         }
     }
 

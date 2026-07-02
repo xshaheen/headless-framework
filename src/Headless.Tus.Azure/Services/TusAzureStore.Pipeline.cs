@@ -29,7 +29,7 @@ public sealed partial class TusAzureStore : ITusPipelineStore
     /// call can commit or discard them. Without a checksum header, all blocks are committed
     /// atomically alongside the updated metadata before returning.
     /// </remarks>
-    /// <exception cref="InvalidOperationException">thrown if the file does not exist</exception>
+    /// <exception cref="TusStoreException">thrown if the file id is invalid or the file does not exist</exception>
     /// <exception cref="NotSupportedException">
     /// thrown if the client requests a checksum algorithm not in the supported list
     /// </exception>
@@ -40,6 +40,7 @@ public sealed partial class TusAzureStore : ITusPipelineStore
     {
         Argument.IsNotNull(fileId);
         Argument.IsNotNull(pipeReader);
+        await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
 
         _logger.PipeReaderAppendStarted(fileId);
 
@@ -48,7 +49,7 @@ public sealed partial class TusAzureStore : ITusPipelineStore
 
         var azureFile =
             await _GetTusFileInfoAsync(blobClient, fileId, cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException($"File {fileId} does not exist");
+            ?? throw new TusStoreException($"File {fileId} does not exist");
 
         var committedBlocks = await _GetCommittedBlocksAsync(blockBlobClient, cancellationToken).ConfigureAwait(false);
         var currentOffset = committedBlocks.Sum(b => b.SizeLong);
