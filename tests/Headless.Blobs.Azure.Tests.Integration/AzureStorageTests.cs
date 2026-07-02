@@ -6,6 +6,7 @@ using Azure.Storage.Blobs.Models;
 using Headless.Abstractions;
 using Headless.Blobs;
 using Headless.Blobs.Azure;
+using Headless.Blobs.Internals;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -134,6 +135,42 @@ public sealed class AzureStorageTests(AzureBlobStorageFixture fixture) : BlobSto
 
         deleted.Should().Be(total);
         (await storage.GetBlobsListAsync(new BlobQuery(name))).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task delete_all_clears_raw_backend_keys_that_blob_location_rejects()
+    {
+        // B1 regression: a blob written out-of-band whose name BlobLocation rejects (the reserved sidecar suffix)
+        // must not make the container permanently un-clearable — DeleteAllAsync deletes the listed backend keys
+        // directly instead of re-wrapping them in BlobLocation.
+        await using var storage = GetStorage();
+        var manager = GetContainerManager();
+
+        var container = $"rawclear{Guid.NewGuid():N}";
+        await manager.EnsureContainerAsync(container, AbortToken);
+
+        // A framework-written blob plus a raw, backend-legal but BlobLocation-illegal key written natively.
+        await storage.UploadContentAsync(new BlobLocation(container, "normal.txt"), "data", AbortToken);
+
+        var containerClient = _CreateClient().GetBlobContainerClient(container);
+        var rawKey = "out-of-band" + BlobStorageHelpers.SidecarSuffix;
+        await containerClient
+            .GetBlobClient(rawKey)
+            .UploadAsync(BinaryData.FromString("raw"), overwrite: false, AbortToken);
+
+        var deleted = await storage.DeleteAllAsync(new BlobQuery(container), AbortToken);
+
+        deleted.Should().Be(2);
+
+        // Verify through the native client: nothing at all is left behind, including the BlobLocation-illegal key.
+        var remaining = 0;
+
+        await foreach (var _ in containerClient.GetBlobsAsync(cancellationToken: AbortToken))
+        {
+            remaining++;
+        }
+
+        remaining.Should().Be(0);
     }
 
     #endregion

@@ -293,6 +293,70 @@ public sealed class AwsBlobStorageEngineTests : TestBase
     }
 
     [Fact]
+    public async Task delete_all_throws_when_retry_still_reports_failures()
+    {
+        // A single listing page of three matching objects: one that deletes on the first pass, two that fail on
+        // both the first pass and the one-time retry.
+        _s3.ListObjectsV2Async(Arg.Any<ListObjectsV2Request>(), Arg.Any<CancellationToken>())
+            .Returns(
+                new ListObjectsV2Response
+                {
+                    HttpStatusCode = HttpStatusCode.OK,
+                    IsTruncated = false,
+                    S3Objects = [new() { Key = "ok-0" }, new() { Key = "fail-0" }, new() { Key = "fail-1" }],
+                }
+            );
+
+        // Both delete passes report the "fail-" keys as DeleteErrors, so the retry exhausts and the contract's
+        // "attempt all, then throw one AggregateException carrying the per-key failures" shape must kick in.
+        _s3.DeleteObjectsAsync(Arg.Any<DeleteObjectsRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                var requestedKeys = (ci.Arg<DeleteObjectsRequest>().Objects ?? [])
+                    .Select(o => o.Key)
+                    .Where(k => k is not null)
+                    .Select(k => k!)
+                    .ToList();
+
+                return Task.FromResult(
+                    new DeleteObjectsResponse
+                    {
+                        HttpStatusCode = HttpStatusCode.OK,
+                        DeletedObjects = requestedKeys
+                            .Where(k => k.StartsWith("ok-", StringComparison.Ordinal))
+                            .Select(k => new DeletedObject { Key = k })
+                            .ToList(),
+                        DeleteErrors = requestedKeys
+                            .Where(k => k.StartsWith("fail-", StringComparison.Ordinal))
+                            .Select(k => new DeleteError
+                            {
+                                Key = k,
+                                Code = "AccessDenied",
+                                Message = "persistent",
+                            })
+                            .ToList(),
+                    }
+                );
+            });
+
+        var sut = _CreateSut();
+
+        var act = async () => await sut.DeleteAllAsync(new BlobQuery("bucket"));
+
+        // One aggregated failure per still-failing key, each naming the key so callers can act on the residue.
+        var assertion = await act.Should()
+            .ThrowAsync<AggregateException>()
+            .WithMessage("DeleteAllAsync failed for 2 blob(s).*");
+
+        assertion.Which.InnerExceptions.Should().HaveCount(2);
+        assertion.Which.InnerExceptions.Select(static e => e.Message).Should().Contain(m => m.Contains("fail-0"));
+        assertion.Which.InnerExceptions.Select(static e => e.Message).Should().Contain(m => m.Contains("fail-1"));
+
+        // The initial bulk delete plus the single retry for the failed keys — attempt-all, no premature abort.
+        await _s3.ReceivedWithAnyArgs(2).DeleteObjectsAsync(default!, default);
+    }
+
+    [Fact]
     public async Task move_rejects_occupied_destination_without_copying_or_deleting()
     {
         // Reject-occupied: when the destination already exists, Move returns false and touches nothing — no copy,

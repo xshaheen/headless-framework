@@ -198,6 +198,7 @@ public sealed class FileSystemBlobStorage : IBlobStorage
         }
 
         var count = 0;
+        List<Exception>? failures = null;
 
         foreach (var file in Directory.EnumerateFiles(containerDirectory, "*", SearchOption.AllDirectories))
         {
@@ -216,16 +217,30 @@ public sealed class FileSystemBlobStorage : IBlobStorage
                 continue;
             }
 
-            File.Delete(file);
-
-            var sidecar = file + BlobStorageHelpers.SidecarSuffix;
-
-            if (File.Exists(sidecar))
+            // Attempt every matched entry even after a failure: per-entry errors are collected and surfaced as one
+            // AggregateException at the end (the uniform DeleteAll contract), so one locked file cannot abort the rest.
+            try
             {
-                File.Delete(sidecar);
-            }
+                File.Delete(file);
 
-            count++;
+                var sidecar = file + BlobStorageHelpers.SidecarSuffix;
+
+                if (File.Exists(sidecar))
+                {
+                    File.Delete(sidecar);
+                }
+
+                count++;
+            }
+            catch (Exception e) when (e is not OperationCanceledException)
+            {
+                (failures ??= []).Add(e);
+            }
+        }
+
+        if (failures is { Count: > 0 })
+        {
+            throw new AggregateException($"DeleteAllAsync failed for {failures.Count} blob(s).", failures);
         }
 
         _logger.LogDeletingByPrefix(count, prefix);

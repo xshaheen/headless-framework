@@ -209,9 +209,25 @@ public sealed class SshBlobStorage(
                 count++;
             }
 
+            // Attempt every matched entry even after a failure: per-entry errors are collected and surfaced as one
+            // AggregateException at the end (the uniform DeleteAll contract), so one bad entry cannot abort the rest.
+            List<Exception>? failures = null;
+
             foreach (var path in toDelete)
             {
-                await _DeleteFileIfExistsAsync(client, path, cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    await _DeleteFileIfExistsAsync(client, path, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception e) when (e is not OperationCanceledException)
+                {
+                    (failures ??= []).Add(e);
+                }
+            }
+
+            if (failures is { Count: > 0 })
+            {
+                throw new AggregateException($"DeleteAllAsync failed for {failures.Count} blob(s).", failures);
             }
 
             return count;

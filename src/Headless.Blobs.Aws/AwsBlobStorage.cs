@@ -399,12 +399,16 @@ public sealed class AwsBlobStorage(
 
         if (errors.Count > 0)
         {
-            var more = errors.Count > 20 ? errors.Count - 20 : 0;
-            var keys = string.Join(',', errors.Take(20).Select(e => e.Key));
-
-            throw new InvalidOperationException(
-                $"Unable to delete all S3 entries \"{keys}\"{(more > 0 ? $" plus {more.ToString(CultureInfo.InvariantCulture)} more" : "")}."
+            // S3 reports per-key failures as DeleteError records, not exceptions; wrap each into an exception naming
+            // the key/code/message so the uniform "attempt all, aggregate per-entry failures" contract holds.
+            var failures = errors.ConvertAll(static error =>
+                (Exception)
+                    new InvalidOperationException(
+                        $"Unable to delete S3 object \"{error.Key}\": {error.Code} {error.Message}"
+                    )
             );
+
+            throw new AggregateException($"DeleteAllAsync failed for {failures.Count} blob(s).", failures);
         }
 
         _logger.LogFinishedDeletingFiles(count, prefix);

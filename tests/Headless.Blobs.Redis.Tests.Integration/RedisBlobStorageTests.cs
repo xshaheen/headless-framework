@@ -2,6 +2,7 @@
 
 using Headless.Abstractions;
 using Headless.Blobs;
+using Headless.Blobs.Internals;
 using Headless.Blobs.Redis;
 using Headless.Serializer;
 using Microsoft.Extensions.Options;
@@ -119,6 +120,38 @@ public sealed class RedisBlobStorageTests(RedisBlobStorageFixture fixture) : Blo
         deleted.Should().Be(1);
         (await storage.ExistsAsync(literal, AbortToken)).Should().BeFalse();
         (await storage.GetBlobContentAsync(globMatch, AbortToken)).Should().Be("glob");
+    }
+
+    [Fact]
+    public async Task delete_all_clears_raw_backend_fields_that_blob_location_rejects()
+    {
+        // B1 regression: a hash field written out-of-band whose shape BlobLocation rejects (the reserved sidecar
+        // suffix) must not make the container permanently un-clearable — DeleteAllAsync deletes the scanned fields
+        // directly instead of re-wrapping them in BlobLocation.
+        await using var storage = GetStorage();
+
+        var container = $"rawclear{Guid.NewGuid():N}";
+        var blobsHash = container + "/";
+        var infoHash = "blob-info/" + container + "/";
+        var rawField = "out-of-band" + BlobStorageHelpers.SidecarSuffix;
+
+        // A framework-written blob plus a raw, backend-legal but BlobLocation-illegal field written natively into
+        // both backing hashes (DeleteAll discovers fields by scanning the info hash).
+        await storage.UploadContentAsync(new BlobLocation(container, "normal.txt"), "data", AbortToken);
+
+        var database = fixture.ConnectionMultiplexer.GetDatabase();
+        await database.HashSetAsync(blobsHash, rawField, "raw");
+        await database.HashSetAsync(infoHash, rawField, "raw-info");
+
+        var deleted = await storage.DeleteAllAsync(new BlobQuery(container), AbortToken);
+
+        deleted.Should().Be(2);
+
+        // Deleting every field removes the backing hashes entirely, so the container is fully cleared.
+        (await database.KeyExistsAsync(blobsHash))
+            .Should()
+            .BeFalse();
+        (await database.KeyExistsAsync(infoHash)).Should().BeFalse();
     }
 
     #endregion

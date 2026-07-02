@@ -99,8 +99,9 @@ public interface IBlobStorage : IAsyncDisposable
     /// <remarks>
     /// Deletion is by validated prefix only (the prefix is path-security checked at <see cref="BlobQuery"/>
     /// construction, so a <c>../</c> prefix can never reach enumeration). Glob-pattern deletion is a client-side
-    /// concern: list with a glob filter, then bulk-delete. Providers throw on per-entry or backend failures instead of
-    /// silently under-counting partial deletes.
+    /// concern: list with a glob filter, then bulk-delete. On per-entry failures providers keep attempting every
+    /// matched entry, then surface the collected per-entry failures as a single <see cref="AggregateException"/> —
+    /// a partial delete always throws instead of silently under-counting.
     /// </remarks>
     ValueTask<int> DeleteAllAsync(BlobQuery query, CancellationToken cancellationToken = default);
 
