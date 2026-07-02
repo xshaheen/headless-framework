@@ -14,20 +14,21 @@ namespace Tests.Concatenation;
 public sealed class TusConcatenationTests : TestBase
 {
     private readonly TusAzureStore _store;
+    private readonly BlobServiceClient _blobServiceClient;
     private readonly BlobContainerClient _containerClient;
     private const string _ContainerName = "tuscontainer";
     private const string _BlobPrefix = "tusfiles/";
 
     public TusConcatenationTests(TusAzureFixture fixture)
     {
-        var blobServiceClient = new BlobServiceClient(
+        _blobServiceClient = new BlobServiceClient(
             fixture.Container.GetConnectionString(),
             new BlobClientOptions(BlobClientOptions.ServiceVersion.V2024_11_04)
         );
 
         var storeOptions = new TusAzureStoreOptions { ContainerName = _ContainerName, BlobPrefix = _BlobPrefix };
-        _containerClient = blobServiceClient.GetBlobContainerClient(_ContainerName);
-        _store = new TusAzureStore(blobServiceClient, storeOptions, loggerFactory: LoggerFactory);
+        _containerClient = _blobServiceClient.GetBlobContainerClient(_ContainerName);
+        _store = new TusAzureStore(_blobServiceClient, storeOptions, loggerFactory: LoggerFactory);
     }
 
     /* CreatePartialFileAsync */
@@ -368,6 +369,73 @@ public sealed class TusConcatenationTests : TestBase
 
         downloadStream.ToArray().Should().BeEquivalentTo(data.Concat(data).ToArray());
         (await _store.GetUploadLengthAsync(finalFileId, AbortToken)).Should().Be(data.Length * 2);
+    }
+
+    [Fact]
+    public async Task should_delete_partials_after_concat_when_enabled()
+    {
+        // given - a store with DeletePartialFilesOnConcat enabled on the same container
+        var deletingStore = new TusAzureStore(
+            _blobServiceClient,
+            new TusAzureStoreOptions
+            {
+                ContainerName = _ContainerName,
+                BlobPrefix = _BlobPrefix,
+                DeletePartialFilesOnConcat = true,
+            },
+            loggerFactory: LoggerFactory
+        );
+
+        var data1 = Faker.Random.Bytes(300);
+        var data2 = Faker.Random.Bytes(200);
+        var partial1 = await deletingStore.CreatePartialFileAsync(data1.Length, metadata: null, AbortToken);
+        var partial2 = await deletingStore.CreatePartialFileAsync(data2.Length, metadata: null, AbortToken);
+
+        await using (var stream = new MemoryStream(data1))
+        {
+            await deletingStore.AppendDataAsync(partial1, stream, AbortToken);
+        }
+
+        await using (var stream = new MemoryStream(data2))
+        {
+            await deletingStore.AppendDataAsync(partial2, stream, AbortToken);
+        }
+
+        // when
+        var finalFileId = await deletingStore.CreateFinalFileAsync([partial1, partial2], metadata: null, AbortToken);
+
+        // then - the final upload is durable and intact
+        var blobClient = _containerClient.GetBlobClient(_BlobPrefix + finalFileId);
+        await using var downloadStream = new MemoryStream();
+        await blobClient.DownloadToAsync(downloadStream, AbortToken);
+        downloadStream.ToArray().Should().BeEquivalentTo(data1.Concat(data2).ToArray());
+
+        // and the partials are gone
+        (await deletingStore.FileExistAsync(partial1, AbortToken))
+            .Should()
+            .BeFalse();
+        (await deletingStore.FileExistAsync(partial2, AbortToken)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_keep_partials_after_concat_by_default()
+    {
+        // given
+        var data = Faker.Random.Bytes(250);
+        var partialId = await _store.CreatePartialFileAsync(data.Length, metadata: null, AbortToken);
+
+        await using (var stream = new MemoryStream(data))
+        {
+            await _store.AppendDataAsync(partialId, stream, AbortToken);
+        }
+
+        // when
+        _ = await _store.CreateFinalFileAsync([partialId], metadata: null, AbortToken);
+
+        // then - the spec allows reusing partials for multiple finals; the default keeps them
+        (await _store.FileExistAsync(partialId, AbortToken))
+            .Should()
+            .BeTrue();
     }
 
     [Fact]

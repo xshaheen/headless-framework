@@ -240,6 +240,11 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
 
             _logger.LogCreatedFinalFile(fileId, partialFiles.Length, totalSize);
 
+            if (_options.DeletePartialFilesOnConcat)
+            {
+                await _DeletePartialFilesBestEffortAsync(partialFiles).ConfigureAwait(false);
+            }
+
             return fileId;
         }
         catch (Exception e)
@@ -279,6 +284,27 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
         await destinationClient
             .StageBlockAsync(blockId, buffer, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Deletes the partial uploads that formed a final upload. Best-effort on
+    /// <c>CancellationToken.None</c>: the final blob is already committed, so a failed or aborted
+    /// deletion must neither fail the request nor stop the remaining deletions.
+    /// </summary>
+    private async Task _DeletePartialFilesBestEffortAsync(string[] partialFiles)
+    {
+        // The same partial may be listed multiple times in one Upload-Concat; delete each once.
+        foreach (var partialFileId in partialFiles.Distinct(StringComparer.Ordinal))
+        {
+            try
+            {
+                await DeleteFileAsync(partialFileId, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception e)
+            {
+                _logger.LogFailedToDeletePartialFileAfterConcat(e, partialFileId);
+            }
+        }
     }
 
     private async Task _ValidatePartialFilesAsync(string[] partialFiles, CancellationToken cancellationToken)

@@ -74,6 +74,16 @@ public sealed class TusAzureStoreOptionsTests : TestBase
     }
 
     [Fact]
+    public void should_default_delete_partial_files_on_concat_to_false()
+    {
+        // given
+        var options = new TusAzureStoreOptions();
+
+        // then - partials are kept by default (TusDiskStore parity; the spec allows reusing them)
+        options.DeletePartialFilesOnConcat.Should().BeFalse();
+    }
+
+    [Fact]
     public void should_default_container_public_access_type_to_none()
     {
         // when

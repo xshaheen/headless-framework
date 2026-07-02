@@ -18,6 +18,7 @@ Provides `TusAzureStore`, a complete `ITusStore` implementation that backs resum
   - **Termination** (`ITusTerminationStore`) — `DeleteFileAsync`
   - **Readable** (`ITusReadableStore`) — `GetFileAsync` returns `ITusFile`
 - `ITusAzureBlobHttpHeadersProvider` / `DefaultTusAzureBlobHttpHeadersProvider` — per-file HTTP header customization (Content-Type, cache control)
+- `AddTusAzureStore` — optional DI registration (overloads for `IConfiguration`, `Action<TOptions>`, `Action<TOptions, IServiceProvider>`) with FluentValidation + `ValidateOnStart`; manual construction stays fully supported
 - Adaptive chunk sizing: automatic selection between `BlobDefaultChunkSize` (4 MB) and `BlobMaxChunkSize` (16 MB default; up to 100 MB) based on declared upload size
 - Pooled buffer stream splitting via `ArrayPool<byte>` to minimize allocations during PATCH ingestion
 
@@ -97,6 +98,23 @@ app.MapTus(
 
 A single-node deployment can omit the lock provider entirely and rely on tusdotnet's in-process lock.
 
+Prefer DI? `AddTusAzureStore` registers the store as a singleton with validated options; it consumes the
+`BlobServiceClient` registered by the app (for example via `Microsoft.Extensions.Azure`'s `AddAzureClients`):
+
+```csharp
+builder.Services.AddAzureClients(azure => azure.AddBlobServiceClient(connectionString));
+builder.Services.AddTusAzureStore(builder.Configuration.GetSection("Tus:Azure"));
+
+app.MapTus(
+    "/files",
+    httpContext => Task.FromResult(new DefaultTusConfiguration
+    {
+        Store = httpContext.RequestServices.GetRequiredService<TusAzureStore>(),
+        UrlPath = "/files",
+    })
+);
+```
+
 With custom HTTP headers per upload:
 
 ```csharp
@@ -136,6 +154,7 @@ var store = new TusAzureStore(
 | `EnableChunkSplitting` | `true` | Splits large PATCH bodies into multiple Azure blocks. |
 | `BlobDefaultChunkSize` | `4 MB` | Default block size for medium uploads. Must be 1 byte–100 MB and not exceed `BlobMaxChunkSize`. |
 | `BlobMaxChunkSize` | `16 MB` | Block size used for uploads ≥ 100 MB; also the per-request memory buffering unit for large uploads. Max 100 MB (Azure block limit). |
+| `DeletePartialFilesOnConcat` | `false` | Delete the partial uploads after a final upload is committed. Keep `false` if clients reuse partials across finals (the spec allows it). Deletion is best-effort and never fails the request. |
 
 Chunk size selection: uploads < 10 MB use `min(BlobDefaultChunkSize, fileSize)`; uploads 10–100 MB use `BlobDefaultChunkSize`; uploads ≥ 100 MB use `BlobMaxChunkSize`.
 
@@ -148,4 +167,4 @@ Chunk size selection: uploads < 10 MB use `min(BlobDefaultChunkSize, fileSize)`;
 ## Side Effects
 
 - Synchronously calls `BlobContainerClient.CreateIfNotExists` during `TusAzureStore` construction when `CreateContainerIfNotExists = true`.
-- No DI registrations by design — tusdotnet composes stores inside `DefaultTusConfiguration` factories, so `TusAzureStore` is constructed manually where the configuration is built. For cross-node PATCH locking, register `Headless.Tus.DistributedLocks`.
+- DI registration is optional — tusdotnet composes stores inside `DefaultTusConfiguration` factories, so `TusAzureStore` can be constructed manually; `AddTusAzureStore` additionally offers options-pipeline registration (requires a `BlobServiceClient` in DI; the container is still created synchronously at first resolution when enabled). For cross-node PATCH locking, register `Headless.Tus.DistributedLocks`.

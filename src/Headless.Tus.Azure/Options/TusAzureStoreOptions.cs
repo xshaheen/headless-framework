@@ -68,6 +68,18 @@ public sealed class TusAzureStoreOptions
     /// <remarks>Only used when <see cref="CreateContainerIfNotExists"/> is <see langword="true"/>
     /// and the container does not yet exist. Defaults to <c>None</c> (private).</remarks>
     public PublicAccessType ContainerPublicAccessType { get; set; } = PublicAccessType.None;
+
+    /// <summary>
+    /// When <see langword="true"/>, the partial uploads that formed a final concatenated upload are
+    /// deleted after the final blob is committed.
+    /// </summary>
+    /// <remarks>
+    /// Defaults to <see langword="false"/> (partials are kept), matching <c>TusDiskStore</c>'s
+    /// default. The tus spec allows partials to be reused for multiple final uploads, so only
+    /// enable this when clients never reuse partials. Deletion is best-effort: the final upload is
+    /// already durable when it runs, so individual failures are logged and do not fail the request.
+    /// </remarks>
+    public bool DeletePartialFilesOnConcat { get; set; }
 }
 
 internal sealed class TusAzureStoreOptionsValidator : AbstractValidator<TusAzureStoreOptions>

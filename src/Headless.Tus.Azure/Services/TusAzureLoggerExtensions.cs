@@ -53,4 +53,16 @@ internal static partial class TusAzureLoggerExtensions
         Exception exception,
         string partialFiles
     );
+
+    [LoggerMessage(
+        EventId = 3250,
+        EventName = "FailedToDeletePartialFileAfterConcat",
+        Level = LogLevel.Warning,
+        Message = "Failed to delete partial file {PartialFileId} after concatenation; the final upload is unaffected"
+    )]
+    public static partial void LogFailedToDeletePartialFileAfterConcat(
+        this ILogger logger,
+        Exception exception,
+        string partialFileId
+    );
 }
