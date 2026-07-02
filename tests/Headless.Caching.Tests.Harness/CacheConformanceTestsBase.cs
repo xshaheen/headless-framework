@@ -1101,6 +1101,23 @@ public abstract class CacheConformanceTestsBase : TestBase
         members.Value.Should().HaveCount(2);
     }
 
+    public virtual async Task should_evict_set_members_when_set_add_uses_zero_expiration()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+
+        await cache.SetAddAsync(key, new[] { "a", "b" }, TimeSpan.FromMinutes(5), AbortToken);
+
+        // TimeSpan.Zero is expire-immediately (matching the numeric mutations): the members are removed from the
+        // set instead of added and the call reports 0 added.
+        var added = await cache.SetAddAsync(key, new[] { "a", "b" }, TimeSpan.Zero, AbortToken);
+        var members = await cache.GetSetAsync<string>(key, cancellationToken: AbortToken);
+
+        added.Should().Be(0);
+        members.HasValue.Should().BeFalse("expiring every member immediately leaves no set behind");
+    }
+
     public virtual async Task should_keep_zero_total_after_decrementing_to_zero()
     {
         await ResetAsync();

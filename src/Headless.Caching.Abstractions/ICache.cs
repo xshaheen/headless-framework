@@ -266,6 +266,10 @@ public interface ICache
     /// provider-native: serialized-byte equality on Redis, default equality on InMemory.
     /// Null members are silently skipped. Returns the number of members actually added (duplicates excluded).
     /// </summary>
+    /// <remarks>
+    /// A <see cref="TimeSpan.Zero"/> expiration is treated as expire-immediately: the given members are removed
+    /// from the set instead of added and the method returns <c>0</c> without adding.
+    /// </remarks>
     ValueTask<long> SetAddAsync<T>(
         string key,
         IEnumerable<T> value,
@@ -411,6 +415,10 @@ public interface ICache
     /// equality, matching <c>SetAddAsync</c> and the distributed providers. Non-string member equality is
     /// provider-native: serialized-byte equality on Redis, default equality on InMemory.
     /// </summary>
+    /// <remarks>
+    /// A <see cref="TimeSpan.Zero"/> expiration is allowed and does not alter the removal (removal applies no
+    /// expiration); a negative expiration throws.
+    /// </remarks>
     ValueTask<long> SetRemoveAsync<T>(
         string key,
         IEnumerable<T> value,

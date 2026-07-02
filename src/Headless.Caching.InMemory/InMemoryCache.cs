@@ -773,7 +773,7 @@ public sealed class InMemoryCache
         _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(key);
         Argument.IsNotNull(value);
-        Argument.IsPositive(expiration);
+        Argument.IsPositiveOrZero(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (expiration is { Ticks: <= 0 })
@@ -1618,7 +1618,9 @@ public sealed class InMemoryCache
         _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(key);
         Argument.IsNotNull(value);
-        Argument.IsPositive(expiration);
+        // Zero is allowed (not just positive) so SetAddAsync's expire-immediately branch can delegate here; the
+        // expiration is not applied by removal.
+        Argument.IsPositiveOrZero(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
         key = _GetKey(key);
