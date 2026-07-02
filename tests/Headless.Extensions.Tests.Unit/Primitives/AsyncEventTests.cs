@@ -6,7 +6,7 @@ namespace Tests.Primitives;
 
 public sealed class AsyncEventTests
 {
-    private sealed class TestEventArgs : EventArgs { }
+    private sealed class TestEventArgs : EventArgs;
 
     [Fact]
     public async Task parallel_invoke_should_run_all_handlers_even_when_one_throws_synchronously()

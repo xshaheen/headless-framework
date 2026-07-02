@@ -19,7 +19,7 @@ public sealed class HeadlessSettingsSetupBuilder
 
     internal SettingsStorageOptions StorageOptions { get; } = new();
 
-    internal IList<ISettingsStorageOptionsExtension> Extensions { get; } = new List<ISettingsStorageOptionsExtension>();
+    internal IList<ISettingsStorageOptionsExtension> Extensions { get; } = [];
 
     /// <summary>Applies a configuration delegate to the shared <see cref="SettingsStorageOptions"/>.</summary>
     /// <param name="configure">The delegate that mutates <see cref="SettingsStorageOptions"/>.</param>

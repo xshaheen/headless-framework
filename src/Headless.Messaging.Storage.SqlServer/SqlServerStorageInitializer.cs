@@ -87,7 +87,9 @@ internal sealed class SqlServerStorageInitializer(
         //   2714 — "There is already an object named '...' in the database." (schema/table races)
         //   1913 — index already exists (index creation races)
         //   2627 — "Violation of PRIMARY KEY constraint." (lock-row INSERT races)
-        var batchSql = $"""
+        var batchSql = string.Create(
+            CultureInfo.InvariantCulture,
+            $"""
             BEGIN TRY
                 IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = '{schema}')
                 BEGIN
@@ -282,7 +284,8 @@ internal sealed class SqlServerStorageInitializer(
                 IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
             END CATCH;
 
-            """;
+            """
+        );
 
         return batchSql;
     }

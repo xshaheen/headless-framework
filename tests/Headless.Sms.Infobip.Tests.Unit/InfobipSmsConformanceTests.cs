@@ -3,7 +3,6 @@
 using System.Net;
 using Headless.Sms;
 using Headless.Sms.Infobip;
-using Headless.Sms.Testing;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using WireMock.RequestBuilders;

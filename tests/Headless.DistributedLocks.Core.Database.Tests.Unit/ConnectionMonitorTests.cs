@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
-using Headless.DistributedLocks;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Time.Testing;
 using Tests.Fakes;
@@ -25,7 +24,7 @@ public sealed class ConnectionMonitorTests : TestBase
 
         // then (the active worker runs the monitoring probe against the connection)
         await _DrainUntilAsync(() => fake.ExecuteNonQueryCount > 0);
-        fake.ExecuteNonQueryCount.Should().BeGreaterThan(0);
+        fake.ExecuteNonQueryCount.Should().BePositive();
         handle.ConnectionLostToken.IsCancellationRequested.Should().BeFalse();
     }
 
@@ -33,7 +32,7 @@ public sealed class ConnectionMonitorTests : TestBase
     public async Task should_return_an_already_cancelled_handle_when_the_connection_is_already_closed()
     {
         // given
-        var fake = new FakeDbConnection();
+        await using var fake = new FakeDbConnection();
         fake.SetState(ConnectionState.Closed);
         await using var connection = new TestDatabaseConnection(fake, _timeProvider, _CommandTimeoutSeconds);
 

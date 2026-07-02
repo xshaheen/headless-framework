@@ -165,7 +165,12 @@ public class ValuesController(IOutboxBus producer, IServiceProvider services) : 
             cancellationToken: HttpContext.RequestAborted
         );
 
-        return Ok($"Inserted {person}; delayed publish ({delaySeconds}s) bound to the commit.");
+        return Ok(
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"Inserted {person}; delayed publish ({delaySeconds}s) bound to the commit."
+            )
+        );
     }
 }
 
@@ -173,7 +178,12 @@ public sealed class PersonConsumer : IConsume<Person>
 {
     public ValueTask ConsumeAsync(ConsumeContext<Person> context, CancellationToken cancellationToken)
     {
-        Console.WriteLine($@"{DateTime.UtcNow} Subscriber invoked, Info: {context.Message}");
+        Console.WriteLine(
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"{DateTime.UtcNow} Subscriber invoked, Info: {context.Message}"
+            )
+        );
         return ValueTask.CompletedTask;
     }
 }

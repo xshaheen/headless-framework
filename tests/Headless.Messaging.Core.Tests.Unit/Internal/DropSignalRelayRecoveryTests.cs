@@ -4,7 +4,6 @@ using System.Data;
 using System.Data.Common;
 using Headless.Abstractions;
 using Headless.CommitCoordination;
-using Headless.Generator.Primitives;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -46,7 +45,7 @@ public sealed class DropSignalRelayRecoveryTests : TestBase
         await using var provider = services.BuildServiceProvider();
         var storage = provider.GetRequiredService<IDataStorage>();
 
-        var transaction = new TestDbTransaction();
+        await using var transaction = new TestDbTransaction();
         var stack = new CommitScopeStack();
         var dispatcher = Substitute.For<IDispatcher>();
 

@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Runtime.ExceptionServices;
+using Headless.Checks;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
@@ -130,7 +131,7 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
             // Close the dispose race: if teardown has begun, the just-acquired lock would be missed by the
             // teardown snapshot of _heldByLockId, leaking its connection and advisory lock under No Reset On
             // Close. Drop it explicitly instead of registering it.
-            ObjectDisposedException.ThrowIf(_disposed, this);
+            Ensure.NotDisposed(_disposed, this);
 
             var held = new HeldLock(resource, leaseId, engineHandle);
             _heldByLockId[leaseId] = held;
@@ -347,11 +348,11 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
         throw new AggregateException(teardownErrors);
     }
 
-    private DatabaseConnection _CreateConnection(string connectionString)
+    private PostgresDatabaseConnection _CreateConnection(string connectionString)
     {
         // connectionString is the engine's pool key; the storage always opens against its owned data source so an
         // injected DataSource (with its configuration and pooling) is honored.
-        return new PostgresDatabaseConnection(_dataSource, _timeProvider, _commandTimeoutSeconds);
+        return new(_dataSource, _timeProvider, _commandTimeoutSeconds);
     }
 
     private PostgresAdvisoryLockKey _CreateKey(string resource)

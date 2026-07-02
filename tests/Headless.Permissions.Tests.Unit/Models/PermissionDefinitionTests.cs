@@ -100,7 +100,7 @@ public sealed class PermissionDefinitionTests : TestBase
         var child = parent.AddChild("ChildPermission");
 
         // then
-        parent.Children.Should().HaveCount(1);
+        parent.Children.Should().ContainSingle();
         parent.Children.Should().Contain(child);
     }
 

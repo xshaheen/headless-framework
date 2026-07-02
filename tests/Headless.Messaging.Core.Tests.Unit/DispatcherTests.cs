@@ -14,7 +14,6 @@ using Tests.Helpers;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class DispatcherTests : TestBase
 {
     private readonly ILogger<Dispatcher> _logger = Substitute.For<ILogger<Dispatcher>>();
@@ -486,7 +485,7 @@ public sealed class DispatcherTests : TestBase
         // using the same wiring shape Dispatcher uses. This pins the contract that the continuation
         // calls IHostApplicationLifetime.StopApplication and survives a nested throw inside
         // StopApplication via the LoggerExtensions.DispatcherLoopStopApplicationFailed event.
-        var lifetime = new TestHostApplicationLifetime();
+        using var lifetime = new TestHostApplicationLifetime();
         var options = Options.Create(new MessagingOptions { EnablePublishParallelSend = false });
 
         await using var dispatcher = new Dispatcher(
@@ -536,7 +535,7 @@ public sealed class DispatcherTests : TestBase
     {
         // R2 negative — normal start/stop must not trip the host-lifetime contract. Pairs with the
         // synthesised-fault test above to pin the wiring in both directions.
-        var lifetime = new TestHostApplicationLifetime();
+        using var lifetime = new TestHostApplicationLifetime();
         var sender = new TestThreadSafeMessageSender();
         var options = Options.Create(new MessagingOptions { EnablePublishParallelSend = false });
 

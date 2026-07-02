@@ -7,7 +7,6 @@ using Headless.Blobs.Azure;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using NSubstitute;
 
 namespace Tests;
 
@@ -29,8 +28,8 @@ public sealed class AzureBlobStorageContainerTests : TestBase
             NullLogger<AzureBlobStorage>.Instance
         );
 
-        await sut.CreateContainerAsync(["mycontainer"]);
-        await sut.CreateContainerAsync(["mycontainer"]);
+        await sut.CreateContainerAsync(["mycontainer"], AbortToken);
+        await sut.CreateContainerAsync(["mycontainer"], AbortToken);
 
         // The second call is served from the per-instance cache; CreateIfNotExists runs once.
         await containerClient

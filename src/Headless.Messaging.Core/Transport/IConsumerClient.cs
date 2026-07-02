@@ -17,7 +17,7 @@ public interface IConsumerClient : IAsyncDisposable
     /// <returns>A collection of message-name identifiers returned by the broker</returns>
     ValueTask<ICollection<string>> FetchMessageNamesAsync(IEnumerable<string> messageNames)
     {
-        return ValueTask.FromResult<ICollection<string>>(messageNames.ToList());
+        return ValueTask.FromResult<ICollection<string>>([.. messageNames]);
     }
 
     /// <summary>

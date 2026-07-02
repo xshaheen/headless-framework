@@ -3,7 +3,7 @@
 using Headless.Checks;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Headless.Captcha;
+namespace Headless.Captcha.Internals;
 
 /// <summary>
 /// <see cref="ICaptchaProvider"/> over the container's keyed <see cref="ICaptchaVerifier"/> registrations — resolves

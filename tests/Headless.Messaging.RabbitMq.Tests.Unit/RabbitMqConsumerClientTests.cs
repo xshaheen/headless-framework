@@ -10,7 +10,6 @@ using RabbitMQ.Client;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class RabbitMqConsumerClientTests : TestBase
 {
     private readonly IConnectionChannelPool _pool;
@@ -438,7 +437,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
         await client.ConnectAsync();
 
-        await client.PauseAsync();
+        await client.PauseAsync(AbortToken);
 
         // BasicCancelAsync should NOT have been called
         _channel.ReceivedCalls().Should().NotContain(c => c.GetMethodInfo().Name == nameof(IChannel.BasicCancelAsync));
@@ -450,7 +449,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
 
         // not paused — ResumeAsync should be no-op, no BasicConsumeAsync call
-        await client.ResumeAsync();
+        await client.ResumeAsync(AbortToken);
 
         _channel.ReceivedCalls().Should().NotContain(c => c.GetMethodInfo().Name == nameof(IChannel.BasicConsumeAsync));
     }
@@ -463,9 +462,9 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         await client.ConnectAsync();
 
         // when
-        await client.PauseAsync();
+        await client.PauseAsync(AbortToken);
         _channel.ClearReceivedCalls();
-        await client.PauseAsync(); // second call — should be a no-op
+        await client.PauseAsync(AbortToken); // second call — should be a no-op
 
         // then — no broker interaction on the second call
         _channel.ReceivedCalls().Should().NotContain(c => c.GetMethodInfo().Name == nameof(IChannel.BasicCancelAsync));
@@ -477,12 +476,12 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         // given
         await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
 
-        await client.PauseAsync();
-        await client.ResumeAsync();
+        await client.PauseAsync(AbortToken);
+        await client.ResumeAsync(AbortToken);
         _channel.ClearReceivedCalls();
 
         // when — second resume should be a no-op
-        await client.ResumeAsync();
+        await client.ResumeAsync(AbortToken);
 
         // then
         _channel
@@ -499,7 +498,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         await client.DisposeAsync();
 
         // when — should not throw or interact with channel
-        await client.PauseAsync();
+        await client.PauseAsync(AbortToken);
 
         // then
         _channel.ReceivedCalls().Should().NotContain(c => c.GetMethodInfo().Name == nameof(IChannel.BasicCancelAsync));
@@ -513,7 +512,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         await client.DisposeAsync();
 
         // when — should not throw or interact with channel
-        await client.ResumeAsync();
+        await client.ResumeAsync(AbortToken);
 
         // then
         _channel

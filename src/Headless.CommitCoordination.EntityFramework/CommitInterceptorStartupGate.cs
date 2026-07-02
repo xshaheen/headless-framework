@@ -74,7 +74,7 @@ internal sealed partial class CommitInterceptorStartupGate<TContext>(
                         var observed = false;
 
                         // Enlist synchronously in this frame so the ambient coordinator flows to the commit edge.
-                        using (
+                        await using (
                             var commitScope = context.Database.EnlistCommitCoordination(
                                 transaction,
                                 scope.ServiceProvider,
@@ -150,6 +150,7 @@ internal sealed partial class CommitInterceptorStartupGate<TContext>(
             + "but register the DbContext through AddHeadlessDbContext or call AddDiRegisteredInterceptors(sp) in your "
             + "AddDbContext options action to restore atomic dispatch."
     )]
+    // ReSharper disable once InconsistentNaming
     private static partial void LogInterceptorNotFiring(ILogger logger, string? contextType);
 
     [LoggerMessage(
@@ -158,5 +159,6 @@ internal sealed partial class CommitInterceptorStartupGate<TContext>(
         Message = "Commit interceptor self-probe for `{ContextType}` was inconclusive (database unreachable); "
             + "skipping. The host is allowed to start."
     )]
+    // ReSharper disable once InconsistentNaming
     private static partial void LogProbeInconclusive(ILogger logger, string? contextType, Exception exception);
 }

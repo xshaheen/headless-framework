@@ -102,7 +102,7 @@ internal sealed class FakeMembershipStore : IMembershipStore
         // Mirror the real store SPI contract: snapshots are returned sorted by identity.
         IReadOnlyList<NodeLivenessSnapshot> snapshots =
             _snapshots.Count == 0
-                ? Array.Empty<NodeLivenessSnapshot>()
+                ? []
                 : _snapshots
                     .Dequeue()
                     .OrderBy(static snapshot => snapshot.Identity.ToString(), StringComparer.Ordinal)
@@ -142,7 +142,7 @@ internal sealed class FakeMembershipStore : IMembershipStore
         // SPI, where ReadLiveNodesAsync equals filtering ReadLivenessAsync to Alive and ordering by identity.
         IReadOnlyList<NodeIdentity> live =
             _snapshots.Count == 0
-                ? Array.Empty<NodeIdentity>()
+                ? []
                 : _snapshots
                     .Dequeue()
                     .Where(static snapshot => snapshot.State == NodeLivenessState.Alive)

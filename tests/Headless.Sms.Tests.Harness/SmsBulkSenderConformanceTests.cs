@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Sms.Testing;
+using Headless.Sms;
+
+namespace Tests;
 
 /// <summary>
 /// Cross-provider conformance contract that every <see cref="IBulkSmsSender"/> implementation must satisfy.

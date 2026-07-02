@@ -148,8 +148,8 @@ public static class SetupTwilio
                     password: options.AuthToken,
                     accountSid: options.Sid,
                     region: options.Region,
-                    edge: options.Edge,
-                    httpClient: new global::Twilio.Http.SystemNetHttpClient(httpClient)
+                    httpClient: new global::Twilio.Http.SystemNetHttpClient(httpClient),
+                    edge: options.Edge
                 );
             });
 

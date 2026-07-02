@@ -82,7 +82,7 @@ public sealed partial class TusAzureStore
         // The digest is prefixed with the algorithm so VerifyChecksumAsync can confirm the requested algorithm
         // matches the one actually used to stage the data.
         var algorithm = stream.GetUploadChecksumInfo()!.Algorithm;
-        azureFile.Metadata.LastChunkBlocks = chunkBlockIds.ToArray();
+        azureFile.Metadata.LastChunkBlocks = [.. chunkBlockIds];
         azureFile.Metadata.LastChunkChecksum = $"{algorithm}:{hasher.GetHashAndReset().ToBase64()}";
         await _UpdateMetadataAsync(blobClient, azureFile, cancellationToken).ConfigureAwait(false);
 

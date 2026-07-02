@@ -97,7 +97,10 @@ internal static class RedisCacheEntryFrame
         if (!isNull && payload.Length > Array.MaxLength)
         {
             throw new ArgumentException(
-                $"Cache payload of {payload.Length} bytes exceeds the maximum supported size of {Array.MaxLength} bytes.",
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Cache payload of {payload.Length} bytes exceeds the maximum supported size of {Array.MaxLength} bytes."
+                ),
                 nameof(payload)
             );
         }
@@ -288,12 +291,8 @@ internal static class RedisCacheEntryFrame
                 offset += etagBytes.Length;
             }
 
-            if (tagPooled is not null)
-            {
-                // Copy from the pooled scratch (exact logical length) into the frame buffer.
-                tagPooled.AsSpan(0, tagLength).CopyTo(buffer.AsSpan(offset));
-                offset += tagLength;
-            }
+            // Copy from the pooled scratch (exact logical length) into the frame buffer.
+            tagPooled?.AsSpan(0, tagLength).CopyTo(buffer.AsSpan(offset));
 
             // The value segment (offset == payloadOffset here) is left for the caller to fill; both Encode
             // overloads copy their payload into buffer[payloadOffset..] after this method returns.

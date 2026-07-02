@@ -8,7 +8,6 @@ using Headless.Blobs;
 using Headless.Blobs.Aws;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Options;
-using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 
 namespace Tests;
@@ -38,11 +37,11 @@ public sealed class AwsBlobStorageEngineTests : TestBase
 
         var sut = _CreateSut(new AwsBlobStorageOptions { AutoCreateContainer = false });
 
-        using var stream = new MemoryStream("hello"u8.ToArray());
-        await sut.UploadAsync(["bucket"], "file.txt", stream);
+        await using var stream = new MemoryStream("hello"u8.ToArray());
+        await sut.UploadAsync(["bucket"], "file.txt", stream, cancellationToken: AbortToken);
 
-        await _s3.DidNotReceiveWithAnyArgs().PutBucketAsync(default(PutBucketRequest)!, default);
-        await _s3.ReceivedWithAnyArgs(1).PutObjectAsync(default!, default);
+        await _s3.DidNotReceiveWithAnyArgs().PutBucketAsync(default(PutBucketRequest)!, AbortToken);
+        await _s3.ReceivedWithAnyArgs(1).PutObjectAsync(default!, AbortToken);
     }
 
     [Fact]
@@ -54,8 +53,8 @@ public sealed class AwsBlobStorageEngineTests : TestBase
 
         var sut = _CreateSut(new AwsBlobStorageOptions { AutoCreateContainer = false });
 
-        using var stream = new MemoryStream("hi"u8.ToArray());
-        await sut.UploadAsync(["My-Bucket", "Reports"], "Q1.pdf", stream);
+        await using var stream = new MemoryStream("hi"u8.ToArray());
+        await sut.UploadAsync(["My-Bucket", "Reports"], "Q1.pdf", stream, cancellationToken: AbortToken);
 
         // Two-tier naming: the first segment (bucket) is lowercased by NormalizeContainerName; the sub-path and
         // blob name are preserved because AwsBlobNamingNormalizer.NormalizeBlobName is validate-only.
@@ -89,7 +88,7 @@ public sealed class AwsBlobStorageEngineTests : TestBase
             ))
             .ToList();
 
-        var results = await sut.BulkUploadAsync(["bucket"], blobs);
+        var results = await sut.BulkUploadAsync(["bucket"], blobs, AbortToken);
 
         results.Should().HaveCount(blobs.Count);
 
@@ -161,33 +160,37 @@ public sealed class AwsBlobStorageEngineTests : TestBase
                     new DeleteObjectsResponse
                     {
                         HttpStatusCode = HttpStatusCode.OK,
-                        DeletedObjects = requestedKeys
-                            .Where(k => k.StartsWith("ok-", StringComparison.Ordinal))
-                            .Select(k => new DeletedObject { Key = k })
-                            .ToList(),
-                        DeleteErrors = requestedKeys
-                            .Where(k => k.StartsWith("fail-", StringComparison.Ordinal))
-                            .Select(k => new DeleteError
-                            {
-                                Key = k,
-                                Code = "InternalError",
-                                Message = "transient",
-                            })
-                            .ToList(),
+                        DeletedObjects =
+                        [
+                            .. requestedKeys
+                                .Where(k => k.StartsWith("ok-", StringComparison.Ordinal))
+                                .Select(k => new DeletedObject { Key = k }),
+                        ],
+                        DeleteErrors =
+                        [
+                            .. requestedKeys
+                                .Where(k => k.StartsWith("fail-", StringComparison.Ordinal))
+                                .Select(k => new DeleteError
+                                {
+                                    Key = k,
+                                    Code = "InternalError",
+                                    Message = "transient",
+                                }),
+                        ],
                     }
                 );
             });
 
         var sut = _CreateSut(new AwsBlobStorageOptions { AutoCreateContainer = false });
 
-        var deleted = await sut.DeleteAllAsync(["bucket"]);
+        var deleted = await sut.DeleteAllAsync(["bucket"], cancellationToken: AbortToken);
 
         // 3 deleted on the first pass + 2 deleted on the retry. The retry deletions must be included in the
         // returned total — the contract returns the number actually deleted, not just the first-pass successes.
         deleted.Should().Be(5);
 
         // Exactly the initial bulk delete plus a single retry for the failed keys.
-        await _s3.ReceivedWithAnyArgs(2).DeleteObjectsAsync(default!, default);
+        await _s3.ReceivedWithAnyArgs(2).DeleteObjectsAsync(default!, AbortToken);
     }
 
     [Fact]
@@ -198,7 +201,7 @@ public sealed class AwsBlobStorageEngineTests : TestBase
 
         var sut = _CreateSut();
 
-        (await sut.ExistsAsync(["missing"], "file.txt")).Should().BeFalse();
+        (await sut.ExistsAsync(["missing"], "file.txt", AbortToken)).Should().BeFalse();
     }
 
     [Fact]
@@ -209,7 +212,7 @@ public sealed class AwsBlobStorageEngineTests : TestBase
 
         var sut = _CreateSut();
 
-        (await sut.GetBlobInfoAsync(["missing"], "file.txt")).Should().BeNull();
+        (await sut.GetBlobInfoAsync(["missing"], "file.txt", AbortToken)).Should().BeNull();
     }
 
     [Fact]
@@ -220,7 +223,7 @@ public sealed class AwsBlobStorageEngineTests : TestBase
 
         var sut = _CreateSut();
 
-        (await sut.OpenReadStreamAsync(["missing"], "file.txt")).Should().BeNull();
+        (await sut.OpenReadStreamAsync(["missing"], "file.txt", AbortToken)).Should().BeNull();
     }
 
     [Fact]
@@ -230,13 +233,13 @@ public sealed class AwsBlobStorageEngineTests : TestBase
 
         var sut = _CreateSut();
 
-        await sut.CreateContainerAsync(["bucket"]);
+        await sut.CreateContainerAsync(["bucket"], AbortToken);
         var callsAfterFirst = _s3.ReceivedCalls().Count();
 
-        await sut.CreateContainerAsync(["bucket"]);
+        await sut.CreateContainerAsync(["bucket"], AbortToken);
 
         // The second call is served from the per-instance cache and issues no further S3 calls.
-        _s3.ReceivedCalls().Count().Should().Be(callsAfterFirst);
+        _s3.ReceivedCalls().Should().HaveCount(callsAfterFirst);
     }
 
     [Fact]
@@ -246,22 +249,27 @@ public sealed class AwsBlobStorageEngineTests : TestBase
         var sut = _CreateSut();
 
         // 20 concurrent first-time ensures of the same bucket.
-        await Task.WhenAll(Enumerable.Range(0, 20).Select(_ => sut.CreateContainerAsync(["bucket"]).AsTask()));
+        await Task.WhenAll(
+            Enumerable.Range(0, 20).Select(_ => sut.CreateContainerAsync(["bucket"], AbortToken).AsTask())
+        );
         var concurrentCalls = _s3.ReceivedCalls().Count();
 
         // A single ensure on a fresh instance issues the same S3 calls; concurrency must not multiply them.
         var fresh = Substitute.For<IAmazonS3>();
+
         fresh
             .PutBucketAsync(Arg.Any<PutBucketRequest>(), Arg.Any<CancellationToken>())
             .Returns(new PutBucketResponse());
-        var freshSut = new AwsBlobStorage(
+
+        await using var freshSut = new AwsBlobStorage(
             fresh,
             new MimeTypeProvider(),
             new Clock(TimeProvider.System),
             new OptionsWrapper<AwsBlobStorageOptions>(new AwsBlobStorageOptions()),
             new AwsBlobNamingNormalizer()
         );
-        await freshSut.CreateContainerAsync(["bucket"]);
+
+        await freshSut.CreateContainerAsync(["bucket"], AbortToken);
 
         concurrentCalls.Should().Be(fresh.ReceivedCalls().Count());
     }
@@ -274,7 +282,7 @@ public sealed class AwsBlobStorageEngineTests : TestBase
 
         var sut = _CreateSut();
 
-        var act = async () => await sut.CreateContainerAsync(["bucket"]);
+        var act = async () => await sut.CreateContainerAsync(["bucket"], AbortToken);
 
         await act.Should().NotThrowAsync();
     }
@@ -298,11 +306,11 @@ public sealed class AwsBlobStorageEngineTests : TestBase
         var sut = _CreateSut();
 
         // First ensure fails; the failure must not be cached.
-        var firstAttempt = async () => await sut.CreateContainerAsync(["bucket"]);
+        var firstAttempt = async () => await sut.CreateContainerAsync(["bucket"], AbortToken);
         await firstAttempt.Should().ThrowAsync<AmazonS3Exception>();
 
         // Retry re-attempts the create rather than serving a poisoned cache entry.
-        await sut.CreateContainerAsync(["bucket"]);
+        await sut.CreateContainerAsync(["bucket"], AbortToken);
 
         calls.Should().Be(2);
     }
@@ -312,7 +320,7 @@ public sealed class AwsBlobStorageEngineTests : TestBase
     {
         var sut = _CreateSut();
 
-        var act = async () => await sut.GetPresignedDownloadUrlAsync(["bucket"], "file.txt", TimeSpan.Zero);
+        var act = async () => await sut.GetPresignedDownloadUrlAsync(["bucket"], "file.txt", TimeSpan.Zero, AbortToken);
 
         await act.Should().ThrowAsync<ArgumentException>();
     }
@@ -330,7 +338,7 @@ public sealed class AwsBlobStorageEngineTests : TestBase
 
         var sut = _CreateSut();
 
-        var url = await sut.GetPresignedDownloadUrlAsync(["bucket"], "file.txt", TimeSpan.FromMinutes(15));
+        var url = await sut.GetPresignedDownloadUrlAsync(["bucket"], "file.txt", TimeSpan.FromMinutes(15), AbortToken);
 
         url.Should().Be(new Uri("https://example.com/signed-get"));
         await _s3.Received(1)
@@ -353,7 +361,7 @@ public sealed class AwsBlobStorageEngineTests : TestBase
 
         var sut = _CreateSut();
 
-        var url = await sut.GetPresignedUploadUrlAsync(["bucket"], "file.txt", TimeSpan.FromMinutes(15));
+        var url = await sut.GetPresignedUploadUrlAsync(["bucket"], "file.txt", TimeSpan.FromMinutes(15), AbortToken);
 
         url.Should().Be(new Uri("https://example.com/signed-put"));
         await _s3.Received(1)

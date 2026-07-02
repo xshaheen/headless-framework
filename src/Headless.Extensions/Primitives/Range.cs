@@ -283,20 +283,13 @@ public sealed class Range<T> : IEquatable<Range<T>>, IComparable<Range<T>>
 
         // Lower bound: an unbounded-below (`null`) `From` sorts before any concrete lower bound. Comparing the
         // raw nullables would treat a null `From` as equal to every `other.From`, which contradicts Equals.
-        int fromComparison;
-
-        if (From is null)
-        {
-            fromComparison = other.From is null ? 0 : -1;
-        }
-        else if (other.From is null)
-        {
-            fromComparison = 1;
-        }
-        else
-        {
-            fromComparison = From.CompareTo(other.From);
-        }
+        var fromComparison = From is null
+            ? other.From is null
+                ? 0
+                : -1
+            : other.From is null
+                ? 1
+                : From.CompareTo(other.From);
 
         if (fromComparison != 0)
         {

@@ -5,7 +5,6 @@ using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
 using Headless.Sms;
 using Headless.Sms.Aws;
-using Headless.Sms.Testing;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute.ExceptionExtensions;

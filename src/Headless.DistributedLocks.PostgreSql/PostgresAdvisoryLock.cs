@@ -17,27 +17,19 @@ namespace Headless.DistributedLocks.PostgreSql;
 /// server-side <c>lock_timeout</c> (used by the transaction-coupled API, where a server-side block is correct). When the
 /// connection has a transaction the <c>_xact_</c> variants are emitted, which release on transaction end.
 /// </remarks>
-internal sealed partial class PostgresAdvisoryLock : IDbSynchronizationStrategy<object>
+internal sealed partial class PostgresAdvisoryLock(bool isShared, TimeProvider timeProvider, bool allowHashing = true)
+    : IDbSynchronizationStrategy<object>
 {
     // A non-null sentinel returned on success; advisory locks carry no per-acquire release state beyond the key.
     private static readonly object _Cookie = new();
 
-    private readonly bool _isShared;
-    private readonly bool _allowHashing;
-    private readonly TimeProvider _timeProvider;
-
-    public PostgresAdvisoryLock(bool isShared, TimeProvider timeProvider, bool allowHashing = true)
-    {
-        _isShared = isShared;
-        _allowHashing = allowHashing;
-        _timeProvider = timeProvider;
-    }
-
     /// <summary>Advisory locks do not natively support upgradeable read locks.</summary>
     public bool IsUpgradeable => false;
 
-    public object GetHeldLockIdentity(string resourceName) =>
-        PostgresAdvisoryLockKey.FromString(resourceName, _allowHashing);
+    public object GetHeldLockIdentity(string resourceName)
+    {
+        return PostgresAdvisoryLockKey.FromString(resourceName, allowHashing);
+    }
 
     public async ValueTask<object?> TryAcquireAsync(
         DatabaseConnection connection,
@@ -48,7 +40,7 @@ internal sealed partial class PostgresAdvisoryLock : IDbSynchronizationStrategy<
     {
         const string savePointName = "headless_distributed_locks_postgres_advisory_lock_acquire";
 
-        var key = PostgresAdvisoryLockKey.FromString(resourceName, _allowHashing);
+        var key = PostgresAdvisoryLockKey.FromString(resourceName, allowHashing);
 
         if (
             connection.IsExternallyOwned
@@ -71,7 +63,7 @@ internal sealed partial class PostgresAdvisoryLock : IDbSynchronizationStrategy<
             // wait out the timeout and report failure. This degenerate path is reached only by the externally-owned
             // transaction API, never by the connection-scoped provider (which owns its connections and never
             // re-acquires the same lock on one).
-            await _timeProvider.Delay(timeout, cancellationToken).ConfigureAwait(false);
+            await timeProvider.Delay(timeout, cancellationToken).ConfigureAwait(false);
 
             return null;
         }
@@ -97,7 +89,7 @@ internal sealed partial class PostgresAdvisoryLock : IDbSynchronizationStrategy<
         }
         catch (Exception exception)
         {
-            await _RollBackTransactionTimeoutVariablesIfNeededAsync(acquired: false).ConfigureAwait(false);
+            await rollBackTransactionTimeoutVariablesIfNeededAsync(isAcquired: false).ConfigureAwait(false);
             await _RestoreTimeoutSettingsIfNeededAsync(capturedTimeoutSettings, connection).ConfigureAwait(false);
 
             if (exception is PostgresException postgresException)
@@ -118,8 +110,6 @@ internal sealed partial class PostgresAdvisoryLock : IDbSynchronizationStrategy<
                             $"The distributed-lock request failed with SqlState '{postgresException.SqlState}' (deadlock_detected).",
                             exception
                         );
-                    default:
-                        break;
                 }
             }
 
@@ -147,7 +137,7 @@ internal sealed partial class PostgresAdvisoryLock : IDbSynchronizationStrategy<
             _ => (bool?)null,
         };
 
-        await _RollBackTransactionTimeoutVariablesIfNeededAsync(acquired: acquired == true).ConfigureAwait(false);
+        await rollBackTransactionTimeoutVariablesIfNeededAsync(isAcquired: acquired == true).ConfigureAwait(false);
         await _RestoreTimeoutSettingsIfNeededAsync(capturedTimeoutSettings, connection).ConfigureAwait(false);
 
         return acquired switch
@@ -159,14 +149,14 @@ internal sealed partial class PostgresAdvisoryLock : IDbSynchronizationStrategy<
             ),
         };
 
-        async ValueTask _RollBackTransactionTimeoutVariablesIfNeededAsync(bool acquired)
+        async ValueTask rollBackTransactionTimeoutVariablesIfNeededAsync(bool isAcquired)
         {
             if (
                 savePointDefined
                 // For a transaction-scoped success we can't roll back the savepoint (it would release the lock). Leaking
                 // the savepoint is fine: an internally-owned transaction cleans it up on disposal, and an externally-owned
                 // transaction must keep it or lose the lock.
-                && !(acquired && _UseTransactionScopedLock(connection))
+                && !(isAcquired && _UseTransactionScopedLock(connection))
             )
             {
                 using var rollBackSavePointCommand = connection.CreateCommand();
@@ -177,7 +167,7 @@ internal sealed partial class PostgresAdvisoryLock : IDbSynchronizationStrategy<
     }
 
     public ValueTask ReleaseAsync(DatabaseConnection connection, string resourceName, object lockCookie) =>
-        _ReleaseAsync(connection, PostgresAdvisoryLockKey.FromString(resourceName, _allowHashing), isTry: false);
+        _ReleaseAsync(connection, PostgresAdvisoryLockKey.FromString(resourceName, allowHashing), isTry: false);
 
     private async ValueTask _ReleaseAsync(DatabaseConnection connection, PostgresAdvisoryLockKey key, bool isTry)
     {
@@ -188,7 +178,7 @@ internal sealed partial class PostgresAdvisoryLock : IDbSynchronizationStrategy<
 
         using var command = connection.CreateCommand();
         command.SetCommandText(
-            $"SELECT pg_catalog.pg_advisory_unlock{(_isShared ? "_shared" : string.Empty)}({key.AddKeyParameters(command)})"
+            $"SELECT pg_catalog.pg_advisory_unlock{(isShared ? "_shared" : string.Empty)}({key.AddKeyParameters(command)})"
         );
 
         var result = (bool)(await command.ExecuteScalarAsync(CancellationToken.None).ConfigureAwait(false))!;
@@ -260,7 +250,7 @@ internal sealed partial class PostgresAdvisoryLock : IDbSynchronizationStrategy<
 
         commandText.Append("_lock");
 
-        if (_isShared)
+        if (isShared)
         {
             commandText.Append("_shared");
         }
@@ -285,12 +275,12 @@ internal sealed partial class PostgresAdvisoryLock : IDbSynchronizationStrategy<
             return null;
         }
 
-        var statementTimeout = await _GetCurrentSettingAsync("statement_timeout").ConfigureAwait(false);
-        var lockTimeout = await _GetCurrentSettingAsync("lock_timeout").ConfigureAwait(false);
+        var statementTimeout = await getCurrentSettingAsync("statement_timeout").ConfigureAwait(false);
+        var lockTimeout = await getCurrentSettingAsync("lock_timeout").ConfigureAwait(false);
 
         return new CapturedTimeoutSettings(statementTimeout!, lockTimeout!);
 
-        async ValueTask<string?> _GetCurrentSettingAsync(string settingName)
+        async ValueTask<string?> getCurrentSettingAsync(string settingName)
         {
             using var command = connection.CreateCommand();
             command.SetCommandText($"SELECT current_setting('{settingName}', 'true') AS {settingName};");
@@ -307,7 +297,7 @@ internal sealed partial class PostgresAdvisoryLock : IDbSynchronizationStrategy<
     {
         // For internally-owned connections, HasTransaction is authoritative; without one,
         // SET LOCAL cannot escape the acquire command.
-        if (!connection.IsExternallyOwned && !connection.HasTransaction)
+        if (connection is { IsExternallyOwned: false, HasTransaction: false })
         {
             return false;
         }
@@ -329,7 +319,9 @@ internal sealed partial class PostgresAdvisoryLock : IDbSynchronizationStrategy<
         {
             await setSavePointCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.NoActiveSqlTransaction)
+        catch (PostgresException exception)
+            when (string.Equals(exception.SqlState, PostgresErrorCodes.NoActiveSqlTransaction, StringComparison.Ordinal)
+            )
         {
             return false;
         }
@@ -373,11 +365,11 @@ internal sealed partial class PostgresAdvisoryLock : IDbSynchronizationStrategy<
         public int LockTimeout { get; } = _ParsePostgresTimeout(lockTimeout);
 
         private static int _ParsePostgresTimeout(string timeout) =>
-            _PostgresTimeoutRegex().Match(timeout) is { Success: true, Value: var value }
+            PostgresTimeoutRegex.Match(timeout) is { Success: true, Value: var value }
                 ? int.Parse(value, CultureInfo.InvariantCulture)
                 : throw new FormatException($"Unexpected timeout setting value '{timeout}'.");
     }
 
     [GeneratedRegex(@"^\d+(?=(?:ms)?$)", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
-    private static partial Regex _PostgresTimeoutRegex();
+    private static partial Regex PostgresTimeoutRegex { get; }
 }

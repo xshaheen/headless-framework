@@ -92,7 +92,7 @@ public sealed class PostgresConnectionDeathFanoutTests(PostgresDistributedLockFi
     private async Task<IReadOnlyList<int>> _GetBackendPidsHoldingAsync(string keyMaterial)
     {
         var key = PostgresAdvisoryLockKey.FromString(keyMaterial, allowHashing: true);
-        var keys = key.Keys;
+        var (key1, key2) = key.Keys;
 
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
@@ -109,8 +109,8 @@ public sealed class PostgresConnectionDeathFanoutTests(PostgresDistributedLockFi
               AND l.objid = @objId
               AND l.objsubid = @objSubId
             """;
-        command.Parameters.AddWithValue("classId", keys.Key1);
-        command.Parameters.AddWithValue("objId", keys.Key2);
+        command.Parameters.AddWithValue("classId", key1);
+        command.Parameters.AddWithValue("objId", key2);
         command.Parameters.AddWithValue("objSubId", (short)(key.HasSingleKey ? 1 : 2));
 
         var pids = new List<int>();
@@ -131,7 +131,7 @@ public sealed class PostgresConnectionDeathFanoutTests(PostgresDistributedLockFi
 
         await using var command = admin.CreateCommand();
         command.CommandText = "SELECT pg_terminate_backend(@pid)";
-        command.Parameters.AddWithValue("pid", pid);
+        command.Parameters.AddWithValue(nameof(pid), pid);
 
         // Capture the result: a false/null return means the backend was not actually terminated, so the test must fail
         // here rather than later asserting on a connection that was never killed.

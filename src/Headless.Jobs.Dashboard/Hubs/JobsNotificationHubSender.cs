@@ -18,9 +18,10 @@ internal sealed class JobsNotificationHubSender : IJobsNotificationHubSender, ID
     public JobsNotificationHubSender(IHubContext<JobsNotificationHub> hubContext)
     {
         _hubContext = Argument.IsNotNull(hubContext);
+
         _timeJobUpdateTimer = new Timer(
             _TimeJobUpdateCallback,
-            null,
+            state: null,
             Timeout.InfiniteTimeSpan,
             Timeout.InfiniteTimeSpan
         );
@@ -66,7 +67,7 @@ internal sealed class JobsNotificationHubSender : IJobsNotificationHubSender, ID
         _ = _hubContext.Clients.All.SendAsync("GetActiveThreadsNotification", activeThreads);
     }
 
-    public void UpdateNextOccurrence(object nextOccurrence)
+    public void UpdateNextOccurrence(object? nextOccurrence)
     {
         if (nextOccurrence != null)
         {

@@ -111,9 +111,9 @@ public sealed class GetOrAddAsyncTests : TestBase
 
         ValueTask<string?> slowFactory(CancellationToken ct)
         {
-            return new ValueTask<string?>(SlowFactoryAsync());
+            return new ValueTask<string?>(slowFactoryAsync());
 
-            async Task<string?> SlowFactoryAsync()
+            async Task<string?> slowFactoryAsync()
             {
                 Interlocked.Increment(ref factoryCallCount);
                 factoryStarted.TrySetResult();

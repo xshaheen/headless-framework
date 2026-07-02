@@ -15,8 +15,7 @@ namespace Headless.Caching;
 /// and cluster-wide tag invalidation — comes from the engine the consumer composed.
 /// </summary>
 internal sealed class HeadlessOutputCacheStore(ICache cache, IOptions<HeadlessOutputCacheStoreOptions> options)
-    : IOutputCacheStore,
-        IOutputCacheBufferStore
+    : IOutputCacheBufferStore
 {
     private readonly HeadlessOutputCacheStoreOptions _options = Argument.IsNotNull(options).Value;
 

@@ -47,7 +47,7 @@ public static class CouchbaseEventingFunctionsSeeder
             MetadataBucket = metaDataKeyspace.Bucket,
             MetadataScope = metaDataKeyspace.Scope,
             MetadataCollection = metaDataKeyspace.Collection,
-            BucketBindings = aliases.Select(alias => _CreateBucketBinding(alias.Key, alias.Value)).ToList(),
+            BucketBindings = [.. aliases.Select(alias => _CreateBucketBinding(alias.Key, alias.Value))],
         };
 
         var function = new EventingFunction

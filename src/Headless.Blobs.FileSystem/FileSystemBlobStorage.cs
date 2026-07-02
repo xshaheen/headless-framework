@@ -29,8 +29,6 @@ public sealed class FileSystemBlobStorage(
     private readonly string _basePath = optionsAccessor
         .Value.BaseDirectoryPath.NormalizePath()
         .EnsureEndsWith(Path.DirectorySeparatorChar);
-    private readonly IBlobNamingNormalizer _normalizer = normalizer;
-    private readonly ILogger _logger = logger;
 
     #region Create Container
 
@@ -186,7 +184,7 @@ public sealed class FileSystemBlobStorage(
         // Reject traversal sequences in the pattern before it is combined with the directory. The boundary check
         // below is anchored to the base directory, so a '..' pattern could otherwise resolve into a sibling
         // container; ValidatePathSegment rejects it up front (matching how blob names are validated).
-        PathValidation.ValidatePathSegment(blobSearchPattern, nameof(blobSearchPattern));
+        PathValidation.ValidatePathSegment(blobSearchPattern);
 
         blobSearchPattern = blobSearchPattern.NormalizePath();
         var path = Path.Combine(directoryPath, blobSearchPattern);
@@ -209,19 +207,19 @@ public sealed class FileSystemBlobStorage(
             return ValueTask.FromResult(_DeleteDirectoryWithLogging(path, includeSelf: true, cancellationToken));
         }
 
-        _logger.LogDeletingFilesMatching(blobSearchPattern);
+        logger.LogDeletingFilesMatching(blobSearchPattern);
 
         var filesCount = 0;
 
         foreach (var file in Directory.EnumerateFiles(directoryPath, blobSearchPattern, SearchOption.AllDirectories))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            _logger.LogDeletingFile(file);
+            logger.LogDeletingFile(file);
             File.Delete(file);
             filesCount++;
         }
 
-        _logger.LogFinishedDeletingFiles(filesCount, blobSearchPattern);
+        logger.LogFinishedDeletingFiles(filesCount, blobSearchPattern);
 
         return ValueTask.FromResult(filesCount);
     }
@@ -237,7 +235,7 @@ public sealed class FileSystemBlobStorage(
             return 0;
         }
 
-        _logger.LogDeletingDirectory(directoryPath);
+        logger.LogDeletingDirectory(directoryPath);
 
         // Count while deleting in a single enumeration pass; the count is the return value, so we cannot skip it,
         // but we no longer walk the tree once to count and again to delete.
@@ -263,7 +261,7 @@ public sealed class FileSystemBlobStorage(
             }
         }
 
-        _logger.LogFinishedDeletingDirectory(directoryPath, count);
+        logger.LogFinishedDeletingDirectory(directoryPath, count);
 
         return count;
     }
@@ -291,7 +289,7 @@ public sealed class FileSystemBlobStorage(
         var newFullPath = _BuildBlobPath(newBlobContainer, newBlobName);
         var newDirectoryPath = _GetDirectoryPath(newBlobContainer);
 
-        _logger.LogRenamingFile(oldFullPath, newFullPath);
+        logger.LogRenamingFile(oldFullPath, newFullPath);
 
         if (!File.Exists(oldFullPath))
         {
@@ -326,7 +324,7 @@ public sealed class FileSystemBlobStorage(
         var targetPath = _BuildBlobPath(newBlobContainer, newBlobName);
         var targetDirectory = _GetDirectoryPath(newBlobContainer);
 
-        _logger.LogCopyingFile(blobPath, targetPath);
+        logger.LogCopyingFile(blobPath, targetPath);
 
         if (!File.Exists(blobPath))
         {
@@ -412,12 +410,12 @@ public sealed class FileSystemBlobStorage(
         // Defense-in-depth: verify the resolved path stays under the base directory before touching the file.
         _ThrowIfPathTraversal(filePath, nameof(blobName));
 
-        _logger.LogGettingFileStream(filePath);
+        logger.LogGettingFileStream(filePath);
         var fileInfo = new FileInfo(filePath);
 
         if (!fileInfo.Exists)
         {
-            _logger.LogFileNotFound(filePath);
+            logger.LogFileNotFound(filePath);
 
             return ValueTask.FromResult<BlobInfo?>(null);
         }
@@ -449,7 +447,7 @@ public sealed class FileSystemBlobStorage(
         // Reject traversal sequences in the search pattern (consistent with DeleteAllAsync) before it reaches
         // Directory.EnumerateFiles, so the package surfaces its own ArgumentException rather than leaning on a
         // BCL implementation detail.
-        PathValidation.ValidatePathSegment(blobSearchPattern, nameof(blobSearchPattern));
+        PathValidation.ValidatePathSegment(blobSearchPattern);
 
         blobSearchPattern = blobSearchPattern.NormalizePath();
 
@@ -511,7 +509,7 @@ public sealed class FileSystemBlobStorage(
             blobSearchPattern = "*";
         }
 
-        PathValidation.ValidatePathSegment(blobSearchPattern, nameof(blobSearchPattern));
+        PathValidation.ValidatePathSegment(blobSearchPattern);
 
         blobSearchPattern = blobSearchPattern.NormalizePath();
 
@@ -521,7 +519,7 @@ public sealed class FileSystemBlobStorage(
 
         if (!Directory.Exists(completePath))
         {
-            _logger.LogReturningEmptyFileList(blobSearchPattern);
+            logger.LogReturningEmptyFileList(blobSearchPattern);
 
             return PagedFileListResult.Empty;
         }
@@ -557,7 +555,7 @@ public sealed class FileSystemBlobStorage(
         BlobInfo? carryOver
     )
     {
-        _logger.LogGettingFileList(searchPattern, page, pageSize);
+        logger.LogGettingFileList(searchPattern, page, pageSize);
 
         var list = new List<BlobInfo>(pageSize);
 
@@ -655,7 +653,7 @@ public sealed class FileSystemBlobStorage(
         PathValidation.ValidatePathSegment(blobName);
 
         var normalizedContainer = _NormalizeContainerSegments(container);
-        var normalizedBlobName = _normalizer.NormalizeBlobName(blobName);
+        var normalizedBlobName = normalizer.NormalizeBlobName(blobName);
 
         // Use single Path.Combine call to avoid intermediate string allocations
         var segments = new string[container.Length + 2];
@@ -691,7 +689,7 @@ public sealed class FileSystemBlobStorage(
         for (var i = 0; i < container.Length; i++)
         {
             normalized[i] =
-                i == 0 ? _normalizer.NormalizeContainerName(container[i]) : _normalizer.NormalizeBlobName(container[i]);
+                i == 0 ? normalizer.NormalizeContainerName(container[i]) : normalizer.NormalizeBlobName(container[i]);
         }
 
         return normalized;
@@ -710,7 +708,7 @@ public sealed class FileSystemBlobStorage(
         {
             // A rejected traversal attempt is a security-relevant event; surface it to logs and name the
             // offending resolved path so an operator or agent can see exactly what was blocked.
-            _logger.LogPathTraversalRejected(paramName, fullPath);
+            logger.LogPathTraversalRejected(paramName, fullPath);
 
             throw new ArgumentException(
                 $"Path traversal detected: the resolved path escapes the base directory ('{fullPath}')",

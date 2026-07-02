@@ -133,8 +133,7 @@ internal sealed class MessageObservationStore(TimeProvider? timeProvider = null)
         {
             // The registration is disposed when this `using` block exits (line below), which always happens before
             // the outer `using var cts` disposes in the finally, so the callback cannot fire on a disposed CTS.
-            // ReSharper disable once AccessToDisposedClosure
-            using (cts.Token.Register(() => tcs.TrySetCanceled(cts.Token)))
+            await using (cts.Token.Register(() => tcs.TrySetCanceled(cts.Token)))
             {
                 return await tcs.Task.ConfigureAwait(false);
             }
@@ -234,7 +233,7 @@ internal sealed class MessageObservationStore(TimeProvider? timeProvider = null)
             MessageObservationType.Consumed => _consumed,
             MessageObservationType.Faulted => _faulted,
             MessageObservationType.Exhausted => _exhausted,
-            _ => throw new ArgumentOutOfRangeException(nameof(type), type, null),
+            _ => throw new ArgumentOutOfRangeException(nameof(type), type, message: null),
         };
 
     internal DateTimeOffset GetUtcNow() => _timeProvider.GetUtcNow();

@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Buffers.Binary;
-using System.Text;
 using Headless.Caching;
 using StackExchange.Redis;
 
@@ -132,7 +131,7 @@ public sealed class RedisEnvelopeFormatTests(RedisCacheFixture fixture) : RedisC
 
         var stored = await _GetRawBytesAsync(key);
         (stored[2] & _NullFlag).Should().Be(_NullFlag);
-        stored.Length.Should().Be(_HeaderLength);
+        stored.Should().HaveCount(_HeaderLength);
 
         var cached = await cache.GetAsync<string>(key, AbortToken);
         cached.HasValue.Should().BeTrue();

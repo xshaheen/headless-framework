@@ -102,14 +102,6 @@ public sealed class TenantPropagationE2ETests : TestBase
 {
     private static Task<MessagingTestHarness> _CreateHarnessAsync(
         TenantCapture capture,
-        Action<MessagingSetupBuilder> configureMessaging
-    )
-    {
-        return _CreateHarnessAsync(capture, (_, setup) => configureMessaging(setup));
-    }
-
-    private static Task<MessagingTestHarness> _CreateHarnessAsync(
-        TenantCapture capture,
         Action<IServiceCollection, MessagingSetupBuilder> configureMessaging
     )
     {
@@ -158,9 +150,11 @@ public sealed class TenantPropagationE2ETests : TestBase
         await harness.WaitForConsumed<TenantOrderEvent>(TimeSpan.FromSeconds(5), AbortToken);
 
         // then — consumer body observed the ambient tenant via both the envelope and ICurrentTenant
-        var record = capture.Records.Single(r => r.OrderId == "ORD-1");
-        record.EnvelopeTenant.Should().Be("acme");
-        record.AmbientTenant.Should().Be("acme");
+        var (_, envelopeTenant, ambientTenant) = capture.Records.Single(r =>
+            string.Equals(r.OrderId, "ORD-1", StringComparison.Ordinal)
+        );
+        envelopeTenant.Should().Be("acme");
+        ambientTenant.Should().Be("acme");
 
         // and — restored after consume completes (no lingering ambient outside the using block)
         currentTenant.Id.Should().BeNull();
@@ -185,9 +179,11 @@ public sealed class TenantPropagationE2ETests : TestBase
         await harness.WaitForConsumed<TenantOrderEvent>(TimeSpan.FromSeconds(5), AbortToken);
 
         // then — envelope carries no tenant; consumer observes no ambient tenant
-        var record = capture.Records.Single(r => r.OrderId == "ORD-SYS");
-        record.EnvelopeTenant.Should().BeNull();
-        record.AmbientTenant.Should().BeNull();
+        var (_, envelopeTenant, ambientTenant) = capture.Records.Single(r =>
+            string.Equals(r.OrderId, "ORD-SYS", StringComparison.Ordinal)
+        );
+        envelopeTenant.Should().BeNull();
+        ambientTenant.Should().BeNull();
     }
 
     // ─── AE4 — caller override preserved ─────────────────────────────────────
@@ -219,9 +215,11 @@ public sealed class TenantPropagationE2ETests : TestBase
         await harness.WaitForConsumed<TenantOrderEvent>(TimeSpan.FromSeconds(5), AbortToken);
 
         // then — explicit value wins over ambient
-        var record = capture.Records.Single(r => r.OrderId == "ORD-OVR");
-        record.EnvelopeTenant.Should().Be("system");
-        record.AmbientTenant.Should().Be("system");
+        var (_, envelopeTenant, ambientTenant) = capture.Records.Single(r =>
+            string.Equals(r.OrderId, "ORD-OVR", StringComparison.Ordinal)
+        );
+        envelopeTenant.Should().Be("system");
+        ambientTenant.Should().Be("system");
     }
 
     // ─── AE6 — exception path preserves envelope tenant ──────────────────────
@@ -251,7 +249,7 @@ public sealed class TenantPropagationE2ETests : TestBase
         // and — wait for the second (successful) attempt so we can assert that the retry
         //       observed the same tenant context, not just the first faulted invocation.
         await harness.WaitForConsumed<TenantOrderEvent>(
-            msg => msg.OrderId == "ORD-RETRY",
+            msg => string.Equals(msg.OrderId, "ORD-RETRY", StringComparison.Ordinal),
             TimeSpan.FromSeconds(10),
             AbortToken
         );
@@ -259,7 +257,9 @@ public sealed class TenantPropagationE2ETests : TestBase
         // then — both attempts (faulted + successful) saw the envelope tenant. AE6 isolation
         //         covers the retry path: tenant context is rebuilt from the envelope on each
         //         invocation, never reused from a previous attempt's residue.
-        var retryRecords = capture.Records.Where(r => r.OrderId == "ORD-RETRY").ToArray();
+        var retryRecords = capture
+            .Records.Where(r => string.Equals(r.OrderId, "ORD-RETRY", StringComparison.Ordinal))
+            .ToArray();
         retryRecords.Should().HaveCount(2);
         retryRecords
             .Should()
@@ -316,7 +316,7 @@ public sealed class TenantPropagationE2ETests : TestBase
         foreach (var tenantId in tenants)
         {
             await harness.WaitForConsumed<TenantOrderEvent>(
-                msg => msg.OrderId == tenantId,
+                msg => string.Equals(msg.OrderId, tenantId, StringComparison.Ordinal),
                 TimeSpan.FromSeconds(10),
                 AbortToken
             );
@@ -325,9 +325,11 @@ public sealed class TenantPropagationE2ETests : TestBase
         // then — each consumer observation matched its own tenant; no cross-talk
         foreach (var tenantId in tenants)
         {
-            var record = capture.Records.Single(r => r.OrderId == tenantId);
-            record.EnvelopeTenant.Should().Be(tenantId);
-            record.AmbientTenant.Should().Be(tenantId);
+            var (_, envelopeTenant, ambientTenant) = capture.Records.Single(r =>
+                string.Equals(r.OrderId, tenantId, StringComparison.Ordinal)
+            );
+            envelopeTenant.Should().Be(tenantId);
+            ambientTenant.Should().Be(tenantId);
         }
 
         // and — ambient is restored on the publishing thread
@@ -364,15 +366,17 @@ public sealed class TenantPropagationE2ETests : TestBase
         }
 
         await harness.WaitForConsumed<TenantOrderEvent>(
-            msg => msg.OrderId == "chained-HOP-1",
+            msg => string.Equals(msg.OrderId, "chained-HOP-1", StringComparison.Ordinal),
             TimeSpan.FromSeconds(10),
             AbortToken
         );
 
         // then — the second consumer observed the same tenant the chain started with
-        var record = capture.Records.Single(r => r.OrderId == "chained-HOP-1");
-        record.EnvelopeTenant.Should().Be("tenant-x");
-        record.AmbientTenant.Should().Be("tenant-x");
+        var (_, envelopeTenant, ambientTenant) = capture.Records.Single(r =>
+            string.Equals(r.OrderId, "chained-HOP-1", StringComparison.Ordinal)
+        );
+        envelopeTenant.Should().Be("tenant-x");
+        ambientTenant.Should().Be("tenant-x");
     }
 
     // ─── Integration: outbox publish path ─────────────────────────────────────
@@ -401,8 +405,10 @@ public sealed class TenantPropagationE2ETests : TestBase
         await harness.WaitForConsumed<TenantOrderEvent>(TimeSpan.FromSeconds(10), AbortToken);
 
         // then — envelope and ambient both reflect the publishing tenant on the consume side
-        var record = capture.Records.Single(r => r.OrderId == "ORD-OUTBOX");
-        record.EnvelopeTenant.Should().Be("globex");
-        record.AmbientTenant.Should().Be("globex");
+        var (_, envelopeTenant, ambientTenant) = capture.Records.Single(r =>
+            string.Equals(r.OrderId, "ORD-OUTBOX", StringComparison.Ordinal)
+        );
+        envelopeTenant.Should().Be("globex");
+        ambientTenant.Should().Be("globex");
     }
 }

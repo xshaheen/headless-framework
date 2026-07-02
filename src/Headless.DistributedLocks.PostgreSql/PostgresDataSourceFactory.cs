@@ -29,7 +29,7 @@ internal static class PostgresDataSourceFactory
             return options.DataSource;
         }
 
-        var builder = new NpgsqlConnectionStringBuilder(options.ConnectionString!);
+        var builder = new NpgsqlConnectionStringBuilder(options.ConnectionString);
 
         // KeepAlive of 0 is the Npgsql "disabled" sentinel, so a non-zero value means the connection
         // string already opted in and we must not clobber the consumer's chosen interval.

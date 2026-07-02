@@ -89,13 +89,13 @@ public readonly struct EquatableArray<T>(T[] array, IEqualityComparer<T>? equali
     }
 
     /// <summary>Returns the underlying wrapped array.</summary>
-    /// <returns>The underlying array. This is <see langword="null"/> for a <c>default</c> instance that was never constructed with an array.</returns>
+    /// <returns>The underlying array. This is <see langword="null"/> for a <see langword="default"/> instance that was never constructed with an array.</returns>
     public T[] AsArray()
     {
         return _array;
     }
 
-    /// <summary>Returns an allocation-free enumerator over the underlying items (preferred by <c>foreach</c>).</summary>
+    /// <summary>Returns an allocation-free enumerator over the underlying items (preferred by <see langword="foreach"/>).</summary>
     public ReadOnlySpan<T>.Enumerator GetEnumerator()
     {
         return AsSpan().GetEnumerator();

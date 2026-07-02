@@ -12,169 +12,169 @@ public sealed class PathValidationTests : TestBase
     [Fact]
     public void should_allow_null_path_when_checking_path_traversal()
     {
-        // Arrange
+        // given
         const string? path = null;
 
-        // Act
+        // when
         var act = () => PathValidation.ThrowIfPathTraversal(path);
 
-        // Assert
+        // then
         act.Should().NotThrow();
     }
 
     [Fact]
     public void should_allow_empty_path_when_checking_path_traversal()
     {
-        // Arrange
+        // given
         const string path = "";
 
-        // Act
+        // when
         var act = () => PathValidation.ThrowIfPathTraversal(path);
 
-        // Assert
+        // then
         act.Should().NotThrow();
     }
 
     [Fact]
     public void should_allow_simple_path_when_checking_path_traversal()
     {
-        // Arrange
+        // given
         const string path = "folder/file.txt";
 
-        // Act
+        // when
         var act = () => PathValidation.ThrowIfPathTraversal(path);
 
-        // Assert
+        // then
         act.Should().NotThrow();
     }
 
     [Fact]
     public void should_throw_for_unix_traversal_when_path_contains_parent_directory()
     {
-        // Arrange
+        // given
         const string path = "../secret.txt";
 
-        // Act
+        // when
         var act = () => PathValidation.ThrowIfPathTraversal(path);
 
-        // Assert
+        // then
         act.Should().Throw<ArgumentException>().WithMessage("*traversal*");
     }
 
     [Fact]
     public void should_throw_for_windows_traversal_when_path_contains_backslash_parent()
     {
-        // Arrange
+        // given
         const string path = "..\\secret.txt";
 
-        // Act
+        // when
         var act = () => PathValidation.ThrowIfPathTraversal(path);
 
-        // Assert
+        // then
         act.Should().Throw<ArgumentException>().WithMessage("*traversal*");
     }
 
     [Fact]
     public void should_throw_for_mid_path_unix_traversal_when_path_contains_embedded_parent()
     {
-        // Arrange
+        // given
         const string path = "folder/../secret.txt";
 
-        // Act
+        // when
         var act = () => PathValidation.ThrowIfPathTraversal(path);
 
-        // Assert
+        // then
         act.Should().Throw<ArgumentException>().WithMessage("*traversal*");
     }
 
     [Fact]
     public void should_throw_for_mid_path_windows_traversal_when_path_contains_embedded_backslash_parent()
     {
-        // Arrange
+        // given
         const string path = "folder\\..\\secret.txt";
 
-        // Act
+        // when
         var act = () => PathValidation.ThrowIfPathTraversal(path);
 
-        // Assert
+        // then
         act.Should().Throw<ArgumentException>().WithMessage("*traversal*");
     }
 
     [Fact]
     public void should_throw_for_trailing_traversal_unix_when_path_ends_with_parent()
     {
-        // Arrange
+        // given
         const string path = "folder/..";
 
-        // Act
+        // when
         var act = () => PathValidation.ThrowIfPathTraversal(path);
 
-        // Assert
+        // then
         act.Should().Throw<ArgumentException>().WithMessage("*traversal*");
     }
 
     [Fact]
     public void should_throw_for_trailing_traversal_windows_when_path_ends_with_backslash_parent()
     {
-        // Arrange
+        // given
         const string path = "folder\\..";
 
-        // Act
+        // when
         var act = () => PathValidation.ThrowIfPathTraversal(path);
 
-        // Assert
+        // then
         act.Should().Throw<ArgumentException>().WithMessage("*traversal*");
     }
 
     [Fact]
     public void should_throw_for_starts_with_double_dot_when_path_begins_with_parent()
     {
-        // Arrange
+        // given
         const string path = "..";
 
-        // Act
+        // when
         var act = () => PathValidation.ThrowIfPathTraversal(path);
 
-        // Assert
+        // then
         act.Should().Throw<ArgumentException>().WithMessage("*traversal*");
     }
 
     [Fact]
     public void should_allow_single_dot_when_path_contains_current_directory()
     {
-        // Arrange
+        // given
         const string path = "./file.txt";
 
-        // Act
+        // when
         var act = () => PathValidation.ThrowIfPathTraversal(path);
 
-        // Assert
+        // then
         act.Should().NotThrow();
     }
 
     [Fact]
     public void should_allow_dotted_filename_when_file_has_double_dots_in_name()
     {
-        // Arrange
+        // given
         const string path = "file..name.txt";
 
-        // Act
+        // when
         var act = () => PathValidation.ThrowIfPathTraversal(path);
 
-        // Assert
+        // then
         act.Should().NotThrow();
     }
 
     [Fact]
     public void should_include_param_name_in_exception_when_path_is_invalid()
     {
-        // Arrange
+        // given
         const string badPath = "../secret";
 
-        // Act
+        // when
         var act = () => PathValidation.ThrowIfPathTraversal(badPath);
 
-        // Assert
+        // then
         act.Should().Throw<ArgumentException>().Which.ParamName.Should().Be("badPath");
     }
 
@@ -187,10 +187,10 @@ public sealed class PathValidationTests : TestBase
     [InlineData("a\\b\\..")]
     public void should_throw_for_various_traversal_patterns_when_path_contains_parent_directory(string path)
     {
-        // Act
+        // when
         var act = () => PathValidation.ThrowIfPathTraversal(path);
 
-        // Assert
+        // then
         act.Should().Throw<ArgumentException>();
     }
 
@@ -201,91 +201,91 @@ public sealed class PathValidationTests : TestBase
     [Fact]
     public void should_allow_null_path_when_checking_absolute_path()
     {
-        // Arrange
+        // given
         const string? path = null;
 
-        // Act
+        // when
         var act = () => PathValidation.ThrowIfAbsolutePath(path);
 
-        // Assert
+        // then
         act.Should().NotThrow();
     }
 
     [Fact]
     public void should_allow_empty_path_when_checking_absolute_path()
     {
-        // Arrange
+        // given
         const string path = "";
 
-        // Act
+        // when
         var act = () => PathValidation.ThrowIfAbsolutePath(path);
 
-        // Assert
+        // then
         act.Should().NotThrow();
     }
 
     [Fact]
     public void should_allow_relative_path_when_checking_absolute_path()
     {
-        // Arrange
+        // given
         const string path = "folder/file.txt";
 
-        // Act
+        // when
         var act = () => PathValidation.ThrowIfAbsolutePath(path);
 
-        // Assert
+        // then
         act.Should().NotThrow();
     }
 
     [Fact]
     public void should_throw_for_unix_absolute_when_path_starts_with_forward_slash()
     {
-        // Arrange
+        // given
         const string path = "/etc/passwd";
 
-        // Act
+        // when
         var act = () => PathValidation.ThrowIfAbsolutePath(path);
 
-        // Assert
+        // then
         act.Should().Throw<ArgumentException>().WithMessage("*Absolute*");
     }
 
     [Fact]
     public void should_throw_for_windows_absolute_when_path_starts_with_backslash()
     {
-        // Arrange
+        // given
         const string path = "\\Windows\\system32";
 
-        // Act
+        // when
         var act = () => PathValidation.ThrowIfAbsolutePath(path);
 
-        // Assert
+        // then
         act.Should().Throw<ArgumentException>().WithMessage("*Absolute*");
     }
 
     [Fact]
     public void should_allow_path_with_mid_slash_when_slash_is_not_at_start()
     {
-        // Arrange
+        // given
         const string path = "folder/subfolder";
 
-        // Act
+        // when
         var act = () => PathValidation.ThrowIfAbsolutePath(path);
 
-        // Assert
+        // then
         act.Should().NotThrow();
     }
 
     [Fact]
     public void should_include_param_name_in_absolute_path_exception_when_path_is_absolute()
     {
-        // Arrange
+        // given
         const string absolutePath = "/root/secret";
 
-        // Act
+        // when
         var act = () => PathValidation.ThrowIfAbsolutePath(absolutePath);
 
-        // Assert
+        // then
         act.Should().Throw<ArgumentException>().Which.ParamName.Should().Be("absolutePath");
     }
 
@@ -296,117 +296,117 @@ public sealed class PathValidationTests : TestBase
     [Fact]
     public void should_allow_null_path_when_checking_control_characters()
     {
-        // Arrange
+        // given
         const string? path = null;
 
-        // Act
+        // when
         var act = () => PathValidation.ThrowIfControlCharacters(path);
 
-        // Assert
+        // then
         act.Should().NotThrow();
     }
 
     [Fact]
     public void should_allow_empty_path_when_checking_control_characters()
     {
-        // Arrange
+        // given
         const string path = "";
 
-        // Act
+        // when
         var act = () => PathValidation.ThrowIfControlCharacters(path);
 
-        // Assert
+        // then
         act.Should().NotThrow();
     }
 
     [Fact]
     public void should_allow_normal_characters_when_path_has_standard_chars()
     {
-        // Arrange
+        // given
         const string path = "folder/file.txt";
 
-        // Act
+        // when
         var act = () => PathValidation.ThrowIfControlCharacters(path);
 
-        // Assert
+        // then
         act.Should().NotThrow();
     }
 
     [Fact]
     public void should_throw_for_null_char_when_path_contains_null_byte()
     {
-        // Arrange
+        // given
         const string path = "file\0.txt";
 
-        // Act
+        // when
         var act = () => PathValidation.ThrowIfControlCharacters(path);
 
-        // Assert
+        // then
         act.Should().Throw<ArgumentException>().WithMessage("*Control*");
     }
 
     [Fact]
     public void should_throw_for_newline_when_path_contains_line_feed()
     {
-        // Arrange
+        // given
         const string path = "file\n.txt";
 
-        // Act
+        // when
         var act = () => PathValidation.ThrowIfControlCharacters(path);
 
-        // Assert
+        // then
         act.Should().Throw<ArgumentException>().WithMessage("*Control*");
     }
 
     [Fact]
     public void should_throw_for_carriage_return_when_path_contains_cr()
     {
-        // Arrange
+        // given
         const string path = "file\r.txt";
 
-        // Act
+        // when
         var act = () => PathValidation.ThrowIfControlCharacters(path);
 
-        // Assert
+        // then
         act.Should().Throw<ArgumentException>().WithMessage("*Control*");
     }
 
     [Fact]
     public void should_throw_for_tab_when_path_contains_horizontal_tab()
     {
-        // Arrange
+        // given
         const string path = "file\t.txt";
 
-        // Act
+        // when
         var act = () => PathValidation.ThrowIfControlCharacters(path);
 
-        // Assert
+        // then
         act.Should().Throw<ArgumentException>().WithMessage("*Control*");
     }
 
     [Fact]
     public void should_throw_for_bell_when_path_contains_bell_character()
     {
-        // Arrange
+        // given
         const string path = "file\a.txt";
 
-        // Act
+        // when
         var act = () => PathValidation.ThrowIfControlCharacters(path);
 
-        // Assert
+        // then
         act.Should().Throw<ArgumentException>().WithMessage("*Control*");
     }
 
     [Fact]
     public void should_allow_space_when_path_contains_space_character()
     {
-        // Arrange
+        // given
         const string path = "file name.txt";
 
-        // Act
+        // when
         var act = () => PathValidation.ThrowIfControlCharacters(path);
 
-        // Assert
+        // then
         act.Should().NotThrow();
     }
 
@@ -416,13 +416,13 @@ public sealed class PathValidationTests : TestBase
     [InlineData("\x1F")] // Unit Separator (char 31, just below space)
     public void should_throw_for_various_control_chars_when_path_contains_low_ascii(string controlChar)
     {
-        // Arrange
+        // given
         var path = $"file{controlChar}.txt";
 
-        // Act
+        // when
         var act = () => PathValidation.ThrowIfControlCharacters(path);
 
-        // Assert
+        // then
         act.Should().Throw<ArgumentException>();
     }
 
@@ -433,52 +433,52 @@ public sealed class PathValidationTests : TestBase
     [Fact]
     public void should_combine_all_validations_when_validating_path_segment()
     {
-        // Arrange - path with traversal
+        // given - path with traversal
         const string pathWithTraversal = "../secret";
 
-        // Act
+        // when
         var act = () => PathValidation.ValidatePathSegment(pathWithTraversal);
 
-        // Assert - should throw for traversal
+        // then - should throw for traversal
         act.Should().Throw<ArgumentException>().WithMessage("*traversal*");
     }
 
     [Fact]
     public void should_validate_absolute_path_in_segment_when_path_is_absolute()
     {
-        // Arrange
+        // given
         const string absolutePath = "/root";
 
-        // Act
+        // when
         var act = () => PathValidation.ValidatePathSegment(absolutePath);
 
-        // Assert
+        // then
         act.Should().Throw<ArgumentException>().WithMessage("*Absolute*");
     }
 
     [Fact]
     public void should_validate_control_chars_in_segment_when_path_has_control_chars()
     {
-        // Arrange
+        // given
         const string pathWithControl = "file\t.txt";
 
-        // Act
+        // when
         var act = () => PathValidation.ValidatePathSegment(pathWithControl);
 
-        // Assert
+        // then
         act.Should().Throw<ArgumentException>().WithMessage("*Control*");
     }
 
     [Fact]
     public void should_allow_valid_segment_when_path_is_clean()
     {
-        // Arrange
+        // given
         const string validPath = "folder/subfolder/file.txt";
 
-        // Act
+        // when
         var act = () => PathValidation.ValidatePathSegment(validPath);
 
-        // Assert
+        // then
         act.Should().NotThrow();
     }
 
@@ -489,78 +489,78 @@ public sealed class PathValidationTests : TestBase
     [Fact]
     public void should_validate_all_segments_when_validating_container()
     {
-        // Arrange
+        // given
         string[] container = ["folder", "subfolder"];
 
-        // Act
+        // when
         var act = () => PathValidation.ValidateContainer(container);
 
-        // Assert
+        // then
         act.Should().NotThrow();
     }
 
     [Fact]
     public void should_throw_on_first_invalid_segment_when_container_has_bad_segment()
     {
-        // Arrange
+        // given
         string[] container = ["folder", "../secret", "another"];
 
-        // Act
+        // when
         var act = () => PathValidation.ValidateContainer(container);
 
-        // Assert
+        // then
         act.Should().Throw<ArgumentException>().WithMessage("*traversal*");
     }
 
     [Fact]
     public void should_allow_valid_container_when_all_segments_are_valid()
     {
-        // Arrange
+        // given
         string[] container = ["bucket", "users", "uploads"];
 
-        // Act
+        // when
         var act = () => PathValidation.ValidateContainer(container);
 
-        // Assert
+        // then
         act.Should().NotThrow();
     }
 
     [Fact]
     public void should_throw_for_absolute_segment_in_container_when_segment_starts_with_slash()
     {
-        // Arrange
+        // given
         string[] container = ["folder", "/absolute"];
 
-        // Act
+        // when
         var act = () => PathValidation.ValidateContainer(container);
 
-        // Assert
+        // then
         act.Should().Throw<ArgumentException>().WithMessage("*Absolute*");
     }
 
     [Fact]
     public void should_throw_for_control_char_in_container_when_segment_has_control_char()
     {
-        // Arrange
+        // given
         string[] container = ["folder", "bad\0name"];
 
-        // Act
+        // when
         var act = () => PathValidation.ValidateContainer(container);
 
-        // Assert
+        // then
         act.Should().Throw<ArgumentException>().WithMessage("*Control*");
     }
 
     [Fact]
     public void should_allow_empty_container_when_array_is_empty()
     {
-        // Arrange
+        // given
         string[] container = [];
 
-        // Act
+        // when
         var act = () => PathValidation.ValidateContainer(container);
 
-        // Assert
+        // then
         act.Should().NotThrow();
     }
 

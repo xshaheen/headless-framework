@@ -190,7 +190,7 @@ public sealed class ListExtensionsTests
         // given - records are not IComparable; the old Comparer<T>.Default.Compare path threw for them.
         var a = new Box(1);
         var c = new Box(3);
-        var list = new List<Box> { a, new Box(2), c };
+        var list = new List<Box> { a, new(2), c };
 
         // when
         list.ReplaceFirst(new Box(2), new Box(42));

@@ -11,5 +11,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\demo\Headless.Messaging.AzureServiceBus.InMemory.Demo\Headless.Messaging.AzureServiceBus.InMemory.Demo.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.AzureServiceBus\Headless.Messaging.AzureServiceBus.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
   </ItemGroup>
 </Project>

@@ -9,6 +9,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.CommitCoordination.Core\Headless.CommitCoordination.Core.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
     <ProjectReference Include="..\Headless.CommitCoordination.Tests.Harness\Headless.CommitCoordination.Tests.Harness.csproj" />
   </ItemGroup>
 </Project>

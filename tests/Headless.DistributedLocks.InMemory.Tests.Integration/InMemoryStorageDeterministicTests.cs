@@ -204,7 +204,7 @@ public sealed class InMemoryStorageDeterministicTests : TestBase
         await Task.WhenAll(tasks);
 
         failures.Should().Be(0);
-        maxToken.Should().BeGreaterThan(0);
+        maxToken.Should().BePositive();
     }
 
     [Fact]

@@ -16,12 +16,12 @@ namespace Headless.Messaging.CircuitBreaker;
 public interface ICircuitBreakerMonitor
 {
     /// <summary>
-    /// Returns <c>true</c> if the circuit for the specified consumer group is currently
+    /// Returns <see langword="true"/> if the circuit for the specified consumer group is currently
     /// Open or HalfOpen (i.e., the group is paused or probing).
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <strong>Advisory hint only:</strong> This method returns <c>false</c> for unknown groups
+    /// <strong>Advisory hint only:</strong> This method returns <see langword="false"/> for unknown groups
     /// (groups not yet registered or never accessed). Use this when you want to check if a
     /// <em>registered</em> group is in an open state, not to determine whether a group exists.
     /// </para>
@@ -49,7 +49,7 @@ public interface ICircuitBreakerMonitor
     bool IsOpen(string groupName);
 
     /// <summary>
-    /// Returns <c>true</c> if the circuit for the specified delivery intent and consumer group
+    /// Returns <see langword="true"/> if the circuit for the specified delivery intent and consumer group
     /// is currently Open or HalfOpen.
     /// </summary>
     /// <param name="intentType">The delivery intent (<see cref="IntentType.Bus"/> or <see cref="IntentType.Queue"/>).</param>

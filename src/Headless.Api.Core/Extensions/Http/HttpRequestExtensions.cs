@@ -76,7 +76,7 @@ public static class HttpRequestExtensions
         }
 
         // ParseList handles comma-separated values across all header entries.
-        var parsed = MediaTypeHeaderValue.ParseList(acceptHeader!);
+        var parsed = MediaTypeHeaderValue.ParseList(acceptHeader);
 
         if (parsed is null or { Count: 0 })
         {
@@ -135,7 +135,7 @@ public static class HttpRequestExtensions
             return false;
         }
 
-        var parsed = MediaTypeHeaderValue.ParseList(acceptHeader!);
+        var parsed = MediaTypeHeaderValue.ParseList(acceptHeader);
 
         foreach (var mediaType in parsed)
         {

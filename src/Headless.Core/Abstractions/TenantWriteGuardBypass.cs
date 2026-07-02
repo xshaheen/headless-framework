@@ -17,7 +17,7 @@ internal sealed class TenantWriteGuardBypass : ITenantWriteGuardBypass
         // between the active-check and the increment. AsyncLocal can flow the same BypassState object
         // into parallel branches, so the increment must be race-safe against a concurrent last release;
         // if the shared state died, install a fresh one rather than returning an inactive ("zombie") scope.
-        if (state is null || !state.TryAddRef())
+        if (state?.TryAddRef() != true)
         {
             state = new BypassState();
             state.TryAddRef(); // 0 -> 1; the object is thread-private until published on the next line.
@@ -50,7 +50,7 @@ internal sealed class TenantWriteGuardBypass : ITenantWriteGuardBypass
         public bool IsActive => Volatile.Read(ref _refCount) > 0;
 
         /// <summary>Atomically increments the ref count unless the state is terminal.</summary>
-        /// <returns><c>true</c> if a ref was taken; <c>false</c> if the state is terminal.</returns>
+        /// <returns><see langword="true"/> if a ref was taken; <see langword="false"/> if the state is terminal.</returns>
         public bool TryAddRef()
         {
             int current;

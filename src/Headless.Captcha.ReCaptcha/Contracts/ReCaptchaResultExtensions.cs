@@ -22,8 +22,6 @@ public static class ReCaptchaResultExtensions
                     + $"but received '{result.GetType().FullName}'."
             );
 
-        return captchaResult.ErrorCodes is { } codes
-            ? Array.ConvertAll(codes, static code => code.ToReCaptchaError())
-            : [];
+        return captchaResult.ErrorCodes.ToReCaptchaErrors();
     }
 }

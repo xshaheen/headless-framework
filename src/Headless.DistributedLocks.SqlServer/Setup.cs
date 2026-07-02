@@ -2,7 +2,6 @@
 
 using Headless.Abstractions;
 using Headless.Checks;
-using Headless.Core;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -35,10 +34,7 @@ public static class SetupSqlServerDistributedLocks
         {
             Argument.IsNotNullOrWhiteSpace(connectionString);
 
-            return setup.UseSqlServer(options =>
-            {
-                options.ConnectionString = connectionString;
-            });
+            return setup.UseSqlServer(options => options.ConnectionString = connectionString);
         }
 
         /// <summary>

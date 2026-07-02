@@ -27,7 +27,7 @@ internal static partial class SqlServerIdentifier
         Argument.IsNotNullOrWhiteSpace(keyPrefix);
 
         var builder = new StringBuilder(_DefaultSequenceName);
-        var normalized = _UnsafeIdentifierCharacters().Replace(keyPrefix, "_").Trim('_');
+        var normalized = UnsafeIdentifierCharacters.Replace(keyPrefix, "_").Trim('_');
 
         if (!string.IsNullOrWhiteSpace(normalized))
         {
@@ -57,5 +57,5 @@ internal static partial class SqlServerIdentifier
     }
 
     [GeneratedRegex("[^A-Za-z0-9_]+", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 100)]
-    private static partial Regex _UnsafeIdentifierCharacters();
+    private static partial Regex UnsafeIdentifierCharacters { get; }
 }

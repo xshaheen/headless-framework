@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 using Headless.Redis;
 using StackExchange.Redis;
 
-namespace Headless.Coordination.Redis;
+namespace Headless.Coordination.Redis.Scripts;
 
 /// <summary>
 /// Returns the current-generation <c>Alive</c> members from the <c>:live</c> sorted set — the targeted,

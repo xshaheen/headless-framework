@@ -27,10 +27,7 @@ public static class SetupSettingsPostgreSql
         {
             Argument.IsNotNullOrWhiteSpace(connectionString);
 
-            return setup.UsePostgreSql(options =>
-            {
-                options.ConnectionString = connectionString;
-            });
+            return setup.UsePostgreSql(options => options.ConnectionString = connectionString);
         }
 
         /// <summary>Configures the settings feature to use PostgreSQL, binding options from <paramref name="configuration"/>.</summary>

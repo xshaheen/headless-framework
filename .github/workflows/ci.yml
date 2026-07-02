@@ -77,9 +77,9 @@ jobs:
           global-json-file: "./global.json"
 
       # Required: the dashboard SPAs are pre-built in the "Build dashboard SPAs"
-      # step below (before the NuGet token is written), so the token-bearing
+      # step below (before the NuGet token is present), so the token-bearing
       # solution build runs with BuildDashboardSpa=false and never executes npm
-      # lifecycle scripts while a credential is on disk.
+      # lifecycle scripts while the credential is available in the environment.
       - name: "Setup Node"
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
@@ -90,32 +90,30 @@ jobs:
             src/Headless.Messaging.Dashboard/wwwroot/package-lock.json
 
       - name: "Setup nuget cache"
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
           path: ${{ env.NUGET_PACKAGES }}
           key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/*.props', '**/*.targets', 'global.json', 'nuget.config') }}
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      # Build the dashboard SPAs BEFORE the NuGet token is written to disk, so a
-      # malicious dependency lifecycle script run by `npm ci` cannot read it. The
-      # solution build below then runs with BuildDashboardSpa=false and only
-      # embeds the already-built wwwroot/dist.
+      # Build the dashboard SPAs BEFORE the NuGet token is present, so a malicious
+      # dependency lifecycle script run by `npm ci` cannot read it. The token is
+      # injected only on the "Format, build, and pack" step below, which runs with
+      # BuildDashboardSpa=false and only embeds the already-built wwwroot/dist.
       - name: "Build dashboard SPAs"
         run: make dashboards
         shell: bash
 
-      - name: "Authenticate GitHub Packages"
-        env:
-          GH_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: dotnet nuget update source github.com --username xshaheen --password "$GH_PACKAGES_TOKEN" --store-password-in-clear-text --configfile nuget.config
-        shell: bash
-
       - name: "Format, build, and pack"
-        # Dashboards are already built above (before the token landed on disk);
-        # skip the in-build npm step so no lifecycle scripts run with the token present.
+        # Dashboards are already built above (before the token is present), so we skip
+        # the in-build npm step (BuildDashboardSpa=false) and no lifecycle scripts run
+        # while the credential is available. GITHUB_PACKAGES_TOKEN is scoped to THIS step
+        # only — the earlier `npm ci` never sees it, and it is never written to disk.
+        # NuGet expands it from nuget.config's %GITHUB_PACKAGES_TOKEN% credential entry.
         env:
           BuildDashboardSpa: "false"
+          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: make ci-build
 
       - name: "Publish Artifacts"

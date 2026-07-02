@@ -19,15 +19,15 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache,
     : INodeDiscoveryProvider
 {
     private const string _TagPrefix = "headless.messaging";
-    private readonly ILogger<ConsulNodeDiscoveryProvider> _logger = logger.CreateLogger<ConsulNodeDiscoveryProvider>();
+    private readonly ILogger<K8sNodeDiscoveryProvider> _logger = logger.CreateLogger<K8sNodeDiscoveryProvider>();
 
-    public async Task<Node?> GetNode(string svcName, string? ns = null, CancellationToken cancellationToken = default)
+    public async Task<Node?> GetNode(string nodeName, string? ns = null, CancellationToken cancellationToken = default)
     {
         try
         {
             using var client = new Kubernetes(options.K8SClientConfig);
             var service = await client
-                .CoreV1.ReadNamespacedServiceAsync(svcName, ns, cancellationToken: cancellationToken)
+                .CoreV1.ReadNamespacedServiceAsync(nodeName, ns, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
 
             return new Node
@@ -41,7 +41,7 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache,
         }
         catch (Exception e)
         {
-            _logger.LogGetConsulNodesFailed(e, e.Message);
+            _logger.LogGetK8SNodeFailed(e, e.Message);
         }
 
         return null;
@@ -68,7 +68,7 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache,
         {
             cache.Set("messaging.nodes.count", 0, TimeSpan.FromSeconds(20));
 
-            _logger.LogGetK8sServicesFailed(ex);
+            _logger.LogGetK8SServicesFailed(ex);
 
             return [];
         }
@@ -83,7 +83,8 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache,
             var namespaces = await client
                 .ListNamespaceAsync(cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
-            return namespaces.Items.Select(x => x.Name()).ToList();
+
+            return [.. namespaces.Items.Select(x => x.Name())];
         }
 #pragma warning disable ERP022
         catch (Exception)
@@ -200,7 +201,7 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache,
             return 0;
         }
 
-        var portByName = servicePorts.FirstOrDefault(p => p.Name == portName);
+        var portByName = servicePorts.FirstOrDefault(p => string.Equals(p.Name, portName, StringComparison.Ordinal));
         if (portByName is null)
         {
             return 0;
@@ -211,7 +212,7 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache,
 
     private sealed record TagFilterResult(bool HideNode, int FilteredPortIndex, string FilteredPortName);
 
-    private TagFilterResult _FilterNodesByTags(IDictionary<string, string> tags)
+    private TagFilterResult _FilterNodesByTags(IDictionary<string, string>? tags)
     {
         var isNodeHidden = options.ShowOnlyExplicitVisibleNodes;
         var filteredPortIndex = 0; //this the default port index
@@ -238,7 +239,7 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache,
             //check for hide Tag
             if (_IsNodeHidden(tag, messagingTagScope))
             {
-                return new TagFilterResult(true, filteredPortIndex, filteredPortName);
+                return new TagFilterResult(HideNode: true, filteredPortIndex, filteredPortName);
             }
 
             isNodeHidden = false;
@@ -316,15 +317,15 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache,
     }
 }
 
-internal static partial class K8sNodeDiscoveryProviderLog
+internal static partial class K8SNodeDiscoveryProviderLog
 {
     [LoggerMessage(
         EventId = 1,
-        EventName = "GetConsulNodesFailed",
+        EventName = "GetK8sNodeFailed",
         Level = LogLevel.Error,
-        Message = "Get consul nodes raised an exception. Exception:{Message}"
+        Message = "Get k8s node raised an exception. Exception:{Message}"
     )]
-    public static partial void LogGetConsulNodesFailed(this ILogger logger, Exception exception, string message);
+    public static partial void LogGetK8SNodeFailed(this ILogger logger, Exception exception, string message);
 
     [LoggerMessage(
         EventId = 2,
@@ -332,5 +333,5 @@ internal static partial class K8sNodeDiscoveryProviderLog
         Level = LogLevel.Error,
         Message = "Get k8s services raised an exception"
     )]
-    public static partial void LogGetK8sServicesFailed(this ILogger logger, Exception exception);
+    public static partial void LogGetK8SServicesFailed(this ILogger logger, Exception exception);
 }

@@ -73,7 +73,7 @@ public sealed class SetOperationsTests(RedisCacheFixture fixture) : RedisCacheTe
         // then
         result.Should().Be(2);
         var remaining = await cache.GetSetAsync<string>(key, cancellationToken: AbortToken);
-        remaining.Value.Should().HaveCount(1);
+        remaining.Value.Should().ContainSingle();
         remaining.Value.Should().Contain("value3");
     }
 

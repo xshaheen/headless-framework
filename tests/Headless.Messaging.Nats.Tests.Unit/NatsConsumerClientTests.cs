@@ -9,9 +9,9 @@ using NATS.Client.Core;
 using NATS.Client.JetStream;
 using MsOptions = Microsoft.Extensions.Options;
 
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class NatsConsumerClientTests : TestBase
 {
     private readonly MsOptions.IOptions<MessagingNatsOptions> _options = MsOptions.Options.Create(
@@ -259,15 +259,15 @@ public sealed class NatsConsumerClientTests : TestBase
     {
         await using var client = _CreateClient("test-group");
 
-        await client.PauseAsync();
-        await client.PauseAsync();
+        await client.PauseAsync(AbortToken);
+        await client.PauseAsync(AbortToken);
     }
 
     [Fact]
     public async Task ResumeAsync_is_noop_when_not_paused()
     {
         await using var client = _CreateClient("test-group");
-        await client.ResumeAsync();
+        await client.ResumeAsync(AbortToken);
     }
 
     [Fact]
@@ -275,8 +275,8 @@ public sealed class NatsConsumerClientTests : TestBase
     {
         await using var client = _CreateClient("test-group");
 
-        await client.PauseAsync();
-        await client.ResumeAsync();
+        await client.PauseAsync(AbortToken);
+        await client.ResumeAsync(AbortToken);
     }
 
     [Fact]
@@ -284,9 +284,9 @@ public sealed class NatsConsumerClientTests : TestBase
     {
         await using var client = _CreateClient("test-group");
 
-        await client.PauseAsync();
-        await client.ResumeAsync();
-        await client.ResumeAsync();
+        await client.PauseAsync(AbortToken);
+        await client.ResumeAsync(AbortToken);
+        await client.ResumeAsync(AbortToken);
     }
 
     [Fact]
@@ -295,7 +295,7 @@ public sealed class NatsConsumerClientTests : TestBase
         var client = _CreateClient("test-group");
         await client.DisposeAsync();
 
-        await client.PauseAsync();
+        await client.PauseAsync(AbortToken);
     }
 
     [Fact]
@@ -304,7 +304,7 @@ public sealed class NatsConsumerClientTests : TestBase
         var client = _CreateClient("test-group");
         await client.DisposeAsync();
 
-        await client.ResumeAsync();
+        await client.ResumeAsync(AbortToken);
     }
 
     // CommitAsync / RejectAsync tests
@@ -531,7 +531,7 @@ public sealed class NatsConsumerClientTests : TestBase
             (_, _, _) => Task.FromResult(consumer)
         );
         await client.SubscribeAsync(["orders.created", "orders.updated"]);
-        await client.PauseAsync();
+        await client.PauseAsync(AbortToken);
 
         using var cts = new CancellationTokenSource();
 
@@ -763,12 +763,15 @@ public sealed class NatsConsumerClientTests : TestBase
             _options,
             _serviceProvider,
             (_, _, _) => Task.FromResult(consumer)
-        );
-        client.OnMessageCallback = async (_, _) =>
+        )
         {
-            handlerStarted.TrySetResult();
-            await releaseHandler.Task;
+            OnMessageCallback = async (_, _) =>
+            {
+                handlerStarted.TrySetResult();
+                await releaseHandler.Task;
+            },
         };
+
         await client.SubscribeAsync(["orders.created"]);
 
         using var cts = new CancellationTokenSource();

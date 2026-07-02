@@ -27,16 +27,11 @@ public static class ServiceBuilder
         {
             if (configurationType == ConfigurationType.UseModelCustomizer)
             {
-                var originalDescriptor = services.FirstOrDefault(descriptor =>
-                    descriptor.ServiceType == typeof(DbContextOptions<TContext>)
-                );
-
-                if (originalDescriptor == null)
-                {
-                    throw new InvalidOperationException(
+                var originalDescriptor =
+                    services.FirstOrDefault(descriptor => descriptor.ServiceType == typeof(DbContextOptions<TContext>))
+                    ?? throw new InvalidOperationException(
                         $"Job: Cannot use UseModelCustomizer with empty {typeof(TContext).Name} configurations"
                     );
-                }
 
                 if (originalDescriptor.ImplementationFactory == null)
                 {
@@ -62,7 +57,7 @@ public static class ServiceBuilder
             // Resolves the registered DbContextOptions<TContext> template (customizer-applied when UseModelCustomizer
             // replaced the descriptor above). Shared by the pooled factory and the coordinated-write path, which
             // clones this template and swaps only the connection.
-            DbContextOptions<TContext> ResolveOptionsTemplate(IServiceProvider provider)
+            DbContextOptions<TContext> resolveOptionsTemplate(IServiceProvider provider)
             {
                 var serviceDescriptor = services.FirstOrDefault(d =>
                     d.ServiceType == typeof(DbContextOptions<TContext>)
@@ -77,11 +72,11 @@ public static class ServiceBuilder
             }
 
             services.TryAddSingleton<IDbContextFactory<TContext>>(provider => new PooledDbContextFactory<TContext>(
-                ResolveOptionsTemplate(provider),
+                resolveOptionsTemplate(provider),
                 builder.PoolSize
             ));
 
-            _AddPersistenceProviderCore<TContext, TTimeJob, TCronJob>(services, ResolveOptionsTemplate);
+            _AddPersistenceProviderCore<TContext, TTimeJob, TCronJob>(services, resolveOptionsTemplate);
         };
     }
 
@@ -100,7 +95,7 @@ public static class ServiceBuilder
             // Builds the options template the way the pooled factory does (apply the consumer's options action, then
             // bind the app service provider). Shared by the pooled factory and the coordinated-write path, which
             // clones this template and swaps only the connection.
-            DbContextOptions<TContext> ResolveOptionsTemplate(IServiceProvider sp)
+            DbContextOptions<TContext> resolveOptionsTemplate(IServiceProvider sp)
             {
                 var optionsBuilder = new DbContextOptionsBuilder<TContext>();
                 optionsAction.Invoke(optionsBuilder);
@@ -109,11 +104,11 @@ public static class ServiceBuilder
             }
 
             services.TryAddSingleton<IDbContextFactory<TContext>>(sp => new PooledDbContextFactory<TContext>(
-                ResolveOptionsTemplate(sp),
+                resolveOptionsTemplate(sp),
                 builder.PoolSize
             ));
 
-            _AddPersistenceProviderCore<TContext, TTimeJob, TCronJob>(services, ResolveOptionsTemplate);
+            _AddPersistenceProviderCore<TContext, TTimeJob, TCronJob>(services, resolveOptionsTemplate);
         };
     }
 

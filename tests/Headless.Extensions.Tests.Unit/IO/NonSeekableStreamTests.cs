@@ -221,7 +221,9 @@ public sealed class NonSeekableStreamTests
 
         // when
         sut.Dispose();
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
         var act = () => sut.Dispose();
+#pragma warning restore MA0045
 
         // then
         act.Should().NotThrow();
@@ -262,8 +264,8 @@ public sealed class NonSeekableStreamTests
     {
         // given
         byte[] data = [10, 20, 30, 40, 50];
-        using var inner = new MemoryStream(data);
-        using var sut = new NonSeekableStream(inner);
+        await using var inner = new MemoryStream(data);
+        await using var sut = new NonSeekableStream(inner);
         var buffer = new byte[3];
 
         // when
@@ -279,8 +281,8 @@ public sealed class NonSeekableStreamTests
     {
         // given
         byte[] data = [10, 20, 30, 40, 50];
-        using var inner = new MemoryStream(data);
-        using var sut = new NonSeekableStream(inner);
+        await using var inner = new MemoryStream(data);
+        await using var sut = new NonSeekableStream(inner);
         var buffer = new byte[3];
 
         // when
@@ -327,8 +329,8 @@ public sealed class NonSeekableStreamTests
     public async Task should_delegate_WriteAsync_byte_array_to_inner_stream()
     {
         // given
-        using var inner = new MemoryStream();
-        using var sut = new NonSeekableStream(inner);
+        await using var inner = new MemoryStream();
+        await using var sut = new NonSeekableStream(inner);
         byte[] data = [1, 2, 3];
 
         // when
@@ -342,8 +344,8 @@ public sealed class NonSeekableStreamTests
     public async Task should_delegate_WriteAsync_memory_to_inner_stream()
     {
         // given
-        using var inner = new MemoryStream();
-        using var sut = new NonSeekableStream(inner);
+        await using var inner = new MemoryStream();
+        await using var sut = new NonSeekableStream(inner);
         byte[] data = [1, 2, 3];
 
         // when
@@ -357,8 +359,8 @@ public sealed class NonSeekableStreamTests
     public async Task should_delegate_FlushAsync_to_inner_stream()
     {
         // given
-        using var inner = new MemoryStream();
-        using var sut = new NonSeekableStream(inner);
+        await using var inner = new MemoryStream();
+        await using var sut = new NonSeekableStream(inner);
 
         // when/then - no exception means delegation works
         await sut.FlushAsync(TestContext.Current.CancellationToken);

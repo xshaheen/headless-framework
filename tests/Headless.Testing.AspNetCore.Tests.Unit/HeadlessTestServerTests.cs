@@ -41,10 +41,10 @@ public sealed class HeadlessTestServerTests : TestBase
         await _server.InitializeAsync();
 
         using var client = _server.CreateClient();
-        using var response = await client.GetAsync("/");
+        using var response = await client.GetAsync("/", AbortToken);
 
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
-        var content = await response.Content.ReadAsStringAsync();
+        var content = await response.Content.ReadAsStringAsync(AbortToken);
         content.Should().Be("ok");
     }
 

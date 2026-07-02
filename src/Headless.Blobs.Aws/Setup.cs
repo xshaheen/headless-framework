@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Amazon.Extensions.NETCore.Setup;
-using Amazon.S3;
 using Headless.Abstractions;
 using Headless.Checks;
 using Microsoft.Extensions.Configuration;

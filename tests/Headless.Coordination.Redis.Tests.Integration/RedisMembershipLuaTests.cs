@@ -2,6 +2,7 @@
 
 using Headless.Coordination;
 using Headless.Coordination.Redis;
+using Headless.Coordination.Redis.Scripts;
 using Headless.Redis;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;

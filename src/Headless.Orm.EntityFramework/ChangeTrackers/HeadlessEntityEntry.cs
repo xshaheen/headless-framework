@@ -12,7 +12,7 @@ internal sealed class HeadlessEntityEntry(string id, EntityEntry entry)
     public EntityEntry Entry { get; } = entry;
 
     public List<HeadlessNavigationEntry> Navigations { get; } =
-        entry.Navigations.Select(x => new HeadlessNavigationEntry(x)).ToList();
+    [.. entry.Navigations.Select(x => new HeadlessNavigationEntry(x))];
 
     public bool IsModified
     {

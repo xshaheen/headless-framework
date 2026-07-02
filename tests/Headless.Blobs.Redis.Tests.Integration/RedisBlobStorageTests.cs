@@ -1,11 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Abstractions;
 using Headless.Blobs;
 using Headless.Blobs.Redis;
 using Headless.Serializer;
 using Microsoft.Extensions.Options;
 
-// ReSharper disable AccessToDisposedClosure
 namespace Tests;
 
 [Collection<RedisBlobStorageFixture>]
@@ -16,7 +16,12 @@ public sealed class RedisBlobStorageTests(RedisBlobStorageFixture fixture) : Blo
         var options = new RedisBlobStorageOptions { ConnectionMultiplexer = fixture.ConnectionMultiplexer };
         var optionsWrapper = new OptionsWrapper<RedisBlobStorageOptions>(options);
 
-        return new RedisBlobStorage(optionsWrapper, new SystemJsonSerializer(), new CrossOsNamingNormalizer());
+        return new RedisBlobStorage(
+            optionsWrapper,
+            new SystemJsonSerializer(),
+            new CrossOsNamingNormalizer(),
+            new Clock(TimeProvider.System)
+        );
     }
 
     [Fact]
@@ -194,7 +199,8 @@ public sealed class RedisBlobStorageTests(RedisBlobStorageFixture fixture) : Blo
         await using var storage = new RedisBlobStorage(
             optionsWrapper,
             new SystemJsonSerializer(),
-            new CrossOsNamingNormalizer()
+            new CrossOsNamingNormalizer(),
+            new Clock(TimeProvider.System)
         );
 
         var largeData = new byte[200]; // Exceeds 100 byte limit
@@ -219,7 +225,8 @@ public sealed class RedisBlobStorageTests(RedisBlobStorageFixture fixture) : Blo
         await using var storage = new RedisBlobStorage(
             optionsWrapper,
             new SystemJsonSerializer(),
-            new CrossOsNamingNormalizer()
+            new CrossOsNamingNormalizer(),
+            new Clock(TimeProvider.System)
         );
 
         var data = new byte[500]; // Within limit
@@ -244,7 +251,8 @@ public sealed class RedisBlobStorageTests(RedisBlobStorageFixture fixture) : Blo
         await using var storage = new RedisBlobStorage(
             optionsWrapper,
             new SystemJsonSerializer(),
-            new CrossOsNamingNormalizer()
+            new CrossOsNamingNormalizer(),
+            new Clock(TimeProvider.System)
         );
 
         var data = new byte[1000];

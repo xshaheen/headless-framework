@@ -269,7 +269,7 @@ public readonly struct PostgresAdvisoryLockKey : IEquatable<PostgresAdvisoryLock
 
     private static bool _TryEncodeAscii(string name, out long key)
     {
-        if (name.Length > (8 * sizeof(long)) / _AsciiCharBits)
+        if (name.Length > 8 * sizeof(long) / _AsciiCharBits)
         {
             key = default;
             return false;
@@ -290,7 +290,7 @@ public readonly struct PostgresAdvisoryLockKey : IEquatable<PostgresAdvisoryLock
 
         result <<= 1;
 
-        for (var i = name.Length; i < (8 * sizeof(long)) / _AsciiCharBits; i++)
+        for (var i = name.Length; i < 8 * sizeof(long) / _AsciiCharBits; i++)
         {
             result = (result << _AsciiCharBits) | _MaxAsciiValue;
         }
@@ -303,7 +303,7 @@ public readonly struct PostgresAdvisoryLockKey : IEquatable<PostgresAdvisoryLock
     private static string _ToAsciiString(long key)
     {
         var remainingKeyBits = unchecked((ulong)key);
-        var length = (8 * sizeof(long)) / _AsciiCharBits;
+        var length = 8 * sizeof(long) / _AsciiCharBits;
 
         while ((remainingKeyBits & _MaxAsciiValue) == _MaxAsciiValue)
         {
@@ -376,7 +376,7 @@ public readonly struct PostgresAdvisoryLockKey : IEquatable<PostgresAdvisoryLock
 
     private static string _ToHashString((int Key1, int Key2) keys)
     {
-        return string.Create(CultureInfo.InvariantCulture, $"{keys.Key1:x8},{keys.Key2:x8}");
+        return $"{keys.Key1:x8},{keys.Key2:x8}";
     }
 
     private enum KeyEncoding

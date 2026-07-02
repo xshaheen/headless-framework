@@ -76,7 +76,7 @@ public sealed class Url
 
             if (!port.HasValue)
             {
-                return userInfo.Length > 0 ? string.Concat(userInfo, "@", host) : host;
+                return userInfo.Length > 0 ? $"{userInfo}@{host}" : host;
             }
 
             // Append the port via the int overload so the nullable port isn't boxed (as string.Concat would).
@@ -199,7 +199,8 @@ public sealed class Url
     /// True if Url is absolute and scheme is https or wss.
     /// </summary>
     public bool IsSecureScheme =>
-        !IsRelative && (Scheme.OrdinalEquals("https", true) || Scheme.OrdinalEquals("wss", true));
+        !IsRelative
+        && (Scheme.OrdinalEquals("https", ignoreCase: true) || Scheme.OrdinalEquals("wss", ignoreCase: true));
     #endregion
 
     #region ctors and parsing methods
@@ -263,11 +264,14 @@ public sealed class Url
             // Root excludes the port here because _port is still null at this point.
             var rootWithoutPort = Root;
             _port =
-                _originalString?.OrdinalStartsWith($"{rootWithoutPort}:{uri.Port}", ignoreCase: true) == true
+                _originalString?.OrdinalStartsWith(
+                    string.Create(CultureInfo.InvariantCulture, $"{rootWithoutPort}:{uri.Port}"),
+                    ignoreCase: true
+                ) == true
                     ? uri.Port
                     : null; // don't default Port if not included explicitly
             _pathSegments = [];
-            if (uri.AbsolutePath.Length > 0 && uri.AbsolutePath != "/")
+            if (uri.AbsolutePath.Length > 0 && !string.Equals(uri.AbsolutePath, "/", StringComparison.Ordinal))
             {
                 AppendPathSegment(uri.AbsolutePath);
             }
@@ -357,10 +361,7 @@ public sealed class Url
         else
         {
             var subpath = segment.ToInvariantString();
-            foreach (var s in ParsePathSegments(subpath))
-            {
-                _pathSegments.Add(s);
-            }
+            _pathSegments.AddRange(ParsePathSegments(subpath));
 
             _trailingSlash = subpath.OrdinalEndsWith("/");
         }
@@ -437,7 +438,7 @@ public sealed class Url
     /// <returns>The Url object with the query parameter added</returns>
     public Url SetQueryParam(string name, object? value, NullValueHandling nullValueHandling = NullValueHandling.Remove)
     {
-        QueryParams.AddOrReplace(name, value, false, nullValueHandling);
+        QueryParams.AddOrReplace(name, value, isEncoded: false, nullValueHandling);
         return this;
     }
 
@@ -547,7 +548,7 @@ public sealed class Url
         NullValueHandling nullValueHandling = NullValueHandling.Remove
     )
     {
-        QueryParams.Add(name, value, false, nullValueHandling);
+        QueryParams.Add(name, value, isEncoded: false, nullValueHandling: nullValueHandling);
         return this;
     }
 
@@ -577,7 +578,7 @@ public sealed class Url
     /// <returns>The Url object with the query parameter added</returns>
     public Url AppendQueryParam(string name)
     {
-        QueryParams.Add(name, null, false, NullValueHandling.NameOnly);
+        QueryParams.Add(name, value: null, isEncoded: false, NullValueHandling.NameOnly);
         return this;
     }
 
@@ -600,9 +601,9 @@ public sealed class Url
             return AppendQueryParam(s);
         }
 
-        foreach (var kv in values.ToKeyValuePairs())
+        foreach (var (key, value) in values.ToKeyValuePairs())
         {
-            AppendQueryParam(kv.Key, kv.Value, nullValueHandling);
+            AppendQueryParam(key, value, nullValueHandling);
         }
 
         return this;
@@ -866,7 +867,7 @@ public sealed class Url
     /// <summary>
     /// Converts this Url object to its string representation.
     /// </summary>
-    public override string ToString() => ToString(false);
+    public override string ToString() => ToString(encodeSpaceAsPlus: false);
 
     /// <summary>
     /// Converts this Url object to System.Uri

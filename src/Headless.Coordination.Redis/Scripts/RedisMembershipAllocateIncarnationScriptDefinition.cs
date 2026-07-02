@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 using Headless.Redis;
 using StackExchange.Redis;
 
-namespace Headless.Coordination.Redis;
+namespace Headless.Coordination.Redis.Scripts;
 
 /// <summary>Allocates a node incarnation and mirrors it into the known-node projection.</summary>
 internal sealed class RedisMembershipAllocateIncarnationScriptDefinition : RedisScriptDefinition

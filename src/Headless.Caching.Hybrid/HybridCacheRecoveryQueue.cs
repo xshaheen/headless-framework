@@ -199,7 +199,7 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
             // Conservatively invalidate the tracked minimum: we don't hold _admissionLock here, so we can't
             // cheaply confirm whether this item was the minimum. Null forces a one-time re-scan on the next
             // queue-full add. Volatile ensures the write is visible to threads entering Enqueue.
-            Volatile.Write(ref _minExpiryItem, null);
+            Volatile.Write(ref _minExpiryItem, value: null);
             _logger.LogAutoRecoveryItemSuperseded(key, item.Kind);
         }
     }
@@ -222,7 +222,7 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
         // Remove only if the slot still holds the same item we inspected (a newer bump may have replaced it).
         if (_items.TryRemove(KeyValuePair.Create(key, item)))
         {
-            Volatile.Write(ref _minExpiryItem, null);
+            Volatile.Write(ref _minExpiryItem, value: null);
             _logger.LogAutoRecoveryItemSuperseded(key, item.Kind);
         }
     }
@@ -246,7 +246,7 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
         // so replaying an old marker only re-asserts its generation and cannot lower a newer one; and (2) synthetic
         // marker keys (the "\0hybrid-marker:*" namespace) are never emitted as real cache keys in invalidation
         // messages, so they never match the key/prefix branches below.
-        bool IsConflicting(RecoveryItem item) =>
+        bool isConflicting(RecoveryItem item) =>
             item.Kind != HybridCacheRecoveryKind.MarkerBump
             && (message.Timestamp is null || item.EnqueuedAt < message.Timestamp.Value);
 
@@ -254,7 +254,7 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
         {
             foreach (var pair in _items)
             {
-                if (IsConflicting(pair.Value))
+                if (isConflicting(pair.Value))
                 {
                     _TryRemoveConflicting(pair);
                 }
@@ -267,7 +267,7 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
         {
             foreach (var pair in _items)
             {
-                if (pair.Key.StartsWith(message.Prefix, StringComparison.Ordinal) && IsConflicting(pair.Value))
+                if (pair.Key.StartsWith(message.Prefix, StringComparison.Ordinal) && isConflicting(pair.Value))
                 {
                     _TryRemoveConflicting(pair);
                 }
@@ -280,7 +280,7 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
         {
             foreach (var key in message.Keys)
             {
-                if (_items.TryGetValue(key, out var item) && IsConflicting(item))
+                if (_items.TryGetValue(key, out var item) && isConflicting(item))
                 {
                     _TryRemoveConflicting(new(key, item));
                 }
@@ -292,7 +292,7 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
         if (
             !string.IsNullOrEmpty(message.Key)
             && _items.TryGetValue(message.Key, out var single)
-            && IsConflicting(single)
+            && isConflicting(single)
         )
         {
             _TryRemoveConflicting(new(message.Key, single));
@@ -337,7 +337,7 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
                     // Invalidate the tracked minimum so the next queue-full Enqueue re-scans rather
                     // than trusting a pointer that may now refer to a removed item. Volatile matches
                     // the write pattern used by OnSuccessfulL2Operation and _TryRemoveConflicting.
-                    Volatile.Write(ref _minExpiryItem, null);
+                    Volatile.Write(ref _minExpiryItem, value: null);
                     _logger.LogAutoRecoveryItemExpired(pair.Key, pair.Value.Kind);
                 }
             }
@@ -375,7 +375,7 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
                         {
                             // Invalidate the tracked minimum so the next queue-full Enqueue re-scans rather than
                             // trusting a pointer that may now refer to a removed item.
-                            Volatile.Write(ref _minExpiryItem, null);
+                            Volatile.Write(ref _minExpiryItem, value: null);
                             _logger.LogAutoRecoveryItemDroppedAfterRetries(
                                 exception,
                                 item.Key,
@@ -402,7 +402,7 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
                 }
                 finally
                 {
-                    Volatile.Write(ref _replaying, null);
+                    Volatile.Write(ref _replaying, value: null);
                 }
 
                 // Conditional remove: a newer item (or this item's own residual publish) may have replaced this
@@ -411,7 +411,7 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
                 {
                     // Invalidate the tracked minimum so the next queue-full Enqueue re-scans rather than
                     // trusting a pointer that may now refer to a removed item.
-                    Volatile.Write(ref _minExpiryItem, null);
+                    Volatile.Write(ref _minExpiryItem, value: null);
                 }
 
                 if (outcome == HybridCacheRecoveryReplayOutcome.Replayed)
@@ -471,7 +471,7 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
     {
         var active = _activeProcessTask;
 
-        if (active is null || active.IsCompleted)
+        if (active?.IsCompleted != false)
         {
             return;
         }
@@ -524,7 +524,7 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
         {
             // Same conservative invalidation as OnSuccessfulL2Operation: no lock held here, so null to force
             // a re-scan on the next queue-full admission rather than comparing against a potentially stale pointer.
-            Volatile.Write(ref _minExpiryItem, null);
+            Volatile.Write(ref _minExpiryItem, value: null);
             _logger.LogAutoRecoveryItemConflicted(pair.Key, pair.Value.Kind);
         }
     }

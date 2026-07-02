@@ -20,8 +20,8 @@ public sealed partial class R2BlobNamingNormalizer : IBlobNamingNormalizer
             containerName = containerName.ToLowerInvariant();
 
             // R2 bucket names allow only lowercase letters, digits, and hyphens (no dots).
-            containerName = _NotAllowedCharactersRegex().Replace(containerName, string.Empty);
-            containerName = _LeadingHyphensRegex().Replace(containerName, string.Empty);
+            containerName = NotAllowedCharactersRegex.Replace(containerName, string.Empty);
+            containerName = LeadingHyphensRegex.Replace(containerName, string.Empty);
 
             // Enforce the 63-char ceiling after normalization, then strip any hyphen the truncation may expose.
             if (containerName.Length > 63)
@@ -29,7 +29,7 @@ public sealed partial class R2BlobNamingNormalizer : IBlobNamingNormalizer
                 containerName = containerName[..63];
             }
 
-            containerName = _TrailingHyphensRegex().Replace(containerName, string.Empty);
+            containerName = TrailingHyphensRegex.Replace(containerName, string.Empty);
 
             // R2 bucket names must be at least 3 characters.
             return containerName.Length >= 3 ? containerName : containerName.PadRight(3, '0');
@@ -48,13 +48,13 @@ public sealed partial class R2BlobNamingNormalizer : IBlobNamingNormalizer
     #region Helpers
 
     [GeneratedRegex("[^a-z0-9-]", RegexOptions.None, 100)]
-    private static partial Regex _NotAllowedCharactersRegex();
+    private static partial Regex NotAllowedCharactersRegex { get; }
 
     [GeneratedRegex("^-+", RegexOptions.None, 100)]
-    private static partial Regex _LeadingHyphensRegex();
+    private static partial Regex LeadingHyphensRegex { get; }
 
     [GeneratedRegex("-+$", RegexOptions.None, 100)]
-    private static partial Regex _TrailingHyphensRegex();
+    private static partial Regex TrailingHyphensRegex { get; }
 
     #endregion
 }

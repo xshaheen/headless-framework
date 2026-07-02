@@ -22,6 +22,11 @@ internal static class CommitSignalSourceAttach
         CancellationToken cancellationToken
     )
     {
+        // MA0045: this method is synchronous by design (see ICommitSignalSource.Attach) — it pushes the ambient
+        // coordinator onto an AsyncLocal<T> stack in the caller's frame, so making it async would strand that push
+        // in a separate execution context and break ICurrentCommitCoordinator.Current. The error-path Dispose()
+        // calls below therefore stay synchronous.
+#pragma warning disable MA0045
         Argument.IsNotNull(bindings);
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -63,5 +68,6 @@ internal static class CommitSignalSourceAttach
         // The provider both logs the duplicate and builds the exception, keeping the log+throw decision in one
         // place per provider (its own [LoggerMessage] + message wording).
         throw duplicateFault(key);
+#pragma warning restore MA0045
     }
 }

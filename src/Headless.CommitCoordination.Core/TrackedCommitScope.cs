@@ -34,6 +34,9 @@ internal sealed class TrackedCommitScope : ICommitScope
         }
     }
 
+    // _inner is readonly: reading a stable reference's property needs no lock. The _gate only serializes the
+    // mutating operations on _inner (Dispose/DisposeAsync/SignalAsync), not this pass-through read.
+    // ReSharper disable once InconsistentlySynchronizedField
     public ICommitCoordinator Coordinator => _inner.Coordinator;
 
     public async ValueTask SignalAsync(CommitOutcome outcome)
@@ -157,7 +160,9 @@ internal sealed class TrackedCommitScope : ICommitScope
             return;
         }
 
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
         _ownedServices.Value.Dispose();
+#pragma warning restore MA0045
     }
 
     private async ValueTask _DisposeOwnedServicesAsync()

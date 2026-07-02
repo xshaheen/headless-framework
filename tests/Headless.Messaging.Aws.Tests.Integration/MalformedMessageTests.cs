@@ -4,7 +4,6 @@ using Amazon.SQS;
 using Amazon.SQS.Model;
 using Headless.Messaging;
 using Headless.Messaging.Aws;
-using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Meziantou.Extensions.Logging.Xunit.v3;

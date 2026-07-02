@@ -2,7 +2,7 @@
 
 namespace Headless.Caching.Benchmarks.Infrastructure;
 
-internal sealed class BenchmarkRemoteCacheAdapter(Headless.Caching.ICache cache) : IRemoteCache
+internal sealed class BenchmarkRemoteCacheAdapter(ICache cache) : IRemoteCache
 {
     public CacheEntryOptions? DefaultEntryOptions => cache.DefaultEntryOptions;
 

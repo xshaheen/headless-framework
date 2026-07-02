@@ -262,7 +262,7 @@ internal sealed class IdempotencyOptionsValidator : AbstractValidator<Idempotenc
 /// <see cref="InFlightStrategy.WaitAndReplay"/> but no
 /// <see cref="IDistributedLock"/> is registered.
 /// </summary>
-internal sealed class IdempotencyOptionsDIValidator(IServiceProvider serviceProvider)
+internal sealed class IdempotencyOptionsDiValidator(IServiceProvider serviceProvider)
     : IValidateOptions<IdempotencyOptions>
 {
     public ValidateOptionsResult Validate(string? name, IdempotencyOptions options)

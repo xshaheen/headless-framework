@@ -111,9 +111,9 @@ public static class ProcessExtensions
             // Process has already exited (WaitForExitAsync awaited above), so the synchronous WaitForExit() returns
             // immediately after draining buffered stdio — no deadlock risk; the async overload does not guarantee
             // redirected streams have fully drained.
-#pragma warning disable CA1849, AsyncFixer02
+#pragma warning disable CA1849, AsyncFixer02, MA0042
             process.WaitForExit();
-#pragma warning restore CA1849, AsyncFixer02
+#pragma warning restore CA1849, AsyncFixer02, MA0042
 
             exitCode = process.ExitCode;
         }
@@ -208,8 +208,7 @@ public static class ProcessExtensions
                 {
                     if (cancellationToken.CanBeCanceled && !process.HasExited)
                     {
-                        // ReSharper disable once AccessToDisposedClosure
-                        registration = cancellationToken.Register(() => process.TryToKill());
+                        registration = cancellationToken.Register(process.TryToKill);
                     }
 
                     await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
@@ -224,9 +223,9 @@ public static class ProcessExtensions
                 // callbacks may still be in-flight. The no-argument WaitForExit() blocks until
                 // all redirected streams have been fully read, ensuring OnNext is never called
                 // after OnCompleted (which would violate the Rx contract).
-#pragma warning disable CA1849 // Synchronous WaitForExit() is intentional: the async overload does not guarantee redirected stdio has drained.
+#pragma warning disable CA1849, MA0042 // Synchronous WaitForExit() is intentional: the async overload does not guarantee redirected stdio has drained.
                 process.WaitForExit();
-#pragma warning restore CA1849
+#pragma warning restore CA1849, MA0042
 
                 observer.OnNext(
                     new ProcessObservedOutput(

@@ -11,6 +11,8 @@ public static class ConsoleSampleJobs
     [JobFunction("ConsoleSample_HelloWorld")]
     public static Task HelloWorldAsync(JobFunctionContext context, CancellationToken cancellationToken)
     {
+        _ = cancellationToken;
+
         System.Console.WriteLine($"[Console] Hello from Jobs! Id={context.Id}, ScheduledFor={context.ScheduledFor:O}");
         return Task.CompletedTask;
     }
@@ -40,7 +42,12 @@ public class SampleScheduler(ITimeJobManager<TimeJobEntity> timeJobManager) : IH
             return;
         }
 
-        System.Console.WriteLine($"Scheduled console sample job with Id={job.Id}, ScheduledFor={job.ExecutionTime:O}");
+        System.Console.WriteLine(
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"Scheduled console sample job with Id={job.Id}, ScheduledFor={job.ExecutionTime:O}"
+            )
+        );
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;

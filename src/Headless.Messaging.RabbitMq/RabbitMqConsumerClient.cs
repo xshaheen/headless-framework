@@ -56,7 +56,11 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
 
     public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
 
-    public BrokerAddress BrokerAddress => new("rabbitmq", $"{_rabbitMqOptions.HostName}:{_rabbitMqOptions.Port}");
+    public BrokerAddress BrokerAddress =>
+        new(
+            "rabbitmq",
+            string.Create(CultureInfo.InvariantCulture, $"{_rabbitMqOptions.HostName}:{_rabbitMqOptions.Port}")
+        );
 
     public async ValueTask SubscribeAsync(IEnumerable<string> messageNames)
     {
@@ -124,7 +128,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
             foreach (var queueName in _queueNames)
             {
                 var consumerTag = await _channel!
-                    .BasicConsumeAsync(queueName, false, _consumer, cancellationToken)
+                    .BasicConsumeAsync(queueName, autoAck: false, _consumer, cancellationToken)
                     .ConfigureAwait(false);
                 _consumerTags.Add(consumerTag);
             }
@@ -212,7 +216,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         foreach (var queueName in _queueNames)
         {
             var consumerTag = await _channel!
-                .BasicConsumeAsync(queueName, false, _consumer!, cancellationToken)
+                .BasicConsumeAsync(queueName, autoAck: false, _consumer!, cancellationToken)
                 .ConfigureAwait(false);
             _consumerTags.Add(consumerTag);
         }
@@ -243,7 +247,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         await _semaphore.WaitAsync().ConfigureAwait(false);
         try
         {
-            if (_channel is not null && !_channel.IsClosed)
+            if (_channel?.IsClosed == false)
             {
                 return;
             }
@@ -253,7 +257,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
             try
             {
                 await channel
-                    .ExchangeDeclareAsync(_exchangeName, RabbitMqOptions.ExchangeType, true)
+                    .ExchangeDeclareAsync(_exchangeName, RabbitMqOptions.ExchangeType, durable: true)
                     .ConfigureAwait(false);
 
                 _channel = channel;

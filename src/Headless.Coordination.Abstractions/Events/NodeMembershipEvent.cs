@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Coordination;
 
 /// <summary>Base type for best-effort local membership observations derived from authoritative snapshots.</summary>

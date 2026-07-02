@@ -2,7 +2,6 @@
 
 using Headless.Messaging;
 using Headless.Messaging.Exceptions;
-using Headless.Messaging.Messages;
 using Headless.Messaging.Nats;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -132,7 +131,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
 
         var conn = await fixture.GetConnectionAsync();
         var js = new NatsJSContext(conn);
-        var stream = await js.GetStreamAsync(streamName);
+        var stream = await js.GetStreamAsync(streamName, cancellationToken: AbortToken);
         stream.Should().NotBeNull();
     }
 
@@ -148,10 +147,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
             {
                 Servers = fixture.ConnectionString,
                 EnableSubscriberClientStreamAndSubjectCreation = true,
-                StreamOptions = config =>
-                {
-                    config.Storage = StreamConfigStorage.Memory;
-                },
+                StreamOptions = config => config.Storage = StreamConfigStorage.Memory,
             }
         );
 
@@ -164,7 +160,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
         // then — stream should use Memory storage (from callback)
         var conn = await fixture.GetConnectionAsync();
         var js = new NatsJSContext(conn);
-        var stream = await js.GetStreamAsync(streamName);
+        var stream = await js.GetStreamAsync(streamName, cancellationToken: AbortToken);
         var info = stream.Info;
         info.Config.Storage.Should().Be(StreamConfigStorage.Memory);
     }
@@ -259,7 +255,6 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
         var messageCount = 0;
         client.OnMessageCallback = (_, _) =>
         {
-            // ReSharper disable once AccessToModifiedClosure
             Interlocked.Increment(ref messageCount);
             messageReceived.TrySetResult();
             return Task.CompletedTask;
@@ -319,7 +314,8 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
         await js.PublishAsync(
             subject,
             new ReadOnlyMemory<byte>(body),
-            serializer: NatsRawSerializer<ReadOnlyMemory<byte>>.Default
+            serializer: NatsRawSerializer<ReadOnlyMemory<byte>>.Default,
+            cancellationToken: AbortToken
         );
     }
 

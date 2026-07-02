@@ -126,8 +126,8 @@ public sealed class PostgreSqlSettingsFailureModesTests(PostgreSqlSettingsFixtur
             """,
             connection
         );
-        command.Parameters.AddWithValue("schema", schema);
-        command.Parameters.AddWithValue("table", table);
+        command.Parameters.AddWithValue(nameof(schema), schema);
+        command.Parameters.AddWithValue(nameof(table), table);
 
         return Convert.ToInt32(
             await command.ExecuteScalarAsync(TestContext.Current.CancellationToken),
@@ -149,7 +149,7 @@ public sealed class PostgreSqlSettingsFailureModesTests(PostgreSqlSettingsFixtur
             """,
             connection
         );
-        command.Parameters.AddWithValue("schema", schema);
+        command.Parameters.AddWithValue(nameof(schema), schema);
 
         return Convert.ToInt32(
             await command.ExecuteScalarAsync(TestContext.Current.CancellationToken),

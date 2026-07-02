@@ -271,7 +271,7 @@ public sealed class FullGeoCoordinate : IEquatable<FullGeoCoordinate>
     /// <param name="right">The second GeoCoordinate to compare.</param>
     public static bool operator ==(FullGeoCoordinate? left, FullGeoCoordinate? right)
     {
-        return left?.Equals(right) ?? right is null;
+        return left?.Equals(right) ?? (right is null);
     }
 
     /// <summary>

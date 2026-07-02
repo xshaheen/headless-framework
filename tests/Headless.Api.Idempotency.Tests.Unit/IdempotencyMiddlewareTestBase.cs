@@ -96,8 +96,10 @@ public abstract class IdempotencyMiddlewareTestBase : TestBase
         byte[]? body = null
     )
     {
-        var ctx = new DefaultHttpContext();
-        ctx.RequestServices = new ServiceCollection().AddLogging().AddProblemDetails().BuildServiceProvider();
+        var ctx = new DefaultHttpContext
+        {
+            RequestServices = new ServiceCollection().AddLogging().AddProblemDetails().BuildServiceProvider(),
+        };
         ctx.Request.Method = method;
         ctx.Request.Path = path;
         ctx.Request.Body = body is { Length: > 0 } ? new MemoryStream(body) : new MemoryStream();

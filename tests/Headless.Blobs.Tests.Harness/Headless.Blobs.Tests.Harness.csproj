@@ -3,9 +3,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Tests</RootNamespace>
     <IsTestProject>false</IsTestProject>
-    <IsTestableProject>false</IsTestableProject>
-    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
-    <ExcludeFromCodeCoverage>true</ExcludeFromCodeCoverage>
+    <IsTestableProject>true</IsTestableProject>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Testcontainers" />

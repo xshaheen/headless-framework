@@ -42,17 +42,18 @@ public static class JobsCancellationTokenManager
         {
             _ParentIdIndex.AddOrUpdate(
                 context.ParentId.Value,
-                key =>
+                static (_, jobId) =>
                 {
                     var set = new ConcurrentHashSet<Guid>();
-                    set.Add(context.JobId);
+                    set.Add(jobId);
                     return set;
                 },
-                (key, existing) =>
+                static (_, existing, jobId) =>
                 {
-                    existing.Add(context.JobId);
+                    existing.Add(jobId);
                     return existing;
-                }
+                },
+                context.JobId
             );
         }
     }

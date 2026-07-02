@@ -158,8 +158,8 @@ internal sealed class OutboxMessageWriter(
                 .StoreMessageAsync(
                     publishRequest.MessageName,
                     _CreateStorageEnvelope(publishRequest),
-                    null,
-                    cancellationToken
+                    transaction: null,
+                    cancellationToken: cancellationToken
                 )
                 .ConfigureAwait(false);
 
@@ -168,7 +168,12 @@ internal sealed class OutboxMessageWriter(
             if (publishRequest.Message.Headers.ContainsKey(Headers.DelayTime))
             {
                 await dispatcher
-                    .EnqueueToScheduler(immediateMessage, publishRequest.PublishAt, null, cancellationToken)
+                    .EnqueueToScheduler(
+                        immediateMessage,
+                        publishRequest.PublishAt,
+                        transaction: null,
+                        cancellationToken: cancellationToken
+                    )
                     .ConfigureAwait(false);
             }
             else
@@ -213,7 +218,7 @@ internal sealed class OutboxMessageWriter(
             var eventData = new MessageEventDataPubStore
             {
                 OperationTimestamp = _NowUnixTimeMilliseconds(),
-                Operation = message.GetName(),
+                Operation = message.Name,
                 Message = message,
                 IntentType = intentType,
                 CancellationToken = cancellationToken,
@@ -243,7 +248,7 @@ internal sealed class OutboxMessageWriter(
             var eventData = new MessageEventDataPubStore
             {
                 OperationTimestamp = now,
-                Operation = message.GetName(),
+                Operation = message.Name,
                 Message = message,
                 IntentType = intentType,
                 ElapsedTimeMs = now - tracingTimestamp.Value,
@@ -271,7 +276,7 @@ internal sealed class OutboxMessageWriter(
             var eventData = new MessageEventDataPubStore
             {
                 OperationTimestamp = now,
-                Operation = message.GetName(),
+                Operation = message.Name,
                 Message = message,
                 IntentType = intentType,
                 ElapsedTimeMs = now - tracingTimestamp.Value,

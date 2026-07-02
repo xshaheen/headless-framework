@@ -19,16 +19,20 @@ namespace Headless.Payments.Paymob.Services.CashIn;
 /// channels: card iframe, saved card token, mobile wallet, and kiosk.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Each <c>StartAsync</c> overload executes the full legacy Paymob flow internally — order
 /// creation, payment-key issuance, and channel-specific pay initiation — and returns a
 /// channel-specific response ready for the client. Provider connectivity failures are surfaced as
 /// <c>ConflictException</c> with a structured error descriptor from <c>PaymobMessageDescriptor</c>.
-///
+/// </para>
+/// <para>
 /// The Intention API flow (<c>StartAsync(CashInCreateIntentionRequest)</c>) bypasses the
 /// multi-step legacy flow and delegates directly to the broker.
-///
+/// </para>
+/// <para>
 /// Register via the Services package setup class. The implementation depends on
 /// <c>IPaymobCashInBroker</c> and is itself scoped.
+/// </para>
 /// </remarks>
 public interface IPaymobCashInService
 {
@@ -231,7 +235,7 @@ public sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<Paym
             OrderId = orderId.ToString(CultureInfo.InvariantCulture),
             TransactionId = payResponse.Id,
             RedirectionUrl = payResponse.RedirectionUrl,
-            Is3DSecure = payResponse.Is3dSecure.Equals("true", StringComparison.OrdinalIgnoreCase),
+            Is3DSecure = payResponse.Is3DSecure.Equals("true", StringComparison.OrdinalIgnoreCase),
             IsSuccess = payResponse.IsSuccess(),
         };
     }

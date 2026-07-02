@@ -5,7 +5,7 @@ namespace Headless.Jobs.SourceGenerator.Models;
 /// <summary>
 /// Contains information about method parameters for JobFunction methods.
 /// </summary>
-internal class MethodParameterInfo
+internal sealed class MethodParameterInfo
 {
     public bool UsesGenericContext { get; set; }
     public string GenericTypeName { get; set; } = string.Empty;

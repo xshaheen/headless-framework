@@ -275,7 +275,7 @@ public static class MessagingDashboardEndpoints
         var ss = await monitoringApi.HourlySucceededJobs(MessageType.Subscribe).ConfigureAwait(false);
         var sf = await monitoringApi.HourlyFailedJobs(MessageType.Subscribe).ConfigureAwait(false);
 
-        var dayHour = ps.Keys.OrderBy(x => x).Select(x => new DateTimeOffset(x).ToUnixTimeSeconds());
+        var dayHour = ps.Keys.Order().Select(x => new DateTimeOffset(x).ToUnixTimeSeconds());
 
         var result = new
         {
@@ -306,8 +306,8 @@ public static class MessagingDashboardEndpoints
             new
             {
                 StorageId = message.StorageId.ToString("D"),
-                MessageId = message.Origin.GetId(),
-                Name = message.Origin.GetName(),
+                MessageId = message.Origin.Id,
+                message.Origin.Name,
                 message.IntentType,
                 message.Content,
                 message.Added,
@@ -332,8 +332,8 @@ public static class MessagingDashboardEndpoints
             new
             {
                 StorageId = message.StorageId.ToString("D"),
-                MessageId = message.Origin.GetId(),
-                Name = message.Origin.GetName(),
+                MessageId = message.Origin.Id,
+                message.Origin.Name,
                 Group = message.Origin.GetGroup(),
                 message.IntentType,
                 message.Content,
@@ -459,7 +459,9 @@ public static class MessagingDashboardEndpoints
                 continue;
             }
 
-            await dispatcher.EnqueueToExecute(message, null, httpContext.RequestAborted).ConfigureAwait(false);
+            await dispatcher
+                .EnqueueToExecute(message, descriptor: null, cancellationToken: httpContext.RequestAborted)
+                .ConfigureAwait(false);
             requeued.Add(message.StorageId);
         }
 
@@ -725,8 +727,14 @@ public static class MessagingDashboardEndpoints
 
         var nodes = await discoveryProvider.GetNodes().ConfigureAwait(false);
         var isRegistered = nodes.Any(n =>
-            endpoint.StartsWith($"http://{n.Address}:{n.Port}", StringComparison.OrdinalIgnoreCase)
-            || endpoint.StartsWith($"https://{n.Address}:{n.Port}", StringComparison.OrdinalIgnoreCase)
+            endpoint.StartsWith(
+                string.Create(CultureInfo.InvariantCulture, $"http://{n.Address}:{n.Port}"),
+                StringComparison.OrdinalIgnoreCase
+            )
+            || endpoint.StartsWith(
+                string.Create(CultureInfo.InvariantCulture, $"https://{n.Address}:{n.Port}"),
+                StringComparison.OrdinalIgnoreCase
+            )
         );
 
         if (!isRegistered)
@@ -743,7 +751,7 @@ public static class MessagingDashboardEndpoints
             var response = await httpClient.GetStringAsync(healthEndpoint).ConfigureAwait(false);
             sw.Stop();
 
-            if (response == "OK")
+            if (string.Equals(response, "OK", StringComparison.Ordinal))
             {
                 return Results.Text(sw.ElapsedMilliseconds.ToString("D", CultureInfo.InvariantCulture));
             }
@@ -773,7 +781,7 @@ internal sealed class WarpResult
 
     public required List<SubInfo> Values { get; set; }
 
-    public class SubInfo
+    public sealed class SubInfo
     {
         public required string MessageName { get; set; }
 

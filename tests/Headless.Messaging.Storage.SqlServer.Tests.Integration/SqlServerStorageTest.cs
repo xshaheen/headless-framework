@@ -52,7 +52,7 @@ public sealed class SqlServerStorageTest(SqlServerTestFixture fixture) : IAsyncL
 
         // Log what tables exist for debugging
         var tableList = string.Join(", ", tables);
-        Assert.True(tables.Count > 0, $"No tables found. Available tables: {tableList}");
+        (tables.Count > 0).Should().BeTrue($"No tables found. Available tables: {tableList}");
     }
 
     [Theory]

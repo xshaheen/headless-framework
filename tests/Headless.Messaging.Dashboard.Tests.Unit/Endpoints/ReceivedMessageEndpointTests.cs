@@ -27,7 +27,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
     public async Task ReceivedMessageDetails_should_return_message_content()
     {
         // given
-        var messageId = Guid.Parse("11111111-1111-1111-1111-111111111456");
+        var messageId = new Guid(0x11111111, 0x1111, 0x1111, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x14, 0x56);
         var message = new MediumMessage
         {
             StorageId = messageId,
@@ -50,15 +50,17 @@ public sealed class ReceivedMessageEndpointTests : TestBase
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
 
         await using var app = _CreateTestApp(_dataStorage);
-        await app.StartAsync();
+        await app.StartAsync(AbortToken);
         using var client = app.GetTestClient();
 
         // when
-        var response = await client.GetAsync($"/api/received/message/{messageId}");
+        var response = await client.GetAsync($"/api/received/message/{messageId}", AbortToken);
 
         // then
         response.StatusCode.Should().NotBe(HttpStatusCode.NotFound);
-        var payload = await response.Content.ReadFromJsonAsync<Dictionary<string, object?>>();
+        var payload = await response.Content.ReadFromJsonAsync<Dictionary<string, object?>>(
+            cancellationToken: AbortToken
+        );
         payload.Should().ContainKey("storageId");
         payload.Should().ContainKey("messageId");
         payload.Should().ContainKey("intentType");
@@ -69,18 +71,18 @@ public sealed class ReceivedMessageEndpointTests : TestBase
     public async Task ReceivedMessageDetails_should_return_404_for_missing_message()
     {
         // given
-        var messageId = Guid.Parse("11111111-1111-1111-1111-111111111888");
+        var messageId = new Guid(0x11111111, 0x1111, 0x1111, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x18, 0x88);
         _monitoringApi
             .GetReceivedMessageAsync(messageId, Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult<MediumMessage?>(null));
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
 
         await using var app = _CreateTestApp(_dataStorage);
-        await app.StartAsync();
+        await app.StartAsync(AbortToken);
         using var client = app.GetTestClient();
 
         // when
-        var response = await client.GetAsync($"/api/received/message/{messageId}");
+        var response = await client.GetAsync($"/api/received/message/{messageId}", AbortToken);
 
         // then
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -94,7 +96,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
             [
                 new MessageView
                 {
-                    StorageId = Guid.Parse("11111111-1111-1111-1111-111111111456"),
+                    StorageId = new Guid(0x11111111, 0x1111, 0x1111, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x14, 0x56),
                     MessageId = "logical-rec-456",
                     Version = "v1",
                     Name = "orders.received",
@@ -117,17 +119,20 @@ public sealed class ReceivedMessageEndpointTests : TestBase
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
 
         await using var app = _CreateTestApp(_dataStorage);
-        await app.StartAsync();
+        await app.StartAsync(AbortToken);
         using var client = app.GetTestClient();
 
         // when
         var response = await client.GetAsync(
-            "/api/received/Failed?currentPage=1&perPage=10&group=workers&intentType=Queue"
+            "/api/received/Failed?currentPage=1&perPage=10&group=workers&intentType=Queue",
+            AbortToken
         );
 
         // then
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var payload = await response.Content.ReadFromJsonAsync<Dictionary<string, JsonElement>>();
+        var payload = await response.Content.ReadFromJsonAsync<Dictionary<string, JsonElement>>(
+            cancellationToken: AbortToken
+        );
         payload
             .Should()
             .ContainKeys("items", "index", "size", "totalItems", "totalPages", "hasPrevious", "hasNext", "totals");
@@ -232,7 +237,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
     public async Task ReceivedDelete_should_return_204_on_success()
     {
         // given
-        var messageId = Guid.Parse("11111111-1111-1111-1111-111111111789");
+        var messageId = new Guid(0x11111111, 0x1111, 0x1111, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x17, 0x89);
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
         _dataStorage
             .DeleteReceivedMessageAsync(messageId, Arg.Any<CancellationToken>())

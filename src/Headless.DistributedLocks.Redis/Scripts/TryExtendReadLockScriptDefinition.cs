@@ -2,7 +2,7 @@
 
 using Headless.Redis;
 
-namespace Headless.DistributedLocks.Redis;
+namespace Headless.DistributedLocks.Redis.Scripts;
 
 /// <summary>Atomically extends a reader lock if the caller's lock id is still present.</summary>
 internal sealed class TryExtendReadLockScriptDefinition : RedisScriptDefinition

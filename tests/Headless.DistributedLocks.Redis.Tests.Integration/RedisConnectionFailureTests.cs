@@ -21,8 +21,8 @@ public sealed class RedisConnectionFailureTests : TestBase
         options.ConnectTimeout = 100;
         options.SyncTimeout = 100;
 
-        var multiplexer = await ConnectionMultiplexer.ConnectAsync(options);
-        var scriptsLoader = new HeadlessRedisScriptsLoader(multiplexer);
+        await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(options);
+        using var scriptsLoader = new HeadlessRedisScriptsLoader(multiplexer);
         var storage = new RedisDistributedLockStorage(multiplexer, scriptsLoader);
 
         var key = $"lock:{Faker.Random.AlphaNumeric(10)}";
@@ -46,8 +46,8 @@ public sealed class RedisConnectionFailureTests : TestBase
         options.ConnectTimeout = 100;
         options.SyncTimeout = 100;
 
-        var multiplexer = await ConnectionMultiplexer.ConnectAsync(options);
-        var scriptsLoader = new HeadlessRedisScriptsLoader(multiplexer);
+        await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(options);
+        using var scriptsLoader = new HeadlessRedisScriptsLoader(multiplexer);
         var storage = new RedisDistributedLockStorage(multiplexer, scriptsLoader);
 
         var key = $"lock:{Faker.Random.AlphaNumeric(10)}";

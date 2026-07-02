@@ -71,7 +71,9 @@ internal static class SourceGeneratorUtilities
         try
         {
             var tree = CSharpSyntaxTree.ParseText(code);
+#pragma warning disable MA0045 // Formatting is part of the synchronous source-generation pipeline.
             var root = tree.GetRoot();
+#pragma warning restore MA0045
             var formatted = root.NormalizeWhitespace();
             return formatted.ToFullString();
         }
@@ -96,18 +98,20 @@ internal static class SourceGeneratorUtilities
             {
                 return $"\"{stringKey}\"";
             }
-            else if (keyArg.Value != null)
+
+            if (keyArg.Value != null)
             {
-                return _FormatServiceKeyValue(keyArg.Value, keyArg.Type);
+                return _FormatServiceKeyValue(keyArg.Value);
             }
         }
+
         return null;
     }
 
     /// <summary>
     /// Formats a service key value for C# code generation.
     /// </summary>
-    private static string _FormatServiceKeyValue(object value, ITypeSymbol? type)
+    private static string _FormatServiceKeyValue(object value)
     {
         return value switch
         {
@@ -126,10 +130,7 @@ internal static class SourceGeneratorUtilities
     /// <summary>
     /// Creates type aliases for complex nested types and returns a dictionary of full type name to alias.
     /// </summary>
-    public static Dictionary<string, string> CreateTypeAliases(
-        IEnumerable<string> typeNames,
-        string? targetNamespace = null
-    )
+    public static Dictionary<string, string> CreateTypeAliases(IEnumerable<string> typeNames)
     {
         var aliases = new Dictionary<string, string>(StringComparer.Ordinal);
         var usedAliases = new HashSet<string>(StringComparer.Ordinal);
@@ -139,7 +140,7 @@ internal static class SourceGeneratorUtilities
             // Create aliases for types that:
             // 1. Have at least one dot (are qualified)
             // 2. Are not in the same namespace as the target (to avoid conflicts)
-            if (typeName.Contains('.') && _ShouldCreateAlias(typeName, targetNamespace))
+            if (typeName.Contains('.'))
             {
                 var alias = _GenerateTypeAlias(typeName, usedAliases);
                 aliases[typeName] = alias;
@@ -148,16 +149,6 @@ internal static class SourceGeneratorUtilities
         }
 
         return aliases;
-    }
-
-    /// <summary>
-    /// Determines if a type alias should be created for the given type name.
-    /// </summary>
-    private static bool _ShouldCreateAlias(string typeName, string? targetNamespace)
-    {
-        // Create aliases for all qualified types to ensure clean, consistent code
-        // This includes both nested types and single-level qualified types
-        return true;
     }
 
     /// <summary>
@@ -186,7 +177,7 @@ internal static class SourceGeneratorUtilities
             }
 
             // If parent name is also taken, combine parent + simple name
-            var combinedName = $"{parentName}{simpleName}";
+            var combinedName = string.Concat(parentName, simpleName);
             if (!usedAliases.Contains(combinedName))
             {
                 return combinedName;
@@ -198,34 +189,10 @@ internal static class SourceGeneratorUtilities
         string candidate;
         do
         {
-            candidate = $"{simpleName}{counter}";
+            candidate = string.Concat(simpleName, counter.ToString(CultureInfo.InvariantCulture));
             counter++;
         } while (usedAliases.Contains(candidate));
 
         return candidate;
-    }
-
-    /// <summary>
-    /// Extracts the namespace from a fully qualified type name.
-    /// </summary>
-    private static string _ExtractNamespaceFromTypeName(string fullTypeName)
-    {
-        var lastDotIndex = fullTypeName.LastIndexOf('.');
-        return lastDotIndex > 0 ? fullTypeName.Substring(0, lastDotIndex) : string.Empty;
-    }
-}
-
-/// <summary>
-/// Extension methods for .NET Standard 2.0 compatibility.
-/// </summary>
-internal static class NetStandardExtensions
-{
-    /// <summary>
-    /// Deconstruct extension for KeyValuePair to enable tuple deconstruction in .NET Standard 2.0.
-    /// </summary>
-    public static void Deconstruct<TKey, TValue>(this KeyValuePair<TKey, TValue> kvp, out TKey key, out TValue value)
-    {
-        key = kvp.Key;
-        value = kvp.Value;
     }
 }

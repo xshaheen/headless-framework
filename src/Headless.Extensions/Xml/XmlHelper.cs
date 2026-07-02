@@ -11,6 +11,21 @@ namespace Headless.Xml;
 [PublicAPI]
 public static class XmlHelper
 {
+    // Hardened reader shared by both overloads: DtdProcessing.Ignore + XmlResolver=null skip any inline DTD,
+    // so entity-expansion (billion-laughs) and external-entity (XXE) payloads can never be processed.
+    private static readonly XmlReaderSettings _SafeReaderSettings = new()
+    {
+        CheckCharacters = true,
+        ConformanceLevel = ConformanceLevel.Document,
+        DtdProcessing = DtdProcessing.Ignore,
+        IgnoreComments = true,
+        IgnoreProcessingInstructions = true,
+        IgnoreWhitespace = true,
+        ValidationFlags = XmlSchemaValidationFlags.None,
+        ValidationType = ValidationType.None,
+        XmlResolver = null,
+    };
+
     /// <summary>Strips hidden/control characters from <paramref name="str"/> and then XML-encodes the result.</summary>
     /// <param name="str">The text to sanitize and encode; may be <see langword="null"/>.</param>
     /// <param name="settings">Optional writer settings; a sensible async default is used when <see langword="null"/>.</param>
@@ -68,6 +83,8 @@ public static class XmlHelper
         return sb.ToString();
     }
 
+    #region Is Valid Xml
+
     /// <summary>Determines whether <paramref name="maybeXml"/> is well-formed XML, parsing with a hardened (XXE-safe) reader.</summary>
     /// <param name="maybeXml">The candidate XML text.</param>
     /// <returns><see langword="true"/> when the text parses as well-formed XML; otherwise <see langword="false"/>.</returns>
@@ -90,26 +107,35 @@ public static class XmlHelper
         return _TryReadToEnd(xmlReader);
     }
 
-    // Hardened reader shared by both overloads: DtdProcessing.Ignore + XmlResolver=null skip any inline DTD,
-    // so entity-expansion (billion-laughs) and external-entity (XXE) payloads can never be processed.
-    private static readonly XmlReaderSettings _SafeReaderSettings = new()
+    /// <summary>Determines whether <paramref name="maybeXml"/> is well-formed XML, parsing with a hardened (XXE-safe) reader.</summary>
+    /// <param name="maybeXml">The candidate XML text.</param>
+    /// <returns><see langword="true"/> when the text parses as well-formed XML; otherwise <see langword="false"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="maybeXml"/> is <see langword="null"/>.</exception>
+    public static async Task<bool> IsValidXmlAsync(string maybeXml)
     {
-        CheckCharacters = true,
-        ConformanceLevel = ConformanceLevel.Document,
-        DtdProcessing = DtdProcessing.Ignore,
-        IgnoreComments = true,
-        IgnoreProcessingInstructions = true,
-        IgnoreWhitespace = true,
-        ValidationFlags = XmlSchemaValidationFlags.None,
-        ValidationType = ValidationType.None,
-        XmlResolver = null,
-    };
+        using var xmlReader = XmlReader.Create(new StringReader(maybeXml), _SafeReaderSettings);
+
+        return await _TryReadToEndAsync(xmlReader).ConfigureAwait(false);
+    }
+
+    /// <summary>Determines whether <paramref name="maybeXml"/> contains well-formed XML, parsing with a hardened (XXE-safe) reader.</summary>
+    /// <param name="maybeXml">The stream containing the candidate XML.</param>
+    /// <returns><see langword="true"/> when the stream parses as well-formed XML; otherwise <see langword="false"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="maybeXml"/> is <see langword="null"/>.</exception>
+    public static async Task<bool> IsValidXmlAsync(Stream maybeXml)
+    {
+        using var xmlReader = XmlReader.Create(maybeXml, _SafeReaderSettings);
+
+        return await _TryReadToEndAsync(xmlReader).ConfigureAwait(false);
+    }
 
     private static bool _TryReadToEnd(XmlReader xmlReader)
     {
         try
         {
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
             while (xmlReader.Read())
+#pragma warning restore MA0045
             {
                 // This space intentionally left blank
             }
@@ -121,4 +147,23 @@ public static class XmlHelper
             return false;
         }
     }
+
+    private static async Task<bool> _TryReadToEndAsync(XmlReader xmlReader)
+    {
+        try
+        {
+            while (await xmlReader.ReadAsync().ConfigureAwait(false))
+            {
+                // This space intentionally left blank
+            }
+
+            return true;
+        }
+        catch (XmlException)
+        {
+            return false;
+        }
+    }
+
+    #endregion
 }

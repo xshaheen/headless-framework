@@ -64,4 +64,61 @@
   <data name="strings:only_numbers" xml:space="preserve">
     <value>The field must contain only numbers.</value>
   </data>
+  <data name="strings:only_decimals" xml:space="preserve">
+    <value>The field must be a valid decimal number.</value>
+  </data>
+  <data name="strings:invalid_slug" xml:space="preserve">
+    <value>The field must be a valid slug (lowercase letters, digits, and single hyphens).</value>
+  </data>
+  <data name="strings:invalid_username" xml:space="preserve">
+    <value>The field must be a valid username (3–30 letters, digits, '-', '_', or '.', not starting, ending, or repeating a special character).</value>
+  </data>
+  <data name="strings:invalid_zip_code" xml:space="preserve">
+    <value>The field must be a valid postal/ZIP code.</value>
+  </data>
+  <data name="strings:invalid_hex_color" xml:space="preserve">
+    <value>The field must be a valid hex color (for example "#1a2b3c" or "1a2b3c").</value>
+  </data>
+  <data name="strings:invalid_base64" xml:space="preserve">
+    <value>The field must be a valid Base64-encoded string.</value>
+  </data>
+  <data name="strings:not_trimmed" xml:space="preserve">
+    <value>The field must not start or end with whitespace.</value>
+  </data>
+  <data name="strings:invalid_culture" xml:space="preserve">
+    <value>The field must be a valid culture/locale name (for example "en", "en-US").</value>
+  </data>
+  <data name="strings:contains_scripts" xml:space="preserve">
+    <value>The field must not contain script elements.</value>
+  </data>
+  <data name="phone_number:invalid_mobile_number" xml:space="preserve">
+    <value>"{PropertyValue}" is not a valid mobile phone number.</value>
+  </data>
+  <data name="net:invalid_ipv4" xml:space="preserve">
+    <value>The field must be a valid IPv4 address.</value>
+  </data>
+  <data name="net:invalid_ipv6" xml:space="preserve">
+    <value>The field must be a valid IPv6 address.</value>
+  </data>
+  <data name="net:invalid_ip" xml:space="preserve">
+    <value>The field must be a valid IP address.</value>
+  </data>
+  <data name="enum:invalid_name" xml:space="preserve">
+    <value>"{PropertyValue}" is not a valid value for {PropertyName}.</value>
+  </data>
+  <data name="datetime:must_be_in_past" xml:space="preserve">
+    <value>{PropertyName} must be a date in the past.</value>
+  </data>
+  <data name="datetime:must_be_in_future" xml:space="preserve">
+    <value>{PropertyName} must be a date in the future.</value>
+  </data>
+  <data name="datetime:must_not_be_in_past" xml:space="preserve">
+    <value>{PropertyName} must not be a date in the past.</value>
+  </data>
+  <data name="datetime:must_not_be_in_future" xml:space="preserve">
+    <value>{PropertyName} must not be a date in the future.</value>
+  </data>
+  <data name="datetime:minimum_age" xml:space="preserve">
+    <value>{PropertyName} must be at least {MinimumAge} years ago.</value>
+  </data>
 </root>

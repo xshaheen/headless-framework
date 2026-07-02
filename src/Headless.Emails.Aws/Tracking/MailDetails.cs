@@ -69,7 +69,8 @@ public sealed record MailDetails
 
     /// <summary>Captures any fields SES adds to the mail object that are not modeled above.</summary>
     [JsonExtensionData]
-    public IDictionary<string, object?>? ExtensionData { get; set; }
+    public IDictionary<string, object?> ExtensionData { get; } =
+        new Dictionary<string, object?>(StringComparer.Ordinal);
 }
 
 /// <summary>A single email header, as reported in <see cref="MailDetails.Headers"/>.</summary>
@@ -130,5 +131,6 @@ public sealed record EmailCommonHeaders
 
     /// <summary>Captures any common headers SES reports that are not modeled above.</summary>
     [JsonExtensionData]
-    public IDictionary<string, object?>? ExtensionData { get; set; }
+    public IDictionary<string, object?> ExtensionData { get; } =
+        new Dictionary<string, object?>(StringComparer.Ordinal);
 }

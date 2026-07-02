@@ -36,9 +36,10 @@ public sealed class NodeMembershipContractTests : TestBase
         // when
         var enumerator = sut.WatchAsync(cts.Token).GetAsyncEnumerator(cts.Token);
         await cts.CancelAsync();
+        var action = async () => await enumerator.MoveNextAsync();
 
         // then
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await enumerator.MoveNextAsync());
+        await action.Should().ThrowAsync<OperationCanceledException>();
         await enumerator.DisposeAsync();
     }
 
@@ -58,7 +59,7 @@ public sealed class NodeMembershipContractTests : TestBase
 
         // then
         events.Should().AllSatisfy(@event => @event.Identity.Should().Be(identity));
-        events.Select(static @event => @event.GetType()).Should().OnlyHaveUniqueItems();
+        events.Should().OnlyHaveUniqueItems(static @event => @event.GetType());
     }
 
     [Fact]
@@ -96,7 +97,7 @@ public sealed class NodeMembershipContractTests : TestBase
                 [typeof(CancellationToken)]
             )!
             .ReturnType.Should()
-            .Be(typeof(ValueTask<IReadOnlyList<NodeIdentity>>));
+            .Be<ValueTask<IReadOnlyList<NodeIdentity>>>();
         typeof(INodeMembership)
             .GetMethod(
                 nameof(INodeMembership.GetLivenessSnapshotAsync),
@@ -104,7 +105,7 @@ public sealed class NodeMembershipContractTests : TestBase
                 [typeof(CancellationToken)]
             )!
             .ReturnType.Should()
-            .Be(typeof(ValueTask<IReadOnlyList<NodeLivenessSnapshot>>));
+            .Be<ValueTask<IReadOnlyList<NodeLivenessSnapshot>>>();
     }
 
     [Fact]

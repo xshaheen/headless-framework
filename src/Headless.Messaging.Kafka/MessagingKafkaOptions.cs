@@ -46,7 +46,7 @@ public sealed class MessagingKafkaOptions
     /// errors such as leader elections, rebalances, and network timeouts.
     /// See <see href="https://docs.confluent.io/platform/current/clients/librdkafka/html/rdkafkacpp_8h.html#a4c6b7af48c215724c323c60ea4080dbf"/>.
     /// </summary>
-    public List<ErrorCode> RetriableErrorCodes { get; set; } = GetDefaultRetriableErrorCodes();
+    public List<ErrorCode> RetriableErrorCodes { get; } = [.. DefaultRetriableErrorCodes];
 
     /// <summary>
     /// Topic creation options applied when the framework auto-creates topics.
@@ -56,22 +56,19 @@ public sealed class MessagingKafkaOptions
     /// <summary>
     /// Returns the default set of retriable Kafka error codes.
     /// </summary>
-    public static List<ErrorCode> GetDefaultRetriableErrorCodes()
-    {
-        return
-        [
-            ErrorCode.GroupLoadInProgress,
-            ErrorCode.Local_Retry,
-            ErrorCode.Local_TimedOut,
-            ErrorCode.RequestTimedOut,
-            ErrorCode.LeaderNotAvailable,
-            ErrorCode.NotLeaderForPartition,
-            ErrorCode.RebalanceInProgress,
-            ErrorCode.NotCoordinatorForGroup,
-            ErrorCode.NetworkException,
-            ErrorCode.GroupCoordinatorNotAvailable,
-        ];
-    }
+    public static IReadOnlyList<ErrorCode> DefaultRetriableErrorCodes { get; } =
+    [
+        ErrorCode.GroupLoadInProgress,
+        ErrorCode.Local_Retry,
+        ErrorCode.Local_TimedOut,
+        ErrorCode.RequestTimedOut,
+        ErrorCode.LeaderNotAvailable,
+        ErrorCode.NotLeaderForPartition,
+        ErrorCode.RebalanceInProgress,
+        ErrorCode.NotCoordinatorForGroup,
+        ErrorCode.NetworkException,
+        ErrorCode.GroupCoordinatorNotAvailable,
+    ];
 }
 
 /// <summary>Topic creation settings used when the framework auto-creates Kafka topics.</summary>

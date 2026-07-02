@@ -32,16 +32,13 @@ internal sealed class SubscribeInvoker(ISerializer serializer, IConsumeMiddlewar
         var descriptor = context.ConsumerDescriptor;
 
         // Extract message type from method parameter: IConsume<T>.Consume(ConsumeContext<T>, CancellationToken)
-        var consumeContextParam = descriptor.Parameters.FirstOrDefault(p =>
-            p.ParameterType.IsGenericType && p.ParameterType.GetGenericTypeDefinition() == typeof(ConsumeContext<>)
-        );
-
-        if (consumeContextParam == null)
-        {
-            throw new InvalidOperationException(
+        var consumeContextParam =
+            descriptor.Parameters.FirstOrDefault(p =>
+                p.ParameterType.IsGenericType && p.ParameterType.GetGenericTypeDefinition() == typeof(ConsumeContext<>)
+            )
+            ?? throw new InvalidOperationException(
                 $"Consumer method must have a ConsumeContext<T> parameter. Method: {descriptor.MethodInfo.Name}"
             );
-        }
 
         var messageType = consumeContextParam.ParameterType.GetGenericArguments()[0];
 

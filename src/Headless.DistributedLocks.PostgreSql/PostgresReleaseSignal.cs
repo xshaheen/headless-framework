@@ -118,7 +118,7 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
         await using var command = connection.CreateCommand();
         command.CommandTimeout = _commandTimeoutSeconds;
         command.CommandText = $"SELECT pg_catalog.pg_notify('{_Channel}', @resource)";
-        command.Parameters.AddWithValue("resource", resource);
+        command.Parameters.AddWithValue(nameof(resource), resource);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -150,7 +150,7 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
                 await using var connection = await _dataSource
                     .OpenConnectionAsync(cancellationToken)
                     .ConfigureAwait(false);
-                connection.Notification += OnNotification;
+                connection.Notification += onNotification;
 
                 await using (var listen = connection.CreateCommand())
                 {
@@ -168,7 +168,7 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
                     await connection.WaitAsync(cancellationToken).ConfigureAwait(false);
                 }
 
-                connection.Notification -= OnNotification;
+                connection.Notification -= onNotification;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -184,13 +184,17 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
                     Math.Min(Math.Pow(2, consecutiveFailures), _MaxReconnectBackoff.TotalSeconds)
                 );
                 consecutiveFailures++;
+#pragma warning disable CA5394 // Random is an insecure random number generator.
                 var jitter = 0.8 + (Random.Shared.NextDouble() * 0.4);
+#pragma warning restore CA5394
                 var delay = TimeSpan.FromMilliseconds(exponential.TotalMilliseconds * jitter);
                 await _timeProvider.Delay(delay, cancellationToken).ConfigureAwait(false);
             }
         }
 
-        void OnNotification(object sender, NpgsqlNotificationEventArgs args)
+        return;
+
+        void onNotification(object sender, NpgsqlNotificationEventArgs args)
         {
             var resource = args.Payload;
 

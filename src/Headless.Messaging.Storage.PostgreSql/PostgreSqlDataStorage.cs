@@ -16,6 +16,7 @@ using Microsoft.Extensions.Options;
 using Npgsql;
 using NpgsqlTypes;
 
+#pragma warning disable RCS1084 // Use coalesce expression instead of conditional expression
 namespace Headless.Messaging.Storage.PostgreSql;
 
 /// <summary>
@@ -65,7 +66,6 @@ internal sealed class PostgreSqlDataStorage(
 
     private readonly string _publishedTable = initializer.GetPublishedTableName();
     private readonly string _receivedTable = initializer.GetReceivedTableName();
-    private readonly INodeMembership _nodeMembership = nodeMembership;
 
     /// <summary>
     /// Returns the monitoring API for querying message statistics and dashboard data against this PostgreSQL storage.
@@ -185,7 +185,7 @@ internal sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@LockedUntil", lockedUntil.ToUtcParameterValue()),
             new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar)
             {
-                Value = _nodeMembership.GetOwnerParameterValue(lockedUntil),
+                Value = nodeMembership.GetOwnerParameterValue(lockedUntil),
             },
             new NpgsqlParameter("@OriginalRetries", NpgsqlDbType.Integer)
             {
@@ -267,7 +267,7 @@ internal sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@LockedUntil", stored.LockedUntil.ToUtcParameterValue()),
             new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar) { Value = DBNull.Value },
             new NpgsqlParameter("@StatusName", nameof(StatusName.Scheduled)),
-            new NpgsqlParameter("@MessageId", message.Origin.GetId()),
+            new NpgsqlParameter("@MessageId", message.Origin.Id),
         ];
 
         if (transaction == null)
@@ -406,7 +406,7 @@ internal sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@LockedUntil", DBNull.Value),
             new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar) { Value = DBNull.Value },
             new NpgsqlParameter("@StatusName", nameof(StatusName.Failed)),
-            new NpgsqlParameter("@MessageId", message.Origin.GetId()),
+            new NpgsqlParameter("@MessageId", message.Origin.Id),
             new NpgsqlParameter("@ExceptionInfo", exceptionInfo ?? (object)DBNull.Value),
             // #4 — active-lease guard uses the injected TimeProvider (not DB now()) so all lease math
             // shares one clock domain; keeps the guard testable with a fake clock.
@@ -463,7 +463,7 @@ internal sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@LockedUntil", mediumMessage.LockedUntil.ToUtcParameterValue()),
             new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar) { Value = DBNull.Value },
             new NpgsqlParameter("@StatusName", nameof(StatusName.Scheduled)),
-            new NpgsqlParameter("@MessageId", message.Origin.GetId()),
+            new NpgsqlParameter("@MessageId", message.Origin.Id),
             new NpgsqlParameter("@ExceptionInfo", DBNull.Value),
             // #4 — active-lease guard uses the injected TimeProvider (not DB now()) so all lease math
             // shares one clock domain; keeps the guard testable with a fake clock.
@@ -789,7 +789,7 @@ internal sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@LockedUntil", lockedUntil.ToUtcParameterValue()),
             new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar)
             {
-                Value = _nodeMembership.GetOwnerParameterValue(lockedUntil),
+                Value = nodeMembership.GetOwnerParameterValue(lockedUntil),
             },
             new NpgsqlParameter("@OriginalRetries", NpgsqlDbType.Integer)
             {
@@ -931,7 +931,7 @@ internal sealed class PostgreSqlDataStorage(
             + "AND (\"LockedUntil\" IS NULL OR \"LockedUntil\" <= @Now) "
             + $"AND {_TerminalRowGuardSimple}";
 
-        var owner = _nodeMembership.GetOwnerTag();
+        var owner = nodeMembership.GetOwnerTag();
         object[] sqlParams =
         [
             new NpgsqlParameter("@Id", message.StorageId),
@@ -978,7 +978,9 @@ internal sealed class PostgreSqlDataStorage(
         // Use the injected TimeProvider rather than the DB server clock (now()) so InMemory and
         // SQL providers share identical pickup semantics — keeps tests with a fake clock honest
         // and avoids subtle drift between application time and DB time.
-        var sql = $"""
+        var sql = string.Create(
+            CultureInfo.InvariantCulture,
+            $"""
             UPDATE {tableName} SET "LockedUntil" = @NewLease, "Owner" = @Owner
             WHERE "Id" IN (
                 SELECT "Id" FROM {tableName}
@@ -992,7 +994,8 @@ internal sealed class PostgreSqlDataStorage(
                 FOR UPDATE SKIP LOCKED
             )
             RETURNING "Id","Content","IntentType","Retries","Added","NextRetryAt","LockedUntil","Owner";
-            """;
+            """
+        );
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var newLease = now.Add(messagingOptions.Value.RetryPolicy.DispatchTimeout);
@@ -1005,7 +1008,7 @@ internal sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@NewLease", newLease),
             new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar)
             {
-                Value = _nodeMembership.GetOwnerTag() ?? (object)DBNull.Value,
+                Value = nodeMembership.GetOwnerTag() ?? (object)DBNull.Value,
             },
         ];
 
@@ -1102,10 +1105,7 @@ internal sealed class PostgreSqlDataStorage(
                 sqlParams:
                 [
                     new NpgsqlParameter("@Now", now),
-                    new NpgsqlParameter("@DeadOwners", NpgsqlDbType.Array | NpgsqlDbType.Varchar)
-                    {
-                        Value = deadOwners.ToArray(),
-                    },
+                    new NpgsqlParameter("@DeadOwners", deadOwners.ToArray()) { DataTypeName = "varchar[]" },
                 ],
                 cancellationToken: cancellationToken
             )

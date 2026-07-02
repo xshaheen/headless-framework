@@ -31,9 +31,8 @@ public static class DataProtectionBuilderExtensions
     )
     {
         builder.Services.Configure<KeyManagementOptions>(options =>
-        {
-            options.XmlRepository = new BlobStorageDataProtectionXmlRepository(storage, loggerFactory);
-        });
+            options.XmlRepository = new BlobStorageDataProtectionXmlRepository(storage, loggerFactory)
+        );
 
         return builder;
     }

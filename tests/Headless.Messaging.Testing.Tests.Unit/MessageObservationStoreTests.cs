@@ -192,7 +192,7 @@ public sealed class MessageObservationStoreTests : TestBase
             typeof(SimpleMessage),
             MessageObservationType.Published,
             intentType: null,
-            predicate: p => p is SimpleMessage sm && sm.Value == "yes",
+            predicate: p => p is SimpleMessage sm && string.Equals(sm.Value, "yes", StringComparison.Ordinal),
             timeout: TimeSpan.FromSeconds(5),
             cancellationToken: AbortToken
         );
@@ -225,7 +225,7 @@ public sealed class MessageObservationStoreTests : TestBase
             typeof(SimpleMessage),
             MessageObservationType.Consumed,
             intentType: null,
-            predicate: p => p is SimpleMessage sm && sm.Value == "match-me",
+            predicate: p => p is SimpleMessage sm && string.Equals(sm.Value, "match-me", StringComparison.Ordinal),
             timeout: TimeSpan.FromMilliseconds(50),
             cancellationToken: AbortToken
         );
@@ -260,7 +260,7 @@ public sealed class MessageObservationStoreTests : TestBase
             typeof(SimpleMessage),
             MessageObservationType.Published,
             intentType: IntentType.Queue,
-            predicate: p => p is SimpleMessage sm && sm.Value == "same",
+            predicate: p => p is SimpleMessage sm && string.Equals(sm.Value, "same", StringComparison.Ordinal),
             timeout: TimeSpan.FromMilliseconds(50),
             cancellationToken: AbortToken
         );
@@ -323,7 +323,7 @@ public sealed class MessageObservationStoreTests : TestBase
 
         // then
         ex.Should().NotBeNull();
-        ex!.ExpectedType.Should().Be(typeof(OtherMessage));
+        ex!.ExpectedType.Should().Be<OtherMessage>();
         ex.ObservationType.Should().Be(MessageObservationType.Published);
         ex.Elapsed.Should().BeGreaterThan(TimeSpan.Zero);
         // ObservedMessages contains what was in the Published bucket
@@ -414,7 +414,7 @@ public sealed class MessageObservationStoreTests : TestBase
         public string? Value { get; set; }
     }
 
-    private sealed class DerivedMessage : SimpleMessage { }
+    private sealed class DerivedMessage : SimpleMessage;
 
-    private sealed class OtherMessage { }
+    private sealed class OtherMessage;
 }

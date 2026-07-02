@@ -2,7 +2,7 @@
 
 using Headless.Messaging.CircuitBreaker;
 
-namespace Headless.Messaging;
+namespace Headless.Messaging.Registration;
 
 internal sealed record MessageRegistration(
     Type MessageType,

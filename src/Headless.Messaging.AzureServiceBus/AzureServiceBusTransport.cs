@@ -26,8 +26,9 @@ internal sealed class AzureServiceBusTransport(
     /// <returns></returns>
     public IServiceBusProducerDescriptor CreateProducerForMessage(TransportMessage transportMessage)
     {
-        return busOptions.Value.CustomProducers.SingleOrDefault(p => p.MessageTypeName == transportMessage.GetName())
-            ?? new ServiceBusProducerDescriptor(transportMessage.GetName(), busOptions.Value.TopicPath);
+        return busOptions.Value.CustomProducers.SingleOrDefault(p =>
+                string.Equals(p.MessageTypeName, transportMessage.Name, StringComparison.Ordinal)
+            ) ?? new ServiceBusProducerDescriptor(transportMessage.Name, busOptions.Value.TopicPath);
     }
 
     public BrokerAddress BrokerAddress =>
@@ -50,7 +51,7 @@ internal sealed class AzureServiceBusTransport(
 
             await sender.SendMessageAsync(message, cancellationToken).ConfigureAwait(false);
 
-            var messageName = transportMessage.GetName();
+            var messageName = transportMessage.Name;
             _logger.MessagePublished(messageName);
 
             return OperateResult.Success;
@@ -75,18 +76,29 @@ internal sealed class AzureServiceBusTransport(
     {
         return _senders.GetOrAdd(
             producerDescriptor.TopicPath,
-            topicPath => new Lazy<ServiceBusSender>(
-                () =>
-                {
-                    _logger.TopicConnectionExists(topicPath);
-                    _client ??= busOptions.Value.TokenCredential is null
-                        ? new ServiceBusClient(busOptions.Value.ConnectionString)
-                        : new ServiceBusClient(busOptions.Value.Namespace, busOptions.Value.TokenCredential);
-                    return _client.CreateSender(topicPath);
-                },
-                LazyThreadSafetyMode.ExecutionAndPublication
-            )
+            static (topicPath, transport) =>
+            {
+                var factory = new SenderFactory(transport, topicPath);
+
+                return new Lazy<ServiceBusSender>(factory.Create, LazyThreadSafetyMode.ExecutionAndPublication);
+            },
+            this
         );
+    }
+
+    private ServiceBusSender _CreateSender(string topicPath)
+    {
+        _logger.TopicConnectionExists(topicPath);
+        _client ??= busOptions.Value.TokenCredential is null
+            ? new ServiceBusClient(busOptions.Value.ConnectionString)
+            : new ServiceBusClient(busOptions.Value.Namespace, busOptions.Value.TokenCredential);
+
+        return _client.CreateSender(topicPath);
+    }
+
+    private sealed class SenderFactory(AzureServiceBusTransport transport, string topicPath)
+    {
+        public ServiceBusSender Create() => transport._CreateSender(topicPath);
     }
 
     public async ValueTask DisposeAsync()

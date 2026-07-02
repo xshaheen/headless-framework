@@ -178,7 +178,7 @@ public sealed class AwsBlobStorage(
 
         // Index results by enumeration position, not the order parallel bodies start, so results[i] always
         // describes items[i] — honoring the "one Result per input blob, in original order" contract.
-        var items = blobs as IReadOnlyList<BlobUploadRequest> ?? [.. blobs];
+        var items = blobs.AsIReadOnlyList();
         var results = new Result<Exception>[items.Count];
 
         var options = new ParallelOptions
@@ -288,7 +288,7 @@ public sealed class AwsBlobStorage(
         }
         catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.NotFound)
         {
-            return objectKeys.ConvertAll(_ => Result<bool, Exception>.Ok(true));
+            return objectKeys.ConvertAll(_ => Result<bool, Exception>.Ok(value: true));
         }
         catch (DeleteObjectsException e) // This exception is thrown when some items fail to delete.
         {
@@ -310,7 +310,7 @@ public sealed class AwsBlobStorage(
                 }
                 else
                 {
-                    results.Add(Result<bool, Exception>.Ok(true));
+                    results.Add(Result<bool, Exception>.Ok(value: true));
                 }
             }
 
@@ -321,7 +321,7 @@ public sealed class AwsBlobStorage(
 
         // No exceptions were thrown, so all items were deleted successfully.
 
-        return objectKeys.ConvertAll(_ => Result<bool, Exception>.Ok(true));
+        return objectKeys.ConvertAll(_ => Result<bool, Exception>.Ok(value: true));
     }
 
     public async ValueTask<int> DeleteAllAsync(
@@ -957,7 +957,7 @@ public sealed class AwsBlobStorage(
 
         // The S3 client is built per-store by the DI factory and handed to this engine to own (it is not a
         // container-tracked service), so this instance is responsible for releasing its HTTP handler/sockets.
-        (s3 as IDisposable)?.Dispose();
+        s3?.Dispose();
 
         return ValueTask.CompletedTask;
     }

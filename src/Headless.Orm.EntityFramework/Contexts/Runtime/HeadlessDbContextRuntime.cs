@@ -60,8 +60,6 @@ internal sealed class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextSe
 
     public ValueTask DisposeAsync()
     {
-        GC.SuppressFinalize(this);
-
         if (!_initialized)
         {
             return ValueTask.CompletedTask;

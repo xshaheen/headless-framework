@@ -2,7 +2,7 @@
 
 using Headless.Messaging;
 using Headless.Messaging.AzureServiceBus;
-using Headless.Messaging.Messages;
+using Headless.Messaging.Registration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;

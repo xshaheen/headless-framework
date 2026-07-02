@@ -551,7 +551,9 @@ public sealed class PrimitiveGeneratorTests
         );
     }
 
+#pragma warning disable xUnit1004 // Test methods should not be skipped
     [Fact(Skip = "Primitive of Primitive not supported yet")]
+#pragma warning restore xUnit1004
     public Task should_generate_all_converters_when_string_of_string_primitive()
     {
         const string source = """
@@ -584,7 +586,9 @@ public sealed class PrimitiveGeneratorTests
         return TestHelper.Verify(source, generated => generated.Files.Should().HaveCount(11), _generateAllOptions);
     }
 
+#pragma warning disable xUnit1004 // Test methods should not be skipped
     [Fact(Skip = "Primitive of Primitive not supported yet")]
+#pragma warning restore xUnit1004
     public Task should_generate_all_converters_when_int_of_int_primitive()
     {
         const string source = """

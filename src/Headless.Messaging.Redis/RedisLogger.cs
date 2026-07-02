@@ -4,7 +4,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.Redis;
 
-internal class RedisLogger(ILogger logger) : TextWriter
+internal sealed class RedisLogger(ILogger logger) : TextWriter
 {
     public override Encoding Encoding => Encoding.UTF8;
 

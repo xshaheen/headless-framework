@@ -8,7 +8,7 @@
 
 using Headless.Redis;
 
-namespace Headless.Caching;
+namespace Headless.Caching.Scripts;
 
 /// <summary>Atomically replaces a cache key only if its framed or raw value matches the expected value.</summary>
 internal sealed class CacheReplaceIfEqualScriptDefinition : RedisScriptDefinition

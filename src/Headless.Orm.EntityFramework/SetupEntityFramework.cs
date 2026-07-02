@@ -4,7 +4,6 @@ using Headless.Abstractions;
 using Headless.AuditLog;
 using Headless.Checks;
 using Headless.CommitCoordination.EntityFramework;
-using Headless.Core;
 using Headless.Domain;
 using Headless.EntityFramework.CompiledQueryCache;
 using Headless.EntityFramework.Contexts.Runtime;
@@ -307,10 +306,7 @@ public static class SetupEntityFramework
             // PostConfigure (not Configure): the seam's IsEnabled = true must run AFTER any consumer
             // Configure<TenantWriteGuardOptions>(...) the host wires up so a later host-side
             // Configure that disables the guard does not override the seam's explicit opt-in.
-            services.PostConfigure<TenantWriteGuardOptions>(options =>
-            {
-                options.IsEnabled = true;
-            });
+            services.PostConfigure<TenantWriteGuardOptions>(options => options.IsEnabled = true);
 
             return services;
         }

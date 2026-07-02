@@ -42,7 +42,7 @@ public sealed class AzureStorageTests(AzureBlobStorageFixture fixture) : BlobSto
         var container = new[] { $"presign{Guid.NewGuid():N}" };
         var content = "presigned-content"u8.ToArray();
 
-        using (var stream = new MemoryStream(content))
+        await using (var stream = new MemoryStream(content))
         {
             await ((IBlobStorage)storage).UploadAsync(container, "file.txt", stream, cancellationToken: AbortToken);
         }
@@ -89,7 +89,7 @@ public sealed class AzureStorageTests(AzureBlobStorageFixture fixture) : BlobSto
         var readBack = await ((IBlobStorage)storage).OpenReadStreamAsync(container, "file.txt", AbortToken);
         readBack.Should().NotBeNull();
 
-        using var buffer = new MemoryStream();
+        await using var buffer = new MemoryStream();
         await readBack!.Stream.CopyToAsync(buffer, AbortToken);
         buffer.ToArray().Should().Equal(content);
     }
@@ -107,7 +107,7 @@ public sealed class AzureStorageTests(AzureBlobStorageFixture fixture) : BlobSto
 
         for (var i = 0; i < total; i++)
         {
-            using var content = new MemoryStream("x"u8.ToArray());
+            await using var content = new MemoryStream("x"u8.ToArray());
             await storage.UploadAsync(container, $"f{i}.txt", content, cancellationToken: AbortToken);
         }
 
@@ -115,7 +115,7 @@ public sealed class AzureStorageTests(AzureBlobStorageFixture fixture) : BlobSto
         var deleted = await storage.DeleteAllAsync(container, blobSearchPattern: null, pageSize: 2, AbortToken);
 
         deleted.Should().Be(total);
-        (await storage.GetBlobsListAsync(container)).Should().BeEmpty();
+        (await storage.GetBlobsListAsync(container, cancellationToken: AbortToken)).Should().BeEmpty();
     }
 
     [Fact]

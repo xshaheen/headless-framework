@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 using Headless.Redis;
 using StackExchange.Redis;
 
-namespace Headless.DistributedLocks.Redis;
+namespace Headless.DistributedLocks.Redis.Scripts;
 
 /// <summary>Atomically extends a writer lock when the writer key still belongs to the lock id.</summary>
 internal sealed class TryExtendWriteLockScriptDefinition : RedisScriptDefinition

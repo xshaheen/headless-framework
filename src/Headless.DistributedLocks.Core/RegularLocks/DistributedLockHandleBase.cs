@@ -441,7 +441,7 @@ internal abstract class DistributedLockHandleBase : IDistributedLease, LeaseMoni
 
     private async ValueTask _StopMonitorAsync()
     {
-        var monitor = Interlocked.Exchange(ref _monitor, null);
+        var monitor = Interlocked.Exchange(ref _monitor, value: null);
 
         if (monitor is null)
         {

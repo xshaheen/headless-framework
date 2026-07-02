@@ -4,7 +4,6 @@ using System.Reflection;
 using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Coordination;
-using Headless.Core;
 using Headless.DistributedLocks;
 using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
@@ -12,6 +11,7 @@ using Headless.Messaging.Configuration;
 using Headless.Messaging.Coordination;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Processor;
+using Headless.Messaging.Registration;
 using Headless.Messaging.Serialization;
 using Headless.Messaging.Transactions;
 using Headless.Messaging.Transport;
@@ -469,10 +469,7 @@ public static class SetupMessaging
                 {
                     var logger = provider.GetService<ILoggerFactory>()?.CreateLogger(typeof(SetupMessaging).FullName!);
 
-                    if (logger is not null)
-                    {
-                        SetupMessagingLog.ForMessageCalledAfterProviderBuilt(logger, descriptorCount - resolvedCount);
-                    }
+                    logger?.ForMessageCalledAfterProviderBuilt(descriptorCount - resolvedCount);
                 }
             }
 
@@ -631,25 +628,17 @@ public static class SetupMessaging
             );
     }
 
-    private readonly struct ConsumerRegistrationSettings : IEquatable<ConsumerRegistrationSettings>
+    private readonly struct ConsumerRegistrationSettings(
+        byte concurrency,
+        string resolvedHandlerId,
+        ConsumerCircuitBreakerSettings circuitBreaker,
+        IReadOnlyDictionary<Type, object> providerConfigs
+    ) : IEquatable<ConsumerRegistrationSettings>
     {
-        private readonly byte _concurrency;
-        private readonly string _resolvedHandlerId;
-        private readonly ConsumerCircuitBreakerSettings _circuitBreaker;
-        private readonly IReadOnlyDictionary<Type, object> _providerConfigs;
-
-        public ConsumerRegistrationSettings(
-            byte concurrency,
-            string resolvedHandlerId,
-            ConsumerCircuitBreakerSettings circuitBreaker,
-            IReadOnlyDictionary<Type, object> providerConfigs
-        )
-        {
-            _concurrency = concurrency;
-            _resolvedHandlerId = resolvedHandlerId;
-            _circuitBreaker = circuitBreaker;
-            _providerConfigs = providerConfigs;
-        }
+        private readonly byte _concurrency = concurrency;
+        private readonly string _resolvedHandlerId = resolvedHandlerId;
+        private readonly ConsumerCircuitBreakerSettings _circuitBreaker = circuitBreaker;
+        private readonly IReadOnlyDictionary<Type, object> _providerConfigs = providerConfigs;
 
         public bool Equals(ConsumerRegistrationSettings other) =>
             _concurrency == other._concurrency

@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Sms.Testing;
+using Headless.Sms;
+
+namespace Tests;
 
 /// <summary>Builders for SMS request values used across SMS provider tests.</summary>
 public static class SmsRequests

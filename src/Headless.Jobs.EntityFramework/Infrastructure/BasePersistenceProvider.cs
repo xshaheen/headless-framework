@@ -436,7 +436,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     #endregion
 
     public async Task<TimeJobEntity[]> AcquireImmediateTimeJobsAsync(
-        Guid[] ids,
+        Guid[]? ids,
         CancellationToken cancellationToken = default
     )
     {

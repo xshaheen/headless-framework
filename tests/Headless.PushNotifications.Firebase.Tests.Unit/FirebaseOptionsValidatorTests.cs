@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using FluentValidation;
 using Headless.PushNotifications.Firebase;
 
 namespace Tests;

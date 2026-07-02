@@ -163,6 +163,9 @@ profile.arm.json
 *.msm
 *.msp
 
+# env
+.envrc
+
 # OS generated files
 .DS_Store
 Thumbs.db

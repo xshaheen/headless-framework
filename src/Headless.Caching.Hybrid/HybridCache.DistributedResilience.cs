@@ -5,7 +5,7 @@ namespace Headless.Caching;
 public sealed partial class HybridCache
 {
     private readonly DistributedCacheCircuitBreaker _distributedCircuit = new(
-        options.DistributedCacheCircuitBreakerDuration,
+        cacheOptions.DistributedCacheCircuitBreakerDuration,
         timeProvider ?? TimeProvider.System
     );
 
@@ -14,19 +14,19 @@ public sealed partial class HybridCache
         var timeout = Timeout.InfiniteTimeSpan;
 
         if (
-            options.DistributedCacheSoftTimeout != Timeout.InfiniteTimeSpan
+            cacheOptions.DistributedCacheSoftTimeout != Timeout.InfiniteTimeSpan
             && (hasLocalFallback || softCanDegradeToMiss)
         )
         {
-            timeout = options.DistributedCacheSoftTimeout;
+            timeout = cacheOptions.DistributedCacheSoftTimeout;
         }
 
         if (
-            options.DistributedCacheHardTimeout != Timeout.InfiniteTimeSpan
-            && (timeout == Timeout.InfiniteTimeSpan || options.DistributedCacheHardTimeout < timeout)
+            cacheOptions.DistributedCacheHardTimeout != Timeout.InfiniteTimeSpan
+            && (timeout == Timeout.InfiniteTimeSpan || cacheOptions.DistributedCacheHardTimeout < timeout)
         )
         {
-            timeout = options.DistributedCacheHardTimeout;
+            timeout = cacheOptions.DistributedCacheHardTimeout;
         }
 
         return timeout;
@@ -56,7 +56,7 @@ public sealed partial class HybridCache
             {
                 _OpenDistributedCacheCircuit(exception, key);
 
-                if (options.ReThrowDistributedCacheExceptions)
+                if (cacheOptions.ReThrowDistributedCacheExceptions)
                 {
                     throw;
                 }
@@ -68,7 +68,6 @@ public sealed partial class HybridCache
         // Declare before the try so the finally can always dispose them. Both are assigned inside the try so a
         // synchronous throw from operation() is covered by the finally (no CTS leak).
         CancellationTokenSource? operationCts = null;
-        Task<T>? operationTask = null;
 
         try
         {
@@ -77,7 +76,8 @@ public sealed partial class HybridCache
             operationCts = cancellationToken.CanBeCanceled
                 ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
                 : new CancellationTokenSource();
-            operationTask = operation(operationCts.Token).AsTask();
+
+            var operationTask = operation(operationCts.Token).AsTask();
 
             using var delayCts = new CancellationTokenSource();
             var delayTask = Task.Delay(timeout, _timeProvider, delayCts.Token);
@@ -91,7 +91,7 @@ public sealed partial class HybridCache
                 try
                 {
                     var value = await operationTask.ConfigureAwait(false);
-                    operationCts?.Dispose();
+                    operationCts.Dispose();
                     operationCts = null;
 
                     return DistributedCacheReadResult<T>.Success(value);
@@ -103,7 +103,7 @@ public sealed partial class HybridCache
                     operationCts = null;
                     _OpenDistributedCacheCircuit(exception, key);
 
-                    if (options.ReThrowDistributedCacheExceptions)
+                    if (cacheOptions.ReThrowDistributedCacheExceptions)
                     {
                         throw;
                     }

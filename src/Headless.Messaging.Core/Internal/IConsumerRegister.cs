@@ -621,14 +621,14 @@ internal sealed class ConsumerRegister(
 
                 if (_logger.IsEnabled(LogLevel.Debug))
                 {
-                    var safeMessageId = LogSanitizer.Sanitize(transportMessage.GetId());
-                    var safeMessageName = LogSanitizer.Sanitize(transportMessage.GetName());
+                    var safeMessageId = LogSanitizer.Sanitize(transportMessage.Id);
+                    var safeMessageName = LogSanitizer.Sanitize(transportMessage.Name);
                     _logger.MessageReceived(safeMessageId, safeMessageName);
                 }
 
                 tracingTimestamp = _TracingBefore(transportMessage, intentType, _serverAddress, hostShutdownToken);
 
-                var name = transportMessage.GetName();
+                var name = transportMessage.Name;
 
                 Message message;
                 Exception? dispatchBypassException = null;
@@ -780,14 +780,11 @@ internal sealed class ConsumerRegister(
                     {
                         if (_logger.IsEnabled(LogLevel.Information))
                         {
-                            _logger.SkippingPoisonedOnExhaustedAlreadyTerminal(message.GetId());
+                            _logger.SkippingPoisonedOnExhaustedAlreadyTerminal(message.Id);
                         }
                     }
 
-                    _logger.ConsumerReceivedMessageAfterThreshold(
-                        message.GetId(),
-                        _options.RetryPolicy.MaxPersistedRetries
-                    );
+                    _logger.ConsumerReceivedMessageAfterThreshold(message.Id, _options.RetryPolicy.MaxPersistedRetries);
 
                     _TracingAfter(tracingTimestamp, transportMessage, intentType, _serverAddress, hostShutdownToken);
                 }
@@ -925,6 +922,9 @@ internal sealed class ConsumerRegister(
         public required string GroupName { get; init; }
         public ConcurrentBag<Task> ConsumerTasks { get; init; } = [];
 
+        // Production reads the pause state through the private _isPaused field (see AddClientAsync); the public getter
+        // exists for setter symmetry and is exercised by the reflection-based ConsumerRegisterTests. Not dead state.
+        // ReSharper disable once UnusedMember.Local
         public bool IsPaused
         {
             get
@@ -1023,7 +1023,7 @@ internal sealed class ConsumerRegister(
             var eventData = new MessageEventDataSubStore
             {
                 OperationTimestamp = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds(),
-                Operation = message.GetName(),
+                Operation = message.Name,
                 BrokerAddress = broker,
                 TransportMessage = message,
                 IntentType = intentType,
@@ -1053,7 +1053,7 @@ internal sealed class ConsumerRegister(
             var eventData = new MessageEventDataSubStore
             {
                 OperationTimestamp = now,
-                Operation = message.GetName(),
+                Operation = message.Name,
                 BrokerAddress = broker,
                 TransportMessage = message,
                 IntentType = intentType,
@@ -1081,7 +1081,7 @@ internal sealed class ConsumerRegister(
             var eventData = new MessageEventDataSubStore
             {
                 OperationTimestamp = now,
-                Operation = message.GetName(),
+                Operation = message.Name,
                 BrokerAddress = broker,
                 TransportMessage = message,
                 IntentType = intentType,

@@ -9,7 +9,7 @@ internal static partial class RabbitMqValidation
 {
     // RabbitMQ naming rules: alphanumeric, dash, underscore, period
     [GeneratedRegex("^[a-zA-Z0-9._-]+$", RegexOptions.Compiled, 100)]
-    private static partial Regex _NamePattern();
+    private static partial Regex NamePattern { get; }
 
     // RabbitMQ Max length 255 chars
     private const int _MaxNameLength = 255;
@@ -20,7 +20,7 @@ internal static partial class RabbitMqValidation
         Argument.IsLessThanOrEqualTo(name.Length, _MaxNameLength, "Queue name must not exceed 255 characters");
         Argument.Matches(
             name,
-            _NamePattern(),
+            NamePattern,
             "Queue name must contain only alphanumeric characters, dashes, underscores, and periods"
         );
     }
@@ -31,7 +31,7 @@ internal static partial class RabbitMqValidation
         Argument.IsLessThanOrEqualTo(name.Length, _MaxNameLength, "Exchange name must not exceed 255 characters");
         Argument.Matches(
             name,
-            _NamePattern(),
+            NamePattern,
             "Exchange name must contain only alphanumeric characters, dashes, underscores, and periods"
         );
     }
@@ -44,7 +44,7 @@ internal static partial class RabbitMqValidation
         // But for safety, we validate the same as queue/exchange names for now
         Argument.Matches(
             name,
-            _NamePattern(),
+            NamePattern,
             "Message name must contain only alphanumeric characters, dashes, underscores, and periods"
         );
     }

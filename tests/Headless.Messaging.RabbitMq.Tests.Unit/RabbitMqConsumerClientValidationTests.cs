@@ -7,7 +7,6 @@ using RabbitMQ.Client;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class RabbitMqConsumerClientValidationTests : TestBase
 {
     private readonly IConnectionChannelPool _pool;

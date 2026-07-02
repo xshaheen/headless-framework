@@ -63,10 +63,7 @@ public static class SetupPermissions
         {
             services.AddSingleton<T>();
 
-            services.Configure<PermissionManagementProvidersOptions>(options =>
-            {
-                options.DefinitionProviders.Add<T>();
-            });
+            services.Configure<PermissionManagementProvidersOptions>(options => options.DefinitionProviders.Add<T>());
 
             return services;
         }

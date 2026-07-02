@@ -3,7 +3,7 @@
 using System.Net;
 using Headless.Sms;
 using Headless.Sms.Infobip;
-using Headless.Sms.Testing;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using WireMock.RequestBuilders;
@@ -11,7 +11,7 @@ using WireMock.ResponseBuilders;
 
 namespace Tests;
 
-public sealed class InfobipSmsSenderTests : IClassFixture<SmsWireMockFixture>
+public sealed class InfobipSmsSenderTests : TestBase, IClassFixture<SmsWireMockFixture>
 {
     private const string _SuccessBody = """
         {
@@ -34,7 +34,7 @@ public sealed class InfobipSmsSenderTests : IClassFixture<SmsWireMockFixture>
         _fixture.Reset();
     }
 
-    private InfobipSmsSender CreateSender(string? basePath = null)
+    private InfobipSmsSender _CreateSender(string? basePath = null)
     {
         var options = Options.Create(
             new InfobipSmsOptions
@@ -61,8 +61,7 @@ public sealed class InfobipSmsSenderTests : IClassFixture<SmsWireMockFixture>
                     .WithBody(_SuccessBody)
             );
 
-        var result = await CreateSender().SendAsync(SmsRequests.Single());
-
+        var result = await _CreateSender().SendAsync(SmsRequests.Single(), AbortToken);
         result.Success.Should().BeTrue();
         result.ProviderMessageId.Should().Be("bulk-1");
     }
@@ -80,8 +79,7 @@ public sealed class InfobipSmsSenderTests : IClassFixture<SmsWireMockFixture>
                     .WithBody("""{"requestError":{"serviceException":{"messageId":"BAD_REQUEST","text":"invalid"}}}""")
             );
 
-        var result = await CreateSender().SendAsync(SmsRequests.Single());
-
+        var result = await _CreateSender().SendAsync(SmsRequests.Single(), AbortToken);
         result.Success.Should().BeFalse();
     }
 
@@ -107,8 +105,8 @@ public sealed class InfobipSmsSenderTests : IClassFixture<SmsWireMockFixture>
                     .WithBody(body)
             );
 
-        var response = await CreateSender()
-            .SendBulkAsync(SmsRequests.Bulk("hi", (20, "1001110000"), (20, "1002220000")));
+        var response = await _CreateSender()
+            .SendBulkAsync(SmsRequests.Bulk("hi", (20, "1001110000"), (20, "1002220000")), AbortToken);
 
         response.AllSucceeded.Should().BeTrue();
         response.ProviderBatchId.Should().Be("bulk-9");
@@ -139,8 +137,8 @@ public sealed class InfobipSmsSenderTests : IClassFixture<SmsWireMockFixture>
                     .WithBody(body)
             );
 
-        var response = await CreateSender()
-            .SendBulkAsync(SmsRequests.Bulk("hi", (20, "1001110000"), (20, "1002220000")));
+        var response = await _CreateSender()
+            .SendBulkAsync(SmsRequests.Bulk("hi", (20, "1001110000"), (20, "1002220000")), AbortToken);
 
         response.AllSucceeded.Should().BeFalse();
         response.AnySucceeded.Should().BeTrue();
@@ -175,8 +173,8 @@ public sealed class InfobipSmsSenderTests : IClassFixture<SmsWireMockFixture>
                     .WithBody(body)
             );
 
-        var response = await CreateSender()
-            .SendBulkAsync(SmsRequests.Bulk("hi", (20, "1001110000"), (20, "1002220000")));
+        var response = await _CreateSender()
+            .SendBulkAsync(SmsRequests.Bulk("hi", (20, "1001110000"), (20, "1002220000")), AbortToken);
 
         response.AllSucceeded.Should().BeFalse();
         response.AnySucceeded.Should().BeFalse();
@@ -209,7 +207,7 @@ public sealed class InfobipSmsSenderTests : IClassFixture<SmsWireMockFixture>
                     .WithBody(body)
             );
 
-        var response = await CreateSender().SendBulkAsync(SmsRequests.Bulk("hi", (20, "1001110000")));
+        var response = await _CreateSender().SendBulkAsync(SmsRequests.Bulk("hi", (20, "1001110000")), AbortToken);
 
         response.AllSucceeded.Should().BeFalse();
         response.Results[0].Result.FailureKind.Should().Be(SmsFailureKind.InvalidRecipient);
@@ -234,7 +232,7 @@ public sealed class InfobipSmsSenderTests : IClassFixture<SmsWireMockFixture>
                     )
             );
 
-        var result = await CreateSender().SendAsync(SmsRequests.Single());
+        var result = await _CreateSender().SendAsync(SmsRequests.Single(), AbortToken);
 
         result.Success.Should().BeFalse();
         result.FailureKind.Should().Be(SmsFailureKind.Unknown);
@@ -263,7 +261,7 @@ public sealed class InfobipSmsSenderTests : IClassFixture<SmsWireMockFixture>
                     .WithBody(body)
             );
 
-        var result = await CreateSender().SendAsync(SmsRequests.Single());
+        var result = await _CreateSender().SendAsync(SmsRequests.Single(), AbortToken);
 
         result.Success.Should().BeFalse();
         result.FailureError.Should().Be("Invalid destination");
@@ -289,7 +287,7 @@ public sealed class InfobipSmsSenderTests : IClassFixture<SmsWireMockFixture>
                     .WithBody(body)
             );
 
-        var response = await CreateSender().SendBulkAsync(SmsRequests.Bulk("hi", (20, "1001110000")));
+        var response = await _CreateSender().SendBulkAsync(SmsRequests.Bulk("hi", (20, "1001110000")), AbortToken);
 
         response.Results[0].Result.Success.Should().BeFalse();
         response.Results[0].Result.FailureKind.Should().Be(SmsFailureKind.Unknown);
@@ -316,7 +314,7 @@ public sealed class InfobipSmsSenderTests : IClassFixture<SmsWireMockFixture>
                     .WithBody(body)
             );
 
-        var response = await CreateSender().SendBulkAsync(SmsRequests.Bulk("hi", (20, "1001110000")));
+        var response = await _CreateSender().SendBulkAsync(SmsRequests.Bulk("hi", (20, "1001110000")), AbortToken);
 
         response.Results[0].Result.Success.Should().BeFalse();
         response.Results[0].Result.FailureError.Should().Be("Infobip message status REJECTED_DESTINATION");

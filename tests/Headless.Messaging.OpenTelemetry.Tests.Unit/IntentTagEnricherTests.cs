@@ -30,7 +30,7 @@ public sealed class IntentTagEnricherTests : TestBase
         };
 
         // when
-        await _enricher.Enrich(activity, context);
+        await _enricher.Enrich(activity, context, AbortToken);
 
         // then
         activity.GetTagItem(MessagingTags.Intent).Should().Be(expectedIntent);
@@ -49,7 +49,7 @@ public sealed class IntentTagEnricherTests : TestBase
         };
 
         // when
-        await _enricher.Enrich(activity, context);
+        await _enricher.Enrich(activity, context, AbortToken);
 
         // then
         activity.GetTagItem(MessagingTags.Intent).Should().BeNull();

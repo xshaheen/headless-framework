@@ -68,12 +68,7 @@ public sealed class MessagingConventions
     /// <exception cref="ArgumentException">Thrown when <paramref name="applicationId"/> is null or whitespace.</exception>
     public MessagingConventions UseApplicationId(string applicationId)
     {
-        if (string.IsNullOrWhiteSpace(applicationId))
-        {
-            throw new ArgumentException("ApplicationId cannot be null or whitespace.", nameof(applicationId));
-        }
-
-        ApplicationId = applicationId;
+        ApplicationId = Argument.IsNotNullOrWhiteSpace(applicationId, "ApplicationId cannot be null or whitespace.");
         return this;
     }
 
@@ -85,12 +80,7 @@ public sealed class MessagingConventions
     /// <exception cref="ArgumentException">Thrown when <paramref name="version"/> is null or whitespace.</exception>
     public MessagingConventions UseVersion(string version)
     {
-        if (string.IsNullOrWhiteSpace(version))
-        {
-            throw new ArgumentException("Version cannot be null or whitespace.", nameof(version));
-        }
-
-        Version = version;
+        Version = Argument.IsNotNullOrWhiteSpace(version, "Version cannot be null or whitespace.");
         return this;
     }
 
@@ -158,13 +148,10 @@ public sealed class MessagingConventions
     {
         if (!string.IsNullOrWhiteSpace(DefaultGroup))
         {
-            return DefaultGroup!;
+            return DefaultGroup;
         }
 
-        if (string.IsNullOrWhiteSpace(handlerId))
-        {
-            throw new ArgumentException("HandlerId cannot be null or whitespace.", nameof(handlerId));
-        }
+        Argument.IsNotNullOrWhiteSpace(handlerId, "HandlerId cannot be null or whitespace.");
 
         var normalizedAppId = NormalizeSegment(ApplicationId);
         var normalizedHandlerId = NormalizeSegment(handlerId);
@@ -212,10 +199,7 @@ public sealed class MessagingConventions
 
     internal static string NormalizeSegment(string value)
     {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            throw new ArgumentException("Value cannot be null or whitespace.", nameof(value));
-        }
+        Argument.IsNotNullOrWhiteSpace(value, "Value cannot be null or whitespace.");
 
         var builder = new StringBuilder(value.Length);
         var previousWasSeparator = false;

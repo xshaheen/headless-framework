@@ -168,7 +168,7 @@ public sealed class ReflectionHelperTests
         // AnnotatedClass itself has no SampleAttribute; Tagged has one. No duplication possible here.
         var results = member.GetAttributesOfMemberOrDeclaringType<SampleAttribute>().ToList();
 
-        results.Should().HaveCount(1);
+        results.Should().ContainSingle();
     }
 
     // ----- Test support types -----
@@ -195,7 +195,7 @@ public sealed class ReflectionHelperTests
 
     private sealed class AnnotatedClass
     {
-        [SampleAttribute("hello")]
+        [Sample("hello")]
         public string? Tagged { get; set; }
 
         public string? Bare { get; set; }
@@ -203,7 +203,7 @@ public sealed class ReflectionHelperTests
 
     private class BaseClass
     {
-        [SampleAttribute("hello")]
+        [Sample("hello")]
         public virtual string? Tagged { get; set; }
     }
 
@@ -214,7 +214,7 @@ public sealed class ReflectionHelperTests
         public string? OwnProp { get; set; }
     }
 
-    [SampleAttribute("class")]
+    [Sample("class")]
     private sealed class AnnotatedClassWithTypeAttr
     {
         public string? Bare { get; set; }
@@ -225,10 +225,10 @@ public sealed class ReflectionHelperTests
         public string? Value { get; set; }
     }
 
-    [SampleAttribute("class")]
+    [Sample("class")]
     private sealed class ClassWithBothAttrs
     {
-        [SampleAttribute("prop")]
+        [Sample("prop")]
         public string? Prop { get; set; }
     }
 }

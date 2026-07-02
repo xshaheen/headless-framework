@@ -244,14 +244,10 @@ internal sealed class HeadlessAuditPersistence(
         // ReSharper disable once NullCoalescingConditionIsAlwaysNotNullAccordingToAPIContract
         var result = await _auditStore.SaveAsync(entries, context, cancellationToken).ConfigureAwait(false);
 
-        if (result is null)
-        {
-            throw new InvalidOperationException(
+        return result
+            ?? throw new InvalidOperationException(
                 "IAuditLogStore.SaveAsync returned null; implementation must return an empty list when no entries are saved, never null."
             );
-        }
-
-        return result;
     }
 
     private static void _SuppressEntries(DbContext context, IReadOnlyList<TrackedEntrySnapshot> snapshots)
@@ -277,7 +273,7 @@ internal sealed class HeadlessAuditPersistence(
         IReadOnlyList<PropertySnapshot> Properties
     )
     {
-        public static IReadOnlyList<TrackedEntrySnapshot> Capture(DbContext context)
+        public static List<TrackedEntrySnapshot> Capture(DbContext context)
         {
             List<TrackedEntrySnapshot>? snapshots = null;
 
@@ -298,7 +294,7 @@ internal sealed class HeadlessAuditPersistence(
                 (snapshots ??= []).Add(new(entry.Entity, entry.State, properties));
             }
 
-            return snapshots ?? (IReadOnlyList<TrackedEntrySnapshot>)[];
+            return snapshots ?? [];
         }
 
         public void Restore(DbContext context)

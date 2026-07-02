@@ -82,18 +82,17 @@ internal static partial class UrlEncoder
 #pragma warning restore SYSLIB0013
 
         // pick out all %-hex-hex matches and avoid double-encoding
-        return _EscapeRegex()
-            .Replace(
-                s,
-                c =>
-                {
-                    var a = c.Groups[1].Value; // group 1 is a sequence with no %-encoding - encode illegal characters
-                    var b = c.Groups[2].Value; // group 2 is a valid 3-character %-encoded sequence - leave it alone!
+        return EscapeRegex.Replace(
+            s,
+            c =>
+            {
+                var a = c.Groups[1].Value; // group 1 is a sequence with no %-encoding - encode illegal characters
+                var b = c.Groups[2].Value; // group 2 is a valid 3-character %-encoded sequence - leave it alone!
 #pragma warning disable SYSLIB0013 // Type or member is obsolete
-                    return Uri.EscapeUriString(a) + b;
+                return Uri.EscapeUriString(a) + b;
 #pragma warning restore SYSLIB0013
-                }
-            );
+            }
+        );
     }
 
     /// <summary>
@@ -113,5 +112,5 @@ internal static partial class UrlEncoder
     }
 
     [GeneratedRegex("(.*?)((%[0-9A-Fa-f]{2})|$)", RegexOptions.Compiled | RegexOptions.ExplicitCapture, 100)]
-    private static partial Regex _EscapeRegex();
+    private static partial Regex EscapeRegex { get; }
 }

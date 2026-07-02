@@ -10,7 +10,7 @@ namespace Headless.Jobs.Managers;
 // Commit-coordination routing for atomic enqueue: synchronous capture of the ambient coordinator, the fail-loud
 // mis-wire/dead-transaction checks, post-commit side-effect deferral, and the coordinated cron side effects. The main
 // JobsManager partial holds the add-job flow that routes through this seam.
-internal partial class JobsManager<TTimeJob, TCronJob>
+internal sealed partial class JobsManager<TTimeJob, TCronJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {

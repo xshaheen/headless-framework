@@ -5,6 +5,7 @@ using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 
+#pragma warning disable REFL017 // Don't use name of wrong member
 namespace Tests;
 
 public sealed class JobsOptionsBuilderTests
@@ -117,12 +118,7 @@ public sealed class JobsOptionsBuilderTests
 
         var builder = new JobsOptionsBuilder<FakeTimeJob, FakeCronJob>(executionContext, schedulerOptions);
 
-        builder.UseJobsSeeder(
-            async (ITimeJobManager<FakeTimeJob> _) =>
-            {
-                await Task.CompletedTask;
-            }
-        );
+        builder.UseJobsSeeder(async (ITimeJobManager<FakeTimeJob> _) => await Task.CompletedTask);
 
         var seeder = typeof(JobsOptionsBuilder<FakeTimeJob, FakeCronJob>)
             .GetProperty(

@@ -2,14 +2,12 @@
 
 using Headless.Messaging;
 using Headless.Messaging.InMemory;
-using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class InMemoryConsumerClientTests : TestBase
 {
     private readonly MemoryQueue _queue;
@@ -102,7 +100,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
 
         // then
         receivedMessage.Should().NotBeNull();
-        receivedMessage!.Value.GetId().Should().Be("msg-1");
+        receivedMessage!.Value.Id.Should().Be("msg-1");
         receivedSender.Should().BeNull();
     }
 
@@ -329,7 +327,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
         var processOrder = new List<string>();
         client.OnMessageCallback = (msg, _) =>
         {
-            processOrder.Add(msg.GetId());
+            processOrder.Add(msg.Id);
             return Task.CompletedTask;
         };
 
@@ -423,8 +421,8 @@ public sealed class InMemoryConsumerClientTests : TestBase
     public async Task PauseAsync_is_idempotent_when_called_twice()
     {
         // when
-        await _client.PauseAsync();
-        await _client.PauseAsync();
+        await _client.PauseAsync(AbortToken);
+        await _client.PauseAsync(AbortToken);
 
         // then — no exception
     }
@@ -433,7 +431,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
     public async Task ResumeAsync_is_noop_when_not_paused()
     {
         // when
-        await _client.ResumeAsync();
+        await _client.ResumeAsync(AbortToken);
 
         // then — no exception
     }
@@ -442,8 +440,8 @@ public sealed class InMemoryConsumerClientTests : TestBase
     public async Task PauseAsync_then_ResumeAsync_completes_full_cycle()
     {
         // when
-        await _client.PauseAsync();
-        await _client.ResumeAsync();
+        await _client.PauseAsync(AbortToken);
+        await _client.ResumeAsync(AbortToken);
 
         // then — no exception
     }
@@ -545,7 +543,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
         var client = new InMemoryConsumerClient(queue, "disposed-group", 1);
         await client.DisposeAsync();
 
-        // when / then
+        // when & then
         var act = client.DrainPendingMessages;
         act.Should().NotThrow();
     }
@@ -556,7 +554,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
         // given — client created but no messages enqueued
         var act = () => _client.DrainPendingMessages();
 
-        // when / then
+        // when & then
         act.Should().NotThrow();
     }
 

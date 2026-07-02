@@ -37,7 +37,7 @@ public sealed class DatabaseReset
     /// </summary>
     /// <param name="connection">An <b>open</b> <see cref="DbConnection"/>.</param>
     /// <param name="options">
-    /// Optional configuration. When <c>null</c>, defaults to Postgres adapter with only the
+    /// Optional configuration. When <see langword="null"/>, defaults to Postgres adapter with only the
     /// EF migrations history table excluded.
     /// </param>
     /// <exception cref="InvalidOperationException">

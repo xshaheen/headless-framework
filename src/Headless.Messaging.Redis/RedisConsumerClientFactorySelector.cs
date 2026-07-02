@@ -40,7 +40,7 @@ internal sealed class RedisConsumerClientFactorySelector(
             IntentType.Queue => throw new InvalidOperationException(
                 "Headless.Messaging.Redis was not configured for Redis Streams queue delivery. Call UseRedis(...)."
             ),
-            _ => throw new ArgumentOutOfRangeException(nameof(intentType), intentType, null),
+            _ => throw new ArgumentOutOfRangeException(nameof(intentType), intentType, message: null),
         };
 #pragma warning restore CA2000
     }

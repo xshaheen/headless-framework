@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Runtime.InteropServices;
+using Headless.Abstractions;
 using Headless.Checks;
 using Headless.CommitCoordination;
 using Headless.Jobs.Entities;
@@ -17,6 +18,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     IJobPersistenceProvider<TTimeJob, TCronJob> persistenceProvider,
     IJobsHostScheduler jobsHostScheduler,
     TimeProvider timeProvider,
+    IGuidGenerator guidGenerator,
     IJobsNotificationHubSender notificationHubSender,
     JobsExecutionContext executionContext,
     IJobsDispatcher dispatcher,
@@ -94,10 +96,10 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     {
         if (entity.Id == Guid.Empty)
         {
-            entity.Id = Guid.NewGuid();
+            entity.Id = guidGenerator.Create();
         }
 
-        if (JobFunctionProvider.JobFunctions.All(x => x.Key != entity.Function))
+        if (JobFunctionProvider.JobFunctions.All(x => !string.Equals(x.Key, entity.Function, StringComparison.Ordinal)))
         {
             throw new JobValidatorException($"Cannot find JobFunction with name {entity.Function}");
         }
@@ -117,7 +119,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         var coordinated = _TryCaptureCoordinatedContext();
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
-        var executionTime = entity.ExecutionTime!.Value;
+        var executionTime = entity.ExecutionTime.Value;
 
         if (coordinated is { } context)
         {
@@ -185,10 +187,10 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     {
         if (entity.Id == Guid.Empty)
         {
-            entity.Id = Guid.NewGuid();
+            entity.Id = guidGenerator.Create();
         }
 
-        if (JobFunctionProvider.JobFunctions.All(x => x.Key != entity.Function))
+        if (JobFunctionProvider.JobFunctions.All(x => !string.Equals(x.Key, entity.Function, StringComparison.Ordinal)))
         {
             throw new JobValidatorException($"Cannot find JobFunction with name {entity.Function}");
         }
@@ -271,7 +273,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     }
 
     private async Task<JobResult<TCronJob>> _UpdateCronJobAsync(
-        TCronJob cronJob,
+        TCronJob? cronJob,
         CancellationToken cancellationToken = default
     )
     {
@@ -280,7 +282,9 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             return new JobResult<TCronJob>(new ArgumentNullException(nameof(cronJob), "Cron job must not be null!"));
         }
 
-        if (JobFunctionProvider.JobFunctions.All(x => x.Key != cronJob.Function))
+        if (
+            JobFunctionProvider.JobFunctions.All(x => !string.Equals(x.Key, cronJob.Function, StringComparison.Ordinal))
+        )
         {
             return new JobResult<TCronJob>(
                 new JobValidatorException($"Cannot find JobFunction with name {cronJob.Function}")
@@ -387,12 +391,12 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
     private InternalFunctionContext[] _BuildImmediateContextsFromNonGeneric(IEnumerable<TimeJobEntity> jobs)
     {
-        return jobs.Select(_BuildContextFromNonGeneric).ToArray();
+        return [.. jobs.Select(_BuildContextFromNonGeneric)];
     }
 
     private InternalFunctionContext _BuildContextFromNonGeneric(TimeJobEntity job)
     {
-        return new InternalFunctionContext
+        var context = new InternalFunctionContext
         {
             FunctionName = job.Function,
             JobId = job.Id,
@@ -402,12 +406,15 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             ParentId = job.ParentId,
             ExecutionTime = job.ExecutionTime ?? timeProvider.GetUtcNow().UtcDateTime,
             RunCondition = job.RunCondition ?? RunCondition.OnAnyCompletedStatus,
-            TimeJobChildren = job.Children.Select(_BuildContextFromNonGeneric).ToList(),
         };
+
+        context.TimeJobChildren.AddRange(job.Children.Select(_BuildContextFromNonGeneric));
+
+        return context;
     }
 
     private async Task<List<TTimeJob>> _AddTimeJobsBatchAsync(
-        List<TTimeJob> entities,
+        List<TTimeJob>? entities,
         CancellationToken cancellationToken = default
     )
     {
@@ -425,7 +432,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         {
             if (entity.Id == Guid.Empty)
             {
-                entity.Id = Guid.NewGuid();
+                entity.Id = guidGenerator.Create();
             }
 
             if (!jobFunctionsHashSet.Contains(entity.Function))
@@ -465,7 +472,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         {
             // Route every entity through the seam in insertion order; defer the batch side effects once (KTD-4/R5).
             await context
-                .Writer.WriteTimeJobsAsync(entities.ToArray(), context.Relational, cancellationToken)
+                .Writer.WriteTimeJobsAsync([.. entities], context.Relational, cancellationToken)
                 .ConfigureAwait(false);
 
             _DeferSideEffects(
@@ -478,8 +485,9 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         }
 
         await persistenceProvider
-            .AddTimeJobs(entities.ToArray(), cancellationToken: cancellationToken)
+            .AddTimeJobs([.. entities], cancellationToken: cancellationToken)
             .ConfigureAwait(false);
+
         await _RunTimeJobsBatchSideEffectsAsync(immediateTickers, earliestForNonImmediate, cancellationToken)
             .ConfigureAwait(false);
 
@@ -500,7 +508,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         if (_dispatcher.IsEnabled && immediateTickers.Count > 0)
         {
             var acquired = await persistenceProvider
-                .AcquireImmediateTimeJobsAsync(immediateTickers.ToArray(), cancellationToken)
+                .AcquireImmediateTimeJobsAsync([.. immediateTickers], cancellationToken)
                 .ConfigureAwait(false);
 
             if (acquired.Length > 0)
@@ -530,10 +538,14 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         {
             if (entity.Id == Guid.Empty)
             {
-                entity.Id = Guid.NewGuid();
+                entity.Id = guidGenerator.Create();
             }
 
-            if (JobFunctionProvider.JobFunctions.All(x => x.Key != entity.Function))
+            if (
+                JobFunctionProvider.JobFunctions.All(x =>
+                    !string.Equals(x.Key, entity.Function, StringComparison.Ordinal)
+                )
+            )
             {
                 (errors ??= []).Add($"Cannot find JobFunction with name {entity.Function}");
                 continue;
@@ -567,7 +579,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         if (coordinated is { } context)
         {
             await context
-                .Writer.WriteCronJobsAsync(validEntities.ToArray(), context.Relational, cancellationToken)
+                .Writer.WriteCronJobsAsync([.. validEntities], context.Relational, cancellationToken)
                 .ConfigureAwait(false);
 
             _DeferSideEffects(
@@ -580,7 +592,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         }
 
         await persistenceProvider
-            .InsertCronJobs(validEntities.ToArray(), cancellationToken: cancellationToken)
+            .InsertCronJobs([.. validEntities], cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
         if (validEntities.Count != 0)
@@ -635,13 +647,13 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
         if (errors.Count != 0)
         {
-            return new JobResult<List<TTimeJob>>(errors.First());
+            return new JobResult<List<TTimeJob>>(errors[0]);
         }
 
         try
         {
             var affectedRows = await persistenceProvider
-                .UpdateTimeJobs(validTickers.ToArray(), cancellationToken: cancellationToken)
+                .UpdateTimeJobs([.. validTickers], cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
 
             if (needsRestart)
@@ -681,7 +693,11 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 continue;
             }
 
-            if (JobFunctionProvider.JobFunctions.All(x => x.Key != cronJob.Function))
+            if (
+                JobFunctionProvider.JobFunctions.All(x =>
+                    !string.Equals(x.Key, cronJob.Function, StringComparison.Ordinal)
+                )
+            )
             {
                 errors.Add(new JobValidatorException($"Cannot find JobFunction with name {cronJob.Function}"));
                 continue;
@@ -711,13 +727,13 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
         if (errors.Count != 0)
         {
-            return new JobResult<List<TCronJob>>(errors.First());
+            return new JobResult<List<TCronJob>>(errors[0]);
         }
 
         try
         {
             var affectedRows = await persistenceProvider
-                .UpdateCronJobs(validTickers.ToArray(), cancellationToken: cancellationToken)
+                .UpdateCronJobs([.. validTickers], cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
 
             // Update internal functions for those that need it
@@ -752,7 +768,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     )
     {
         var affectedRows = await persistenceProvider
-            .RemoveTimeJobs(ids.ToArray(), cancellationToken: cancellationToken)
+            .RemoveTimeJobs([.. ids], cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
         if (affectedRows > 0 && _executionContext.Functions.Any(x => ids.Contains(x.JobId)))
@@ -769,7 +785,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     )
     {
         var affectedRows = await persistenceProvider
-            .RemoveCronJobs(ids.ToArray(), cancellationToken: cancellationToken)
+            .RemoveCronJobs([.. ids], cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
         if (affectedRows > 0 && _executionContext.Functions.Any(x => ids.Contains(x.ParentId ?? Guid.Empty)))

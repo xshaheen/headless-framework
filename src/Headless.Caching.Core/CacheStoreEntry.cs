@@ -59,7 +59,9 @@ public readonly record struct CacheStoreEntry<T>(
     public bool ServeStaleImmediately { get; init; }
 
     /// <summary>Gets an entry representing a store miss.</summary>
+#pragma warning disable CA1000 // Do not declare static members on generic types
     public static CacheStoreEntry<T> NotFound { get; } =
+#pragma warning restore CA1000
         new(
             Found: false,
             IsNull: false,

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers.Text;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -280,16 +281,7 @@ internal sealed class CequensSmsSender(
 
     private static string _Base64UrlDecode(string value)
     {
-        var normalized = value.Replace('-', '+').Replace('_', '/');
-
-        normalized += (normalized.Length % 4) switch
-        {
-            2 => "==",
-            3 => "=",
-            _ => "",
-        };
-
-        return Encoding.UTF8.GetString(Convert.FromBase64String(normalized));
+        return Encoding.UTF8.GetString(Base64Url.DecodeFromChars(value));
     }
 
     public void Dispose()

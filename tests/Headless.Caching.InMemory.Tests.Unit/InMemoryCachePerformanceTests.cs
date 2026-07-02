@@ -1,4 +1,3 @@
-using System;
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
@@ -24,7 +23,7 @@ public sealed class InMemoryCachePerformanceTests : TestBase
     {
         // given - a large cache
         using var cache = _CreateCache();
-        var count = 100_000;
+        const int count = 100_000;
 
         for (var i = 0; i < count; i++)
         {

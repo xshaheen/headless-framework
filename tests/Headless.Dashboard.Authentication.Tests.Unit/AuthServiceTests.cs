@@ -114,7 +114,11 @@ public sealed class AuthServiceTests : TestBase
     [Fact]
     public async Task custom_auth_succeeds_with_valid_validator()
     {
-        var config = new AuthConfig { Mode = AuthMode.Custom, CustomValidator = (token, _) => token == "valid-token" };
+        var config = new AuthConfig
+        {
+            Mode = AuthMode.Custom,
+            CustomValidator = (token, _) => string.Equals(token, "valid-token", StringComparison.Ordinal),
+        };
         var service = new AuthService(config, _logger);
         var context = new DefaultHttpContext();
         context.Request.Headers.Authorization = "valid-token";
@@ -128,7 +132,11 @@ public sealed class AuthServiceTests : TestBase
     [Fact]
     public async Task custom_auth_fails_with_invalid_token()
     {
-        var config = new AuthConfig { Mode = AuthMode.Custom, CustomValidator = (token, _) => token == "valid-token" };
+        var config = new AuthConfig
+        {
+            Mode = AuthMode.Custom,
+            CustomValidator = (token, _) => string.Equals(token, "valid-token", StringComparison.Ordinal),
+        };
         var service = new AuthService(config, _logger);
         var context = new DefaultHttpContext();
         context.Request.Headers.Authorization = "invalid-token";

@@ -73,7 +73,7 @@ internal sealed class PostgreSqlFeatureValueRecordRepository(
         var sql =
             $"""SELECT "Id","Name","Value","ProviderName","ProviderKey" FROM {PostgreSqlFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} WHERE {string.Join(" AND ", filters)};""";
 
-        return _ReadValuesAsync(sql, cancellationToken, parameters.ToArray());
+        return _ReadValuesAsync(sql, cancellationToken, [.. parameters]);
     }
 
     /// <inheritdoc/>

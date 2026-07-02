@@ -5,7 +5,7 @@ using System.Buffers;
 namespace Headless.Serializer;
 
 /// <summary>
-/// Convenience adapters for <see cref="ISerializer"/> that operate on <c>byte[]</c>, <c>string</c>, and
+/// Convenience adapters for <see cref="ISerializer"/> that operate on <c>byte[]</c>, <see langword="string"/>, and
 /// <see cref="Stream"/> instead of the core buffer primitives.
 /// </summary>
 /// <remarks>

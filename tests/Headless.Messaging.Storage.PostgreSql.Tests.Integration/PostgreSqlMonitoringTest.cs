@@ -52,7 +52,7 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
 
         var stored1 = await storage.StoreMessageAsync("stats-test", msg1, cancellationToken: AbortToken);
         var stored2 = await storage.StoreMessageAsync("stats-test", msg2, cancellationToken: AbortToken);
-        var stored3 = await storage.StoreMessageAsync("stats-test", msg3, cancellationToken: AbortToken);
+        await storage.StoreMessageAsync("stats-test", msg3, cancellationToken: AbortToken);
 
         await storage.ChangePublishStateAsync(stored1, StatusName.Succeeded, cancellationToken: AbortToken);
         await storage.ChangePublishStateAsync(stored2, StatusName.Failed, cancellationToken: AbortToken);
@@ -180,7 +180,7 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
             AbortToken
         );
 
-        page1.Items.Should().HaveCount(1);
+        page1.Items.Should().ContainSingle();
         page1.TotalItems.Should().Be(3);
     }
 
@@ -236,7 +236,7 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
         );
 
         // then
-        result.Items.Should().HaveCount(1);
+        result.Items.Should().ContainSingle();
         result.Items[0].StatusName.Should().Be("Succeeded");
     }
 

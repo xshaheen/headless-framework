@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-#pragma warning disable IDE0130 // Namespace does not match folder structure
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Domain;
 
 /// <summary>Defines an entity with a single primary key with "ID" property.</summary>
@@ -17,7 +16,7 @@ public interface IEntity<out TId> : IEntity
 /// <summary>Base class for entities with a single primary key.</summary>
 [PublicAPI]
 public abstract class Entity<TId> : Entity, IEntity<TId>
-    where TId : notnull, IEquatable<TId>
+    where TId : IEquatable<TId>
 {
     /// <summary>Unique identifier for this entity.</summary>
     public required TId Id { get; init; }

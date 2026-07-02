@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Mvc.Abstractions;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Net.Http.Headers;
 
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.AspNetCore.Http;
 
 [PublicAPI]
@@ -74,11 +74,10 @@ public static class HttpContextExtensions
 
                 break;
             default:
-                var message = string.Create(
-                    CultureInfo.InvariantCulture,
+                var exception = new NotSupportedException(
                     $"Unknown {nameof(ResponseCacheLocation)}: {cacheProfile.Location}"
                 );
-                var exception = new NotSupportedException(message);
+
                 Debug.Fail(exception.ToString());
 
                 throw exception;
@@ -100,7 +99,7 @@ public static class HttpContextExtensions
         headers[HeaderNames.CacheControl] = "no-cache, no-store, must-revalidate";
         headers[HeaderNames.Pragma] = "no-cache";
         headers[HeaderNames.Expires] = "-1";
-        headers.Remove(HeaderNames.ETag);
+        headers.Remove(HttpHeaderNames.ETag);
     }
 
     /// <summary>
@@ -126,7 +125,7 @@ public static class HttpContextExtensions
     /// <returns>The raw <c>User-Agent</c> header value, or <see langword="null"/> when the header is missing.</returns>
     public static string? GetUserAgent(this HttpContext httpContext)
     {
-        return httpContext.Request.Headers.TryGetValue(HeaderNames.UserAgent, out var value)
+        return httpContext.Request.Headers.TryGetValue(HttpHeaderNames.UserAgent, out var value)
             ? value.FirstOrDefault()
             : null;
     }

@@ -140,7 +140,7 @@ public sealed class TenantResolutionMiddlewareTests : TestBase
         using var app = builder.Build();
 
         // when
-        var act = () => app.UseHeadlessTenancy();
+        var act = app.UseHeadlessTenancy;
 
         // then
         act.Should()
@@ -185,7 +185,7 @@ public sealed class TenantResolutionMiddlewareTests : TestBase
     public async Task should_emit_ordering_warning_when_tenant_resolution_runs_before_authentication()
     {
         TenantResolutionMiddleware.ResetOrderingWarningForTesting();
-        var loggerProvider = new CapturingLoggerProvider();
+        using var loggerProvider = new CapturingLoggerProvider();
         await using var app = await _CreateAppAsync(
             applyTenantMiddlewareBeforeAuthentication: true,
             loggerProvider: loggerProvider

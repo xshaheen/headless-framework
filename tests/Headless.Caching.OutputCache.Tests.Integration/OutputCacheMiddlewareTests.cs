@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Globalization;
 using Headless.Caching;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;

@@ -2,7 +2,7 @@
 
 using Headless.Redis;
 
-namespace Headless.DistributedLocks.Redis;
+namespace Headless.DistributedLocks.Redis.Scripts;
 
 /// <summary>
 /// Read-only check of whether a holder is still live (its slot's expiry score has not passed).

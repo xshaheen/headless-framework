@@ -3,10 +3,11 @@
 using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
+using Headless.Testing.Tests;
 
 namespace Tests.Internal;
 
-public sealed class ScheduledMediumMessageQueueTests
+public sealed class ScheduledMediumMessageQueueTests : TestBase
 {
     [Fact]
     public void unordered_items_should_reflect_all_enqueued_messages_without_removing_them()
@@ -42,7 +43,7 @@ public sealed class ScheduledMediumMessageQueueTests
         queue.Enqueue(first, dueAt);
         queue.Enqueue(third, dueAt + TimeSpan.FromMilliseconds(10).Ticks);
 
-        var enumerator = queue.GetConsumingEnumerable(CancellationToken.None).GetAsyncEnumerator();
+        var enumerator = queue.GetConsumingEnumerable(AbortToken).GetAsyncEnumerator(AbortToken);
 
         // when
         await enumerator.MoveNextAsync();
@@ -72,18 +73,18 @@ public sealed class ScheduledMediumMessageQueueTests
         var message = _CreateMediumMessage(7);
         queue.Enqueue(message, timeProvider.CurrentTicks + TimeSpan.FromMilliseconds(200).Ticks);
 
-        var enumerator = queue.GetConsumingEnumerable(CancellationToken.None).GetAsyncEnumerator();
+        var enumerator = queue.GetConsumingEnumerable(AbortToken).GetAsyncEnumerator(AbortToken);
 
         // when
         var moveNextTask = enumerator.MoveNextAsync().AsTask();
-        await Task.Delay(75);
+        await Task.Delay(75, AbortToken);
 
         // then
         moveNextTask.IsCompleted.Should().BeFalse();
 
         // when
         timeProvider.Advance(TimeSpan.FromMilliseconds(250));
-        await moveNextTask.WaitAsync(TimeSpan.FromSeconds(1));
+        await moveNextTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
 
         // then
         enumerator.Current.StorageId.Should().Be(_StorageGuid(7));

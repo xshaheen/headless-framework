@@ -10,48 +10,48 @@ namespace Headless.Permissions.Resources;
 /// </summary>
 public interface IPermissionErrorsDescriptor
 {
-    ValueTask<ErrorDescriptor> SomePermissionsAreNotDefined(IReadOnlyCollection<string> permissionNames);
+    ErrorDescriptor SomePermissionsAreNotDefined(IReadOnlyCollection<string> permissionNames);
 
-    ValueTask<ErrorDescriptor> SomePermissionsAreDisabled(IReadOnlyCollection<string> permissionNames);
+    ErrorDescriptor SomePermissionsAreDisabled(IReadOnlyCollection<string> permissionNames);
 
-    ValueTask<ErrorDescriptor> ProviderNotDefinedForSomePermissions(
+    ErrorDescriptor ProviderNotDefinedForSomePermissions(
         IReadOnlyCollection<string> permissionNames,
         string providerName
     );
 
-    ValueTask<ErrorDescriptor> PermissionIsNotDefined(string permissionName);
+    ErrorDescriptor PermissionIsNotDefined(string permissionName);
 
-    ValueTask<ErrorDescriptor> PermissionDisabled(string permissionName);
+    ErrorDescriptor PermissionDisabled(string permissionName);
 
-    ValueTask<ErrorDescriptor> PermissionsProviderNotFound(string providerName);
+    ErrorDescriptor PermissionsProviderNotFound(string providerName);
 
-    ValueTask<ErrorDescriptor> PermissionProviderNotDefined(string permissionName, string providerName);
+    ErrorDescriptor PermissionProviderNotDefined(string permissionName, string providerName);
 }
 
 #pragma warning disable CA1863 // Use 'CompositeFormat'
 public sealed class DefaultPermissionErrorsDescriptor : IPermissionErrorsDescriptor
 {
-    public ValueTask<ErrorDescriptor> SomePermissionsAreNotDefined(IReadOnlyCollection<string> permissionNames)
+    public ErrorDescriptor SomePermissionsAreNotDefined(IReadOnlyCollection<string> permissionNames)
     {
         var error = new ErrorDescriptor("permissions:some-undefined", Messages.permissions_some_undefined).WithParam(
             "permissionNames",
             permissionNames
         );
 
-        return ValueTask.FromResult(error);
+        return error;
     }
 
-    public ValueTask<ErrorDescriptor> SomePermissionsAreDisabled(IReadOnlyCollection<string> permissionNames)
+    public ErrorDescriptor SomePermissionsAreDisabled(IReadOnlyCollection<string> permissionNames)
     {
         var error = new ErrorDescriptor("permissions:some-disabled", Messages.permissions_some_disabled).WithParam(
             "permissionNames",
             permissionNames
         );
 
-        return ValueTask.FromResult(error);
+        return error;
     }
 
-    public ValueTask<ErrorDescriptor> ProviderNotDefinedForSomePermissions(
+    public ErrorDescriptor ProviderNotDefinedForSomePermissions(
         IReadOnlyCollection<string> permissionNames,
         string providerName
     )
@@ -66,10 +66,10 @@ public sealed class DefaultPermissionErrorsDescriptor : IPermissionErrorsDescrip
             .WithParam("permissionNames", permissionNames)
             .WithParam("providerName", providerName);
 
-        return ValueTask.FromResult(error);
+        return error;
     }
 
-    public ValueTask<ErrorDescriptor> PermissionIsNotDefined(string permissionName)
+    public ErrorDescriptor PermissionIsNotDefined(string permissionName)
     {
         var description = string.Format(CultureInfo.InvariantCulture, Messages.permissions_undefined, permissionName);
 
@@ -78,10 +78,10 @@ public sealed class DefaultPermissionErrorsDescriptor : IPermissionErrorsDescrip
             permissionName
         );
 
-        return ValueTask.FromResult(error);
+        return error;
     }
 
-    public ValueTask<ErrorDescriptor> PermissionDisabled(string permissionName)
+    public ErrorDescriptor PermissionDisabled(string permissionName)
     {
         var description = string.Format(CultureInfo.InvariantCulture, Messages.permissions_disabled, permissionName);
 
@@ -90,10 +90,10 @@ public sealed class DefaultPermissionErrorsDescriptor : IPermissionErrorsDescrip
             permissionName
         );
 
-        return ValueTask.FromResult(error);
+        return error;
     }
 
-    public ValueTask<ErrorDescriptor> PermissionsProviderNotFound(string providerName)
+    public ErrorDescriptor PermissionsProviderNotFound(string providerName)
     {
         var description = string.Format(
             CultureInfo.InvariantCulture,
@@ -106,10 +106,10 @@ public sealed class DefaultPermissionErrorsDescriptor : IPermissionErrorsDescrip
             providerName
         );
 
-        return ValueTask.FromResult(error);
+        return error;
     }
 
-    public ValueTask<ErrorDescriptor> PermissionProviderNotDefined(string permissionName, string providerName)
+    public ErrorDescriptor PermissionProviderNotDefined(string permissionName, string providerName)
     {
         var description = string.Format(
             CultureInfo.InvariantCulture,
@@ -122,6 +122,6 @@ public sealed class DefaultPermissionErrorsDescriptor : IPermissionErrorsDescrip
             .WithParam("permissionName", permissionName)
             .WithParam("providerName", providerName);
 
-        return ValueTask.FromResult(error);
+        return error;
     }
 }

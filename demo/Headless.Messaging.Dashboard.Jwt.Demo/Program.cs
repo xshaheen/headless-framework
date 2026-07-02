@@ -51,10 +51,7 @@ builder
 
 const string dashboardPolicy = "DashboardPolicy";
 
-builder.Services.AddAuthorization(options =>
-{
-    options.AddPolicy(dashboardPolicy, policy => policy.RequireAuthenticatedUser());
-});
+builder.Services.AddAuthorizationBuilder().AddPolicy(dashboardPolicy, policy => policy.RequireAuthenticatedUser());
 
 builder.Services.AddHttpClient();
 
@@ -77,7 +74,7 @@ app.UseStaticFiles();
 
 app.UseRouting();
 
-app.MapGet("/", () => Results.LocalRedirect("/index.html", true));
+app.MapGet("/", () => Results.LocalRedirect("/index.html", permanent: true));
 
 app.MapPost(
     "/security/createToken",

@@ -80,7 +80,7 @@ public class GatewayProxyAgent(
         }
         else
         {
-            if (_consulDiscoveryOptions.NodeName == requestNodeName)
+            if (string.Equals(_consulDiscoveryOptions.NodeName, requestNodeName, StringComparison.Ordinal))
             {
                 return false;
             }
@@ -178,10 +178,7 @@ public class GatewayProxyAgent(
     {
         if (!context.Response.Headers.ContainsKey(httpResponseHeader.Key))
         {
-            context.Response.Headers.Append(
-                httpResponseHeader.Key,
-                new StringValues(httpResponseHeader.Value.ToArray())
-            );
+            context.Response.Headers.Append(httpResponseHeader.Key, new StringValues([.. httpResponseHeader.Value]));
         }
     }
 }

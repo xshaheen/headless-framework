@@ -8,9 +8,9 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class KafkaConsumerClientTests : TestBase
 {
     private readonly IOptions<MessagingKafkaOptions> _options = Options.Create(
@@ -128,7 +128,7 @@ public sealed class KafkaConsumerClientTests : TestBase
             .CreateTopicsAsync(Arg.Any<IEnumerable<TopicSpecification>>(), Arg.Any<CreateTopicsOptions>())
             .Returns(Task.CompletedTask);
 
-        IConsumerClient client = new KafkaConsumerClient(
+        await using IConsumerClient client = new KafkaConsumerClient(
             "test-group",
             1,
             _options,
@@ -200,9 +200,10 @@ public sealed class KafkaConsumerClientTests : TestBase
     public async Task should_handle_retriable_error_codes()
     {
         // given
-        var options = Options.Create(
-            new MessagingKafkaOptions { Servers = "localhost:9092", RetriableErrorCodes = [ErrorCode.Local_TimedOut] }
-        );
+        var kafkaOptions = new MessagingKafkaOptions { Servers = "localhost:9092" };
+        kafkaOptions.RetriableErrorCodes.Clear();
+        kafkaOptions.RetriableErrorCodes.Add(ErrorCode.Local_TimedOut);
+        var options = Options.Create(kafkaOptions);
         await using var client = new KafkaConsumerClient("test-group", 1, options, _serviceProvider);
 
         // then - client created successfully
@@ -393,8 +394,8 @@ public sealed class KafkaConsumerClientTests : TestBase
         await using var client = new KafkaConsumerClient("test-group", 1, _options, _serviceProvider);
 
         // when — no consumer built yet, but should not throw
-        await client.PauseAsync();
-        await client.PauseAsync();
+        await client.PauseAsync(AbortToken);
+        await client.PauseAsync(AbortToken);
 
         // then — no exception
     }
@@ -406,7 +407,7 @@ public sealed class KafkaConsumerClientTests : TestBase
         await using var client = new KafkaConsumerClient("test-group", 1, _options, _serviceProvider);
 
         // when — never paused, resume should be a no-op
-        await client.ResumeAsync();
+        await client.ResumeAsync(AbortToken);
 
         // then — no exception
     }
@@ -418,8 +419,8 @@ public sealed class KafkaConsumerClientTests : TestBase
         await using var client = new KafkaConsumerClient("test-group", 1, _options, _serviceProvider);
 
         // when
-        await client.PauseAsync();
-        await client.ResumeAsync();
+        await client.PauseAsync(AbortToken);
+        await client.ResumeAsync(AbortToken);
 
         // then — no exception, state restored
     }
@@ -432,7 +433,7 @@ public sealed class KafkaConsumerClientTests : TestBase
         await client.DisposeAsync();
 
         // when — should not throw
-        await client.PauseAsync();
+        await client.PauseAsync(AbortToken);
     }
 
     [Fact]
@@ -443,7 +444,7 @@ public sealed class KafkaConsumerClientTests : TestBase
         await client.DisposeAsync();
 
         // when — should not throw
-        await client.ResumeAsync();
+        await client.ResumeAsync(AbortToken);
     }
 
     [Fact]
@@ -453,9 +454,9 @@ public sealed class KafkaConsumerClientTests : TestBase
         await using var client = new KafkaConsumerClient("test-group", 1, _options, _serviceProvider);
 
         // when
-        await client.PauseAsync();
-        await client.ResumeAsync();
-        await client.ResumeAsync(); // second resume is no-op
+        await client.PauseAsync(AbortToken);
+        await client.ResumeAsync(AbortToken);
+        await client.ResumeAsync(AbortToken); // second resume is no-op
 
         // then — no exception
     }
@@ -536,10 +537,12 @@ public sealed class KafkaConsumerClientTests : TestBase
             {
                 await listeningTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
             }
+#pragma warning disable ERP022 // Unobserved exception in generic exception handler
             catch
             {
                 // Expected — mock throws OCE on second Consume call.
             }
+#pragma warning restore ERP022
 
             // then — callback should not be invoked, offset should be seeked back
             callbackInvoked.Should().BeFalse();
@@ -554,10 +557,12 @@ public sealed class KafkaConsumerClientTests : TestBase
             {
                 await listeningTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
             }
+#pragma warning disable ERP022 // Unobserved exception in generic exception handler
             catch
             {
                 // Best-effort cleanup only.
             }
+#pragma warning restore ERP022 // Unobserved exception in generic exception handler
         }
     }
 }

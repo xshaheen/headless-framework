@@ -25,13 +25,11 @@ public sealed class TestLogger(ITestOutputHelper outputHelper, string categoryNa
     public IDisposable BeginScope<TState>(TState state)
         where TState : notnull
     {
-        return new DisposableAction(state);
+        return new DisposableAction();
     }
 
-    private sealed class DisposableAction(object state) : IDisposable
+    private sealed class DisposableAction : IDisposable
     {
-        private readonly object _state = state;
-
         public void Dispose() { }
     }
 }

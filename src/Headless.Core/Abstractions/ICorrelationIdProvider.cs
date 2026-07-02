@@ -8,6 +8,6 @@ namespace Headless.Abstractions;
 /// </summary>
 public interface ICorrelationIdProvider
 {
-    /// <summary>Gets the current correlation ID, or <c>null</c> if none is active.</summary>
+    /// <summary>Gets the current correlation ID, or <see langword="null"/> if none is active.</summary>
     string? CorrelationId { get; }
 }

@@ -16,6 +16,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
+#pragma warning disable RCS1084 // Use coalesce expression instead of conditional expression
 namespace Headless.Messaging.Storage.SqlServer;
 
 /// <summary>
@@ -63,7 +64,6 @@ internal sealed class SqlServerDataStorage(
 
     private readonly string _publishedTable = initializer.GetPublishedTableName();
     private readonly string _receivedTable = initializer.GetReceivedTableName();
-    private readonly INodeMembership _nodeMembership = nodeMembership;
 
     /// <summary>
     /// Bulk-transitions the specified published messages to <c>Delayed</c> status.
@@ -250,7 +250,7 @@ internal sealed class SqlServerDataStorage(
             new SqlParameter("@LockedUntil", SqlDbType.DateTime2) { Value = stored.LockedUntil.ToUtcParameterValue() },
             _OwnerParameter("@Owner", stored.LockedUntil),
             new SqlParameter("@StatusName", nameof(StatusName.Scheduled)),
-            new SqlParameter("@MessageId", message.Origin.GetId()),
+            new SqlParameter("@MessageId", message.Origin.Id),
         ];
 
         if (transaction == null)
@@ -391,7 +391,7 @@ internal sealed class SqlServerDataStorage(
             new SqlParameter("@LockedUntil", SqlDbType.DateTime2) { Value = DBNull.Value },
             _OwnerParameter("@Owner", lockedUntil: null),
             new SqlParameter("@StatusName", nameof(StatusName.Failed)),
-            new SqlParameter("@MessageId", message.Origin.GetId()),
+            new SqlParameter("@MessageId", message.Origin.Id),
             new SqlParameter("@Version", messagingOptions.Value.Version),
             new SqlParameter("@ExceptionInfo", exceptionInfo ?? (object)DBNull.Value),
             // #4 — active-lease guard uses the injected TimeProvider (not GETUTCDATE()) so all lease
@@ -454,7 +454,7 @@ internal sealed class SqlServerDataStorage(
             },
             _OwnerParameter("@Owner", mediumMessage.LockedUntil),
             new SqlParameter("@StatusName", nameof(StatusName.Scheduled)),
-            new SqlParameter("@MessageId", message.Origin.GetId()),
+            new SqlParameter("@MessageId", message.Origin.Id),
             new SqlParameter("@Version", messagingOptions.Value.Version),
             new SqlParameter("@ExceptionInfo", DBNull.Value),
             // #4 — active-lease guard uses the injected TimeProvider (not GETUTCDATE()) so all lease
@@ -942,7 +942,7 @@ internal sealed class SqlServerDataStorage(
             + "AND (LockedUntil IS NULL OR LockedUntil <= @Now) "
             + $"AND {_TerminalRowGuardSimple}";
 
-        var owner = _nodeMembership.GetOwnerTag();
+        var owner = nodeMembership.GetOwnerTag();
         object[] sqlParams =
         [
             new SqlParameter("@Id", message.StorageId),
@@ -1146,6 +1146,6 @@ internal sealed class SqlServerDataStorage(
     private SqlParameter _OwnerParameter(string name, DateTime? lockedUntil) =>
         new(name, SqlDbType.NVarChar, options.Value.OwnerColumnMaxLength)
         {
-            Value = _nodeMembership.GetOwnerParameterValue(lockedUntil),
+            Value = nodeMembership.GetOwnerParameterValue(lockedUntil),
         };
 }

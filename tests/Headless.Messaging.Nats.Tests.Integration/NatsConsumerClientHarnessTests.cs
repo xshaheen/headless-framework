@@ -62,10 +62,10 @@ public sealed class NatsConsumerClientHarnessTests(NatsFixture fixture) : Consum
     /// </remarks>
     protected override async ValueTask<IReadOnlyList<string>> ResolveSubscriptionTopicsAsync(
         IConsumerClient consumer,
-        IReadOnlyList<string> topics
+        IReadOnlyList<string> messageNames
     )
     {
-        var prefixed = topics.Select(t => $"{_topicPrefix}.{t}").ToList();
+        var prefixed = messageNames.Select(t => $"{_topicPrefix}.{t}").ToList();
         await consumer.FetchMessageNamesAsync(prefixed);
         return prefixed;
     }

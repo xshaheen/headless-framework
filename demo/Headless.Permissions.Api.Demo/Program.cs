@@ -1,3 +1,4 @@
+using Demo;
 using Demo.Models;
 using Headless.Abstractions;
 using Headless.Api;
@@ -7,7 +8,6 @@ using Headless.Permissions.Grants;
 using Headless.Permissions.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -25,9 +25,10 @@ builder.Services.AddNswagOpenApi();
 
 // Configure authorization policies
 builder.Services.AddAuthentication();
-builder.Services.AddAuthorization(options =>
-{
-    options.AddPolicy(
+
+builder
+    .Services.AddAuthorizationBuilder()
+    .AddPolicy(
         "PermissionsManage",
         policy =>
             policy.RequireAssertion(context =>
@@ -35,7 +36,6 @@ builder.Services.AddAuthorization(options =>
                 && (context.User.IsInRole("Admin") || context.User.IsInRole("PermissionsAdmin"))
             )
     );
-});
 
 var app = builder.Build();
 
@@ -200,15 +200,3 @@ app.MapDelete(
     .Produces(StatusCodes.Status403Forbidden);
 
 await app.RunAsync();
-
-internal sealed class PermissionsDemoDbContext(
-    DbContextOptions<PermissionsDemoDbContext> options,
-    IOptions<PermissionsStorageOptions> storageOptions
-) : DbContext(options)
-{
-    protected override void OnModelCreating(ModelBuilder modelBuilder)
-    {
-        base.OnModelCreating(modelBuilder);
-        modelBuilder.AddHeadlessPermissions(storageOptions.Value);
-    }
-}

@@ -277,7 +277,7 @@ public sealed class FileValidatorsTests : TestBase
         var fileStream = new MemoryStream(_FileSignatureBytes);
         var mockFile = Substitute.For<IFormFile>();
         mockFile.OpenReadStream().Returns(fileStream);
-        var fileFormat = new TestFileFormat(_FileSignatureBytes.Where((_, i) => i != 2).ToArray());
+        var fileFormat = new TestFileFormat([.. _FileSignatureBytes.Where((_, i) => i != 2)]);
         fileInspectorMock.DetermineFileFormat(Arg.Any<Stream>()).Returns(fileFormat);
 
         var model = new FileUploadTestModel { UploadedFile = mockFile };
