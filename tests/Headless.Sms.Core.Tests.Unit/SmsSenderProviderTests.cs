@@ -104,4 +104,19 @@ public sealed class SmsSenderProviderTests
         // when / then
         provider.GetRequiredService<ISmsSenderProvider>().GetSenderOrNull("default").Should().BeNull();
     }
+
+    [Fact]
+    public void registered_names_should_list_named_instances_and_exclude_the_default()
+    {
+        // given
+        using var provider = _BuildProvider();
+
+        // when
+        var names = provider.GetRequiredService<ISmsSenderProvider>().RegisteredNames;
+
+        // then - use RegisteredNames to validate externally supplied names before resolving.
+        names.Should().BeEquivalentTo(["audit"]);
+        names.Contains("audit").Should().BeTrue();
+        names.Contains("nope").Should().BeFalse();
+    }
 }

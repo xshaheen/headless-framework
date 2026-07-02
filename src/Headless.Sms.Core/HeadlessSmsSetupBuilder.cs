@@ -8,8 +8,8 @@ namespace Headless.Sms;
 
 /// <summary>
 /// Root builder for <c>AddHeadlessSms</c>. Provider packages contribute deferred service registrations into
-/// two slots — the default sender (exactly one, the unkeyed <see cref="ISmsSender"/>) and named instances
-/// (unlimited, unique names, resolved as keyed <see cref="ISmsSender"/> services or through
+/// two slots — an optional default sender (at most one, the unkeyed <see cref="ISmsSender"/>) and named
+/// instances (unlimited, unique names, resolved as keyed <see cref="ISmsSender"/> services or through
 /// <see cref="ISmsSenderProvider"/>). Nothing is registered into <see cref="Services"/> until the setup
 /// gates pass; contributions are queued only.
 /// </summary>
@@ -28,6 +28,8 @@ public sealed class HeadlessSmsSetupBuilder
     }
 
     internal IServiceCollection Services { get; }
+
+    internal IReadOnlySet<string> InstanceNames => _instanceNames;
 
     internal List<Action<IServiceCollection>> DefaultExtensions { get; } = [];
 
