@@ -15,13 +15,12 @@ using Headless.Blobs.Aws;
 using Headless.Blobs.Azure;
 using Headless.Blobs.CloudflareR2;
 using Headless.Blobs.FileSystem;
-using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Tests;
 
-public sealed class MultiProviderIsolationTests : TestBase
+public sealed class MultiProviderIsolationTests
 {
     private static AWSOptions _DummyAwsOptions() =>
         new() { Region = RegionEndpoint.USEast1, Credentials = new BasicAWSCredentials("k", "s") };
@@ -113,15 +112,18 @@ public sealed class MultiProviderIsolationTests : TestBase
         var provider = sp.GetRequiredService<IBlobStorageProvider>();
         var defaultStorage = sp.GetRequiredService<IBlobStorage>();
         var scratch = provider.GetStorage("scratch");
-        string[] container = ["bucket"];
+        var location = new BlobLocation("bucket", "a.txt");
+
+        // The data plane never auto-creates containers, so provision the default store's container first.
+        await sp.GetRequiredService<IBlobContainerManager>().EnsureContainerAsync("bucket");
 
         // when
-        await defaultStorage.UploadContentAsync(container, "a.txt", "hello", cancellationToken: AbortToken);
+        await defaultStorage.UploadContentAsync(location, "hello");
 
         // then
-        (await defaultStorage.GetBlobContentAsync(container, "a.txt", cancellationToken: AbortToken))
+        (await defaultStorage.GetBlobContentAsync(location))
             .Should()
             .Be("hello");
-        (await scratch.GetBlobContentAsync(container, "a.txt", cancellationToken: AbortToken)).Should().BeNull();
+        (await scratch.GetBlobContentAsync(location)).Should().BeNull();
     }
 }

@@ -106,8 +106,10 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddHeadlessInfrastructure();
 
 // Pick exactly one provider per feature; code only against the abstractions.
-builder.Services.AddFileSystemBlobStorage(options =>
-    options.BaseDirectoryPath = Path.Combine(builder.Environment.ContentRootPath, "storage")
+builder.Services.AddHeadlessBlobs(blobs =>
+    blobs.UseFileSystem(options =>
+        options.BaseDirectoryPath = Path.Combine(builder.Environment.ContentRootPath, "storage")
+    )
 );
 builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
 builder.Services.AddHeadlessJobs(options =>
@@ -117,6 +119,10 @@ builder.Services.AddHeadlessJobs(options =>
 builder.Services.AddScoped<DocumentService>();
 
 var app = builder.Build();
+
+// Containers are never auto-created (UploadAsync treats a missing container as an error):
+// provision once at startup via the DI-resolved manager, or out-of-band (IaC/dashboard).
+await app.Services.GetRequiredService<IBlobContainerManager>().EnsureContainerAsync("documents");
 
 app.UseHeadlessDefaults(); // StatusCodePages before ExceptionHandler, then auth/tenant, then endpoints
 
@@ -169,10 +175,9 @@ public sealed class DocumentService(
 
         await using var stream = new MemoryStream(request.Content);
         await storage.UploadAsync(
-            container: ["documents"],
-            blobName: id,
-            stream: stream,
-            metadata: new Dictionary<string, string?> { ["file-name"] = request.FileName },
+            new BlobLocation("documents", id),
+            stream,
+            metadata: new Dictionary<string, string> { ["file-name"] = request.FileName },
             cancellationToken: ct
         );
 

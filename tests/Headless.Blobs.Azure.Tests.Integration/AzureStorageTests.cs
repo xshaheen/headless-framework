@@ -1,9 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Azure;
 using Azure.Storage.Blobs;
+using Azure.Storage.Blobs.Models;
 using Headless.Abstractions;
 using Headless.Blobs;
 using Headless.Blobs.Azure;
+using Headless.Blobs.Internals;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -12,47 +15,54 @@ namespace Tests;
 [Collection<AzureBlobStorageFixture>]
 public sealed class AzureStorageTests(AzureBlobStorageFixture fixture) : BlobStorageTestsBase
 {
-    protected override IBlobStorage GetStorage()
+    private BlobServiceClient _CreateClient()
     {
-        var blobServiceClient = new BlobServiceClient(
+        return new BlobServiceClient(
             fixture.Container.GetConnectionString(),
             new BlobClientOptions(BlobClientOptions.ServiceVersion.V2024_11_04)
         );
+    }
 
-        var azureStorageOptions = new AzureStorageOptions();
-        var optionsAccessor = new OptionsWrapper<AzureStorageOptions>(azureStorageOptions);
-        var mimeTypeProvider = new MimeTypeProvider();
-        var clock = new Clock(TimeProvider.System);
-        var normalizer = new AzureBlobNamingNormalizer();
-
+    protected override IBlobStorage GetStorage()
+    {
         return new AzureBlobStorage(
-            blobServiceClient,
-            mimeTypeProvider,
-            clock,
-            optionsAccessor,
-            normalizer,
+            _CreateClient(),
+            new MimeTypeProvider(),
+            new Clock(TimeProvider.System),
+            new OptionsWrapper<AzureStorageOptions>(new AzureStorageOptions()),
+            new AzureBlobNamingNormalizer(),
             LoggerFactory.CreateLogger<AzureBlobStorage>()
         );
     }
 
+    // Azure supports container lifecycle: the capability is a separately-resolved AzureBlobContainerManager sharing
+    // the storage's Azurite endpoint (a fresh client over the same connection string), never a cast from IBlobStorage.
+    protected override IBlobContainerManager GetContainerManager()
+    {
+        return new AzureBlobContainerManager(_CreateClient(), new AzureBlobNamingNormalizer(), PublicAccessType.None);
+    }
+
+    #region Azure-specific: presigned URLs
+
     [Fact]
     public async Task can_round_trip_via_presigned_download_url()
     {
-        var storage = (IPresignedUrlBlobStorage)GetStorage();
-        var container = new[] { $"presign{Guid.NewGuid():N}" };
+        await using var storage = GetStorage();
+        var presigned = (IPresignedUrlBlobStorage)storage;
+        var manager = GetContainerManager();
+
+        var container = $"presign{Guid.NewGuid():N}";
+        var location = new BlobLocation(container, "file.txt");
         var content = "presigned-content"u8.ToArray();
 
-        await using (var stream = new MemoryStream(content))
+        await manager.EnsureContainerAsync(container, AbortToken);
+
+        using (var stream = new MemoryStream(content))
         {
-            await ((IBlobStorage)storage).UploadAsync(container, "file.txt", stream, cancellationToken: AbortToken);
+            await storage.UploadAsync(location, stream, cancellationToken: AbortToken);
         }
 
-        var url = await storage.GetPresignedDownloadUrlAsync(
-            container,
-            "file.txt",
-            TimeSpan.FromMinutes(5),
-            AbortToken
-        );
+        var url = await presigned.GetPresignedDownloadUrlAsync(location, TimeSpan.FromMinutes(5), AbortToken);
 
         using var http = new HttpClient();
         var downloaded = await http.GetByteArrayAsync(url, AbortToken);
@@ -63,19 +73,18 @@ public sealed class AzureStorageTests(AzureBlobStorageFixture fixture) : BlobSto
     [Fact]
     public async Task can_round_trip_via_presigned_upload_url()
     {
-        var storage = (IPresignedUrlBlobStorage)GetStorage();
-        var container = new[] { $"presign{Guid.NewGuid():N}" };
+        await using var storage = GetStorage();
+        var presigned = (IPresignedUrlBlobStorage)storage;
+        var manager = GetContainerManager();
+
+        var container = $"presign{Guid.NewGuid():N}";
+        var location = new BlobLocation(container, "file.txt");
         var content = "presigned-upload"u8.ToArray();
 
-        // The presigned PUT goes straight to Azure and does not create the container; create it first.
-        await ((IBlobStorage)storage).CreateContainerAsync(container, AbortToken);
+        // The presigned PUT goes straight to Azure and does not create the container; ensure it first.
+        await manager.EnsureContainerAsync(container, AbortToken);
 
-        var uploadUrl = await storage.GetPresignedUploadUrlAsync(
-            container,
-            "file.txt",
-            TimeSpan.FromMinutes(5),
-            AbortToken
-        );
+        var uploadUrl = await presigned.GetPresignedUploadUrlAsync(location, TimeSpan.FromMinutes(5), AbortToken);
 
         using (var http = new HttpClient())
         using (var body = new ByteArrayContent(content))
@@ -86,37 +95,87 @@ public sealed class AzureStorageTests(AzureBlobStorageFixture fixture) : BlobSto
             response.EnsureSuccessStatusCode();
         }
 
-        var readBack = await ((IBlobStorage)storage).OpenReadStreamAsync(container, "file.txt", AbortToken);
+        await using var readBack = await storage.OpenReadStreamAsync(location, AbortToken);
         readBack.Should().NotBeNull();
 
-        await using var buffer = new MemoryStream();
+        using var buffer = new MemoryStream();
         await readBack!.Stream.CopyToAsync(buffer, AbortToken);
         buffer.ToArray().Should().Equal(content);
     }
 
+    #endregion
+
+    #region Azure-specific: delete-all paging
+
     [Fact]
     public async Task delete_all_async_removes_every_page_when_results_span_multiple_pages()
     {
-        // Regression: the previous do/while loop advanced before deleting, so the final page (loaded by the last
-        // NextPageAsync) was never deleted. Exercise the multi-page path with a tiny page size instead of 500+ blobs.
-        await using var storage = (AzureBlobStorage)GetStorage();
+        // Regression: an earlier do/while loop advanced before deleting, so the final page was never deleted. Exercise
+        // the multi-page path with a tiny page size instead of 500+ blobs.
+        await using var storage = GetStorage();
+        var manager = GetContainerManager();
+
         var name = $"c{Guid.NewGuid():N}";
-        string[] container = [name, "bulk"];
+        await manager.EnsureContainerAsync(name, AbortToken);
 
         const int total = 5;
 
         for (var i = 0; i < total; i++)
         {
-            await using var content = new MemoryStream("x"u8.ToArray());
-            await storage.UploadAsync(container, $"f{i}.txt", content, cancellationToken: AbortToken);
+            using var content = new MemoryStream("x"u8.ToArray());
+            await storage.UploadAsync(
+                new BlobLocation(name, "bulk", $"f{i}.txt"),
+                content,
+                cancellationToken: AbortToken
+            );
         }
 
-        // pageSize=2 over 5 blobs => 3 pages; the bug left the last page undeleted and undercounted.
-        var deleted = await storage.DeleteAllAsync(container, blobSearchPattern: null, pageSize: 2, AbortToken);
+        // pageSize=2 over 5 blobs => 3 native pages; the bug left the last page undeleted and undercounted.
+        var deleted = await storage.DeleteAllAsync(new BlobQuery(name, prefix: null, pageSize: 2), AbortToken);
 
         deleted.Should().Be(total);
-        (await storage.GetBlobsListAsync(container, cancellationToken: AbortToken)).Should().BeEmpty();
+        (await storage.GetBlobsListAsync(new BlobQuery(name))).Should().BeEmpty();
     }
+
+    [Fact]
+    public async Task delete_all_clears_raw_backend_keys_that_blob_location_rejects()
+    {
+        // B1 regression: a blob written out-of-band whose name BlobLocation rejects (the reserved sidecar suffix)
+        // must not make the container permanently un-clearable — DeleteAllAsync deletes the listed backend keys
+        // directly instead of re-wrapping them in BlobLocation.
+        await using var storage = GetStorage();
+        var manager = GetContainerManager();
+
+        var container = $"rawclear{Guid.NewGuid():N}";
+        await manager.EnsureContainerAsync(container, AbortToken);
+
+        // A framework-written blob plus a raw, backend-legal but BlobLocation-illegal key written natively.
+        await storage.UploadContentAsync(new BlobLocation(container, "normal.txt"), "data", AbortToken);
+
+        var containerClient = _CreateClient().GetBlobContainerClient(container);
+        var rawKey = "out-of-band" + BlobStorageHelpers.SidecarSuffix;
+        await containerClient
+            .GetBlobClient(rawKey)
+            .UploadAsync(BinaryData.FromString("raw"), overwrite: false, AbortToken);
+
+        var deleted = await storage.DeleteAllAsync(new BlobQuery(container), AbortToken);
+
+        deleted.Should().Be(2);
+
+        // Verify through the native client: nothing at all is left behind, including the BlobLocation-illegal key.
+        var remaining = 0;
+
+        await foreach (var _ in containerClient.GetBlobsAsync(cancellationToken: AbortToken))
+        {
+            remaining++;
+        }
+
+        remaining.Should().Be(0);
+    }
+
+    #endregion
+
+    #region List / Round-trip
 
     [Fact]
     public override Task can_get_empty_file_list_on_missing_directory()
@@ -134,12 +193,6 @@ public sealed class AzureStorageTests(AzureBlobStorageFixture fixture) : BlobSto
     public override Task can_get_file_list_for_single_file()
     {
         return base.can_get_file_list_for_single_file();
-    }
-
-    [Fact]
-    public override Task can_get_paged_file_list_for_single_folder()
-    {
-        return base.can_get_paged_file_list_for_single_folder();
     }
 
     [Fact]
@@ -161,15 +214,59 @@ public sealed class AzureStorageTests(AzureBlobStorageFixture fixture) : BlobSto
     }
 
     [Fact]
-    public override Task can_rename_files()
+    public override Task can_move_files()
     {
-        return base.can_rename_files();
+        return base.can_move_files();
+    }
+
+    [Fact]
+    public override Task can_round_trip_seekable_stream()
+    {
+        return base.can_round_trip_seekable_stream();
+    }
+
+    [Fact]
+    public override Task will_reset_stream_position()
+    {
+        return base.will_reset_stream_position();
+    }
+
+    [Fact]
+    public override Task can_save_over_existing_stored_content()
+    {
+        return base.can_save_over_existing_stored_content();
     }
 
     [Fact]
     public override Task can_concurrently_manage_files()
     {
         return base.can_concurrently_manage_files();
+    }
+
+    #endregion
+
+    #region Token Paging
+
+    [Fact]
+    public override Task token_paging_round_trips_across_serialization()
+    {
+        return base.token_paging_round_trips_across_serialization();
+    }
+
+    [Fact]
+    public override Task list_rejects_malformed_continuation_token()
+    {
+        return base.list_rejects_malformed_continuation_token();
+    }
+
+    #endregion
+
+    #region Delete by prefix / glob
+
+    [Fact]
+    public override Task delete_by_prefix_removes_only_matching_blobs()
+    {
+        return base.delete_by_prefix_removes_only_matching_blobs();
     }
 
     [Fact]
@@ -208,22 +305,118 @@ public sealed class AzureStorageTests(AzureBlobStorageFixture fixture) : BlobSto
         return base.can_delete_specific_files_in_nested_folder();
     }
 
+    #endregion
+
+    #region Metadata / Move with metadata
+
     [Fact]
-    public override Task can_round_trip_seekable_stream()
+    public override Task metadata_round_trips_and_sidecar_is_hidden()
     {
-        return base.can_round_trip_seekable_stream();
+        return base.metadata_round_trips_and_sidecar_is_hidden();
     }
 
     [Fact]
-    public override Task will_reset_stream_position()
+    public override Task list_metadata_is_opt_in()
     {
-        return base.will_reset_stream_position();
+        return base.list_metadata_is_opt_in();
     }
 
     [Fact]
-    public override Task can_save_over_existing_stored_content()
+    public override Task move_relocates_blob_and_metadata()
     {
-        return base.can_save_over_existing_stored_content();
+        return base.move_relocates_blob_and_metadata();
+    }
+
+    #endregion
+
+    #region Normalization round-trip
+
+    [Fact]
+    public override Task normalization_round_trips_through_bulk_and_info()
+    {
+        return base.normalization_round_trips_through_bulk_and_info();
+    }
+
+    #endregion
+
+    #region Bulk operations
+
+    [Fact]
+    public override Task bulk_upload_reports_per_blob_results()
+    {
+        return base.bulk_upload_reports_per_blob_results();
+    }
+
+    [Fact]
+    public override Task bulk_upload_failure_does_not_abort_batch()
+    {
+        return base.bulk_upload_failure_does_not_abort_batch();
+    }
+
+    [Fact(
+        Skip = "Azure batch delete reports already-absent blobs as success in Azurite, so Ok(false) is not observable."
+    )]
+    public override Task bulk_delete_reports_per_entry_results()
+    {
+        return base.bulk_delete_reports_per_entry_results();
+    }
+
+    [Fact(
+        Skip = "Azure batch delete reports already-absent blobs as success in Azurite, so Ok(false) is not observable."
+    )]
+    public override Task bulk_delete_reports_each_blob_by_identity()
+    {
+        return base.bulk_delete_reports_each_blob_by_identity();
+    }
+
+    #endregion
+
+    #region Container management capability
+
+    [Fact]
+    public override Task container_management_capability_matches_support_flag()
+    {
+        return base.container_management_capability_matches_support_flag();
+    }
+
+    [Fact]
+    public override Task container_manager_rejects_traversal_container()
+    {
+        return base.container_manager_rejects_traversal_container();
+    }
+
+    [Fact]
+    public override Task requires_container_provisioning_reflects_backend_reality()
+    {
+        return base.requires_container_provisioning_reflects_backend_reality();
+    }
+
+    [Fact]
+    public async Task upload_to_missing_container_throws_until_container_manager_ensures_it()
+    {
+        await using var storage = GetStorage();
+        var manager = GetContainerManager();
+        var container = "missing" + Guid.NewGuid().ToString("N");
+        var location = new BlobLocation(container, "nested/file.txt");
+
+        var act = async () => await storage.UploadContentAsync(location, "payload", AbortToken);
+
+        await act.Should().ThrowAsync<RequestFailedException>();
+        (await manager.ContainerExistsAsync(container, AbortToken)).Should().BeFalse();
+
+        await manager.EnsureContainerAsync(container, AbortToken);
+        await storage.UploadContentAsync(location, "payload", AbortToken);
+        (await storage.GetBlobContentAsync(location, AbortToken)).Should().Be("payload");
+    }
+
+    #endregion
+
+    #region Empty / missing container (no throw)
+
+    [Fact]
+    public override Task can_call_delete_all_async_with_empty_container()
+    {
+        return base.can_call_delete_all_async_with_empty_container();
     }
 
     [Fact]
@@ -239,21 +432,15 @@ public sealed class AzureStorageTests(AzureBlobStorageFixture fixture) : BlobSto
     }
 
     [Fact]
-    public override Task can_call_delete_all_async_with_empty_container()
+    public override Task can_call_move_with_empty_container()
     {
-        return base.can_call_delete_all_async_with_empty_container();
+        return base.can_call_move_with_empty_container();
     }
 
     [Fact]
     public override Task can_call_copy_with_empty_container()
     {
         return base.can_call_copy_with_empty_container();
-    }
-
-    [Fact]
-    public override Task can_call_rename_with_empty_container()
-    {
-        return base.can_call_rename_with_empty_container();
     }
 
     [Fact]
@@ -275,92 +462,69 @@ public sealed class AzureStorageTests(AzureBlobStorageFixture fixture) : BlobSto
     }
 
     [Fact]
-    public override Task can_call_get_paged_list_with_empty_container()
+    public override Task can_call_list_with_empty_container()
     {
-        return base.can_call_get_paged_list_with_empty_container();
+        return base.can_call_list_with_empty_container();
     }
 
-    [Fact]
-    public override Task bulk_upload_reports_per_blob_results()
-    {
-        return base.bulk_upload_reports_per_blob_results();
-    }
+    #endregion
 
-    [Fact]
-    public override Task bulk_upload_aligns_results_to_input_order_under_failures()
-    {
-        return base.bulk_upload_aligns_results_to_input_order_under_failures();
-    }
-
-    [Fact]
-    public override Task delete_all_with_empty_container_array_throws()
-    {
-        return base.delete_all_with_empty_container_array_throws();
-    }
-
-    // bulk_delete_reports_per_entry_results / bulk_delete_aligns_results_to_input_order are intentionally NOT wired
-    // here: the Azure batch delete (and the Azurite emulator used in tests) report success for already-absent
-    // blobs, so the "not found -> Ok(false)" distinction those tests assert is not reliable. See
-    // IBlobStorage.BulkDeleteAsync remarks.
-
-    #region Path Traversal Security Tests
+    #region Path Traversal & Construction Security Tests
 
     [Theory]
     [InlineData("../../../etc/passwd")]
     [InlineData("..\\..\\..\\etc\\passwd")]
     [InlineData("subdir/../../../etc/passwd")]
-    public override Task should_throw_when_blob_name_has_path_traversal(string blobName)
+    public override Task blob_location_with_traversal_path_throws(string path)
     {
-        return base.should_throw_when_blob_name_has_path_traversal(blobName);
+        return base.blob_location_with_traversal_path_throws(path);
     }
 
     [Fact]
-    public override Task should_throw_when_container_has_path_traversal()
+    public override Task blob_location_with_traversal_container_throws()
     {
-        return base.should_throw_when_container_has_path_traversal();
+        return base.blob_location_with_traversal_container_throws();
     }
 
     [Fact]
-    public override Task should_throw_when_upload_blob_has_path_traversal()
+    public override Task blob_location_with_control_characters_throws()
     {
-        return base.should_throw_when_upload_blob_has_path_traversal();
-    }
-
-    [Fact]
-    public override Task should_throw_when_download_blob_has_path_traversal()
-    {
-        return base.should_throw_when_download_blob_has_path_traversal();
-    }
-
-    [Fact]
-    public override Task should_throw_when_delete_blob_has_path_traversal()
-    {
-        return base.should_throw_when_delete_blob_has_path_traversal();
-    }
-
-    [Fact]
-    public override Task should_throw_when_rename_source_blob_has_path_traversal()
-    {
-        return base.should_throw_when_rename_source_blob_has_path_traversal();
-    }
-
-    [Fact]
-    public override Task should_throw_when_copy_source_blob_has_path_traversal()
-    {
-        return base.should_throw_when_copy_source_blob_has_path_traversal();
-    }
-
-    [Fact]
-    public override Task should_throw_when_blob_name_has_control_characters()
-    {
-        return base.should_throw_when_blob_name_has_control_characters();
+        return base.blob_location_with_control_characters_throws();
     }
 
     [Theory]
     [InlineData("/etc/passwd")]
-    public override Task should_throw_when_blob_name_is_absolute_path(string blobName)
+    [InlineData("\\windows\\system32")]
+    public override Task blob_location_with_absolute_path_throws(string path)
     {
-        return base.should_throw_when_blob_name_is_absolute_path(blobName);
+        return base.blob_location_with_absolute_path_throws(path);
+    }
+
+    [Fact]
+    public override Task blob_location_with_reserved_sidecar_suffix_throws()
+    {
+        return base.blob_location_with_reserved_sidecar_suffix_throws();
+    }
+
+    [Theory]
+    [InlineData("../escape/")]
+    [InlineData("..\\escape")]
+    [InlineData("nested/../escape")]
+    public override Task blob_query_with_traversal_prefix_throws(string prefix)
+    {
+        return base.blob_query_with_traversal_prefix_throws(prefix);
+    }
+
+    [Fact]
+    public override Task blob_query_with_empty_container_throws()
+    {
+        return base.blob_query_with_empty_container_throws();
+    }
+
+    [Fact]
+    public override Task bulk_delete_with_traversal_path_reports_failure()
+    {
+        return base.bulk_delete_with_traversal_path_reports_failure();
     }
 
     #endregion

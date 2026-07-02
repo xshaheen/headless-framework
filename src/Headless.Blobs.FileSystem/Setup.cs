@@ -1,10 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Serializer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Blobs.FileSystem;
@@ -62,10 +63,21 @@ public static class SetupFileSystemBlob
 
     private static IServiceCollection _AddBlobsDefaultCore(IServiceCollection services)
     {
+        _AddBlobsCoreShared(services);
+
         services.AddSingleton<IBlobStorage>(serviceProvider => new FileSystemBlobStorage(
             serviceProvider.GetRequiredService<IOptions<FileSystemBlobStorageOptions>>(),
+            serviceProvider.GetRequiredService<IJsonSerializer>(),
             new CrossOsNamingNormalizer(),
-            serviceProvider.GetService<ILogger<FileSystemBlobStorage>>() ?? NullLogger<FileSystemBlobStorage>.Instance
+            serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System,
+            serviceProvider.GetService<ILogger<FileSystemBlobStorage>>()
+        ));
+
+        // Container lifecycle is a separately-resolved capability (not a cast from IBlobStorage), registered with
+        // its own per-store options + normalizer to mirror the storage's isolation (U12 / KTD5).
+        services.AddSingleton<IBlobContainerManager>(serviceProvider => new FileSystemBlobContainerManager(
+            serviceProvider.GetRequiredService<IOptions<FileSystemBlobStorageOptions>>(),
+            new CrossOsNamingNormalizer()
         ));
 
         return services;
@@ -73,6 +85,8 @@ public static class SetupFileSystemBlob
 
     internal static IServiceCollection AddBlobsNamedCore(IServiceCollection services, string name)
     {
+        _AddBlobsCoreShared(services);
+
         services.AddKeyedSingleton<IBlobStorage>(
             name,
             (serviceProvider, _) =>
@@ -80,11 +94,35 @@ public static class SetupFileSystemBlob
                     Options.Create(
                         serviceProvider.GetRequiredService<IOptionsMonitor<FileSystemBlobStorageOptions>>().Get(name)
                     ),
+                    serviceProvider.GetRequiredService<IJsonSerializer>(),
                     new CrossOsNamingNormalizer(),
+                    serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System,
                     serviceProvider.GetService<ILogger<FileSystemBlobStorage>>()
-                        ?? NullLogger<FileSystemBlobStorage>.Instance
                 )
         );
+
+        // Keyed container-management capability for this named instance (separate registration, not a cast).
+        services.AddKeyedSingleton<IBlobContainerManager>(
+            name,
+            (serviceProvider, _) =>
+                new FileSystemBlobContainerManager(
+                    Options.Create(
+                        serviceProvider.GetRequiredService<IOptionsMonitor<FileSystemBlobStorageOptions>>().Get(name)
+                    ),
+                    new CrossOsNamingNormalizer()
+                )
+        );
+
+        return services;
+    }
+
+    private static IServiceCollection _AddBlobsCoreShared(IServiceCollection services)
+    {
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<IJsonOptionsProvider>(new DefaultJsonOptionsProvider());
+        services.TryAddSingleton<IJsonSerializer>(serviceProvider => new SystemJsonSerializer(
+            serviceProvider.GetRequiredService<IJsonOptionsProvider>()
+        ));
 
         return services;
     }

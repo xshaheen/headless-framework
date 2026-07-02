@@ -67,4 +67,56 @@ internal static partial class DataProtectionLoggerExtensions
         Message = "Skipping malformed XML blob: {File}"
     )]
     public static partial void LogMalformedElement(this ILogger logger, string file, Exception exception);
+
+    [LoggerMessage(
+        EventId = 10,
+        EventName = "StartupValidationRoundTripSucceeded",
+        Level = LogLevel.Information,
+        Message = "Data protection startup validation succeeded: a protect/unprotect round-trip exercised the key ring against the '{Container}' container"
+    )]
+    public static partial void LogStartupValidationRoundTripSucceeded(this ILogger logger, string container);
+
+    [LoggerMessage(
+        EventId = 11,
+        EventName = "StartupValidationReadProbeSucceeded",
+        Level = LogLevel.Information,
+        Message = "Data protection startup validation succeeded: the read-only key-ring probe loaded {KeyCount} keys from the '{Container}' container (AutoGenerateKeys is false, so no key was generated)"
+    )]
+    public static partial void LogStartupValidationReadProbeSucceeded(
+        this ILogger logger,
+        int keyCount,
+        string container
+    );
+
+    [LoggerMessage(
+        EventId = 12,
+        EventName = "StartupValidationFailed",
+        Level = LogLevel.Critical,
+        Message = "Data protection startup validation failed and Mode is LogOnly — continuing startup. The key ring could not be exercised against the '{Container}' blob container; the first key write or the ~90-day key rotation will likely fail the same way. Verify the container exists and the credentials allow access, wire an IBlobContainerManager so PersistKeysToBlobStorage ensures the container before writes, or provision the container out-of-band (BlobContainerProvisioning.PreProvisioned)"
+    )]
+    public static partial void LogStartupValidationFailed(this ILogger logger, Exception exception, string container);
+
+    [LoggerMessage(
+        EventId = 13,
+        EventName = "StartupValidationWriteProbeSucceeded",
+        Level = LogLevel.Information,
+        Message = "Data protection startup validation write probe succeeded: uploaded and deleted the reserved sentinel blob in the '{Container}' container through the key-write pipeline"
+    )]
+    public static partial void LogStartupValidationWriteProbeSucceeded(this ILogger logger, string container);
+
+    [LoggerMessage(
+        EventId = 14,
+        EventName = "StartupValidationWriteProbeSkipped",
+        Level = LogLevel.Debug,
+        Message = "Data protection startup validation write probe skipped: the configured IXmlRepository ('{RepositoryType}') is not the blob-storage repository, so there is no generic write to safely perform"
+    )]
+    public static partial void LogStartupValidationWriteProbeSkipped(this ILogger logger, string repositoryType);
+
+    [LoggerMessage(
+        EventId = 15,
+        EventName = "StartupValidationEmptyKeyRing",
+        Level = LogLevel.Critical,
+        Message = "Data protection startup validation failed and Mode is LogOnly — continuing startup. The key-ring read probe reached the '{Container}' container but found no keys; AutoGenerateKeys is false on this node so it cannot create one, and its first protected operation will fail. Has the designated key writer run yet? Is this the right container/storage for this environment?"
+    )]
+    public static partial void LogStartupValidationEmptyKeyRing(this ILogger logger, string container);
 }
