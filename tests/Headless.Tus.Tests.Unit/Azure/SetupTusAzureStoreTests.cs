@@ -69,6 +69,29 @@ public sealed class SetupTusAzureStoreTests : TestBase
     }
 
     [Fact]
+    public void should_bind_options_via_service_provider_overload()
+    {
+        // given - the provider-factory overload resolves a registered marker to derive options,
+        // exercising the AddTusAzureStore(Action<TOptions, IServiceProvider>) wiring path.
+        var services = _Services();
+        services.AddSingleton(new ContainerNameSource("provider-derived-uploads"));
+        services.AddTusAzureStore(
+            (options, provider) =>
+            {
+                options.ContainerName = provider.GetRequiredService<ContainerNameSource>().Name;
+                options.CreateContainerIfNotExists = false;
+            }
+        );
+        using var provider = services.BuildServiceProvider();
+
+        // when
+        var options = provider.GetRequiredService<IOptions<TusAzureStoreOptions>>().Value;
+
+        // then
+        options.ContainerName.Should().Be("provider-derived-uploads");
+    }
+
+    [Fact]
     public void should_register_default_headers_provider()
     {
         // given
@@ -130,6 +153,8 @@ public sealed class SetupTusAzureStoreTests : TestBase
         // then
         act.Should().Throw<InvalidOperationException>().WithMessage("*BlobServiceClient*");
     }
+
+    private sealed record ContainerNameSource(string Name);
 
     private sealed class FakeHeadersProvider : ITusAzureBlobHttpHeadersProvider
     {
