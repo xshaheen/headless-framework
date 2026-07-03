@@ -69,6 +69,61 @@ public sealed class HybridCacheBestPracticesAdvisorTests : TestBase
     }
 
     // ────────────────────────────────────────────────────────────
+    // Check 6 — auto-recovery enabled but circuit breaker disabled
+    // ────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task should_warn_when_auto_recovery_enabled_but_circuit_breaker_disabled()
+    {
+        var options = new HybridCacheOptions
+        {
+            EnableAutoRecovery = true,
+            DistributedCacheCircuitBreakerDuration = TimeSpan.Zero, // breaker disabled (the default) — no bypass window
+        };
+
+        var logger = new CapturingLogger();
+        var advisor = new HybridCacheBestPracticesAdvisor(options, logger, invalidationConsumerRegistered: true);
+
+        await advisor.StartingAsync(AbortToken);
+
+        logger.HasWarning("AutoRecoveryWithoutCircuitBreaker").Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_not_warn_about_circuit_breaker_when_auto_recovery_disabled()
+    {
+        var options = new HybridCacheOptions
+        {
+            EnableAutoRecovery = false,
+            DistributedCacheCircuitBreakerDuration = TimeSpan.Zero,
+        };
+
+        var logger = new CapturingLogger();
+        var advisor = new HybridCacheBestPracticesAdvisor(options, logger, invalidationConsumerRegistered: true);
+
+        await advisor.StartingAsync(AbortToken);
+
+        logger.HasWarning("AutoRecoveryWithoutCircuitBreaker").Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_not_warn_when_auto_recovery_paired_with_a_circuit_breaker()
+    {
+        var options = new HybridCacheOptions
+        {
+            EnableAutoRecovery = true,
+            DistributedCacheCircuitBreakerDuration = TimeSpan.FromSeconds(30), // breaker on — bypass window exists
+        };
+
+        var logger = new CapturingLogger();
+        var advisor = new HybridCacheBestPracticesAdvisor(options, logger, invalidationConsumerRegistered: true);
+
+        await advisor.StartingAsync(AbortToken);
+
+        logger.HasWarning("AutoRecoveryWithoutCircuitBreaker").Should().BeFalse();
+    }
+
+    // ────────────────────────────────────────────────────────────
     // Check 2 — FailSafeMaxDuration <= Duration
     // ────────────────────────────────────────────────────────────
 

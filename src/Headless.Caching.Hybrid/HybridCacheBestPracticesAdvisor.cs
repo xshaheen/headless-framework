@@ -55,6 +55,16 @@ internal sealed partial class HybridCacheBestPracticesAdvisor(
             logger.LogAutoRecoveryDelayTooLarge(o.AutoRecoveryDelay, _AutoRecoveryDelayThreshold);
         }
 
+        // Check 6 — auto-recovery is enabled but the distributed-cache circuit breaker is disabled (the default).
+        // Auto-recovery replays failed L2 writes on a bounded background cadence, but without a breaker there is no
+        // bypass window: every read that misses L1 still attempts L2 on each request during an outage. The L2 read
+        // timeouts (DistributedCacheSoftTimeout/HardTimeout) bound each attempt's latency but do not stop the
+        // repeated attempts, so a sustained L2 outage keeps hammering the down dependency.
+        if (o.EnableAutoRecovery && o.DistributedCacheCircuitBreakerDuration == TimeSpan.Zero)
+        {
+            logger.LogAutoRecoveryWithoutCircuitBreaker();
+        }
+
         // Check 5 — messaging backplane is wired (IBus is present) but no consumer for
         // CacheInvalidationMessage was registered. The hybrid cache publishes invalidations on every
         // write/remove, but without a consumer those messages are never received by any instance —
@@ -181,4 +191,17 @@ internal static partial class HybridCacheBestPracticesAdvisorLogger
         float eagerRefreshThreshold,
         float limit
     );
+
+    [LoggerMessage(
+        EventId = 6,
+        EventName = "AutoRecoveryWithoutCircuitBreaker",
+        Level = LogLevel.Warning,
+        Message = "HybridCacheOptions.EnableAutoRecovery is true but DistributedCacheCircuitBreakerDuration is zero "
+            + "(the circuit breaker is disabled). Without a breaker there is no bypass window: every read that misses "
+            + "L1 still attempts L2 on each request during an outage — the L2 read timeouts bound each attempt's "
+            + "latency but not the repeated attempts — so a sustained L2 outage keeps hammering the down dependency. "
+            + "Set DistributedCacheCircuitBreakerDuration to a non-zero value to pair the breaker's bypass window "
+            + "with auto-recovery."
+    )]
+    public static partial void LogAutoRecoveryWithoutCircuitBreaker(this ILogger logger);
 }
