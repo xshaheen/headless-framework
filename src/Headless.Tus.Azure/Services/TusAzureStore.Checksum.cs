@@ -1,11 +1,16 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers;
 using System.Security.Cryptography;
+using Azure;
+using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using Azure.Storage.Blobs.Specialized;
 using Headless.Tus.Models;
 using Microsoft.Extensions.Logging;
+using tusdotnet.Helpers;
 using tusdotnet.Interfaces;
+using tusdotnet.Models;
 
 namespace Headless.Tus.Services;
 
@@ -33,42 +38,45 @@ public sealed partial class TusAzureStore : ITusChecksumStore
 
     /*
      * The Client and the Server MAY implement and use this extension (Checksum)
-     * to verify data integrity of each PATCH request.
+     * to verify data integrity of each PATCH request. Two flows reach this store:
      *
-     * How append work:
-     * Implementation note: Uses tusdotnet's StreamExtensions.GetUploadChecksumInfo() to detect
-     * if the client requested checksum verification, allowing conditional block commitment:
-     * - if the client requests a checksum verification, don't commit in append and commit here after verification
-     * - if the client doesn't request a checksum verification, commit in append and do nothing here
+     * 1. Upload-Checksum HEADER: tusdotnet wraps the request body in a ChecksumAware stream/pipe,
+     *    so AppendDataAsync sees the algorithm up-front, stages the blocks WITHOUT committing, and
+     *    records the running digest in metadata. VerifyChecksumAsync compares the digests and
+     *    commits (match) or leaves the blocks uncommitted (mismatch; Azure GC discards them).
+     *
+     * 2. Upload-Checksum TRAILER: the checksum is not known until after the body was read, so
+     *    AppendDataAsync sees no checksum info and commits immediately — recording the pre-append
+     *    offset (tus_last_chunk_offset) as a rollback point. VerifyChecksumAsync then hashes the
+     *    committed [LastChunkOffset, end) range on demand and, on mismatch (or tusdotnet's
+     *    faulty-trailer fallback sentinel), rolls the blob back by re-committing the previous
+     *    block list — the Azure analog of TusDiskStore's SetLength(chunkStartPosition).
      */
 
-    // This implements the TUS Checksum Extension's PATCH verification flow:
-    // 1. Retrieves pre-calculated checksum from metadata (calculated during AppendDataAsync)
-    // 2. Performs constant-time comparison to prevent timing attacks
-    // 3. On match: Commits staged blocks + updates metadata atomically
-    // 4. On mismatch: Leaves blocks uncommitted (Azure auto-deletes after 7 days)
-
-    // Uses "fail fast" approach - if pre-calculated checksum is missing, verification fails
-    // without attempting recalculation, indicating a bug or corrupted metadata.
-
     /// <summary>
-    /// Verifies the checksum of the most recent PATCH against the digest supplied by the client
-    /// and, on success, atomically commits the staged blocks.
+    /// Verifies the checksum of the most recent PATCH against the digest supplied by the client.
+    /// For header-based checksums this compares the digest pre-computed during
+    /// <c>AppendDataAsync</c> and commits the staged blocks on success; for trailer-based
+    /// checksums it hashes the last chunk's committed range on demand and rolls the chunk back
+    /// on mismatch.
     /// </summary>
     /// <param name="fileId">the TUS file identifier</param>
     /// <param name="algorithm">hash algorithm name as reported in the TUS-Checksum header (e.g. <c>sha256</c>)</param>
     /// <param name="checksum">expected digest bytes supplied by the client</param>
     /// <param name="cancellationToken">token to cancel the operation</param>
     /// <returns>
-    /// <see langword="true"/> if the stored pre-calculated digest matches <paramref name="checksum"/>
-    /// and the staged blocks were committed; <see langword="false"/> on mismatch, missing metadata,
-    /// or unexpected error — staged blocks are left uncommitted and Azure discards them after seven days
+    /// <see langword="true"/> if the digest matches and the chunk is durably committed;
+    /// <see langword="false"/> on mismatch or missing state — the chunk is discarded (staged
+    /// blocks left uncommitted, or the committed range rolled back)
     /// </returns>
     /// <remarks>
-    /// The digest is not recalculated here; it was computed during <c>AppendDataAsync</c> and
-    /// stored in blob metadata under <c>tus_last_chunk_checksum</c>. A missing checksum value
-    /// in metadata indicates a bug or corrupted state and is treated as a verification failure.
     /// Comparison uses <c>CryptographicOperations.FixedTimeEquals</c> to prevent timing attacks.
+    /// <paramref name="cancellationToken"/> is deliberately ignored for all store I/O (mirroring
+    /// <c>TusDiskStore</c>): tusdotnet passes the request's token, which is <em>already
+    /// cancelled</em> when the client disconnected — including right after sending a checksum
+    /// trailer over data this store has already committed. Honoring the token there could abort
+    /// between verification and rollback and leave an unverified (possibly corrupt) chunk durable,
+    /// so verification and its cleanup are must-complete.
     /// </remarks>
     public async Task<bool> VerifyChecksumAsync(
         string fileId,
@@ -77,57 +85,281 @@ public sealed partial class TusAzureStore : ITusChecksumStore
         CancellationToken cancellationToken
     )
     {
+        await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
+
+        var blobClient = _GetBlobClient(fileId);
         var blockBlobClient = _GetBlockBlobClient(fileId);
-        TusAzureFile file;
-        byte[] calculatedChecksum;
+
+        // tusdotnet substitutes this sentinel when the checksum-trailer was faulty or the client
+        // disconnected before sending it; the store must discard the chunk unconditionally.
+        var isFallback = ChecksumTrailerHelper.IsFallback(algorithm, checksum);
+
+        // 404 is already mapped to null inside _GetTusFileInfoAsync, so any exception it throws is a
+        // genuine infrastructure failure (throttling / network / 500), NOT a checksum outcome — let it
+        // propagate so the client retries. Returning false here would map to HTTP 460 (tusdotnet),
+        // telling the client its correctly-checksummed data was corrupt and discarding it. This mirrors
+        // the commit and trailer-verify branches below, deliberately kept outside any infra catch.
+        var file = await _GetTusFileInfoAsync(blobClient, fileId, CancellationToken.None).ConfigureAwait(false);
+
+        if (file is null)
+        {
+            _logger.ChecksumVerificationFileInfoNotFound(fileId);
+
+            return false;
+        }
+
+        if (isFallback)
+        {
+            _logger.TrailerFallbackChunkDiscarded(fileId);
+            await _DiscardLastChunkAsync(blobClient, blockBlobClient, file).ConfigureAwait(false);
+
+            return false;
+        }
+
+        // Header flow: the digest was pre-computed during AppendDataAsync and the blocks are staged
+        // but uncommitted.
+        if (!string.IsNullOrEmpty(file.Metadata.LastChunkChecksum))
+        {
+            byte[] calculatedChecksum;
+
+            try
+            {
+                if (!_TryGetChecksum(file, algorithm, out var stored))
+                {
+                    return false;
+                }
+
+                calculatedChecksum = stored;
+            }
+            catch (Exception e)
+            {
+                _logger.ChecksumVerificationFailedUnexpectedly(e, fileId, algorithm);
+
+                return false;
+            }
+
+            if (!_VerifyChecksum(calculatedChecksum, checksum))
+            {
+                _logger.ChecksumVerificationFailed(fileId, algorithm, checksum, calculatedChecksum);
+
+                // Don't commit the last chunk, effectively discarding it (since it's not part of the
+                // committed blob) as the TUS protocol requires.
+                return false;
+            }
+
+            _logger.ChecksumVerificationPassed(fileId, algorithm);
+
+            // Commit OUTSIDE the catch-all above: a failure here is an infrastructure error (throttling,
+            // network), NOT a checksum mismatch. Let it propagate so the client retries the verification,
+            // instead of being told via a false return that its (correctly-checksummed) data was corrupt
+            // and discarding it.
+            await _CommitLastChunkAsync(blockBlobClient, file, CancellationToken.None).ConfigureAwait(false);
+
+            return true;
+        }
+
+        // Trailer flow: the chunk is already committed; verify its range on demand. Must-complete:
+        // an abort between hashing and rollback would leave an unverified chunk durable.
+        return await _VerifyCommittedLastChunkAsync(blobClient, blockBlobClient, file, algorithm, checksum)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Verifies an already-committed last chunk (checksum-trailer flow) by hashing its
+    /// <c>[LastChunkOffset, end)</c> range, rolling the chunk back on mismatch. Runs entirely on
+    /// <c>CancellationToken.None</c>: the caller's request token may already be cancelled, and
+    /// aborting between hashing and rollback would leave an unverified chunk durable.
+    /// </summary>
+    private async Task<bool> _VerifyCommittedLastChunkAsync(
+        BlobClient blobClient,
+        BlockBlobClient blockBlobClient,
+        TusAzureFile file,
+        string algorithm,
+        byte[] checksum
+    )
+    {
+        var chunkStart = file.Metadata.LastChunkOffset;
+
+        if (chunkStart is null)
+        {
+            // Nothing was appended (VerifyChecksumAsync without a prior AppendDataAsync) or the blob
+            // predates rollback-point tracking; there is no verifiable chunk.
+            _logger.NoVerifiableChunk(file.FileId);
+
+            return false;
+        }
+
+        var chunkLength = file.CurrentContentLength - chunkStart.Value;
+
+        if (chunkLength < 0)
+        {
+            _logger.LastChunkStateCorrupted(file.FileId, chunkStart.Value, file.CurrentContentLength);
+
+            return false;
+        }
+
+        // Infrastructure failures (download/hash) propagate rather than returning false: a false
+        // return tells the client its data was corrupt and discarded, which is untrue here.
+        var calculatedChecksum = await _ComputeCommittedRangeChecksumAsync(
+                blobClient,
+                algorithm,
+                chunkStart.Value,
+                chunkLength,
+                CancellationToken.None
+            )
+            .ConfigureAwait(false);
+
+        if (calculatedChecksum is null)
+        {
+            // Unsupported algorithm; tusdotnet validates against GetSupportedAlgorithmsAsync up-front,
+            // so this only happens for store-direct callers.
+            return false;
+        }
+
+        if (_VerifyChecksum(calculatedChecksum, checksum))
+        {
+            _logger.ChecksumVerificationPassed(file.FileId, algorithm);
+
+            return true;
+        }
+
+        _logger.ChecksumVerificationFailed(file.FileId, algorithm, checksum, calculatedChecksum);
+        await _RollbackLastChunkAsync(blockBlobClient, file, chunkStart.Value).ConfigureAwait(false);
+
+        return false;
+    }
+
+    /// <summary>
+    /// Discards the most recent chunk after a faulty/missing checksum-trailer: staged-but-uncommitted
+    /// blocks are dropped by clearing their tracking metadata (Azure GC reaps them), a committed
+    /// chunk is rolled back to its recorded start offset.
+    /// </summary>
+    private async Task _DiscardLastChunkAsync(BlobClient blobClient, BlockBlobClient blockBlobClient, TusAzureFile file)
+    {
+        if (file.Metadata.LastChunkBlocks is { Count: > 0 })
+        {
+            file.Metadata.LastChunkBlocks = null;
+            file.Metadata.LastChunkChecksum = null;
+            await blobClient
+                .SetMetadataAsync(file.Metadata.ToAzure(), cancellationToken: CancellationToken.None)
+                .ConfigureAwait(false);
+
+            return;
+        }
+
+        var chunkStart = file.Metadata.LastChunkOffset;
+
+        if (chunkStart is null || chunkStart.Value >= file.CurrentContentLength)
+        {
+            // Nothing committed by the last append — nothing to discard.
+            return;
+        }
+
+        await _RollbackLastChunkAsync(blockBlobClient, file, chunkStart.Value).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Rolls the blob back to <paramref name="chunkStartOffset"/> by re-committing the prefix of the
+    /// current committed block list — the Azure equivalent of <c>TusDiskStore</c>'s
+    /// <c>SetLength(chunkStartPosition)</c>. Blocks dropped from the list are garbage-collected by Azure.
+    /// </summary>
+    /// <remarks>
+    /// Runs on <c>CancellationToken.None</c>: rollback is must-complete cleanup, and the caller's
+    /// request token is already cancelled when the client disconnected before sending the trailer.
+    /// </remarks>
+    private async Task _RollbackLastChunkAsync(BlockBlobClient client, TusAzureFile file, long chunkStartOffset)
+    {
+        var committedBlocks = await _GetCommittedBlocksAsync(client, CancellationToken.None).ConfigureAwait(false);
+
+        var prefix = new List<string>(committedBlocks.Count);
+        var cumulative = 0L;
+
+        foreach (var block in committedBlocks)
+        {
+            if (cumulative >= chunkStartOffset)
+            {
+                break;
+            }
+
+            prefix.Add(block.Name);
+            cumulative += block.SizeLong;
+        }
+
+        if (cumulative != chunkStartOffset)
+        {
+            // Block boundaries no longer align with the recorded chunk start; refuse to guess a
+            // rollback point rather than corrupt the upload.
+            _logger.LastChunkStateCorrupted(file.FileId, chunkStartOffset, cumulative);
+
+            throw new TusStoreException(
+                $"Cannot roll back file {file.FileId}: committed blocks do not align with the recorded chunk offset {chunkStartOffset}."
+            );
+        }
+
+        file.Metadata.LastChunkBlocks = null;
+        file.Metadata.LastChunkChecksum = null;
+        file.Metadata.LastChunkOffset = null;
+
+        // HttpHeaders must be re-supplied: Put Block List clears any x-ms-blob-* property omitted
+        // from the request, which would wipe creation-time headers during rollback.
+        var options = new CommitBlockListOptions { Metadata = file.Metadata.ToAzure(), HttpHeaders = file.HttpHeaders };
+        await client.CommitBlockListAsync(prefix, options, CancellationToken.None).ConfigureAwait(false);
+
+        _logger.LastChunkRolledBack(file.FileId, chunkStartOffset);
+    }
+
+    /// <summary>
+    /// Streams the committed range <c>[from, from + length)</c> and returns its digest, or
+    /// <see langword="null"/> when the algorithm is not supported.
+    /// </summary>
+    private async Task<byte[]?> _ComputeCommittedRangeChecksumAsync(
+        BlobClient blobClient,
+        string algorithm,
+        long from,
+        long length,
+        CancellationToken cancellationToken
+    )
+    {
+        using var hasher = _CreateHasher(algorithm);
+
+        if (hasher is null)
+        {
+            return null;
+        }
+
+        if (length == 0)
+        {
+            return hasher.GetHashAndReset();
+        }
+
+        var response = await blobClient
+            .DownloadStreamingAsync(new BlobDownloadOptions { Range = new HttpRange(from, length) }, cancellationToken)
+            .ConfigureAwait(false);
+
+        using var download = response.Value;
+        var buffer = ArrayPool<byte>.Shared.Rent(81920);
 
         try
         {
-            var blobClient = _GetBlobClient(fileId);
+            int bytesRead;
 
-            // Get file info to access stored chunk metadata
-            var info = await _GetTusFileInfoAsync(blobClient, fileId, cancellationToken).ConfigureAwait(false);
-
-            if (info is null)
+            while (
+                (
+                    bytesRead = await download
+                        .Content.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken)
+                        .ConfigureAwait(false)
+                ) > 0
+            )
             {
-                _logger.ChecksumVerificationFileInfoNotFound(fileId);
-                return false;
+                hasher.AppendData(buffer, 0, bytesRead);
             }
-
-            file = info;
-
-            // Get pre-calculated checksum from metadata (calculated during upload)
-            if (!_TryGetChecksum(file, algorithm, out var stored))
-            {
-                return false;
-            }
-
-            calculatedChecksum = stored;
         }
-        catch (Exception e)
+        finally
         {
-            _logger.ChecksumVerificationFailedUnexpectedly(e, fileId, algorithm);
-
-            return false;
+            ArrayPool<byte>.Shared.Return(buffer, clearArray: true);
         }
 
-        if (!_VerifyChecksum(calculatedChecksum, checksum))
-        {
-            _logger.ChecksumVerificationFailed(fileId, algorithm, checksum, calculatedChecksum);
-
-            // Don't commit the last chunk, effectively discarding it (since it's not part of the committed blob)
-            // as the TUS protocol requires.
-            return false;
-        }
-
-        _logger.ChecksumVerificationPassed(fileId, algorithm);
-
-        // Commit OUTSIDE the catch-all above: a failure here is an infrastructure error (throttling, network),
-        // NOT a checksum mismatch. Let it propagate so the client retries the verification, instead of being
-        // told via a false return that its (correctly-checksummed) data was corrupt and discarding it.
-        await _CommitLastChunkAsync(blockBlobClient, file, cancellationToken).ConfigureAwait(false);
-
-        return true;
+        return hasher.GetHashAndReset();
     }
 
     private IncrementalHash? _CreateHasher(string algorithm)
@@ -218,16 +450,33 @@ public sealed partial class TusAzureStore : ITusChecksumStore
         {
             var committedBlocks = await _GetCommittedBlocksAsync(client, token).ConfigureAwait(false);
 
-            // Build complete block list BEFORE clearing metadata (use LastChunkBlocks while it still has data)
-            List<string> allBlockIds = [.. committedBlocks.Select(x => x.Name), .. file.Metadata.LastChunkBlocks ?? []];
+            // Build complete block list BEFORE clearing metadata: the staged IDs are reconstructed
+            // from the persisted (token, firstIndex, count) triple — see TusStagedBlocks.
+            var staged = file.Metadata.LastChunkBlocks;
+            var allBlockIds = new List<string>(committedBlocks.Count + (staged?.Count ?? 0));
+            allBlockIds.AddRange(committedBlocks.Select(x => x.Name));
+
+            if (staged is { } stagedRange)
+            {
+                for (var i = 0; i < stagedRange.Count; i++)
+                {
+                    allBlockIds.Add(_GenerateBlockId(stagedRange.Token, stagedRange.FirstIndex + i));
+                }
+            }
+
             _EnsureWithinBlockLimit(allBlockIds.Count);
 
             // NOW clear chunk tracking metadata (after we've used it)
             file.Metadata.LastChunkBlocks = null;
             file.Metadata.LastChunkChecksum = null;
 
-            // ATOMIC: Commit blocks + update metadata in single operation
-            var options = new CommitBlockListOptions { Metadata = file.Metadata.ToAzure() };
+            // ATOMIC: Commit blocks + update metadata in single operation. HttpHeaders must be
+            // re-supplied: Put Block List clears any x-ms-blob-* property omitted from the request.
+            var options = new CommitBlockListOptions
+            {
+                Metadata = file.Metadata.ToAzure(),
+                HttpHeaders = file.HttpHeaders,
+            };
             await client.CommitBlockListAsync(allBlockIds, options, cancellationToken: token).ConfigureAwait(false);
 
             _logger.LastChunkCommitted(file.FileId, allBlockIds.Count);
@@ -339,6 +588,39 @@ internal static partial class TusAzureStoreChecksumLog
         Message = "Committed last chunk for file {FileId}: {TotalBlocks} blocks (atomic with metadata update)"
     )]
     public static partial void LastChunkCommitted(this ILogger logger, string fileId, int totalBlocks);
+
+    [LoggerMessage(
+        EventId = 3246,
+        Level = LogLevel.Warning,
+        Message = "Discarding last chunk of file {FileId}: checksum-trailer was faulty or the client disconnected before sending it"
+    )]
+    public static partial void TrailerFallbackChunkDiscarded(this ILogger logger, string fileId);
+
+    [LoggerMessage(
+        EventId = 3247,
+        Level = LogLevel.Warning,
+        Message = "Rolled back file {FileId} to offset {ChunkStartOffset} after checksum failure"
+    )]
+    public static partial void LastChunkRolledBack(this ILogger logger, string fileId, long chunkStartOffset);
+
+    [LoggerMessage(
+        EventId = 3248,
+        Level = LogLevel.Error,
+        Message = "No verifiable chunk for file {FileId}: no pre-computed digest and no recorded chunk offset"
+    )]
+    public static partial void NoVerifiableChunk(this ILogger logger, string fileId);
+
+    [LoggerMessage(
+        EventId = 3249,
+        Level = LogLevel.Error,
+        Message = "Last-chunk state for file {FileId} is corrupted: recorded chunk offset {ChunkStartOffset} does not align with committed content ({CommittedLength})"
+    )]
+    public static partial void LastChunkStateCorrupted(
+        this ILogger logger,
+        string fileId,
+        long chunkStartOffset,
+        long committedLength
+    );
 
     [LoggerMessage(EventId = 3238, Level = LogLevel.Error, Message = "Failed to commit last chunk for file {FileId}")]
     public static partial void CommitLastChunkFailed(this ILogger logger, Exception exception, string fileId);

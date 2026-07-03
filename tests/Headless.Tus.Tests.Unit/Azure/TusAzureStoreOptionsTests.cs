@@ -54,13 +54,13 @@ public sealed class TusAzureStoreOptionsTests : TestBase
     }
 
     [Fact]
-    public void should_default_blob_max_chunk_size_to_100mb()
+    public void should_default_blob_max_chunk_size_to_16mb()
     {
         // when
         var options = new TusAzureStoreOptions();
 
         // then
-        options.BlobMaxChunkSize.Should().Be(100 * 1024 * 1024);
+        options.BlobMaxChunkSize.Should().Be(16 * 1024 * 1024);
     }
 
     [Fact]
@@ -71,6 +71,16 @@ public sealed class TusAzureStoreOptionsTests : TestBase
 
         // then
         options.BlobDefaultChunkSize.Should().Be(4 * 1024 * 1024);
+    }
+
+    [Fact]
+    public void should_default_delete_partial_files_on_concat_to_false()
+    {
+        // given
+        var options = new TusAzureStoreOptions();
+
+        // then - partials are kept by default (TusDiskStore parity; the spec allows reusing them)
+        options.DeletePartialFilesOnConcat.Should().BeFalse();
     }
 
     [Fact]
