@@ -134,9 +134,21 @@ public sealed partial class FactoryCacheCoordinator
             // concurrency stamp: a concurrent Remove/Upsert landing during the (potentially long) factory run then
             // fails the final write's CAS instead of being silently clobbered or the removed key resurrected. The
             // gate write carried the original birth time forward, so the re-read's CreatedAt preserves it on the
-            // NotModified path. A failed re-read degrades to NotFound (an unconditional write), matching the
-            // best-effort tolerance of the rest of this path.
+            // NotModified path.
             var postGateEntry = await _TryGetEntryAsync<T>(store, key, CancellationToken.None).ConfigureAwait(false);
+
+            // Fail closed when the re-read did not return a live entry. NotFound (ConcurrencyStamp == null) covers both
+            // a key concurrently removed between the gate commit and this re-read (Remove takes no factory lock) and a
+            // re-read that itself threw and degraded to NotFound. A null stamp makes _WriteFactoryResultAsync emit an
+            // UNCONDITIONAL write, which would resurrect the removed key or clobber a concurrent writer — exactly what
+            // the post-gate CAS exists to prevent. A proactive refresh of an entry that is now gone (or unreadable)
+            // has nothing to safely extend, so drop it; natural expiry and the next read take over. The finally below
+            // releases the lock and lease because ownsReleaser is still true here.
+            if (!postGateEntry.Found)
+            {
+                _logger.LogEagerRefreshAbandonedGateEntryLost(key);
+                return;
+            }
 
             ownsReleaser = false;
             await _StartEagerFactoryAsync(

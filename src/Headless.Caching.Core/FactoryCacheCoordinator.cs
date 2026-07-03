@@ -1016,4 +1016,14 @@ internal static partial class FactoryCacheCoordinatorLog
             + "factory ignored cancellation and the wasted work was thrown away."
     )]
     public static partial void LogCacheFactoryDiscardedSuccess(this ILogger logger, string key);
+
+    [LoggerMessage(
+        EventId = 17,
+        EventName = "CacheEagerRefreshAbandonedGateEntryLost",
+        Level = LogLevel.Debug,
+        Message = "Cache eager refresh abandoned for key {Key}: the post-gate re-read returned no live entry (the key "
+            + "was concurrently removed or the re-read failed), so the eager write is dropped rather than resurrecting "
+            + "the key; natural expiry and the next read take over."
+    )]
+    public static partial void LogEagerRefreshAbandonedGateEntryLost(this ILogger logger, string key);
 }
