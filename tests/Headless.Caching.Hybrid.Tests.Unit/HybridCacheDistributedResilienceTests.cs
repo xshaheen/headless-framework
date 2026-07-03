@@ -412,6 +412,63 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
         l2.ReadAttempts.Should().Be(attemptsBeforeSkippedRead, "an open circuit must not issue the L2 read");
     }
 
+    [Fact]
+    public async Task should_degrade_prefix_and_count_reads_to_empty_when_l2_read_faults()
+    {
+        // given — an L2 whose prefix/count reads throw (a down store); default policy swallows the fault. The circuit
+        // is disabled (duration 0), so each of the three reads genuinely exercises the fault -> degrade path.
+        var timeProvider = TimeProvider.System;
+        using var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l2 = new ThrowingReadRemoteCache(timeProvider);
+        var cache = _CreateCache(l1, l2, new HybridCacheOptions(), timeProvider);
+        await using var _ = cache;
+
+        var prefix = Faker.Random.AlphaNumeric(6);
+
+        // when / then — each rerouted read degrades to its empty shape instead of surfacing the L2 fault. Before the
+        // fix these calls hit l2Cache directly and threw during an L2 outage.
+        (await cache.GetByPrefixAsync<int>(prefix, AbortToken))
+            .Should()
+            .BeEmpty();
+        (await cache.GetAllKeysByPrefixAsync(prefix, AbortToken)).Should().BeEmpty();
+        (await cache.GetCountAsync(prefix, AbortToken)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_degrade_prefix_and_count_reads_to_empty_when_distributed_circuit_is_open()
+    {
+        // given — a healthy L2 that genuinely holds matching entries, but the distributed circuit is tripped by a
+        // prior read fault, so the rerouted prefix/count reads must skip L2 and degrade instead of throwing.
+        using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l2 = new TogglableRemoteCache(_timeProvider);
+        var cache = _CreateCache(
+            l1,
+            l2,
+            new HybridCacheOptions { DistributedCacheCircuitBreakerDuration = TimeSpan.FromSeconds(30) }
+        );
+        await using var _ = cache;
+
+        var prefix = Faker.Random.AlphaNumeric(6);
+        await l2.UpsertAsync(prefix + "-a", 1, TimeSpan.FromMinutes(5), AbortToken);
+        await l2.UpsertAsync(prefix + "-b", 2, TimeSpan.FromMinutes(5), AbortToken);
+        // Premise: L2 really does hold matching entries, so an empty hybrid result can only come from the open circuit.
+        (await l2.GetCountAsync(prefix, AbortToken))
+            .Should()
+            .Be(2);
+
+        // trip the circuit via a failing L2 read
+        l2.FailReads = true;
+        await cache.GetAsync<int>(prefix + "-a", AbortToken);
+        l2.FailReads = false;
+
+        // when / then — while the circuit is open the three rerouted reads return their empty shape without touching L2
+        (await cache.GetByPrefixAsync<int>(prefix, AbortToken))
+            .Should()
+            .BeEmpty();
+        (await cache.GetAllKeysByPrefixAsync(prefix, AbortToken)).Should().BeEmpty();
+        (await cache.GetCountAsync(prefix, AbortToken)).Should().Be(0);
+    }
+
     private static IBus _FaultingPublisher(string message)
     {
         var publisher = Substitute.For<IBus>();

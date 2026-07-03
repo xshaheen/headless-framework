@@ -343,6 +343,109 @@ public sealed class HybridCacheTagTests : TestBase
     }
 
     [Fact]
+    public async Task should_invalidate_generic_cold_seeded_entry_when_removing_by_tag()
+    {
+        // given — a tagged entry lives in L2 only (a fresh node whose L1 has never held it). Writing through the
+        // framed IFactoryCacheStore contract stamps Tags + CreatedAt without ever touching the hybrid's L1.
+        var (cache, l1, l2, _) = _CreateCache();
+        await using var _ = cache;
+
+        var key = Faker.Random.AlphaNumeric(10);
+        var tag = Faker.Random.AlphaNumeric(8);
+        var value = Faker.Random.Word();
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+
+        await ((IFactoryCacheStore)l2).SetEntryAsync(
+            key,
+            new CacheStoreEntryWrite<string>
+            {
+                Value = value,
+                IsNull = false,
+                LogicalExpiresAt = now.AddMinutes(5),
+                PhysicalExpiresAt = now.AddMinutes(5),
+                Tags = [tag],
+                // A past birth time so any later marker postdates it (mirrors a value cached before this node woke).
+                CreatedAt = now.AddSeconds(-5),
+            },
+            AbortToken
+        );
+        (await l1.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse("the seed must start with an empty L1");
+
+        // when — the generic GetAsync<T> cold path (L1 miss -> L2 hit) seeds L1 with the value AND its tag metadata
+        // via the framed IFactoryCacheStore.TryGetEntryAsync route.
+        (await cache.GetAsync<string>(key, AbortToken))
+            .Value.Should()
+            .Be(value);
+
+        // advance so the tag marker postdates the seeded entry's birth time, then invalidate the tag.
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(10));
+        await cache.RemoveByTagAsync(tag, AbortToken);
+
+        // then — the cold-seeded L1 entry carries the tag, so it is tag-invalidated directly and the next generic
+        // read misses. Before the fix the generic cold seed dropped the tags and this entry survived until physical TTL.
+        (await l1.GetAsync<string>(key, AbortToken))
+            .HasValue.Should()
+            .BeFalse("the cold seed must carry the tag so RemoveByTag can invalidate the L1 copy");
+        (await cache.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_invalidate_generic_bulk_cold_seeded_entries_when_removing_by_tag()
+    {
+        // given — two tagged entries live in L2 only; L1 has never held them.
+        var (cache, l1, l2, _) = _CreateCache();
+        await using var _ = cache;
+
+        var tag = Faker.Random.AlphaNumeric(8);
+        var key1 = Faker.Random.AlphaNumeric(10);
+        var key2 = Faker.Random.AlphaNumeric(10);
+        var value1 = Faker.Random.Int(1, 1000);
+        var value2 = Faker.Random.Int(1001, 2000);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+
+        foreach (var (key, value) in new[] { (key1, value1), (key2, value2) })
+        {
+            await ((IFactoryCacheStore)l2).SetEntryAsync(
+                key,
+                new CacheStoreEntryWrite<int>
+                {
+                    Value = value,
+                    IsNull = false,
+                    LogicalExpiresAt = now.AddMinutes(5),
+                    PhysicalExpiresAt = now.AddMinutes(5),
+                    Tags = [tag],
+                    CreatedAt = now.AddSeconds(-5),
+                },
+                AbortToken
+            );
+        }
+
+        (await l1.GetAsync<int>(key1, AbortToken)).HasValue.Should().BeFalse("the seed must start with an empty L1");
+        (await l1.GetAsync<int>(key2, AbortToken)).HasValue.Should().BeFalse("the seed must start with an empty L1");
+
+        // when — the generic bulk GetAllAsync<T> cold path (L1 miss -> L2 hit) populates the result AND seeds each
+        // L1 copy with its tags via the framed per-key TryGetEntryAsync route.
+        var cold = await cache.GetAllAsync<int>([key1, key2], AbortToken);
+        cold[key1].Value.Should().Be(value1);
+        cold[key2].Value.Should().Be(value2);
+
+        // advance so the tag marker postdates the seeded entries, then invalidate the tag.
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(10));
+        await cache.RemoveByTagAsync(tag, AbortToken);
+
+        // then — the cold-seeded L1 copies carry the tag, so both keys are invalidated on L1 and miss on the next
+        // bulk read. Before the fix the bulk cold seed dropped the tags and these entries survived until physical TTL.
+        (await l1.GetAsync<int>(key1, AbortToken))
+            .HasValue.Should()
+            .BeFalse();
+        (await l1.GetAsync<int>(key2, AbortToken)).HasValue.Should().BeFalse();
+
+        var afterEvict = await cache.GetAllAsync<int>([key1, key2], AbortToken);
+        afterEvict[key1].HasValue.Should().BeFalse();
+        afterEvict[key2].HasValue.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task should_only_invalidate_entries_carrying_the_removed_tag()
     {
         // given — three keys all carrying the same tag set.

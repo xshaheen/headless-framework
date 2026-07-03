@@ -2505,6 +2505,56 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         _store.GetEntry(key).Should().BeNull();
     }
 
+    // #3 — eager-refresh fail-closed: when the post-gate re-read returns NotFound (a Remove landed in the
+    // gate-write -> re-read window, or the re-read itself degraded), the eager write is ABANDONED before the factory
+    // runs, rather than degrading to an unconditional (null-stamp) write that would resurrect the removed key. This
+    // is distinct from the sibling test above, where the removal lands AFTER the post-gate read and the final write's
+    // CAS is what fails.
+    [Fact]
+    public async Task should_abandon_eager_refresh_without_factory_when_post_gate_reread_returns_not_found()
+    {
+        // given — a fresh entry past its eager point
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "old", now.AddMinutes(5), now.AddMinutes(5), eagerRefreshAt: now.AddSeconds(-1));
+        var coordinator = _CreateCoordinator();
+        var backgroundFinished = _WaitForBackgroundFinished(coordinator);
+        var factoryCalls = 0;
+        var options = _CreateOptions(duration: TimeSpan.FromMinutes(10), eagerRefreshThreshold: 0.5f);
+
+        // The eager gate write clears EagerRefreshAt; the first read AFTER that (the post-gate re-read) is where a
+        // concurrent Remove is modelled to have landed. Removing the key on that read forces the re-read to return
+        // NotFound, which drives the fail-closed guard. Earlier reads (pre-lock, under-lock double-check) still see the
+        // eager stamp set, so they are left untouched.
+        _store.TryGetEntryOverride = (k, _) =>
+        {
+            if (_store.GetEntry(k) is { EagerRefreshAt: null })
+            {
+                _store.RemoveEntry(k);
+            }
+
+            return null; // always fall through to the real (now-absent) store read
+        };
+
+        ValueTask<string?> factory(CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref factoryCalls);
+            return ValueTask.FromResult<string?>("fresh");
+        }
+
+        // when — the triggering caller returns the still-fresh value; the detached refresh re-reads NotFound post-gate
+        var result = await coordinator.GetOrAddAsync(_store, key, factory, options, AbortToken);
+        await backgroundFinished;
+
+        // then — the eager write was abandoned: the factory never ran, only the gate write happened (no result write),
+        // and the removed key was NOT resurrected. A regression to the unconditional null-stamp write would re-add it.
+        result.Value.Should().Be("old");
+        result.IsStale.Should().BeFalse();
+        factoryCalls.Should().Be(0, "a post-gate NotFound must abandon the refresh before the factory runs");
+        _store.SetEntryCalls.Should().Be(1, "only the gate write happened; the eager result write must not run");
+        _store.GetEntry(key).Should().BeNull("a lost/removed gate entry must not be resurrected by the eager write");
+    }
+
     [Fact]
     public async Task should_not_clobber_concurrent_upsert_when_eager_factory_write_lands_mid_flight()
     {
