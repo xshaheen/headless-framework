@@ -7,6 +7,12 @@ namespace Headless.Caching;
 
 public sealed partial class HybridCache
 {
+    // Upper bound on concurrent per-key framed cold reads fanned out for a single bulk GetAllAsync miss set. Caps the
+    // burst of concurrent L2 GETs (and, for tagged entries, the per-key marker MGETs) pushed through the shared L2
+    // multiplexer regardless of caller batch size — mirroring the Redis provider's own multi-key fan-out cap so a large
+    // cold batch cannot reintroduce the unbounded-command storm the native bulk path avoids.
+    private const int _ColdReadFanOutBatchSize = 250;
+
     #region ICache - Get Operations
 
     /// <inheritdoc />
@@ -302,13 +308,28 @@ public sealed partial class HybridCache
                 $"[bulk:{missedKeys.Count}]",
                 async ct =>
                 {
-                    var reads = new Task<CacheStoreEntry<T>>[missedKeys.Count];
-                    for (var i = 0; i < missedKeys.Count; i++)
+                    // Bound the fan-out: process the missed keys in fixed-size chunks (each chunk fully awaited before
+                    // the next starts) so the concurrent L2 command backlog — and, for tagged entries, the per-key
+                    // marker-MGET burst — is capped regardless of caller batch size. Results stay position-aligned with
+                    // missedKeys so the freshness/seed loop below can index them directly.
+                    var entries = new CacheStoreEntry<T>[missedKeys.Count];
+
+                    for (var offset = 0; offset < missedKeys.Count; offset += _ColdReadFanOutBatchSize)
                     {
-                        reads[i] = l2Store.TryGetEntryAsync<T>(missedKeys[i], ct).AsTask();
+                        ct.ThrowIfCancellationRequested();
+
+                        var count = Math.Min(_ColdReadFanOutBatchSize, missedKeys.Count - offset);
+                        var reads = new Task<CacheStoreEntry<T>>[count];
+                        for (var i = 0; i < count; i++)
+                        {
+                            reads[i] = l2Store.TryGetEntryAsync<T>(missedKeys[offset + i], ct).AsTask();
+                        }
+
+                        var chunk = await Task.WhenAll(reads).ConfigureAwait(false);
+                        Array.Copy(chunk, 0, entries, offset, count);
                     }
 
-                    return await Task.WhenAll(reads).ConfigureAwait(false);
+                    return entries;
                 },
                 _SelectDistributedReadTimeout(hasLocalFallback: false, softCanDegradeToMiss: true),
                 DistributedCacheTimeoutKind.Soft,
