@@ -94,23 +94,16 @@ public sealed partial class TusAzureStore : ITusChecksumStore
         // disconnected before sending it; the store must discard the chunk unconditionally.
         var isFallback = ChecksumTrailerHelper.IsFallback(algorithm, checksum);
 
-        TusAzureFile file;
+        // 404 is already mapped to null inside _GetTusFileInfoAsync, so any exception it throws is a
+        // genuine infrastructure failure (throttling / network / 500), NOT a checksum outcome — let it
+        // propagate so the client retries. Returning false here would map to HTTP 460 (tusdotnet),
+        // telling the client its correctly-checksummed data was corrupt and discarding it. This mirrors
+        // the commit and trailer-verify branches below, deliberately kept outside any infra catch.
+        var file = await _GetTusFileInfoAsync(blobClient, fileId, CancellationToken.None).ConfigureAwait(false);
 
-        try
+        if (file is null)
         {
-            var info = await _GetTusFileInfoAsync(blobClient, fileId, CancellationToken.None).ConfigureAwait(false);
-
-            if (info is null)
-            {
-                _logger.ChecksumVerificationFileInfoNotFound(fileId);
-                return false;
-            }
-
-            file = info;
-        }
-        catch (Exception e)
-        {
-            _logger.ChecksumVerificationFailedUnexpectedly(e, fileId, algorithm);
+            _logger.ChecksumVerificationFileInfoNotFound(fileId);
 
             return false;
         }
