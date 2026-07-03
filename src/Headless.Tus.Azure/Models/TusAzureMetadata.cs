@@ -34,6 +34,9 @@ internal sealed class TusAzureMetadata
     // message instead of an opaque Azure 400 at blob creation.
     private const int _MaxRawMetadataLength = 7 * 1024;
 
+    // Azure's hard cap on the total size of all blob-metadata names + values.
+    private const int _MaxTotalMetadataLength = 8 * 1024;
+
     private TusAzureMetadata(IDictionary<string, string> decodedMetadata)
     {
         _decodedMetadata = decodedMetadata;
@@ -219,6 +222,38 @@ internal sealed class TusAzureMetadata
             {
                 _decodedMetadata[RawMetadataKey] = value;
             }
+        }
+    }
+
+    /// <summary>
+    /// Asserts the composed blob metadata (all keys + values) fits Azure's 8&#160;KB cap, throwing an
+    /// actionable <see cref="TusStoreException"/> instead of letting the commit fail with an opaque
+    /// Azure 400.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="FromTus"/> bounds the verbatim <c>Upload-Metadata</c> alone, but system <c>tus_*</c>
+    /// keys are added afterwards — notably <see cref="PartialUploads"/> on a concat final, whose
+    /// comma-joined id list is unbounded in count — so the composed total can exceed the cap even
+    /// when each part passed its own guard. Keys and values are ASCII (raw metadata is ASCII-validated
+    /// in <see cref="FromTus"/>; the <c>tus_*</c> keys and values are ASCII), so character count equals
+    /// byte count.
+    /// </remarks>
+    public void EnsureWithinAzureMetadataLimit()
+    {
+        var total = 0L;
+
+        foreach (var (key, value) in _decodedMetadata)
+        {
+            total += key.Length + value.Length;
+        }
+
+        if (total > _MaxTotalMetadataLength)
+        {
+            throw new TusStoreException(
+                $"Blob metadata is too large ({total} bytes). Azure Blob Storage caps blob metadata "
+                    + $"(all keys and values) at {_MaxTotalMetadataLength} bytes. Reduce Upload-Metadata "
+                    + "or the number of partial uploads in the concatenation."
+            );
         }
     }
 

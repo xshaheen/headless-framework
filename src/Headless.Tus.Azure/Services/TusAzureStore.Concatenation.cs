@@ -224,6 +224,12 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
             blobMetadata.ConcatType = "final";
             blobMetadata.PartialUploads = partialFiles;
 
+            // A concat final persists tus_partial_uploads (comma-joined ids, unbounded count) on top of
+            // the verbatim Upload-Metadata, so the composed metadata can exceed Azure's 8 KB cap even
+            // though each part passed its own guard. Fail with an actionable message instead of the
+            // opaque Azure 400 the commit below would otherwise raise.
+            blobMetadata.EnsureWithinAzureMetadataLimit();
+
             // Commit all blocks to create the final file, applying the same content-type/HTTP headers the
             // regular and partial create paths set (CreateFileAsync / CreatePartialFileAsync).
             _EnsureWithinBlockLimit(blockIds.Count);
