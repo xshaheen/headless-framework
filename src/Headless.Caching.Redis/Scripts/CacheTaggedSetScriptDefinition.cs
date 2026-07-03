@@ -14,6 +14,16 @@ namespace Headless.Caching.Scripts;
 /// The concurrency stamp captures only the fixed frame header (the first <c>@headerLen</c> bytes), so the CAS
 /// compares that same prefix of the live value rather than the whole payload (#13). <c>string.sub</c> clamps to
 /// the value's length, so a shorter legacy value compares in full and stays consistent with the C# stamp codec.
+/// <para>
+/// Because the header omits the payload, two writes to the same key with identical options — same logical,
+/// physical, and created-at millisecond timestamps and the same optional-field flags — produce byte-identical
+/// stamps. Within that same-key, same-options, same-millisecond window the CAS cannot distinguish a stale factory
+/// write from a newer concurrent one, so the "cannot clobber a concurrent writer" guarantee does not strictly hold
+/// there (#583). This is a deliberate perf-over-correctness choice: the header-only compare avoids hashing the
+/// whole frame on every write, and <see cref="CacheEntryOptions.JitterMaxDuration"/> <c>&gt; 0</c> spreads the
+/// header timestamps sub-millisecond and defeats the collision. Callers needing strict cross-writer CAS on a hot
+/// key should enable jitter rather than rely on a same-millisecond guarantee.
+/// </para>
 /// </remarks>
 internal sealed class CacheTaggedSetScriptDefinition : RedisScriptDefinition
 {
