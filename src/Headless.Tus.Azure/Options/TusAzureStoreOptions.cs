@@ -67,6 +67,22 @@ public sealed class TusAzureStoreOptions
     /// <see cref="BlobMaxChunkSize"/> based on total upload size heuristics.</remarks>
     public int BlobDefaultChunkSize { get; set; } = 4 * 1024 * 1024; // 4MB
 
+    /// <summary>
+    /// Maximum number of bytes buffered in memory for a single PATCH body when
+    /// <see cref="EnableChunkSplitting"/> is <see langword="false"/>.
+    /// </summary>
+    /// <remarks>
+    /// No-split mode stages the whole PATCH body as one Azure block, buffering a non-seekable body
+    /// (the normal ASP.NET Core request body) entirely in memory first. This cap bounds that buffer
+    /// and is the <em>only</em> in-flight memory bound for a Creation-Defer-Length upload, whose
+    /// declared length is unknown so the too-much-data guard cannot apply. A PATCH body exceeding the
+    /// cap is rejected with a <c>TusStoreException</c>. Defaults to 256 MB. Ignored when
+    /// <see cref="EnableChunkSplitting"/> is <see langword="true"/> (each block is bounded by
+    /// <see cref="BlobMaxChunkSize"/> instead). Raise it for larger single-block uploads at the cost
+    /// of proportional memory per concurrent upload, or enable chunk splitting.
+    /// </remarks>
+    public int MaxNoSplitBufferSize { get; set; } = 256 * 1024 * 1024; // 256MB
+
     /// <summary>Public access level applied when creating the container.</summary>
     /// <remarks>Only used when <see cref="CreateContainerIfNotExists"/> is <see langword="true"/>
     /// and the container does not yet exist. Defaults to <c>None</c> (private).</remarks>
@@ -102,6 +118,11 @@ internal sealed class TusAzureStoreOptionsValidator : AbstractValidator<TusAzure
             .WithMessage("BlobDefaultChunkSize must be between 1 byte and 100MB")
             .LessThanOrEqualTo(x => x.BlobMaxChunkSize)
             .WithMessage("BlobDefaultChunkSize must not exceed BlobMaxChunkSize");
+
+        // Bounds the single owned buffer used for no-split staging; a byte[] cannot exceed Array.MaxLength.
+        RuleFor(x => x.MaxNoSplitBufferSize)
+            .InclusiveBetween(1, Array.MaxLength)
+            .WithMessage("MaxNoSplitBufferSize must be between 1 byte and Array.MaxLength (~2 GB)");
 
         RuleFor(x => x.ContainerPublicAccessType).IsInEnum();
     }

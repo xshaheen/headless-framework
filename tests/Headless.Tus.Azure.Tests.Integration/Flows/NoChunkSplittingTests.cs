@@ -7,6 +7,7 @@ using Headless.Testing.Tests;
 using Headless.Tus.Options;
 using Headless.Tus.Services;
 using Tests.TestSetup;
+using tusdotnet.Models;
 
 namespace Tests.Flows;
 
@@ -24,10 +25,11 @@ public sealed class NoChunkSplittingTests : TestBase
 
     private readonly TusAzureStore _store;
     private readonly BlobContainerClient _containerClient;
+    private readonly BlobServiceClient _blobServiceClient;
 
     public NoChunkSplittingTests(TusAzureFixture fixture)
     {
-        var blobServiceClient = new BlobServiceClient(
+        _blobServiceClient = new BlobServiceClient(
             fixture.Container.GetConnectionString(),
             new BlobClientOptions(BlobClientOptions.ServiceVersion.V2024_11_04)
         );
@@ -39,8 +41,23 @@ public sealed class NoChunkSplittingTests : TestBase
             EnableChunkSplitting = false,
         };
 
-        _containerClient = blobServiceClient.GetBlobContainerClient(_ContainerName);
-        _store = new TusAzureStore(blobServiceClient, storeOptions, loggerFactory: LoggerFactory);
+        _containerClient = _blobServiceClient.GetBlobContainerClient(_ContainerName);
+        _store = new TusAzureStore(_blobServiceClient, storeOptions, loggerFactory: LoggerFactory);
+    }
+
+    private TusAzureStore _CreateStore(int maxNoSplitBufferSize)
+    {
+        return new TusAzureStore(
+            _blobServiceClient,
+            new TusAzureStoreOptions
+            {
+                ContainerName = _ContainerName,
+                BlobPrefix = _BlobPrefix,
+                EnableChunkSplitting = false,
+                MaxNoSplitBufferSize = maxNoSplitBufferSize,
+            },
+            loggerFactory: LoggerFactory
+        );
     }
 
     [Fact]
@@ -107,6 +124,40 @@ public sealed class NoChunkSplittingTests : TestBase
         await using var downloaded = new MemoryStream();
         await blobClient.DownloadToAsync(downloaded, AbortToken);
         downloaded.ToArray().Should().BeEquivalentTo(chunk1.Concat(chunk2).ToArray());
+    }
+
+    [Fact]
+    public async Task should_reject_non_seekable_body_longer_than_declared_upload_length()
+    {
+        // given - a non-seekable body larger than the declared Upload-Length
+        var content = Faker.Random.Bytes(5_000);
+        var fileId = await _store.CreateFileAsync(uploadLength: 3_000, metadata: null, AbortToken);
+
+        // when - the no-split path buffers incrementally and must reject before staging
+        await using var body = new NonSeekableReadStream(content);
+        var act = async () => await _store.AppendDataAsync(fileId, body, AbortToken);
+
+        // then - rejected, and nothing committed (offset stays 0)
+        await act.Should().ThrowAsync<TusStoreException>();
+        (await _store.GetUploadOffsetAsync(fileId, AbortToken)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_reject_deferred_length_body_exceeding_the_no_split_buffer_cap()
+    {
+        // given - a deferred-length upload (no declared length, so the too-much-data guard is a no-op)
+        // against a store whose no-split buffer cap is deliberately tiny: the cap is the only memory bound.
+        var store = _CreateStore(maxNoSplitBufferSize: 4_096);
+        var fileId = await store.CreateFileAsync(uploadLength: -1, metadata: null, AbortToken);
+        var content = Faker.Random.Bytes(8_192);
+
+        // when
+        await using var body = new NonSeekableReadStream(content);
+        var act = async () => await store.AppendDataAsync(fileId, body, AbortToken);
+
+        // then - rejected by the cap (not the declared-length guard), nothing committed
+        (await act.Should().ThrowAsync<TusStoreException>()).WithMessage("*MaxNoSplitBufferSize*");
+        (await store.GetUploadOffsetAsync(fileId, AbortToken)).Should().Be(0);
     }
 
     private async Task _AssertSingleBlockUploadAsync(string fileId, byte[] expectedContent)

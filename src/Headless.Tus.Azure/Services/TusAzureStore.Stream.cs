@@ -215,7 +215,7 @@ public sealed partial class TusAzureStore
                     return ([], 0);
                 }
 
-                _AssertNotToMuchData(currentOffset, buffered.Length, fileUploadLength);
+                // Length already bounded incrementally inside bufferAsync (cap + declared upload length).
                 buffered.Position = 0;
                 await blockBlobClient
                     .StageBlockAsync(blockId, buffered, cancellationToken: CancellationToken.None)
@@ -233,8 +233,7 @@ public sealed partial class TusAzureStore
                 return ([], 0);
             }
 
-            _AssertNotToMuchData(currentOffset, memoryStream.Length, fileUploadLength);
-
+            // Length already bounded incrementally inside bufferAsync (cap + declared upload length).
             hasher.AppendData(memoryStream.GetBuffer().AsSpan(0, (int)memoryStream.Length));
 
             memoryStream.Position = 0; // Reuse MemoryStream for upload
@@ -282,19 +281,44 @@ public sealed partial class TusAzureStore
 
         // Buffers the whole no-split body into an expandable MemoryStream, swallowing a mid-copy
         // disconnect so the received prefix is still staged (spec: store as much of the received data
-        // as possible). Shared by the no-checksum and with-checksum no-split sub-branches so a future
-        // disconnect-tolerance change touches exactly one place instead of drifting between the two.
+        // as possible). Enforces MaxNoSplitBufferSize and the declared upload length incrementally so a
+        // deferred-length (null) upload still has a memory bound — a plain CopyToAsync would buffer the
+        // entire body before any check. Shared by the no-checksum and with-checksum no-split sub-branches
+        // so a future disconnect-tolerance change touches exactly one place instead of drifting.
         async Task<MemoryStream> bufferAsync(int capacityHint)
         {
+            var maxNoSplitBuffer = _options.MaxNoSplitBufferSize;
             var buffered = new MemoryStream(capacityHint);
+            var pool = ArrayPool<byte>.Shared.Rent(81920);
 
             try
             {
-                await stream.CopyToAsync(buffered, cancellationToken).ConfigureAwait(false);
+                int read;
+
+                while ((read = await stream.ReadAsync(pool, cancellationToken).ConfigureAwait(false)) > 0)
+                {
+                    if (buffered.Length + read > maxNoSplitBuffer)
+                    {
+                        FormattableString message =
+                            $"A single PATCH body exceeds the {maxNoSplitBuffer}-byte no-split buffer cap (MaxNoSplitBufferSize). Enable chunk splitting, raise MaxNoSplitBufferSize, or send the upload in smaller PATCH requests.";
+
+                        throw new TusStoreException(message.ToString(CultureInfo.InvariantCulture));
+                    }
+
+                    // CancellationToken.None: these bytes are already received and must land in the
+                    // buffer even if the client disconnected (a MemoryStream write never truly blocks).
+                    await buffered.WriteAsync(pool.AsMemory(0, read), CancellationToken.None).ConfigureAwait(false);
+                    _AssertNotToMuchData(currentOffset, buffered.Length, fileUploadLength);
+                }
             }
             catch (OperationCanceledException)
             {
                 // Client disconnected mid-copy; keep the received prefix.
+            }
+            finally
+            {
+                // clearArray: the transfer buffer held upload data that must not leak to other pool users.
+                ArrayPool<byte>.Shared.Return(pool, clearArray: true);
             }
 
             return buffered;

@@ -75,6 +75,7 @@ public sealed partial class TusAzureStore : ITusPipelineStore
         // When EnableChunkSplitting is false the whole PATCH body is staged as ONE Azure block
         // (mirroring the Stream overload); otherwise the body is split into optimalChunkSize blocks.
         var enableSplitting = _options.EnableChunkSplitting;
+        var maxNoSplitBuffer = _options.MaxNoSplitBufferSize;
         var optimalChunkSize = _CalculateOptimalChunkSize(azureFile.Metadata.UploadLength);
         var nextBlockNumber = committedBlocks.Count;
         var blockToken = _NewBlockToken();
@@ -120,9 +121,11 @@ public sealed partial class TusAzureStore : ITusPipelineStore
                 while (!buffer.IsEmpty)
                 {
                     // Split mode flushes a full optimalChunkSize block when the buffer fills; no-split
-                    // mode grows the buffer instead, so the whole PATCH body ends up in a single block
-                    // staged after the loop.
-                    var capacity = enableSplitting ? optimalChunkSize : accumulationBuffer.Length;
+                    // mode grows the buffer instead (bounded by MaxNoSplitBufferSize), so the whole PATCH
+                    // body ends up in a single block staged after the loop.
+                    var capacity = enableSplitting
+                        ? optimalChunkSize
+                        : Math.Min(accumulationBuffer.Length, maxNoSplitBuffer);
 
                     if (accumulatedCount == capacity)
                     {
@@ -132,12 +135,21 @@ public sealed partial class TusAzureStore : ITusPipelineStore
                         }
                         else
                         {
+                            // Reject an over-length body early (known length) before buffering more, then
+                            // grow within the cap. Without this the whole body buffers before the post-loop
+                            // check, and for a deferred length (null) that check is a no-op — so the cap is
+                            // the only in-flight memory bound.
+                            _AssertNotToMuchData(currentOffset, accumulatedCount, azureFile.Metadata.UploadLength);
                             growAccumulationBuffer();
-                            capacity = accumulationBuffer.Length;
+                            capacity = Math.Min(accumulationBuffer.Length, maxNoSplitBuffer);
                         }
                     }
 
                     var take = (int)Math.Min(buffer.Length, capacity - accumulatedCount);
+                    // Copy into a buffer WE own rather than staging the ReadOnlySequence slice zero-copy:
+                    // the slice is only valid until AdvanceTo below, and on disconnect those bytes are
+                    // unrecoverable. The copy is a deliberate throughput-for-disconnect-safety trade — do
+                    // not revert to zero-copy staging without preserving that invariant.
                     buffer.Slice(0, take).CopyTo(accumulationBuffer.AsSpan(accumulatedCount, take));
                     accumulatedCount += take;
                     buffer = buffer.Slice(take);
@@ -231,18 +243,20 @@ public sealed partial class TusAzureStore : ITusPipelineStore
             accumulatedCount = 0;
         }
 
-        // Doubles the owned buffer (no-split mode only) so the entire PATCH body fits in one block.
+        // Doubles the owned buffer (no-split mode only), clamped to MaxNoSplitBufferSize so a single
+        // PATCH body cannot exhaust memory — the only in-flight bound when the upload length is deferred
+        // (null), where _AssertNotToMuchData is a no-op.
         void growAccumulationBuffer()
         {
-            if (accumulationBuffer.Length >= Array.MaxLength)
+            if (accumulationBuffer.Length >= maxNoSplitBuffer)
             {
-                throw new TusStoreException(
-                    "A single PATCH body exceeds the maximum size that can be buffered with chunk splitting "
-                        + "disabled. Enable chunk splitting or send the upload in smaller PATCH requests."
-                );
+                FormattableString message =
+                    $"A single PATCH body exceeds the {maxNoSplitBuffer}-byte no-split buffer cap (MaxNoSplitBufferSize). Enable chunk splitting, raise MaxNoSplitBufferSize, or send the upload in smaller PATCH requests.";
+
+                throw new TusStoreException(message.ToString(CultureInfo.InvariantCulture));
             }
 
-            var newSize = (int)Math.Min((long)accumulationBuffer.Length * 2, Array.MaxLength);
+            var newSize = (int)Math.Min((long)accumulationBuffer.Length * 2, maxNoSplitBuffer);
             var larger = ArrayPool<byte>.Shared.Rent(newSize);
             accumulationBuffer.AsSpan(0, accumulatedCount).CopyTo(larger);
             // clearArray: the discarded buffer held upload data that must not leak to other pool users.

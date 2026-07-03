@@ -238,6 +238,60 @@ public sealed class TusProtocolTests(TusAzureFixture fixture) : TestBase
         head.Headers.GetValues("Upload-Offset").Should().ContainSingle().Which.Should().Be("0");
     }
 
+    [Fact]
+    public async Task patch_with_chunk_splitting_disabled_rejects_declared_over_length_body_at_the_protocol_layer()
+    {
+        // given - chunk splitting OFF and a declared Upload-Length smaller than the PATCH body
+        using var host = await _CreateHostAsync(enableChunkSplitting: false, blobDefaultChunkSize: 256);
+        using var client = host.GetTestClient();
+
+        var location = await _CreateUploadAsync(client, uploadLength: 512, metadata: null);
+
+        // when - a single PATCH delivers more than the declared length
+        using var patched = await _PatchAsync(client, location, Faker.Random.Bytes(1024), offset: 0);
+
+        // then - tusdotnet rejects it up front (413, Upload-Offset + body > Upload-Length) before the
+        // store buffers anything, and nothing is committed
+        ((int)patched.StatusCode)
+            .Should()
+            .Be(413);
+        (await _GetCommittedBlockCountAsync(location)).Should().Be(0);
+
+        using var head = await _HeadAsync(client, location);
+        head.Headers.GetValues("Upload-Offset").Should().ContainSingle().Which.Should().Be("0");
+    }
+
+    [Fact]
+    public async Task patch_with_chunk_splitting_disabled_rejects_deferred_length_body_exceeding_the_buffer_cap()
+    {
+        // given - chunk splitting OFF with a tiny no-split buffer cap. A deferred-length upload has no
+        // declared length, so tusdotnet cannot pre-reject the PATCH by size (as the over-length case
+        // above shows) and the body reaches the store's PipeReader path — where MaxNoSplitBufferSize is
+        // the only in-flight memory bound (#5). This pins that the cap is enforced on the real pipeline.
+        using var host = await _CreateHostAsync(enableChunkSplitting: false, maxNoSplitBufferSize: 4096);
+        using var client = host.GetTestClient();
+
+        // deferred-length create (no Upload-Length)
+        using var create = new HttpRequestMessage(HttpMethod.Post, _Endpoint);
+        create.Headers.Add("Tus-Resumable", "1.0.0");
+        create.Headers.Add("Upload-Defer-Length", "1");
+        using var created = await client.SendAsync(create, AbortToken);
+        created.StatusCode.Should().Be(HttpStatusCode.Created);
+        var location = created.Headers.Location!.ToString();
+
+        // when - a single PATCH (still deferred: no Upload-Length) delivers more than the cap
+        using var patched = await _PatchAsync(client, location, Faker.Random.Bytes(8192), offset: 0);
+
+        // then - the store rejects it (400) with nothing committed and the offset unchanged
+        ((int)patched.StatusCode)
+            .Should()
+            .Be(400);
+        (await _GetCommittedBlockCountAsync(location)).Should().Be(0);
+
+        using var head = await _HeadAsync(client, location);
+        head.Headers.GetValues("Upload-Offset").Should().ContainSingle().Which.Should().Be("0");
+    }
+
     private async Task<int> _GetCommittedBlockCountAsync(string location)
     {
         var fileId = location[(location.LastIndexOf('/') + 1)..];
@@ -257,7 +311,11 @@ public sealed class TusProtocolTests(TusAzureFixture fixture) : TestBase
         return blockList.Value.CommittedBlocks.Count();
     }
 
-    private async Task<IHost> _CreateHostAsync(bool enableChunkSplitting = true, int? blobDefaultChunkSize = null)
+    private async Task<IHost> _CreateHostAsync(
+        bool enableChunkSplitting = true,
+        int? blobDefaultChunkSize = null,
+        int? maxNoSplitBufferSize = null
+    )
     {
         var blobServiceClient = new BlobServiceClient(
             fixture.Container.GetConnectionString(),
@@ -274,6 +332,11 @@ public sealed class TusProtocolTests(TusAzureFixture fixture) : TestBase
         if (blobDefaultChunkSize is not null)
         {
             storeOptions.BlobDefaultChunkSize = blobDefaultChunkSize.Value;
+        }
+
+        if (maxNoSplitBufferSize is not null)
+        {
+            storeOptions.MaxNoSplitBufferSize = maxNoSplitBufferSize.Value;
         }
 
         var store = new TusAzureStore(blobServiceClient, storeOptions, loggerFactory: LoggerFactory);
