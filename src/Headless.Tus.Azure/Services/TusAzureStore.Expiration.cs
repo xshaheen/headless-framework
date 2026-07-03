@@ -184,6 +184,16 @@ public sealed partial class TusAzureStore : ITusExpirationStore
     /// must-complete policy): once a file is enumerated as expired, its delete finishes even when
     /// the caller's token cancels mid-pass — otherwise a shutdown would abandon the remainder
     /// with spurious per-file errors. The token still bounds the enumeration itself.
+    /// <para>
+    /// This reaper runs <em>outside</em> tusdotnet's middleware and does <strong>not</strong> hold
+    /// the per-file <c>ITusFileLock</c> that serializes request-path mutations — it is the one blob
+    /// mutator not synchronized with in-flight writes. The window is narrow: only <em>incomplete</em>
+    /// expired uploads are reaped (see <see cref="GetExpiredFilesAsync"/>), and any in-flight PATCH
+    /// refreshes the sliding expiration, so an actively-resuming upload is not eligible. A paused
+    /// upload whose window lapsed exactly as a resume begins could still be deleted mid-resume, so its
+    /// resuming <c>CommitBlockList</c> would hit a deleted blob. Deployments that must eliminate that
+    /// window should gate uploads and cleanup with <c>Headless.Tus.DistributedLocks</c>.
+    /// </para>
     /// </remarks>
     public async Task<int> RemoveExpiredFilesAsync(CancellationToken cancellationToken)
     {
