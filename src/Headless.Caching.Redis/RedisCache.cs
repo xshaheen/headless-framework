@@ -466,7 +466,7 @@ public sealed class RedisCache(
             )
             .ConfigureAwait(false);
 
-        return long.Parse(raw.ToString(), CultureInfo.InvariantCulture);
+        return _ParseLongReply(raw);
     }
 
     public async ValueTask<double> SetIfHigherAsync(
@@ -526,7 +526,7 @@ public sealed class RedisCache(
             )
             .ConfigureAwait(false);
 
-        return long.Parse(raw.ToString(), CultureInfo.InvariantCulture);
+        return _ParseLongReply(raw);
     }
 
     public async ValueTask<double> SetIfLowerAsync(
@@ -586,7 +586,7 @@ public sealed class RedisCache(
             )
             .ConfigureAwait(false);
 
-        return long.Parse(raw.ToString(), CultureInfo.InvariantCulture);
+        return _ParseLongReply(raw);
     }
 
     public async ValueTask<long> SetAddAsync<T>(
@@ -1780,7 +1780,31 @@ public sealed class RedisCache(
 
     private string _GetKey(string key)
     {
+        // #555: reject NUL bytes in consumer keys. Redis keys are binary-safe, so the leading-NUL namespace that
+        // isolates the Family-2 markers ({KeyPrefix}\0__tag:/\0__clear/\0__remove) is only a real trust boundary if
+        // consumer keys are guaranteed NUL-free; without this a crafted key such as "\0__clear" could forge or
+        // suppress an invalidation generation. Internal marker keys are built separately and never flow through here.
+        Argument.IsFalse(
+            key.Contains('\0', StringComparison.Ordinal),
+            "Cache keys must not contain NUL ('\\0') bytes."
+        );
+
         return string.IsNullOrEmpty(_keyPrefix) ? key : string.Concat(_keyPrefix, key);
+    }
+
+    // #590: one Lua script serves the long and double SetIfHigher/SetIfLower overloads and returns the difference as
+    // a string (integer via %d, fractional via tostring). When a key mixes integer and fractional writes, the
+    // long-overload difference can be fractional (e.g. "4.5"); parse the exact integer when the reply is integral,
+    // otherwise coerce a fractional reply by truncating toward zero (the (long) cast) instead of throwing
+    // FormatException. Values past 2^53 already lose precision in the Lua double arithmetic (documented on the
+    // script definitions), so the fallback adds no precision loss the pure-long path did not already have.
+    private static long _ParseLongReply(RedisResult raw)
+    {
+        var text = raw.ToString();
+
+        return long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var exact)
+            ? exact
+            : (long)double.Parse(text, CultureInfo.InvariantCulture);
     }
 
     /// <summary>
