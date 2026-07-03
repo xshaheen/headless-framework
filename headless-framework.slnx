@@ -357,9 +357,11 @@
     </Folder>
     <Folder Name="/PushNotifications/">
         <Project Path="src\Headless.PushNotifications.Abstractions\Headless.PushNotifications.Abstractions.csproj" />
+        <Project Path="src\Headless.PushNotifications.Core\Headless.PushNotifications.Core.csproj" />
         <Project Path="src\Headless.PushNotifications.Dev\Headless.PushNotifications.Dev.csproj" />
         <Project Path="src\Headless.PushNotifications.Firebase\Headless.PushNotifications.Firebase.csproj" />
         <Project Path="tests\Headless.PushNotifications.Abstractions.Tests.Unit\Headless.PushNotifications.Abstractions.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.PushNotifications.Core.Tests.Unit\Headless.PushNotifications.Core.Tests.Unit.csproj" />
         <Project Path="tests\Headless.PushNotifications.Dev.Tests.Unit\Headless.PushNotifications.Dev.Tests.Unit.csproj" />
         <Project Path="tests\Headless.PushNotifications.Firebase.Tests.Unit\Headless.PushNotifications.Firebase.Tests.Unit.csproj" />
     </Folder>
