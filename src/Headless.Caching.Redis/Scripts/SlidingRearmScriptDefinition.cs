@@ -2,7 +2,7 @@
 
 using Headless.Redis;
 
-namespace Headless.Caching;
+namespace Headless.Caching.Scripts;
 
 /// <summary>
 /// Atomic sliding-expiration re-arm: reads the live key TTL and conditionally pushes it out in a single Redis
