@@ -18,6 +18,7 @@ public sealed partial class HybridCache
     {
         _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(key);
+        Argument.IsPositiveOrZero(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (expiration is { Ticks: <= 0 })
@@ -221,6 +222,7 @@ public sealed partial class HybridCache
     {
         _ThrowIfDisposed();
         Argument.IsNotNull(value);
+        Argument.IsPositive(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (value.Count == 0)
@@ -306,6 +308,7 @@ public sealed partial class HybridCache
     {
         _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(key);
+        Argument.IsPositive(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (expiration is { Ticks: <= 0 })
@@ -356,6 +359,7 @@ public sealed partial class HybridCache
     {
         _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(key);
+        Argument.IsPositive(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (expiration is { Ticks: <= 0 })
@@ -418,6 +422,7 @@ public sealed partial class HybridCache
     {
         _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(key);
+        Argument.IsPositive(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (expiration is { Ticks: <= 0 })
@@ -469,6 +474,7 @@ public sealed partial class HybridCache
     {
         _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(key);
+        Argument.IsPositiveOrZero(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (expiration is { Ticks: <= 0 })
@@ -500,6 +506,7 @@ public sealed partial class HybridCache
     {
         _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(key);
+        Argument.IsPositiveOrZero(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (expiration is { Ticks: <= 0 })
@@ -531,6 +538,7 @@ public sealed partial class HybridCache
     {
         _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(key);
+        Argument.IsPositiveOrZero(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (expiration is { Ticks: <= 0 })
@@ -558,6 +566,7 @@ public sealed partial class HybridCache
     {
         _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(key);
+        Argument.IsPositiveOrZero(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (expiration is { Ticks: <= 0 })
@@ -585,6 +594,7 @@ public sealed partial class HybridCache
     {
         _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(key);
+        Argument.IsPositiveOrZero(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (expiration is { Ticks: <= 0 })
@@ -612,6 +622,7 @@ public sealed partial class HybridCache
     {
         _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(key);
+        Argument.IsPositiveOrZero(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (expiration is { Ticks: <= 0 })
@@ -747,6 +758,7 @@ public sealed partial class HybridCache
         _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(key);
         Argument.IsNotNull(value);
+        Argument.IsPositiveOrZero(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
         var items = value.AsArray();
@@ -1192,6 +1204,7 @@ public sealed partial class HybridCache
         _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(key);
         Argument.IsNotNull(value);
+        Argument.IsPositiveOrZero(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
         var items = value.AsArray();
