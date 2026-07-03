@@ -208,17 +208,7 @@ public sealed partial class TusAzureStore
 
                 // A non-seekable request body has no Length; buffer it so StageBlock has a content length and
                 // we can report the exact bytes staged without ever calling Stream.Length on a forward-only stream.
-                await using var buffered = new MemoryStream();
-
-                try
-                {
-                    await stream.CopyToAsync(buffered, cancellationToken).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException)
-                {
-                    // Client disconnected mid-copy; persist what was received (spec: store as much
-                    // of the received data as possible).
-                }
+                await using var buffered = await bufferAsync(capacityHint: 0).ConfigureAwait(false);
 
                 if (buffered.Length == 0)
                 {
@@ -236,17 +226,7 @@ public sealed partial class TusAzureStore
             // Read entire stream into MemoryStream for hashing and upload
             // Pre-allocate capacity if stream length is known to avoid resizing (clamped to int range)
             var capacity = stream is { CanSeek: true, Length: > 0 } ? (int)Math.Min(stream.Length, int.MaxValue) : 0;
-            await using var memoryStream = new MemoryStream(capacity);
-
-            try
-            {
-                await stream.CopyToAsync(memoryStream, cancellationToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                // Client disconnected mid-copy; stage what was received — the partial digest will
-                // fail verification and the staged blocks get discarded, matching the protocol.
-            }
+            await using var memoryStream = await bufferAsync(capacity).ConfigureAwait(false);
 
             if (memoryStream.Length == 0)
             {
@@ -299,6 +279,26 @@ public sealed partial class TusAzureStore
         }
 
         return (chunkBlockIds, bytesWritten);
+
+        // Buffers the whole no-split body into an expandable MemoryStream, swallowing a mid-copy
+        // disconnect so the received prefix is still staged (spec: store as much of the received data
+        // as possible). Shared by the no-checksum and with-checksum no-split sub-branches so a future
+        // disconnect-tolerance change touches exactly one place instead of drifting between the two.
+        async Task<MemoryStream> bufferAsync(int capacityHint)
+        {
+            var buffered = new MemoryStream(capacityHint);
+
+            try
+            {
+                await stream.CopyToAsync(buffered, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // Client disconnected mid-copy; keep the received prefix.
+            }
+
+            return buffered;
+        }
     }
 
     /// <summary>Splits a stream into chunks of the specified maximum size.</summary>

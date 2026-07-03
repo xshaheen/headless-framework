@@ -85,9 +85,9 @@ public sealed partial class TusAzureStore : ITusExpirationStore
             return null;
         }
 
-        var uploadLength = azureFile.Metadata.UploadLength;
-
-        if (uploadLength is not null && azureFile.CurrentContentLength >= uploadLength.Value)
+        // Completed uploads report no expiration (see remarks); reuse the shared incompleteness predicate
+        // so the HEAD-expiration report and the reaper cannot disagree on whether an upload is reapable.
+        if (!_IsIncompleteUpload(azureFile.Metadata.UploadLength, azureFile.CurrentContentLength))
         {
             return null;
         }
@@ -139,9 +139,8 @@ public sealed partial class TusAzureStore : ITusExpirationStore
 
                 // ContentLength is the committed length (staged-but-unverified checksum blocks are
                 // excluded), i.e. the same offset GetUploadOffsetAsync reports to resuming clients.
-                var uploadLength = metadata.UploadLength;
                 var committedLength = blobItem.Properties.ContentLength ?? 0;
-                var isIncomplete = uploadLength is null || committedLength < uploadLength.Value;
+                var isIncomplete = _IsIncompleteUpload(metadata.UploadLength, committedLength);
 
                 if (!isIncomplete)
                 {
@@ -207,6 +206,16 @@ public sealed partial class TusAzureStore : ITusExpirationStore
         _logger.ExpiredFilesRemoved(removedCount);
 
         return removedCount;
+    }
+
+    // Single source of truth for "is this upload still incomplete?". Used by GetExpirationAsync (which
+    // reports no expiration for completed uploads) and GetExpiredFilesAsync / RemoveExpiredFilesAsync
+    // (which reap only incomplete uploads). A null upload length (Creation-Defer-Length in progress)
+    // counts as incomplete. Keeping one predicate stops the two paths from drifting via a hand-rolled
+    // De Morgan inverse and disagreeing on whether an upload is reapable.
+    private static bool _IsIncompleteUpload(long? uploadLength, long currentContentLength)
+    {
+        return uploadLength is null || currentContentLength < uploadLength.Value;
     }
 }
 
