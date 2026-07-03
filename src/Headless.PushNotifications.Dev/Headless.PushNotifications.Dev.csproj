@@ -6,6 +6,6 @@
     <InternalsVisibleTo Include="Headless.PushNotifications.Dev.Tests.Unit" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Headless.PushNotifications.Abstractions\Headless.PushNotifications.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.PushNotifications.Core\Headless.PushNotifications.Core.csproj" />
   </ItemGroup>
 </Project>

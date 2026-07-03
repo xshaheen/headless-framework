@@ -416,7 +416,8 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Permissions.Storage.SqlServer` — SQL Server raw storage.
 
 ### Push Notifications
-- `Headless.PushNotifications.Abstractions` — Push notification interface.
+- `Headless.PushNotifications.Abstractions` — Push notification interface and `IPushNotificationServiceProvider`.
+- `Headless.PushNotifications.Core` — `AddHeadlessPushNotifications` setup builder and named `IPushNotificationServiceProvider` resolution.
 - `Headless.PushNotifications.Firebase` — Firebase Cloud Messaging.
 - `Headless.PushNotifications.Dev` — Dev no-op (use in local/dev).
 

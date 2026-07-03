@@ -12,6 +12,7 @@ Prevents real notifications from being sent during development or test runs. Use
 - No network calls or external dependencies
 - Always returns `Success` responses with a generated GUID as the message id
 - Never validates input or throws (inert for any caller, including invalid tokens or empty titles)
+- Selectable as the default (`setup.UseNoop()`) or as a named instance (`setup.AddNamed("name", i => i.UseNoop())`)
 
 ## Installation
 
@@ -42,8 +43,8 @@ None. No options or configuration keys.
 
 ## Dependencies
 
-- `Headless.PushNotifications.Abstractions`
+- `Headless.PushNotifications.Core`
 
 ## Side Effects
 
-- Registers `IPushNotificationService` as singleton (`NoopPushNotificationService`)
+- Registers `IPushNotificationService` as singleton (`NoopPushNotificationService`) for the default, or a keyed singleton under the instance name for a named instance

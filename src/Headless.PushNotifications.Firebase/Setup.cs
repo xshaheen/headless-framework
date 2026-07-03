@@ -10,12 +10,15 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Polly;
+using Polly.Registry;
 using Polly.Retry;
 
 namespace Headless.PushNotifications.Firebase;
 
 /// <summary>
-/// Registers the Firebase Cloud Messaging provider on a <see cref="HeadlessPushNotificationsSetupBuilder"/>.
+/// Extension members for selecting Firebase Cloud Messaging as the default (unkeyed) push-notification
+/// provider on <see cref="HeadlessPushNotificationsSetupBuilder"/>. Named instances are configured through
+/// <see cref="SetupFirebasePushNotificationsNamed"/>.
 /// </summary>
 /// <remarks>
 /// The Firebase app and credentials are created lazily on the first send (not during registration), so
@@ -32,7 +35,14 @@ public static class SetupFirebasePushNotifications
         public HeadlessPushNotificationsSetupBuilder UseFirebase(IConfiguration configuration)
         {
             Argument.IsNotNull(configuration);
-            setup.RegisterExtension(new FirebaseProviderOptionsExtension(configuration));
+
+            setup.RegisterDefaultProvider(services =>
+                AddFirebaseCore(
+                    services,
+                    name: null,
+                    (s, n) => s.Configure<FirebaseOptions, FirebaseOptionsValidator>(configuration, n)
+                )
+            );
 
             return setup;
         }
@@ -42,7 +52,14 @@ public static class SetupFirebasePushNotifications
         public HeadlessPushNotificationsSetupBuilder UseFirebase(Action<FirebaseOptions> configure)
         {
             Argument.IsNotNull(configure);
-            setup.RegisterExtension(new FirebaseProviderOptionsExtension(configure));
+
+            setup.RegisterDefaultProvider(services =>
+                AddFirebaseCore(
+                    services,
+                    name: null,
+                    (s, n) => s.Configure<FirebaseOptions, FirebaseOptionsValidator>(configure, n)
+                )
+            );
 
             return setup;
         }
@@ -52,7 +69,14 @@ public static class SetupFirebasePushNotifications
         public HeadlessPushNotificationsSetupBuilder UseFirebase(Action<FirebaseOptions, IServiceProvider> configure)
         {
             Argument.IsNotNull(configure);
-            setup.RegisterExtension(new FirebaseProviderOptionsExtension(configure));
+
+            setup.RegisterDefaultProvider(services =>
+                AddFirebaseCore(
+                    services,
+                    name: null,
+                    (s, n) => s.Configure<FirebaseOptions, FirebaseOptionsValidator>(configure, n)
+                )
+            );
 
             return setup;
         }
@@ -62,20 +86,84 @@ public static class SetupFirebasePushNotifications
         public HeadlessPushNotificationsSetupBuilder UseFirebase(FirebaseOptions options)
         {
             Argument.IsNotNull(options);
-            setup.RegisterExtension(new FirebaseProviderOptionsExtension(options));
+
+            setup.RegisterDefaultProvider(services => AddFirebaseCore(services, name: null, CopyOptions(options)));
 
             return setup;
         }
     }
 
-    private static void _AddFirebaseRetryPipeline(IServiceCollection services)
+    /// <summary>
+    /// Registers the Firebase push-notification service. <paramref name="name"/> <see langword="null"/>
+    /// registers the default (unkeyed) service and an overridable <see cref="IFcmMessageSender"/>
+    /// (<c>TryAddSingleton</c>, so a host-supplied sender wins); a non-null name registers a keyed service and
+    /// keyed sender built from that name's options and per-name retry pipeline. Every factory reads the options
+    /// snapshot for its own name (<c>IOptionsMonitor.Get(name)</c>) so keyed settings never bleed across
+    /// instances — keyed DI does not cascade the key to ctor dependencies, and a keyed sender must not read
+    /// <c>CurrentValue</c> (which binds the default).
+    /// </summary>
+    internal static void AddFirebaseCore(
+        IServiceCollection services,
+        string? name,
+        Action<IServiceCollection, string?> configureOptions
+    )
+    {
+        configureOptions(services, name);
+        services.TryAddSingleton(TimeProvider.System);
+        _AddFirebaseRetryPipeline(services, name);
+
+        if (name is null)
+        {
+            services.TryAddSingleton<IFcmMessageSender>(static sp => new FcmMessageSender(
+                sp.GetRequiredService<IOptionsMonitor<FirebaseOptions>>(),
+                sp.GetRequiredService<ResiliencePipelineProvider<string>>(),
+                optionsName: null,
+                sp.GetRequiredService<ILogger<FcmMessageSender>>()
+            ));
+
+            services.AddSingleton<IPushNotificationService, FcmPushNotificationService>();
+
+            return;
+        }
+
+        services.AddKeyedSingleton<IFcmMessageSender>(
+            name,
+            (sp, key) =>
+                new FcmMessageSender(
+                    sp.GetRequiredService<IOptionsMonitor<FirebaseOptions>>(),
+                    sp.GetRequiredService<ResiliencePipelineProvider<string>>(),
+                    optionsName: (string)key!,
+                    sp.GetRequiredService<ILogger<FcmMessageSender>>()
+                )
+        );
+
+        services.AddKeyedSingleton<IPushNotificationService>(
+            name,
+            static (sp, key) => new FcmPushNotificationService(sp.GetRequiredKeyedService<IFcmMessageSender>(key))
+        );
+    }
+
+    internal static Action<IServiceCollection, string?> CopyOptions(FirebaseOptions options)
+    {
+        return (services, name) =>
+            services.Configure<FirebaseOptions, FirebaseOptionsValidator>(
+                target =>
+                {
+                    target.Json = options.Json;
+                    target.Retry = options.Retry;
+                },
+                name
+            );
+    }
+
+    private static void _AddFirebaseRetryPipeline(IServiceCollection services, string? name)
     {
         services.AddResiliencePipeline(
-            FcmResilienceKeys.RetryPipeline,
-            static (builder, context) =>
+            FcmResilienceKeys.GetRetryPipelineKey(name),
+            (builder, context) =>
             {
                 var serviceProvider = context.ServiceProvider;
-                var retry = serviceProvider.GetRequiredService<IOptions<FirebaseOptions>>().Value.Retry;
+                var retry = serviceProvider.GetRequiredService<IOptionsMonitor<FirebaseOptions>>().Get(name).Retry;
                 var timeProvider = serviceProvider.GetRequiredService<TimeProvider>();
                 var logger = serviceProvider.GetRequiredService<ILogger<FcmMessageSender>>();
 
@@ -150,44 +238,93 @@ public static class SetupFirebasePushNotifications
             }
         );
     }
+}
 
-    private sealed class FirebaseProviderOptionsExtension : IPushNotificationsProviderOptionsExtension
+/// <summary>
+/// Extension members for selecting Firebase Cloud Messaging for a named push-notification instance on
+/// <see cref="HeadlessPushNotificationsInstanceBuilder"/>. The instance owns its own named options and per-name
+/// retry pipeline, keyed <see cref="IFcmMessageSender"/>, and keyed service; it never shares them with the
+/// default service or other named instances.
+/// </summary>
+[PublicAPI]
+public static class SetupFirebasePushNotificationsNamed
+{
+    extension(HeadlessPushNotificationsInstanceBuilder instance)
     {
-        private readonly Action<IServiceCollection> _configureOptions;
-
-        public FirebaseProviderOptionsExtension(IConfiguration configuration)
+        /// <summary>Uses Firebase for this named instance, binding and validating <see cref="FirebaseOptions"/> from configuration.</summary>
+        /// <exception cref="ArgumentNullException"><paramref name="configuration"/> is <see langword="null"/>.</exception>
+        public HeadlessPushNotificationsInstanceBuilder UseFirebase(IConfiguration configuration)
         {
-            _configureOptions = services =>
-                services.Configure<FirebaseOptions, FirebaseOptionsValidator>(configuration);
+            Argument.IsNotNull(configuration);
+
+            var name = instance.Name;
+
+            instance.RegisterProvider(services =>
+                SetupFirebasePushNotifications.AddFirebaseCore(
+                    services,
+                    name,
+                    (s, n) => s.Configure<FirebaseOptions, FirebaseOptionsValidator>(configuration, n)
+                )
+            );
+
+            return instance;
         }
 
-        public FirebaseProviderOptionsExtension(Action<FirebaseOptions> configure)
+        /// <summary>Uses Firebase for this named instance, configuring <see cref="FirebaseOptions"/> via a delegate.</summary>
+        /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
+        public HeadlessPushNotificationsInstanceBuilder UseFirebase(Action<FirebaseOptions> configure)
         {
-            _configureOptions = services => services.Configure<FirebaseOptions, FirebaseOptionsValidator>(configure);
+            Argument.IsNotNull(configure);
+
+            var name = instance.Name;
+
+            instance.RegisterProvider(services =>
+                SetupFirebasePushNotifications.AddFirebaseCore(
+                    services,
+                    name,
+                    (s, n) => s.Configure<FirebaseOptions, FirebaseOptionsValidator>(configure, n)
+                )
+            );
+
+            return instance;
         }
 
-        public FirebaseProviderOptionsExtension(Action<FirebaseOptions, IServiceProvider> configure)
+        /// <summary>Uses Firebase for this named instance, configuring <see cref="FirebaseOptions"/> with access to the service provider.</summary>
+        /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
+        public HeadlessPushNotificationsInstanceBuilder UseFirebase(Action<FirebaseOptions, IServiceProvider> configure)
         {
-            _configureOptions = services => services.Configure<FirebaseOptions, FirebaseOptionsValidator>(configure);
+            Argument.IsNotNull(configure);
+
+            var name = instance.Name;
+
+            instance.RegisterProvider(services =>
+                SetupFirebasePushNotifications.AddFirebaseCore(
+                    services,
+                    name,
+                    (s, n) => s.Configure<FirebaseOptions, FirebaseOptionsValidator>(configure, n)
+                )
+            );
+
+            return instance;
         }
 
-        public FirebaseProviderOptionsExtension(FirebaseOptions options)
+        /// <summary>Uses Firebase for this named instance from a pre-built options instance (validated at startup).</summary>
+        /// <exception cref="ArgumentNullException"><paramref name="options"/> is <see langword="null"/>.</exception>
+        public HeadlessPushNotificationsInstanceBuilder UseFirebase(FirebaseOptions options)
         {
-            _configureOptions = services =>
-                services.Configure<FirebaseOptions, FirebaseOptionsValidator>(target =>
-                {
-                    target.Json = options.Json;
-                    target.Retry = options.Retry;
-                });
-        }
+            Argument.IsNotNull(options);
 
-        public void AddServices(IServiceCollection services)
-        {
-            _configureOptions(services);
-            services.TryAddSingleton(TimeProvider.System);
-            _AddFirebaseRetryPipeline(services);
-            services.TryAddSingleton<IFcmMessageSender, FcmMessageSender>();
-            services.AddSingleton<IPushNotificationService, FcmPushNotificationService>();
+            var name = instance.Name;
+
+            instance.RegisterProvider(services =>
+                SetupFirebasePushNotifications.AddFirebaseCore(
+                    services,
+                    name,
+                    SetupFirebasePushNotifications.CopyOptions(options)
+                )
+            );
+
+            return instance;
         }
     }
 }
