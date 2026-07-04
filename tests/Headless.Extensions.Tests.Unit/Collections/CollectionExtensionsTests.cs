@@ -136,6 +136,19 @@ public sealed class CollectionExtensionsTests
     }
 
     [Fact]
+    public void add_if_not_contains_with_items_uses_set_membership()
+    {
+        // given
+        var set = new HashSet<int> { 1, 2, 3 };
+        var items = new[] { 2, 3, 4, 4, 5 };
+        // when
+        var addedItems = set.AddIfNotContains(items);
+        // then
+        addedItems.Should().Equal(4, 5);
+        set.Should().BeEquivalentTo([1, 2, 3, 4, 5]);
+    }
+
+    [Fact]
     public void remove_all_with_predicate_removes_matching_items()
     {
         // given
