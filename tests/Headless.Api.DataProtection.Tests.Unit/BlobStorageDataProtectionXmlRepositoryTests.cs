@@ -612,7 +612,7 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
         var result = sut.GetAllElements();
 
         result.Should().ContainSingle();
-        result.First().Attribute("id")?.Value.Should().Be("1");
+        result.First().Attribute("id")!.Value.Should().Be("1");
         await storage
             .DidNotReceive()
             .OpenReadStreamAsync(

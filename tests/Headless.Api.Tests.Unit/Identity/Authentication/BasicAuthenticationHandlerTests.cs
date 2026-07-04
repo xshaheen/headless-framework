@@ -199,7 +199,9 @@ public sealed class BasicAuthenticationHandlerTests : TestBase
         var credentials = "testuser:password123".ToBase64();
         context.Request.Headers.Authorization = $"Basic {credentials}";
         _userManager.FindByNameAsync("testuser").Returns(Task.FromResult<TestUser?>(user));
-        _signInManager.CanSignInAsync(user).Returns(Task.FromResult(false));
+        _signInManager
+            .CheckPasswordSignInAsync(user, "password123", lockoutOnFailure: true)
+            .Returns(Task.FromResult(SignInResult.NotAllowed));
 
         await handler.InitializeAsync(
             new AuthenticationScheme("Basic", null, typeof(BasicAuthenticationHandler<TestUser, string>)),
@@ -225,9 +227,9 @@ public sealed class BasicAuthenticationHandlerTests : TestBase
         var credentials = "testuser:password123".ToBase64();
         context.Request.Headers.Authorization = $"Basic {credentials}";
         _userManager.FindByNameAsync("testuser").Returns(Task.FromResult<TestUser?>(user));
-        _signInManager.CanSignInAsync(user).Returns(Task.FromResult(true));
-        _userManager.SupportsUserLockout.Returns(true);
-        _userManager.IsLockedOutAsync(user).Returns(Task.FromResult(true));
+        _signInManager
+            .CheckPasswordSignInAsync(user, "password123", lockoutOnFailure: true)
+            .Returns(Task.FromResult(SignInResult.LockedOut));
 
         await handler.InitializeAsync(
             new AuthenticationScheme("Basic", null, typeof(BasicAuthenticationHandler<TestUser, string>)),
@@ -253,9 +255,9 @@ public sealed class BasicAuthenticationHandlerTests : TestBase
         var credentials = "testuser:wrongpassword".ToBase64();
         context.Request.Headers.Authorization = $"Basic {credentials}";
         _userManager.FindByNameAsync("testuser").Returns(Task.FromResult<TestUser?>(user));
-        _signInManager.CanSignInAsync(user).Returns(Task.FromResult(true));
-        _userManager.SupportsUserLockout.Returns(false);
-        _userManager.CheckPasswordAsync(user, "wrongpassword").Returns(Task.FromResult(false));
+        _signInManager
+            .CheckPasswordSignInAsync(user, "wrongpassword", lockoutOnFailure: true)
+            .Returns(Task.FromResult(SignInResult.Failed));
 
         await handler.InitializeAsync(
             new AuthenticationScheme("Basic", null, typeof(BasicAuthenticationHandler<TestUser, string>)),
@@ -269,6 +271,7 @@ public sealed class BasicAuthenticationHandlerTests : TestBase
         result.Succeeded.Should().BeFalse();
         result.Failure.Should().NotBeNull();
         result.Failure!.Message.Should().Be("Invalid user name or password.");
+        await _signInManager.Received(1).CheckPasswordSignInAsync(user, "wrongpassword", lockoutOnFailure: true);
     }
 
     [Fact]
@@ -283,9 +286,9 @@ public sealed class BasicAuthenticationHandlerTests : TestBase
 
         context.Request.Headers.Authorization = $"Basic {credentials}";
         _userManager.FindByNameAsync("testuser").Returns(Task.FromResult<TestUser?>(user));
-        _signInManager.CanSignInAsync(user).Returns(Task.FromResult(true));
-        _userManager.SupportsUserLockout.Returns(false);
-        _userManager.CheckPasswordAsync(user, "correctpassword").Returns(Task.FromResult(true));
+        _signInManager
+            .CheckPasswordSignInAsync(user, "correctpassword", lockoutOnFailure: true)
+            .Returns(Task.FromResult(SignInResult.Success));
         _signInManager.CreateUserPrincipalAsync(user).Returns(Task.FromResult(principal));
 
         await handler.InitializeAsync(

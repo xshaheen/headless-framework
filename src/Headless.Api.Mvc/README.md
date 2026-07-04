@@ -12,6 +12,7 @@ Provides consistent MVC configuration, base controllers, and URL canonicalizatio
 - Environment-based action filters (`BlockInEnvironmentAttribute`, `RequireEnvironmentAttribute`)
 - URL canonicalization middleware (`RedirectToCanonicalUrlRule`)
 - Pre-configured JSON and MVC options
+- Direct MVC `ObjectResult` responses carrying Headless-normalized `ProblemDetails` run `ProblemDetailsOptions.CustomizeProblemDetails` once before serialization
 - API versioning integration with API Explorer
 
 ## Installation
@@ -64,3 +65,4 @@ No additional configuration required.
 ## Side Effects
 
 - Configures `MvcOptions` and `JsonOptions` for controllers
+- Adds a result filter that applies ProblemDetails customization to Headless-generated MVC object results

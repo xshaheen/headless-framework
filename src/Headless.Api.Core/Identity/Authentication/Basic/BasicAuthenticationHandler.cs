@@ -59,12 +59,16 @@ public sealed class BasicAuthenticationHandler<TUser, TUserId>(
 
         var user = await userManager.FindByNameAsync(userName).ConfigureAwait(false);
 
-        if (
-            user is null
-            || !await signInManager.CanSignInAsync(user).ConfigureAwait(false)
-            || (userManager.SupportsUserLockout && await userManager.IsLockedOutAsync(user).ConfigureAwait(false))
-            || !await userManager.CheckPasswordAsync(user, password).ConfigureAwait(false)
-        )
+        if (user is null)
+        {
+            return AuthenticateResult.Fail("Invalid user name or password.");
+        }
+
+        var signInResult = await signInManager
+            .CheckPasswordSignInAsync(user, password, lockoutOnFailure: true)
+            .ConfigureAwait(false);
+
+        if (!signInResult.Succeeded)
         {
             return AuthenticateResult.Fail("Invalid user name or password.");
         }

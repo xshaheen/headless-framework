@@ -318,7 +318,8 @@ internal sealed partial class HeadlessApiExceptionHandler(
 
     private static bool _AcceptsJsonProblemDetails(HttpRequest request)
     {
-        return request.CanAccept(ContentTypes.Applications.Json, ContentTypes.Applications.ProblemJson);
+        return !request.HasAcceptRejection(ContentTypes.Applications.ProblemJson)
+            && request.CanAccept(ContentTypes.Applications.Json, ContentTypes.Applications.ProblemJson);
     }
 
     [LoggerMessage(
