@@ -45,11 +45,15 @@ public sealed class RedisEnvelopeFormatTests(RedisCacheFixture fixture) : RedisC
             IsNull = false,
             LogicalExpiresAt = now.AddMinutes(5),
             PhysicalExpiresAt = now.AddMinutes(5),
+            // Distinct CreatedAt so the two writes have different frame headers, hence different concurrency stamps.
+            // With an identical/absent CreatedAt the header-only stamp (#13/#583) is byte-identical and the CAS
+            // cannot distinguish them; this test exercises the CAS in the regime where it holds (different headers).
+            CreatedAt = now,
         };
         await store.SetEntryAsync(key, in originalEntry, AbortToken);
         var snapshot = await store.TryGetEntryAsync<string>(key, AbortToken);
 
-        var concurrentEntry = originalEntry with { Value = "concurrent" };
+        var concurrentEntry = originalEntry with { Value = "concurrent", CreatedAt = now.AddSeconds(1) };
         await store.SetEntryAsync(key, in concurrentEntry, AbortToken);
 
         var staleWrite = originalEntry with { Value = "late", ExpectedConcurrencyStamp = snapshot.ConcurrencyStamp };

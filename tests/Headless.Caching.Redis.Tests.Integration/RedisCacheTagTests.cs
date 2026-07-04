@@ -270,7 +270,7 @@ public sealed class RedisCacheTagTests(RedisCacheFixture fixture) : RedisCacheTe
     }
 
     [Fact]
-    public async Task should_not_invalidate_when_marker_is_lost()
+    public async Task should_stay_invalidated_when_marker_is_lost_because_markers_are_raise_only()
     {
         await FlushAsync();
         var prefix = $"{Faker.Random.AlphaNumeric(8)}:";
@@ -290,14 +290,21 @@ public sealed class RedisCacheTagTests(RedisCacheFixture fixture) : RedisCacheTe
         await cache.RemoveByTagAsync(tag, AbortToken);
         (await cache.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse();
 
-        // Simulate marker loss (e.g. its own TTL elapsed or it was evicted): the entry is no longer invalidated,
-        // and its physical TTL is the staleness backstop.
+        // Delete the tag marker key. This is anomalous: markers carry NO TTL (WriteTagMarkerAsync's durable
+        // SetIfHigher write passes no expiry), so they never expire on their own — only a Redis maxmemory eviction
+        // could drop one. The per-tag marker cache is RAISE-ONLY (review #5): a re-resolve that finds the marker
+        // absent must NOT lower the invalidation this process already observed, or a stale/lagging read could
+        // resurrect stale data. So a process that saw the RemoveByTag keeps the entry invalidated even after the
+        // marker key is gone (the entry's own physical TTL is the ultimate backstop).
         await Database.KeyDeleteAsync($"{prefix}{_TagMarkerNamespace}{tag}");
         await Task.Delay(20, AbortToken);
 
         var cached = await cache.GetAsync<string>(key, AbortToken);
-        cached.HasValue.Should().BeTrue("a missing marker means not-invalidated");
-        cached.Value.Should().Be("value");
+        cached
+            .HasValue.Should()
+            .BeFalse(
+                "raise-only markers never lower, so a lost marker does not resurrect a previously-invalidated entry"
+            );
     }
 
     [Fact]
