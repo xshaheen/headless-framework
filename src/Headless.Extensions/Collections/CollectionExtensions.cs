@@ -87,6 +87,19 @@ public static class CollectionExtensions
 
         var addedItems = items.TryGetNonEnumeratedCount(out var count) ? new List<T>(count) : [];
 
+        if (source is ISet<T> set)
+        {
+            foreach (var item in items)
+            {
+                if (set.Add(item))
+                {
+                    addedItems.Add(item);
+                }
+            }
+
+            return addedItems;
+        }
+
         // List<T>.Contains is O(n), making the naive loop O(n*m). For large lists, snapshot the existing
         // items into a HashSet (same default equality as List<T>.Contains) so membership checks are O(1).
         // Newly added items are tracked in the set too, preserving the de-duplication of repeated items.

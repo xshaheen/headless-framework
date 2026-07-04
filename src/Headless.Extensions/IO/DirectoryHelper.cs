@@ -61,10 +61,7 @@ public static class DirectoryHelper
     /// <exception cref="UnauthorizedAccessException">Thrown when the caller does not have the required permission.</exception>
     public static void CreateIfNotExists(string directory)
     {
-        if (!Directory.Exists(directory))
-        {
-            Directory.CreateDirectory(directory);
-        }
+        Directory.CreateDirectory(directory);
     }
 
     /// <summary>Creates the directory described by <paramref name="directory"/> if it does not already exist.</summary>
@@ -73,10 +70,7 @@ public static class DirectoryHelper
     /// <exception cref="UnauthorizedAccessException">Thrown when the caller does not have the required permission.</exception>
     public static void CreateIfNotExists(DirectoryInfo directory)
     {
-        if (!directory.Exists)
-        {
-            directory.Create();
-        }
+        directory.Create();
     }
 
     #endregion
