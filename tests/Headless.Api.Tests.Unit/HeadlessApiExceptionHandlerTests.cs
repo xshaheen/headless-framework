@@ -494,6 +494,31 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         await problemDetailsService.DidNotReceive().TryWriteAsync(Arg.Any<ProblemDetailsContext>());
     }
 
+    [Theory]
+    [InlineData("application/json;q=0")]
+    [InlineData("application/problem+json;q=0")]
+    [InlineData("application/json;q=0, application/problem+json;q=0, */*;q=1")]
+    [InlineData("*/*;q=0")]
+    public async Task should_return_false_when_accept_header_rejects_json_with_zero_quality(string acceptHeader)
+    {
+        // given
+        var problemDetailsService = Substitute.For<IProblemDetailsService>();
+        var handler = _CreateHandler(problemDetailsService, _CreateRealCreator());
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers.Accept = acceptHeader;
+
+        // when
+        var result = await handler.TryHandleAsync(
+            httpContext,
+            new MissingTenantContextException(),
+            TestContext.Current.CancellationToken
+        );
+
+        // then
+        result.Should().BeFalse();
+        await problemDetailsService.DidNotReceive().TryWriteAsync(Arg.Any<ProblemDetailsContext>());
+    }
+
     [Fact]
     public async Task should_log_5007_when_fallback_write_fails()
     {

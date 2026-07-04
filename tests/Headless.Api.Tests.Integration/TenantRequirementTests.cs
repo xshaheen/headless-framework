@@ -217,6 +217,36 @@ public sealed class TenantRequirementTests : TestBase
             .Be(HeadlessProblemDetailsConstants.Errors.TenantContextRequired.Code);
     }
 
+    [Theory]
+    [InlineData("/tenant-required", "auth-marker", null)]
+    [InlineData("/throw-missing-tenant", "exception-marker", "tenant-a")]
+    public async Task should_apply_customize_problem_details_once_per_response(
+        string path,
+        string marker,
+        string? tenantId
+    )
+    {
+        var customizeCount = 0;
+        await using var app = await _CreateAppAsync(configureProblemDetails: options =>
+            options.CustomizeProblemDetails = context =>
+            {
+                customizeCount++;
+                context.ProblemDetails.Extensions["x-custom"] = marker;
+                context.ProblemDetails.Extensions["x-customize-count"] = customizeCount;
+            }
+        );
+        using var client = HttpTenancyTestHarness.CreateClient(app);
+
+        using var response = await _SendAsync(client, path, user: "alice", tenantId: tenantId);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var json = await response.Content.ReadAsStringAsync(AbortToken);
+        using var doc = JsonDocument.Parse(json);
+        doc.RootElement.GetProperty("x-custom").GetString().Should().Be(marker);
+        doc.RootElement.GetProperty("x-customize-count").GetInt32().Should().Be(1);
+        customizeCount.Should().Be(1);
+    }
+
     private async Task<WebApplication> _CreateAppAsync(
         Action<ProblemDetailsOptions>? configureProblemDetails = null,
         bool registerCustomAuthResultHandler = false
