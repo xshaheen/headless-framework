@@ -140,7 +140,7 @@ public sealed class RedisBlobStorageTests(RedisBlobStorageFixture fixture) : Blo
         var container = $"rawclear{Guid.NewGuid():N}";
         var blobsHash = container + "/";
         var infoHash = "blob-info/" + container + "/";
-        var rawField = "out-of-band" + BlobStorageHelpers.SidecarSuffix;
+        const string rawField = "out-of-band" + BlobStorageHelpers.SidecarSuffix;
 
         // A framework-written blob plus a raw, backend-legal but BlobLocation-illegal field written natively into
         // both backing hashes (DeleteAll discovers fields by scanning the info hash).

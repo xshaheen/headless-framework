@@ -142,25 +142,26 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
         var storage = Substitute.For<IBlobStorage>();
         _SetupStorageWithBlobs(storage, [_CreateBlobInfo("test-key.xml")]);
 
-        var xmlContent = """
+        const string xmlContent = """
             <key id="test-123" version="1">
               <creationDate>2026-01-01T00:00:00Z</creationDate>
               <encryptedKey>base64data</encryptedKey>
             </key>
             """;
+
         _SetupDownload(storage, "test-key.xml", xmlContent);
 
         var sut = new BlobStorageDataProtectionXmlRepository(storage);
 
         var result = sut.GetAllElements();
 
-        result.Should().HaveCount(1);
+        result.Should().ContainSingle();
         var element = result.First();
         element.Name.LocalName.Should().Be("key");
-        element.Attribute("id")?.Value.Should().Be("test-123");
-        element.Attribute("version")?.Value.Should().Be("1");
-        element.Element("creationDate")?.Value.Should().Be("2026-01-01T00:00:00Z");
-        element.Element("encryptedKey")?.Value.Should().Be("base64data");
+        element.Attribute("id")!.Value.Should().Be("test-123");
+        element.Attribute("version")!.Value.Should().Be("1");
+        element.Element("creationDate")!.Value.Should().Be("2026-01-01T00:00:00Z");
+        element.Element("encryptedKey")!.Value.Should().Be("base64data");
     }
 
     [Fact]
@@ -209,13 +210,14 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
         // XXE attack attempt - external entity declaration
         // In .NET 5+, XElement.Load() has DTD processing disabled by default
         // The entity reference will be included literally, not resolved
-        var xxeXml = """
+        const string xxeXml = """
             <?xml version="1.0"?>
             <!DOCTYPE key [
               <!ENTITY xxe SYSTEM "file:///etc/passwd">
             ]>
             <key id="malicious">&xxe;</key>
             """;
+
         _SetupDownload(storage, "xxe.xml", xxeXml);
 
         var sut = new BlobStorageDataProtectionXmlRepository(storage);
@@ -224,9 +226,9 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
 
         // Modern .NET safely ignores external entities - the key is returned
         // but the entity reference is NOT resolved (no file contents leaked)
-        result.Should().HaveCount(1);
+        result.Should().ContainSingle();
         var element = result.First();
-        element.Attribute("id")?.Value.Should().Be("malicious");
+        element.Attribute("id")?.Value.Should()?.Be("malicious");
         // The value should NOT contain /etc/passwd contents - DTD expansion is disabled
         element.Value.Should().NotContain("root:");
     }
@@ -356,19 +358,21 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
     {
         var storage = Substitute.For<IBlobStorage>();
         byte[]? capturedBytes = null;
+        async ValueTask captureUploadAsync(Stream stream)
+        {
+            await using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms, TestContext.Current.CancellationToken);
+            capturedBytes = ms.ToArray();
+        }
+
         storage
             .UploadAsync(
                 Arg.Any<BlobLocation>(),
-                Arg.Do<Stream>(s =>
-                {
-                    using var ms = new MemoryStream();
-                    s.CopyTo(ms);
-                    capturedBytes = ms.ToArray();
-                }),
+                Arg.Any<Stream>(),
                 Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<CancellationToken>()
             )
-            .Returns(ValueTask.CompletedTask);
+            .Returns(callInfo => captureUploadAsync(callInfo.ArgAt<Stream>(1)));
         var sut = new BlobStorageDataProtectionXmlRepository(storage);
 
         var element = new XElement("key", new XAttribute("id", "test"), new XElement("child", "value"));
@@ -663,7 +667,7 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
 
         foreach (var result in results)
         {
-            result.Should().HaveCount(1);
+            result.Should().ContainSingle();
         }
     }
 

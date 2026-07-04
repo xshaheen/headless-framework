@@ -439,7 +439,7 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
         var emptyDirectory = Path.Combine(_baseDirectoryPath, ContainerName, "EmptyDirectory");
         Directory.CreateDirectory(emptyDirectory);
 
-        (await storage.GetBlobsListAsync(Container)).Should().BeEmpty();
+        (await storage.GetBlobsListAsync(Container, cancellationToken: AbortToken)).Should().BeEmpty();
         (await storage.GetBlobInfoAsync(new BlobLocation(ContainerName, "EmptyDirectory"), AbortToken))
             .Should()
             .BeNull("a directory is not a blob");
@@ -447,7 +447,7 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
         // A nested file is listed by its key; the directory that holds it is not a separate entry.
         await storage.UploadContentAsync(new BlobLocation(ContainerName, "folder", "file.txt"), "x", AbortToken);
 
-        var listed = await storage.GetBlobsListAsync(Container);
+        var listed = await storage.GetBlobsListAsync(Container, cancellationToken: AbortToken);
         listed.Should().ContainSingle();
         listed[0].BlobKey.Should().Be("folder/file.txt");
     }
@@ -468,7 +468,7 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
         // DeleteAll is a data-plane operation: it removes blobs (and their sidecars), not the container itself.
         // Container lifecycle belongs to FileSystemBlobContainerManager, so the container root survives a delete-all.
         Directory.Exists(containerDirectory).Should().BeTrue();
-        (await storage.GetBlobsListAsync(Container)).Should().BeEmpty();
+        (await storage.GetBlobsListAsync(Container, cancellationToken: AbortToken)).Should().BeEmpty();
     }
 
     #endregion

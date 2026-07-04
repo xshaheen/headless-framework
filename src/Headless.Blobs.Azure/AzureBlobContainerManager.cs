@@ -18,12 +18,12 @@ namespace Headless.Blobs.Azure;
 /// The <see cref="BlobServiceClient"/> is owned by DI / the caller's client factory — the same client the storage
 /// engine uses — so this manager never disposes it; it only disposes its own per-container ensure lock.
 /// </remarks>
-internal sealed class AzureBlobContainerManager : IBlobContainerManager, IDisposable
+internal sealed class AzureBlobContainerManager(
+    BlobServiceClient blobServiceClient,
+    IBlobNamingNormalizer normalizer,
+    PublicAccessType publicAccessType
+) : IBlobContainerManager, IDisposable
 {
-    private readonly BlobServiceClient _blobServiceClient;
-    private readonly IBlobNamingNormalizer _normalizer;
-    private readonly PublicAccessType _publicAccessType;
-
     // Containers this instance has already ensured exist, so CreateIfNotExists runs at most once per container. A
     // container is recorded only after a successful create, so a failed ensure is naturally retried (L5). The
     // per-container lock serializes concurrent first-time ensures of the same container while letting distinct
@@ -31,17 +31,6 @@ internal sealed class AzureBlobContainerManager : IBlobContainerManager, IDispos
     // the same container.
     private readonly ConcurrentDictionary<string, byte> _ensuredContainers = new(StringComparer.Ordinal);
     private readonly KeyedAsyncLock _ensureContainerLock = new();
-
-    public AzureBlobContainerManager(
-        BlobServiceClient blobServiceClient,
-        IBlobNamingNormalizer normalizer,
-        PublicAccessType publicAccessType
-    )
-    {
-        _blobServiceClient = Argument.IsNotNull(blobServiceClient);
-        _normalizer = Argument.IsNotNull(normalizer);
-        _publicAccessType = publicAccessType;
-    }
 
     public async ValueTask EnsureContainerAsync(string container, CancellationToken cancellationToken = default)
     {
@@ -54,7 +43,7 @@ internal sealed class AzureBlobContainerManager : IBlobContainerManager, IDispos
     {
         var name = _NormalizeContainer(container);
 
-        var response = await _blobServiceClient
+        var response = await blobServiceClient
             .GetBlobContainerClient(name)
             .ExistsAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -74,7 +63,7 @@ internal sealed class AzureBlobContainerManager : IBlobContainerManager, IDispos
         {
             _ensuredContainers.TryRemove(name, out _);
 
-            var response = await _blobServiceClient
+            var response = await blobServiceClient
                 .GetBlobContainerClient(name)
                 .DeleteIfExistsAsync(cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
@@ -98,9 +87,9 @@ internal sealed class AzureBlobContainerManager : IBlobContainerManager, IDispos
                 return;
             }
 
-            await _blobServiceClient
+            await blobServiceClient
                 .GetBlobContainerClient(container)
-                .CreateIfNotExistsAsync(_publicAccessType, cancellationToken: cancellationToken)
+                .CreateIfNotExistsAsync(publicAccessType, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
 
             // Record only after a successful create so a failed ensure is retried next time.
@@ -110,7 +99,7 @@ internal sealed class AzureBlobContainerManager : IBlobContainerManager, IDispos
 
     private string _NormalizeContainer(string container)
     {
-        return BlobLocationResolver.ResolveContainer(container, _normalizer);
+        return BlobLocationResolver.ResolveContainer(container, normalizer);
     }
 
     private bool _disposed;

@@ -626,14 +626,14 @@ public sealed class AzureBlobStorage(
 
     // Converts an Azure metadata dictionary (non-null string values) into the contract's read-only shape, or null
     // when empty so BlobInfo.Metadata stays absent rather than an empty dictionary.
-    private static IReadOnlyDictionary<string, string>? _ToMetadata(IDictionary<string, string>? metadata)
+    private static Dictionary<string, string>? _ToMetadata(IDictionary<string, string>? metadata)
     {
         if (metadata is not { Count: > 0 })
         {
             return null;
         }
 
-        return new Dictionary<string, string>(metadata, StringComparer.Ordinal);
+        return new(metadata, StringComparer.Ordinal);
     }
 
     #endregion
@@ -700,7 +700,9 @@ public sealed class AzureBlobStorage(
             // When the client targets an http:// endpoint (an emulator such as Azurite), allow http too — the
             // emulator rejects an https-only (spr=https) SAS. Real Azure endpoints are https, so this stays
             // HTTPS-only in production.
-            Protocol = blobClient.Uri.Scheme == Uri.UriSchemeHttps ? SasProtocol.Https : SasProtocol.HttpsAndHttp,
+            Protocol = string.Equals(blobClient.Uri.Scheme, Uri.UriSchemeHttps, StringComparison.Ordinal)
+                ? SasProtocol.Https
+                : SasProtocol.HttpsAndHttp,
         };
 
         builder.SetPermissions(permissions);

@@ -57,7 +57,7 @@ public sealed class AzureStorageTests(AzureBlobStorageFixture fixture) : BlobSto
 
         await manager.EnsureContainerAsync(container, AbortToken);
 
-        using (var stream = new MemoryStream(content))
+        await using (var stream = new MemoryStream(content))
         {
             await storage.UploadAsync(location, stream, cancellationToken: AbortToken);
         }
@@ -98,7 +98,7 @@ public sealed class AzureStorageTests(AzureBlobStorageFixture fixture) : BlobSto
         await using var readBack = await storage.OpenReadStreamAsync(location, AbortToken);
         readBack.Should().NotBeNull();
 
-        using var buffer = new MemoryStream();
+        await using var buffer = new MemoryStream();
         await readBack!.Stream.CopyToAsync(buffer, AbortToken);
         buffer.ToArray().Should().Equal(content);
     }
@@ -122,7 +122,7 @@ public sealed class AzureStorageTests(AzureBlobStorageFixture fixture) : BlobSto
 
         for (var i = 0; i < total; i++)
         {
-            using var content = new MemoryStream("x"u8.ToArray());
+            await using var content = new MemoryStream("x"u8.ToArray());
             await storage.UploadAsync(
                 new BlobLocation(name, "bulk", $"f{i}.txt"),
                 content,
@@ -134,7 +134,7 @@ public sealed class AzureStorageTests(AzureBlobStorageFixture fixture) : BlobSto
         var deleted = await storage.DeleteAllAsync(new BlobQuery(name, prefix: null, pageSize: 2), AbortToken);
 
         deleted.Should().Be(total);
-        (await storage.GetBlobsListAsync(new BlobQuery(name))).Should().BeEmpty();
+        (await storage.GetBlobsListAsync(new BlobQuery(name), cancellationToken: AbortToken)).Should().BeEmpty();
     }
 
     [Fact]

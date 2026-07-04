@@ -100,7 +100,7 @@ public sealed class SshBlobStorageTests(SshBlobStorageFixture fixture) : BlobSto
         var page = await storage.ListAsync(Container, AbortToken);
         page.Items.Should().BeEmpty();
         page.ContinuationToken.Should().BeNull();
-        (await storage.GetBlobsListAsync(Container)).Should().BeEmpty();
+        (await storage.GetBlobsListAsync(Container, cancellationToken: AbortToken)).Should().BeEmpty();
 
         // ...nor by GetBlobInfo, which returns null for a directory (it is not a blob).
         (await storage.GetBlobInfoAsync(new BlobLocation(ContainerName, "EmptyDirectory"), AbortToken))

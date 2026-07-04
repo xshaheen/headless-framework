@@ -968,9 +968,9 @@ public sealed class TusAzureMetadataTests : TestBase
     {
         // given - exactly 7 KB must round-trip (the guard is exclusive); the value length is a
         // multiple of 4 so it stays valid base64
-        var value = new string('A', 7 * 1024 - "fnm ".Length);
+        var value = new string('A', (7 * 1024) - "fnm ".Length);
         var metadata = $"fnm {value}";
-        metadata.Length.Should().Be(7 * 1024);
+        metadata.Should().HaveLength(7 * 1024);
 
         // when
         var result = TusAzureMetadata.FromTus(metadata);

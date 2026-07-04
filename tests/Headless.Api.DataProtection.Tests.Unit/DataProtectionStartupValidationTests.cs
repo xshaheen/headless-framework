@@ -23,7 +23,7 @@ public sealed class DataProtectionStartupValidationTests : TestBase
         var manager = Substitute.For<IBlobContainerManager>();
         services.AddDataProtection().PersistKeysToBlobStorage(storage, manager).ValidateKeyRingAtStartup();
 
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         var sut = _GetValidationService(provider);
 
         // when: the startup gate runs.
@@ -67,7 +67,7 @@ public sealed class DataProtectionStartupValidationTests : TestBase
             .PersistKeysToBlobStorage(storage, Substitute.For<IBlobContainerManager>())
             .ValidateKeyRingAtStartup();
 
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         var sut = _GetValidationService(provider);
 
         // when
@@ -94,7 +94,7 @@ public sealed class DataProtectionStartupValidationTests : TestBase
             .PersistKeysToBlobStorage(storage, Substitute.For<IBlobContainerManager>())
             .ValidateKeyRingAtStartup(options => options.Mode = StartupValidationMode.LogOnly);
 
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         var sut = _GetValidationService(provider);
 
         // when
@@ -118,7 +118,7 @@ public sealed class DataProtectionStartupValidationTests : TestBase
             .ValidateKeyRingAtStartup(options => options.ProbeWritePath = false);
         services.Configure<KeyManagementOptions>(options => options.AutoGenerateKeys = false);
 
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         var sut = _GetValidationService(provider);
 
         // when
@@ -143,7 +143,7 @@ public sealed class DataProtectionStartupValidationTests : TestBase
             .ValidateKeyRingAtStartup();
         services.Configure<KeyManagementOptions>(options => options.AutoGenerateKeys = false);
 
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         var sut = _GetValidationService(provider);
 
         // when
@@ -170,7 +170,7 @@ public sealed class DataProtectionStartupValidationTests : TestBase
             .PersistKeysToBlobStorage(storage, Substitute.For<IBlobContainerManager>())
             .ValidateKeyRingAtStartup();
 
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         var sut = _GetValidationService(provider);
 
         // when
@@ -204,7 +204,7 @@ public sealed class DataProtectionStartupValidationTests : TestBase
             .PersistKeysToBlobStorage(storage, Substitute.For<IBlobContainerManager>())
             .ValidateKeyRingAtStartup(options => options.Mode = StartupValidationMode.LogOnly);
 
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         var sut = _GetValidationService(provider);
 
         // when
@@ -226,7 +226,7 @@ public sealed class DataProtectionStartupValidationTests : TestBase
             .PersistKeysToBlobStorage(storage, Substitute.For<IBlobContainerManager>())
             .ValidateKeyRingAtStartup(options => options.ProbeWritePath = false);
 
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         var sut = _GetValidationService(provider);
 
         // when
@@ -256,7 +256,7 @@ public sealed class DataProtectionStartupValidationTests : TestBase
             .PersistKeysToBlobStorage(storage, Substitute.For<IBlobContainerManager>())
             .ValidateKeyRingAtStartup();
 
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         var sut = _GetValidationService(provider);
 
         sut.Should().BeAssignableTo<IHostedLifecycleService>();
@@ -350,7 +350,7 @@ public sealed class DataProtectionStartupValidationTests : TestBase
             .PersistKeysToBlobStorage(storage, Substitute.For<IBlobContainerManager>())
             .ValidateKeyRingAtStartup();
 
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         await _GetValidationService(provider).StartingAsync(AbortToken);
 
         return stored;
@@ -384,7 +384,7 @@ public sealed class DataProtectionStartupValidationTests : TestBase
 
         async Task captureAsync(BlobLocation location, Stream content)
         {
-            using var buffer = new MemoryStream();
+            await using var buffer = new MemoryStream();
             await content.CopyToAsync(buffer);
             stored[location.Path] = buffer.ToArray();
         }

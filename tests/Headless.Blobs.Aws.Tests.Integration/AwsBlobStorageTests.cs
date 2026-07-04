@@ -79,7 +79,7 @@ public sealed class AwsBlobStorageTests(AwsBlobStorageFixture fixture) : BlobSto
         await using var storage = GetStorage();
 
         var location = new BlobLocation($"missing-{Guid.NewGuid():N}", "file.txt");
-        using var stream = new MemoryStream("hello"u8.ToArray());
+        await using var stream = new MemoryStream("hello"u8.ToArray());
 
         var act = async () => await storage.UploadAsync(location, stream, cancellationToken: AbortToken);
 
@@ -99,7 +99,7 @@ public sealed class AwsBlobStorageTests(AwsBlobStorageFixture fixture) : BlobSto
         // The bucket must exist before the upload; ensure it through the container-management capability.
         await GetContainerManager().EnsureContainerAsync(container, AbortToken);
 
-        using (var stream = new MemoryStream(content))
+        await using (var stream = new MemoryStream(content))
         {
             await storage.UploadAsync(location, stream, cancellationToken: AbortToken);
         }
@@ -137,7 +137,7 @@ public sealed class AwsBlobStorageTests(AwsBlobStorageFixture fixture) : BlobSto
         await using var readBack = await storage.OpenReadStreamAsync(location, AbortToken);
         readBack.Should().NotBeNull();
 
-        using var buffer = new MemoryStream();
+        await using var buffer = new MemoryStream();
         await readBack!.Stream.CopyToAsync(buffer, AbortToken);
         buffer.ToArray().Should().Equal(content);
     }

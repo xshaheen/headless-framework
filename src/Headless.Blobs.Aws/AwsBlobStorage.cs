@@ -795,16 +795,16 @@ public sealed class AwsBlobStorage(
 
     #region Metadata Converters
 
-    private static Exception _ToDeleteException(DeleteError error)
+    private static InvalidOperationException _ToDeleteException(DeleteError error)
     {
         var message = string.IsNullOrEmpty(error.Message)
             ? $"S3 failed to delete object '{error.Key}'."
             : error.Message;
 
-        return new InvalidOperationException(message);
+        return new(message);
     }
 
-    private static IReadOnlyDictionary<string, string>? _ToDictionary(MetadataCollection? metadata)
+    private static Dictionary<string, string>? _ToDictionary(MetadataCollection? metadata)
     {
         if (metadata is null || metadata.Count == 0)
         {

@@ -162,7 +162,7 @@ public sealed class BlobStorageExtensionsTests : TestBase
 
         // Assert
         collected.Should().BeEmpty();
-        await _storage.DidNotReceiveWithAnyArgs().ListAsync(default!, default);
+        await _storage.DidNotReceiveWithAnyArgs().ListAsync(default!, AbortToken);
     }
 
     [Fact]
@@ -514,7 +514,7 @@ file sealed class InMemoryBlobStorage : IBlobStorage
         CancellationToken cancellationToken = default
     )
     {
-        using var buffer = new MemoryStream();
+        await using var buffer = new MemoryStream();
         await content.CopyToAsync(buffer, cancellationToken);
         _store[location.ToString()] = buffer.ToArray();
     }

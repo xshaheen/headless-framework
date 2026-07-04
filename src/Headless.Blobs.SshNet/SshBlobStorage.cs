@@ -654,7 +654,7 @@ public sealed class SshBlobStorage(
 
         await using (sidecarStream.ConfigureAwait(false))
         {
-            using var buffer = new MemoryStream();
+            await using var buffer = new MemoryStream();
             await sidecarStream.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
 
             if (buffer.Length == 0)

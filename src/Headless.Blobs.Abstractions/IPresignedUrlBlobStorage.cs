@@ -13,7 +13,7 @@ namespace Headless.Blobs;
 /// (file system, Redis, SSH) deliberately do not implement it.
 /// </para>
 /// <para>
-/// Consumers feature-detect the capability with an <c>is</c>-cast from the resolved <see cref="IBlobStorage"/>
+/// Consumers feature-detect the capability with an <see langword="is"/>-cast from the resolved <see cref="IBlobStorage"/>
 /// instead of relying on a runtime failure:
 /// <code>
 /// if (storage is IPresignedUrlBlobStorage presigned)
@@ -22,7 +22,7 @@ namespace Headless.Blobs;
 ///     var url = await presigned.GetPresignedDownloadUrlAsync(location, TimeSpan.FromMinutes(15));
 /// }
 /// </code>
-/// The <c>is</c>-cast stays honest here because both AWS and Cloudflare R2 (which reuses the AWS storage type)
+/// The <see langword="is"/>-cast stays honest here because both AWS and Cloudflare R2 (which reuses the AWS storage type)
 /// support signing — unlike <see cref="IBlobContainerManager"/>, which must distinguish providers that share a
 /// storage implementation and is therefore resolved from DI rather than cast from the storage instance.
 /// </para>

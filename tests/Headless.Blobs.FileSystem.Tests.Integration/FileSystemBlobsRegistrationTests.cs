@@ -2,6 +2,7 @@
 
 using Headless.Blobs;
 using Headless.Blobs.FileSystem;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
@@ -10,7 +11,7 @@ namespace Tests;
 /// Verifies <c>AddHeadlessBlobs</c> default + named registration and per-instance isolation for the file system
 /// provider. Disk-based — no container required.
 /// </summary>
-public sealed class FileSystemBlobsRegistrationTests
+public sealed class FileSystemBlobsRegistrationTests : TestBase
 {
     [Fact]
     public async Task default_store_is_injectable_and_named_stores_resolve_via_provider()
@@ -76,14 +77,14 @@ public sealed class FileSystemBlobsRegistrationTests
         var location = new BlobLocation("bucket", "a.txt");
 
         // when
-        await imagesManager.EnsureContainerAsync(location.Container);
-        await images.UploadContentAsync(location, "hello");
+        await imagesManager.EnsureContainerAsync(location.Container, AbortToken);
+        await images.UploadContentAsync(location, "hello", AbortToken);
 
         // then — write to one named store is not visible in the other, and no default store exists
-        (await images.GetBlobContentAsync(location))
+        (await images.GetBlobContentAsync(location, AbortToken))
             .Should()
             .Be("hello");
-        (await docs.GetBlobContentAsync(location)).Should().BeNull();
+        (await docs.GetBlobContentAsync(location, AbortToken)).Should().BeNull();
         serviceProvider.GetService<IBlobStorage>().Should().BeNull();
     }
 }

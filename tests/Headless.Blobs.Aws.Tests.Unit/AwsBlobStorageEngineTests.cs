@@ -38,11 +38,11 @@ public sealed class AwsBlobStorageEngineTests : TestBase
 
         var sut = _CreateSut();
 
-        using var stream = new MemoryStream("hello"u8.ToArray());
-        await sut.UploadAsync(new BlobLocation("bucket", "file.txt"), stream);
+        await using var stream = new MemoryStream("hello"u8.ToArray());
+        await sut.UploadAsync(new BlobLocation("bucket", "file.txt"), stream, cancellationToken: AbortToken);
 
-        await _s3.DidNotReceiveWithAnyArgs().PutBucketAsync(default(PutBucketRequest)!, default);
-        await _s3.ReceivedWithAnyArgs(1).PutObjectAsync(default!, default);
+        await _s3.DidNotReceiveWithAnyArgs().PutBucketAsync(default(PutBucketRequest)!, AbortToken);
+        await _s3.ReceivedWithAnyArgs(1).PutObjectAsync(default!, AbortToken);
     }
 
     [Fact]
@@ -54,8 +54,12 @@ public sealed class AwsBlobStorageEngineTests : TestBase
 
         var sut = _CreateSut();
 
-        using var stream = new MemoryStream("hi"u8.ToArray());
-        await sut.UploadAsync(new BlobLocation("My-Bucket", "Reports", "Q1.pdf"), stream);
+        await using var stream = new MemoryStream("hi"u8.ToArray());
+        await sut.UploadAsync(
+            new BlobLocation("My-Bucket", "Reports", "Q1.pdf"),
+            stream,
+            cancellationToken: AbortToken
+        );
 
         // Two-tier naming: the container is lowercased by NormalizeContainerName; the sub-path and blob name are
         // preserved because AwsBlobNamingNormalizer.NormalizeBlobName is validate-only.
@@ -89,7 +93,7 @@ public sealed class AwsBlobStorageEngineTests : TestBase
             ))
             .ToList();
 
-        var results = await sut.BulkUploadAsync("bucket", blobs);
+        var results = await sut.BulkUploadAsync("bucket", blobs, AbortToken);
 
         results.Should().HaveCount(blobs.Count);
 
@@ -145,7 +149,7 @@ public sealed class AwsBlobStorageEngineTests : TestBase
 
         _s3.PutObjectAsync(Arg.Any<PutObjectRequest>(), Arg.Any<CancellationToken>())
             .Returns(ci =>
-                ci.Arg<PutObjectRequest>().Key == "timeout.txt"
+                string.Equals(ci.Arg<PutObjectRequest>().Key, "timeout.txt", StringComparison.Ordinal)
                     ? Task.FromException<PutObjectResponse>(new TaskCanceledException())
                     : Task.FromResult(new PutObjectResponse { HttpStatusCode = HttpStatusCode.OK })
             );
@@ -176,7 +180,7 @@ public sealed class AwsBlobStorageEngineTests : TestBase
             {
                 var key = ci.ArgAt<string>(1);
 
-                return key == "absent.txt"
+                return string.Equals(key, "absent.txt", StringComparison.Ordinal)
                     ? Task.FromException<GetObjectMetadataResponse>(
                         new AmazonS3Exception("not found") { StatusCode = HttpStatusCode.NotFound }
                     )
@@ -186,22 +190,26 @@ public sealed class AwsBlobStorageEngineTests : TestBase
         _s3.DeleteObjectsAsync(Arg.Any<DeleteObjectsRequest>(), Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
-                var keys = ci.Arg<DeleteObjectsRequest>().Objects.Select(static item => item.Key).ToList();
+                var keys = ci.Arg<DeleteObjectsRequest>().Objects.ConvertAll(static item => item.Key);
 
                 return new DeleteObjectsResponse
                 {
                     HttpStatusCode = HttpStatusCode.OK,
-                    DeletedObjects = keys.Where(static key => key == "ok.txt")
-                        .Select(static key => new DeletedObject { Key = key })
-                        .ToList(),
-                    DeleteErrors = keys.Where(static key => key == "fail.txt")
-                        .Select(static key => new DeleteError
-                        {
-                            Key = key,
-                            Code = "InternalError",
-                            Message = "transient",
-                        })
-                        .ToList(),
+                    DeletedObjects =
+                    [
+                        .. keys.Where(static key => string.Equals(key, "ok.txt", StringComparison.Ordinal))
+                            .Select(static key => new DeletedObject { Key = key }),
+                    ],
+                    DeleteErrors =
+                    [
+                        .. keys.Where(static key => string.Equals(key, "fail.txt", StringComparison.Ordinal))
+                            .Select(static key => new DeleteError
+                            {
+                                Key = key,
+                                Code = "InternalError",
+                                Message = "transient",
+                            }),
+                    ],
                 };
             });
 
@@ -229,13 +237,13 @@ public sealed class AwsBlobStorageEngineTests : TestBase
                 Arg.Is<DeleteObjectsRequest>(request =>
                     request.BucketName == "bucket"
                     && request.Objects.Count == 2
-                    && request.Objects.Any(static item => item.Key == "ok.txt")
-                    && request.Objects.Any(static item => item.Key == "fail.txt")
+                    && request.Objects.Exists(static item => item.Key == "ok.txt")
+                    && request.Objects.Exists(static item => item.Key == "fail.txt")
                 ),
                 Arg.Any<CancellationToken>()
             );
-        await _s3.ReceivedWithAnyArgs(3).GetObjectMetadataAsync(default!, default!, default);
-        await _s3.DidNotReceiveWithAnyArgs().DeleteObjectAsync(default!, default);
+        await _s3.ReceivedWithAnyArgs(3).GetObjectMetadataAsync(default!, default!, AbortToken);
+        await _s3.DidNotReceiveWithAnyArgs().DeleteObjectAsync(default!, AbortToken);
     }
 
     [Fact]
@@ -314,33 +322,37 @@ public sealed class AwsBlobStorageEngineTests : TestBase
                     new DeleteObjectsResponse
                     {
                         HttpStatusCode = HttpStatusCode.OK,
-                        DeletedObjects = requestedKeys
-                            .Where(k => k.StartsWith("ok-", StringComparison.Ordinal))
-                            .Select(k => new DeletedObject { Key = k })
-                            .ToList(),
-                        DeleteErrors = requestedKeys
-                            .Where(k => k.StartsWith("fail-", StringComparison.Ordinal))
-                            .Select(k => new DeleteError
-                            {
-                                Key = k,
-                                Code = "InternalError",
-                                Message = "transient",
-                            })
-                            .ToList(),
+                        DeletedObjects =
+                        [
+                            .. requestedKeys
+                                .Where(k => k.StartsWith("ok-", StringComparison.Ordinal))
+                                .Select(k => new DeletedObject { Key = k }),
+                        ],
+                        DeleteErrors =
+                        [
+                            .. requestedKeys
+                                .Where(k => k.StartsWith("fail-", StringComparison.Ordinal))
+                                .Select(k => new DeleteError
+                                {
+                                    Key = k,
+                                    Code = "InternalError",
+                                    Message = "transient",
+                                }),
+                        ],
                     }
                 );
             });
 
         var sut = _CreateSut();
 
-        var deleted = await sut.DeleteAllAsync(new BlobQuery("bucket"));
+        var deleted = await sut.DeleteAllAsync(new BlobQuery("bucket"), AbortToken);
 
         // 3 deleted on the first pass + 2 deleted on the retry. The retry deletions must be included in the
         // returned total — the contract returns the number actually deleted, not just the first-pass successes.
         deleted.Should().Be(5);
 
         // Exactly the initial bulk delete plus a single retry for the failed keys.
-        await _s3.ReceivedWithAnyArgs(2).DeleteObjectsAsync(default!, default);
+        await _s3.ReceivedWithAnyArgs(2).DeleteObjectsAsync(default!, AbortToken);
     }
 
     [Fact]
@@ -373,26 +385,30 @@ public sealed class AwsBlobStorageEngineTests : TestBase
                     new DeleteObjectsResponse
                     {
                         HttpStatusCode = HttpStatusCode.OK,
-                        DeletedObjects = requestedKeys
-                            .Where(k => k.StartsWith("ok-", StringComparison.Ordinal))
-                            .Select(k => new DeletedObject { Key = k })
-                            .ToList(),
-                        DeleteErrors = requestedKeys
-                            .Where(k => k.StartsWith("fail-", StringComparison.Ordinal))
-                            .Select(k => new DeleteError
-                            {
-                                Key = k,
-                                Code = "AccessDenied",
-                                Message = "persistent",
-                            })
-                            .ToList(),
+                        DeletedObjects =
+                        [
+                            .. requestedKeys
+                                .Where(k => k.StartsWith("ok-", StringComparison.Ordinal))
+                                .Select(k => new DeletedObject { Key = k }),
+                        ],
+                        DeleteErrors =
+                        [
+                            .. requestedKeys
+                                .Where(k => k.StartsWith("fail-", StringComparison.Ordinal))
+                                .Select(k => new DeleteError
+                                {
+                                    Key = k,
+                                    Code = "AccessDenied",
+                                    Message = "persistent",
+                                }),
+                        ],
                     }
                 );
             });
 
         var sut = _CreateSut();
 
-        var act = async () => await sut.DeleteAllAsync(new BlobQuery("bucket"));
+        var act = async () => await sut.DeleteAllAsync(new BlobQuery("bucket"), AbortToken);
 
         // One aggregated failure per still-failing key, each naming the key so callers can act on the residue.
         var assertion = await act.Should()
@@ -404,7 +420,7 @@ public sealed class AwsBlobStorageEngineTests : TestBase
         assertion.Which.InnerExceptions.Select(static e => e.Message).Should().Contain(m => m.Contains("fail-1"));
 
         // The initial bulk delete plus the single retry for the failed keys — attempt-all, no premature abort.
-        await _s3.ReceivedWithAnyArgs(2).DeleteObjectsAsync(default!, default);
+        await _s3.ReceivedWithAnyArgs(2).DeleteObjectsAsync(default!, AbortToken);
     }
 
     [Fact]
@@ -419,12 +435,13 @@ public sealed class AwsBlobStorageEngineTests : TestBase
 
         var moved = await sut.MoveAsync(
             new BlobLocation("bucket", "source.txt"),
-            new BlobLocation("bucket", "target.txt")
+            new BlobLocation("bucket", "target.txt"),
+            AbortToken
         );
 
         moved.Should().BeFalse();
-        await _s3.DidNotReceiveWithAnyArgs().CopyObjectAsync(default!, default);
-        await _s3.DidNotReceiveWithAnyArgs().DeleteObjectAsync(default!, default);
+        await _s3.DidNotReceiveWithAnyArgs().CopyObjectAsync(default!, AbortToken);
+        await _s3.DidNotReceiveWithAnyArgs().DeleteObjectAsync(default!, AbortToken);
     }
 
     [Fact]
@@ -434,7 +451,7 @@ public sealed class AwsBlobStorageEngineTests : TestBase
         // the source reads as intact so the post-fault re-check confirms rolling back cannot lose data.
         _s3.GetObjectMetadataAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(ci =>
-                ci.ArgAt<string>(1) == "target.txt"
+                string.Equals(ci.ArgAt<string>(1), "target.txt", StringComparison.Ordinal)
                     ? Task.FromException<GetObjectMetadataResponse>(
                         new AmazonS3Exception("not found") { StatusCode = HttpStatusCode.NotFound }
                     )
@@ -451,7 +468,7 @@ public sealed class AwsBlobStorageEngineTests : TestBase
             {
                 var request = ci.Arg<DeleteObjectRequest>();
 
-                return request.Key == "source.txt"
+                return string.Equals(request.Key, "source.txt", StringComparison.Ordinal)
                     ? Task.FromException<DeleteObjectResponse>(deleteError)
                     : Task.FromResult(new DeleteObjectResponse { HttpStatusCode = HttpStatusCode.OK });
             });
@@ -459,7 +476,11 @@ public sealed class AwsBlobStorageEngineTests : TestBase
         var sut = _CreateSut();
 
         var act = async () =>
-            await sut.MoveAsync(new BlobLocation("bucket", "source.txt"), new BlobLocation("bucket", "target.txt"));
+            await sut.MoveAsync(
+                new BlobLocation("bucket", "source.txt"),
+                new BlobLocation("bucket", "target.txt"),
+                AbortToken
+            );
 
         await act.Should().ThrowAsync<AmazonS3Exception>().WithMessage("delete failed");
         await _s3.Received(1)
@@ -478,7 +499,7 @@ public sealed class AwsBlobStorageEngineTests : TestBase
         // already holds the data, so the move is complete. No rollback, no source re-check.
         _s3.GetObjectMetadataAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(ci =>
-                ci.ArgAt<string>(1) == "target.txt"
+                string.Equals(ci.ArgAt<string>(1), "target.txt", StringComparison.Ordinal)
                     ? Task.FromException<GetObjectMetadataResponse>(
                         new AmazonS3Exception("not found") { StatusCode = HttpStatusCode.NotFound }
                     )
@@ -495,7 +516,8 @@ public sealed class AwsBlobStorageEngineTests : TestBase
 
         var moved = await sut.MoveAsync(
             new BlobLocation("bucket", "source.txt"),
-            new BlobLocation("bucket", "target.txt")
+            new BlobLocation("bucket", "target.txt"),
+            AbortToken
         );
 
         moved.Should().BeTrue();
@@ -521,7 +543,7 @@ public sealed class AwsBlobStorageEngineTests : TestBase
 
         var sut = _CreateSut();
 
-        (await sut.ExistsAsync(new BlobLocation("missing", "file.txt"))).Should().BeFalse();
+        (await sut.ExistsAsync(new BlobLocation("missing", "file.txt"), AbortToken)).Should().BeFalse();
     }
 
     [Fact]
@@ -532,7 +554,7 @@ public sealed class AwsBlobStorageEngineTests : TestBase
 
         var sut = _CreateSut();
 
-        (await sut.GetBlobInfoAsync(new BlobLocation("missing", "file.txt"))).Should().BeNull();
+        (await sut.GetBlobInfoAsync(new BlobLocation("missing", "file.txt"), AbortToken)).Should().BeNull();
     }
 
     [Fact]
@@ -543,7 +565,7 @@ public sealed class AwsBlobStorageEngineTests : TestBase
 
         var sut = _CreateSut();
 
-        (await sut.OpenReadStreamAsync(new BlobLocation("missing", "file.txt"))).Should().BeNull();
+        (await sut.OpenReadStreamAsync(new BlobLocation("missing", "file.txt"), AbortToken)).Should().BeNull();
     }
 
     [Fact]
@@ -552,7 +574,7 @@ public sealed class AwsBlobStorageEngineTests : TestBase
         var sut = _CreateSut();
 
         var act = async () =>
-            await sut.GetPresignedDownloadUrlAsync(new BlobLocation("bucket", "file.txt"), TimeSpan.Zero);
+            await sut.GetPresignedDownloadUrlAsync(new BlobLocation("bucket", "file.txt"), TimeSpan.Zero, AbortToken);
 
         await act.Should().ThrowAsync<ArgumentException>();
     }
@@ -572,7 +594,8 @@ public sealed class AwsBlobStorageEngineTests : TestBase
 
         var url = await sut.GetPresignedDownloadUrlAsync(
             new BlobLocation("bucket", "file.txt"),
-            TimeSpan.FromMinutes(15)
+            TimeSpan.FromMinutes(15),
+            AbortToken
         );
 
         url.Should().Be(new Uri("https://example.com/signed-get"));
@@ -598,7 +621,8 @@ public sealed class AwsBlobStorageEngineTests : TestBase
 
         var url = await sut.GetPresignedUploadUrlAsync(
             new BlobLocation("bucket", "file.txt"),
-            TimeSpan.FromMinutes(15)
+            TimeSpan.FromMinutes(15),
+            AbortToken
         );
 
         url.Should().Be(new Uri("https://example.com/signed-put"));

@@ -110,7 +110,7 @@ public sealed class ContractTypesTests : TestBase
 
         // Assert
         var attribute = type.GetCustomAttributes(typeof(DebuggerDisplayAttribute), false);
-        attribute.Should().HaveCount(1);
+        attribute.Should().ContainSingle();
     }
 
     #endregion
@@ -279,7 +279,7 @@ public sealed class ContractTypesTests : TestBase
         var page = new BlobPage(items, "next-token");
 
         // Assert
-        page.Items.Should().HaveCount(1);
+        page.Items.Should().ContainSingle();
         page.Items[0].BlobKey.Should().Be("file1.txt");
         page.ContinuationToken.Should().Be("next-token");
     }
@@ -327,7 +327,7 @@ public sealed class ContractTypesTests : TestBase
     public void should_carry_raw_identity_without_location_when_input_path_is_invalid()
     {
         // Arrange
-        var error = new ArgumentException("Invalid path.");
+        var error = new InvalidOperationException("Invalid path.");
 
         // Act
         var result = new BlobBulkResult("bucket", "../escape.txt", Result<bool, Exception>.Fail(error));

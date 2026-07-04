@@ -647,7 +647,7 @@ public abstract class BlobStorageTestsBase : TestBase
         var info = await storage.GetBlobInfoAsync(location, AbortToken);
         info.Should().NotBeNull();
         info.Metadata.Should().NotBeNull();
-        info.Metadata!.ContainsKey("author").Should().BeTrue();
+        info.Metadata!.Should().ContainKey("author");
         info.Metadata!["author"].Should().Be("blake");
         info.Metadata!["category"].Should().Be("report");
 

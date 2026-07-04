@@ -46,7 +46,7 @@ public sealed class UploadDirectory(BlobServiceClient blobServiceClient, IOption
             uploads.Add(_ToSummary(blob, prefix));
         }
 
-        return uploads.OrderByDescending(upload => upload.CreatedAt ?? DateTimeOffset.MinValue).ToList();
+        return [.. uploads.OrderByDescending(upload => upload.CreatedAt ?? DateTimeOffset.MinValue)];
     }
 
     private static UploadSummary _ToSummary(BlobItem blob, string prefix)

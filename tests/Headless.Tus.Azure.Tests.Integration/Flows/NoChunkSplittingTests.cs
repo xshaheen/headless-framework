@@ -169,7 +169,7 @@ public sealed class NoChunkSplittingTests : TestBase
             BlockListTypes.Committed,
             cancellationToken: AbortToken
         );
-        blockList.Value.CommittedBlocks.Should().HaveCount(1);
+        blockList.Value.CommittedBlocks.Should().ContainSingle();
 
         await using var downloaded = new MemoryStream();
         await _containerClient.GetBlobClient(_BlobPrefix + fileId).DownloadToAsync(downloaded, AbortToken);

@@ -115,7 +115,9 @@ public sealed class SftpClientPool : IDisposable
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="client"/> is <see langword="null"/>.</exception>
     public ValueTask ReleaseAsync(SftpClient client)
     {
+#pragma warning disable MA0042 // Do not use blocking calls when the calling method is async
         Release(client);
+#pragma warning restore MA0042
 
         return ValueTask.CompletedTask;
     }

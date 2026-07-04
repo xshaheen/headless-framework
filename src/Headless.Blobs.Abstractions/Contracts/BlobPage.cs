@@ -18,5 +18,5 @@ namespace Headless.Blobs;
 public sealed record BlobPage(IReadOnlyList<BlobInfo> Items, string? ContinuationToken)
 {
     /// <summary>A completed, empty page with no items and no continuation token.</summary>
-    public static BlobPage Empty { get; } = new([], null);
+    public static BlobPage Empty { get; } = new([], ContinuationToken: null);
 }

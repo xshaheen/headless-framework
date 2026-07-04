@@ -19,7 +19,11 @@ public sealed class AzureBlobContainerManagerTests : TestBase
         serviceClient.GetBlobContainerClient(Arg.Any<string>()).Returns(containerClient);
 
         // Container lifecycle now lives on the separately-resolved manager, not on AzureBlobStorage.
-        var sut = new AzureBlobContainerManager(serviceClient, new AzureBlobNamingNormalizer(), PublicAccessType.None);
+        using var sut = new AzureBlobContainerManager(
+            serviceClient,
+            new AzureBlobNamingNormalizer(),
+            PublicAccessType.None
+        );
 
         await sut.EnsureContainerAsync("mycontainer", AbortToken);
         await sut.EnsureContainerAsync("mycontainer", AbortToken);
@@ -55,7 +59,11 @@ public sealed class AzureBlobContainerManagerTests : TestBase
                 return releaseDelete.Task;
             });
 
-        var sut = new AzureBlobContainerManager(serviceClient, new AzureBlobNamingNormalizer(), PublicAccessType.None);
+        using var sut = new AzureBlobContainerManager(
+            serviceClient,
+            new AzureBlobNamingNormalizer(),
+            PublicAccessType.None
+        );
         await sut.EnsureContainerAsync("mycontainer", AbortToken);
 
         // Start the delete and park it inside the backend call; the ensured-cache entry was already evicted under

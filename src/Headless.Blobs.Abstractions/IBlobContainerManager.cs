@@ -11,7 +11,7 @@ namespace Headless.Blobs;
 /// <remarks>
 /// <para>
 /// Unlike <see cref="IPresignedUrlBlobStorage"/> (which both AWS and Cloudflare R2 support, so an
-/// <c>is</c>-cast from the resolved <see cref="IBlobStorage"/> stays honest), this capability must distinguish
+/// <see langword="is"/>-cast from the resolved <see cref="IBlobStorage"/> stays honest), this capability must distinguish
 /// providers that <i>share</i> a storage implementation: AWS supports bucket lifecycle, but R2 — whose
 /// object-scoped tokens cannot create buckets — reuses the AWS storage type. So this capability is a
 /// <b>separately registered service resolved from DI</b>, not a cast from the storage instance. Capable providers

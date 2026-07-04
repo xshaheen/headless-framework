@@ -250,9 +250,10 @@ internal sealed class TusAzureMetadata
         if (total > _MaxTotalMetadataLength)
         {
             throw new TusStoreException(
-                $"Blob metadata is too large ({total} bytes). Azure Blob Storage caps blob metadata "
-                    + $"(all keys and values) at {_MaxTotalMetadataLength} bytes. Reduce Upload-Metadata "
-                    + "or the number of partial uploads in the concatenation."
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Blob metadata is too large ({total} bytes). Azure Blob Storage caps blob metadata (all keys and values) at {_MaxTotalMetadataLength} bytes. Reduce Upload-Metadata or the number of partial uploads in the concatenation."
+                )
             );
         }
     }

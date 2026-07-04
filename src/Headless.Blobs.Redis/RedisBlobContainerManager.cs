@@ -16,18 +16,12 @@ namespace Headless.Blobs.Redis;
 /// "missing" container always succeeds, <see cref="EnsureContainerAsync"/> is an honest no-op. A container is considered
 /// to exist when either backing hash holds at least one field, and deleting a container drops both hashes.
 /// </remarks>
-internal sealed class RedisBlobContainerManager : IBlobContainerManager
+internal sealed class RedisBlobContainerManager(
+    IConnectionMultiplexer connectionMultiplexer,
+    IBlobNamingNormalizer normalizer
+) : IBlobContainerManager
 {
-    private readonly IConnectionMultiplexer _connectionMultiplexer;
-    private readonly IBlobNamingNormalizer _normalizer;
-
-    public RedisBlobContainerManager(IConnectionMultiplexer connectionMultiplexer, IBlobNamingNormalizer normalizer)
-    {
-        _connectionMultiplexer = Argument.IsNotNull(connectionMultiplexer);
-        _normalizer = Argument.IsNotNull(normalizer);
-    }
-
-    private IDatabase Database => _connectionMultiplexer.GetDatabase();
+    private IDatabase Database => connectionMultiplexer.GetDatabase();
 
     public ValueTask EnsureContainerAsync(string container, CancellationToken cancellationToken = default)
     {
@@ -82,6 +76,6 @@ internal sealed class RedisBlobContainerManager : IBlobContainerManager
 
     private string _ValidateContainer(string container)
     {
-        return BlobLocationResolver.ResolveContainer(container, _normalizer);
+        return BlobLocationResolver.ResolveContainer(container, normalizer);
     }
 }

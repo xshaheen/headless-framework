@@ -165,7 +165,7 @@ public sealed class DataProtectionBuilderExtensionsTests : TestBase
         builder.PersistKeysToBlobStorage(storage, containerManager);
 
         // then
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<KeyManagementOptions>>().Value;
 
         options.XmlRepository.Should().BeOfType<BlobStorageDataProtectionXmlRepository>();
@@ -199,7 +199,7 @@ public sealed class DataProtectionBuilderExtensionsTests : TestBase
         builder.PersistKeysToBlobStorage(storage, containerManager);
 
         // then: configures without acknowledgment and the ensure still runs before the first write.
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<KeyManagementOptions>>().Value;
 
         options.XmlRepository!.StoreElement(new XElement("key"), "friendly");
@@ -603,7 +603,7 @@ public sealed class DataProtectionBuilderExtensionsTests : TestBase
         builder.PersistKeysToBlobStorage(provisioning: BlobContainerProvisioning.PreProvisioned);
 
         // when
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<KeyManagementOptions>>().Value;
         options.XmlRepository!.StoreElement(new XElement("key"), "friendly");
 

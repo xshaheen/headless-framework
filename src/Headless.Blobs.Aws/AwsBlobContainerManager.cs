@@ -21,23 +21,16 @@ namespace Headless.Blobs.Aws;
 /// is discoverable only where it is honestly supported (KTD5). It owns its own per-store <see cref="IAmazonS3"/>
 /// client (mirroring the storage's per-instance isolation) and releases it on disposal.
 /// </remarks>
-internal sealed class AwsBlobContainerManager : IBlobContainerManager, IDisposable
+internal sealed class AwsBlobContainerManager(IAmazonS3 s3, IBlobNamingNormalizer normalizer)
+    : IBlobContainerManager,
+        IDisposable
 {
-    private readonly IAmazonS3 _s3;
-    private readonly IBlobNamingNormalizer _normalizer;
-
     // Buckets this instance has already ensured exist, so the ensure round trip runs at most once per bucket. A
     // bucket is recorded only after a successful ensure, so a failed ensure is naturally retried (L5). The per-bucket
     // lock serializes concurrent first-time ensures of the same bucket while letting distinct buckets run in
     // parallel, and DeleteContainerAsync takes the same lock so an ensure never races a delete of the same bucket.
     private readonly ConcurrentDictionary<string, byte> _ensuredBuckets = new(StringComparer.Ordinal);
     private readonly KeyedAsyncLock _ensureBucketLock = new();
-
-    public AwsBlobContainerManager(IAmazonS3 s3, IBlobNamingNormalizer normalizer)
-    {
-        _s3 = Argument.IsNotNull(s3);
-        _normalizer = Argument.IsNotNull(normalizer);
-    }
 
     public async ValueTask EnsureContainerAsync(string container, CancellationToken cancellationToken = default)
     {
@@ -54,7 +47,7 @@ internal sealed class AwsBlobContainerManager : IBlobContainerManager, IDisposab
         // both S3 and S3-compatible endpoints, and unlike AmazonS3Util.DoesS3BucketExistV2Async it accepts a token.
         try
         {
-            await _s3.ListObjectsV2Async(
+            await s3.ListObjectsV2Async(
                     new ListObjectsV2Request { BucketName = bucket, MaxKeys = 1 },
                     cancellationToken
                 )
@@ -88,7 +81,7 @@ internal sealed class AwsBlobContainerManager : IBlobContainerManager, IDisposab
 
             try
             {
-                await _s3.DeleteBucketAsync(new DeleteBucketRequest { BucketName = bucket }, cancellationToken)
+                await s3.DeleteBucketAsync(new DeleteBucketRequest { BucketName = bucket }, cancellationToken)
                     .ConfigureAwait(false);
             }
             catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.NotFound)
@@ -111,7 +104,7 @@ internal sealed class AwsBlobContainerManager : IBlobContainerManager, IDisposab
         {
             try
             {
-                listResponse = await _s3.ListObjectsV2Async(listRequest, cancellationToken).ConfigureAwait(false);
+                listResponse = await s3.ListObjectsV2Async(listRequest, cancellationToken).ConfigureAwait(false);
             }
             catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.NotFound)
             {
@@ -128,7 +121,7 @@ internal sealed class AwsBlobContainerManager : IBlobContainerManager, IDisposab
 
             if (keys.Count > 0)
             {
-                await _s3.DeleteObjectsAsync(
+                await s3.DeleteObjectsAsync(
                         new DeleteObjectsRequest
                         {
                             BucketName = bucket,
@@ -172,7 +165,7 @@ internal sealed class AwsBlobContainerManager : IBlobContainerManager, IDisposab
         // DoesS3BucketExistV2Async HEAD probe) and treat "already owned by you" as success.
         try
         {
-            await _s3.PutBucketAsync(new PutBucketRequest { BucketName = bucket }, cancellationToken)
+            await s3.PutBucketAsync(new PutBucketRequest { BucketName = bucket }, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (AmazonS3Exception e)
@@ -184,7 +177,7 @@ internal sealed class AwsBlobContainerManager : IBlobContainerManager, IDisposab
 
     private string _NormalizeContainer(string container)
     {
-        return BlobLocationResolver.ResolveContainer(container, _normalizer);
+        return BlobLocationResolver.ResolveContainer(container, normalizer);
     }
 
     private bool _disposed;
@@ -200,6 +193,6 @@ internal sealed class AwsBlobContainerManager : IBlobContainerManager, IDisposab
         _ensureBucketLock.Dispose();
 
         // This manager owns its per-store S3 client (built by the DI factory), so it releases the HTTP handler/sockets.
-        _s3?.Dispose();
+        s3?.Dispose();
     }
 }

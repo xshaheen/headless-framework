@@ -194,13 +194,15 @@ internal sealed class NatsConsumerClient(
             return all;
         }
 
-        return all.Where(s =>
-                !wildcardBases.Any(prefix =>
+        return
+        [
+            .. all.Where(s =>
+                !wildcardBases.Exists(prefix =>
                     !string.Equals(s, prefix + ">", StringComparison.Ordinal)
                     && s.StartsWith(prefix, StringComparison.Ordinal)
                 )
-            )
-            .ToList();
+            ),
+        ];
     }
 
     public ValueTask SubscribeAsync(IEnumerable<string> messageNames)

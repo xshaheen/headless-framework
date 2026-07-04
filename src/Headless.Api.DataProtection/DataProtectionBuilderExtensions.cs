@@ -292,7 +292,7 @@ public static class DataProtectionBuilderExtensions
 
         throw new InvalidOperationException(
             $"PersistKeysToBlobStorage: the '{BlobStorageDataProtectionXmlRepository.ContainerName}' container cannot "
-                + $"be ensured because no IBlobContainerManager is available, and the configured storage "
+                + "be ensured because no IBlobContainerManager is available, and the configured storage "
                 + $"('{storage.GetType().Name}') requires containers to be provisioned before data-plane writes "
                 + "(IBlobStorage.RequiresContainerProvisioning is true) — the first data-protection key write would "
                 + "fail. Fix this by (1) wiring an IBlobContainerManager (use the storage+manager overload, or a "

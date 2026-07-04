@@ -13,6 +13,9 @@ namespace Tests;
 /// </summary>
 public sealed class MoveViaCopyThenDeleteTests : TestBase
 {
+    private static void _UnexpectedInvocation(string callbackName) =>
+        false.Should().BeTrue("{0} must not be invoked", callbackName);
+
     [Fact]
     public async Task should_reject_occupied_destination_without_copying_or_deleting()
     {
@@ -56,8 +59,8 @@ public sealed class MoveViaCopyThenDeleteTests : TestBase
 
                 return ValueTask.CompletedTask;
             },
-            logDestinationKeptSourceGone: _ => Assert.Fail("logDestinationKeptSourceGone must not be invoked"),
-            logSourceCheckFailed: _ => Assert.Fail("logSourceCheckFailed must not be invoked"),
+            logDestinationKeptSourceGone: _ => _UnexpectedInvocation("logDestinationKeptSourceGone"),
+            logSourceCheckFailed: _ => _UnexpectedInvocation("logSourceCheckFailed"),
             cancellationToken: cts.Token
         );
 
@@ -107,8 +110,8 @@ public sealed class MoveViaCopyThenDeleteTests : TestBase
 
                 return ValueTask.CompletedTask;
             },
-            logDestinationKeptSourceGone: _ => Assert.Fail("logDestinationKeptSourceGone must not be invoked"),
-            logSourceCheckFailed: _ => Assert.Fail("logSourceCheckFailed must not be invoked"),
+            logDestinationKeptSourceGone: _ => _UnexpectedInvocation("logDestinationKeptSourceGone"),
+            logSourceCheckFailed: _ => _UnexpectedInvocation("logSourceCheckFailed"),
             cancellationToken: cts.Token
         );
 
@@ -151,8 +154,8 @@ public sealed class MoveViaCopyThenDeleteTests : TestBase
 
                 return ValueTask.CompletedTask;
             },
-            logDestinationKeptSourceGone: _ => Assert.Fail("logDestinationKeptSourceGone must not be invoked"),
-            logSourceCheckFailed: _ => Assert.Fail("logSourceCheckFailed must not be invoked"),
+            logDestinationKeptSourceGone: _ => _UnexpectedInvocation("logDestinationKeptSourceGone"),
+            logSourceCheckFailed: _ => _UnexpectedInvocation("logSourceCheckFailed"),
             cancellationToken: cts.Token
         );
 
@@ -188,8 +191,8 @@ public sealed class MoveViaCopyThenDeleteTests : TestBase
 
                 return ValueTask.CompletedTask;
             },
-            logDestinationKeptSourceGone: _ => Assert.Fail("logDestinationKeptSourceGone must not be invoked"),
-            logSourceCheckFailed: _ => Assert.Fail("logSourceCheckFailed must not be invoked"),
+            logDestinationKeptSourceGone: _ => _UnexpectedInvocation("logDestinationKeptSourceGone"),
+            logSourceCheckFailed: _ => _UnexpectedInvocation("logSourceCheckFailed"),
             cancellationToken: AbortToken
         );
 
@@ -229,8 +232,8 @@ public sealed class MoveViaCopyThenDeleteTests : TestBase
 
                     return ValueTask.CompletedTask;
                 },
-                logDestinationKeptSourceGone: _ => Assert.Fail("logDestinationKeptSourceGone must not be invoked"),
-                logSourceCheckFailed: _ => Assert.Fail("logSourceCheckFailed must not be invoked"),
+                logDestinationKeptSourceGone: _ => _UnexpectedInvocation("logDestinationKeptSourceGone"),
+                logSourceCheckFailed: _ => _UnexpectedInvocation("logSourceCheckFailed"),
                 cancellationToken: cts.Token
             );
 
@@ -278,7 +281,7 @@ public sealed class MoveViaCopyThenDeleteTests : TestBase
                 keptLogCalls++;
                 keptLogException = e;
             },
-            logSourceCheckFailed: _ => Assert.Fail("logSourceCheckFailed must not be invoked"),
+            logSourceCheckFailed: _ => _UnexpectedInvocation("logSourceCheckFailed"),
             cancellationToken: AbortToken
         );
 
@@ -320,7 +323,7 @@ public sealed class MoveViaCopyThenDeleteTests : TestBase
 
                     return ValueTask.CompletedTask;
                 },
-                logDestinationKeptSourceGone: _ => Assert.Fail("logDestinationKeptSourceGone must not be invoked"),
+                logDestinationKeptSourceGone: _ => _UnexpectedInvocation("logDestinationKeptSourceGone"),
                 logSourceCheckFailed: e =>
                 {
                     checkFailedLogCalls++;

@@ -23,6 +23,10 @@ TEST_MODULES ?= tests/**/bin/$(CONFIGURATION)/**/*.Tests.*.dll
 UNIT_TEST_MODULES ?= tests/**/bin/$(CONFIGURATION)/**/*.Tests.Unit.dll
 INTEGRATION_TEST_MODULES ?= tests/**/bin/$(CONFIGURATION)/**/*.Tests.Integration.dll
 MSBUILD_ARGS ?=
+QUALITY_SEVERITY ?= info
+QUALITY_DIAGNOSTICS ?=
+QUALITY_FORMAT_ARGS = --no-restore --verify-no-changes --severity "$(QUALITY_SEVERITY)" -v minimal $(if $(QUALITY_DIAGNOSTICS),--diagnostics $(QUALITY_DIAGNOSTICS),)
+QUALITY_BUILD_ARGS = --configuration "$(CONFIGURATION)" --no-restore --no-incremental -v:q -nologo /clp:NoSummary $(MSBUILD_ARGS)
 TEST_MAX_PARALLEL ?= 3
 TEST_TIMEOUT ?= 15m
 
@@ -30,11 +34,12 @@ COVERAGE_ARGS ?= -p:EnableCodeCoverage=true --coverage-output-format cobertura
 
 .PHONY: help
 help: ## Show available commands.
-	@awk 'BEGIN {FS = ":.*##"; printf "\nCommands:\n"} /^[a-zA-Z0-9_.-]+:.*##/ { printf "  %-18s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*##"; printf "\nCommands:\n"} /^[a-zA-Z0-9_.-]+:.*##/ { printf "  %-28s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 	@printf "\nExamples:\n"
 	@printf "  make build\n"
 	@printf "  make test-project TEST_PROJECT=tests/Headless.Api.Tests.Unit/Headless.Api.Tests.Unit.csproj\n"
 	@printf "  make test-class CLASS='*ClockTests'\n"
+	@printf "  make quality-analyzers-project PROJECT=src/Headless.Api/Headless.Api.csproj\n"
 	@printf "  make coverage-json\n"
 	@printf "  make pack CONFIGURATION=Release\n\n"
 
@@ -112,6 +117,19 @@ rebuild-no-restore: ## Build without restore or incremental compilation; use aft
 build-project: restore-project ## Build one project; preferred when working on a specified project.
 	@test -n "$(PROJECT)" || (echo "PROJECT is required. Example: make build-project PROJECT=src/Headless.Api/Headless.Api.csproj" && exit 2)
 	$(DOTNET) build "$(PROJECT)" --configuration "$(CONFIGURATION)" --no-restore -v:q -nologo /clp:ErrorsOnly $(MSBUILD_ARGS)
+
+.PHONY: quality-analyzers
+quality-analyzers: ## Report build warnings/errors and analyzer suggestions without writing changes.
+	@$(DOTNET) restore "$(SOLUTION)" -v:q -nologo
+	@$(DOTNET) build "$(SOLUTION)" $(QUALITY_BUILD_ARGS) 2>&1 | awk '/(^|: )(warning|error) [A-Z]+[0-9]+:/'
+	@$(DOTNET) format analyzers "$(SOLUTION)" $(QUALITY_FORMAT_ARGS)
+
+.PHONY: quality-analyzers-project
+quality-analyzers-project: ## Report build warnings/errors and analyzer suggestions for PROJECT.
+	@test -n "$(PROJECT)" || (echo "PROJECT is required. Example: make quality-analyzers-project PROJECT=src/Headless.Api/Headless.Api.csproj" && exit 2)
+	@$(DOTNET) restore "$(PROJECT)" -v:q -nologo
+	@$(DOTNET) build "$(PROJECT)" $(QUALITY_BUILD_ARGS) 2>&1 | awk '/(^|: )(warning|error) [A-Z]+[0-9]+:/'
+	@$(DOTNET) format analyzers "$(PROJECT)" $(QUALITY_FORMAT_ARGS)
 
 .PHONY: dashboards
 dashboards: dashboard-jobs dashboard-messaging ## Rebuild every SPA dashboard (npm ci + vite build into wwwroot/dist).

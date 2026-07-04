@@ -20,7 +20,8 @@ public sealed class AzureBlobStorageDeleteMappingTests
     [InlineData(202)] // Azure batch delete accepts with 202
     public void maps_a_successful_subresponse_to_ok_true(int status)
     {
-        var result = AzureBlobStorage.MapDeleteResponse(new FakeResponse(status));
+        using var response = new FakeResponse(status);
+        var result = AzureBlobStorage.MapDeleteResponse(response);
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().BeTrue("a non-error sub-response means the blob was deleted");
@@ -29,7 +30,8 @@ public sealed class AzureBlobStorageDeleteMappingTests
     [Fact]
     public void maps_a_404_subresponse_to_ok_false_not_found()
     {
-        var result = AzureBlobStorage.MapDeleteResponse(new FakeResponse(404));
+        using var response = new FakeResponse(404);
+        var result = AzureBlobStorage.MapDeleteResponse(response);
 
         result.IsSuccess.Should().BeTrue("a 404 is a benign 'already gone', not a failure");
         result.Value.Should().BeFalse("404 means the blob did not exist -> not found");
@@ -41,7 +43,8 @@ public sealed class AzureBlobStorageDeleteMappingTests
     [InlineData(500)] // server error
     public void maps_a_non_404_error_subresponse_to_fail(int status)
     {
-        var result = AzureBlobStorage.MapDeleteResponse(new FakeResponse(status));
+        using var response = new FakeResponse(status);
+        var result = AzureBlobStorage.MapDeleteResponse(response);
 
         result.IsFailure.Should().BeTrue("a non-404 error must surface the real cause, not a misleading 'not found'");
         result.Error.Should().BeOfType<RequestFailedException>();

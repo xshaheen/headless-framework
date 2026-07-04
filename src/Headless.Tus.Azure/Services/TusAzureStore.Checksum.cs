@@ -292,7 +292,10 @@ public sealed partial class TusAzureStore : ITusChecksumStore
             _logger.LastChunkStateCorrupted(file.FileId, chunkStartOffset, cumulative);
 
             throw new TusStoreException(
-                $"Cannot roll back file {file.FileId}: committed blocks do not align with the recorded chunk offset {chunkStartOffset}."
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Cannot roll back file {file.FileId}: committed blocks do not align with the recorded chunk offset {chunkStartOffset}."
+                )
             );
         }
 

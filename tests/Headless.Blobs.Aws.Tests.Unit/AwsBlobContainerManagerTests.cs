@@ -28,25 +28,27 @@ public sealed class AwsBlobContainerManagerTests : TestBase
     {
         _s3.PutBucketAsync(Arg.Any<PutBucketRequest>(), Arg.Any<CancellationToken>()).Returns(new PutBucketResponse());
 
-        var sut = _CreateSut();
+        using var sut = _CreateSut();
 
-        await sut.EnsureContainerAsync("bucket");
+        await sut.EnsureContainerAsync("bucket", AbortToken);
         var callsAfterFirst = _s3.ReceivedCalls().Count();
 
-        await sut.EnsureContainerAsync("bucket");
+        await sut.EnsureContainerAsync("bucket", AbortToken);
 
         // The second call is served from the per-instance cache and issues no further S3 calls.
-        _s3.ReceivedCalls().Count().Should().Be(callsAfterFirst);
+        _s3.ReceivedCalls().Should().HaveCount(callsAfterFirst);
     }
 
     [Fact]
     public async Task concurrent_ensure_container_ensures_bucket_at_most_once()
     {
         _s3.PutBucketAsync(Arg.Any<PutBucketRequest>(), Arg.Any<CancellationToken>()).Returns(new PutBucketResponse());
-        var sut = _CreateSut();
+        using var sut = _CreateSut();
 
         // 20 concurrent first-time ensures of the same bucket.
-        await Task.WhenAll(Enumerable.Range(0, 20).Select(_ => sut.EnsureContainerAsync("bucket").AsTask()));
+        await Task.WhenAll(
+            Enumerable.Range(0, 20).Select(_ => sut.EnsureContainerAsync("bucket", AbortToken).AsTask())
+        );
         var concurrentCalls = _s3.ReceivedCalls().Count();
 
         // A single ensure on a fresh instance issues the same S3 calls; concurrency must not multiply them.
@@ -54,8 +56,8 @@ public sealed class AwsBlobContainerManagerTests : TestBase
         fresh
             .PutBucketAsync(Arg.Any<PutBucketRequest>(), Arg.Any<CancellationToken>())
             .Returns(new PutBucketResponse());
-        var freshSut = new AwsBlobContainerManager(fresh, new AwsBlobNamingNormalizer());
-        await freshSut.EnsureContainerAsync("bucket");
+        using var freshSut = new AwsBlobContainerManager(fresh, new AwsBlobNamingNormalizer());
+        await freshSut.EnsureContainerAsync("bucket", AbortToken);
 
         concurrentCalls.Should().Be(fresh.ReceivedCalls().Count());
     }
@@ -66,9 +68,9 @@ public sealed class AwsBlobContainerManagerTests : TestBase
         _s3.PutBucketAsync(Arg.Any<PutBucketRequest>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new AmazonS3Exception("already owned") { ErrorCode = "BucketAlreadyOwnedByYou" });
 
-        var sut = _CreateSut();
+        using var sut = _CreateSut();
 
-        var act = async () => await sut.EnsureContainerAsync("bucket");
+        var act = async () => await sut.EnsureContainerAsync("bucket", AbortToken);
 
         await act.Should().NotThrowAsync();
     }
@@ -89,14 +91,14 @@ public sealed class AwsBlobContainerManagerTests : TestBase
                     : Task.FromResult(new PutBucketResponse());
             });
 
-        var sut = _CreateSut();
+        using var sut = _CreateSut();
 
         // First ensure fails; the failure must not be cached.
-        var firstAttempt = async () => await sut.EnsureContainerAsync("bucket");
+        var firstAttempt = async () => await sut.EnsureContainerAsync("bucket", AbortToken);
         await firstAttempt.Should().ThrowAsync<AmazonS3Exception>();
 
         // Retry re-attempts the create rather than serving a poisoned cache entry.
-        await sut.EnsureContainerAsync("bucket");
+        await sut.EnsureContainerAsync("bucket", AbortToken);
 
         calls.Should().Be(2);
     }
@@ -107,9 +109,9 @@ public sealed class AwsBlobContainerManagerTests : TestBase
         _s3.ListObjectsV2Async(Arg.Any<ListObjectsV2Request>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new AmazonS3Exception("no such bucket") { StatusCode = HttpStatusCode.NotFound });
 
-        var sut = _CreateSut();
+        using var sut = _CreateSut();
 
-        (await sut.ContainerExistsAsync("missing")).Should().BeFalse();
+        (await sut.ContainerExistsAsync("missing", AbortToken)).Should().BeFalse();
     }
 
     [Fact]
@@ -118,9 +120,9 @@ public sealed class AwsBlobContainerManagerTests : TestBase
         _s3.ListObjectsV2Async(Arg.Any<ListObjectsV2Request>(), Arg.Any<CancellationToken>())
             .Returns(new ListObjectsV2Response { HttpStatusCode = HttpStatusCode.OK });
 
-        var sut = _CreateSut();
+        using var sut = _CreateSut();
 
-        (await sut.ContainerExistsAsync("present")).Should().BeTrue();
+        (await sut.ContainerExistsAsync("present", AbortToken)).Should().BeTrue();
     }
 
     [Fact]
@@ -129,9 +131,9 @@ public sealed class AwsBlobContainerManagerTests : TestBase
         _s3.ListObjectsV2Async(Arg.Any<ListObjectsV2Request>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new AmazonS3Exception("no such bucket") { StatusCode = HttpStatusCode.NotFound });
 
-        var sut = _CreateSut();
+        using var sut = _CreateSut();
 
-        (await sut.DeleteContainerAsync("missing")).Should().BeFalse();
+        (await sut.DeleteContainerAsync("missing", AbortToken)).Should().BeFalse();
     }
 
     [Fact]
@@ -153,17 +155,17 @@ public sealed class AwsBlobContainerManagerTests : TestBase
                 return releaseDelete.Task;
             });
 
-        var sut = _CreateSut();
-        await sut.EnsureContainerAsync("bucket");
+        using var sut = _CreateSut();
+        await sut.EnsureContainerAsync("bucket", AbortToken);
 
         // Start the delete and park it inside the backend call; the ensured-cache entry was already evicted under
         // the per-bucket lock before the backend delete began.
-        var deleteTask = sut.DeleteContainerAsync("bucket").AsTask();
+        var deleteTask = sut.DeleteContainerAsync("bucket", AbortToken).AsTask();
         await deleteBucketCalled.Task;
 
         // A concurrent ensure must not be served from the stale cache entry: it misses and waits on the per-bucket
         // lock held by the in-flight delete instead of reporting success for a bucket mid-deletion.
-        var ensureTask = sut.EnsureContainerAsync("bucket").AsTask();
+        var ensureTask = sut.EnsureContainerAsync("bucket", AbortToken).AsTask();
         ensureTask.IsCompleted.Should().BeFalse();
 
         releaseDelete.SetResult(new DeleteBucketResponse());
