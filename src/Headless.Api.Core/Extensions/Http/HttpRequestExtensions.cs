@@ -175,16 +175,16 @@ public static class HttpRequestExtensions
             return false;
         }
 
-        var match = _GetBestAcceptMatch(parsed, candidate);
+        var (found, quality) = _GetBestAcceptMatch(parsed, candidate);
 
-        return match.Found && match.Quality <= 0;
+        return found && quality <= 0;
     }
 
     private static bool _CanAccept(IList<MediaTypeHeaderValue> acceptHeader, MediaTypeHeaderValue candidate)
     {
-        var match = _GetBestAcceptMatch(acceptHeader, candidate);
+        var (found, quality) = _GetBestAcceptMatch(acceptHeader, candidate);
 
-        return match.Found && match.Quality > 0;
+        return found && quality > 0;
     }
 
     private static (bool Found, double Quality) _GetBestAcceptMatch(
@@ -203,7 +203,7 @@ public static class HttpRequestExtensions
             }
 
             var specificity = _GetSpecificity(mediaType, candidate);
-            var quality = mediaType.Quality.GetValueOrDefault(1);
+            var quality = mediaType.Quality ?? 1;
 
             if (specificity > bestSpecificity || (specificity == bestSpecificity && quality > bestQuality))
             {

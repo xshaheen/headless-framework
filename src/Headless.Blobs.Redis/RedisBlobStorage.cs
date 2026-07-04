@@ -427,19 +427,19 @@ public sealed class RedisBlobStorage : IBlobStorage
         CancellationToken cancellationToken = default
     )
     {
-        var src = _Resolve(source);
-        var dst = _Resolve(destination);
+        var (srcBlobsHash, srcInfoHash, srcKey) = _Resolve(source);
+        var (dstBlobsHash, dstInfoHash, dstKey) = _Resolve(destination);
 
         if (
-            string.Equals(src.BlobsHash, dst.BlobsHash, StringComparison.Ordinal)
-            && string.Equals(src.Key, dst.Key, StringComparison.Ordinal)
+            string.Equals(srcBlobsHash, dstBlobsHash, StringComparison.Ordinal)
+            && string.Equals(srcKey, dstKey, StringComparison.Ordinal)
         )
         {
             // A resolved self-move is a no-op: the Lua HSET-then-HDEL on the same field would delete the blob.
             return true;
         }
 
-        _logger.LogMovingPath(src.Key, dst.Key);
+        _logger.LogMovingPath(srcKey, dstKey);
 
         try
         {
@@ -453,8 +453,8 @@ public sealed class RedisBlobStorage : IBlobStorage
                         await Database
                             .ScriptEvaluateAsync(
                                 _MoveScript,
-                                [src.BlobsHash, src.InfoHash, dst.BlobsHash, dst.InfoHash],
-                                [src.Key, dst.Key]
+                                [srcBlobsHash, srcInfoHash, dstBlobsHash, dstInfoHash],
+                                [srcKey, dstKey]
                             )
                             .ConfigureAwait(false),
                     cancellationToken
@@ -465,7 +465,7 @@ public sealed class RedisBlobStorage : IBlobStorage
         }
         catch (Exception e)
         {
-            _logger.LogErrorMovingPath(e, src.Key, dst.Key, e.Message);
+            _logger.LogErrorMovingPath(e, srcKey, dstKey, e.Message);
 
             throw;
         }
@@ -477,19 +477,19 @@ public sealed class RedisBlobStorage : IBlobStorage
         CancellationToken cancellationToken = default
     )
     {
-        var src = _Resolve(source);
-        var dst = _Resolve(destination);
+        var (srcBlobsHash, srcInfoHash, srcKey) = _Resolve(source);
+        var (dstBlobsHash, dstInfoHash, dstKey) = _Resolve(destination);
 
         if (
-            string.Equals(src.BlobsHash, dst.BlobsHash, StringComparison.Ordinal)
-            && string.Equals(src.Key, dst.Key, StringComparison.Ordinal)
+            string.Equals(srcBlobsHash, dstBlobsHash, StringComparison.Ordinal)
+            && string.Equals(srcKey, dstKey, StringComparison.Ordinal)
         )
         {
             // A resolved self-copy is a no-op; copying a blob onto itself has nothing to do.
             return true;
         }
 
-        _logger.LogCopyingPath(src.Key, dst.Key);
+        _logger.LogCopyingPath(srcKey, dstKey);
 
         try
         {
@@ -499,8 +499,8 @@ public sealed class RedisBlobStorage : IBlobStorage
                         await Database
                             .ScriptEvaluateAsync(
                                 _CopyScript,
-                                [src.BlobsHash, src.InfoHash, dst.BlobsHash, dst.InfoHash],
-                                [src.Key, dst.Key]
+                                [srcBlobsHash, srcInfoHash, dstBlobsHash, dstInfoHash],
+                                [srcKey, dstKey]
                             )
                             .ConfigureAwait(false),
                     cancellationToken
@@ -511,7 +511,7 @@ public sealed class RedisBlobStorage : IBlobStorage
         }
         catch (Exception e)
         {
-            _logger.LogErrorCopyingPath(e, src.Key, dst.Key, e.Message);
+            _logger.LogErrorCopyingPath(e, srcKey, dstKey, e.Message);
 
             throw;
         }
