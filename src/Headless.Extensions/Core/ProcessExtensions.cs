@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections;
+using System.ComponentModel;
 using System.Reactive.Linq;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
@@ -250,18 +251,23 @@ public static class ProcessExtensions
         {
             process.Kill(entireProcessTree: true);
         }
-        catch (InvalidOperationException)
+        catch (Exception exception) when (_IsExpectedKillFailure(exception))
         {
             try
             {
                 // Try to at least kill the root process
                 process.Kill();
             }
-            catch (InvalidOperationException)
+            catch (Exception retryException) when (_IsExpectedKillFailure(retryException))
             {
                 // Ignore
             }
         }
+    }
+
+    private static bool _IsExpectedKillFailure(Exception exception)
+    {
+        return exception is InvalidOperationException or Win32Exception or NotSupportedException or AggregateException;
     }
 }
 
