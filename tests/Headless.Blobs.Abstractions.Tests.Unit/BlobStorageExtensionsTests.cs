@@ -15,48 +15,178 @@ public sealed class BlobStorageExtensionsTests : TestBase
         await base.DisposeAsyncCore();
     }
 
-    #region UploadAsync (with BlobUploadRequest) Tests
+    private static BlobInfo _Blob(string key) =>
+        new()
+        {
+            BlobKey = key,
+            Created = DateTimeOffset.UtcNow,
+            Modified = DateTimeOffset.UtcNow,
+            Size = 0,
+        };
+
+    #region GetBlobsAsync (streaming) Tests
 
     [Fact]
-    public async Task should_delegate_to_core_upload_when_using_request_object()
+    public async Task should_stream_across_pages_when_continuation_token_present()
     {
-        // given
-        string[] container = ["bucket", "uploads"];
-        var stream = new MemoryStream([1, 2, 3]);
-        var metadata = new Dictionary<string, string?>(StringComparer.Ordinal) { ["key"] = "value" };
-        var request = new BlobUploadRequest(stream, "test.txt", metadata);
+        // Arrange
+        var page1 = new BlobPage([_Blob("file1.txt"), _Blob("file2.txt")], "page-2");
+        var page2 = new BlobPage([_Blob("file3.txt")], null);
 
-        // when
-        await _storage.UploadAsync(container, request, AbortToken);
+        _storage
+            .ListAsync(Arg.Is<BlobQuery>(q => q.ContinuationToken == null), Arg.Any<CancellationToken>())
+            .Returns(page1);
+        _storage
+            .ListAsync(Arg.Is<BlobQuery>(q => q.ContinuationToken == "page-2"), Arg.Any<CancellationToken>())
+            .Returns(page2);
 
-        // then
-        await _storage.Received(1).UploadAsync(container, "test.txt", stream, metadata, AbortToken);
+        // Act
+        var collected = new List<BlobInfo>();
+        await foreach (var blob in _storage.GetBlobsAsync(new BlobQuery("bucket"), AbortToken))
+        {
+            collected.Add(blob);
+        }
+
+        // Assert
+        collected.Select(b => b.BlobKey).Should().BeEquivalentTo(["file1.txt", "file2.txt", "file3.txt"]);
     }
 
     [Fact]
-    public async Task should_pass_metadata_from_request_when_metadata_is_provided()
+    public async Task should_carry_prefix_and_page_size_into_next_page_query()
     {
-        // given
-        string[] container = ["bucket"];
-        var metadata = new Dictionary<string, string?>(StringComparer.Ordinal)
-        {
-            ["contentType"] = "text/plain",
-            ["author"] = "test",
-        };
-        var request = new BlobUploadRequest(new MemoryStream(), "file.txt", metadata);
+        // Arrange
+        var page1 = new BlobPage([_Blob("logs/file1.txt")], "page-2");
+        var page2 = new BlobPage([_Blob("logs/file2.txt")], null);
 
-        // when
-        await _storage.UploadAsync(container, request, AbortToken);
+        _storage
+            .ListAsync(Arg.Is<BlobQuery>(q => q.ContinuationToken == null), Arg.Any<CancellationToken>())
+            .Returns(page1);
+        _storage
+            .ListAsync(Arg.Is<BlobQuery>(q => q.ContinuationToken == "page-2"), Arg.Any<CancellationToken>())
+            .Returns(page2);
 
-        // then
+        // Act
+        await foreach (var _ in _storage.GetBlobsAsync(new BlobQuery("bucket", "logs/", pageSize: 50), AbortToken)) { }
+
+        // Assert - the second page request preserves prefix + page size
         await _storage
             .Received(1)
-            .UploadAsync(
-                container,
-                "file.txt",
-                Arg.Any<Stream>(),
-                Arg.Is<Dictionary<string, string?>>(m => m["contentType"] == "text/plain" && m["author"] == "test"),
+            .ListAsync(
+                Arg.Is<BlobQuery>(q =>
+                    q.ContinuationToken == "page-2"
+                    && q.Prefix == "logs/"
+                    && q.PageSize == 50
+                    && q.Container == "bucket"
+                ),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    #endregion
+
+    #region GetBlobsAsync (glob filter) Tests
+
+    [Fact]
+    public async Task should_filter_to_matching_keys_when_glob_pattern_provided()
+    {
+        // Arrange
+        var page = new BlobPage([_Blob("a.txt"), _Blob("b.json"), _Blob("c.txt")], null);
+        _storage.ListAsync(Arg.Any<BlobQuery>(), Arg.Any<CancellationToken>()).Returns(page);
+
+        // Act
+        var collected = new List<BlobInfo>();
+        await foreach (var blob in _storage.GetBlobsAsync(new BlobQuery("bucket"), "*.txt", AbortToken))
+        {
+            collected.Add(blob);
+        }
+
+        // Assert
+        collected.Select(b => b.BlobKey).Should().BeEquivalentTo(["a.txt", "c.txt"]);
+    }
+
+    [Fact]
+    public async Task should_push_glob_literal_prefix_when_it_narrows_query()
+    {
+        // Arrange
+        var page = new BlobPage([_Blob("logs/2026/a.txt"), _Blob("logs/2026/b.json")], null);
+        _storage.ListAsync(Arg.Any<BlobQuery>(), Arg.Any<CancellationToken>()).Returns(page);
+
+        // Act
+        var collected = new List<BlobInfo>();
+        await foreach (
+            var blob in _storage.GetBlobsAsync(new BlobQuery("bucket", "logs/"), "logs/2026/*.txt", AbortToken)
+        )
+        {
+            collected.Add(blob);
+        }
+
+        // Assert
+        collected.Select(b => b.BlobKey).Should().BeEquivalentTo(["logs/2026/a.txt"]);
+        await _storage
+            .Received(1)
+            .ListAsync(
+                Arg.Is<BlobQuery>(q => q.Container == "bucket" && q.Prefix == "logs/2026/" && q.PageSize == 100),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_keep_query_prefix_when_it_is_already_narrower_than_glob_literal_prefix()
+    {
+        // Arrange
+        var page = new BlobPage([_Blob("logs/2026/a.txt")], null);
+        _storage.ListAsync(Arg.Any<BlobQuery>(), Arg.Any<CancellationToken>()).Returns(page);
+
+        // Act
+        await foreach (var _ in _storage.GetBlobsAsync(new BlobQuery("bucket", "logs/2026/"), "logs/*.txt", AbortToken))
+        { }
+
+        // Assert
+        await _storage
+            .Received(1)
+            .ListAsync(
+                Arg.Is<BlobQuery>(q => q.Container == "bucket" && q.Prefix == "logs/2026/"),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_not_enumerate_when_query_prefix_and_glob_literal_prefix_are_incompatible()
+    {
+        // Act
+        var collected = new List<BlobInfo>();
+        await foreach (var blob in _storage.GetBlobsAsync(new BlobQuery("bucket", "logs/"), "images/*.txt", AbortToken))
+        {
+            collected.Add(blob);
+        }
+
+        // Assert
+        collected.Should().BeEmpty();
+        await _storage.DidNotReceiveWithAnyArgs().ListAsync(default!, default);
+    }
+
+    [Fact]
+    public async Task should_not_change_prefix_when_query_has_continuation_token()
+    {
+        // Arrange
+        var page = new BlobPage([_Blob("logs/2026/a.txt")], null);
+        _storage.ListAsync(Arg.Any<BlobQuery>(), Arg.Any<CancellationToken>()).Returns(page);
+
+        // Act
+        await foreach (
+            var _ in _storage.GetBlobsAsync(
+                new BlobQuery("bucket", "logs/", continuationToken: "token-1"),
+                "logs/2026/*.txt",
                 AbortToken
+            )
+        ) { }
+
+        // Assert
+        await _storage
+            .Received(1)
+            .ListAsync(
+                Arg.Is<BlobQuery>(q => q.Prefix == "logs/" && q.ContinuationToken == "token-1"),
+                Arg.Any<CancellationToken>()
             );
     }
 
@@ -65,127 +195,48 @@ public sealed class BlobStorageExtensionsTests : TestBase
     #region GetBlobsListAsync Tests
 
     [Fact]
-    public async Task should_collect_all_pages_when_iterating_through_results()
+    public async Task should_collect_all_pages_when_materializing_list()
     {
-        // given
-        string[] container = ["bucket"];
+        // Arrange
+        var page1 = new BlobPage([_Blob("file1.txt"), _Blob("file2.txt")], "page-2");
+        var page2 = new BlobPage([_Blob("file3.txt")], null);
 
-        var page1Blobs = new List<BlobInfo>
-        {
-            new()
-            {
-                BlobKey = "file1.txt",
-                Created = DateTimeOffset.UtcNow,
-                Modified = DateTimeOffset.UtcNow,
-            },
-            new()
-            {
-                BlobKey = "file2.txt",
-                Created = DateTimeOffset.UtcNow,
-                Modified = DateTimeOffset.UtcNow,
-            },
-        };
+        _storage
+            .ListAsync(Arg.Is<BlobQuery>(q => q.ContinuationToken == null), Arg.Any<CancellationToken>())
+            .Returns(page1);
+        _storage
+            .ListAsync(Arg.Is<BlobQuery>(q => q.ContinuationToken == "page-2"), Arg.Any<CancellationToken>())
+            .Returns(page2);
 
-        var page2Blobs = new List<BlobInfo>
-        {
-            new()
-            {
-                BlobKey = "file3.txt",
-                Created = DateTimeOffset.UtcNow,
-                Modified = DateTimeOffset.UtcNow,
-            },
-        };
+        // Act
+        var result = await _storage.GetBlobsListAsync(new BlobQuery("bucket"), cancellationToken: AbortToken);
 
-        await using var page1Result = new PagedFileListResult(
-            page1Blobs,
-            hasMore: true,
-            (_, _) =>
-                ValueTask.FromResult<INextPageResult>(
-                    new NextPageResult
-                    {
-                        Success = true,
-                        HasMore = false,
-                        Blobs = page2Blobs,
-                        NextPageFunc = null,
-                    }
-                )
-        );
-
-        _storage.GetPagedListAsync(container, null, Arg.Any<int>(), AbortToken).Returns(page1Result);
-
-        // when
-        var result = await _storage.GetBlobsListAsync(container, cancellationToken: AbortToken);
-
-        // then
-        result.Should().HaveCount(3);
+        // Assert
         result.Select(b => b.BlobKey).Should().BeEquivalentTo(["file1.txt", "file2.txt", "file3.txt"]);
     }
 
     [Fact]
-    public async Task should_respect_limit_parameter_when_limit_is_set()
+    public async Task should_respect_limit_when_materializing_list()
     {
-        // given
-        string[] container = ["bucket"];
+        // Arrange
+        var page1 = new BlobPage([_Blob("file1.txt"), _Blob("file2.txt")], "page-2");
+        var page2 = new BlobPage([_Blob("file3.txt")], null);
 
-        var blobs = new List<BlobInfo>
-        {
-            new()
-            {
-                BlobKey = "file1.txt",
-                Created = DateTimeOffset.UtcNow,
-                Modified = DateTimeOffset.UtcNow,
-            },
-            new()
-            {
-                BlobKey = "file2.txt",
-                Created = DateTimeOffset.UtcNow,
-                Modified = DateTimeOffset.UtcNow,
-            },
-            new()
-            {
-                BlobKey = "file3.txt",
-                Created = DateTimeOffset.UtcNow,
-                Modified = DateTimeOffset.UtcNow,
-            },
-        };
+        _storage
+            .ListAsync(Arg.Is<BlobQuery>(q => q.ContinuationToken == null), Arg.Any<CancellationToken>())
+            .Returns(page1);
+        _storage
+            .ListAsync(Arg.Is<BlobQuery>(q => q.ContinuationToken == "page-2"), Arg.Any<CancellationToken>())
+            .Returns(page2);
 
-        await using var pageResult = new PagedFileListResult(
-            blobs,
-            hasMore: true,
-            (_, _) =>
-                ValueTask.FromResult<INextPageResult>(
-                    new NextPageResult
-                    {
-                        Success = true,
-                        HasMore = true,
-                        Blobs = blobs,
-                    }
-                )
-        );
+        // Act
+        var result = await _storage.GetBlobsListAsync(new BlobQuery("bucket"), limit: 2, cancellationToken: AbortToken);
 
-        _storage.GetPagedListAsync(container, null, 2, AbortToken).Returns(pageResult);
-
-        // when
-        var result = await _storage.GetBlobsListAsync(container, limit: 2, cancellationToken: AbortToken);
-
-        // then - first page returns 3 but limit stops further pages
-        result.Should().HaveCount(3);
-    }
-
-    [Fact]
-    public async Task should_use_default_limit_of_1m_when_limit_not_specified()
-    {
-        // given
-        string[] container = ["bucket"];
-        await using var pageResult = new PagedFileListResult([]);
-
-        _storage.GetPagedListAsync(container, null, 1_000_000, AbortToken).Returns(pageResult);
-
-        // when
-        await _storage.GetBlobsListAsync(container, cancellationToken: AbortToken);
-
-        // then
-        await _storage.Received(1).GetPagedListAsync(container, null, 1_000_000, AbortToken);
+        // Assert - stops at the limit without fetching the second page
+        result.Should().HaveCount(2);
+        await _storage
+            .DidNotReceive()
+            .ListAsync(Arg.Is<BlobQuery>(q => q.ContinuationToken == "page-2"), Arg.Any<CancellationToken>());
     }
 
     #endregion
@@ -195,53 +246,49 @@ public sealed class BlobStorageExtensionsTests : TestBase
     [Fact]
     public async Task should_upload_string_content_when_content_is_provided()
     {
-        // given
-        string[] container = ["bucket"];
-        const string blobName = "test.txt";
+        // Arrange
+        var location = new BlobLocation("bucket", "test.txt");
         const string contents = "Hello, World!";
 
-        // when
-        await _storage.UploadContentAsync(container, blobName, contents, AbortToken);
+        // Act
+        await _storage.UploadContentAsync(location, contents, AbortToken);
 
-        // then
-        await _storage.Received(1).UploadAsync(container, blobName, Arg.Any<Stream>(), null, AbortToken);
+        // Assert
+        await _storage.Received(1).UploadAsync(location, Arg.Any<Stream>(), null, AbortToken);
     }
 
     [Fact]
     public async Task should_handle_null_content_when_string_is_null()
     {
-        // given
-        string[] container = ["bucket"];
-        const string blobName = "test.txt";
+        // Arrange
+        var location = new BlobLocation("bucket", "test.txt");
         const string? contents = null;
 
-        // when
-        await _storage.UploadContentAsync(container, blobName, contents, AbortToken);
+        // Act
+        await _storage.UploadContentAsync(location, contents, AbortToken);
 
-        // then
-        await _storage.Received(1).UploadAsync(container, blobName, Arg.Any<Stream>(), null, AbortToken);
+        // Assert
+        await _storage.Received(1).UploadAsync(location, Arg.Any<Stream>(), null, AbortToken);
     }
 
     [Fact]
     public async Task should_pass_metadata_when_uploading_string_with_metadata()
     {
-        // given
-        string[] container = ["bucket"];
-        const string blobName = "test.txt";
+        // Arrange
+        var location = new BlobLocation("bucket", "test.txt");
         const string contents = "content";
-        var metadata = new Dictionary<string, string?>(StringComparer.Ordinal) { ["type"] = "text" };
+        var metadata = new Dictionary<string, string>(StringComparer.Ordinal) { ["type"] = "text" };
 
-        // when
-        await _storage.UploadContentAsync(container, blobName, contents, metadata, AbortToken);
+        // Act
+        await _storage.UploadContentAsync(location, contents, metadata, AbortToken);
 
-        // then
+        // Assert
         await _storage
             .Received(1)
             .UploadAsync(
-                container,
-                blobName,
+                location,
                 Arg.Any<Stream>(),
-                Arg.Is<Dictionary<string, string?>>(m => m["type"] == "text"),
+                Arg.Is<IReadOnlyDictionary<string, string>>(m => m["type"] == "text"),
                 AbortToken
             );
     }
@@ -253,68 +300,58 @@ public sealed class BlobStorageExtensionsTests : TestBase
     [Fact]
     public async Task should_serialize_object_to_json_when_uploading_typed_content()
     {
-        // given
-        string[] container = ["bucket"];
-        const string blobName = "data.json";
+        // Arrange
+        var location = new BlobLocation("bucket", "data.json");
         var contents = new TestData { Name = "Test", Value = 42 };
 
-        // when
-        await _storage.UploadContentAsync(container, blobName, contents, AbortToken);
+        // Act
+        await _storage.UploadContentAsync(location, contents, AbortToken);
 
-        // then
-        await _storage.Received(1).UploadAsync(container, blobName, Arg.Any<Stream>(), null, AbortToken);
+        // Assert
+        await _storage.Received(1).UploadAsync(location, Arg.Any<Stream>(), null, AbortToken);
     }
 
     [Fact]
     public async Task should_handle_null_object_when_uploading_null_typed_content()
     {
-        // given
-        string[] container = ["bucket"];
-        const string blobName = "data.json";
+        // Arrange
+        var location = new BlobLocation("bucket", "data.json");
         TestData? contents = null;
 
-        // when
-        await _storage.UploadContentAsync(container, blobName, contents, AbortToken);
+        // Act
+        await _storage.UploadContentAsync(location, contents, AbortToken);
 
-        // then
-        await _storage.Received(1).UploadAsync(container, blobName, Arg.Any<Stream>(), null, AbortToken);
+        // Assert
+        await _storage.Received(1).UploadAsync(location, Arg.Any<Stream>(), null, AbortToken);
     }
 
     [Fact]
     public async Task should_use_provided_options_when_custom_json_options_provided()
     {
-        // given
-        string[] container = ["bucket"];
-        const string blobName = "data.json";
+        // Arrange
+        var location = new BlobLocation("bucket", "data.json");
         var contents = new TestData { Name = "Test", Value = 42 };
         var options = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
-        // when
-        await _storage.UploadContentAsync(container, blobName, contents, options, AbortToken);
+        // Act
+        await _storage.UploadContentAsync(location, contents, options, AbortToken);
 
-        // then
-        await _storage.Received(1).UploadAsync(container, blobName, Arg.Any<Stream>(), null, AbortToken);
+        // Assert
+        await _storage.Received(1).UploadAsync(location, Arg.Any<Stream>(), null, AbortToken);
     }
 
     [Fact]
     public async Task should_use_json_type_info_for_aot_when_type_info_provided()
     {
-        // given
-        string[] container = ["bucket"];
-        const string blobName = "data.json";
+        // Arrange
+        var location = new BlobLocation("bucket", "data.json");
         var contents = new TestData { Name = "AOT Test", Value = 100 };
 
-        // when
-        await _storage.UploadContentAsync(
-            container,
-            blobName,
-            contents,
-            TestDataJsonContext.Default.TestData,
-            AbortToken
-        );
+        // Act
+        await _storage.UploadContentAsync(location, contents, TestDataJsonContext.Default.TestData, AbortToken);
 
-        // then
-        await _storage.Received(1).UploadAsync(container, blobName, Arg.Any<Stream>(), null, AbortToken);
+        // Assert
+        await _storage.Received(1).UploadAsync(location, Arg.Any<Stream>(), null, AbortToken);
     }
 
     #endregion
@@ -324,37 +361,75 @@ public sealed class BlobStorageExtensionsTests : TestBase
     [Fact]
     public async Task should_return_null_when_blob_not_found()
     {
-        // given
-        string[] container = ["bucket"];
-        const string blobName = "nonexistent.txt";
+        // Arrange
+        var location = new BlobLocation("bucket", "nonexistent.txt");
 
-        _storage.OpenReadStreamAsync(container, blobName, AbortToken).Returns((BlobDownloadResult?)null);
+        // ReSharper disable once NotDisposedResource
+        _storage.OpenReadStreamAsync(location, AbortToken).Returns((BlobDownloadResult?)null);
 
-        // when
-        var result = await _storage.GetBlobContentAsync(container, blobName, AbortToken);
+        // Act
+        var result = await _storage.GetBlobContentAsync(location, AbortToken);
 
-        // then
+        // Assert
         result.Should().BeNull();
     }
 
     [Fact]
     public async Task should_read_string_content_when_blob_exists()
     {
-        // given
-        string[] container = ["bucket"];
-        const string blobName = "test.txt";
+        // Arrange
+        var location = new BlobLocation("bucket", "test.txt");
         const string expectedContent = "Hello, World!";
 
         await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(expectedContent));
-        await using var downloadResult = new BlobDownloadResult(stream, blobName);
+        await using var downloadResult = new BlobDownloadResult(stream, "test.txt");
 
-        _storage.OpenReadStreamAsync(container, blobName, AbortToken).Returns(downloadResult);
+        // ReSharper disable once NotDisposedResource
+        _storage.OpenReadStreamAsync(location, AbortToken).Returns(downloadResult);
 
-        // when
-        var result = await _storage.GetBlobContentAsync(container, blobName, AbortToken);
+        // Act
+        var result = await _storage.GetBlobContentAsync(location, AbortToken);
 
-        // then
+        // Assert
         result.Should().Be(expectedContent);
+    }
+
+    #endregion
+
+    #region UploadContentAsync / GetBlobContentAsync round-trip Tests
+
+    [Fact]
+    public async Task should_round_trip_string_content_through_in_memory_storage()
+    {
+        // Arrange
+        await using var storage = new InMemoryBlobStorage();
+        var location = new BlobLocation("bucket", "round/trip.txt");
+        const string contents = "Round-trip UTF-8 ✓";
+
+        // Act
+        await storage.UploadContentAsync(location, contents, AbortToken);
+        var read = await storage.GetBlobContentAsync(location, AbortToken);
+
+        // Assert
+        read.Should().Be(contents);
+    }
+
+    [Fact]
+    public async Task should_round_trip_json_content_through_in_memory_storage()
+    {
+        // Arrange
+        await using var storage = new InMemoryBlobStorage();
+        var location = new BlobLocation("bucket", "round/data.json");
+        var contents = new TestData { Name = "RoundTrip", Value = 7 };
+
+        // Act
+        await storage.UploadContentAsync(location, contents, TestDataJsonContext.Default.TestData, AbortToken);
+        var read = await storage.GetBlobContentAsync(location, TestDataJsonContext.Default.TestData, AbortToken);
+
+        // Assert
+        read.Should().NotBeNull();
+        read!.Name.Should().Be("RoundTrip");
+        read.Value.Should().Be(7);
     }
 
     #endregion
@@ -364,20 +439,20 @@ public sealed class BlobStorageExtensionsTests : TestBase
     [Fact]
     public async Task should_deserialize_json_content_when_blob_contains_json()
     {
-        // given
-        string[] container = ["bucket"];
-        const string blobName = "data.json";
+        // Arrange
+        var location = new BlobLocation("bucket", "data.json");
         const string json = """{"Name":"Deserialized","Value":99}""";
 
         var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
-        await using var downloadResult = new BlobDownloadResult(stream, blobName);
+        await using var downloadResult = new BlobDownloadResult(stream, "data.json");
 
-        _storage.OpenReadStreamAsync(container, blobName, AbortToken).Returns(downloadResult);
+        // ReSharper disable once NotDisposedResource
+        _storage.OpenReadStreamAsync(location, AbortToken).Returns(downloadResult);
 
-        // when
-        var result = await _storage.GetBlobContentAsync<TestData>(container, blobName, cancellationToken: AbortToken);
+        // Act
+        var result = await _storage.GetBlobContentAsync<TestData>(location, cancellationToken: AbortToken);
 
-        // then
+        // Assert
         result.Should().NotBeNull();
         result!.Name.Should().Be("Deserialized");
         result.Value.Should().Be(99);
@@ -386,47 +461,121 @@ public sealed class BlobStorageExtensionsTests : TestBase
     [Fact]
     public async Task should_return_default_when_blob_not_found_for_typed_content()
     {
-        // given
-        string[] container = ["bucket"];
-        const string blobName = "nonexistent.json";
+        // Arrange
+        var location = new BlobLocation("bucket", "nonexistent.json");
 
-        _storage.OpenReadStreamAsync(container, blobName, AbortToken).Returns((BlobDownloadResult?)null);
+        // ReSharper disable once NotDisposedResource
+        _storage.OpenReadStreamAsync(location, AbortToken).Returns((BlobDownloadResult?)null);
 
-        // when
-        var result = await _storage.GetBlobContentAsync<TestData>(container, blobName, cancellationToken: AbortToken);
+        // Act
+        var result = await _storage.GetBlobContentAsync<TestData>(location, cancellationToken: AbortToken);
 
-        // then
+        // Assert
         result.Should().BeNull();
     }
 
     [Fact]
     public async Task should_use_json_type_info_for_aot_deserialization_when_type_info_provided()
     {
-        // given
-        string[] container = ["bucket"];
-        const string blobName = "data.json";
+        // Arrange
+        var location = new BlobLocation("bucket", "data.json");
         const string json = """{"Name":"AOT","Value":123}""";
 
         var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
-        await using var downloadResult = new BlobDownloadResult(stream, blobName);
+        await using var downloadResult = new BlobDownloadResult(stream, "data.json");
 
-        _storage.OpenReadStreamAsync(container, blobName, AbortToken).Returns(downloadResult);
+        // ReSharper disable once NotDisposedResource
+        _storage.OpenReadStreamAsync(location, AbortToken).Returns(downloadResult);
 
-        // when
-        var result = await _storage.GetBlobContentAsync(
-            container,
-            blobName,
-            TestDataJsonContext.Default.TestData,
-            AbortToken
-        );
+        // Act
+        var result = await _storage.GetBlobContentAsync(location, TestDataJsonContext.Default.TestData, AbortToken);
 
-        // then
+        // Assert
         result.Should().NotBeNull();
         result!.Name.Should().Be("AOT");
         result.Value.Should().Be(123);
     }
 
     #endregion
+}
+
+/// <summary>Minimal in-memory <see cref="IBlobStorage"/> used to prove content/JSON helpers round-trip end to end.</summary>
+file sealed class InMemoryBlobStorage : IBlobStorage
+{
+    private readonly Dictionary<string, byte[]> _store = new(StringComparer.Ordinal);
+
+    // The dictionary materializes lazily; uploads never require a provisioned container.
+    public bool RequiresContainerProvisioning => false;
+
+    public async ValueTask UploadAsync(
+        BlobLocation location,
+        Stream content,
+        IReadOnlyDictionary<string, string>? metadata = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        using var buffer = new MemoryStream();
+        await content.CopyToAsync(buffer, cancellationToken);
+        _store[location.ToString()] = buffer.ToArray();
+    }
+
+    public ValueTask<BlobDownloadResult?> OpenReadStreamAsync(
+        BlobLocation location,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (!_store.TryGetValue(location.ToString(), out var bytes))
+        {
+            return ValueTask.FromResult<BlobDownloadResult?>(null);
+        }
+
+        var stream = new MemoryStream(bytes);
+
+        return ValueTask.FromResult<BlobDownloadResult?>(new BlobDownloadResult(stream, location.Path));
+    }
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+    public ValueTask<IReadOnlyList<BlobBulkResult>> BulkUploadAsync(
+        string container,
+        IReadOnlyCollection<BlobUploadRequest> blobs,
+        CancellationToken cancellationToken = default
+    ) => throw new NotSupportedException();
+
+    public ValueTask<bool> DeleteAsync(BlobLocation location, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+
+    public ValueTask<IReadOnlyList<BlobBulkResult>> BulkDeleteAsync(
+        string container,
+        IReadOnlyCollection<string> paths,
+        CancellationToken cancellationToken = default
+    ) => throw new NotSupportedException();
+
+    public ValueTask<int> DeleteAllAsync(BlobQuery query, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+
+    public ValueTask<bool> MoveAsync(
+        BlobLocation source,
+        BlobLocation destination,
+        CancellationToken cancellationToken = default
+    ) => throw new NotSupportedException();
+
+    public ValueTask<bool> CopyAsync(
+        BlobLocation source,
+        BlobLocation destination,
+        CancellationToken cancellationToken = default
+    ) => throw new NotSupportedException();
+
+    public ValueTask<bool> ExistsAsync(BlobLocation location, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+
+    public ValueTask<BlobInfo?> GetBlobInfoAsync(
+        BlobLocation location,
+        CancellationToken cancellationToken = default
+    ) => throw new NotSupportedException();
+
+    public ValueTask<BlobPage> ListAsync(BlobQuery query, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
 }
 
 public sealed class TestData

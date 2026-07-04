@@ -3,6 +3,10 @@
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Blobs.Aws.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Blobs.Aws.Tests.Integration" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="AWSSDK.Extensions.NETCore.Setup" />
     <PackageReference Include="AWSSDK.S3" />
   </ItemGroup>

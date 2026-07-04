@@ -77,6 +77,16 @@ public static class SetupRedisBlob
             serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System
         ));
 
+        // Container lifecycle is a separately-resolved capability (not a cast from IBlobStorage). Redis registers a
+        // manager whose EnsureContainer is a no-op (writes auto-create the hash) and that deletes the backing
+        // hashes; it shares the storage's connection multiplexer and normalizer for matching key layout.
+        services.AddSingleton<IBlobContainerManager>(serviceProvider =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<RedisBlobStorageOptions>>().Value;
+
+            return new RedisBlobContainerManager(options.ConnectionMultiplexer, new CrossOsNamingNormalizer());
+        });
+
         return services;
     }
 
@@ -96,6 +106,19 @@ public static class SetupRedisBlob
                     serviceProvider.GetRequiredService<IClock>(),
                     serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System
                 )
+        );
+
+        // Keyed container-management capability for this named instance, sharing the same per-instance multiplexer
+        // and normalizer as the keyed storage so the manager targets the same backing hashes. Separate registration
+        // (resolve via DI), not a cast from the keyed storage.
+        services.AddKeyedSingleton<IBlobContainerManager>(
+            name,
+            (serviceProvider, _) =>
+            {
+                var options = serviceProvider.GetRequiredService<IOptionsMonitor<RedisBlobStorageOptions>>().Get(name);
+
+                return new RedisBlobContainerManager(options.ConnectionMultiplexer, new CrossOsNamingNormalizer());
+            }
         );
 
         return services;

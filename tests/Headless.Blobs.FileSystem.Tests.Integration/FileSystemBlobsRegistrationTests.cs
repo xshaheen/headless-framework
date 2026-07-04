@@ -2,7 +2,6 @@
 
 using Headless.Blobs;
 using Headless.Blobs.FileSystem;
-using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
@@ -11,7 +10,7 @@ namespace Tests;
 /// Verifies <c>AddHeadlessBlobs</c> default + named registration and per-instance isolation for the file system
 /// provider. Disk-based — no container required.
 /// </summary>
-public sealed class FileSystemBlobsRegistrationTests : TestBase
+public sealed class FileSystemBlobsRegistrationTests
 {
     [Fact]
     public async Task default_store_is_injectable_and_named_stores_resolve_via_provider()
@@ -44,6 +43,12 @@ public sealed class FileSystemBlobsRegistrationTests : TestBase
         defaultStorage.Should().NotBeNull();
         images.Should().NotBeSameAs(docs);
         serviceProvider.GetRequiredKeyedService<IBlobStorage>("images").Should().BeSameAs(images);
+
+        // the file-system container-management capability is a separately-registered service (resolved, not cast):
+        // the default store registers an unkeyed manager and each named store registers a keyed one.
+        serviceProvider.GetService<IBlobContainerManager>().Should().NotBeNull();
+        serviceProvider.GetRequiredKeyedService<IBlobContainerManager>("images").Should().NotBeNull();
+        serviceProvider.GetRequiredKeyedService<IBlobContainerManager>("docs").Should().NotBeNull();
     }
 
     [Fact]
@@ -67,16 +72,18 @@ public sealed class FileSystemBlobsRegistrationTests : TestBase
         var provider = serviceProvider.GetRequiredService<IBlobStorageProvider>();
         var images = provider.GetStorage("images");
         var docs = provider.GetStorage("docs");
-        string[] container = ["bucket"];
+        var imagesManager = serviceProvider.GetRequiredKeyedService<IBlobContainerManager>("images");
+        var location = new BlobLocation("bucket", "a.txt");
 
         // when
-        await images.UploadContentAsync(container, "a.txt", "hello", AbortToken);
+        await imagesManager.EnsureContainerAsync(location.Container);
+        await images.UploadContentAsync(location, "hello");
 
         // then — write to one named store is not visible in the other, and no default store exists
-        (await images.GetBlobContentAsync(container, "a.txt", AbortToken))
+        (await images.GetBlobContentAsync(location))
             .Should()
             .Be("hello");
-        (await docs.GetBlobContentAsync(container, "a.txt", AbortToken)).Should().BeNull();
+        (await docs.GetBlobContentAsync(location)).Should().BeNull();
         serviceProvider.GetService<IBlobStorage>().Should().BeNull();
     }
 }

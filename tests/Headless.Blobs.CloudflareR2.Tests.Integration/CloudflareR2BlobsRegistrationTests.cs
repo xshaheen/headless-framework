@@ -105,4 +105,23 @@ public sealed class CloudflareR2BlobsRegistrationTests
         sp.GetRequiredService<IOptions<AwsBlobStorageOptions>>().Value.DisablePayloadSigning.Should().BeFalse();
         monitor.Get(collidingName).DisablePayloadSigning.Should().BeFalse();
     }
+
+    [Fact]
+    public async Task r2_registers_no_container_manager_capability()
+    {
+        // given — R2's object-scoped tokens cannot manage buckets, so the provider deliberately registers no
+        // IBlobContainerManager (unlike AWS). Because the capability is DI-resolved (not cast from IBlobStorage),
+        // omitting the registration makes it honestly resolve to null for both default and named instances.
+        var services = _CreateServices();
+        services.AddHeadlessBlobs(blobs =>
+        {
+            blobs.UseCloudflareR2(_ConfigureR2);
+            blobs.AddNamed("images", instance => instance.UseCloudflareR2(_ConfigureR2));
+        });
+        await using var sp = services.BuildServiceProvider();
+
+        // then
+        sp.GetService<IBlobContainerManager>().Should().BeNull();
+        sp.GetKeyedService<IBlobContainerManager>("images").Should().BeNull();
+    }
 }

@@ -111,6 +111,14 @@ public static class SetupAwsS3
             );
         });
 
+        // Container lifecycle is a separately-resolved capability (not a cast from IBlobStorage), so the AWS
+        // provider registers a dedicated manager with its own per-store S3 client. Cloudflare R2 reuses
+        // AwsBlobStorage but registers no manager, so its IBlobContainerManager resolves to null (U12 / KTD5).
+        services.AddSingleton<IBlobContainerManager>(_ => new AwsBlobContainerManager(
+            S3ClientFactory.Create(awsOptions),
+            new AwsBlobNamingNormalizer()
+        ));
+
         return services;
     }
 
@@ -148,6 +156,14 @@ public static class SetupAwsS3
             name,
             (serviceProvider, _) =>
                 (IPresignedUrlBlobStorage)serviceProvider.GetRequiredKeyedService<IBlobStorage>(name)
+        );
+
+        // Keyed container-management capability for this named instance, registered with its own per-store S3
+        // client (per-instance isolation). This is a separate registration, not a cast from the keyed storage,
+        // so providers that share AwsBlobStorage but cannot manage buckets (Cloudflare R2) simply omit it.
+        services.AddKeyedSingleton<IBlobContainerManager>(
+            name,
+            (_, _) => new AwsBlobContainerManager(S3ClientFactory.Create(awsOptions), new AwsBlobNamingNormalizer())
         );
 
         return services;

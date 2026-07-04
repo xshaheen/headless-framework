@@ -26,7 +26,7 @@ namespace Headless.Blobs.Azure;
 /// services.AddHeadlessBlobs(blobs =>
 /// {
 ///     // Default store — uses the ambient BlobServiceClient from DI:
-///     blobs.UseAzure(options => options.AutoCreateContainer = true);
+///     blobs.UseAzure(options => options.MaxBulkParallelism = 8);
 ///
 ///     // Named store — uses a dedicated client for a second account:
 ///     blobs.AddNamed("archive", instance => instance.UseAzure(
@@ -145,6 +145,21 @@ public static class SetupAzureBlob
             );
         });
 
+        // Container lifecycle is a separately-resolved capability (not a cast from IBlobStorage), so the Azure
+        // provider registers a dedicated manager. It shares the storage's BlobServiceClient (ambient DI or the
+        // supplied client factory) but never disposes it (U12 / KTD5).
+        services.AddSingleton<IBlobContainerManager>(sp =>
+        {
+            var options = sp.GetRequiredService<IOptions<AzureStorageOptions>>().Value;
+            var client = clientFactory is not null ? clientFactory(sp) : sp.GetRequiredService<BlobServiceClient>();
+
+            return new AzureBlobContainerManager(
+                client,
+                new AzureBlobNamingNormalizer(),
+                options.ContainerPublicAccessType
+            );
+        });
+
         return services;
     }
 
@@ -178,6 +193,23 @@ public static class SetupAzureBlob
         services.AddKeyedSingleton<IPresignedUrlBlobStorage>(
             name,
             (sp, _) => (IPresignedUrlBlobStorage)sp.GetRequiredKeyedService<IBlobStorage>(name)
+        );
+
+        // Keyed container-management capability for this named instance, registered as a separate service (not a
+        // cast from the keyed storage) so it shares the per-instance BlobServiceClient and per-instance options.
+        services.AddKeyedSingleton<IBlobContainerManager>(
+            name,
+            (sp, _) =>
+            {
+                var options = sp.GetRequiredService<IOptionsMonitor<AzureStorageOptions>>().Get(name);
+                var client = clientFactory is not null ? clientFactory(sp) : sp.GetRequiredService<BlobServiceClient>();
+
+                return new AzureBlobContainerManager(
+                    client,
+                    new AzureBlobNamingNormalizer(),
+                    options.ContainerPublicAccessType
+                );
+            }
         );
 
         return services;
