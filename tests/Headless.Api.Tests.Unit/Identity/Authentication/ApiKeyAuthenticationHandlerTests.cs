@@ -50,7 +50,7 @@ public sealed class ApiKeyAuthenticationHandlerTests : TestBase
     }
 
     [Fact]
-    public async Task should_return_success_when_user_already_authenticated()
+    public async Task should_return_no_result_when_user_already_authenticated_without_api_key()
     {
         // given
         var handler = _CreateHandler();
@@ -67,9 +67,8 @@ public sealed class ApiKeyAuthenticationHandlerTests : TestBase
         var result = await handler.AuthenticateAsync();
 
         // then
-        result.Succeeded.Should().BeTrue();
-        result.Ticket.Should().NotBeNull();
-        result.Ticket!.AuthenticationScheme.Should().Be("context.User");
+        result.None.Should().BeTrue();
+        result.Succeeded.Should().BeFalse();
     }
 
     [Fact]

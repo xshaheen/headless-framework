@@ -120,6 +120,8 @@ Additional packages:
 - Use `UseHeadless()` for the default middleware order (`UseStatusCodePages()` before `UseExceptionHandler()`), then add auth/tenant middleware, then map endpoints. `UseHeadless` and `MapHeadlessEndpoints` are idempotent.
 - For tenant-aware HTTP apps, configure `builder.AddHeadlessTenancy(tenancy => tenancy.Http(http => http.ResolveFromClaims()))` and place `app.UseHeadlessTenancy()` after app-owned `UseAuthentication()` and before app-owned `UseAuthorization()`.
 - For idempotent-replay middleware, register `services.AddIdempotency(o => { ... })` and place `app.UseIdempotency()` AFTER `UseAuthorization()` and AFTER `UseHeadlessTenancy()`. Idempotency reads `ICurrentTenant.Id` for cache-key composition; tenant and auth must be resolved first so unauthenticated/unauthorized requests do not allocate cache slots. `InFlightStrategy = WaitAndReplay` requires `IDistributedLock`; the DI startup validator fails fast if it is missing.
+- Basic and API-key handlers authenticate only credentials supplied for their own scheme. Do not rely on an existing cookie/bearer principal to satisfy an endpoint that explicitly requires `Basic` or `ApiKey`.
+- API-key query-string authentication is opt-in (`AllowApiKeyInQueryString = true`); the dynamic scheme provider ignores `?api_key=` unless the API-key handler would accept it.
 - Use `MapHeadlessEndpoints()` to expose `/health`, `/alive`, OpenAPI JSON, and static web assets. `AddHeadless()` registers a `self` health check tagged `live`.
 - Keep `TrustForwardedHeadersFromAnyProxy` disabled unless the service is reachable only through trusted proxy infrastructure.
 - `Headless.Api.ServiceDefaults` validates by default that `UseHeadless()`, `UseStatusCodesRewriter()`, and `MapHeadlessEndpoints()` were applied at startup. For custom/manual pipelines, disable via `options.Validation.RequireUseHeadless = false`, `options.Validation.RequireStatusCodesRewriter = false`, and `options.Validation.RequireMapHeadlessEndpoints = false`.
@@ -263,6 +265,7 @@ Exposes each API primitive individually so teams that need à-la-carte compositi
 - `AddHeadlessTimeService()` — `TimeProvider.System`, `IClock`, `ITimezoneProvider` (all `TryAddSingleton`)
 - `AddServerTimingMiddleware()` + `UseServerTiming()` — appends `Server-Timing` trailer when response supports trailers
 - `UseNoCacheWhenMissingCacheHeaders()` — injects `Cache-Control: no-cache,no-store,must-revalidate` when response omits the header
+- Basic/API-key authentication helpers — `AddBasicSchema()` and `AddApiKey()` register the canonical `Basic` and `ApiKey` schemes; handlers only authenticate credentials supplied for their own scheme
 - HTTP tenant resolution: `ResolveFromClaims()`, `UseHeadlessTenancy()`, `[SkipTenantResolution]`, `.SkipTenantResolution()`
 - HTTP tenant authorization: `TenantRequirement`, `[AllowMissingTenant]`, `.AllowMissingTenant()`, `[RequireTenant]`, `.RequireTenant()`
 - Diagnostic listeners: `AddHeadlessApiDiagnosticListeners()`, `BadRequestDiagnosticAdapter`, `MiddlewareAnalysisDiagnosticAdapter`
@@ -338,6 +341,8 @@ Exception mapping from `AddHeadlessProblemDetails()`:
 All other exceptions return `false`; the host default or a downstream handler renders them.
 
 `StatusCodesRewriterMiddleware` is required for the `g:tenant_required` discriminator on 403 authorization rejections. It is wired by ServiceDefaults; apps that skip ServiceDefaults must call `UseStatusCodesRewriter()` themselves. `TenantRequirement` must live in `DefaultPolicy` or `FallbackPolicy` — the startup validator does not inspect named policies. `UseHeadlessTenancy()` / `UseTenantResolution()` must run after `UseRouting()` so endpoint metadata is available when `[SkipTenantResolution]` is evaluated.
+
+`AddBasicSchema()` defaults to the canonical `Basic` authentication scheme and `AddApiKey()` defaults to `ApiKey`. `DynamicAuthenticationSchemeProvider` selects those same canonical names. API keys are read from the configured header by default; query-string keys are routed and accepted only when `ApiKeyAuthenticationSchemeOptions.AllowApiKeyInQueryString` is `true`.
 
 ### Dependencies
 
@@ -753,7 +758,7 @@ app.MapPost("/webhooks", HandleWebhook)
 | `WinnerLockLease` | 5 minutes | Lease duration for the winner's distributed lock under `WaitAndReplay`. Must be >= `InFlightLockTimeout`. Capped at 1 hour. |
 | `MaxBodySizeForHashing` | 1 MiB | Maximum body size eligible for fingerprinting. Capped at 64 MiB. |
 | `OversizeBehavior` | `Reject` | `Reject` returns 413 (`g:idempotency_body_too_large`). `PassThrough` runs the handler without idempotency guarantees. |
-| `OnCacheError` | `FailOpen` | `FailOpen` logs a warning and bypasses idempotency for the failing request. `Throw` propagates the exception as 5xx. |
+| `OnCacheError` | `FailOpen` | `FailOpen` logs a warning and bypasses idempotency for pre-handler cache failures; post-handler finalize failures remove the marker and preserve the handler response. `Throw` propagates the exception as 5xx. |
 | `RequireUserIdentity` | `true` | When `true`, the default cache key requires an authenticated user; tenant-only anonymous requests pass through. Set `false` for webhook receivers / OAuth callbacks. |
 | `MismatchStatusCode` | 422 | Status code for fingerprint mismatch. Must be 409 or 422. |
 | `ReplayHeaderAllowlist` | Content-Type, Content-Language, Content-Encoding, Content-Disposition, Location, Link, ETag, Last-Modified, Cache-Control, Vary | Response headers copied into the cached record. `Set-Cookie` and `traceparent` are excluded by design. |
@@ -775,10 +780,10 @@ app.MapPost("/webhooks", HandleWebhook)
 
 ### Side Effects
 
-- Reads `ICurrentTenant.Id` and `ICurrentUser.UserId` for cache-key composition; when both are absent and no `KeyDeriver` is configured, the middleware passes through without applying idempotency.
+- Reads `ICurrentTenant.Id` and authenticated `ICurrentUser.UserId` for cache-key composition; when both are absent and no `KeyDeriver` is configured, the middleware passes through without applying idempotency.
 - Buffers the request body up to `MaxBodySizeForHashing + 1` bytes via `HttpRequest.EnableBuffering`.
 - On replay, writes `Idempotent-Replayed: true` to the response. Pre-existing allowlisted response headers set by upstream middleware are removed before captured headers are written for byte-equivalent replay.
-- On cache miss, inserts an `InFlight` sentinel marker before invoking the handler, then upserts the `Complete` record afterward using compare-and-swap (`TryReplaceIfEqualAsync`). The marker uses the same TTL as `IdempotencyKeyExpiration`.
+- On cache miss, inserts an `InFlight` sentinel marker before invoking the handler, then promotes it to the `Complete` record afterward using compare-and-swap (`TryReplaceIfEqualAsync`). The marker uses the same TTL as `IdempotencyKeyExpiration`.
 - When the **response** body exceeds `MaxBodySizeForHashing` (`captureStream.TruncatedCapture`), the completed record is not stored and replay does not apply. `OversizeBehavior` controls **request**-body handling only.
 
 ---

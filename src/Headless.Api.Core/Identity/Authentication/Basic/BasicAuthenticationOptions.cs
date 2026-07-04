@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Constants;
 using Microsoft.AspNetCore.Authentication;
 
 namespace Headless.Api.Identity.Authentication.Basic;
@@ -9,7 +10,7 @@ namespace Headless.Api.Identity.Authentication.Basic;
 public sealed class BasicAuthenticationOptions : AuthenticationSchemeOptions
 {
     /// <summary>Default scheme name used when none is specified during registration.</summary>
-    public const string DefaultScheme = "Basic Authentication";
+    public const string DefaultScheme = AuthenticationConstants.Schemas.Basic;
 
     /// <summary>
     /// Scheme name included in the <see cref="Microsoft.AspNetCore.Authentication.AuthenticationTicket"/>.

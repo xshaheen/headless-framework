@@ -18,7 +18,6 @@ namespace Headless.Api.Identity.Authentication.Basic;
 /// <remarks>
 /// Authentication flow:
 /// <list type="number">
-///   <item><description>If the request already carries an authenticated identity, the existing ticket is reused.</description></item>
 ///   <item><description>If no <c>Authorization: Basic</c> header is present, <c>NoResult</c> is returned so other handlers can run.</description></item>
 ///   <item><description>If the header value cannot be Base64-decoded or parsed as <c>username:password</c>, <c>Fail</c> is returned.</description></item>
 ///   <item><description>If the user is not found, cannot sign in, is locked out, or the password is wrong, <c>Fail</c> is returned.</description></item>
@@ -48,13 +47,6 @@ public sealed class BasicAuthenticationHandler<TUser, TUserId>(
     /// </returns>
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
-        // This block is important when working with multiple authentication schemes
-        // when only cookies are being sent in request.
-        if (Context.User.Identity?.IsAuthenticated ?? false)
-        {
-            return AuthenticateResult.Success(new AuthenticationTicket(Context.User, "context.User"));
-        }
-
         if (!_TryGetEncodedCredentials(out var encodedCredentials))
         {
             return AuthenticateResult.NoResult();
