@@ -38,10 +38,18 @@ public sealed class InMemoryCache
 
     // Family-2 logical tag-version invalidation: tag -> last-invalidation UTC marker. RemoveByTagAsync bumps the
     // marker (O(1), no member enumeration); reads treat an entry as invalidated when its CreatedAt predates the
-    // newest applicable marker (CacheTagInvalidation.IsInvalidated). Markers are never pruned: the residue is
-    // bounded by the process-lifetime distinct-tag cardinality, and a re-created entry (newer CreatedAt) is
-    // naturally not invalidated by an older marker.
+    // newest applicable marker (CacheTagInvalidation.IsInvalidated). The maintenance sweep prunes markers old
+    // enough that every entry they could invalidate is guaranteed physically gone (see _PruneStaleTagMarkers),
+    // bounding growth without ever resurrecting still-live pre-marker data (#546).
     private readonly ConcurrentDictionary<string, DateTime> _tagMarkers = new(StringComparer.Ordinal);
+
+    // Largest physical lifetime (PhysicalExpiresAt - CreatedAt, in ticks) of any TAGGED entry ever written to this
+    // instance. A per-tag marker (T,M) can invalidate only tagged-T entries born before M, and such an entry is
+    // physically gone once now >= M + maxObservedEntryLifetime — so the marker is safe to prune only then. Tracked
+    // tagged-only so a routine untagged no-expiry entry cannot poison the bound. 0 = no tagged entry observed yet
+    // (prune nothing); long.MaxValue = a tagged entry with no physical expiry was written (immortal; never prune).
+    // Monotonically non-decreasing on the write path; reset only by the physical wipe in FlushAsync.
+    private long _maxObservedEntryLifetimeTicks;
 
     // Global logical clear-generation marker (UTC ticks; 0 = never cleared). ClearAsync bumps it; every read
     // compares the entry's CreatedAt against it. Stored as ticks so it can be read/written atomically via
@@ -1705,6 +1713,9 @@ public sealed class InMemoryCache
         Interlocked.Exchange(ref _clearGenerationTicks, 0);
         Interlocked.Exchange(ref _currentMemorySize, 0);
         Interlocked.Exchange(ref _nextExpiryTicks, long.MaxValue);
+        // No entry survives to be invalidated and no marker remains to bound, so the lifetime bound resets to
+        // "nothing observed" and is rebuilt from the next generation of tagged writes.
+        Interlocked.Exchange(ref _maxObservedEntryLifetimeTicks, 0);
         return ValueTask.CompletedTask;
     }
 
@@ -1921,6 +1932,88 @@ public sealed class InMemoryCache
         }
     }
 
+    // Fold a tagged entry's physical lifetime into _maxObservedEntryLifetimeTicks, the running upper bound that
+    // gates safe tag-marker pruning. Untagged entries can never be reached by a per-tag marker, so they are ignored
+    // (this also stops a routine untagged no-expiry entry from disabling pruning). A tagged entry with no physical
+    // expiry or no birth stamp can outlive any finite bound, so it records the unbounded sentinel and, by design,
+    // permanently disables pruning for this instance until FlushAsync.
+    private void _ObserveEntryLifetime(CacheEntry entry)
+    {
+        if (entry.Tags is not { Count: > 0 })
+        {
+            return;
+        }
+
+        if (entry.PhysicalExpiresAt is not { } physicalExpiresAt || entry.CreatedAt is not { } createdAt)
+        {
+            _RaiseMaxObservedLifetime(long.MaxValue);
+            return;
+        }
+
+        _RaiseMaxObservedLifetime(physicalExpiresAt.Ticks - createdAt.Ticks);
+    }
+
+    // Raise-only CAS on _maxObservedEntryLifetimeTicks; never lowers it. The immortal sentinel (long.MaxValue)
+    // dominates any finite lifetime and, once set, sticks until FlushAsync resets it.
+    private void _RaiseMaxObservedLifetime(long lifetimeTicks)
+    {
+        if (lifetimeTicks <= 0)
+        {
+            return;
+        }
+
+        long current;
+
+        while ((current = Volatile.Read(ref _maxObservedEntryLifetimeTicks)) < lifetimeTicks)
+        {
+            if (Interlocked.CompareExchange(ref _maxObservedEntryLifetimeTicks, lifetimeTicks, current) == current)
+            {
+                break;
+            }
+        }
+    }
+
+    // Bound the authoritative Family-2 tag-marker store (#546). SAFETY INVARIANT: dropping a marker (T,M) makes tag
+    // T read as "never invalidated", which is safe ONLY once every entry M could invalidate is physically gone. A
+    // tagged-T entry affected by (T,M) was born before M (CacheTagInvalidation requires marker > CreatedAt) and
+    // cannot outlive _maxObservedEntryLifetimeTicks, so it is guaranteed gone once now >= M + maxObservedEntryLifetime,
+    // i.e. M <= now - maxObservedEntryLifetime. Prune exactly those markers — never by size/LRU alone, which could
+    // evict a marker a still-live entry needs and resurrect stale data. No tagged entry observed yet (0) or an
+    // immortal tagged entry seen (long.MaxValue) both disable pruning.
+    private void _PruneStaleTagMarkers(long nowTicks)
+    {
+        if (_tagMarkers.IsEmpty)
+        {
+            return;
+        }
+
+        var maxLifetimeTicks = Volatile.Read(ref _maxObservedEntryLifetimeTicks);
+
+        // Nothing observed, an immortal tagged entry was written, or the bound still exceeds the elapsed clock
+        // (cutoff would be non-positive and no marker could be old enough): prune nothing.
+        if (maxLifetimeTicks <= 0 || maxLifetimeTicks == long.MaxValue || nowTicks <= maxLifetimeTicks)
+        {
+            return;
+        }
+
+        var cutoffTicks = nowTicks - maxLifetimeTicks;
+
+        foreach (var (tag, marker) in _tagMarkers)
+        {
+            if (marker.Ticks > cutoffTicks)
+            {
+                continue;
+            }
+
+            // Conditional remove: drop only the exact stale snapshot. A concurrent RemoveByTagAsync/SeedTagMarker
+            // that raises the marker rewrites the value, so the key+value match of ICollection.Remove leaves the
+            // raised marker intact.
+            ((ICollection<KeyValuePair<string, DateTime>>)_tagMarkers).Remove(
+                new KeyValuePair<string, DateTime>(tag, marker)
+            );
+        }
+    }
+
     private string _GetKey(string key)
     {
         return string.IsNullOrEmpty(_keyPrefix) ? key : string.Concat(_keyPrefix, key);
@@ -2074,6 +2167,7 @@ public sealed class InMemoryCache
         if (wasUpdated)
         {
             _TrackUpdate(entry.TrackedExpiresAt);
+            _ObserveEntryLifetime(entry);
         }
 
         // Compaction is the only async work; await it only under memory/count pressure. Otherwise dispatch the
@@ -2123,6 +2217,7 @@ public sealed class InMemoryCache
         }
 
         _TrackUpdate(entry.TrackedExpiresAt);
+        _ObserveEntryLifetime(entry);
 
         await _StartMaintenanceAsync(ShouldCompact).ConfigureAwait(false);
 
@@ -2275,6 +2370,11 @@ public sealed class InMemoryCache
                 {
                     _SweepExpiredEntries(nowTicks);
                 }
+
+                // Bound the tag-marker store on every maintenance tick (not gated by _nextExpiryTicks or memory
+                // pressure) so distinct-tag growth is bounded even when the live-entry set itself stays small — the
+                // realistic #546 case where _CompactAsync would never fire.
+                _PruneStaleTagMarkers(nowTicks);
             }
             catch (Exception e)
             {

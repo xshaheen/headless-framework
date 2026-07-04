@@ -80,6 +80,16 @@ public sealed class RedisCache(
         StringComparer.Ordinal
     );
 
+    // Bound _markerCache (#547). Every entry is fully re-derivable from Redis, so evicting one is behavior-preserving:
+    // a later read re-fetches an identical marker. An entry whose freshness stamp is older than
+    // _MarkerCacheStaleMultiplier refresh windows is already past its window (the next read re-fetches it regardless),
+    // so dropping it changes no read result. The O(cache) scan is throttled to at most once per refresh window and
+    // single-flighted via _markerCachePruneRunning so it never piles up on the hot read path.
+    private const int _MarkerCacheStaleMultiplier = 8;
+    private const int _MarkerCacheMaxEntries = 100_000;
+    private long _lastMarkerCachePruneTicks = long.MinValue;
+    private int _markerCachePruneRunning;
+
     // Cached clear-generation marker: MarkerMs (long.MinValue = absent) and the fetch tick, stored as two separate
     // long fields read/written individually (not a single reference cell). A torn read across the two at worst
     // forces an extra marker refresh, which is harmless, so no lock or atomic swap is used.
@@ -2015,6 +2025,8 @@ public sealed class RedisCache(
             }
         }
 
+        _PruneMarkerCacheIfDue();
+
         return newestMs;
     }
 
@@ -2083,6 +2095,89 @@ public sealed class RedisCache(
     }
 
     /// <summary>
+    /// Opportunistically bounds <see cref="_markerCache"/> (#547). Throttled to at most once per refresh window and
+    /// single-flighted, so the O(cache) scan is amortized off the hot read path. Drops entries whose freshness stamp
+    /// is older than <see cref="_MarkerCacheStaleMultiplier"/> refresh windows — they are already stale and would be
+    /// re-fetched on next use, so eviction is behavior-preserving — and, as a fallback for a burst of many distinct
+    /// still-fresh tags that the age-prune cannot reclaim, evicts the oldest entries by freshness stamp down to
+    /// <see cref="_MarkerCacheMaxEntries"/>.
+    /// </summary>
+    private void _PruneMarkerCacheIfDue()
+    {
+        if (_markerCache.IsEmpty)
+        {
+            return;
+        }
+
+        var refreshWindow = cacheOptions.TagMarkerRefreshWindow;
+        var last = Interlocked.Read(ref _lastMarkerCachePruneTicks);
+
+        if (last != long.MinValue && Stopwatch.GetElapsedTime(last) < refreshWindow)
+        {
+            return;
+        }
+
+        // Single-flight: one thread scans, concurrent readers skip. A skipped run is retried on the next read.
+        if (Interlocked.CompareExchange(ref _markerCachePruneRunning, 1, 0) != 0)
+        {
+            return;
+        }
+
+        try
+        {
+            Interlocked.Exchange(ref _lastMarkerCachePruneTicks, _StopwatchTicks());
+
+            var staleThreshold = refreshWindow * _MarkerCacheStaleMultiplier;
+
+            foreach (var (tag, entry) in _markerCache)
+            {
+                if (
+                    entry.FetchedTicks != long.MinValue
+                    && Stopwatch.GetElapsedTime(entry.FetchedTicks) < staleThreshold
+                )
+                {
+                    continue;
+                }
+
+                // Conditional remove: drop only the exact stale snapshot so a concurrent _RaiseTagMarker refresh
+                // (which rewrites FetchedTicks) is never clobbered.
+                ((ICollection<KeyValuePair<string, (long MarkerMs, long FetchedTicks)>>)_markerCache).Remove(
+                    new KeyValuePair<string, (long MarkerMs, long FetchedTicks)>(tag, entry)
+                );
+            }
+
+            _EvictMarkerCacheToCap();
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _markerCachePruneRunning, 0);
+        }
+    }
+
+    // Fallback size cap for a burst of many distinct still-fresh tags the age-prune cannot reclaim. Evicts the oldest
+    // entries by freshness stamp down to _MarkerCacheMaxEntries; still behavior-preserving since every evicted marker
+    // is re-fetched from Redis on next use.
+    private void _EvictMarkerCacheToCap()
+    {
+        var overflow = _markerCache.Count - _MarkerCacheMaxEntries;
+
+        if (overflow <= 0)
+        {
+            return;
+        }
+
+        var snapshot = _markerCache.Select(static kvp => (kvp.Key, kvp.Value.FetchedTicks)).ToArray();
+        Array.Sort(snapshot, static (a, b) => a.FetchedTicks.CompareTo(b.FetchedTicks));
+
+        var toRemove = Math.Min(overflow, snapshot.Length);
+
+        for (var i = 0; i < toRemove; i++)
+        {
+            _markerCache.TryRemove(snapshot[i].Key, out _);
+        }
+    }
+
+    /// <summary>
     /// Pre-warms <see cref="_markerCache"/> for all unique stale tag markers referenced by the supplied decoded
     /// frames in a single MGET — O(1) Redis round-trip regardless of how many entries share tags.
     /// Called once before the processing loop in <see cref="GetAllWithExpirationAsync{T}"/> so that subsequent
@@ -2134,6 +2229,8 @@ public sealed class RedisCache(
             // backplane push already seeded. FetchedTicks is still refreshed so the freshness window holds.
             _RaiseTagMarker(staleList[i], ms, fetchedTicks);
         }
+
+        _PruneMarkerCacheIfDue();
     }
 
     /// <summary>Encodes a value to its bare wire bytes (the value codec) without any envelope framing.</summary>
