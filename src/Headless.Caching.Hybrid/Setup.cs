@@ -192,6 +192,10 @@ public static class SetupHybridCache
         {
             services.AddCacheProvider();
 
+            // Auto-register the shared invalidation consumer so this named hybrid receives peer L1 invalidations
+            // by default (idempotent + bus-gated; one consumer routes to every hybrid by CacheName).
+            HybridCacheInvalidationConsumerRegistration.TryAddInvalidationConsumer(services);
+
             services.AddKeyedSingleton<ICache>(
                 name,
                 (provider, _) =>
@@ -228,6 +232,10 @@ public static class SetupHybridCache
 
             services.TryAddSingleton<ICache>(provider => provider.GetRequiredService<HybridCache>());
             services.AddKeyedSingleton(CacheConstants.HybridCacheProvider, (x, _) => x.GetRequiredService<ICache>());
+
+            // Auto-register the invalidation consumer so peer L1 caches are evicted by default when a backplane
+            // bus is present (idempotent + bus-gated). Without this the backplane was silently publish-only.
+            HybridCacheInvalidationConsumerRegistration.TryAddInvalidationConsumer(services);
 
             // Startup advisor: logs warnings for questionable-but-valid configurations once at host
             // startup so operators notice misconfigurations before they see unexpected runtime behavior.
