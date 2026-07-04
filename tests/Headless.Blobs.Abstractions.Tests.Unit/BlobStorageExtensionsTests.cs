@@ -529,9 +529,12 @@ file sealed class InMemoryBlobStorage : IBlobStorage
             return ValueTask.FromResult<BlobDownloadResult?>(null);
         }
 
+#pragma warning disable CA2000 // Dispose objects before losing scope
         var stream = new MemoryStream(bytes);
+        var result = new BlobDownloadResult(stream, location.Path);
+#pragma warning restore CA2000
 
-        return ValueTask.FromResult<BlobDownloadResult?>(new BlobDownloadResult(stream, location.Path));
+        return ValueTask.FromResult<BlobDownloadResult?>(result);
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;

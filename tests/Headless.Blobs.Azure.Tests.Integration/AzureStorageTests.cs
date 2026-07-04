@@ -153,7 +153,7 @@ public sealed class AzureStorageTests(AzureBlobStorageFixture fixture) : BlobSto
         await storage.UploadContentAsync(new BlobLocation(container, "normal.txt"), "data", AbortToken);
 
         var containerClient = _CreateClient().GetBlobContainerClient(container);
-        var rawKey = "out-of-band" + BlobStorageHelpers.SidecarSuffix;
+        const string rawKey = "out-of-band" + BlobStorageHelpers.SidecarSuffix;
         await containerClient
             .GetBlobClient(rawKey)
             .UploadAsync(BinaryData.FromString("raw"), overwrite: false, AbortToken);
@@ -356,19 +356,23 @@ public sealed class AzureStorageTests(AzureBlobStorageFixture fixture) : BlobSto
     // Azurite reports an already-absent blob as success (200), not 404, so the 404 -> Ok(false) branch is not
     // observable here. The mapping is pinned deterministically instead by AzureBlobStorageDeleteMappingTests
     // (unit) in Headless.Blobs.Azure.Tests.Unit.
+#pragma warning disable xUnit1004 // Test methods should not be skipped
     [Fact(
         Skip = "Azure batch delete reports already-absent blobs as success in Azurite, so Ok(false) is not observable; "
             + "the 404 -> Ok(false) mapping is covered by AzureBlobStorageDeleteMappingTests (unit)."
     )]
+#pragma warning restore xUnit1004
     public override Task bulk_delete_reports_per_entry_results()
     {
         return base.bulk_delete_reports_per_entry_results();
     }
 
+#pragma warning disable xUnit1004 // Test methods should not be skipped
     [Fact(
         Skip = "Azure batch delete reports already-absent blobs as success in Azurite, so Ok(false) is not observable; "
             + "the 404 -> Ok(false) mapping is covered by AzureBlobStorageDeleteMappingTests (unit)."
     )]
+#pragma warning restore xUnit1004
     public override Task bulk_delete_reports_each_blob_by_identity()
     {
         return base.bulk_delete_reports_each_blob_by_identity();
