@@ -61,6 +61,48 @@ public sealed class PasswordGeneratorTests
     }
 
     [Fact]
+    public void generate_password_should_allow_no_remaining_pool_when_required_sets_fill_length()
+    {
+        // when
+        var password = _passwordGenerator.GeneratePassword(
+            new GeneratePasswordOptions(4)
+            {
+                UseDigitsInRemaining = false,
+                UseLowercaseInRemaining = false,
+                UseUppercaseInRemaining = false,
+                UseNonAlphanumericInRemaining = false,
+            }
+        );
+
+        // then
+        password.Should().HaveLength(4);
+        password.Any(char.IsDigit).Should().BeTrue();
+        password.Any(char.IsLower).Should().BeTrue();
+        password.Any(char.IsUpper).Should().BeTrue();
+        password.AsEnumerable().Should().Contain(c => !char.IsLetterOrDigit(c));
+    }
+
+    [Fact]
+    public void generate_password_should_bound_required_unique_chars_by_length_before_requiring_remaining_pool()
+    {
+        // when
+        var password = _passwordGenerator.GeneratePassword(
+            new GeneratePasswordOptions(4)
+            {
+                RequiredUniqueChars = 5,
+                UseDigitsInRemaining = false,
+                UseLowercaseInRemaining = false,
+                UseUppercaseInRemaining = false,
+                UseNonAlphanumericInRemaining = false,
+            }
+        );
+
+        // then
+        password.Should().HaveLength(4);
+        password.Distinct().Should().HaveCount(4);
+    }
+
+    [Fact]
     public void validate_required_unique_chars_should_throw_invalid_operation_exception()
     {
         // when
