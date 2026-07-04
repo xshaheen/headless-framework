@@ -695,42 +695,7 @@ public sealed class RedisCache(
 
         // One round-trip (or one per hash slot on a cluster) to fetch all raw values, gathered into a single
         // index-aligned array so the tag-marker prefetch and processing loop can run once over everything.
-        RedisValue[] rawValues;
-
-        if (IsCluster)
-        {
-            rawValues = new RedisValue[redisKeys.Count];
-
-            var indexedKeys = new (RedisKey Redis, int Index)[redisKeys.Count];
-
-            for (var i = 0; i < redisKeys.Count; i++)
-            {
-                indexedKeys[i] = (redisKeys[i], i);
-            }
-
-            var slotBuckets = _GroupBySlot(indexedKeys, static entry => entry.Redis);
-
-            foreach (var bucket in slotBuckets.Values)
-            {
-                var slotKeys = new RedisKey[bucket.Count];
-
-                for (var i = 0; i < bucket.Count; i++)
-                {
-                    slotKeys[i] = bucket[i].Redis;
-                }
-
-                var slotValues = await _database.StringGetAsync(slotKeys, cacheOptions.ReadMode).ConfigureAwait(false);
-
-                for (var i = 0; i < bucket.Count; i++)
-                {
-                    rawValues[bucket[i].Index] = slotValues[i];
-                }
-            }
-        }
-        else
-        {
-            rawValues = await _database.StringGetAsync([.. redisKeys], cacheOptions.ReadMode).ConfigureAwait(false);
-        }
+        var rawValues = await _BulkStringGetOrderedAsync([.. redisKeys]).ConfigureAwait(false);
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
 
@@ -860,44 +825,7 @@ public sealed class RedisCache(
         // frame and decoded below without any additional network call. Sliding entries need the live Redis TTL
         // (the frame's logical is just a lower bound); those are collected and fetched in a single pipelined
         // batch — still O(1) network round-trips total.
-        RedisValue[] rawValues;
-
-        if (IsCluster)
-        {
-            // Cluster: batch by hash slot so each StringGetAsync covers one slot group.
-            // Manual Dictionary grouping avoids LINQ Lookup allocation + per-group materialization.
-            rawValues = new RedisValue[redisKeys.Count];
-
-            var indexedKeys = new (RedisKey Redis, int Index)[redisKeys.Count];
-
-            for (var i = 0; i < redisKeys.Count; i++)
-            {
-                indexedKeys[i] = (redisKeys[i], i);
-            }
-
-            var slotBuckets = _GroupBySlot(indexedKeys, static entry => entry.Redis);
-
-            foreach (var bucket in slotBuckets.Values)
-            {
-                var slotKeys = new RedisKey[bucket.Count];
-
-                for (var i = 0; i < bucket.Count; i++)
-                {
-                    slotKeys[i] = bucket[i].Redis;
-                }
-
-                var slotValues = await _database.StringGetAsync(slotKeys, cacheOptions.ReadMode).ConfigureAwait(false);
-
-                for (var i = 0; i < bucket.Count; i++)
-                {
-                    rawValues[bucket[i].Index] = slotValues[i];
-                }
-            }
-        }
-        else
-        {
-            rawValues = await _database.StringGetAsync([.. redisKeys], cacheOptions.ReadMode).ConfigureAwait(false);
-        }
+        var rawValues = await _BulkStringGetOrderedAsync([.. redisKeys]).ConfigureAwait(false);
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var result = new Dictionary<string, CacheValueWithExpiration<T>>(redisKeys.Count, StringComparer.Ordinal);
@@ -1978,7 +1906,7 @@ public sealed class RedisCache(
                 markerKeys[i] = _GetTagMarkerKey(stale[i]);
             }
 
-            var values = await _GetTagMarkerValuesAsync(markerKeys).ConfigureAwait(false);
+            var values = await _BulkStringGetOrderedAsync(markerKeys).ConfigureAwait(false);
             var fetchedTicks = _StopwatchTicks();
 
             for (var i = 0; i < stale.Count; i++)
@@ -1994,9 +1922,13 @@ public sealed class RedisCache(
                     newestMs = resolved.MarkerMs;
                 }
             }
-        }
 
-        _PruneMarkerCacheIfDue();
+            // Prune only when a fetch actually happened (mirrors _PrefetchTagMarkersAsync's gating): an all-fresh
+            // resolve has nothing new to prune, and fetches recur at least once per refresh window — the same
+            // cadence the prune throttle enforces — so gating here skips the per-read throttle check without
+            // delaying eviction beyond a window.
+            _PruneMarkerCacheIfDue();
+        }
 
         return newestMs;
     }
@@ -2004,24 +1936,26 @@ public sealed class RedisCache(
     private static long _ParseMarkerMs(RedisValue value) =>
         RedisCacheEntryFrame.TryParseMarkerMs(value) ?? _MarkerAbsent;
 
-    // Tag-marker keys carry no hash-tag braces, so distinct tags hash to arbitrary cluster slots — a single flat
-    // MGET across them fails with CROSSSLOT on Redis Cluster. Split per slot on cluster topologies (mirroring the
-    // batch-operation cluster paths); non-cluster keeps the single MGET. Returns values in input-key order.
-    private async Task<RedisValue[]> _GetTagMarkerValuesAsync(RedisKey[] markerKeys)
+    // Bulk StringGet returning values position-aligned with the input keys, shared by the bulk value reads
+    // (GetAllAsync / GetAllWithExpirationAsync / _TryGetAllEntriesAsync) and the tag-marker fetches. Keys carry no
+    // hash-tag braces, so distinct keys hash to arbitrary cluster slots — a single flat MGET across them fails
+    // with CROSSSLOT on Redis Cluster; split per slot there (manual Dictionary grouping avoids LINQ Lookup
+    // allocation + per-group materialization). Non-cluster (and single-key) stays one flat MGET.
+    private async Task<RedisValue[]> _BulkStringGetOrderedAsync(RedisKey[] redisKeys)
     {
-        if (!IsCluster || markerKeys.Length <= 1)
+        if (!IsCluster || redisKeys.Length <= 1)
         {
-            return await _database.StringGetAsync(markerKeys, cacheOptions.ReadMode).ConfigureAwait(false);
+            return await _database.StringGetAsync(redisKeys, cacheOptions.ReadMode).ConfigureAwait(false);
         }
 
-        var indexedKeys = new (RedisKey Redis, int Index)[markerKeys.Length];
+        var indexedKeys = new (RedisKey Redis, int Index)[redisKeys.Length];
 
-        for (var i = 0; i < markerKeys.Length; i++)
+        for (var i = 0; i < redisKeys.Length; i++)
         {
-            indexedKeys[i] = (markerKeys[i], i);
+            indexedKeys[i] = (redisKeys[i], i);
         }
 
-        var values = new RedisValue[markerKeys.Length];
+        var values = new RedisValue[redisKeys.Length];
         var slotBuckets = _GroupBySlot(indexedKeys, static entry => entry.Redis);
 
         foreach (var bucket in slotBuckets.Values)
@@ -2213,7 +2147,7 @@ public sealed class RedisCache(
             markerKeys[i] = _GetTagMarkerKey(staleList[i]);
         }
 
-        var values = await _GetTagMarkerValuesAsync(markerKeys).ConfigureAwait(false);
+        var values = await _BulkStringGetOrderedAsync(markerKeys).ConfigureAwait(false);
         var fetchedTicks = _StopwatchTicks();
 
         for (var i = 0; i < staleList.Count; i++)
@@ -2851,42 +2785,7 @@ public sealed class RedisCache(
         // One round-trip (or one per hash slot on a cluster) to fetch all raw values, gathered into a single
         // index-aligned array — mirrors GetAllAsync/GetAllWithExpirationAsync so the marker prefetch and build loop
         // run once over everything.
-        RedisValue[] rawValues;
-
-        if (IsCluster)
-        {
-            rawValues = new RedisValue[count];
-
-            var indexedKeys = new (RedisKey Redis, int Index)[count];
-
-            for (var i = 0; i < count; i++)
-            {
-                indexedKeys[i] = (redisKeys[i], i);
-            }
-
-            var slotBuckets = _GroupBySlot(indexedKeys, static entry => entry.Redis);
-
-            foreach (var bucket in slotBuckets.Values)
-            {
-                var slotKeys = new RedisKey[bucket.Count];
-
-                for (var i = 0; i < bucket.Count; i++)
-                {
-                    slotKeys[i] = bucket[i].Redis;
-                }
-
-                var slotValues = await _database.StringGetAsync(slotKeys, cacheOptions.ReadMode).ConfigureAwait(false);
-
-                for (var i = 0; i < bucket.Count; i++)
-                {
-                    rawValues[bucket[i].Index] = slotValues[i];
-                }
-            }
-        }
-        else
-        {
-            rawValues = await _database.StringGetAsync(redisKeys, cacheOptions.ReadMode).ConfigureAwait(false);
-        }
+        var rawValues = await _BulkStringGetOrderedAsync(redisKeys).ConfigureAwait(false);
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
 
