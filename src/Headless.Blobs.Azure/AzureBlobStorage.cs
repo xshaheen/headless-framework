@@ -199,7 +199,7 @@ public sealed class AzureBlobStorage(
                     {
                         results[response.Index] = new BlobBulkResult(
                             response.Location,
-                            _MapDeleteResponse(response.Response)
+                            MapDeleteResponse(response.Response)
                         );
                     }
                 }
@@ -219,7 +219,10 @@ public sealed class AzureBlobStorage(
     // Maps a single Azure batch sub-response to a per-blob result: success -> Ok(true); a 404 means the blob was
     // already gone -> Ok(false) ("not found"); any other error (403/429/5xx) -> Fail so callers see the real cause
     // rather than a misleading "not found", per the IBlobStorage.BulkDeleteAsync contract.
-    private static Result<bool, Exception> _MapDeleteResponse(Response response)
+    // internal (not private) so the 404 -> Ok(false) contract is pinned by a deterministic unit test: Azurite reports
+    // an already-absent blob as success, so the live integration path cannot observe the 404 branch (see the two
+    // Skip-ped bulk_delete_reports_* conformance tests).
+    internal static Result<bool, Exception> MapDeleteResponse(Response response)
     {
         if (!response.IsError)
         {
@@ -265,7 +268,7 @@ public sealed class AzureBlobStorage(
 
             foreach (var response in responses)
             {
-                var result = _MapDeleteResponse(response);
+                var result = MapDeleteResponse(response);
 
                 if (result.IsFailure)
                 {
