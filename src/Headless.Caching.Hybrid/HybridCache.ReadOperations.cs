@@ -102,11 +102,7 @@ public sealed partial class HybridCache
 
             if (!l2EntryRead.IsSuccess)
             {
-                if (l2EntryRead.Exception is { } framedException)
-                {
-                    _logger.LogFailedToReadFromL2Cache(framedException, key);
-                }
-
+                _LogL2ReadFailure(l2EntryRead.Exception, key);
                 return CacheValue<T>.NoValue;
             }
 
@@ -137,11 +133,7 @@ public sealed partial class HybridCache
 
         if (!l2Read.IsSuccess)
         {
-            if (l2Read.Exception is { } exception)
-            {
-                _logger.LogFailedToReadFromL2Cache(exception, key);
-            }
-
+            _LogL2ReadFailure(l2Read.Exception, key);
             return CacheValue<T>.NoValue;
         }
 
@@ -226,25 +218,9 @@ public sealed partial class HybridCache
 
         if (!distributedRead.IsSuccess)
         {
-            // Include a small key sample so operators can identify the affected keys without a single-key flood.
-            var keySample = string.Join(", ", missedKeys.Take(5));
-
-            if (distributedRead.Exception is { } exception)
-            {
-                // Degrade to the partial L1 result, mirroring the single-key GetAsync contract:
-                // an L2 read fault is logged then swallowed so callers always get a best-effort response.
-                _logger.LogFailedBulkL2CacheOperationWithSample(exception, missedKeys.Count, keySample);
-            }
-            else
-            {
-                // Timeout or circuit-open: same degrade contract, but no exception to attach to the log entry.
-                _logger.LogBulkDistributedCacheReadDegradedWithSample(
-                    missedKeys.Count,
-                    distributedRead.Status.ToString(),
-                    keySample
-                );
-            }
-
+            // Degrade to the partial L1 result, mirroring the single-key GetAsync contract: an L2 read fault or
+            // timeout is logged then swallowed so callers always get a best-effort response.
+            _LogBulkL2ReadDegraded(distributedRead, missedKeys);
             return result;
         }
 
@@ -312,24 +288,8 @@ public sealed partial class HybridCache
 
         if (!distributedRead.IsSuccess)
         {
-            // Include a small key sample so operators can identify the affected keys without a single-key flood.
-            var keySample = string.Join(", ", missedKeys.Take(5));
-
-            if (distributedRead.Exception is { } exception)
-            {
-                // Degrade to the partial L1 result, mirroring the bulk GetAllAsync contract.
-                _logger.LogFailedBulkL2CacheOperationWithSample(exception, missedKeys.Count, keySample);
-            }
-            else
-            {
-                // Timeout or circuit-open: same degrade contract, but no exception to attach to the log entry.
-                _logger.LogBulkDistributedCacheReadDegradedWithSample(
-                    missedKeys.Count,
-                    distributedRead.Status.ToString(),
-                    keySample
-                );
-            }
-
+            // Degrade to the partial L1 result, mirroring the bulk GetAllAsync contract.
+            _LogBulkL2ReadDegraded(distributedRead, missedKeys);
             return result;
         }
 
@@ -387,11 +347,7 @@ public sealed partial class HybridCache
 
         if (!l2Read.IsSuccess)
         {
-            if (l2Read.Exception is { } exception)
-            {
-                _logger.LogFailedToReadFromL2Cache(exception, prefix);
-            }
-
+            _LogL2ReadFailure(l2Read.Exception, prefix);
             return new Dictionary<string, CacheValue<T>>(StringComparer.Ordinal);
         }
 
@@ -421,11 +377,7 @@ public sealed partial class HybridCache
 
         if (!l2Read.IsSuccess)
         {
-            if (l2Read.Exception is { } exception)
-            {
-                _logger.LogFailedToReadFromL2Cache(exception, prefix);
-            }
-
+            _LogL2ReadFailure(l2Read.Exception, prefix);
             return [];
         }
 
@@ -451,11 +403,7 @@ public sealed partial class HybridCache
 
         if (!l2Read.IsSuccess)
         {
-            if (l2Read.Exception is { } exception)
-            {
-                _logger.LogFailedToReadFromL2Cache(exception, prefix);
-            }
-
+            _LogL2ReadFailure(l2Read.Exception, prefix);
             return 0;
         }
 
@@ -490,11 +438,7 @@ public sealed partial class HybridCache
 
         if (!l2Read.IsSuccess)
         {
-            if (l2Read.Exception is { } exception)
-            {
-                _logger.LogFailedToReadFromL2Cache(exception, key);
-            }
-
+            _LogL2ReadFailure(l2Read.Exception, key);
             return false;
         }
 
@@ -529,11 +473,7 @@ public sealed partial class HybridCache
 
         if (!l2Read.IsSuccess)
         {
-            if (l2Read.Exception is { } exception)
-            {
-                _logger.LogFailedToReadFromL2Cache(exception, key);
-            }
-
+            _LogL2ReadFailure(l2Read.Exception, key);
             return null;
         }
 
@@ -563,20 +503,16 @@ public sealed partial class HybridCache
         }
 
         _logger.LogLocalCacheMiss(key);
+
+        // Serve straight from L2 without seeding L1. InMemory stores sets as per-member dictionaries
+        // (SetAddAsync), so upserting the bare collection returned here would poison the key for the next local
+        // GetSetAsync (InvalidCastException on read-back) — and a paged read returns one page, never the whole
+        // set, so a seed could also clobber the full set with a single page. Locally-written sets (Hybrid
+        // SetAddAsync writes both tiers) still hit L1 above; cold set reads stay L2-authoritative, which also
+        // makes this a single L2 round-trip (no companion GetExpirationAsync needed for a seed TTL).
         var l2Read = await _ReadFromL2Async(
                 key,
-                async ct =>
-                {
-                    var value = await l2Cache.GetSetAsync<T>(key, pageIndex, pageSize, ct).ConfigureAwait(false);
-
-                    if (!value.HasValue)
-                    {
-                        return new CacheValueWithExpiration<ICollection<T>>(value, expiration: null);
-                    }
-
-                    var expiration = await l2Cache.GetExpirationAsync(key, ct).ConfigureAwait(false);
-                    return new CacheValueWithExpiration<ICollection<T>>(value, expiration);
-                },
+                ct => l2Cache.GetSetAsync<T>(key, pageIndex, pageSize, ct),
                 _SelectDistributedReadTimeout(hasLocalFallback: false, softCanDegradeToMiss: true),
                 DistributedCacheTimeoutKind.Soft,
                 cancellationToken
@@ -585,34 +521,48 @@ public sealed partial class HybridCache
 
         if (!l2Read.IsSuccess)
         {
-            if (l2Read.Exception is { } exception)
-            {
-                _logger.LogFailedToReadFromL2Cache(exception, key);
-            }
-
+            _LogL2ReadFailure(l2Read.Exception, key);
             return CacheValue<ICollection<T>>.NoValue;
         }
 
-        cacheValue = l2Read.Value.Value;
+        return l2Read.Value;
+    }
 
-        if (cacheValue.HasValue)
+    /// <summary>
+    /// Shared degrade logging for the single-key/prefix L2 read paths: a read fault is logged once and then
+    /// swallowed (the read degrades to a miss); timeout and circuit-open outcomes carry no exception and log at the
+    /// resilience-wrapper level instead. One helper keeps the degrade log contract identical across the read ops.
+    /// </summary>
+    private void _LogL2ReadFailure(Exception? exception, string keyOrPrefix)
+    {
+        if (exception is not null)
         {
-            // TOCTOU guard: the value and its expiration are read in two separate L2 calls (the lambda above). If
-            // the key expires between them, the value is present but Expiration is null; seeding L1 with a null TTL
-            // and no DefaultLocalExpiration ceiling would create a never-expiring local entry. Skip the L1 seed in
-            // that case and return the value without caching it locally.
-            if (l2Read.Value.Expiration is not null || cacheOptions.DefaultLocalExpiration.HasValue)
-            {
-                var localExpiration = _GetLocalExpiration(l2Read.Value.Expiration);
-                _logger.LogSettingLocalCacheKey(key, localExpiration);
-                // Use UpsertAsync to replace any existing L1 data (not SetAddAsync which would merge)
-                await LocalCache
-                    .UpsertAsync(key, cacheValue.Value, localExpiration, cancellationToken)
-                    .ConfigureAwait(false);
-            }
+            _logger.LogFailedToReadFromL2Cache(exception, keyOrPrefix);
         }
+    }
 
-        return cacheValue;
+    /// <summary>
+    /// Shared degrade tail for the two bulk cold-read paths (native bulk and framed bulk), which must keep an
+    /// identical degrade contract: log with a small key sample — so operators can identify the affected keys
+    /// without a single-key flood — then the call site falls back to the partial L1 result. Faults carry the
+    /// exception; timeout/circuit-open degrades log the status reason instead.
+    /// </summary>
+    private void _LogBulkL2ReadDegraded<T>(in DistributedCacheReadResult<T> distributedRead, List<string> missedKeys)
+    {
+        var keySample = string.Join(", ", missedKeys.Take(5));
+
+        if (distributedRead.Exception is { } exception)
+        {
+            _logger.LogFailedBulkL2CacheOperationWithSample(exception, missedKeys.Count, keySample);
+        }
+        else
+        {
+            _logger.LogBulkDistributedCacheReadDegradedWithSample(
+                missedKeys.Count,
+                distributedRead.Status.ToString(),
+                keySample
+            );
+        }
     }
 
     #endregion

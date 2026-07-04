@@ -899,6 +899,54 @@ public sealed class HybridCacheTests : TestBase
 
     #endregion
 
+    #region GetSetAsync - Cold Reads
+
+    [Fact]
+    public async Task should_serve_set_from_l2_without_seeding_l1_when_l1_misses()
+    {
+        // given - a set that exists only in L2 (written by another node)
+        var (cache, l1, l2, _) = _CreateCache();
+        await using var _ = cache;
+
+        var key = Faker.Random.AlphaNumeric(10);
+        await l2.SetAddAsync(key, new[] { "a", "b", "c" }, TimeSpan.FromMinutes(5), AbortToken);
+
+        // when - two consecutive hybrid reads (the second used to throw InvalidCastException: the old L1 seed
+        // stored the bare collection, which InMemory's dictionary-shaped set read-back cannot decode)
+        var first = await cache.GetSetAsync<string>(key, cancellationToken: AbortToken);
+        var second = await cache.GetSetAsync<string>(key, cancellationToken: AbortToken);
+
+        // then - both reads serve the L2 members and L1 holds no entry for the key (cold set reads are
+        // L2-authoritative; only the hybrid SetAddAsync write path seeds L1, in its native set shape)
+        first.HasValue.Should().BeTrue();
+        first.Value.Should().BeEquivalentTo("a", "b", "c");
+        second.HasValue.Should().BeTrue();
+        second.Value.Should().BeEquivalentTo("a", "b", "c");
+        (await l1.ExistsAsync(key, AbortToken)).Should().BeFalse("cold set reads must not seed L1");
+    }
+
+    [Fact]
+    public async Task should_not_clobber_l1_set_when_paged_read_falls_through_to_l2()
+    {
+        // given - L1 and L2 both hold the full set (hybrid write path)
+        var (cache, l1, _, _) = _CreateCache();
+        await using var _ = cache;
+
+        var key = Faker.Random.AlphaNumeric(10);
+        await cache.SetAddAsync(key, new[] { "a", "b", "c" }, TimeSpan.FromMinutes(5), AbortToken);
+
+        // when - a page past the end misses L1 (NoValue per the aligned page contract) and falls through to L2
+        var pastEnd = await cache.GetSetAsync<string>(key, pageIndex: 5, pageSize: 2, cancellationToken: AbortToken);
+
+        // then - the miss must not disturb the full L1 set (the old seed could clobber it with page data)
+        pastEnd.HasValue.Should().BeFalse();
+        var full = await l1.GetSetAsync<string>(key, cancellationToken: AbortToken);
+        full.HasValue.Should().BeTrue();
+        full.Value.Should().BeEquivalentTo("a", "b", "c");
+    }
+
+    #endregion
+
     #region UpsertAsync
 
     [Fact]
