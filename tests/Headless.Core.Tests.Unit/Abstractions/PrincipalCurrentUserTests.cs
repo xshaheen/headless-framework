@@ -2,6 +2,8 @@
 
 using System.Security.Claims;
 using Headless.Abstractions;
+using Headless.Constants;
+using UserId = Headless.Primitives.UserId;
 
 namespace Tests.Abstractions;
 
@@ -37,6 +39,24 @@ public sealed class PrincipalCurrentUserTests
 
         // then
         sut.IsAuthenticated.Should().BeFalse();
+    }
+
+    [Fact]
+    public void unauthenticated_principal_should_not_expose_user_id_or_roles()
+    {
+        // given
+        UserId userId = "user-123";
+
+        var principal = new ClaimsPrincipal(
+            new ClaimsIdentity([new Claim(UserClaimTypes.UserId, userId), new Claim(UserClaimTypes.Roles, "admin")])
+        );
+
+        var sut = new PrincipalCurrentUser(principal);
+
+        // then
+        sut.IsAuthenticated.Should().BeFalse();
+        sut.UserId.Should().BeNull();
+        sut.Roles.Should().BeEmpty();
     }
 
     [Fact]

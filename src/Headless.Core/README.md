@@ -10,14 +10,14 @@ Provides standardized interfaces for common cross-cutting concerns (clock, user,
 
 - **Abstractions**:
   - `IClock` - Testable time abstraction (wraps `TimeProvider`)
-  - `ICurrentUser` - Current authenticated user context with roles and claims
+  - `ICurrentUser` - Current authenticated user context; `UserId` and `Roles` are exposed only for authenticated principals
   - `ICurrentTenant` - Multi-tenancy support with scoped tenant switching
   - `ITenantWriteGuardBypass` - Explicit bypass scope for audited host/admin tenant writes
   - `CrossTenantWriteException` - Non-transient exception for blocked tenant-owned writes
   - `ICurrentLocale` - Localization context (language, locale, culture)
   - `ICurrentTimeZone` - Timezone handling
   - `ICurrentPrincipalAccessor` - Scoped `ClaimsPrincipal` access with temporary switching
-  - `IPasswordGenerator` - Configurable secure password generation
+  - `IPasswordGenerator` - Configurable secure password generation; remaining character pools are required only when filler or extra unique characters are needed
   - `ICancellationTokenProvider` - Cancellation token access with fallback logic
   - `ITimezoneProvider` - Windows/IANA timezone conversion and listing
   - `IApplicationInformationAccessor` / `IBuildInformationAccessor` - Application metadata and build info

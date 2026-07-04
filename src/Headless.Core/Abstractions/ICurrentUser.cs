@@ -114,7 +114,7 @@ public sealed class PrincipalCurrentUser(ClaimsPrincipal? principal) : ICurrentU
     public bool IsAuthenticated => principal?.Identity?.IsAuthenticated == true;
 
     /// <inheritdoc/>
-    public UserId? UserId => principal.GetUserId();
+    public UserId? UserId => IsAuthenticated ? principal.GetUserId() : null;
 
     /// <inheritdoc/>
     public string? AccountType => principal.GetAccountType();
@@ -123,5 +123,5 @@ public sealed class PrincipalCurrentUser(ClaimsPrincipal? principal) : ICurrentU
     public AccountId? AccountId => principal.GetAccountId();
 
     /// <inheritdoc/>
-    public IReadOnlySet<string> Roles => principal.GetRoles();
+    public IReadOnlySet<string> Roles => IsAuthenticated ? principal.GetRoles() : ImmutableHashSet<string>.Empty;
 }
