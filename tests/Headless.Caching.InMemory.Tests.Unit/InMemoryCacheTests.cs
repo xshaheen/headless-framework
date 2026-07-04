@@ -1251,6 +1251,48 @@ public sealed class InMemoryCacheTests : TestBase
         result.Value.Should().HaveCount(2);
     }
 
+    [Fact]
+    public async Task should_return_no_value_when_page_is_past_live_members()
+    {
+        // #584: a page past the last live member is a miss (NoValue), even though the set still has live members.
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        await cache.SetAddAsync(key, new[] { 1, 2, 3 }, TimeSpan.FromMinutes(5), AbortToken);
+
+        // when - page 1 is full (3 members at pageSize 3); page 2 runs past the last live member
+        var firstPage = await cache.GetSetAsync<object>(key, pageIndex: 1, pageSize: 3, cancellationToken: AbortToken);
+        var pastPage = await cache.GetSetAsync<object>(key, pageIndex: 2, pageSize: 3, cancellationToken: AbortToken);
+
+        // then - HasValue reflects the requested page's members, not key existence
+        firstPage.HasValue.Should().BeTrue();
+        firstPage.Value.Should().HaveCount(3);
+        pastPage.HasValue.Should().BeFalse();
+        pastPage.Value.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_return_no_value_when_all_set_members_are_expired()
+    {
+        // A set whose members have all passed their individual expiry reads as NoValue (not a non-null empty list).
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        var expiration = TimeSpan.FromMilliseconds(250);
+        await cache.SetAddAsync(key, new[] { 1, 2 }, expiration, AbortToken);
+
+        // when
+        _timeProvider.Advance(expiration + TimeSpan.FromMilliseconds(50));
+        var unpaged = await cache.GetSetAsync<object>(key, cancellationToken: AbortToken);
+        var paged = await cache.GetSetAsync<object>(key, pageIndex: 1, pageSize: 10, cancellationToken: AbortToken);
+
+        // then
+        unpaged.HasValue.Should().BeFalse();
+        unpaged.Value.Should().BeNull();
+        paged.HasValue.Should().BeFalse();
+        paged.Value.Should().BeNull();
+    }
+
     #endregion
 
     #region SetRemoveAsync

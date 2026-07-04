@@ -1118,6 +1118,63 @@ public abstract class CacheConformanceTestsBase : TestBase
         members.HasValue.Should().BeFalse("expiring every member immediately leaves no set behind");
     }
 
+    public virtual async Task should_return_no_value_from_get_set_when_key_is_absent()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+
+        // #553: an absent key is a miss on every provider — CacheValue.NoValue (Value is null), never a non-null
+        // empty collection. The unpaged and paged reads must agree.
+        var unpaged = await cache.GetSetAsync<string>(key, cancellationToken: AbortToken);
+        var paged = await cache.GetSetAsync<string>(key, pageIndex: 1, pageSize: 10, cancellationToken: AbortToken);
+
+        unpaged.HasValue.Should().BeFalse();
+        unpaged.Value.Should().BeNull();
+        paged.HasValue.Should().BeFalse();
+        paged.Value.Should().BeNull();
+    }
+
+    public virtual async Task should_return_no_value_from_get_set_when_page_is_past_live_members()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        await cache.SetAddAsync(key, new[] { "a", "b", "c" }, TimeSpan.FromMinutes(5), AbortToken);
+
+        // #584: a page past the last live member is a miss on every provider (NoValue), even though the set itself
+        // still has live members — HasValue reflects the requested page's members, not key existence. Page 1 of the
+        // 3-member set is full; page 2 at pageSize 3 runs past the end.
+        var firstPage = await cache.GetSetAsync<string>(key, pageIndex: 1, pageSize: 3, cancellationToken: AbortToken);
+        var pastPage = await cache.GetSetAsync<string>(key, pageIndex: 2, pageSize: 3, cancellationToken: AbortToken);
+
+        firstPage.HasValue.Should().BeTrue("the set still has live members on the first page");
+        firstPage.Value.Should().HaveCount(3);
+        pastPage.HasValue.Should().BeFalse("a page past the last live member has no members");
+        pastPage.Value.Should().BeNull();
+    }
+
+    public virtual async Task should_return_no_value_from_get_set_when_all_members_expired()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        var expiration = TimeSpan.FromMilliseconds(250);
+        await cache.SetAddAsync(key, new[] { "a", "b" }, expiration, AbortToken);
+
+        // Once every member's individual expiry has passed, GetSetAsync is a miss on every provider (NoValue) — no
+        // non-null empty collection, no extra existence probe.
+        await AdvancePastExpirationAsync(expiration);
+
+        var unpaged = await cache.GetSetAsync<string>(key, cancellationToken: AbortToken);
+        var paged = await cache.GetSetAsync<string>(key, pageIndex: 1, pageSize: 10, cancellationToken: AbortToken);
+
+        unpaged.HasValue.Should().BeFalse();
+        unpaged.Value.Should().BeNull();
+        paged.HasValue.Should().BeFalse();
+        paged.Value.Should().BeNull();
+    }
+
     public virtual async Task should_keep_zero_total_after_decrementing_to_zero()
     {
         await ResetAsync();

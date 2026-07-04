@@ -2426,7 +2426,16 @@ public sealed class RedisCache(
             }
         }
 
-        return new CacheValue<ICollection<T>>(result, result.Count > 0);
+        // Empty result -> NoValue (Value:null), matching InMemory. An empty ZRANGEBYSCORE reply is indistinguishable
+        // from an absent key here (both yield an empty array) without an extra EXISTS round-trip, so GetSetAsync
+        // reports the requested page's members, not key presence: an absent key, an empty set, and a page past the
+        // last live member all read as a miss (HasValue == false).
+        if (result.Count is 0)
+        {
+            return CacheValue<ICollection<T>>.NoValue;
+        }
+
+        return new CacheValue<ICollection<T>>(result, hasValue: true);
     }
 
     private async Task<bool> _SetInternalAsync<T>(

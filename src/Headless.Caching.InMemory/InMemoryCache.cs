@@ -1125,8 +1125,10 @@ public sealed class InMemoryCache
 
     // Shared set-read projection for both the string- and object-keyed member dictionaries (the cast
     // (T)(object)kvp.Key handles both backings). A live member is one whose expiry is null or strictly after now
-    // (Redis Exclude.Start parity: a member expiring exactly at now is excluded). An absent key reads as NoValue;
-    // a present set whose members are all expired reads as an empty-but-present collection.
+    // (Redis Exclude.Start parity: a member expiring exactly at now is excluded). Any empty resolved result reads as
+    // CacheValue.NoValue (Value:null) — an absent key, a set whose live members are all expired, and a page past the
+    // last live member all read as a miss, matching Redis. HasValue reflects whether the requested page has members,
+    // not whether the key exists.
     private static CacheValue<ICollection<T>> _GetSetItems<TKey, T>(
         CacheValue<IDictionary<TKey, DateTime?>> dictionaryCacheValue,
         int? pageIndex,
@@ -1150,17 +1152,16 @@ public sealed class InMemoryCache
                 .ToArray();
 
             return liveMembers.Length is 0
-                ? new CacheValue<ICollection<T>>([], hasValue: false)
+                ? CacheValue<ICollection<T>>.NoValue
                 : new CacheValue<ICollection<T>>(liveMembers, hasValue: true);
         }
 
         // Paginated: stream a single pass instead of materializing the full set then Skip/Take-ing it. Skip the
-        // first (pageIndex-1)*pageSize live members, then take up to pageSize — tracking whether any live member
-        // exists at all so a present-but-all-expired set still reports the empty-but-present ([], false) sentinel
-        // (matching the unpaged branch), distinct from an empty page that simply ran past the last live member.
+        // first (pageIndex-1)*pageSize live members, then take up to pageSize. An empty page reads as NoValue whether
+        // the set has no live members at all or the requested page simply ran past the last live member — both are a
+        // miss for that page (Redis parity; HasValue reflects the requested page's members, not key existence).
         var skip = (pageIndex.Value - 1) * pageSize;
         var skipped = 0;
-        var anyLiveMember = false;
         var page = new List<T>();
 
         foreach (var kvp in dictionary)
@@ -1169,8 +1170,6 @@ public sealed class InMemoryCache
             {
                 continue;
             }
-
-            anyLiveMember = true;
 
             if (skipped < skip)
             {
@@ -1186,9 +1185,9 @@ public sealed class InMemoryCache
             }
         }
 
-        return anyLiveMember
-            ? new CacheValue<ICollection<T>>(page, hasValue: true)
-            : new CacheValue<ICollection<T>>([], hasValue: false);
+        return page.Count is 0
+            ? CacheValue<ICollection<T>>.NoValue
+            : new CacheValue<ICollection<T>>(page, hasValue: true);
     }
 
     /// <summary>

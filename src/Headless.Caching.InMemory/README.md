@@ -26,7 +26,7 @@ Tag and clear invalidation are Family-2 logical: `RemoveByTagAsync` stamps a per
 
 Long `FailSafeMaxDuration` values and long sliding absolute caps can retain more entries in process memory. Use `MaxItems`, `MaxMemorySize`, and LRU compaction to bound direct in-memory deployments. Soft-timeout and eager background refreshes also hold values in process while the detached factory runs; `BackgroundFactoryCeiling` (infinite by default) optionally bounds how long a cooperative refresh keeps the per-key lock when set to a finite value.
 
-Set members (`SetAddAsync`/`SetRemoveAsync`/`GetSetAsync`) compare strings with ordinal (case-sensitive) equality, matching the distributed providers' byte-exact membership; non-string members compare with default `Equals` here, while Redis compares serialized bytes — custom `Equals` overrides can behave differently across providers.
+Set members (`SetAddAsync`/`SetRemoveAsync`/`GetSetAsync`) compare strings with ordinal (case-sensitive) equality, matching the distributed providers' byte-exact membership; non-string members compare with default `Equals` here, while Redis compares serialized bytes — custom `Equals` overrides can behave differently across providers. `GetSetAsync` returns `CacheValue.NoValue` (`HasValue == false`, `Value == null`) whenever the requested page has no members — an absent key, a set whose live members are all expired, and a `pageIndex` past the last live member all read as a miss, matching Redis exactly (no non-null empty collection, no key-existence probe). `HasValue` reflects whether the requested page has members, not whether the key exists.
 
 `Memory` in Headless caching docs means this package, `Headless.Caching.InMemory`, not `Microsoft.Extensions.Caching.Memory`.
 

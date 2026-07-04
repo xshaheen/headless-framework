@@ -330,8 +330,11 @@ public interface ICache
     /// <summary>
     /// Reads an optionally-paginated page of members from the set stored at <paramref name="key"/>. Members
     /// that have individually expired within the set are excluded. Returns <see cref="CacheValue{T}.NoValue"/>
-    /// when the key is absent. <paramref name="pageIndex"/> is 1-based; pass <see langword="null"/> to
-    /// return all members.
+    /// (so <see cref="CacheValue{T}.HasValue"/> is <see langword="false"/> and <see cref="CacheValue{T}.Value"/>
+    /// is <see langword="null"/>) whenever the requested page has no members — the key is absent, the set is empty,
+    /// its live members are all expired, or <paramref name="pageIndex"/> is past the last live member. <c>HasValue</c>
+    /// reflects whether the requested page has members, not whether the key exists (no extra existence round-trip is
+    /// issued). <paramref name="pageIndex"/> is 1-based; pass <see langword="null"/> to return all members.
     /// </summary>
     ValueTask<CacheValue<ICollection<T>>> GetSetAsync<T>(
         string key,
