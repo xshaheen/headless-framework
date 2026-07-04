@@ -83,24 +83,9 @@ public static class HttpRequestExtensions
             return true;
         }
 
-        var candidates = new List<MediaTypeHeaderValue>(contentTypes.Length);
-
         foreach (var contentType in contentTypes)
         {
-            if (MediaTypeHeaderValue.TryParse(contentType, out var candidate))
-            {
-                candidates.Add(candidate);
-            }
-        }
-
-        if (candidates.Count == 0)
-        {
-            return false;
-        }
-
-        foreach (var candidate in candidates)
-        {
-            if (_CanAccept(parsed, candidate))
+            if (MediaTypeHeaderValue.TryParse(contentType, out var candidate) && _CanAccept(parsed, candidate))
             {
                 return true;
             }
