@@ -46,6 +46,17 @@ public sealed class SftpClientPool : IDisposable
     /// </summary>
     /// <param name="ct">Cancellation token. Passed to the connection semaphore and to the SSH handshake.</param>
     /// <returns>A connected <see cref="SftpClient"/>. The caller must return it via <see cref="ReleaseAsync"/> when done.</returns>
+    /// <remarks>
+    /// The pool is bounded to <see cref="SshBlobStorageOptions.MaxPoolSize"/> connections and applies backpressure by
+    /// design: there is no acquire timeout, so when every slot is in use this call blocks until a slot frees or
+    /// <paramref name="ct"/> is cancelled. A slot is only ever returned by <see cref="ReleaseAsync"/> /
+    /// <see cref="Release"/> — the store releases it when an operation finishes, and for
+    /// <see cref="IBlobStorage.OpenReadStreamAsync"/> the returned stream owns the client until the caller disposes it.
+    /// A caller that never disposes an <c>OpenReadStreamAsync</c> result therefore permanently leaks a slot; after
+    /// <see cref="SshBlobStorageOptions.MaxPoolSize"/> such leaks every subsequent acquire blocks until its own
+    /// cancellation fires. Disposing acquired clients / download results is a caller responsibility; size
+    /// <see cref="SshBlobStorageOptions.MaxPoolSize"/> for peak concurrency and always pass a cancellation token.
+    /// </remarks>
     /// <exception cref="ObjectDisposedException">Thrown when the pool has been disposed.</exception>
     /// <exception cref="Renci.SshNet.Common.SshConnectionException">Thrown when a new SSH connection cannot be established.</exception>
     public async ValueTask<SftpClient> AcquireAsync(CancellationToken ct)
