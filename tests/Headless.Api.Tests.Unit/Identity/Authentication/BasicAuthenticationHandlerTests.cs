@@ -43,7 +43,7 @@ public sealed class BasicAuthenticationHandlerTests : TestBase
             null
         );
 
-        var options = new BasicAuthenticationOptions { Scheme = "Basic Authentication" };
+        var options = new BasicAuthenticationOptions();
         _optionsMonitor = Substitute.For<IOptionsMonitor<BasicAuthenticationOptions>>();
         _optionsMonitor.Get(Arg.Any<string>()).Returns(options);
         _optionsMonitor.CurrentValue.Returns(options);
@@ -58,7 +58,7 @@ public sealed class BasicAuthenticationHandlerTests : TestBase
     }
 
     [Fact]
-    public async Task should_return_success_when_user_already_authenticated()
+    public async Task should_return_no_result_when_user_already_authenticated_without_basic_credentials()
     {
         // given
         var handler = _CreateHandler();
@@ -75,9 +75,8 @@ public sealed class BasicAuthenticationHandlerTests : TestBase
         var result = await handler.AuthenticateAsync();
 
         // then
-        result.Succeeded.Should().BeTrue();
-        result.Ticket.Should().NotBeNull();
-        result.Ticket!.AuthenticationScheme.Should().Be("context.User");
+        result.None.Should().BeTrue();
+        result.Succeeded.Should().BeFalse();
     }
 
     [Fact]
@@ -300,7 +299,7 @@ public sealed class BasicAuthenticationHandlerTests : TestBase
         // then
         result.Succeeded.Should().BeTrue();
         result.Ticket.Should().NotBeNull();
-        result.Ticket!.AuthenticationScheme.Should().Be("Basic Authentication");
+        result.Ticket!.AuthenticationScheme.Should().Be("Basic");
         result.Ticket.Principal.Should().BeSameAs(principal);
     }
 

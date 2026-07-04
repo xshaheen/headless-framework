@@ -17,7 +17,7 @@ namespace Headless.Api.Identity.Schemes;
 /// Scheme selection logic (evaluated on every request):
 /// <list type="bullet">
 ///   <item><description>
-///     API key header / query-string parameter present → <c>ApiKey</c> scheme.
+///     API key header present, or query-string parameter present when query keys are enabled → <c>ApiKey</c> scheme.
 ///   </description></item>
 ///   <item><description>
 ///     <c>Authorization: Basic …</c> header present → <c>Basic</c> scheme.
@@ -33,11 +33,9 @@ namespace Headless.Api.Identity.Schemes;
 public sealed class DynamicAuthenticationSchemeProvider(
     IHttpContextAccessor httpContextAccessor,
     IOptions<AuthenticationOptions> options,
-    IOptions<ApiKeyAuthenticationSchemeOptions> apiKeySchemeOptions
+    IOptionsMonitor<ApiKeyAuthenticationSchemeOptions> apiKeySchemeOptions
 ) : AuthenticationSchemeProvider(options)
 {
-    private readonly ApiKeyAuthenticationSchemeOptions _apiKeyAuthenticationOptions = apiKeySchemeOptions.Value;
-
     /// <inheritdoc/>
     /// <remarks>Selects the scheme based on request credentials before falling back to the configured default.</remarks>
     public override async Task<AuthenticationScheme?> GetDefaultAuthenticateSchemeAsync()
@@ -87,9 +85,10 @@ public sealed class DynamicAuthenticationSchemeProvider(
 
         var request = httpContextAccessor.HttpContext.Request;
 
+        var apiKeyOptions = apiKeySchemeOptions.Get(AuthenticationConstants.Schemas.ApiKey);
         var isApiKey =
-            request.Headers.ContainsKey(_apiKeyAuthenticationOptions.ApiKeyHeaderName)
-            || request.Query.ContainsKey(_apiKeyAuthenticationOptions.ApiKeyParamName);
+            request.Headers.ContainsKey(apiKeyOptions.ApiKeyHeaderName)
+            || (apiKeyOptions.AllowApiKeyInQueryString && request.Query.ContainsKey(apiKeyOptions.ApiKeyParamName));
 
         if (isApiKey)
         {
