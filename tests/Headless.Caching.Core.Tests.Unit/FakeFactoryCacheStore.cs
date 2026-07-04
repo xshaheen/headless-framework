@@ -11,6 +11,8 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
 
     public int TryGetEntryCalls { get; private set; }
 
+    public int TryGetAllEntriesCalls { get; private set; }
+
     public int SetEntryCalls { get; private set; }
 
     public int RearmCalls { get; private set; }
@@ -124,6 +126,26 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
                 }
             );
         }
+    }
+
+    public async ValueTask<CacheStoreEntry<T>[]> TryGetAllEntriesAsync<T>(
+        IReadOnlyList<string> keys,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        TryGetAllEntriesCalls++;
+
+        // Position-aligned per-key resolution over the single-key primitive; counts one bulk call regardless of the
+        // number of keys so O(1)-not-O(N) fan-out is observable via TryGetAllEntriesCalls vs TryGetEntryCalls.
+        var result = new CacheStoreEntry<T>[keys.Count];
+
+        for (var i = 0; i < keys.Count; i++)
+        {
+            result[i] = await TryGetEntryAsync<T>(keys[i], cancellationToken);
+        }
+
+        return result;
     }
 
     public ValueTask<bool> SetEntryAsync<T>(

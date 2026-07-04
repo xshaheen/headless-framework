@@ -46,6 +46,16 @@ internal sealed class TogglableRemoteCache(TimeProvider timeProvider)
         return await ((IFactoryCacheStore)_cache).TryGetEntryAsync<T>(key, cancellationToken);
     }
 
+    public async ValueTask<CacheStoreEntry<T>[]> TryGetAllEntriesAsync<T>(
+        IReadOnlyList<string> keys,
+        CancellationToken cancellationToken
+    )
+    {
+        await _WaitReadGateAsync(cancellationToken);
+
+        return await ((IFactoryCacheStore)_cache).TryGetAllEntriesAsync<T>(keys, cancellationToken);
+    }
+
     private ValueTask _WaitReadGateAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();

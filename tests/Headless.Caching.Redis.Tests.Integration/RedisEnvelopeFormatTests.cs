@@ -260,6 +260,75 @@ public sealed class RedisEnvelopeFormatTests(RedisCacheFixture fixture) : RedisC
     }
 
     [Fact]
+    public async Task should_bulk_read_framed_entries_position_aligned_through_factory_store()
+    {
+        // #554: the bulk framed cold read must return one snapshot per key, position-aligned, resolving the batch's
+        // tag markers with a single prefetch rather than a per-key marker MGET fan-out.
+        await FlushAsync();
+        using var cache = CreateCache();
+        var store = (IFactoryCacheStore)cache;
+        var now = DateTime.UtcNow;
+
+        var presentKey = Faker.Random.AlphaNumeric(10);
+        var invalidatedKey = Faker.Random.AlphaNumeric(10);
+        var missingKey = Faker.Random.AlphaNumeric(10);
+        var tag = Faker.Random.AlphaNumeric(8);
+
+        await store.SetEntryAsync(
+            presentKey,
+            new CacheStoreEntryWrite<string>
+            {
+                Value = "present",
+                IsNull = false,
+                LogicalExpiresAt = now.AddMinutes(5),
+                PhysicalExpiresAt = now.AddMinutes(5),
+                Tags = [tag],
+                CreatedAt = now.AddSeconds(-5),
+            },
+            AbortToken
+        );
+
+        await store.SetEntryAsync(
+            invalidatedKey,
+            new CacheStoreEntryWrite<string>
+            {
+                Value = "reserve",
+                IsNull = false,
+                LogicalExpiresAt = now.AddMinutes(5),
+                PhysicalExpiresAt = now.AddMinutes(30),
+                Tags = [tag, "other"],
+                CreatedAt = now.AddSeconds(-5),
+            },
+            AbortToken
+        );
+
+        // Invalidate 'other' after both entries were born so invalidatedKey demotes to a physically-present reserve
+        // while presentKey (which does not carry 'other') stays fresh.
+        await cache.RemoveByTagAsync("other", AbortToken);
+
+        // when — one bulk read; keys include a duplicate and a genuine miss.
+        var keys = new[] { presentKey, missingKey, invalidatedKey, presentKey };
+        var entries = await store.TryGetAllEntriesAsync<string>(keys, AbortToken);
+        var readNow = DateTime.UtcNow;
+
+        // then — position-aligned, one element per key.
+        entries.Should().HaveCount(4);
+
+        entries[0].IsFresh(readNow).Should().BeTrue();
+        entries[0].Value.Should().Be("present");
+        entries[0].Tags.Should().Contain(tag);
+
+        entries[1].Found.Should().BeFalse("the missing key is a miss");
+
+        entries[2].IsPhysicallyPresent(readNow).Should().BeTrue("the reserve survives physically for fail-safe");
+        entries[2].IsFresh(readNow).Should().BeFalse("the 'other' tag was invalidated after the entry's birth");
+        entries[2].Value.Should().Be("reserve");
+
+        entries[3].IsFresh(readNow).Should().BeTrue("the duplicate present key resolves independently");
+        entries[3].Value.Should().Be("present");
+    }
+
+    [Fact]
     public async Task should_keep_increment_counter_raw_and_unframed()
     {
         await FlushAsync();

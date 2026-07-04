@@ -29,6 +29,31 @@ internal sealed class NullTimestampL2Adapter<TValue>(TValue value) : IRemoteCach
         return new ValueTask<CacheStoreEntry<T>>(entry);
     }
 
+    public ValueTask<CacheStoreEntry<T>[]> TryGetAllEntriesAsync<T>(
+        IReadOnlyList<string> keys,
+        CancellationToken cancellationToken
+    )
+    {
+        // Position-aligned: every key resolves to the same found-with-null-timestamps entry the single-key path
+        // returns, modelling a legacy/unframed L2 that carries no expiration metadata.
+        var typedValue = value is T typed ? typed : default;
+        var result = new CacheStoreEntry<T>[keys.Count];
+
+        for (var i = 0; i < keys.Count; i++)
+        {
+            result[i] = new CacheStoreEntry<T>(
+                Found: true,
+                IsNull: false,
+                Value: typedValue,
+                LogicalExpiresAt: null,
+                PhysicalExpiresAt: null,
+                SlidingExpiration: null
+            );
+        }
+
+        return new ValueTask<CacheStoreEntry<T>[]>(result);
+    }
+
     public ValueTask<bool> SetEntryAsync<T>(
         string key,
         in CacheStoreEntryWrite<T> entry,

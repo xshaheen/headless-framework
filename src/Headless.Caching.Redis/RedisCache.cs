@@ -2634,6 +2634,17 @@ public sealed class RedisCache(
         return _TryGetEntryAsync<T>(key);
     }
 
+    ValueTask<CacheStoreEntry<T>[]> IFactoryCacheStore.TryGetAllEntriesAsync<T>(
+        IReadOnlyList<string> keys,
+        CancellationToken cancellationToken
+    )
+    {
+        Argument.IsNotNull(keys);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return _TryGetAllEntriesAsync<T>(keys);
+    }
+
     // Non-async forwarder: `in` parameters are not allowed on async methods, so copy the descriptor by value.
     ValueTask<bool> IFactoryCacheStore.SetEntryAsync<T>(
         string key,
@@ -2808,8 +2819,134 @@ public sealed class RedisCache(
         }
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
-        var concurrencyStamp = _ToConcurrencyStamp(redisValue);
         var frame = RedisCacheEntryFrame.Decode(redisValue);
+
+        return await _BuildStoreEntryFromDecodedAsync<T>(redisValue, frame, now).ConfigureAwait(false);
+    }
+
+    // #554: bulk framed cold read. Fetches every key in one MGET (one per hash slot on cluster), decodes all
+    // frames up-front, then warms the process-local marker cache with a SINGLE per-tag prefetch (plus at most one
+    // clear- and one remove-marker read, resolved by the first framed entry below) so the per-entry build resolves
+    // clear/remove/tag invalidation entirely from the warm cache — O(1) marker round-trips for the whole batch
+    // regardless of how many tagged keys it spans, instead of the O(N) marker MGETs a per-key fan-out incurs.
+    // Results are position-aligned with the input keys (a miss is CacheStoreEntry<T>.NotFound); duplicate keys each
+    // get their own element and keys are NOT de-duplicated, matching the position-aligned contract.
+    private async ValueTask<CacheStoreEntry<T>[]> _TryGetAllEntriesAsync<T>(IReadOnlyList<string> keys)
+    {
+        var count = keys.Count;
+        var result = new CacheStoreEntry<T>[count];
+
+        if (count == 0)
+        {
+            return result;
+        }
+
+        var redisKeys = new RedisKey[count];
+
+        for (var i = 0; i < count; i++)
+        {
+            Argument.IsNotNullOrEmpty(keys[i]);
+            redisKeys[i] = _GetKey(keys[i]);
+        }
+
+        // One round-trip (or one per hash slot on a cluster) to fetch all raw values, gathered into a single
+        // index-aligned array — mirrors GetAllAsync/GetAllWithExpirationAsync so the marker prefetch and build loop
+        // run once over everything.
+        RedisValue[] rawValues;
+
+        if (IsCluster)
+        {
+            rawValues = new RedisValue[count];
+
+            var indexedKeys = new (RedisKey Redis, int Index)[count];
+
+            for (var i = 0; i < count; i++)
+            {
+                indexedKeys[i] = (redisKeys[i], i);
+            }
+
+            var slotBuckets = _GroupBySlot(indexedKeys, static entry => entry.Redis);
+
+            foreach (var bucket in slotBuckets.Values)
+            {
+                var slotKeys = new RedisKey[bucket.Count];
+
+                for (var i = 0; i < bucket.Count; i++)
+                {
+                    slotKeys[i] = bucket[i].Redis;
+                }
+
+                var slotValues = await _database.StringGetAsync(slotKeys, cacheOptions.ReadMode).ConfigureAwait(false);
+
+                for (var i = 0; i < bucket.Count; i++)
+                {
+                    rawValues[bucket[i].Index] = slotValues[i];
+                }
+            }
+        }
+        else
+        {
+            rawValues = await _database.StringGetAsync(redisKeys, cacheOptions.ReadMode).ConfigureAwait(false);
+        }
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+
+        // Decode all frames up-front so the tag-marker prefetch can gather every stale tag across the batch.
+        var decodedFrames = new RedisCacheEntryFrame.DecodedFrame?[count];
+
+        for (var i = 0; i < count; i++)
+        {
+            if (rawValues[i].HasValue)
+            {
+                try
+                {
+                    decodedFrames[i] = RedisCacheEntryFrame.Decode(rawValues[i]);
+                }
+                catch (Exception e)
+                {
+                    _logger.LogDeserializationFailed(e, rawValues[i].Length(), typeof(T).FullName);
+                    throw;
+                }
+            }
+        }
+
+        // Warm _markerCache for every stale tag in ONE MGET (one per hash slot on cluster). The per-entry build
+        // loop below runs SEQUENTIALLY, so the first framed entry resolves the clear- and remove-generation markers
+        // (one durable read each, then cached in the process-local fields), and every entry's per-tag resolution
+        // hits the warm cache — no per-key marker round-trip. This is the O(N)->O(1) marker fix (#554); a concurrent
+        // per-key fan-out instead races the cold marker cache and issues one marker MGET per tagged key.
+        await _PrefetchTagMarkersAsync(decodedFrames, now).ConfigureAwait(false);
+
+        for (var i = 0; i < count; i++)
+        {
+            if (!rawValues[i].HasValue)
+            {
+                result[i] = CacheStoreEntry<T>.NotFound;
+                continue;
+            }
+
+            result[i] = await _BuildStoreEntryFromDecodedAsync<T>(rawValues[i], decodedFrames[i]!.Value, now)
+                .ConfigureAwait(false);
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Builds a <see cref="CacheStoreEntry{T}"/> from an already-fetched, already-decoded present value. Shared by
+    /// the single-key <see cref="_TryGetEntryAsync{T}"/> and the bulk <see cref="_TryGetAllEntriesAsync{T}"/> paths
+    /// so both apply the exact same freshness, remove/clear/tag invalidation, and metadata-mapping rules. The caller
+    /// guarantees <paramref name="redisValue"/> is present (<see cref="RedisValue.HasValue"/>) and that
+    /// <paramref name="frame"/> is its decoded form. Marker resolution goes through the process-local marker cache;
+    /// the bulk caller pre-warms it so this pays no per-entry round-trip.
+    /// </summary>
+    private async ValueTask<CacheStoreEntry<T>> _BuildStoreEntryFromDecodedAsync<T>(
+        RedisValue redisValue,
+        RedisCacheEntryFrame.DecodedFrame frame,
+        DateTime now
+    )
+    {
+        var concurrencyStamp = _ToConcurrencyStamp(redisValue);
 
         if (frame.IsFramed)
         {

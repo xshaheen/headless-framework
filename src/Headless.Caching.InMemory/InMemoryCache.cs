@@ -1808,6 +1808,30 @@ public sealed class InMemoryCache
         );
     }
 
+    async ValueTask<CacheStoreEntry<T>[]> IFactoryCacheStore.TryGetAllEntriesAsync<T>(
+        IReadOnlyList<string> keys,
+        CancellationToken cancellationToken
+    )
+    {
+        _ThrowIfDisposed();
+        Argument.IsNotNull(keys);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // In-memory resolution is a per-key dictionary lookup against process-local marker dictionaries — there are
+        // no network round-trips to batch, so per-key resolution already satisfies the O(1)-marker contract (the
+        // markers ARE the in-process dictionaries). Position-aligned with the input keys, one entry per key; the
+        // single-key path completes synchronously so each await returns without a real suspension.
+        var self = (IFactoryCacheStore)this;
+        var result = new CacheStoreEntry<T>[keys.Count];
+
+        for (var i = 0; i < keys.Count; i++)
+        {
+            result[i] = await self.TryGetEntryAsync<T>(keys[i], cancellationToken).ConfigureAwait(false);
+        }
+
+        return result;
+    }
+
     // Non-async forwarder: `in` parameters are not allowed on async methods, so copy the descriptor by value.
     ValueTask<bool> IFactoryCacheStore.SetEntryAsync<T>(
         string key,

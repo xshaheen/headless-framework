@@ -3174,6 +3174,11 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         public ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(string key, CancellationToken cancellationToken) =>
             inner.TryGetEntryAsync<T>(key, cancellationToken);
 
+        public ValueTask<CacheStoreEntry<T>[]> TryGetAllEntriesAsync<T>(
+            IReadOnlyList<string> keys,
+            CancellationToken cancellationToken
+        ) => inner.TryGetAllEntriesAsync<T>(keys, cancellationToken);
+
         public ValueTask<bool> SetEntryAsync<T>(
             string key,
             in CacheStoreEntryWrite<T> entry,

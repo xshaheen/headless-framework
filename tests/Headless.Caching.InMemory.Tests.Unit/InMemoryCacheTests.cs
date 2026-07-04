@@ -2361,6 +2361,72 @@ public sealed class InMemoryCacheTests : TestBase
     }
 
     [Fact]
+    public async Task should_return_position_aligned_bulk_entries_through_factory_store()
+    {
+        // given — a present tagged entry, a genuine miss, and a tag-invalidated entry, plus a duplicate key.
+        using var cache = _CreateCache();
+        var store = (IFactoryCacheStore)cache;
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+
+        var presentKey = Faker.Random.AlphaNumeric(10);
+        var invalidatedKey = Faker.Random.AlphaNumeric(10);
+        var missingKey = Faker.Random.AlphaNumeric(10);
+        var tag = Faker.Random.AlphaNumeric(6);
+
+        await store.SetEntryAsync(
+            presentKey,
+            new CacheStoreEntryWrite<int>
+            {
+                Value = 42,
+                IsNull = false,
+                LogicalExpiresAt = now.AddMinutes(5),
+                PhysicalExpiresAt = now.AddMinutes(5),
+                CreatedAt = now,
+            },
+            AbortToken
+        );
+
+        await store.SetEntryAsync(
+            invalidatedKey,
+            new CacheStoreEntryWrite<int>
+            {
+                Value = 7,
+                IsNull = false,
+                LogicalExpiresAt = now.AddMinutes(5),
+                PhysicalExpiresAt = now.AddMinutes(30),
+                Tags = [tag],
+                CreatedAt = now,
+            },
+            AbortToken
+        );
+
+        // Invalidate the tag after the entry was born so it demotes to a physically-present stale reserve.
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(10));
+        await cache.RemoveByTagAsync(tag, AbortToken);
+        now = _timeProvider.GetUtcNow().UtcDateTime;
+
+        // when — one bulk read, keys deliberately include a duplicate (presentKey twice) and a miss.
+        var keys = new[] { presentKey, missingKey, invalidatedKey, presentKey };
+        var entries = await store.TryGetAllEntriesAsync<int>(keys, AbortToken);
+
+        // then — position-aligned, one element per key (duplicates each resolved).
+        entries.Should().HaveCount(4);
+
+        entries[0].IsFresh(now).Should().BeTrue("present entry is logically fresh");
+        entries[0].Value.Should().Be(42);
+
+        entries[1].Found.Should().BeFalse("the missing key is a miss");
+
+        // Tag-invalidated: physically present (fail-safe reserve) but no longer logically fresh.
+        entries[2].IsPhysicallyPresent(now).Should().BeTrue();
+        entries[2].IsFresh(now).Should().BeFalse("the tag was invalidated after the entry's birth");
+        entries[2].Value.Should().Be(7);
+
+        entries[3].IsFresh(now).Should().BeTrue("the duplicate present key resolves independently");
+        entries[3].Value.Should().Be(42);
+    }
+
+    [Fact]
     public async Task should_not_corrupt_memory_size_on_failed_replace_with_cloning()
     {
         // given

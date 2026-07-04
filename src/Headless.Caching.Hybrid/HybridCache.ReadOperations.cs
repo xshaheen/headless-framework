@@ -7,12 +7,6 @@ namespace Headless.Caching;
 
 public sealed partial class HybridCache
 {
-    // Upper bound on concurrent per-key framed cold reads fanned out for a single bulk GetAllAsync miss set. Caps the
-    // burst of concurrent L2 GETs (and, for tagged entries, the per-key marker MGETs) pushed through the shared L2
-    // multiplexer regardless of caller batch size — mirroring the Redis provider's own multi-key fan-out cap so a large
-    // cold batch cannot reintroduce the unbounded-command storm the native bulk path avoids.
-    private const int _ColdReadFanOutBatchSize = 250;
-
     #region ICache - Get Operations
 
     /// <inheritdoc />
@@ -285,13 +279,14 @@ public sealed partial class HybridCache
     }
 
     /// <summary>
-    /// Cold bulk-read tail when both tiers implement <see cref="IFactoryCacheStore"/>: fans the missed keys out as
-    /// per-key framed <see cref="IFactoryCacheStore.TryGetEntryAsync{T}"/> reads (value + expiration + Tags +
-    /// CreatedAt) under one circuit/timeout boundary, fills <paramref name="result"/>, and seeds each
+    /// Cold bulk-read tail when both tiers implement <see cref="IFactoryCacheStore"/>: reads the missed keys through
+    /// the bulk framed <see cref="IFactoryCacheStore.TryGetAllEntriesAsync{T}"/> primitive (value + expiration + Tags
+    /// + CreatedAt per key) in one circuit/timeout boundary, fills <paramref name="result"/>, and seeds each
     /// logically-fresh hit into L1 via <see cref="_SetLocalEntryAsync{T}"/> so the local copy carries the tag
     /// metadata Family-2 invalidation version-pins against — unlike the bulk <c>GetAllWithExpirationAsync</c>
-    /// fallback, whose result carries no tags. On a tripped circuit or read fault the whole batch degrades to the
-    /// partial L1 result.
+    /// fallback, whose result carries no tags. The bulk primitive resolves the batch's invalidation markers with a
+    /// single prefetch (O(1) marker round-trips) instead of the O(N) marker MGETs a per-key fan-out incurs (#554).
+    /// On a tripped circuit or read fault the whole batch degrades to the partial L1 result.
     /// </summary>
     private async ValueTask<IDictionary<string, CacheValue<T>>> _GetAllColdReadFromFramedL2Async<T>(
         List<string> missedKeys,
@@ -301,36 +296,14 @@ public sealed partial class HybridCache
         CancellationToken cancellationToken
     )
     {
-        // Fan the per-key framed reads out under a single _ReadFromL2Async wrapper (matching the bulk read's one
-        // circuit/timeout boundary) so the whole batch degrades together to the partial L1 result on fault/timeout.
+        // One bulk read under a single _ReadFromL2Async wrapper (matching the native bulk read's one circuit/timeout
+        // boundary) so the whole batch degrades together to the partial L1 result on fault/timeout. The store
+        // returns entries position-aligned with missedKeys so the freshness/seed loop below can index them directly,
+        // and resolves the batch's clear/remove/tag markers in a single prefetch — O(1) marker round-trips.
         var distributedRead = await _ReadFromL2Async(
                 // Diagnostic-only label: _ReadFromL2Async uses this key solely for timeout/circuit log fields.
                 $"[bulk:{missedKeys.Count}]",
-                async ct =>
-                {
-                    // Bound the fan-out: process the missed keys in fixed-size chunks (each chunk fully awaited before
-                    // the next starts) so the concurrent L2 command backlog — and, for tagged entries, the per-key
-                    // marker-MGET burst — is capped regardless of caller batch size. Results stay position-aligned with
-                    // missedKeys so the freshness/seed loop below can index them directly.
-                    var entries = new CacheStoreEntry<T>[missedKeys.Count];
-
-                    for (var offset = 0; offset < missedKeys.Count; offset += _ColdReadFanOutBatchSize)
-                    {
-                        ct.ThrowIfCancellationRequested();
-
-                        var count = Math.Min(_ColdReadFanOutBatchSize, missedKeys.Count - offset);
-                        var reads = new Task<CacheStoreEntry<T>>[count];
-                        for (var i = 0; i < count; i++)
-                        {
-                            reads[i] = l2Store.TryGetEntryAsync<T>(missedKeys[offset + i], ct).AsTask();
-                        }
-
-                        var chunk = await Task.WhenAll(reads).ConfigureAwait(false);
-                        Array.Copy(chunk, 0, entries, offset, count);
-                    }
-
-                    return entries;
-                },
+                ct => l2Store.TryGetAllEntriesAsync<T>(missedKeys, ct),
                 _SelectDistributedReadTimeout(hasLocalFallback: false, softCanDegradeToMiss: true),
                 DistributedCacheTimeoutKind.Soft,
                 cancellationToken

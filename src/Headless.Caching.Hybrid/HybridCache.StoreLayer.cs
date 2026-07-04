@@ -123,6 +123,35 @@ public sealed partial class HybridCache
         return l2Entry.Found ? l2Entry : l1StaleCandidate ?? CacheStoreEntry<T>.NotFound;
     }
 
+    async ValueTask<CacheStoreEntry<T>[]> IFactoryCacheStore.TryGetAllEntriesAsync<T>(
+        IReadOnlyList<string> keys,
+        CancellationToken cancellationToken
+    )
+    {
+        _ThrowIfDisposed();
+        Argument.IsNotNull(keys);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // This path is reached only when a HybridCache is nested as another HybridCache's L2 store — a rare
+        // configuration. Composing the batch faithfully would need per-key timeout kinds (Hard when a key has no L1
+        // fallback, Soft when it does), a per-index serve-stale decision, and a per-index promotion gate, none of
+        // which collapse into one bulk L2 timeout boundary without diverging from the single-key contract. So we
+        // resolve each key SEQUENTIALLY through the single-key primitive, which preserves that contract exactly.
+        // Marker efficiency is still bounded, not O(N): each leaf tier's marker cache is process-local and shared,
+        // so sequential reads warm it once instead of racing it concurrently (the concurrent race was the original
+        // #554 storm). The common non-nested topology never reaches here — the outer HybridCache's L2 is a leaf
+        // store (Redis/InMemory) whose own bulk primitive does the single-prefetch O(1) marker read.
+        var self = (IFactoryCacheStore)this;
+        var result = new CacheStoreEntry<T>[keys.Count];
+
+        for (var i = 0; i < keys.Count; i++)
+        {
+            result[i] = await self.TryGetEntryAsync<T>(keys[i], cancellationToken).ConfigureAwait(false);
+        }
+
+        return result;
+    }
+
     // Non-async forwarder: `in` parameters are not allowed on async methods, so copy the descriptor by value.
     ValueTask<bool> IFactoryCacheStore.SetEntryAsync<T>(
         string key,

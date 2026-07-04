@@ -446,6 +446,59 @@ public sealed class HybridCacheTagTests : TestBase
     }
 
     [Fact]
+    public async Task should_issue_a_single_bulk_l2_read_for_a_cold_bulk_get_over_many_tagged_keys()
+    {
+        // given — many tagged entries live in L2 only; L1 has never held them. (#554: the framed cold-read path
+        // must resolve the batch through the bulk primitive, not a per-key TryGetEntryAsync fan-out.)
+        var (cache, _, l2, _) = _CreateCache();
+        await using var _ = cache;
+        var adapter = (InMemoryRemoteCacheAdapter)l2;
+
+        var tag = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var expected = new Dictionary<string, int>(StringComparer.Ordinal);
+
+        for (var i = 0; i < 50; i++)
+        {
+            var key = Faker.Random.AlphaNumeric(10) + i;
+            expected[key] = i;
+
+            await ((IFactoryCacheStore)l2).SetEntryAsync(
+                key,
+                new CacheStoreEntryWrite<int>
+                {
+                    Value = i,
+                    IsNull = false,
+                    LogicalExpiresAt = now.AddMinutes(5),
+                    PhysicalExpiresAt = now.AddMinutes(5),
+                    Tags = [tag],
+                    CreatedAt = now.AddSeconds(-5),
+                },
+                AbortToken
+            );
+        }
+
+        // Writes never touch the read counters, so both start at zero going into the cold read.
+        adapter.TryGetEntryCalls.Should().Be(0);
+        adapter.TryGetAllEntriesCalls.Should().Be(0);
+
+        // when — one cold bulk read over all keys (every key misses L1 and falls through to L2).
+        var cold = await cache.GetAllAsync<int>(expected.Keys.ToList(), AbortToken);
+
+        // then — every key resolved with its value, AND the L2 store saw exactly ONE bulk framed read (O(1)),
+        // never a per-key TryGetEntryAsync fan-out (which would be O(N) — 50 calls here).
+        cold.Should().HaveCount(expected.Count);
+
+        foreach (var (key, value) in expected)
+        {
+            cold[key].Value.Should().Be(value);
+        }
+
+        adapter.TryGetAllEntriesCalls.Should().Be(1, "the whole cold batch resolves through one bulk L2 read");
+        adapter.TryGetEntryCalls.Should().Be(0, "no per-key framed fan-out is issued for the bulk cold read");
+    }
+
+    [Fact]
     public async Task should_only_invalidate_entries_carrying_the_removed_tag()
     {
         // given — three keys all carrying the same tag set.

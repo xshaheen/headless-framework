@@ -20,6 +20,28 @@ public interface IFactoryCacheStore
     /// <param name="cancellationToken">The cancellation token.</param>
     ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(string key, CancellationToken cancellationToken);
 
+    /// <summary>Attempts to get a batch of entries in one bulk read, one snapshot per requested key.</summary>
+    /// <remarks>
+    /// The returned array is <b>position-aligned</b> with <paramref name="keys"/>: element <c>i</c> is the snapshot
+    /// for <c>keys[i]</c>, and a miss is <see cref="CacheStoreEntry{T}.NotFound"/>, so the array always has exactly
+    /// <c>keys.Count</c> elements and duplicate keys each get their own element. The per-entry contract is identical
+    /// to <see cref="TryGetEntryAsync{T}"/> applied across the batch — a physically-present but logically-expired
+    /// reserve is still returned so the coordinator can serve it stale, and expiration timestamps are UTC.
+    /// <para>
+    /// Implementations MUST be marker-resolution-efficient: resolve the batch's clear-, remove-, and per-tag
+    /// invalidation markers with a single prefetch for the whole batch (O(1) marker round-trips), never one
+    /// resolution per key. This is the whole point of the primitive — it exists so a bulk cold read pays a fixed
+    /// number of marker round-trips regardless of how many tagged keys it spans.
+    /// </para>
+    /// </remarks>
+    /// <typeparam name="T">The cached value type.</typeparam>
+    /// <param name="keys">The cache keys to read, in the order their snapshots are returned.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    ValueTask<CacheStoreEntry<T>[]> TryGetAllEntriesAsync<T>(
+        IReadOnlyList<string> keys,
+        CancellationToken cancellationToken
+    );
+
     /// <summary>Sets an entry with explicit expiration and per-entry metadata.</summary>
     /// <returns>
     /// <see langword="true"/> when the entry was committed; <see langword="false"/> when
