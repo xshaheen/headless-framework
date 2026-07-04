@@ -67,6 +67,35 @@ public sealed class RangeTests
 
     #endregion
 
+    #region Range Inclusive Has
+
+    public static readonly TheoryData<Range<string>, Range<string>, bool> RangeInclusiveHasData = new()
+    {
+        { new Range<string>("a", null), new Range<string>("m", null), true },
+        { new Range<string>("a", "z"), new Range<string>("m", null), false },
+        { new Range<string>(null, "z"), new Range<string>(null, "m"), true },
+        { new Range<string>("a", "z"), new Range<string>(null, "m"), false },
+        { new Range<string>(null, "z"), new Range<string>("a", "z"), true },
+        { new Range<string>("a", null), new Range<string>("a", "z"), true },
+    };
+
+    [Theory]
+    [MemberData(nameof(RangeInclusiveHasData))]
+    public void range_inclusive_has_should_handle_unbounded_bounds(
+        Range<string> range,
+        Range<string> other,
+        bool expected
+    )
+    {
+        // when
+        var result = range.InclusiveHas(other);
+
+        // then
+        result.Should().Be(expected);
+    }
+
+    #endregion
+
     #region Exclusive Has
 
     public static readonly TheoryData<Range<int>, int, bool> ValueExclusiveHasData = new()
@@ -110,9 +139,28 @@ public sealed class RangeTests
             { new(1, 10), new(15, 20), false }, // Far After
         };
 
+    public static readonly TheoryData<Range<string>, Range<string>, bool> IsOverlapUnboundedData = new()
+    {
+        { new Range<string>("m", null), new Range<string>(null, "l"), false },
+        { new Range<string>("m", null), new Range<string>(null, "m"), true },
+        { new Range<string>(null, "m"), new Range<string>("n", null), false },
+        { new Range<string>(null, "m"), new Range<string>("m", null), true },
+    };
+
     [Theory]
     [MemberData(nameof(IsOverlapData))]
     public void is_overlap_should_return_true_when_ranges_overlap(Range<int> range, Range<int> other, bool expected)
+    {
+        // when
+        var result = range.IsOverlap(other);
+
+        // then
+        result.Should().Be(expected);
+    }
+
+    [Theory]
+    [MemberData(nameof(IsOverlapUnboundedData))]
+    public void is_overlap_should_handle_unbounded_bounds(Range<string> range, Range<string> other, bool expected)
     {
         // when
         var result = range.IsOverlap(other);
@@ -138,6 +186,22 @@ public sealed class RangeTests
         { new(1, 10), new(5, 11), [new(1, 4)] }, // Above
     };
 
+    public static readonly TheoryData<Range<string>, Range<string>, Range<string>[]> RemoveUnboundedOverlapData = new()
+    {
+        {
+            new Range<string>(null, "z"),
+            new Range<string>("m", "p"),
+            [new Range<string>(null, "l"), new Range<string>("q", "z")]
+        },
+        {
+            new Range<string>("a", null),
+            new Range<string>("m", "p"),
+            [new Range<string>("a", "l"), new Range<string>("q", null)]
+        },
+        { new Range<string>(null, "z"), new Range<string>(null, "m"), [new Range<string>("n", "z")] },
+        { new Range<string>("a", null), new Range<string>("m", null), [new Range<string>("a", "l")] },
+    };
+
     [Theory]
     [MemberData(nameof(RemoveOverlapData))]
     public void remove_overlap_should_return_ranges_without_overlap(
@@ -152,6 +216,25 @@ public sealed class RangeTests
         // then
         result.Should().BeEquivalentTo(remaining);
     }
+
+    [Theory]
+    [MemberData(nameof(RemoveUnboundedOverlapData))]
+    public void remove_overlap_should_preserve_unbounded_remainders(
+        Range<string> range,
+        Range<string> other,
+        Range<string>[] remaining
+    )
+    {
+        // when
+        var result = range.RemoveConflictRangeParts(other, _NextLetter, _PreviousLetter);
+
+        // then
+        result.Should().BeEquivalentTo(remaining);
+    }
+
+    private static string _NextLetter(string value) => ((char)(value[0] + 1)).ToString();
+
+    private static string _PreviousLetter(string value) => ((char)(value[0] - 1)).ToString();
 
     #endregion
 
