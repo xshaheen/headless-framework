@@ -3171,13 +3171,17 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         /// <summary>Completes when a restamp write has started (entered the gate-wait).</summary>
         public Task RestampStarted => _restampStartedTcs.Task;
 
-        public ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(string key, CancellationToken cancellationToken) =>
-            inner.TryGetEntryAsync<T>(key, cancellationToken);
+        public ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(
+            string key,
+            CancellationToken cancellationToken,
+            FactoryCacheReadOptions readOptions = default
+        ) => inner.TryGetEntryAsync<T>(key, cancellationToken, readOptions);
 
         public ValueTask<CacheStoreEntry<T>[]> TryGetAllEntriesAsync<T>(
             IReadOnlyList<string> keys,
-            CancellationToken cancellationToken
-        ) => inner.TryGetAllEntriesAsync<T>(keys, cancellationToken);
+            CancellationToken cancellationToken,
+            FactoryCacheReadOptions readOptions = default
+        ) => inner.TryGetAllEntriesAsync<T>(keys, cancellationToken, readOptions);
 
         public ValueTask<bool> SetEntryAsync<T>(
             string key,

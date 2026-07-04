@@ -39,21 +39,26 @@ internal sealed class TogglableRemoteCache(TimeProvider timeProvider)
 
     public int RemoveAttempts { get; private set; }
 
-    public async ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(string key, CancellationToken cancellationToken)
-    {
-        await _WaitReadGateAsync(cancellationToken);
-
-        return await ((IFactoryCacheStore)_cache).TryGetEntryAsync<T>(key, cancellationToken);
-    }
-
-    public async ValueTask<CacheStoreEntry<T>[]> TryGetAllEntriesAsync<T>(
-        IReadOnlyList<string> keys,
-        CancellationToken cancellationToken
+    public async ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(
+        string key,
+        CancellationToken cancellationToken,
+        FactoryCacheReadOptions readOptions = default
     )
     {
         await _WaitReadGateAsync(cancellationToken);
 
-        return await ((IFactoryCacheStore)_cache).TryGetAllEntriesAsync<T>(keys, cancellationToken);
+        return await ((IFactoryCacheStore)_cache).TryGetEntryAsync<T>(key, cancellationToken, readOptions);
+    }
+
+    public async ValueTask<CacheStoreEntry<T>[]> TryGetAllEntriesAsync<T>(
+        IReadOnlyList<string> keys,
+        CancellationToken cancellationToken,
+        FactoryCacheReadOptions readOptions = default
+    )
+    {
+        await _WaitReadGateAsync(cancellationToken);
+
+        return await ((IFactoryCacheStore)_cache).TryGetAllEntriesAsync<T>(keys, cancellationToken, readOptions);
     }
 
     private ValueTask _WaitReadGateAsync(CancellationToken cancellationToken)

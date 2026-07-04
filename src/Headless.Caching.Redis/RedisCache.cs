@@ -2623,9 +2623,11 @@ public sealed class RedisCache(
         );
     }
 
+    // Single-tier (L2 only): the per-tier readOptions have no meaning here and are ignored.
     ValueTask<CacheStoreEntry<T>> IFactoryCacheStore.TryGetEntryAsync<T>(
         string key,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        FactoryCacheReadOptions readOptions
     )
     {
         Argument.IsNotNullOrEmpty(key);
@@ -2634,9 +2636,11 @@ public sealed class RedisCache(
         return _TryGetEntryAsync<T>(key);
     }
 
+    // Single-tier (L2 only): the per-tier readOptions have no meaning here and are ignored.
     ValueTask<CacheStoreEntry<T>[]> IFactoryCacheStore.TryGetAllEntriesAsync<T>(
         IReadOnlyList<string> keys,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        FactoryCacheReadOptions readOptions
     )
     {
         Argument.IsNotNull(keys);

@@ -53,6 +53,10 @@ public sealed partial class FactoryCacheCoordinator
         var ownsReleaser = true;
         IAsyncDisposable? distributedLease = null;
 
+        // Same per-tier read policy as the foreground operation, so an eager double-check reads the tiers the
+        // triggering GetOrAddAsync did (single-tier providers ignore the flags).
+        var readOptions = FactoryCacheReadOptions.FromEntryOptions(options);
+
         try
         {
             // Yield so the triggering caller returns its fresh value without paying for the gate write or
@@ -60,7 +64,8 @@ public sealed partial class FactoryCacheCoordinator
             await Task.Yield();
 
             // Double-check under the lock: a concurrent refresh may have already advanced or cleared the stamp.
-            var entry = await _TryGetEntryAsync<T>(store, key, CancellationToken.None).ConfigureAwait(false);
+            var entry = await _TryGetEntryAsync<T>(store, key, readOptions, CancellationToken.None)
+                .ConfigureAwait(false);
             var now = _GetUtcNow();
 
             if (
@@ -135,7 +140,8 @@ public sealed partial class FactoryCacheCoordinator
             // fails the final write's CAS instead of being silently clobbered or the removed key resurrected. The
             // gate write carried the original birth time forward, so the re-read's CreatedAt preserves it on the
             // NotModified path.
-            var postGateEntry = await _TryGetEntryAsync<T>(store, key, CancellationToken.None).ConfigureAwait(false);
+            var postGateEntry = await _TryGetEntryAsync<T>(store, key, readOptions, CancellationToken.None)
+                .ConfigureAwait(false);
 
             // Fail closed when the re-read did not return a live entry. NotFound (ConcurrencyStamp == null) covers both
             // a key concurrently removed between the gate commit and this re-read (Remove takes no factory lock) and a

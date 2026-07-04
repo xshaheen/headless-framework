@@ -15,12 +15,16 @@ internal sealed class ThrowingReadRemoteCache(TimeProvider timeProvider) : IRemo
 
     private readonly InMemoryCache _inner = new(timeProvider, new InMemoryCacheOptions());
 
-    public ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(string key, CancellationToken cancellationToken) =>
-        throw new InvalidOperationException("L2 store is unavailable");
+    public ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(
+        string key,
+        CancellationToken cancellationToken,
+        FactoryCacheReadOptions readOptions = default
+    ) => throw new InvalidOperationException("L2 store is unavailable");
 
     public ValueTask<CacheStoreEntry<T>[]> TryGetAllEntriesAsync<T>(
         IReadOnlyList<string> keys,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        FactoryCacheReadOptions readOptions = default
     ) => throw new InvalidOperationException("L2 store is unavailable");
 
     public ValueTask<bool> SetEntryAsync<T>(

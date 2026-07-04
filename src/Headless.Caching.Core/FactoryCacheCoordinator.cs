@@ -115,13 +115,19 @@ public sealed partial class FactoryCacheCoordinator(
 
         cancellationToken.ThrowIfCancellationRequested();
 
+        // Per-tier read control: skip reading L1 and/or L2 on a multi-tier (hybrid) store. Setting both is a miss,
+        // matching SkipCacheRead; single-tier providers ignore the flags. Derived once and threaded through every
+        // store read of this operation (pre-lock, under-lock, post-distributed-lock, and eager-refresh double-check)
+        // so all reads share one tier policy.
+        var readOptions = FactoryCacheReadOptions.FromEntryOptions(options);
+
         // Force-refresh (SkipCacheRead): bypass every store read and go straight to the factory. NotFound makes
         // the freshness/stale checks below false, so the read short-circuits and the eager/sliding read-path
         // helpers never fire; the per-key lock and any distributed lease are still acquired/released normally,
         // and staleCandidate stays NotFound so fail-safe cannot serve a reserve (none was read).
         var entry = options.SkipCacheRead
             ? CacheStoreEntry<T>.NotFound
-            : await _TryGetEntryAsync<T>(store, key, cancellationToken).ConfigureAwait(false);
+            : await _TryGetEntryAsync<T>(store, key, readOptions, cancellationToken).ConfigureAwait(false);
         var now = _GetUtcNow();
 
         if (entry.IsFresh(now))
@@ -159,7 +165,7 @@ public sealed partial class FactoryCacheCoordinator(
             // to the factory while still holding the per-key lock for single-flight.
             if (!options.SkipCacheRead)
             {
-                entry = await _TryGetEntryAsync<T>(store, key, cancellationToken).ConfigureAwait(false);
+                entry = await _TryGetEntryAsync<T>(store, key, readOptions, cancellationToken).ConfigureAwait(false);
                 now = _GetUtcNow();
 
                 if (entry.IsFresh(now))
@@ -229,7 +235,8 @@ public sealed partial class FactoryCacheCoordinator(
                 // tiers unconditionally, so a peer's fresh write must not short-circuit the forced factory run.
                 if (!options.SkipCacheRead)
                 {
-                    entry = await _TryGetEntryAsync<T>(store, key, cancellationToken).ConfigureAwait(false);
+                    entry = await _TryGetEntryAsync<T>(store, key, readOptions, cancellationToken)
+                        .ConfigureAwait(false);
                     now = _GetUtcNow();
 
                     if (entry.IsFresh(now))
@@ -498,12 +505,13 @@ public sealed partial class FactoryCacheCoordinator(
     private async ValueTask<CacheStoreEntry<T>> _TryGetEntryAsync<T>(
         IFactoryCacheStore store,
         string key,
+        FactoryCacheReadOptions readOptions,
         CancellationToken cancellationToken
     )
     {
         try
         {
-            return await store.TryGetEntryAsync<T>(key, cancellationToken).ConfigureAwait(false);
+            return await store.TryGetEntryAsync<T>(key, cancellationToken, readOptions).ConfigureAwait(false);
         }
         catch (Exception exception) when (!IsCallerCancellation(exception, cancellationToken))
         {

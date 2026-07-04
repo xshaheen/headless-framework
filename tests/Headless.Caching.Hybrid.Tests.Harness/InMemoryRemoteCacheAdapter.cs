@@ -52,21 +52,26 @@ public sealed class InMemoryRemoteCacheAdapter(InMemoryCache cache)
     /// <summary>Counts bulk framed reads issued against this L2 stand-in (proves the O(1) bulk-read fix).</summary>
     public int TryGetAllEntriesCalls { get; private set; }
 
-    public ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(string key, CancellationToken cancellationToken)
+    public ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(
+        string key,
+        CancellationToken cancellationToken,
+        FactoryCacheReadOptions readOptions = default
+    )
     {
         TryGetEntryCalls++;
-        return ((IFactoryCacheStore)cache).TryGetEntryAsync<T>(key, cancellationToken);
+        return ((IFactoryCacheStore)cache).TryGetEntryAsync<T>(key, cancellationToken, readOptions);
     }
 
     // Delegates to the inner cache's bulk primitive (not this adapter's single-key path), so a bulk cold read
     // registers exactly one TryGetAllEntriesCalls and zero TryGetEntryCalls at the L2 boundary.
     public ValueTask<CacheStoreEntry<T>[]> TryGetAllEntriesAsync<T>(
         IReadOnlyList<string> keys,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        FactoryCacheReadOptions readOptions = default
     )
     {
         TryGetAllEntriesCalls++;
-        return ((IFactoryCacheStore)cache).TryGetAllEntriesAsync<T>(keys, cancellationToken);
+        return ((IFactoryCacheStore)cache).TryGetAllEntriesAsync<T>(keys, cancellationToken, readOptions);
     }
 
     public ValueTask<bool> SetEntryAsync<T>(

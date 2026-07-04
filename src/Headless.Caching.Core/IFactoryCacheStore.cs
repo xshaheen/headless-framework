@@ -18,7 +18,17 @@ public interface IFactoryCacheStore
     /// <typeparam name="T">The cached value type.</typeparam>
     /// <param name="key">The cache key.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
-    ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(string key, CancellationToken cancellationToken);
+    /// <param name="readOptions">
+    /// Per-tier read controls. The default (<see cref="FactoryCacheReadOptions.None"/>) reads every tier. A
+    /// multi-tier store (the hybrid cache) honors <see cref="FactoryCacheReadOptions.SkipMemoryRead"/> /
+    /// <see cref="FactoryCacheReadOptions.SkipDistributedRead"/> to bypass an individual tier; single-tier providers
+    /// ignore them (there is only one tier to read).
+    /// </param>
+    ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(
+        string key,
+        CancellationToken cancellationToken,
+        FactoryCacheReadOptions readOptions = default
+    );
 
     /// <summary>Attempts to get a batch of entries in one bulk read, one snapshot per requested key.</summary>
     /// <remarks>
@@ -37,9 +47,15 @@ public interface IFactoryCacheStore
     /// <typeparam name="T">The cached value type.</typeparam>
     /// <param name="keys">The cache keys to read, in the order their snapshots are returned.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
+    /// <param name="readOptions">
+    /// Per-tier read controls applied to every key in the batch. The default
+    /// (<see cref="FactoryCacheReadOptions.None"/>) reads every tier; a multi-tier store honors the per-tier skip
+    /// flags exactly as <see cref="TryGetEntryAsync{T}"/> does, and single-tier providers ignore them.
+    /// </param>
     ValueTask<CacheStoreEntry<T>[]> TryGetAllEntriesAsync<T>(
         IReadOnlyList<string> keys,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        FactoryCacheReadOptions readOptions = default
     );
 
     /// <summary>Sets an entry with explicit expiration and per-entry metadata.</summary>

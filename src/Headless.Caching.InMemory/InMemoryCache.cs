@@ -1740,9 +1740,11 @@ public sealed class InMemoryCache
         _disposedCts.Dispose();
     }
 
+    // Single-tier (L1 only): the per-tier readOptions have no meaning here and are ignored.
     ValueTask<CacheStoreEntry<T>> IFactoryCacheStore.TryGetEntryAsync<T>(
         string key,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        FactoryCacheReadOptions readOptions
     )
     {
         _ThrowIfDisposed();
@@ -1808,9 +1810,11 @@ public sealed class InMemoryCache
         );
     }
 
+    // Single-tier (L1 only): the per-tier readOptions have no meaning here and are ignored.
     async ValueTask<CacheStoreEntry<T>[]> IFactoryCacheStore.TryGetAllEntriesAsync<T>(
         IReadOnlyList<string> keys,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        FactoryCacheReadOptions readOptions
     )
     {
         _ThrowIfDisposed();

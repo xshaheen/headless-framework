@@ -82,7 +82,11 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
         }
     }
 
-    public ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(string key, CancellationToken cancellationToken)
+    public ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(
+        string key,
+        CancellationToken cancellationToken,
+        FactoryCacheReadOptions readOptions = default
+    )
     {
         cancellationToken.ThrowIfCancellationRequested();
         TryGetEntryCalls++;
@@ -130,7 +134,8 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
 
     public async ValueTask<CacheStoreEntry<T>[]> TryGetAllEntriesAsync<T>(
         IReadOnlyList<string> keys,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        FactoryCacheReadOptions readOptions = default
     )
     {
         cancellationToken.ThrowIfCancellationRequested();

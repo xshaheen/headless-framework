@@ -12,7 +12,8 @@ public sealed partial class HybridCache
 {
     async ValueTask<CacheStoreEntry<T>> IFactoryCacheStore.TryGetEntryAsync<T>(
         string key,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        FactoryCacheReadOptions readOptions
     )
     {
         _ThrowIfDisposed();
@@ -23,55 +24,64 @@ public sealed partial class HybridCache
         CacheStoreEntry<T>? l1StaleCandidate = null;
         var l1SlidingHit = false;
 
-        if (LocalCache is IFactoryCacheStore l1Store)
+        // Per-tier read control: SkipMemoryRead bypasses the L1 read entirely, so the read is served from (or
+        // refreshed against) L2 — no L1 hit, no L1 stale reserve, no L1 miss log. A value still read from L2 is
+        // promoted into L1 below (promotion is a write, governed by SkipMemoryCacheWrite, not by the read skip).
+        if (!readOptions.SkipMemoryRead)
         {
-            var l1Entry = await l1Store.TryGetEntryAsync<T>(key, cancellationToken).ConfigureAwait(false);
-
-            if (l1Entry.IsFresh(now))
+            if (LocalCache is IFactoryCacheStore l1Store)
             {
-                _logger.LogLocalCacheHit(key);
-                Interlocked.Increment(ref _localCacheHits);
+                var l1Entry = await l1Store.TryGetEntryAsync<T>(key, cancellationToken).ConfigureAwait(false);
 
-                if (!l1Entry.SlidingExpiration.HasValue)
+                if (l1Entry.IsFresh(now))
                 {
-                    return l1Entry;
+                    _logger.LogLocalCacheHit(key);
+                    Interlocked.Increment(ref _localCacheHits);
+
+                    if (!l1Entry.SlidingExpiration.HasValue)
+                    {
+                        return l1Entry;
+                    }
+
+                    // Sliding entries need the L2 physical cap for safe re-arm. A local entry may be physically
+                    // capped by DefaultLocalExpiration, so use it only as a no-rearm fallback if L2 is unavailable.
+                    l1SlidingHit = true;
+                    l1StaleCandidate = l1Entry with { SlidingExpiration = null };
                 }
-
-                // Sliding entries need the L2 physical cap for safe re-arm. A local entry may be physically
-                // capped by DefaultLocalExpiration, so use it only as a no-rearm fallback if L2 is unavailable.
-                l1SlidingHit = true;
-                l1StaleCandidate = l1Entry with { SlidingExpiration = null };
+                else if (l1Entry.IsPhysicallyPresent(now))
+                {
+                    l1StaleCandidate = l1Entry;
+                }
             }
-            else if (l1Entry.IsPhysicallyPresent(now))
+            else
             {
-                l1StaleCandidate = l1Entry;
-            }
-        }
-        else
-        {
-            var l1Value = await LocalCache.GetAsync<T>(key, cancellationToken).ConfigureAwait(false);
+                var l1Value = await LocalCache.GetAsync<T>(key, cancellationToken).ConfigureAwait(false);
 
-            if (l1Value.HasValue)
+                if (l1Value.HasValue)
+                {
+                    _logger.LogLocalCacheHit(key);
+                    Interlocked.Increment(ref _localCacheHits);
+                    return new CacheStoreEntry<T>(
+                        Found: true,
+                        IsNull: l1Value.IsNull,
+                        Value: l1Value.Value,
+                        LogicalExpiresAt: null,
+                        PhysicalExpiresAt: null,
+                        SlidingExpiration: null
+                    );
+                }
+            }
+
+            if (!l1SlidingHit)
             {
-                _logger.LogLocalCacheHit(key);
-                Interlocked.Increment(ref _localCacheHits);
-                return new CacheStoreEntry<T>(
-                    Found: true,
-                    IsNull: l1Value.IsNull,
-                    Value: l1Value.Value,
-                    LogicalExpiresAt: null,
-                    PhysicalExpiresAt: null,
-                    SlidingExpiration: null
-                );
+                _logger.LogLocalCacheMiss(key);
             }
         }
 
-        if (!l1SlidingHit)
-        {
-            _logger.LogLocalCacheMiss(key);
-        }
-
-        if (l2Cache is not IFactoryCacheStore l2Store)
+        // Per-tier read control: SkipDistributedRead bypasses the L2 read, so the read is served from whatever L1
+        // yielded (a fresh sliding value with no re-arm, a stale reserve, or a miss that falls through to the
+        // factory). Both flags set therefore reads neither tier and returns a miss, matching SkipCacheRead.
+        if (readOptions.SkipDistributedRead || l2Cache is not IFactoryCacheStore l2Store)
         {
             return l1StaleCandidate ?? CacheStoreEntry<T>.NotFound;
         }
@@ -125,7 +135,8 @@ public sealed partial class HybridCache
 
     async ValueTask<CacheStoreEntry<T>[]> IFactoryCacheStore.TryGetAllEntriesAsync<T>(
         IReadOnlyList<string> keys,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        FactoryCacheReadOptions readOptions
     )
     {
         _ThrowIfDisposed();
@@ -146,7 +157,7 @@ public sealed partial class HybridCache
 
         for (var i = 0; i < keys.Count; i++)
         {
-            result[i] = await self.TryGetEntryAsync<T>(keys[i], cancellationToken).ConfigureAwait(false);
+            result[i] = await self.TryGetEntryAsync<T>(keys[i], cancellationToken, readOptions).ConfigureAwait(false);
         }
 
         return result;
