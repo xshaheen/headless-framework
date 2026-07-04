@@ -11,8 +11,9 @@ namespace Tests;
 
 /// <summary>
 /// Covers the auto-registration of <see cref="HybridCacheInvalidationConsumer"/> (#511): a hybrid cache wires the
-/// backplane consumer by default when a messaging bus is present, stays inert without one, and never
-/// double-registers when the application already wired the consumer itself.
+/// backplane consumer unconditionally (registration order of caching vs messaging must not matter), the emitted
+/// descriptors stay inert until messaging bootstrap drains them, and the registration never doubles when the
+/// application already wired the consumer itself.
 /// </summary>
 public sealed class HybridCacheInvalidationConsumerRegistrationTests : TestBase
 {
@@ -64,19 +65,46 @@ public sealed class HybridCacheInvalidationConsumerRegistrationTests : TestBase
     }
 
     [Fact]
-    public void default_hybrid_without_bus_does_not_register_invalidation_consumer()
+    public void default_hybrid_without_bus_still_registers_inert_consumer_descriptor()
     {
-        // given - no messaging bus is registered (single-node host with no backplane)
+        // given - no messaging bus is registered yet (it may be added later, or never)
         var services = _CreateServices(withBus: false);
         using var l2 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
 
         // when
         _AddDefaultHybrid(services, new InMemoryRemoteCacheAdapter(l2));
 
-        // then - the consumer is not wired, so there is no idle subscription to pay for
+        // then - the consumer is registered unconditionally: the ForMessage descriptors are inert until messaging
+        // bootstrap drains them, so a bus-less host pays nothing while a bus added later still gets the consumer.
+        services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IConsume<CacheInvalidationMessage>));
+    }
+
+    [Fact]
+    public void hybrid_registered_before_messaging_still_drains_the_consumer_into_the_registry()
+    {
+        // given - caching is registered FIRST, the bus and messaging AFTER (the reversed order used to silently
+        // skip the consumer, leaving the backplane publish-only with stale peer L1s)
+        var services = _CreateServices(withBus: false);
+        using var l2 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+        _AddDefaultHybrid(services, new InMemoryRemoteCacheAdapter(l2));
+
+        services.AddSingleton(Substitute.For<IBus>());
+        services.AddHeadlessMessaging(_ => { });
+
+        // when - the captured registration is drained into the consumer registry at bootstrap
+        using var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<IConsumerServiceSelector>().SelectCandidates();
+
+        // then - exactly one hybrid invalidation consumer is wired despite the reversed registration order
         services
+            .Count(descriptor => descriptor.ServiceType == typeof(IConsume<CacheInvalidationMessage>))
             .Should()
-            .NotContain(descriptor => descriptor.ServiceType == typeof(IConsume<CacheInvalidationMessage>));
+            .Be(1);
+        provider
+            .GetRequiredService<IConsumerRegistry>()
+            .GetAll()
+            .Should()
+            .ContainSingle(m => m.ConsumerType == typeof(HybridCacheInvalidationConsumer));
     }
 
     [Fact]
@@ -133,6 +161,29 @@ public sealed class HybridCacheInvalidationConsumerRegistrationTests : TestBase
             .ContainSingle(m => m.ConsumerType == typeof(HybridCacheInvalidationConsumer))
             .Subject;
         metadata.IntentType.Should().Be(IntentType.Bus);
+    }
+
+    [Fact]
+    public void app_registration_after_caching_with_matching_shape_merges_to_exactly_one_consumer()
+    {
+        // given - caching first (auto-registration fires), then the app copies the documented snippet AFTER it;
+        // the bootstrap drain must merge the identical registrations instead of double-subscribing
+        var services = _CreateServices(withBus: true);
+        using var l2 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+        _AddDefaultHybrid(services, new InMemoryRemoteCacheAdapter(l2));
+        services.ForMessage<CacheInvalidationMessage>(message => message.OnBus<HybridCacheInvalidationConsumer>());
+        services.AddHeadlessMessaging(_ => { });
+
+        // when
+        using var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<IConsumerServiceSelector>().SelectCandidates();
+
+        // then - exactly one consumer in the registry (identical shapes merge idempotently at drain)
+        provider
+            .GetRequiredService<IConsumerRegistry>()
+            .GetAll()
+            .Should()
+            .ContainSingle(m => m.ConsumerType == typeof(HybridCacheInvalidationConsumer));
     }
 
     [Fact]

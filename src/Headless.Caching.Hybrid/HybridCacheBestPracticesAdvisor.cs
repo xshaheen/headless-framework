@@ -13,7 +13,6 @@ namespace Headless.Caching;
 internal sealed partial class HybridCacheBestPracticesAdvisor(
     HybridCacheOptions options,
     ILogger<HybridCacheBestPracticesAdvisor> logger,
-    bool invalidationConsumerRegistered,
     string? instanceName = null
 ) : IHostedLifecycleService
 {
@@ -65,14 +64,8 @@ internal sealed partial class HybridCacheBestPracticesAdvisor(
             logger.LogAutoRecoveryWithoutCircuitBreaker();
         }
 
-        // Check 5 — messaging backplane is wired (IBus is present) but no consumer for
-        // CacheInvalidationMessage was registered. The hybrid cache publishes invalidations on every
-        // write/remove, but without a consumer those messages are never received by any instance —
-        // creating a silent one-way backplane where peers never evict their local L1 entries.
-        if (!invalidationConsumerRegistered)
-        {
-            logger.LogInvalidationConsumerNotRegistered();
-        }
+        // (Check 5 — "backplane wired but no invalidation consumer" — was removed: UseHybrid now registers the
+        // consumer unconditionally through the order-independent ForMessage seam, so the condition is unreachable.)
 
         var entry = o.DefaultEntryOptions;
 
@@ -121,17 +114,8 @@ internal sealed partial class HybridCacheBestPracticesAdvisor(
 
 internal static partial class HybridCacheBestPracticesAdvisorLogger
 {
-    [LoggerMessage(
-        EventId = 5,
-        EventName = "InvalidationConsumerNotRegistered",
-        Level = LogLevel.Warning,
-        Message = "No consumer for CacheInvalidationMessage is registered. The hybrid cache publishes "
-            + "invalidation messages on every write and remove, but without a consumer those messages are "
-            + "never received — peers will never evict their local L1 entries (silent one-way backplane). "
-            + "Register HybridCacheInvalidationConsumer with Headless messaging, for example: "
-            + "services.ForMessage<CacheInvalidationMessage>(msg => msg.OnBus<HybridCacheInvalidationConsumer>())."
-    )]
-    public static partial void LogInvalidationConsumerNotRegistered(this ILogger logger);
+    // EventId 5 (InvalidationConsumerNotRegistered) is retired: the consumer is now registered unconditionally.
+    // Keep the id reserved — do not reuse it for a new advisor message.
 
     [LoggerMessage(
         EventId = 1,

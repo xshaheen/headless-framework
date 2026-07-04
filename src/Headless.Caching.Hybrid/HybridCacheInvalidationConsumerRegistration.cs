@@ -26,25 +26,25 @@ internal static class HybridCacheInvalidationConsumerRegistration
     /// <see cref="CacheInvalidationMessage"/> is present — whether emitted by a prior call here or by the
     /// application's own explicit <c>ForMessage&lt;CacheInvalidationMessage&gt;(…)</c> — subsequent calls are
     /// no-ops. So any number of default/named hybrids register exactly one consumer, and an application
-    /// registration always wins over the auto one.
+    /// registration that precedes <c>AddHeadlessCaching</c> always wins over the auto one (the guard sees its
+    /// descriptor and emits nothing). A customization added <i>after</i> caching setup coexists with the
+    /// already-emitted default instead: an identical shape (the documented snippet) merges idempotently at the
+    /// bootstrap drain, the same group with diverging settings fails fast at startup naming the conflict — move
+    /// the customization before <c>AddHeadlessCaching</c> to defer the default — and a different group adds a
+    /// second, separately-grouped subscription.
     /// </para>
     /// <para>
-    /// <b>Bus-gated.</b> The consumer is wired only when a messaging bus (<see cref="IBus"/>) is already present
-    /// in the collection. A single-node host with no backplane pays for no idle subscription. Because
-    /// <see cref="HybridCache"/> resolves a required <see cref="IBus"/>, a functioning hybrid always has one; the
-    /// gate matters for the "caching without messaging" shape and keeps parity with the stated
-    /// correct-by-default-when-a-bus-exists contract.
+    /// <b>Unconditional and order-independent.</b> The consumer is registered through <c>ForMessage</c> regardless
+    /// of whether a bus is present yet: the emitted descriptors are inert until messaging bootstrap drains them
+    /// from the built provider, and <c>ForMessage</c> is documented to work before or after
+    /// <c>AddHeadlessMessaging</c> as long as both precede host build. Gating on an <see cref="IBus"/> descriptor
+    /// here would make correctness depend on registration order (messaging before caching) and silently leave the
+    /// backplane publish-only when the order flips; a functioning <see cref="HybridCache"/> resolves a required
+    /// <see cref="IBus"/> anyway, so an idle subscription in a genuinely bus-less host cannot run in the first
+    /// place — the inert descriptor costs nothing.
     /// </para>
     /// <para>
-    /// <b>Ordering.</b> The gate reads the collection at caching-setup time, so a bus must be registered before
-    /// <c>AddHeadlessCaching</c> for the auto-wiring to fire (every documented recipe adds messaging first). If
-    /// messaging is added afterwards the consumer is not auto-wired, and the
-    /// <see cref="HybridCacheBestPracticesAdvisor"/> Check 5 warning fires at startup so the gap is loud rather
-    /// than silent — register the consumer explicitly or order messaging before caching. Once wired, the
-    /// registration itself is order-independent: it is drained from the built provider at messaging bootstrap.
-    /// </para>
-    /// <para>
-    /// The consumer shape mirrors the advisor's recommended snippet exactly
+    /// The consumer shape mirrors the documented explicit snippet exactly
     /// (<c>OnBus&lt;HybridCacheInvalidationConsumer&gt;()</c> with the default group and convention-derived
     /// message name) so an application that copied that snippet produces a matching registration the bootstrap
     /// drain merges instead of double-registering.
@@ -56,13 +56,6 @@ internal static class HybridCacheInvalidationConsumerRegistration
         // Idempotent: an application's own ForMessage<CacheInvalidationMessage>, or a prior call here for another
         // hybrid on the same collection, already wired the consumer — never double-register.
         if (services.Any(static d => d.ServiceType == typeof(IConsume<CacheInvalidationMessage>)))
-        {
-            return;
-        }
-
-        // Gate on bus presence: with no backplane bus there is nothing to consume, so do not wire an idle
-        // subscription. Bus registration must precede AddHeadlessCaching (see the remarks on ordering).
-        if (!services.Any(static d => d.ServiceType == typeof(IBus)))
         {
             return;
         }

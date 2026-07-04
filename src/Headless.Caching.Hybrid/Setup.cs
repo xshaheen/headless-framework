@@ -193,7 +193,7 @@ public static class SetupHybridCache
             services.AddCacheProvider();
 
             // Auto-register the shared invalidation consumer so this named hybrid receives peer L1 invalidations
-            // by default (idempotent + bus-gated; one consumer routes to every hybrid by CacheName).
+            // by default (idempotent + unconditional; one consumer routes to every hybrid by CacheName).
             HybridCacheInvalidationConsumerRegistration.TryAddInvalidationConsumer(services);
 
             services.AddKeyedSingleton<ICache>(
@@ -208,13 +208,9 @@ public static class SetupHybridCache
             // Startup advisor for THIS named instance: it inspects the named options (the default-path advisor in
             // _AddCacheCore only ever sees the default options). AddSingleton (not TryAddEnumerable) so one advisor
             // per named instance coexists with the default one instead of being deduped by implementation type.
-            var capturedServices = services;
             services.AddSingleton<IHostedService>(provider => new HybridCacheBestPracticesAdvisor(
                 provider.GetRequiredService<IOptionsMonitor<HybridCacheOptions>>().Get(name),
                 provider.GetRequiredService<ILogger<HybridCacheBestPracticesAdvisor>>(),
-                invalidationConsumerRegistered: capturedServices.Any(static d =>
-                    d.ServiceType == typeof(IConsume<CacheInvalidationMessage>)
-                ),
                 instanceName: name
             ));
 
@@ -233,23 +229,18 @@ public static class SetupHybridCache
             services.TryAddSingleton<ICache>(provider => provider.GetRequiredService<HybridCache>());
             services.AddKeyedSingleton(CacheConstants.HybridCacheProvider, (x, _) => x.GetRequiredService<ICache>());
 
-            // Auto-register the invalidation consumer so peer L1 caches are evicted by default when a backplane
-            // bus is present (idempotent + bus-gated). Without this the backplane was silently publish-only.
+            // Auto-register the invalidation consumer so peer L1 caches are evicted by default (idempotent +
+            // unconditional, drained by messaging bootstrap in either registration order). Without this the
+            // backplane was silently publish-only.
             HybridCacheInvalidationConsumerRegistration.TryAddInvalidationConsumer(services);
 
             // Startup advisor: logs warnings for questionable-but-valid configurations once at host
             // startup so operators notice misconfigurations before they see unexpected runtime behavior.
-            // Captures the IServiceCollection at setup time to detect missing consumer registrations;
-            // the collection is fully populated by the time the factory runs (after BuildServiceProvider).
-            var capturedServices = services;
             services.TryAddEnumerable(
                 ServiceDescriptor.Singleton<IHostedService, HybridCacheBestPracticesAdvisor>(
                     provider => new HybridCacheBestPracticesAdvisor(
                         provider.GetRequiredService<HybridCacheOptions>(),
-                        provider.GetRequiredService<ILogger<HybridCacheBestPracticesAdvisor>>(),
-                        invalidationConsumerRegistered: capturedServices.Any(static d =>
-                            d.ServiceType == typeof(IConsume<CacheInvalidationMessage>)
-                        )
+                        provider.GetRequiredService<ILogger<HybridCacheBestPracticesAdvisor>>()
                     )
                 )
             );
