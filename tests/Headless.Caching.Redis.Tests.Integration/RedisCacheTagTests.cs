@@ -308,6 +308,55 @@ public sealed class RedisCacheTagTests(RedisCacheFixture fixture) : RedisCacheTe
     }
 
     [Fact]
+    public async Task should_stay_invalidated_when_marker_is_lost_after_local_marker_cache_prune()
+    {
+        await FlushAsync();
+        var prefix = $"{Faker.Random.AlphaNumeric(8)}:";
+        // Tiny refresh window so the prune's stale threshold (window * 8) elapses quickly.
+        using var cache = CreateCache(prefix, TimeSpan.FromMilliseconds(1));
+        var key = Faker.Random.AlphaNumeric(10);
+        var tag = Faker.Random.AlphaNumeric(8);
+        var otherKey = Faker.Random.AlphaNumeric(10);
+        var otherTag = Faker.Random.AlphaNumeric(8);
+
+        await cache.UpsertEntryAsync(
+            key,
+            "value",
+            new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5), Tags = [tag] },
+            AbortToken
+        );
+
+        // A second tagged entry whose reads drive the marker-cache prune without touching `tag` itself.
+        await cache.UpsertEntryAsync(
+            otherKey,
+            "other",
+            new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5), Tags = [otherTag] },
+            AbortToken
+        );
+
+        await Task.Delay(5, AbortToken);
+        await cache.RemoveByTagAsync(tag, AbortToken);
+        (await cache.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse();
+
+        // Lose the durable marker (in production only a maxmemory eviction can do this — markers carry no TTL).
+        await Database.KeyDeleteAsync($"{prefix}{_TagMarkerNamespace}{tag}");
+
+        // Let `tag`'s raised local snapshot age far past the stale threshold, then read a DIFFERENT tag so
+        // _PruneMarkerCacheIfDue runs while `tag` is stale. Raised invalidation markers are exempt from the
+        // age-prune (they are the raise-only floor); before that exemption these prunes evicted the floor, and
+        // with the durable marker also gone the next read of `key` resurrected the invalidated entry.
+        await Task.Delay(50, AbortToken);
+        (await cache.GetAsync<string>(otherKey, AbortToken)).HasValue.Should().BeTrue();
+        await Task.Delay(10, AbortToken);
+        (await cache.GetAsync<string>(otherKey, AbortToken)).HasValue.Should().BeTrue();
+
+        var cached = await cache.GetAsync<string>(key, AbortToken);
+        cached
+            .HasValue.Should()
+            .BeFalse("a raised invalidation marker must survive the local marker-cache prune (raise-only floor)");
+    }
+
+    [Fact]
     public async Task should_propagate_tag_invalidation_across_instances_within_refresh_window()
     {
         await FlushAsync();

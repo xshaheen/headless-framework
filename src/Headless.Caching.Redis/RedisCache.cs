@@ -8,6 +8,7 @@ using Headless.Caching.Scripts;
 using Headless.Checks;
 using Headless.Redis;
 using Headless.Serializer;
+using Headless.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -80,11 +81,13 @@ public sealed class RedisCache(
         StringComparer.Ordinal
     );
 
-    // Bound _markerCache (#547). Every entry is fully re-derivable from Redis, so evicting one is behavior-preserving:
-    // a later read re-fetches an identical marker. An entry whose freshness stamp is older than
-    // _MarkerCacheStaleMultiplier refresh windows is already past its window (the next read re-fetches it regardless),
-    // so dropping it changes no read result. The O(cache) scan is throttled to at most once per refresh window and
-    // single-flighted via _markerCachePruneRunning so it never piles up on the hot read path.
+    // Bound _markerCache (#547). Never-invalidated (absent) snapshots are fully re-derivable from Redis, so evicting
+    // one is behavior-preserving: a later read re-fetches an identical marker. Raised invalidation markers are NOT
+    // re-derivable — each is this node's raise-only floor (review #5), the only thing that keeps
+    // previously-invalidated entries invalidated if Redis drops the durable no-TTL marker key under an allkeys-*
+    // maxmemory policy — so the age-prune pins them and only the size cap may surrender them (accepted narrow
+    // window). The O(cache) scan is throttled to at most once per refresh window and single-flighted via
+    // _markerCachePruneRunning so it never piles up on the hot read path.
     private const int _MarkerCacheStaleMultiplier = 8;
     private const int _MarkerCacheMaxEntries = 100_000;
     private long _lastMarkerCachePruneTicks = long.MinValue;
@@ -1632,16 +1635,8 @@ public sealed class RedisCache(
     {
         var ms = RedisCacheEntryFrame.ToUnixTimeMilliseconds(invalidatedAt.UtcDateTime);
 
-        // Raise-only CAS: a stale push must not lower a newer clear generation this node already observed.
-        long current;
-        while ((current = Interlocked.Read(ref _clearMarkerMs)) < ms)
-        {
-            if (Interlocked.CompareExchange(ref _clearMarkerMs, ms, current) == current)
-            {
-                break;
-            }
-        }
-
+        // Raise-only: a stale push must not lower a newer clear generation this node already observed.
+        _clearMarkerMs.InterlockedRaiseTo(ms);
         Interlocked.Exchange(ref _clearMarkerFetchedTicks, _StopwatchTicks());
     }
 
@@ -1650,16 +1645,8 @@ public sealed class RedisCache(
     {
         var ms = RedisCacheEntryFrame.ToUnixTimeMilliseconds(invalidatedAt.UtcDateTime);
 
-        // Raise-only CAS: a stale push must not lower a newer remove generation this node already observed.
-        long current;
-        while ((current = Interlocked.Read(ref _removeMarkerMs)) < ms)
-        {
-            if (Interlocked.CompareExchange(ref _removeMarkerMs, ms, current) == current)
-            {
-                break;
-            }
-        }
-
+        // Raise-only: a stale push must not lower a newer remove generation this node already observed.
+        _removeMarkerMs.InterlockedRaiseTo(ms);
         Interlocked.Exchange(ref _removeMarkerFetchedTicks, _StopwatchTicks());
     }
 
@@ -1931,18 +1918,10 @@ public sealed class RedisCache(
             .ConfigureAwait(false);
         var ms = _ParseMarkerMs(value);
 
-        // Raise-only CAS (mirrors SeedClearMarker): a stale durable read — e.g. a lagging replica — must not
+        // Raise-only (mirrors SeedClearMarker): a stale durable read — e.g. a lagging replica — must not
         // lower a newer clear generation a backplane push already seeded. Surface the raised max so this read
         // does not under-invalidate either.
-        long current;
-        while ((current = Interlocked.Read(ref _clearMarkerMs)) < ms)
-        {
-            if (Interlocked.CompareExchange(ref _clearMarkerMs, ms, current) == current)
-            {
-                break;
-            }
-        }
-
+        _clearMarkerMs.InterlockedRaiseTo(ms);
         Interlocked.Exchange(ref _clearMarkerFetchedTicks, _StopwatchTicks());
         return Interlocked.Read(ref _clearMarkerMs);
     }
@@ -1961,18 +1940,10 @@ public sealed class RedisCache(
             .ConfigureAwait(false);
         var ms = _ParseMarkerMs(value);
 
-        // Raise-only CAS (mirrors SeedRemoveMarker): a stale durable read — e.g. a lagging replica — must not
+        // Raise-only (mirrors SeedRemoveMarker): a stale durable read — e.g. a lagging replica — must not
         // lower a newer remove generation a backplane push already seeded. Surface the raised max so this read
         // does not under-invalidate either.
-        long current;
-        while ((current = Interlocked.Read(ref _removeMarkerMs)) < ms)
-        {
-            if (Interlocked.CompareExchange(ref _removeMarkerMs, ms, current) == current)
-            {
-                break;
-            }
-        }
-
+        _removeMarkerMs.InterlockedRaiseTo(ms);
         Interlocked.Exchange(ref _removeMarkerFetchedTicks, _StopwatchTicks());
         return Interlocked.Read(ref _removeMarkerMs);
     }
@@ -2096,11 +2067,14 @@ public sealed class RedisCache(
 
     /// <summary>
     /// Opportunistically bounds <see cref="_markerCache"/> (#547). Throttled to at most once per refresh window and
-    /// single-flighted, so the O(cache) scan is amortized off the hot read path. Drops entries whose freshness stamp
-    /// is older than <see cref="_MarkerCacheStaleMultiplier"/> refresh windows — they are already stale and would be
-    /// re-fetched on next use, so eviction is behavior-preserving — and, as a fallback for a burst of many distinct
-    /// still-fresh tags that the age-prune cannot reclaim, evicts the oldest entries by freshness stamp down to
-    /// <see cref="_MarkerCacheMaxEntries"/>.
+    /// single-flighted, so the O(cache) scan is amortized off the hot read path. Age-prunes only never-invalidated
+    /// (absent) snapshots whose freshness stamp is older than <see cref="_MarkerCacheStaleMultiplier"/> refresh
+    /// windows — they are already stale and re-fetched on next use, so their eviction is behavior-preserving.
+    /// Raised invalidation markers are exempt from the age-prune: each is this node's raise-only floor (review #5);
+    /// the durable marker carries no TTL, and if Redis drops it under an allkeys-* maxmemory policy the floor is
+    /// all that keeps entries born before the invalidation from resurrecting. As a fallback for a burst of many
+    /// distinct tags the age-prune cannot reclaim, evicts down to <see cref="_MarkerCacheMaxEntries"/> — absent
+    /// snapshots first, raised markers only under cap pressure.
     /// </summary>
     private void _PruneMarkerCacheIfDue()
     {
@@ -2131,6 +2105,14 @@ public sealed class RedisCache(
 
             foreach (var (tag, entry) in _markerCache)
             {
+                // A raised invalidation marker is never age-evicted: it is the raise-only floor (review #5) that
+                // keeps previously-invalidated entries invalidated when the durable no-TTL marker key is lost to
+                // an allkeys-* maxmemory eviction. Only the size cap below may surrender it.
+                if (entry.MarkerMs != _MarkerAbsent)
+                {
+                    continue;
+                }
+
                 if (
                     entry.FetchedTicks != long.MinValue
                     && Stopwatch.GetElapsedTime(entry.FetchedTicks) < staleThreshold
@@ -2154,9 +2136,10 @@ public sealed class RedisCache(
         }
     }
 
-    // Fallback size cap for a burst of many distinct still-fresh tags the age-prune cannot reclaim. Evicts the oldest
-    // entries by freshness stamp down to _MarkerCacheMaxEntries; still behavior-preserving since every evicted marker
-    // is re-fetched from Redis on next use.
+    // Fallback size cap for a burst of many distinct tags the age-prune cannot reclaim. Evicts absent
+    // (re-derivable) snapshots before raised invalidation markers — a raised marker is the node's raise-only floor
+    // and is surrendered only under cap pressure (accepted narrow window) — and within each class the oldest
+    // freshness stamp first.
     private void _EvictMarkerCacheToCap()
     {
         var overflow = _markerCache.Count - _MarkerCacheMaxEntries;
@@ -2166,8 +2149,20 @@ public sealed class RedisCache(
             return;
         }
 
-        var snapshot = _markerCache.Select(static kvp => (kvp.Key, kvp.Value.FetchedTicks)).ToArray();
-        Array.Sort(snapshot, static (a, b) => a.FetchedTicks.CompareTo(b.FetchedTicks));
+        var snapshot = _markerCache
+            .Select(static kvp => (kvp.Key, kvp.Value.MarkerMs, kvp.Value.FetchedTicks))
+            .ToArray();
+
+        Array.Sort(
+            snapshot,
+            static (a, b) =>
+            {
+                var aRaised = a.MarkerMs != _MarkerAbsent;
+                var bRaised = b.MarkerMs != _MarkerAbsent;
+
+                return aRaised != bRaised ? (aRaised ? 1 : -1) : a.FetchedTicks.CompareTo(b.FetchedTicks);
+            }
+        );
 
         var toRemove = Math.Min(overflow, snapshot.Length);
 
@@ -2759,7 +2754,7 @@ public sealed class RedisCache(
         var bytes = (byte[])value!;
         var length = Math.Min(bytes.Length, RedisCacheEntryFrame.HeaderLength);
 
-        return string.Concat("b64:", Convert.ToBase64String(bytes, 0, length));
+        return string.Concat("b64:", bytes.AsSpan(0, length).ToBase64());
     }
 
     private static bool _TryDecodeConcurrencyStamp(string stamp, out RedisValue value)
