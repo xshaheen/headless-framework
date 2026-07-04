@@ -151,7 +151,46 @@ public static class HttpRequestExtensions
         return _CanAccept(parsed, candidate);
     }
 
+    internal static bool HasAcceptRejection(this HttpRequest request, string contentType)
+    {
+        Argument.IsNotNull(request);
+        Argument.IsNotNull(contentType);
+
+        var acceptHeader = request.Headers[HeaderNames.Accept];
+
+        if (acceptHeader.Count == 0)
+        {
+            return false;
+        }
+
+        if (!MediaTypeHeaderValue.TryParse(contentType, out var candidate))
+        {
+            return false;
+        }
+
+        var parsed = MediaTypeHeaderValue.ParseList(acceptHeader);
+
+        if (parsed is null or { Count: 0 })
+        {
+            return false;
+        }
+
+        var match = _GetBestAcceptMatch(parsed, candidate);
+
+        return match.Found && match.Quality <= 0;
+    }
+
     private static bool _CanAccept(IList<MediaTypeHeaderValue> acceptHeader, MediaTypeHeaderValue candidate)
+    {
+        var match = _GetBestAcceptMatch(acceptHeader, candidate);
+
+        return match.Found && match.Quality > 0;
+    }
+
+    private static (bool Found, double Quality) _GetBestAcceptMatch(
+        IList<MediaTypeHeaderValue> acceptHeader,
+        MediaTypeHeaderValue candidate
+    )
     {
         double bestQuality = 0;
         var bestSpecificity = -1;
@@ -163,7 +202,7 @@ public static class HttpRequestExtensions
                 continue;
             }
 
-            var specificity = _GetSpecificity(mediaType);
+            var specificity = _GetSpecificity(mediaType, candidate);
             var quality = mediaType.Quality.GetValueOrDefault(1);
 
             if (specificity > bestSpecificity || (specificity == bestSpecificity && quality > bestQuality))
@@ -173,10 +212,10 @@ public static class HttpRequestExtensions
             }
         }
 
-        return bestSpecificity >= 0 && bestQuality > 0;
+        return (bestSpecificity >= 0, bestQuality);
     }
 
-    private static int _GetSpecificity(MediaTypeHeaderValue mediaType)
+    private static int _GetSpecificity(MediaTypeHeaderValue mediaType, MediaTypeHeaderValue candidate)
     {
         if (mediaType.MatchesAllTypes)
         {
@@ -188,6 +227,8 @@ public static class HttpRequestExtensions
             return 1;
         }
 
-        return 2;
+        return string.Equals(mediaType.MediaType.Value, candidate.MediaType.Value, StringComparison.OrdinalIgnoreCase)
+            ? 3
+            : 2;
     }
 }

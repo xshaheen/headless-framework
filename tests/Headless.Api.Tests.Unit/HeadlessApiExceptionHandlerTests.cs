@@ -497,6 +497,8 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
     [Theory]
     [InlineData("application/json;q=0")]
     [InlineData("application/problem+json;q=0")]
+    [InlineData("application/problem+json;q=0, */*;q=1")]
+    [InlineData("application/json;q=1, application/problem+json;q=0")]
     [InlineData("application/json;q=0, application/problem+json;q=0, */*;q=1")]
     [InlineData("*/*;q=0")]
     public async Task should_return_false_when_accept_header_rejects_json_with_zero_quality(string acceptHeader)
