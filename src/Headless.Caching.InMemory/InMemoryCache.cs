@@ -4,6 +4,7 @@ using System.Buffers;
 using System.Collections.Concurrent;
 using System.Reflection;
 using Headless.Checks;
+using Headless.Threading;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Nito.AsyncEx;
@@ -1990,15 +1991,7 @@ public sealed class InMemoryCache
             return;
         }
 
-        long current;
-
-        while ((current = Volatile.Read(ref _maxObservedEntryLifetimeTicks)) < lifetimeTicks)
-        {
-            if (Interlocked.CompareExchange(ref _maxObservedEntryLifetimeTicks, lifetimeTicks, current) == current)
-            {
-                break;
-            }
-        }
+        _maxObservedEntryLifetimeTicks.InterlockedRaiseTo(lifetimeTicks);
     }
 
     // Bound the authoritative Family-2 tag-marker store (#546). SAFETY INVARIANT: dropping a marker (T,M) makes tag
