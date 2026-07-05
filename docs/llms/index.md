@@ -300,6 +300,7 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 
 ### Audit Log
 - `Headless.AuditLog.Abstractions` — Audit log contracts.
+- `Headless.AuditLog.Core` — Audit log DI setup, options validation, and provider setup pipeline.
 - `Headless.AuditLog.Storage.EntityFramework` — EF Core persistence for audit log.
 - `Headless.AuditLog.Storage.PostgreSql` — PostgreSQL raw audit log storage.
 - `Headless.AuditLog.Storage.SqlServer` — SQL Server raw audit log storage.
@@ -461,6 +462,7 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 
 ### SQL
 - `Headless.Sql.Abstractions` — Connection factory interface.
+- `Headless.Sql.Core` — Default ambient current-connection implementation.
 - `Headless.Sql.PostgreSql` — PostgreSQL (Npgsql).
 - `Headless.Sql.SqlServer` — SQL Server (Microsoft.Data.SqlClient).
 - `Headless.Sql.Sqlite` — SQLite (Microsoft.Data.Sqlite).

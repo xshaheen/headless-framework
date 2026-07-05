@@ -67,7 +67,8 @@ None at the abstractions layer. All configuration is done in `Headless.Jobs.Core
 
 ## Dependencies
 
-None. Zero external NuGet dependencies.
+- `Headless.CommitCoordination.Abstractions`
+- `Microsoft.Extensions.DependencyInjection.Abstractions`
 
 ## Side Effects
 

@@ -13,10 +13,9 @@
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="NCrontab.Signed" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.CommitCoordination.Abstractions\Headless.CommitCoordination.Abstractions.csproj" />
-    <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
   </ItemGroup>
 </Project>

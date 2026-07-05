@@ -8,7 +8,7 @@ Provides PostgreSQL-native audit log storage without pulling Entity Framework in
 
 ## Key Features
 
-- No EF Core dependency — depends only on `Npgsql` and `Headless.AuditLog.Abstractions`.
+- No EF Core dependency — depends only on `Npgsql`, `Headless.AuditLog.Abstractions`, and `Headless.AuditLog.Core`.
 - `PostgreSqlAuditLogStore` — implements `IAuditLogStore`; enrolls in the consumer's ambient Npgsql transaction when available; falls back to its own connection otherwise.
 - `PostgreSqlAuditLog<TContext>` — implements `IAuditLog<TContext>` for explicit event logging.
 - `PostgreSqlReadAuditLog<TContext>` — implements `IReadAuditLog<TContext>` via parameterized SQL queries.
@@ -78,7 +78,7 @@ setup.UsePostgreSql(options =>
 ## Dependencies
 
 - `Headless.AuditLog.Abstractions`
-- `Headless.Hosting`
+- `Headless.AuditLog.Core`
 - `Headless.Serializer`
 - `Npgsql`
 

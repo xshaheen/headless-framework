@@ -7,7 +7,7 @@ namespace Headless.AuditLog;
 /// (EntityFramework, PostgreSql, and SqlServer).
 /// </summary>
 /// <remarks>
-/// Configure these options via <see cref="HeadlessAuditLogSetupBuilder.ConfigureStorage"/> inside
+/// Configure these options via <c>HeadlessAuditLogSetupBuilder.ConfigureStorage</c> inside
 /// the <c>AddHeadlessAuditLog(setup =&gt; …)</c> lambda. The EF Core provider validates the schema
 /// and table name at startup; raw-SQL providers (PostgreSql, SqlServer) self-initialize the DDL
 /// unless <see cref="InitializeOnStartup"/> is set to <see langword="false"/>.

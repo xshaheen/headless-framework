@@ -116,6 +116,7 @@ builder.HasKey(e => e.Id); // single-column PK for SQLite
 ## Dependencies
 
 - `Headless.AuditLog.Abstractions`
+- `Headless.AuditLog.Core`
 - `Headless.Orm.EntityFramework`
 - `Microsoft.EntityFrameworkCore`
 
