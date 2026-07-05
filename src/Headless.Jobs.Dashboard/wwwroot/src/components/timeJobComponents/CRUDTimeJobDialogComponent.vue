@@ -500,7 +500,7 @@ defineExpose({
                         ></v-chip>
                       </template>
                       <template v-slot:item="{ props, item }">
-                        <v-list-item v-if="item.raw.header && comboBoxSearch">
+                        <v-list-item v-if="item.header && comboBoxSearch">
                           <span v-if="comboBoxModel.length < values.retries">
                             <v-chip size="small" variant="flat" label>
                               {{ formatTime(parseInt(comboBoxSearch!)) }}
@@ -518,14 +518,14 @@ defineExpose({
                           </span>
                         </v-list-item>
                         <v-list-subheader
-                          v-else-if="item.raw.header"
+                          v-else-if="item.header"
                           :title="item.title"
                         ></v-list-subheader>
                         <v-list-item
-                          v-if="!item.raw.header && comboBoxModel.length < values.retries"
+                          v-if="!item.header && comboBoxModel.length < values.retries"
                           @click="props.onClick as (() => void) | undefined"
                         >
-                          <v-chip :text="item.raw.title" variant="flat" label></v-chip>
+                          <v-chip :text="item.title" variant="flat" label></v-chip>
                         </v-list-item>
                       </template>
                     </v-combobox>
