@@ -137,6 +137,31 @@ public sealed class JsonUtf8SerializerTests : TestBase
     }
 
     [Fact]
+    public async Task should_honor_configured_json_options_for_transport_payload()
+    {
+        // given
+        var options = new MessagingOptions();
+        options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower;
+        var serializer = new JsonUtf8Serializer(Options.Create(options));
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal) { { "headless-msg-id", "json-options" } };
+        var payload = new CompatibilityPayload { PublicApiName = "wire-contract", RetryCount = 3 };
+
+        // when
+        var transport = await serializer.SerializeToTransportMessageAsync(new Message(headers, payload));
+        var json = Encoding.UTF8.GetString(transport.Body.Span);
+        var inbound = new TransportMessage(headers, """{"public_api_name":"from-wire","retry_count":4}"""u8.ToArray());
+        var deserialized = await serializer.DeserializeAsync(inbound, typeof(CompatibilityPayload));
+
+        // then
+        json.Should().Contain("\"public_api_name\"").And.Contain("\"retry_count\"");
+        json.Should().NotContain("PublicApiName").And.NotContain("RetryCount");
+
+        var result = deserialized.Value.Should().BeOfType<CompatibilityPayload>().Which;
+        result.PublicApiName.Should().Be("from-wire");
+        result.RetryCount.Should().Be(4);
+    }
+
+    [Fact]
     public void should_serialize_message_to_string()
     {
         // given
@@ -272,5 +297,11 @@ public sealed class JsonUtf8SerializerTests : TestBase
     private sealed class NestedPayload
     {
         public List<string> Items { get; init; } = [];
+    }
+
+    private sealed class CompatibilityPayload
+    {
+        public string? PublicApiName { get; init; }
+        public int RetryCount { get; init; }
     }
 }
