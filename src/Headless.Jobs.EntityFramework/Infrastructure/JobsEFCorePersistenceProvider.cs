@@ -186,7 +186,10 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
             baseQuery = baseQuery.Where(predicate);
         }
 
-        baseQuery = baseQuery.Where(x => x.ParentId == null).OrderByDescending(x => x.ExecutionTime);
+        baseQuery = baseQuery
+            .Where(x => x.ParentId == null)
+            .OrderByDescending(x => x.ExecutionTime)
+            .ThenByDescending(x => x.Id);
 
         return await baseQuery.ToPaginatedListAsync(pageNumber, pageSize, cancellationToken).ConfigureAwait(false);
     }
@@ -290,7 +293,7 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
             baseQuery = baseQuery.Where(predicate);
         }
 
-        baseQuery = baseQuery.OrderByDescending(x => x.CreatedAt);
+        baseQuery = baseQuery.OrderByDescending(x => x.CreatedAt).ThenByDescending(x => x.Id);
 
         return await baseQuery.ToPaginatedListAsync(pageNumber, pageSize, cancellationToken).ConfigureAwait(false);
     }
@@ -386,7 +389,7 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
             baseQuery = baseQuery.Where(predicate);
         }
 
-        baseQuery = baseQuery.OrderByDescending(x => x.ExecutionTime);
+        baseQuery = baseQuery.OrderByDescending(x => x.ExecutionTime).ThenByDescending(x => x.Id);
 
         return await baseQuery.ToPaginatedListAsync(pageNumber, pageSize, cancellationToken).ConfigureAwait(false);
     }

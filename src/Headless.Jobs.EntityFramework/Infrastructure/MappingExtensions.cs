@@ -123,7 +123,10 @@ internal static class MappingExtensions
         {
             setters.SetProperty(x => x.Status, functionContext.Status);
         }
-        else
+        // Only write Status/SkippedReason when the caller opted in (Status in PropertiesToUpdate). A plain else here
+        // clobbers a live occurrence with the context's residual (often stale terminal) Status on updates that never
+        // requested it — e.g. the cron-expression reschedule that sets only ExecutionTime. Mirrors the in-memory provider.
+        else if (propsToUpdate.Contains(nameof(InternalFunctionContext.Status)))
         {
             setters
                 .SetProperty(x => x.Status, functionContext.Status)
@@ -187,7 +190,10 @@ internal static class MappingExtensions
         {
             setters.SetProperty(x => x.Status, functionContext.Status);
         }
-        else
+        // Only write Status/SkippedReason when the caller opted in (Status in PropertiesToUpdate). A plain else here
+        // clobbers a live occurrence with the context's residual (often stale terminal) Status on updates that never
+        // requested it — e.g. the cron-expression reschedule that sets only ExecutionTime. Mirrors the in-memory provider.
+        else if (propsToUpdate.Contains(nameof(InternalFunctionContext.Status)))
         {
             setters
                 .SetProperty(x => x.Status, functionContext.Status)

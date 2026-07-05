@@ -18,6 +18,10 @@ public class CronJobConfigurations<TCronJob>(string schema = Constants.DefaultSc
 
         builder.Property(e => e.OnNodeDeath).HasConversion<string>().HasMaxLength(32);
 
+        // Bound the indexed string columns — SQL Server cannot index nvarchar(max) (error 1919).
+        builder.Property(e => e.Function).HasMaxLength(Constants.FunctionMaxLength);
+        builder.Property(e => e.Expression).HasMaxLength(Constants.CronExpressionMaxLength);
+
         builder.HasIndex("Expression").HasDatabaseName("IX_CronJobs_Expression");
 
         // Index for common lookups by function + expression

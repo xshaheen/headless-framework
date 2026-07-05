@@ -24,6 +24,9 @@ public class TimeJobConfigurations<TTimeJob>(string schema = Constants.DefaultSc
         builder.Property(x => x.OnNodeDeath).HasConversion<string>().HasMaxLength(32);
         builder.Property(x => x.RunCondition).HasConversion<string>().HasMaxLength(32);
 
+        // Cap Function to match the cron config so the shared inherited column has one length everywhere.
+        builder.Property(x => x.Function).HasMaxLength(Constants.FunctionMaxLength);
+
         builder
             .HasOne(x => x.Parent)
             .WithMany(x => x.Children)

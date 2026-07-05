@@ -262,7 +262,11 @@ internal sealed class JobsExecutionTaskHandler(
                 context.RetryCount = attempt;
                 break;
             }
-            catch (TaskCanceledException ex)
+            // Base OperationCanceledException, not just TaskCanceledException: CancellationToken.ThrowIfCancellationRequested()
+            // and EF Core throw the base type, which must still be treated as a cancel (lease-loss preservation + Cancelled
+            // status) rather than falling through to the failure arm and terminalizing the row. TaskCanceledException still
+            // matches as a subclass.
+            catch (OperationCanceledException ex)
             {
                 if (context.LeaseLost)
                 {
