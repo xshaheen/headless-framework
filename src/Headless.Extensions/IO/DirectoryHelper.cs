@@ -53,28 +53,6 @@ public static class DirectoryHelper
 
     #endregion
 
-    #region Create If Not Exists
-
-    /// <summary>Creates the directory at <paramref name="directory"/> if it does not already exist.</summary>
-    /// <param name="directory">The path of the directory to create.</param>
-    /// <exception cref="IOException">Thrown when the directory cannot be created (for example a file with the same name exists).</exception>
-    /// <exception cref="UnauthorizedAccessException">Thrown when the caller does not have the required permission.</exception>
-    public static void CreateIfNotExists(string directory)
-    {
-        Directory.CreateDirectory(directory);
-    }
-
-    /// <summary>Creates the directory described by <paramref name="directory"/> if it does not already exist.</summary>
-    /// <param name="directory">The directory to create.</param>
-    /// <exception cref="IOException">Thrown when the directory cannot be created (for example a file with the same name exists).</exception>
-    /// <exception cref="UnauthorizedAccessException">Thrown when the caller does not have the required permission.</exception>
-    public static void CreateIfNotExists(DirectoryInfo directory)
-    {
-        directory.Create();
-    }
-
-    #endregion
-
     #region Delete If Exists
 
     /// <summary>Deletes the empty directory at <paramref name="directory"/> if it exists.</summary>
