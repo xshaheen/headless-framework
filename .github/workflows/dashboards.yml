@@ -1,4 +1,4 @@
-# Fast per-dashboard SPA build + type-check feedback on PRs touching wwwroot.
+# Fast per-dashboard SPA build + type-check feedback on pull requests.
 # The embedded bundle itself is built and embedded by the .NET build
 # (eng/DashboardSpa.targets); dist is generated, never committed. This job just
 # fails fast if a dashboard stops compiling, without a full solution build.
@@ -14,11 +14,6 @@ on:
       - 'src/Headless.Messaging.Dashboard/wwwroot/**'
   pull_request:
     branches: [ "main" ]
-    paths:
-      - '.github/workflows/dashboards.yml'
-      - 'eng/**'
-      - 'src/Headless.Jobs.Dashboard/wwwroot/**'
-      - 'src/Headless.Messaging.Dashboard/wwwroot/**'
   workflow_dispatch:
 
 concurrency:

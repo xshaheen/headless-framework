@@ -52,12 +52,12 @@ tools: ## Restore repo-pinned .NET tools.
 
 .PHONY: restore
 restore: ## Restore NuGet packages.
-	$(DOTNET) restore "$(SOLUTION)"
+	$(DOTNET) restore "$(SOLUTION)" --property:Configuration="$(CONFIGURATION)" --property:GenerateSBOM=true
 
 .PHONY: restore-project
 restore-project: ## Restore one project; preferred for focused project work.
 	@test -n "$(PROJECT)" || (echo "PROJECT is required. Example: make restore-project PROJECT=src/Headless.Api/Headless.Api.csproj" && exit 2)
-	$(DOTNET) restore "$(PROJECT)"
+	$(DOTNET) restore "$(PROJECT)" --property:Configuration="$(CONFIGURATION)" --property:GenerateSBOM=true
 
 .PHONY: hooks
 hooks: ## Point git at the committed hooks (per clone/worktree).
@@ -120,14 +120,14 @@ build-project: restore-project ## Build one project; preferred when working on a
 
 .PHONY: quality-analyzers
 quality-analyzers: ## Report build warnings/errors and analyzer suggestions without writing changes.
-	@$(DOTNET) restore "$(SOLUTION)" -v:q -nologo
+	@$(DOTNET) restore "$(SOLUTION)" --property:Configuration="$(CONFIGURATION)" --property:GenerateSBOM=true -v:q -nologo
 	@$(DOTNET) build "$(SOLUTION)" $(QUALITY_BUILD_ARGS) 2>&1 | awk '/(^|: )(warning|error) [A-Z]+[0-9]+:/'
 	@$(DOTNET) format analyzers "$(SOLUTION)" $(QUALITY_FORMAT_ARGS)
 
 .PHONY: quality-analyzers-project
 quality-analyzers-project: ## Report build warnings/errors and analyzer suggestions for PROJECT.
 	@test -n "$(PROJECT)" || (echo "PROJECT is required. Example: make quality-analyzers-project PROJECT=src/Headless.Api/Headless.Api.csproj" && exit 2)
-	@$(DOTNET) restore "$(PROJECT)" -v:q -nologo
+	@$(DOTNET) restore "$(PROJECT)" --property:Configuration="$(CONFIGURATION)" --property:GenerateSBOM=true -v:q -nologo
 	@$(DOTNET) build "$(PROJECT)" $(QUALITY_BUILD_ARGS) 2>&1 | awk '/(^|: )(warning|error) [A-Z]+[0-9]+:/'
 	@$(DOTNET) format analyzers "$(PROJECT)" $(QUALITY_FORMAT_ARGS)
 
@@ -249,7 +249,7 @@ pack: restore ## Pack NuGet packages with symbols.
 pack-built: ## Pack already-built source projects without restore/build; used by CI.
 	@mkdir -p "$(PACKAGES_DIR)"
 	@for csproj in src/*/*.csproj; do \
-		$(DOTNET) pack "$$csproj" --configuration "$(CONFIGURATION)" --no-restore --no-build --include-symbols --output "$(PACKAGES_DIR)"; \
+		$(DOTNET) pack "$$csproj" --configuration "$(CONFIGURATION)" --no-restore --no-build --include-symbols --output "$(PACKAGES_DIR)" /p:GenerateSBOM=true $(MSBUILD_ARGS); \
 	done
 
 .PHONY: pack-sbom

@@ -15,6 +15,10 @@ Provides real-time visibility into message processing, failures, retries, and sy
 - **Performance Metrics**: Consumer processing stats and bottlenecks
 - **5-Mode Auth**: None, Basic, API Key, Host, Custom (shared with Jobs Dashboard)
 
+## Design Notes
+
+The dashboard exposes operational endpoints for inspecting, retrying, re-executing, and deleting message records. Treat `WithNoAuth()` as development-only unless the dashboard is isolated behind trusted network controls. Production deployments should use `WithHostAuthentication(...)`, `WithBasicAuth(...)`, `WithApiKey(...)`, or `WithCustomAuth(...)`, and should set an explicit CORS policy before exposing the dashboard cross-origin.
+
 ## Installation
 
 ```bash
@@ -97,7 +101,7 @@ options.UseDashboard(dashboard =>
 
 ## Fluent API Methods
 
-- `WithNoAuth()` - Public dashboard (no authentication)
+- `WithNoAuth()` - Public dashboard (development or trusted-network use only)
 - `WithBasicAuth(username, password)` - Enable username/password authentication
 - `WithApiKey(apiKey)` - Enable API key authentication
 - `WithHostAuthentication(policy?)` - Use your app's existing auth with optional policy
@@ -113,7 +117,7 @@ options.UseDashboard(dashboard =>
 |--------|---------|-------------|
 | `SetBasePath` | `/messaging` | URL path for the dashboard |
 | `SetStatsPollingInterval` | `2000` | Stats endpoint polling interval (ms) |
-| `WithNoAuth` | (default) | No authentication — public dashboard |
+| `WithNoAuth` | (default) | No authentication — public dashboard; development or trusted-network use only |
 | `SetCorsPolicy` | `null` | CORS policy for cross-origin requests |
 | `WithSessionTimeout` | `60` | Session timeout in minutes |
 
@@ -129,4 +133,4 @@ options.UseDashboard(dashboard =>
 - Mounts the embedded web UI and monitoring API through an `IStartupFilter` — no explicit middleware call is required
 - Exposes a web endpoint at the configured path (default: `/messaging`)
 - Periodically polls message storage for statistics
-- No authentication by default — configure an auth mode for production use
+- No authentication by default — configure authentication and CORS before exposing the dashboard outside an isolated development environment

@@ -26,7 +26,7 @@ on:
       dry-run:
         description: "List candidates without deleting"
         type: boolean
-        default: false
+        default: true
 
 permissions:
   contents: read
@@ -40,6 +40,8 @@ jobs:
   prune:
     name: Prune old prereleases
     runs-on: ubuntu-latest
+    environment:
+      name: "Package Prune"
     steps:
       - name: "Delete prerelease versions older than max-age-days"
         env:
@@ -47,7 +49,7 @@ jobs:
           OWNER: ${{ github.repository_owner }}
           MAX_AGE_DAYS: ${{ github.event.inputs.max-age-days || '60' }}
           KEEP_LATEST: ${{ github.event.inputs.keep-latest || '3' }}
-          DRY_RUN: ${{ github.event.inputs.dry-run || 'false' }}
+          DRY_RUN: ${{ github.event.inputs.dry-run || 'true' }}
         shell: bash
         run: |
           set -uo pipefail

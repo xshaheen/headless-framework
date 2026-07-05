@@ -1,5 +1,5 @@
 ---
-title: Buffer-first ISerializer contract, untrustedData opt-in, and PooledByteBufferWriter pooling
+title: Buffer-first ISerializer contract, untrustedData default, and PooledByteBufferWriter pooling
 date: 2026-06-24
 category: architecture-patterns
 module: Headless.Serializer
@@ -15,7 +15,7 @@ applies_when:
 tags: ["serialization", "buffer-first", "ibufferwriter", "readonlysequence", "arraypool", "messagepack-security", "zero-copy"]
 ---
 
-# Buffer-first ISerializer contract, untrustedData opt-in, and PooledByteBufferWriter pooling
+# Buffer-first ISerializer contract, untrustedData default, and PooledByteBufferWriter pooling
 
 ## Context
 
@@ -51,9 +51,9 @@ Two contract points are hardened on the now-public surface, both documented in t
 - **`Advance` validates `count`** against the granted span (the unsigned check matching `ArrayBufferWriter<T>`) and throws `InvalidOperationException` on over-advance, surfacing misuse at the offending call rather than later at `WrittenSpan`/`WrittenMemory`. The single predicted-not-taken branch is cheap insurance once the type is `[PublicAPI]`.
 - **The written span is zeroed before the rental returns to the pool** (on `Dispose` and on growth — and in the `SerializerExtensions` string transcode path). Serialized payloads (tokens, PII) do not linger in the rented array for the next renter to over-read, matching the repo's `TusAzureStore` (`Return(buffer, clearArray: true)`) convention and `System.Text.Json`'s own pooled writer. Callers no longer clear `WrittenSpan` manually; clearing only the written prefix keeps the cost off the unwritten tail.
 
-### 4. MessagePack untrustedData: opt-in that can never relax an explicit choice
+### 4. MessagePack untrustedData: safe default that can never relax an explicit choice
 
-`new MessagePackSerializer()` defaults to `MessagePackSecurity.TrustedData` — the fast path, correct only when payloads originate inside the trust boundary (cache values the app itself wrote). For data from outside it (a cache other services or attackers can write to, external message producers), construct `new MessagePackSerializer(untrustedData: true)` to apply `MessagePackSecurity.UntrustedData` (recursion-depth limit + collision-resistant hashing against stack-overflow / hash-flooding DoS).
+`new MessagePackSerializer()` defaults to `MessagePackSecurity.UntrustedData`, so the public serializer is safe for cross-service caches, external message producers, and other payloads outside the current process trust boundary. For trusted in-process payloads where the MessagePack-CSharp fast path is intentional, construct `new MessagePackSerializer(untrustedData: false)` or supply explicit `MessagePackSerializerOptions` with the desired `Security`.
 
 The switch configures **only the default (no-options) path**. When you supply your own `MessagePackSerializerOptions`, the serializer uses them verbatim and `untrustedData` is ignored — so the flag can never override or relax a `Security` level you set explicitly. Set `Security` on your options when you supply them.
 
@@ -61,7 +61,7 @@ The switch configures **only the default (no-options) path**. When you supply yo
 
 - **The options-parity trap (pattern 2) is silent.** Nothing fails loudly when `WriteIndented`, `Encoder`, `MaxDepth`, `AllowTrailingCommas`, or `ReadCommentHandling` are dropped on the buffer path — output just differs from the Stream path, and a depth-limit DoS defense silently disappears. The only protection is the explicit `_WriterOptionsFor` / `_ReaderOptionsFor` mapping plus tests that assert each option survives.
 - **The pooled-buffer lifetime invariant (pattern 3) is a use-after-free in waiting.** It is correct today only because every consumer copies synchronously. A reviewer must re-verify this whenever a new consumer wraps `WrittenMemory`, and especially if any `Encode`/consumer ever becomes async.
-- **The untrustedData default (pattern 4) is a deliberate trust-boundary decision, not a defect.** A distributed cache that other services or an attacker can write to is an untrusted source; `TrustedData` deserialization there is exploitable. The framework default stays `TrustedData` (cache values are normally app-written) with an explicit opt-in — so shared/multi-writer deployments must opt in. Document the decision at the wiring site; do not assume the default is safe for every cache.
+- **The untrustedData default (pattern 4) is a deliberate trust-boundary decision.** A distributed cache that other services or an attacker can write to is an untrusted source; `TrustedData` deserialization there is exploitable. The framework default is `UntrustedData`; only opt out for payloads inside a clearly owned trust boundary.
 - **Buffer-first is the idiomatic .NET shape.** It matches `System.Text.Json`, MessagePack-CSharp, and `System.IO.Pipelines`. A custom `ISerializer` that bridges back to `Stream` internally reintroduces the copies the contract exists to avoid.
 
 ## When to Apply
@@ -111,14 +111,14 @@ serializer.Serialize(value, buffer);
 return RedisCacheEntryFrame.Encode(new ReadOnlySequence<byte>(buffer.WrittenMemory), isNull: false, /* ... */);
 ```
 
-**Pattern 4 — untrustedData opt-in vs. supplied options own security:**
+**Pattern 4 — untrustedData default vs. supplied options own security:**
 
 ```csharp
-// Trusted (default): cache values the app itself wrote.
+// Default safe path for untrusted payloads.
 services.AddSingleton<IBinarySerializer, MessagePackSerializer>();
 
-// Untrusted input (cross-service cache, external producers) — one flag, no hand-built options:
-services.AddSingleton<IBinarySerializer>(new MessagePackSerializer(untrustedData: true));
+// Trusted payload fast path only when the trust boundary is explicit:
+services.AddSingleton<IBinarySerializer>(new MessagePackSerializer(untrustedData: false));
 
 // Supplied options own security; untrustedData is ignored here and cannot relax your choice:
 var options = MessagePackSerializerOptions.Standard
