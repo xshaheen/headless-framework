@@ -99,7 +99,7 @@ hook-build: ## Git hook: incremental solution build over warm outputs (no restor
 	$(DOTNET) build "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-restore -v:q -nologo /clp:ErrorsOnly $(MSBUILD_ARGS)
 
 .PHONY: ci-build
-ci-build: format-check rebuild pack-built ## CI: check formatting, clean-build, then pack already-built projects.
+ci-build: format-check rebuild ci-test pack-built ## CI: check formatting, clean-build, test with coverage, then pack already-built projects.
 
 .PHONY: build
 build: restore ## Build the solution.
@@ -116,6 +116,11 @@ rebuild-no-restore: ## Build without restore or incremental compilation; use aft
 .PHONY: build-project
 build-project: restore-project ## Build one project; preferred when working on a specified project.
 	@test -n "$(PROJECT)" || (echo "PROJECT is required. Example: make build-project PROJECT=src/Headless.Api/Headless.Api.csproj" && exit 2)
+	$(DOTNET) build "$(PROJECT)" --configuration "$(CONFIGURATION)" --no-restore -v:q -nologo /clp:ErrorsOnly $(MSBUILD_ARGS)
+
+.PHONY: build-project-no-restore
+build-project-no-restore: ## Build one project without restore; use after restore-project.
+	@test -n "$(PROJECT)" || (echo "PROJECT is required. Example: make build-project-no-restore PROJECT=src/Headless.Api/Headless.Api.csproj" && exit 2)
 	$(DOTNET) build "$(PROJECT)" --configuration "$(CONFIGURATION)" --no-restore -v:q -nologo /clp:ErrorsOnly $(MSBUILD_ARGS)
 
 .PHONY: quality-analyzers
@@ -164,6 +169,11 @@ test: build ## Build, then run all tests. Use TEST_FILTER='--filter-class X' for
 test-fast: ## Run all tests without restore/build. Requires existing $(CONFIGURATION) build outputs.
 	@mkdir -p "$(TEST_RESULTS_DIR)"
 	$(DOTNET) test --solution "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER)
+
+.PHONY: ci-test
+ci-test: ## Run prebuilt tests with CI coverage output. Requires existing $(CONFIGURATION) build outputs.
+	@mkdir -p "$(TEST_RESULTS_DIR)"
+	$(DOTNET) test --solution "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER) $(COVERAGE_ARGS)
 
 .PHONY: test-modules
 test-modules: build ## Run prebuilt test DLLs via MTP --test-modules. Override TEST_MODULES if needed.
