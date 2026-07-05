@@ -33,6 +33,10 @@ internal sealed class PublishMiddlewarePipeline(
     private static readonly ConcurrentDictionary<MiddlewareDispatchKey, PublishMiddlewareInvoker> _TypedInvokers =
         new();
 
+    // Caches the IPublishMiddleware<TContext> closed service type per concrete PublishContext type, so the
+    // resolution path avoids running MakeGenericType on every publish.
+    private static readonly ConcurrentDictionary<Type, Type> _TypedMiddlewareServiceTypes = new();
+
     // Cache the tracked-type HashSet per (registry, direction). The registry instance is stable for
     // the application's lifetime, so we never recompute the set on the hot publish path.
     private static readonly ConditionalWeakTable<
@@ -136,7 +140,7 @@ internal sealed class PublishMiddlewarePipeline(
 
     private object[] _ResolveMiddleware(IServiceProvider provider, PublishContext context)
     {
-        var directMiddleware = _ResolveDirectMiddleware(provider, context).ToArray();
+        var directMiddleware = _ResolveDirectMiddleware(provider, context);
 
         if (
             descriptorRegistry is not null
@@ -158,7 +162,10 @@ internal sealed class PublishMiddlewarePipeline(
 
     private static object[] _ResolveDirectMiddleware(IServiceProvider provider, PublishContext context)
     {
-        var typedServiceType = typeof(IPublishMiddleware<>).MakeGenericType(context.GetType());
+        var typedServiceType = _TypedMiddlewareServiceTypes.GetOrAdd(
+            context.GetType(),
+            static contextType => typeof(IPublishMiddleware<>).MakeGenericType(contextType)
+        );
         var busMiddleware = provider.GetServices<IPublishMiddleware<PublishContext>>().Cast<object>();
         var typedMiddleware = provider
             .GetServices(typedServiceType)

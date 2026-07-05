@@ -11,11 +11,9 @@ namespace Headless.Messaging.Benchmarks.Scenarios;
 
 /// <summary>
 /// Measures the per-message consume dispatch path (<see cref="ConsumeMiddlewarePipeline.ExecuteAsync"/>).
-/// Each call exercises the three audit findings on this path:
+/// Each call exercises the residual hot-path costs on this path:
 /// <list type="bullet">
-/// <item>F-2 — middleware resolution (<c>_ResolveMiddleware</c>): MakeGenericType + GetServices + LINQ per call.</item>
-/// <item>F-3 — reflection dispatch fallback (<c>_DispatchAsync</c>): the descriptor carries no HandlerId, so
-/// dispatch goes through <c>MakeGenericMethod(...).Invoke(...)</c> per call.</item>
+/// <item>F-2 — middleware resolution (<c>_ResolveMiddleware</c>): GetServices + LINQ/array materialization per call.</item>
 /// <item>F-14 — header copy: <c>new MessageHeader(originHeaders)</c> clones the header dictionary per call.</item>
 /// </list>
 /// Vary <see cref="MiddlewareCount"/> to characterize the F-2 component.
