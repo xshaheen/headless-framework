@@ -8,7 +8,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
-#pragma warning disable CA1708 // multiple extension blocks emit marker members differing only by case
 namespace Headless.Blobs.Redis;
 
 /// <summary>Extension methods to register the Redis blob storage provider.</summary>
@@ -25,7 +24,7 @@ public static class SetupRedisBlob
             setup.RegisterDefaultProvider(services =>
             {
                 services.Configure<RedisBlobStorageOptions, RedisBlobStorageOptionsValidator>(setupAction);
-                services._AddBlobsDefaultCore();
+                _AddBlobsDefaultCore(services);
             });
 
             return setup;
@@ -39,7 +38,7 @@ public static class SetupRedisBlob
             setup.RegisterDefaultProvider(services =>
             {
                 services.Configure<RedisBlobStorageOptions, RedisBlobStorageOptionsValidator>(setupAction);
-                services._AddBlobsDefaultCore();
+                _AddBlobsDefaultCore(services);
             });
 
             return setup;
@@ -59,13 +58,88 @@ public static class SetupRedisBlob
             setup.RegisterDefaultProvider(services =>
             {
                 services.Configure<RedisBlobStorageOptions, RedisBlobStorageOptionsValidator>(configuration);
-                services._AddBlobsDefaultCore();
+                _AddBlobsDefaultCore(services);
             });
 
             return setup;
         }
     }
 
+    private static IServiceCollection _AddBlobsDefaultCore(IServiceCollection services)
+    {
+        _AddBlobsCoreShared(services);
+
+        services.AddSingleton<IBlobStorage>(serviceProvider => new RedisBlobStorage(
+            serviceProvider.GetRequiredService<IOptions<RedisBlobStorageOptions>>(),
+            serviceProvider.GetRequiredService<IJsonSerializer>(),
+            new CrossOsNamingNormalizer(),
+            serviceProvider.GetRequiredService<IClock>(),
+            serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System
+        ));
+
+        // Container lifecycle is a separately-resolved capability (not a cast from IBlobStorage). Redis registers a
+        // manager whose EnsureContainer is a no-op (writes auto-create the hash) and that deletes the backing
+        // hashes; it shares the storage's connection multiplexer and normalizer for matching key layout.
+        services.AddSingleton<IBlobContainerManager>(serviceProvider =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<RedisBlobStorageOptions>>().Value;
+
+            return new RedisBlobContainerManager(options.ConnectionMultiplexer, new CrossOsNamingNormalizer());
+        });
+
+        return services;
+    }
+
+    internal static IServiceCollection AddBlobsNamedCore(IServiceCollection services, string name)
+    {
+        _AddBlobsCoreShared(services);
+
+        services.AddKeyedSingleton<IBlobStorage>(
+            name,
+            (serviceProvider, _) =>
+                new RedisBlobStorage(
+                    Options.Create(
+                        serviceProvider.GetRequiredService<IOptionsMonitor<RedisBlobStorageOptions>>().Get(name)
+                    ),
+                    serviceProvider.GetRequiredService<IJsonSerializer>(),
+                    new CrossOsNamingNormalizer(),
+                    serviceProvider.GetRequiredService<IClock>(),
+                    serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System
+                )
+        );
+
+        // Keyed container-management capability for this named instance, sharing the same per-instance multiplexer
+        // and normalizer as the keyed storage so the manager targets the same backing hashes. Separate registration
+        // (resolve via DI), not a cast from the keyed storage.
+        services.AddKeyedSingleton<IBlobContainerManager>(
+            name,
+            (serviceProvider, _) =>
+            {
+                var options = serviceProvider.GetRequiredService<IOptionsMonitor<RedisBlobStorageOptions>>().Get(name);
+
+                return new RedisBlobContainerManager(options.ConnectionMultiplexer, new CrossOsNamingNormalizer());
+            }
+        );
+
+        return services;
+    }
+
+    private static IServiceCollection _AddBlobsCoreShared(IServiceCollection services)
+    {
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<IJsonOptionsProvider>(new DefaultJsonOptionsProvider());
+        services.TryAddSingleton<IJsonSerializer>(sp => new SystemJsonSerializer(
+            sp.GetRequiredService<IJsonOptionsProvider>()
+        ));
+
+        return services;
+    }
+}
+
+/// <summary>Extension methods to register the Redis blob storage provider as a named store.</summary>
+[PublicAPI]
+public static class SetupRedisBlobNamed
+{
     extension(HeadlessBlobInstanceBuilder instance)
     {
         /// <summary>Uses Redis for this named instance, resolvable as a keyed <see cref="IBlobStorage"/> or through <see cref="IBlobStorageProvider"/>.</summary>
@@ -78,7 +152,7 @@ public static class SetupRedisBlob
             instance.RegisterProvider(services =>
             {
                 services.Configure<RedisBlobStorageOptions, RedisBlobStorageOptionsValidator>(setupAction, name);
-                services._AddBlobsNamedCore(name);
+                SetupRedisBlob.AddBlobsNamedCore(services, name);
             });
 
             return instance;
@@ -94,7 +168,7 @@ public static class SetupRedisBlob
             instance.RegisterProvider(services =>
             {
                 services.Configure<RedisBlobStorageOptions, RedisBlobStorageOptionsValidator>(setupAction, name);
-                services._AddBlobsNamedCore(name);
+                SetupRedisBlob.AddBlobsNamedCore(services, name);
             });
 
             return instance;
@@ -116,60 +190,10 @@ public static class SetupRedisBlob
             instance.RegisterProvider(services =>
             {
                 services.Configure<RedisBlobStorageOptions, RedisBlobStorageOptionsValidator>(configuration, name);
-                services._AddBlobsNamedCore(name);
+                SetupRedisBlob.AddBlobsNamedCore(services, name);
             });
 
             return instance;
-        }
-    }
-
-    extension(IServiceCollection services)
-    {
-        private IServiceCollection _AddBlobsDefaultCore()
-        {
-            services._AddBlobsCoreShared();
-
-            services.AddSingleton<IBlobStorage>(serviceProvider => new RedisBlobStorage(
-                serviceProvider.GetRequiredService<IOptions<RedisBlobStorageOptions>>(),
-                serviceProvider.GetRequiredService<IJsonSerializer>(),
-                new CrossOsNamingNormalizer(),
-                serviceProvider.GetRequiredService<IClock>(),
-                serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System
-            ));
-
-            return services;
-        }
-
-        private IServiceCollection _AddBlobsNamedCore(string name)
-        {
-            services._AddBlobsCoreShared();
-
-            services.AddKeyedSingleton<IBlobStorage>(
-                name,
-                (serviceProvider, _) =>
-                    new RedisBlobStorage(
-                        Options.Create(
-                            serviceProvider.GetRequiredService<IOptionsMonitor<RedisBlobStorageOptions>>().Get(name)
-                        ),
-                        serviceProvider.GetRequiredService<IJsonSerializer>(),
-                        new CrossOsNamingNormalizer(),
-                        serviceProvider.GetRequiredService<IClock>(),
-                        serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System
-                    )
-            );
-
-            return services;
-        }
-
-        private IServiceCollection _AddBlobsCoreShared()
-        {
-            services.TryAddSingleton(TimeProvider.System);
-            services.TryAddSingleton<IJsonOptionsProvider>(new DefaultJsonOptionsProvider());
-            services.TryAddSingleton<IJsonSerializer>(sp => new SystemJsonSerializer(
-                sp.GetRequiredService<IJsonOptionsProvider>()
-            ));
-
-            return services;
         }
     }
 }

@@ -41,7 +41,7 @@ public sealed class CequensBulkSmsConformanceTests : SmsBulkSenderConformanceTes
 
     private CequensSmsSender _CreateSender(string baseUrl, string? staticToken)
     {
-        var options = Options.Create(
+        var options = new OptionsMonitorWrapper<CequensSmsOptions>(
             new CequensSmsOptions
             {
                 SingleSmsEndpoint = $"{baseUrl}/sms",
@@ -55,8 +55,10 @@ public sealed class CequensBulkSmsConformanceTests : SmsBulkSenderConformanceTes
 
         return new CequensSmsSender(
             _fixture.HttpClientFactory,
+            SetupCequens.HttpClientName,
             new FakeTimeProvider(),
             options,
+            optionsName: null,
             NullLogger<CequensSmsSender>.Instance
         );
     }

@@ -9,15 +9,8 @@ namespace Headless.Blobs.Azure;
 public sealed class AzureStorageOptions
 {
     /// <summary>
-    /// When <see langword="true"/> (the default), uploads and copies create the target container if it does not
-    /// already exist. The check/create runs at most once per container per storage instance. Set to
-    /// <see langword="false"/> for clients whose credentials cannot create containers; a missing container then
-    /// surfaces as an error from the operation. Explicit <see cref="IBlobStorage.CreateContainerAsync"/> calls
-    /// ensure the container regardless of this setting (the result is cached per instance).
+    /// Access type applied when <see cref="IBlobContainerManager.EnsureContainerAsync"/> creates a new container.
     /// </summary>
-    public bool AutoCreateContainer { get; set; } = true;
-
-    /// <summary>Access type when creating a new container if it does not exist.</summary>
     public PublicAccessType ContainerPublicAccessType { get; set; } = PublicAccessType.None;
 
     /// <summary>Maximum degree of parallelism for bulk upload operations. Default is 10.</summary>

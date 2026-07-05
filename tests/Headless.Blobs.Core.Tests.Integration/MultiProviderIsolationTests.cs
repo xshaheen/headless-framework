@@ -113,15 +113,18 @@ public sealed class MultiProviderIsolationTests : TestBase
         var provider = sp.GetRequiredService<IBlobStorageProvider>();
         var defaultStorage = sp.GetRequiredService<IBlobStorage>();
         var scratch = provider.GetStorage("scratch");
-        string[] container = ["bucket"];
+        var location = new BlobLocation("bucket", "a.txt");
+
+        // The data plane never auto-creates containers, so provision the default store's container first.
+        await sp.GetRequiredService<IBlobContainerManager>().EnsureContainerAsync("bucket", AbortToken);
 
         // when
-        await defaultStorage.UploadContentAsync(container, "a.txt", "hello", cancellationToken: AbortToken);
+        await defaultStorage.UploadContentAsync(location, "hello", AbortToken);
 
         // then
-        (await defaultStorage.GetBlobContentAsync(container, "a.txt", cancellationToken: AbortToken))
+        (await defaultStorage.GetBlobContentAsync(location, AbortToken))
             .Should()
             .Be("hello");
-        (await scratch.GetBlobContentAsync(container, "a.txt", cancellationToken: AbortToken)).Should().BeNull();
+        (await scratch.GetBlobContentAsync(location, AbortToken)).Should().BeNull();
     }
 }

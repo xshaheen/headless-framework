@@ -70,7 +70,9 @@ Use the [Makefile](Makefile) targets instead of raw `dotnet` invocations — the
 - **Node prerequisite (dashboards)**: building `Headless.Jobs.Dashboard` / `Headless.Messaging.Dashboard` requires **Node 22** on `PATH` — their `dotnet build` runs `npm ci` + a Vite build (`eng/DashboardSpa.targets`) and embeds the generated `wwwroot/dist` (no longer committed). Run `make dashboards` to (re)build the SPAs. Pass `/p:BuildDashboardSpa=false` (or set the `BuildDashboardSpa=false` env var) to skip the npm build when a `wwwroot/dist` is already present.
 - **Build**: `make build` (incremental, errors-only), `make rebuild` (no incremental), `make build-project PROJECT=src/.../X.csproj`. Prefer `build-project` when the work is scoped to a specified project; it restores only the selected project graph before building and does not restore the full solution.
 - **Format**: `make format` (CSharpier write), `make format-check` (verify only).
+- **Code quality analyzers**: `make quality-analyzers` for the solution, or `make quality-analyzers-project PROJECT=src/.../X.csproj` for focused work. These run a quiet no-incremental build that reports only warning/error diagnostics, then `dotnet format analyzers` in verify-only mode for analyzer suggestions. Scope with `QUALITY_SEVERITY=warn` or `QUALITY_DIAGNOSTICS=MA0154`.
 - **Test**: `make test` (build + run all). `make test-fast` / `make test-project-fast` skip restore/build when outputs exist. Scope with `make test-project TEST_PROJECT=…`, `test-class CLASS='*ClockTests'`, `test-method METHOD=…`, `test-namespace`, `test-trait`, `test-query`. Group runs: `test-unit`, `test-integration` (needs Docker).
+- **Before opening a PR**: run `make quality-analyzers` after the relevant build/test/format gates so analyzer warnings and suggestions are visible and fix them before CI or review.
 - **Coverage**: `make coverage` (Cobertura), `coverage-html`, `coverage-json` (Summary.json), `coverage-open`.
 - **Package/release**: `make pack`, `pack-sbom`, `outdated`, `version`.
 - **Discovery**: `make list-projects`, `list-tests`, `clean`.
@@ -187,3 +189,7 @@ After creating the project, attach it to [headless-framework.slnx](headless-fram
 - `docs/solutions/` is a searchable knowledge store of past fixes and patterns, organized by category (`api`, `concurrency`, `guides`, `messaging`, etc.) with YAML frontmatter (`module`, `tags`, `problem_type`). Search it before implementing features, debugging issues, or making decisions in a documented area.
 - Two agent-facing doc surfaces must stay in lockstep: `docs/llms/<domain>.md` and `src/Headless.<Package>/README.md`. Authoring rules, templates, and lifecycle workflows live in [docs/authoring/AUTHORING.md](docs/authoring/AUTHORING.md) — **read it before editing either surface**. Docs are not pure API reference; they must explain core concepts, trade-offs, and provider decisions.
 - **Sync trigger** — a code change in `src/Headless.*` requires a docs update when any of these are true: public API surface changes, package added/renamed/removed, consumer-visible behavior changes (defaults, ordering, retry, cancellation, threading), or configuration options added/removed. Internal refactors, perf-only, test-only, and formatting changes do **not** require doc updates. When triggered, follow the drift checks in `docs/authoring/AUTHORING.md`.
+
+## Learnings
+
+- `Range<T>` uses `null` bounds as infinities; range-to-range operations must compare lower and upper bounds with side-specific semantics instead of reusing value containment. (2026-07-04)

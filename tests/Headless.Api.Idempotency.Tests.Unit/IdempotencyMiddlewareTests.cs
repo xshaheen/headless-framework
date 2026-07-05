@@ -1308,10 +1308,10 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
     // ── new behaviors introduced by middleware rewrite ───────────────────────
 
     [Fact]
-    public async Task should_remove_marker_when_finalize_cas_throws()
+    public async Task should_remove_marker_and_preserve_response_when_finalize_cas_throws_in_fail_open_mode()
     {
         // given — TryReplaceIfEqualAsync fails after successful next; middleware must remove the
-        // marker and rethrow so the orphan does not block subsequent retries for the TTL window.
+        // marker and preserve the successful handler response in the default FailOpen mode.
         byte[] body = [1, 2, 3];
 
         var cache = Substitute.For<ICache>();
@@ -1337,6 +1337,53 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
             .Returns<ValueTask<bool>>(_ => throw new InvalidOperationException("cache down"));
 
         var middleware = CreateMiddleware(cache: cache);
+        var context = CreateContext(idempotencyKey: "k1", body: body);
+
+        await middleware.InvokeAsync(
+            context,
+            ctx =>
+            {
+                ctx.Response.StatusCode = 200;
+                return Task.CompletedTask;
+            }
+        );
+
+        context.Response.StatusCode.Should().Be(200);
+        await cache.Received(1).RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_remove_marker_and_throw_when_finalize_cas_throws_in_throw_mode()
+    {
+        // given
+        byte[] body = [1, 2, 3];
+
+        var options = Substitute.For<IOptionsMonitor<IdempotencyOptions>>();
+        options.CurrentValue.Returns(new IdempotencyOptions { OnCacheError = OnCacheErrorBehavior.Throw });
+
+        var cache = Substitute.For<ICache>();
+        cache
+            .GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(CacheValue<IdempotencyRecord>.NoValue);
+        cache
+            .TryInsertAsync(
+                Arg.Any<string>(),
+                Arg.Any<IdempotencyRecord>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(true);
+        cache
+            .TryReplaceIfEqualAsync(
+                Arg.Any<string>(),
+                Arg.Any<IdempotencyRecord?>(),
+                Arg.Any<IdempotencyRecord?>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns<ValueTask<bool>>(_ => throw new InvalidOperationException("cache down"));
+
+        var middleware = CreateMiddleware(options: options, cache: cache);
         var context = CreateContext(idempotencyKey: "k1", body: body);
 
         var act = () =>

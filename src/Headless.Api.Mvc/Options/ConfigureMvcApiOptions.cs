@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Api.Filters;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Formatters;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Metadata;
@@ -17,6 +18,7 @@ namespace Headless.Api.Options;
 ///   <item>Disables <c>HttpNoContentOutputFormatter.TreatNullValueAsNoContent</c> so that <c>Ok(null)</c> serializes normally instead of emitting 204.</item>
 ///   <item>Enables 406 Not Acceptable when the client's <c>Accept</c> header cannot be satisfied.</item>
 ///   <item>Clears the default model-validator providers and substitutes <c>SystemTextJsonValidationMetadataProvider</c>.</item>
+///   <item>Applies <c>ProblemDetailsOptions.CustomizeProblemDetails</c> once to Headless-normalized MVC problem-details object results.</item>
 /// </list>
 /// Behavior applied to <see cref="ApiBehaviorOptions"/>:
 /// <list type="bullet">
@@ -41,6 +43,15 @@ public sealed class ConfigureMvcApiOptions : IConfigureOptions<MvcOptions>, ICon
         // Clear the default model validator providers and add the System.Text.Json validation metadata provider.
         options.ModelValidatorProviders.Clear();
         options.ModelMetadataDetailsProviders.Add(new SystemTextJsonValidationMetadataProvider());
+
+        if (
+            !options
+                .Filters.OfType<TypeFilterAttribute>()
+                .Any(filter => filter.ImplementationType == typeof(HeadlessProblemDetailsResultFilter))
+        )
+        {
+            options.Filters.Add<HeadlessProblemDetailsResultFilter>();
+        }
 
         // Exception mapping is handled globally by HeadlessApiExceptionHandler (registered in
         // AddHeadlessProblemDetails). No MVC IExceptionFilter needed.

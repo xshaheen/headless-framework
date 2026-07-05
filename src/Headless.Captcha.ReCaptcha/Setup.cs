@@ -8,7 +8,6 @@ using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-#pragma warning disable CA1708 // multiple extension blocks emit marker members differing only by case
 namespace Headless.Captcha;
 
 [PublicAPI]
@@ -36,7 +35,7 @@ public static class SetupReCaptcha
                         setupAction,
                         CaptchaConstants.ReCaptchaV3Provider
                     );
-                    services._AddReCaptchaV3Core(CaptchaConstants.ReCaptchaV3Provider, isDefault: true);
+                    _AddReCaptchaV3Core(services, CaptchaConstants.ReCaptchaV3Provider, isDefault: true);
                 }
             );
 
@@ -58,7 +57,7 @@ public static class SetupReCaptcha
                         setupAction,
                         CaptchaConstants.ReCaptchaV3Provider
                     );
-                    services._AddReCaptchaV3Core(CaptchaConstants.ReCaptchaV3Provider, isDefault: true);
+                    _AddReCaptchaV3Core(services, CaptchaConstants.ReCaptchaV3Provider, isDefault: true);
                 }
             );
 
@@ -80,7 +79,7 @@ public static class SetupReCaptcha
                         configuration,
                         CaptchaConstants.ReCaptchaV3Provider
                     );
-                    services._AddReCaptchaV3Core(CaptchaConstants.ReCaptchaV3Provider, isDefault: true);
+                    _AddReCaptchaV3Core(services, CaptchaConstants.ReCaptchaV3Provider, isDefault: true);
                 }
             );
 
@@ -101,7 +100,7 @@ public static class SetupReCaptcha
                 services =>
                 {
                     services.Configure<ReCaptchaOptions, ReCaptchaOptionsValidator>(setupAction, name);
-                    services._AddReCaptchaV3Core(name, isDefault: false);
+                    _AddReCaptchaV3Core(services, name, isDefault: false);
                 }
             );
 
@@ -125,7 +124,7 @@ public static class SetupReCaptcha
                 services =>
                 {
                     services.Configure<ReCaptchaOptions, ReCaptchaOptionsValidator>(setupAction, name);
-                    services._AddReCaptchaV3Core(name, isDefault: false);
+                    _AddReCaptchaV3Core(services, name, isDefault: false);
                 }
             );
 
@@ -146,7 +145,7 @@ public static class SetupReCaptcha
                 services =>
                 {
                     services.Configure<ReCaptchaOptions, ReCaptchaOptionsValidator>(configuration, name);
-                    services._AddReCaptchaV3Core(name, isDefault: false);
+                    _AddReCaptchaV3Core(services, name, isDefault: false);
                 }
             );
 
@@ -175,7 +174,7 @@ public static class SetupReCaptcha
                         setupAction,
                         CaptchaConstants.ReCaptchaV2Provider
                     );
-                    services._AddReCaptchaV2Core(CaptchaConstants.ReCaptchaV2Provider, isDefault: true);
+                    _AddReCaptchaV2Core(services, CaptchaConstants.ReCaptchaV2Provider, isDefault: true);
                 }
             );
 
@@ -197,7 +196,7 @@ public static class SetupReCaptcha
                         setupAction,
                         CaptchaConstants.ReCaptchaV2Provider
                     );
-                    services._AddReCaptchaV2Core(CaptchaConstants.ReCaptchaV2Provider, isDefault: true);
+                    _AddReCaptchaV2Core(services, CaptchaConstants.ReCaptchaV2Provider, isDefault: true);
                 }
             );
 
@@ -219,7 +218,7 @@ public static class SetupReCaptcha
                         configuration,
                         CaptchaConstants.ReCaptchaV2Provider
                     );
-                    services._AddReCaptchaV2Core(CaptchaConstants.ReCaptchaV2Provider, isDefault: true);
+                    _AddReCaptchaV2Core(services, CaptchaConstants.ReCaptchaV2Provider, isDefault: true);
                 }
             );
 
@@ -240,7 +239,7 @@ public static class SetupReCaptcha
                 services =>
                 {
                     services.Configure<ReCaptchaOptions, ReCaptchaOptionsValidator>(setupAction, name);
-                    services._AddReCaptchaV2Core(name, isDefault: false);
+                    _AddReCaptchaV2Core(services, name, isDefault: false);
                 }
             );
 
@@ -264,7 +263,7 @@ public static class SetupReCaptcha
                 services =>
                 {
                     services.Configure<ReCaptchaOptions, ReCaptchaOptionsValidator>(setupAction, name);
-                    services._AddReCaptchaV2Core(name, isDefault: false);
+                    _AddReCaptchaV2Core(services, name, isDefault: false);
                 }
             );
 
@@ -285,7 +284,7 @@ public static class SetupReCaptcha
                 services =>
                 {
                     services.Configure<ReCaptchaOptions, ReCaptchaOptionsValidator>(configuration, name);
-                    services._AddReCaptchaV2Core(name, isDefault: false);
+                    _AddReCaptchaV2Core(services, name, isDefault: false);
                 }
             );
 
@@ -295,85 +294,80 @@ public static class SetupReCaptcha
         #endregion
     }
 
-    extension(IServiceCollection services)
+    private static IServiceCollection _AddReCaptchaV3Core(IServiceCollection services, string name, bool isDefault)
     {
-        private IServiceCollection _AddReCaptchaV3Core(string name, bool isDefault)
-        {
-            services.TryAddTransient<IReCaptchaLanguageCodeProvider, CultureInfoReCaptchaLanguageCodeProvider>();
+        services.TryAddTransient<IReCaptchaLanguageCodeProvider, CultureInfoReCaptchaLanguageCodeProvider>();
 
-            services
-                .AddHttpClient(
-                    name,
-                    (sp, client) =>
-                    {
-                        var options = sp.GetRequiredService<IOptionsMonitor<ReCaptchaOptions>>().Get(name);
-                        client.BaseAddress = new Uri(options.VerifyBaseUrl);
-                    }
+        services
+            .AddHttpClient(
+                name,
+                (sp, client) =>
+                {
+                    var options = sp.GetRequiredService<IOptionsMonitor<ReCaptchaOptions>>().Get(name);
+                    client.BaseAddress = new Uri(options.VerifyBaseUrl);
+                }
+            )
+            // reCAPTCHA tokens are single-use — disable retry on POST to avoid replaying them.
+            .AddStandardResilienceHandler(options => options.Retry.DisableForUnsafeHttpMethods());
+
+        services.AddKeyedSingleton<IReCaptchaV3Verifier>(
+            name,
+            (sp, key) =>
+                new ReCaptchaSiteVerifyV3(
+                    (string)key,
+                    sp.GetRequiredService<IOptionsMonitor<ReCaptchaOptions>>(),
+                    sp.GetRequiredService<IHttpClientFactory>(),
+                    sp.GetService<ILogger<ReCaptchaSiteVerifyV3>>()
                 )
-                // reCAPTCHA tokens are single-use — disable retry on POST to avoid replaying them.
-                .AddStandardResilienceHandler(options => options.Retry.DisableForUnsafeHttpMethods());
+        );
+        services.AddKeyedSingleton<ICaptchaVerifier>(
+            name,
+            (sp, key) => sp.GetRequiredKeyedService<IReCaptchaV3Verifier>(key)
+        );
 
-            services.AddKeyedSingleton<IReCaptchaV3Verifier>(
-                name,
-                (sp, key) =>
-                    new ReCaptchaSiteVerifyV3(
-                        (string)key,
-                        sp.GetRequiredService<IOptionsMonitor<ReCaptchaOptions>>(),
-                        sp.GetRequiredService<IHttpClientFactory>(),
-                        sp.GetService<ILogger<ReCaptchaSiteVerifyV3>>()
-                    )
+        if (isDefault)
+        {
+            services.TryAddSingleton<IReCaptchaV3Verifier>(sp =>
+                sp.GetRequiredKeyedService<IReCaptchaV3Verifier>(name)
             );
-            services.AddKeyedSingleton<ICaptchaVerifier>(
-                name,
-                (sp, key) => sp.GetRequiredKeyedService<IReCaptchaV3Verifier>(key)
-            );
-
-            if (isDefault)
-            {
-                services.TryAddSingleton<IReCaptchaV3Verifier>(sp =>
-                    sp.GetRequiredKeyedService<IReCaptchaV3Verifier>(name)
-                );
-                services.TryAddSingleton<ICaptchaVerifier>(sp =>
-                    sp.GetRequiredKeyedService<IReCaptchaV3Verifier>(name)
-                );
-            }
-
-            return services;
+            services.TryAddSingleton<ICaptchaVerifier>(sp => sp.GetRequiredKeyedService<IReCaptchaV3Verifier>(name));
         }
 
-        private IServiceCollection _AddReCaptchaV2Core(string name, bool isDefault)
-        {
-            services.TryAddTransient<IReCaptchaLanguageCodeProvider, CultureInfoReCaptchaLanguageCodeProvider>();
+        return services;
+    }
 
-            services
-                .AddHttpClient(
-                    name,
-                    (sp, client) =>
-                    {
-                        var options = sp.GetRequiredService<IOptionsMonitor<ReCaptchaOptions>>().Get(name);
-                        client.BaseAddress = new Uri(options.VerifyBaseUrl);
-                    }
-                )
-                // reCAPTCHA tokens are single-use — disable retry on POST to avoid replaying them.
-                .AddStandardResilienceHandler(options => options.Retry.DisableForUnsafeHttpMethods());
+    private static IServiceCollection _AddReCaptchaV2Core(IServiceCollection services, string name, bool isDefault)
+    {
+        services.TryAddTransient<IReCaptchaLanguageCodeProvider, CultureInfoReCaptchaLanguageCodeProvider>();
 
-            services.AddKeyedSingleton<ICaptchaVerifier>(
+        services
+            .AddHttpClient(
                 name,
-                (sp, key) =>
-                    new ReCaptchaSiteVerifyV2(
-                        (string)key,
-                        sp.GetRequiredService<IOptionsMonitor<ReCaptchaOptions>>(),
-                        sp.GetRequiredService<IHttpClientFactory>(),
-                        sp.GetService<ILogger<ReCaptchaSiteVerifyV2>>()
-                    )
-            );
+                (sp, client) =>
+                {
+                    var options = sp.GetRequiredService<IOptionsMonitor<ReCaptchaOptions>>().Get(name);
+                    client.BaseAddress = new Uri(options.VerifyBaseUrl);
+                }
+            )
+            // reCAPTCHA tokens are single-use — disable retry on POST to avoid replaying them.
+            .AddStandardResilienceHandler(options => options.Retry.DisableForUnsafeHttpMethods());
 
-            if (isDefault)
-            {
-                services.TryAddSingleton<ICaptchaVerifier>(sp => sp.GetRequiredKeyedService<ICaptchaVerifier>(name));
-            }
+        services.AddKeyedSingleton<ICaptchaVerifier>(
+            name,
+            (sp, key) =>
+                new ReCaptchaSiteVerifyV2(
+                    (string)key,
+                    sp.GetRequiredService<IOptionsMonitor<ReCaptchaOptions>>(),
+                    sp.GetRequiredService<IHttpClientFactory>(),
+                    sp.GetService<ILogger<ReCaptchaSiteVerifyV2>>()
+                )
+        );
 
-            return services;
+        if (isDefault)
+        {
+            services.TryAddSingleton<ICaptchaVerifier>(sp => sp.GetRequiredKeyedService<ICaptchaVerifier>(name));
         }
+
+        return services;
     }
 }

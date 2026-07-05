@@ -35,7 +35,7 @@ if (builder.Environment.IsDevelopment())
 // As a named instance alongside a real default sender (keyed IEmailSender "audit"):
 builder.Services.AddHeadlessEmails(setup =>
 {
-    setup.UseAwsSes(awsOptions); // default (required)
+    setup.UseAwsSes(awsOptions); // default (optional)
     setup.AddNamed("audit", i => i.UseDevelopment("audit-emails.txt"));
 });
 ```

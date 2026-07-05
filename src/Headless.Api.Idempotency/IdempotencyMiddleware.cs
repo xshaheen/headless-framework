@@ -631,7 +631,13 @@ internal sealed partial class IdempotencyMiddleware(
                     {
                         LogMarkerCleanupFailed(cacheKey, cleanupEx);
                     }
-                    throw;
+
+                    if (options.OnCacheError == OnCacheErrorBehavior.Throw)
+                    {
+                        throw;
+                    }
+
+                    return;
                 }
 
                 if (!replaced)
@@ -901,7 +907,7 @@ internal sealed partial class IdempotencyMiddleware(
     // ReSharper disable once InconsistentNaming
     private partial void LogSkippedNoIdentity();
 
-    [LoggerMessage(Level = LogLevel.Error, Message = "Idempotency finalize (UpsertAsync) failed for key {CacheKey}")]
+    [LoggerMessage(Level = LogLevel.Error, Message = "Idempotency finalize (CAS) failed for key {CacheKey}")]
     // ReSharper disable once InconsistentNaming
 
     private partial void LogFinalizeFailed(string cacheKey, Exception exception);

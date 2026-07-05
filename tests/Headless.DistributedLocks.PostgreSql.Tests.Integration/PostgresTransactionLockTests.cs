@@ -381,9 +381,11 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
     }
 
 #pragma warning disable CA2000
-    // DatabaseConnection owns and disposes this internally-owned fake connection.
+    // The fake connection is externally owned, so DatabaseConnection does not dispose it (CA2000 applies here).
+    // isExternallyOwned MUST stay true: the savepoint-failure path under test only runs when the connection is
+    // externally owned; flipping it to false skips the SAVEPOINT entirely and the wrong exception surfaces.
     private sealed class ThrowingSavePointDatabaseConnection()
-        : DatabaseConnection(new ThrowingSavePointDbConnection(), isExternallyOwned: false, TimeProvider.System)
+        : DatabaseConnection(new ThrowingSavePointDbConnection(), isExternallyOwned: true, TimeProvider.System)
     {
         public override bool ShouldPrepareCommands => false;
 

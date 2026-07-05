@@ -57,8 +57,8 @@ public static class HttpRequestExtensions
     /// <param name="request">The HTTP request to inspect.</param>
     /// <param name="contentTypes">One or more MIME types to check acceptance of.</param>
     /// <returns>
-    /// <see langword="true"/> if the <c>Accept</c> header is absent, a wildcard (<c>*/*</c>), or
-    /// explicitly includes at least one of <paramref name="contentTypes"/>; otherwise
+    /// <see langword="true"/> if the <c>Accept</c> header is absent, or the best matching media range
+    /// for at least one supplied content type has a positive quality value; otherwise
     /// <see langword="false"/>.
     /// </returns>
     /// <exception cref="ArgumentNullException"><paramref name="request"/> is <see langword="null"/>.</exception>
@@ -83,20 +83,11 @@ public static class HttpRequestExtensions
             return true;
         }
 
-        foreach (var mediaType in parsed)
+        foreach (var contentType in contentTypes)
         {
-            // Wildcard */* matches anything.
-            if (mediaType.MatchesAllTypes)
+            if (MediaTypeHeaderValue.TryParse(contentType, out var candidate) && _CanAccept(parsed, candidate))
             {
                 return true;
-            }
-
-            foreach (var contentType in contentTypes)
-            {
-                if (MediaTypeHeaderValue.TryParse(contentType, out var candidate) && mediaType.IsSubsetOf(candidate))
-                {
-                    return true;
-                }
             }
         }
 
@@ -112,8 +103,8 @@ public static class HttpRequestExtensions
     /// <param name="request">The HTTP request to inspect.</param>
     /// <param name="contentType">The MIME type to check acceptance of.</param>
     /// <returns>
-    /// <see langword="true"/> if the <c>Accept</c> header is absent, a wildcard (<c>*/*</c>), or
-    /// explicitly includes <paramref name="contentType"/>; otherwise <see langword="false"/>.
+    /// <see langword="true"/> if the <c>Accept</c> header is absent, or the best matching media range
+    /// for <paramref name="contentType"/> has a positive quality value; otherwise <see langword="false"/>.
     /// Returns <see langword="false"/> when <paramref name="contentType"/> cannot be parsed as a
     /// valid media type.
     /// </returns>
@@ -137,14 +128,92 @@ public static class HttpRequestExtensions
 
         var parsed = MediaTypeHeaderValue.ParseList(acceptHeader);
 
-        foreach (var mediaType in parsed)
+        if (parsed is null or { Count: 0 })
         {
-            if (mediaType.MatchesAllTypes || mediaType.IsSubsetOf(candidate))
+            return true;
+        }
+
+        return _CanAccept(parsed, candidate);
+    }
+
+    internal static bool HasAcceptRejection(this HttpRequest request, string contentType)
+    {
+        Argument.IsNotNull(request);
+        Argument.IsNotNull(contentType);
+
+        var acceptHeader = request.Headers[HeaderNames.Accept];
+
+        if (acceptHeader.Count == 0)
+        {
+            return false;
+        }
+
+        if (!MediaTypeHeaderValue.TryParse(contentType, out var candidate))
+        {
+            return false;
+        }
+
+        var parsed = MediaTypeHeaderValue.ParseList(acceptHeader);
+
+        if (parsed is null or { Count: 0 })
+        {
+            return false;
+        }
+
+        var (found, quality) = _GetBestAcceptMatch(parsed, candidate);
+
+        return found && quality <= 0;
+    }
+
+    private static bool _CanAccept(IList<MediaTypeHeaderValue> acceptHeader, MediaTypeHeaderValue candidate)
+    {
+        var (found, quality) = _GetBestAcceptMatch(acceptHeader, candidate);
+
+        return found && quality > 0;
+    }
+
+    private static (bool Found, double Quality) _GetBestAcceptMatch(
+        IList<MediaTypeHeaderValue> acceptHeader,
+        MediaTypeHeaderValue candidate
+    )
+    {
+        double bestQuality = 0;
+        var bestSpecificity = -1;
+
+        foreach (var mediaType in acceptHeader)
+        {
+            if (!candidate.IsSubsetOf(mediaType))
             {
-                return true;
+                continue;
+            }
+
+            var specificity = _GetSpecificity(mediaType, candidate);
+            var quality = mediaType.Quality ?? 1;
+
+            if (specificity > bestSpecificity || (specificity == bestSpecificity && quality > bestQuality))
+            {
+                bestSpecificity = specificity;
+                bestQuality = quality;
             }
         }
 
-        return false;
+        return (bestSpecificity >= 0, bestQuality);
+    }
+
+    private static int _GetSpecificity(MediaTypeHeaderValue mediaType, MediaTypeHeaderValue candidate)
+    {
+        if (mediaType.MatchesAllTypes)
+        {
+            return 0;
+        }
+
+        if (mediaType.MatchesAllSubTypes || mediaType.MatchesAllSubTypesWithoutSuffix)
+        {
+            return 1;
+        }
+
+        return string.Equals(mediaType.MediaType.Value, candidate.MediaType.Value, StringComparison.OrdinalIgnoreCase)
+            ? 3
+            : 2;
     }
 }

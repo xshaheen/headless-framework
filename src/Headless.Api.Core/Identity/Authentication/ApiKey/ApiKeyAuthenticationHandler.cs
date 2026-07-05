@@ -17,7 +17,6 @@ namespace Headless.Api.Identity.Authentication.ApiKey;
 /// <remarks>
 /// Authentication flow:
 /// <list type="number">
-///   <item><description>If the request already carries an authenticated identity, the existing ticket is reused.</description></item>
 ///   <item><description>If no API key is present in the header (or query string when <see cref="ApiKeyAuthenticationSchemeOptions.AllowApiKeyInQueryString"/> is <see langword="true"/>), <c>NoResult</c> is returned so other handlers can run.</description></item>
 ///   <item><description>If the key is blank or not found in the store, <c>NoResult</c> is returned.</description></item>
 ///   <item><description>If the user cannot sign in (email not confirmed, locked out, etc.) <c>Fail</c> is returned.</description></item>
@@ -48,13 +47,6 @@ public sealed class ApiKeyAuthenticationHandler<TUser, TUserId>(
     /// </returns>
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
-        // This line is important to correct working the multiple authentication schemes
-        // when only cookies sent in request
-        if (Context.User.Identity?.IsAuthenticated ?? false)
-        {
-            return AuthenticateResult.Success(new AuthenticationTicket(Context.User, "context.User"));
-        }
-
         var foundInHeader = Request.Headers.TryGetValue(Options.ApiKeyHeaderName, out var apiKeyValues);
 
         if (!foundInHeader && Options.AllowApiKeyInQueryString)

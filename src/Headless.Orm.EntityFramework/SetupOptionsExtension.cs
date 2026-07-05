@@ -71,11 +71,17 @@ public static class SetupOptionsExtension
     /// interceptors — e.g. the commit-coordination transaction interceptor — without hand-rolling the discovery.
     /// </para>
     /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="optionsBuilder"/> or <paramref name="serviceProvider"/> is <see langword="null"/>.
+    /// </exception>
     public static DbContextOptionsBuilder AddDiRegisteredInterceptors(
         this DbContextOptionsBuilder optionsBuilder,
         IServiceProvider serviceProvider
     )
     {
+        Argument.IsNotNull(optionsBuilder);
+        Argument.IsNotNull(serviceProvider);
+
         var existing = optionsBuilder.Options.FindExtension<CoreOptionsExtension>()?.Interceptors;
 
         var missing = serviceProvider

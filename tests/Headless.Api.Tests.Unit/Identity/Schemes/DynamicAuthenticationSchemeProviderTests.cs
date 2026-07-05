@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Api.Identity.Authentication.ApiKey;
+using Headless.Api.Identity.Authentication.Basic;
 using Headless.Api.Identity.Schemes;
 using Headless.Constants;
 using Headless.Testing.Tests;
@@ -14,7 +15,7 @@ public sealed class DynamicAuthenticationSchemeProviderTests : TestBase
 {
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IOptions<AuthenticationOptions> _authOptions;
-    private readonly IOptions<ApiKeyAuthenticationSchemeOptions> _apiKeyOptions;
+    private readonly IOptionsMonitor<ApiKeyAuthenticationSchemeOptions> _apiKeyOptions;
 
     public DynamicAuthenticationSchemeProviderTests()
     {
@@ -31,7 +32,14 @@ public sealed class DynamicAuthenticationSchemeProviderTests : TestBase
         authOptions.DefaultSignOutScheme = AuthenticationConstants.Schemas.Bearer;
 
         _authOptions = Options.Create(authOptions);
-        _apiKeyOptions = Options.Create(new ApiKeyAuthenticationSchemeOptions());
+        _apiKeyOptions = _CreateApiKeyOptionsMonitor(new ApiKeyAuthenticationSchemeOptions());
+    }
+
+    [Fact]
+    public void should_use_canonical_basic_and_api_key_scheme_names_by_default()
+    {
+        BasicAuthenticationOptions.DefaultScheme.Should().Be(AuthenticationConstants.Schemas.Basic);
+        ApiKeyAuthenticationSchemeOptions.DefaultScheme.Should().Be(AuthenticationConstants.Schemas.ApiKey);
     }
 
     [Fact]
@@ -67,13 +75,30 @@ public sealed class DynamicAuthenticationSchemeProviderTests : TestBase
     }
 
     [Fact]
-    public async Task should_return_api_key_scheme_when_api_key_query_present()
+    public async Task should_fallback_to_base_when_api_key_query_present_but_query_not_opted_in()
     {
         // given
         var context = _CreateContext();
         context.Request.QueryString = new QueryString("?api_key=test-api-key");
         _httpContextAccessor.HttpContext.Returns(context);
         var provider = _CreateProvider();
+
+        // when
+        var result = await provider.GetDefaultAuthenticateSchemeAsync();
+
+        // then
+        result.Should().NotBeNull();
+        result!.Name.Should().Be(AuthenticationConstants.Schemas.Bearer);
+    }
+
+    [Fact]
+    public async Task should_return_api_key_scheme_when_api_key_query_present_and_query_opted_in()
+    {
+        // given
+        var context = _CreateContext();
+        context.Request.QueryString = new QueryString("?api_key=test-api-key");
+        _httpContextAccessor.HttpContext.Returns(context);
+        var provider = _CreateProvider(new ApiKeyAuthenticationSchemeOptions { AllowApiKeyInQueryString = true });
 
         // when
         var result = await provider.GetDefaultAuthenticateSchemeAsync();
@@ -208,6 +233,26 @@ public sealed class DynamicAuthenticationSchemeProviderTests : TestBase
     private DynamicAuthenticationSchemeProvider _CreateProvider()
     {
         return new DynamicAuthenticationSchemeProvider(_httpContextAccessor, _authOptions, _apiKeyOptions);
+    }
+
+    private DynamicAuthenticationSchemeProvider _CreateProvider(ApiKeyAuthenticationSchemeOptions apiKeyOptions)
+    {
+        return new DynamicAuthenticationSchemeProvider(
+            _httpContextAccessor,
+            _authOptions,
+            _CreateApiKeyOptionsMonitor(apiKeyOptions)
+        );
+    }
+
+    private static IOptionsMonitor<ApiKeyAuthenticationSchemeOptions> _CreateApiKeyOptionsMonitor(
+        ApiKeyAuthenticationSchemeOptions options
+    )
+    {
+        var monitor = Substitute.For<IOptionsMonitor<ApiKeyAuthenticationSchemeOptions>>();
+        monitor.CurrentValue.Returns(options);
+        monitor.Get(Arg.Any<string>()).Returns(options);
+
+        return monitor;
     }
 
     private static DefaultHttpContext _CreateContext()

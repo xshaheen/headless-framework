@@ -92,10 +92,8 @@ public static class SetupApiServices
             services.TryAddSingleton<IProblemDetailsCreator, ProblemDetailsCreator>();
             services.AddProblemDetails();
 
-            // Resolve IProblemDetailsCreator lazily on each request rather than at options-build
-            // time. ProblemDetailsCreator depends on IOptions<ProblemDetailsOptions>; capturing
-            // the singleton via Configure<TDep>() at build time would create a circular DI
-            // dependency that deadlocks during host startup.
+            // Resolve IProblemDetailsCreator from request services so consumer replacements are
+            // honored at write time instead of capturing the default singleton at options-build time.
             services.Configure<Microsoft.AspNetCore.Http.ProblemDetailsOptions>(options =>
             {
                 options.CustomizeProblemDetails += context =>

@@ -1,11 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Runtime.CompilerServices;
 using Headless.Blobs.Internals;
 using Headless.Checks;
-using Headless.IO;
 using Headless.Primitives;
+using Headless.Serializer;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using File = System.IO.File;
 
@@ -15,700 +15,683 @@ namespace Headless.Blobs.FileSystem;
 /// <see cref="IBlobStorage"/> implementation backed by the local file system.
 /// </summary>
 /// <remarks>
+/// <para>
 /// All blobs are stored under the directory configured via <see cref="FileSystemBlobStorageOptions.BaseDirectoryPath"/>.
-/// Path-traversal attempts (blob names or container segments that resolve outside the base directory) throw
-/// <see cref="ArgumentException"/>. The file system does not support blob metadata — metadata supplied on upload
-/// is silently ignored.
+/// Every operation — including <see cref="GetBlobInfoAsync"/> — turns its <see cref="BlobLocation"/> into a backend
+/// key through the single <see cref="BlobLocationResolver"/> seam, then maps the resolved key to a path under the base
+/// directory and re-verifies the resolved full path stays inside it. A blob name that would escape the base directory
+/// (traversal, absolute path) throws <see cref="ArgumentException"/> before any disk access (H2).
+/// </para>
+/// <para>
+/// Blob metadata is stored in a companion ("sidecar") file next to the content, named
+/// <c>"&lt;blob&gt;" + <see cref="BlobStorageHelpers.SidecarSuffix"/></c>. The write order is content-first then
+/// sidecar, so a crash between the two reads back as a blob with no metadata rather than corrupt state. Sidecars are
+/// excluded from every listing and are deleted/moved with their blob, so re-uploading a key without metadata cannot
+/// resurrect a stale sidecar. Container/bucket lifecycle is not part of this data-plane type — it lives on the
+/// separately-registered <see cref="FileSystemBlobContainerManager"/> capability; <see cref="UploadAsync"/> still
+/// creates the intermediate path directories inherent to writing a blob.
+/// </para>
 /// </remarks>
-public sealed class FileSystemBlobStorage(
-    IOptions<FileSystemBlobStorageOptions> optionsAccessor,
-    IBlobNamingNormalizer normalizer,
-    ILogger<FileSystemBlobStorage> logger
-) : IBlobStorage
+public sealed class FileSystemBlobStorage : IBlobStorage
 {
-    private readonly string _basePath = optionsAccessor
-        .Value.BaseDirectoryPath.NormalizePath()
-        .EnsureEndsWith(Path.DirectorySeparatorChar);
+    private readonly string _basePath;
+    private readonly IJsonSerializer _serializer;
+    private readonly IBlobNamingNormalizer _normalizer;
+    private readonly TimeProvider _timeProvider;
+    private readonly ILogger _logger;
 
-    #region Create Container
-
-    public ValueTask CreateContainerAsync(string[] container, CancellationToken cancellationToken = default)
+    public FileSystemBlobStorage(
+        IOptions<FileSystemBlobStorageOptions> optionsAccessor,
+        IJsonSerializer serializer,
+        IBlobNamingNormalizer normalizer,
+        TimeProvider? timeProvider = null,
+        ILogger<FileSystemBlobStorage>? logger = null
+    )
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        Argument.IsNotNullOrEmpty(container);
-
-        var directoryPath = _GetDirectoryPath(container);
-
-        Directory.CreateDirectory(directoryPath);
-
-        return ValueTask.CompletedTask;
+        Argument.IsNotNull(optionsAccessor);
+        _basePath = optionsAccessor.Value.BaseDirectoryPath.NormalizePath().EnsureEndsWith(Path.DirectorySeparatorChar);
+        _serializer = Argument.IsNotNull(serializer);
+        _normalizer = Argument.IsNotNull(normalizer);
+        _timeProvider = timeProvider ?? TimeProvider.System;
+        _logger = logger ?? NullLogger<FileSystemBlobStorage>.Instance;
     }
 
-    #endregion
+    // UploadAsync refuses a missing container directory (only intermediate path directories are created on write).
+    public bool RequiresContainerProvisioning => true;
 
     #region Upload
 
     public async ValueTask UploadAsync(
-        string[] container,
-        string blobName,
-        Stream stream,
-        Dictionary<string, string?>? metadata = null,
+        BlobLocation location,
+        Stream content,
+        IReadOnlyDictionary<string, string>? metadata = null,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNullOrEmpty(blobName);
-        Argument.IsNotNullOrEmpty(container);
+        Argument.IsNotNull(content);
 
-        PathValidation.ValidateContainer(container);
-        PathValidation.ValidatePathSegment(blobName);
+        var (container, key, fullPath) = _ResolveLocation(location);
+        var containerDirectory = _ContainerDirectory(container);
 
-        var directoryPath = _GetDirectoryPath(container);
+        if (!Directory.Exists(containerDirectory))
+        {
+            throw new DirectoryNotFoundException(
+                $"Blob container '{container}' does not exist. Ensure it through IBlobContainerManager before uploading."
+            );
+        }
 
-        await stream.SaveToLocalFileAsync(blobName, directoryPath, cancellationToken).ConfigureAwait(false);
+        var directory = Path.GetDirectoryName(fullPath);
+
+        if (!string.IsNullOrEmpty(directory))
+        {
+            // Intermediate path creation is inherent to writing a blob; the top-level container was verified above.
+            Directory.CreateDirectory(directory);
+        }
+
+        var streamOptions = new FileStreamOptions
+        {
+            Mode = FileMode.Create,
+            Access = FileAccess.Write,
+            Share = FileShare.None,
+            Options = FileOptions.Asynchronous,
+        };
+
+        // Content-first write order (KTD6): close the content file before writing the sidecar so a crash between
+        // the two leaves a blob with no sidecar (reads back as no metadata) rather than an orphan sidecar.
+        var fileStream = new FileStream(fullPath, streamOptions);
+
+        try
+        {
+            if (content.CanSeek)
+            {
+                content.Position = 0;
+            }
+
+            await content.CopyToAsync(fileStream, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            await fileStream.DisposeAsync().ConfigureAwait(false);
+        }
+
+        await _WriteSidecarAsync(fullPath, key, metadata, cancellationToken).ConfigureAwait(false);
     }
 
-    #endregion
-
-    #region Bulk Upload
-
-    public async ValueTask<IReadOnlyList<Result<Exception>>> BulkUploadAsync(
-        string[] container,
+    public async ValueTask<IReadOnlyList<BlobBulkResult>> BulkUploadAsync(
+        string container,
         IReadOnlyCollection<BlobUploadRequest> blobs,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNullOrEmpty(blobs);
-        Argument.IsNotNullOrEmpty(container);
+        Argument.IsNotNullOrWhiteSpace(container);
+        Argument.IsNotNull(blobs);
 
-        PathValidation.ValidateContainer(container);
-
-        var directoryPath = _GetDirectoryPath(container);
-
-        // Per-blob name safety is enforced inside FileHelper.SaveToLocalFileAsync, so a malicious file
-        // name surfaces as a per-blob Result.Fail rather than failing the whole batch.
-        var result = await blobs
-            .Select(blob => (blob.Stream, blob.FileName))
-            .SaveToLocalFileAsync(directoryPath, cancellationToken)
+        // maxParallelism: 1 keeps the file-system batch effectively sequential (its ops are synchronous) while sharing
+        // the per-item BlobLocation-construct + indexed-result + OCE-filter orchestration with the other providers.
+        return await BlobStorageHelpers
+            .RunBulkAsync(
+                container,
+                blobs,
+                maxParallelism: 1,
+                static blob => blob.Path,
+                async (location, blob, ct) =>
+                {
+                    await UploadAsync(location, blob.Stream, blob.Metadata, ct).ConfigureAwait(false);
+                    return true;
+                },
+                cancellationToken
+            )
             .ConfigureAwait(false);
-
-        return result;
     }
 
     #endregion
 
     #region Delete
 
-    public ValueTask<bool> DeleteAsync(
-        string[] container,
-        string blobName,
+    public ValueTask<bool> DeleteAsync(BlobLocation location, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var (_, _, fullPath) = _ResolveLocation(location);
+
+        return ValueTask.FromResult(_DeleteBlobAndSidecar(fullPath));
+    }
+
+    public async ValueTask<IReadOnlyList<BlobBulkResult>> BulkDeleteAsync(
+        string container,
+        IReadOnlyCollection<string> paths,
         CancellationToken cancellationToken = default
     )
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        Argument.IsNotNullOrEmpty(container);
-        Argument.IsNotNullOrWhiteSpace(blobName);
+        Argument.IsNotNullOrWhiteSpace(container);
+        Argument.IsNotNull(paths);
 
-        var filePath = _BuildBlobPath(container, blobName);
-        var delete = _Delete(filePath);
-
-        return ValueTask.FromResult(delete);
-    }
-
-    private static bool _Delete(string filePath)
-    {
-        if (!File.Exists(filePath))
-        {
-            return false;
-        }
-
-        File.Delete(filePath);
-
-        return true;
-    }
-
-    #endregion
-
-    #region Bulk Delete
-
-    public ValueTask<IReadOnlyList<Result<bool, Exception>>> BulkDeleteAsync(
-        string[] container,
-        IReadOnlyCollection<string> blobNames,
-        CancellationToken cancellationToken = default
-    )
-    {
-        Argument.IsNotNullOrEmpty(container);
-        cancellationToken.ThrowIfCancellationRequested();
-
-        if (blobNames.Count == 0)
-        {
-            return ValueTask.FromResult<IReadOnlyList<Result<bool, Exception>>>([]);
-        }
-
-        IReadOnlyList<Result<bool, Exception>> results = blobNames
-            .Select(fileName =>
-            {
-                try
+        // maxParallelism: 1 keeps the synchronous file-system deletes sequential while sharing the per-item
+        // orchestration (BlobLocation construct + indexed result + OCE filter) with the other providers.
+        return await BlobStorageHelpers
+            .RunBulkAsync(
+                container,
+                paths,
+                maxParallelism: 1,
+                static path => path,
+                (location, _, _) =>
                 {
-                    return _Delete(_BuildBlobPath(container, fileName));
-                }
-                catch (Exception e)
-                {
-                    return Result<bool, Exception>.Fail(e);
-                }
-            })
-            .ToList();
+                    var (_, _, fullPath) = _ResolveLocation(location);
 
-        return ValueTask.FromResult(results);
+                    return ValueTask.FromResult(_DeleteBlobAndSidecar(fullPath));
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
-    public ValueTask<int> DeleteAllAsync(
-        string[] container,
-        string? blobSearchPattern = null,
-        CancellationToken cancellationToken = default
-    )
+    public ValueTask<int> DeleteAllAsync(BlobQuery query, CancellationToken cancellationToken = default)
     {
+        Argument.IsNotNull(query);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var directoryPath = _GetDirectoryPath(container);
+        // Resolve the container + prefix through the single seam (both were path-security validated at BlobQuery
+        // construction), so delete-by-prefix can never escape into traversal.
+        var (container, prefix) = BlobLocationResolver.ResolveQuery(query, _normalizer);
+        var containerDirectory = _ContainerDirectory(container);
 
-        // No search pattern: clear the whole container. Preserve the container directory itself (mirrors the
-        // SshNet provider and the object-store providers, which have no directory to remove) and delete only
-        // its contents.
-        if (string.IsNullOrEmpty(blobSearchPattern) || string.Equals(blobSearchPattern, "*", StringComparison.Ordinal))
+        if (!Directory.Exists(containerDirectory))
         {
-            return ValueTask.FromResult(
-                _DeleteDirectoryWithLogging(directoryPath, includeSelf: false, cancellationToken)
-            );
+            return ValueTask.FromResult(0);
         }
 
-        // Reject traversal sequences in the pattern before it is combined with the directory. The boundary check
-        // below is anchored to the base directory, so a '..' pattern could otherwise resolve into a sibling
-        // container; ValidatePathSegment rejects it up front (matching how blob names are validated).
-        PathValidation.ValidatePathSegment(blobSearchPattern);
-
-        blobSearchPattern = blobSearchPattern.NormalizePath();
-        var path = Path.Combine(directoryPath, blobSearchPattern);
-
-        _ThrowIfPathTraversal(path, nameof(blobSearchPattern));
-
-        // If the pattern ends with directory separator, delete the directory
-        if (
-            path[^1] == Path.DirectorySeparatorChar
-            || path.EndsWith($"{Path.DirectorySeparatorChar}*", StringComparison.Ordinal)
-        )
-        {
-            var directory = Path.GetDirectoryName(path);
-            return ValueTask.FromResult(_DeleteDirectoryWithLogging(directory, includeSelf: true, cancellationToken));
-        }
-
-        // If the pattern is a directory, delete the directory
-        if (Directory.Exists(path))
-        {
-            return ValueTask.FromResult(_DeleteDirectoryWithLogging(path, includeSelf: true, cancellationToken));
-        }
-
-        logger.LogDeletingFilesMatching(blobSearchPattern);
-
-        var filesCount = 0;
-
-        foreach (var file in Directory.EnumerateFiles(directoryPath, blobSearchPattern, SearchOption.AllDirectories))
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            logger.LogDeletingFile(file);
-            File.Delete(file);
-            filesCount++;
-        }
-
-        logger.LogFinishedDeletingFiles(filesCount, blobSearchPattern);
-
-        return ValueTask.FromResult(filesCount);
-    }
-
-    private int _DeleteDirectoryWithLogging(
-        string? directoryPath,
-        bool includeSelf,
-        CancellationToken cancellationToken
-    )
-    {
-        if (directoryPath is null || !Directory.Exists(directoryPath))
-        {
-            return 0;
-        }
-
-        logger.LogDeletingDirectory(directoryPath);
-
-        // Count while deleting in a single enumeration pass; the count is the return value, so we cannot skip it,
-        // but we no longer walk the tree once to count and again to delete.
         var count = 0;
+        List<Exception>? failures = null;
 
-        foreach (var file in Directory.EnumerateFiles(directoryPath, "*", SearchOption.AllDirectories))
+        foreach (var file in Directory.EnumerateFiles(containerDirectory, "*", SearchOption.AllDirectories))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            File.Delete(file);
-            count++;
-        }
 
-        if (includeSelf)
-        {
-            Directory.Delete(directoryPath, recursive: true);
-        }
-        else
-        {
-            // Keep the container directory; remove the now-empty sub-directories it contained.
-            foreach (var subDirectory in Directory.EnumerateDirectories(directoryPath))
+            var key = _ToBlobKey(file, containerDirectory);
+
+            // Sidecars are never deleted on their own — they go with their blob below — and a prefix narrows the set.
+            if (BlobStorageHelpers.IsSidecarKey(key))
             {
-                Directory.Delete(subDirectory, recursive: true);
+                continue;
+            }
+
+            if (prefix is not null && !key.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            // Attempt every matched entry even after a failure: per-entry errors are collected and surfaced as one
+            // AggregateException at the end (the uniform DeleteAll contract), so one locked file cannot abort the rest.
+            try
+            {
+                File.Delete(file);
+
+                var sidecar = file + BlobStorageHelpers.SidecarSuffix;
+
+                if (File.Exists(sidecar))
+                {
+                    File.Delete(sidecar);
+                }
+
+                count++;
+            }
+            catch (Exception e) when (e is not OperationCanceledException)
+            {
+                (failures ??= []).Add(e);
             }
         }
 
-        logger.LogFinishedDeletingDirectory(directoryPath, count);
-
-        return count;
-    }
-
-    #endregion
-
-    #region Rename
-
-    public ValueTask<bool> RenameAsync(
-        string[] blobContainer,
-        string blobName,
-        string[] newBlobContainer,
-        string newBlobName,
-        CancellationToken cancellationToken = default
-    )
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        Argument.IsNotNullOrWhiteSpace(blobName);
-        Argument.IsNotNullOrWhiteSpace(newBlobName);
-        Argument.IsNotNullOrEmpty(blobContainer);
-        Argument.IsNotNullOrEmpty(newBlobContainer);
-
-        var oldFullPath = _BuildBlobPath(blobContainer, blobName);
-        var newFullPath = _BuildBlobPath(newBlobContainer, newBlobName);
-        var newDirectoryPath = _GetDirectoryPath(newBlobContainer);
-
-        logger.LogRenamingFile(oldFullPath, newFullPath);
-
-        if (!File.Exists(oldFullPath))
+        if (failures is { Count: > 0 })
         {
-            return ValueTask.FromResult(false);
+            throw new AggregateException($"DeleteAllAsync failed for {failures.Count} blob(s).", failures);
         }
 
-        Directory.CreateDirectory(newDirectoryPath);
-        File.Move(oldFullPath, newFullPath, overwrite: true);
+        _logger.LogDeletingByPrefix(count, prefix);
 
-        return ValueTask.FromResult(true);
+        return ValueTask.FromResult(count);
+    }
+
+    private static bool _DeleteBlobAndSidecar(string fullPath)
+    {
+        var existed = File.Exists(fullPath);
+
+        if (existed)
+        {
+            File.Delete(fullPath);
+        }
+
+        // Always drop the sidecar with the blob so a later re-upload without metadata cannot resurrect stale
+        // metadata (this also reaps an orphan sidecar left by a crash mid-write).
+        var sidecar = fullPath + BlobStorageHelpers.SidecarSuffix;
+
+        if (File.Exists(sidecar))
+        {
+            File.Delete(sidecar);
+        }
+
+        return existed;
     }
 
     #endregion
 
-    #region Copy
+    #region Move / Copy
 
     public ValueTask<bool> CopyAsync(
-        string[] blobContainer,
-        string blobName,
-        string[] newBlobContainer,
-        string newBlobName,
+        BlobLocation source,
+        BlobLocation destination,
         CancellationToken cancellationToken = default
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
-        Argument.IsNotNullOrWhiteSpace(blobName);
-        Argument.IsNotNullOrWhiteSpace(newBlobName);
-        Argument.IsNotNullOrEmpty(blobContainer);
-        Argument.IsNotNullOrEmpty(newBlobContainer);
 
-        var blobPath = _BuildBlobPath(blobContainer, blobName);
-        var targetPath = _BuildBlobPath(newBlobContainer, newBlobName);
-        var targetDirectory = _GetDirectoryPath(newBlobContainer);
+        var (_, _, sourcePath) = _ResolveLocation(source);
+        var (destinationContainer, _, destinationPath) = _ResolveLocation(destination);
 
-        logger.LogCopyingFile(blobPath, targetPath);
+        if (string.Equals(sourcePath, destinationPath, StringComparison.Ordinal))
+        {
+            // A resolved self-copy is a no-op: opening destinationPath with FileMode.Create would truncate the source.
+            return ValueTask.FromResult(true);
+        }
 
-        if (!File.Exists(blobPath))
+        _logger.LogCopyingFile(sourcePath, destinationPath);
+
+        if (!File.Exists(sourcePath))
         {
             return ValueTask.FromResult(false);
         }
 
-        Directory.CreateDirectory(targetDirectory);
-        File.Copy(blobPath, targetPath, overwrite: true);
+        // Same data-plane rule as UploadAsync: never auto-create the top-level container. Without this guard the
+        // intermediate-directory creation below would silently provision the destination container.
+        if (!Directory.Exists(_ContainerDirectory(destinationContainer)))
+        {
+            throw new DirectoryNotFoundException(
+                $"Blob container '{destinationContainer}' does not exist. Ensure it through IBlobContainerManager before copying."
+            );
+        }
+
+        var destinationDirectory = Path.GetDirectoryName(destinationPath);
+
+        if (!string.IsNullOrEmpty(destinationDirectory))
+        {
+            Directory.CreateDirectory(destinationDirectory);
+        }
+
+        File.Copy(sourcePath, destinationPath, overwrite: true);
+
+        // The sidecar moves with the blob: copy it when present, otherwise drop a stale destination sidecar so an
+        // overwrite without source metadata cannot resurrect the destination's old metadata.
+        var sourceSidecar = sourcePath + BlobStorageHelpers.SidecarSuffix;
+        var destinationSidecar = destinationPath + BlobStorageHelpers.SidecarSuffix;
+
+        if (File.Exists(sourceSidecar))
+        {
+            File.Copy(sourceSidecar, destinationSidecar, overwrite: true);
+        }
+        else if (File.Exists(destinationSidecar))
+        {
+            File.Delete(destinationSidecar);
+        }
 
         return ValueTask.FromResult(true);
+    }
+
+    public async ValueTask<bool> MoveAsync(
+        BlobLocation source,
+        BlobLocation destination,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var (_, _, sourceFullPath) = _ResolveLocation(source);
+        var (_, _, destinationFullPath) = _ResolveLocation(destination);
+
+        if (string.Equals(sourceFullPath, destinationFullPath, StringComparison.Ordinal))
+        {
+            // A resolved self-move is a no-op: copy-then-delete on the same path would delete the blob.
+            return true;
+        }
+
+        // Non-atomic copy-then-delete; the sidecar moves with the blob (KTD6/KTD7). The shared helper owns
+        // reject-occupied and the rollback rule: the source delete is two-step (blob file, then sidecar), so a
+        // sidecar-second fault can leave the source blob already gone — the destination copy is rolled back only
+        // when the source blob is confirmed intact (see MoveViaCopyThenDeleteAsync).
+        return await BlobStorageHelpers
+            .MoveViaCopyThenDeleteAsync(
+                destinationExistsAsync: _ => ValueTask.FromResult(File.Exists(destinationFullPath)),
+                copyAsync: ct => CopyAsync(source, destination, ct),
+                deleteSourceAsync: _ =>
+                {
+                    _logger.LogMovingFile(sourceFullPath);
+
+                    return ValueTask.FromResult(_DeleteBlobAndSidecar(sourceFullPath));
+                },
+                sourceExistsAsync: _ => ValueTask.FromResult(File.Exists(sourceFullPath)),
+                rollbackDestinationAsync: deleteException =>
+                {
+                    _logger.LogFailedToDeleteOriginal(deleteException, sourceFullPath);
+
+                    try
+                    {
+                        _DeleteBlobAndSidecar(destinationFullPath);
+                    }
+                    catch (Exception rollbackException)
+                    {
+                        _logger.LogFailedToRollbackDestination(rollbackException, destinationFullPath);
+                    }
+
+                    return ValueTask.CompletedTask;
+                },
+                logDestinationKeptSourceGone: e =>
+                    _logger.LogMoveKeptDestinationSourceGone(
+                        e,
+                        sourceFullPath,
+                        sourceFullPath + BlobStorageHelpers.SidecarSuffix
+                    ),
+                logSourceCheckFailed: e => _logger.LogMoveSourceCheckFailed(e, sourceFullPath),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     #endregion
 
     #region Exists
 
-    public ValueTask<bool> ExistsAsync(
-        string[] container,
-        string blobName,
-        CancellationToken cancellationToken = default
-    )
+    public ValueTask<bool> ExistsAsync(BlobLocation location, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        Argument.IsNotNullOrEmpty(container);
-        Argument.IsNotNullOrWhiteSpace(blobName);
 
-        var filePath = _BuildBlobPath(container, blobName);
-        var exists = File.Exists(filePath);
+        var (_, _, fullPath) = _ResolveLocation(location);
 
-        return ValueTask.FromResult(exists);
+        return ValueTask.FromResult(File.Exists(fullPath));
     }
 
     #endregion
 
-    #region Download
+    #region Download / Info
 
-    public ValueTask<BlobDownloadResult?> OpenReadStreamAsync(
-        string[] container,
-        string blobName,
+    public async ValueTask<BlobDownloadResult?> OpenReadStreamAsync(
+        BlobLocation location,
         CancellationToken cancellationToken = default
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var filePath = _BuildBlobPath(container, blobName);
+        var (_, _, fullPath) = _ResolveLocation(location);
+
+        _logger.LogGettingFileStream(fullPath);
+
+        if (!File.Exists(fullPath))
+        {
+            _logger.LogFileNotFound(fullPath);
+
+            return null;
+        }
+
+        // Read the sidecar before opening the content stream so no stream is held open across an awaited read that
+        // could throw — the stream is opened last and its ownership transfers to the result in the same step.
+        var metadata = await _ReadSidecarMetadataAsync(fullPath, cancellationToken).ConfigureAwait(false);
 
         try
         {
-            var fileStream = File.OpenRead(filePath);
+            var fileStream = File.OpenRead(fullPath);
 
 #pragma warning disable CA2000 // Ownership transfers to the returned BlobDownloadResult ([MustDisposeResource]).
-            return ValueTask.FromResult<BlobDownloadResult?>(
-                new BlobDownloadResult(fileStream, Path.GetFileName(filePath))
-            );
+            // FileName is the full container-relative key (location.Path), matching AWS/Azure/Redis/SSH — not just the
+            // last path segment.
+            return new BlobDownloadResult(fileStream, location.Path, BlobStorageHelpers.ToUserMetadata(metadata));
 #pragma warning restore CA2000
         }
         catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
         {
-            // The file was removed between the path build and the open (TOCTOU); honor the documented null contract
-            // instead of leaking a FileNotFoundException to the caller.
-            return ValueTask.FromResult<BlobDownloadResult?>(null);
+            // The file was removed between the existence check and the open (TOCTOU); honor the null contract.
+            _logger.LogFileNotFound(fullPath);
+
+            return null;
         }
     }
 
-    public ValueTask<BlobInfo?> GetBlobInfoAsync(
-        string[] container,
-        string blobName,
+    public async ValueTask<BlobInfo?> GetBlobInfoAsync(
+        BlobLocation location,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNull(blobName);
-        Argument.IsNotNull(container);
+        // H2 fold: resolve through the single seam (which re-checks the resolved full path for traversal) before
+        // touching disk, so a name like "../../etc/passwd" is rejected instead of leaking existence/size/timestamps.
+        var (_, key, fullPath) = _ResolveLocation(location);
 
-        // Reject traversal blob names before they are combined with the container directory. This mirrors how
-        // the sibling read/write methods validate via _BuildBlobPath; without it a name like "../../etc/passwd"
-        // escapes the store and leaks existence/size/timestamps (and an absolute path via _ToBlobKey).
-        PathValidation.ValidatePathSegment(blobName);
+        _logger.LogGettingFileStream(fullPath);
 
-        var baseDirectoryPath = Path.Combine(_basePath, container[0]).EnsureEndsWith(Path.DirectorySeparatorChar);
-        var directoryPath = _GetDirectoryPath(container);
-        var filePath = Path.Combine(directoryPath, blobName);
-
-        // Defense-in-depth: verify the resolved path stays under the base directory before touching the file.
-        _ThrowIfPathTraversal(filePath, nameof(blobName));
-
-        logger.LogGettingFileStream(filePath);
-        var fileInfo = new FileInfo(filePath);
+        var fileInfo = new FileInfo(fullPath);
 
         if (!fileInfo.Exists)
         {
-            logger.LogFileNotFound(filePath);
+            _logger.LogFileNotFound(fullPath);
 
-            return ValueTask.FromResult<BlobInfo?>(null);
+            return null;
         }
 
-        // Derive the blob key from the resolved path (stripping the container base), so the same blob yields the
-        // same BlobKey here and through GetBlobsAsync / GetPagedListAsync.
-        var blobKey = _ToBlobKey(fileInfo, baseDirectoryPath);
+        var metadata = await _ReadSidecarMetadataAsync(fullPath, cancellationToken).ConfigureAwait(false);
 
-        return ValueTask.FromResult<BlobInfo?>(_CreateBlobInfo(fileInfo, blobKey));
+        return _CreateBlobInfo(fileInfo, key, metadata);
     }
 
     #endregion
 
     #region List
 
-    public async IAsyncEnumerable<BlobInfo> GetBlobsAsync(
-        string[] container,
-        string? blobSearchPattern = null,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default
-    )
+    public async ValueTask<BlobPage> ListAsync(BlobQuery query, CancellationToken cancellationToken = default)
     {
-        Argument.IsNotNullOrEmpty(container);
+        Argument.IsNotNull(query);
 
-        if (string.IsNullOrEmpty(blobSearchPattern))
+        var (container, prefix) = BlobLocationResolver.ResolveQuery(query, _normalizer);
+        var containerDirectory = _ContainerDirectory(container);
+
+        if (!Directory.Exists(containerDirectory))
         {
-            blobSearchPattern = "*";
+            return BlobPage.Empty;
         }
 
-        // Reject traversal sequences in the search pattern (consistent with DeleteAllAsync) before it reaches
-        // Directory.EnumerateFiles, so the package surfaces its own ArgumentException rather than leaning on a
-        // BCL implementation detail.
-        PathValidation.ValidatePathSegment(blobSearchPattern);
+        var startAfterKey = BlobStorageHelpers.DecodeContinuationToken(query.ContinuationToken);
 
-        blobSearchPattern = blobSearchPattern.NormalizePath();
+        // Hold at most PageSize+1 entries in a sliding window (mirroring the SFTP provider) so memory stays
+        // O(pageSize) regardless of how many blobs the container holds — a full window signals a further page remains.
+        // Compute the +1 in long space and clamp the initial capacity so PageSize == int.MaxValue ("everything in one
+        // page") cannot overflow the capacity/threshold into a negative value.
+        var windowLimit = (long)query.PageSize + 1;
+        var pageWindow = new List<(string Key, FileInfo Info)>((int)Math.Min(windowLimit, 1024));
 
-        var baseDirectoryPath = Path.Combine(_basePath, container[0]).EnsureEndsWith(Path.DirectorySeparatorChar);
-        var directoryPath = _GetDirectoryPath(container);
-        var completePath = Path.GetDirectoryName(Path.Combine(directoryPath, blobSearchPattern));
-
-        if (!Directory.Exists(completePath))
-        {
-            yield break;
-        }
-
-        // The directory walk below is synchronous I/O; this await keeps the method a valid async iterator.
-        await ValueTask.CompletedTask.ConfigureAwait(false);
-
-        foreach (var path in Directory.EnumerateFiles(directoryPath, blobSearchPattern, SearchOption.AllDirectories))
+        foreach (var file in Directory.EnumerateFiles(containerDirectory, "*", SearchOption.AllDirectories))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var fileInfo = new FileInfo(path);
+            var key = _ToBlobKey(file, containerDirectory);
 
-            if (!fileInfo.Exists)
+            if (BlobStorageHelpers.IsSidecarKey(key))
             {
                 continue;
             }
 
-            yield return _CreateBlobInfo(fileInfo, _ToBlobKey(fileInfo, baseDirectoryPath));
+            if (prefix is not null && !key.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (startAfterKey is not null && string.CompareOrdinal(key, startAfterKey) <= 0)
+            {
+                continue;
+            }
+
+            var info = new FileInfo(file);
+
+            if (!info.Exists)
+            {
+                continue;
+            }
+
+            if (pageWindow.Count < windowLimit)
+            {
+                pageWindow.Add((key, info));
+                continue;
+            }
+
+            var maxIndex = BlobStorageHelpers.IndexOfMaxKey(pageWindow, static item => item.Key);
+
+            if (string.CompareOrdinal(key, pageWindow[maxIndex].Key) < 0)
+            {
+                pageWindow[maxIndex] = (key, info);
+            }
         }
+
+        pageWindow.Sort(static (a, b) => string.CompareOrdinal(a.Key, b.Key));
+
+        string? continuationToken = null;
+
+        if (pageWindow.Count > query.PageSize)
+        {
+            pageWindow.RemoveAt(pageWindow.Count - 1);
+            continuationToken = BlobStorageHelpers.EncodeContinuationToken(pageWindow[^1].Key);
+        }
+
+        // List omits per-object metadata by default (it would cost a sidecar read per file); populate it only when the
+        // caller opts in via BlobQuery.IncludeMetadata. Sidecars are read only for the final page entries (not the
+        // ones evicted from the window), and GetBlobInfoAsync remains the authoritative single-blob metadata source.
+        var items = new List<BlobInfo>(pageWindow.Count);
+
+        foreach (var (key, info) in pageWindow)
+        {
+            var metadata = query.IncludeMetadata
+                ? await _ReadSidecarMetadataAsync(info.FullName, cancellationToken).ConfigureAwait(false)
+                : null;
+
+            items.Add(_CreateBlobInfo(info, key, metadata));
+        }
+
+        return new BlobPage(items, continuationToken);
     }
 
-    /// <summary>
-    /// Gets a paged list of blobs in the specified container.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <strong>Performance Warning:</strong> This method has O(n^2) complexity for full enumeration
-    /// of large directories. Each page request re-enumerates the directory from the start and skips
-    /// previous items. For example, fetching page 10 with pageSize=100 reads 1000 file entries to
-    /// return 100 results.
-    /// </para>
-    /// <para>
-    /// For directories with many files, consider using <see cref="GetBlobsAsync"/> with LINQ
-    /// operators, or implement application-level caching of the file list.
-    /// </para>
-    /// </remarks>
-    public async ValueTask<PagedFileListResult> GetPagedListAsync(
-        string[] container,
-        string? blobSearchPattern = null,
-        int pageSize = 100,
-        CancellationToken cancellationToken = default
+    #endregion
+
+    #region Sidecar Metadata
+
+    private async ValueTask _WriteSidecarAsync(
+        string blobFullPath,
+        string objectKey,
+        IReadOnlyDictionary<string, string>? metadata,
+        CancellationToken cancellationToken
     )
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        Argument.IsNotNullOrEmpty(container);
-        Argument.IsPositive(pageSize);
+        // Copies the caller's metadata (never mutated) and layers the framework keys on top — mirroring how the
+        // object-store providers store them.
+        var sidecar = BlobStorageHelpers.BuildEffectiveMetadata(metadata, _timeProvider.GetUtcNow(), objectKey);
 
-        if (string.IsNullOrEmpty(blobSearchPattern))
-        {
-            blobSearchPattern = "*";
-        }
+        var payload = _serializer.SerializeToBytes(sidecar)!;
+        var sidecarPath = blobFullPath + BlobStorageHelpers.SidecarSuffix;
 
-        PathValidation.ValidatePathSegment(blobSearchPattern);
-
-        blobSearchPattern = blobSearchPattern.NormalizePath();
-
-        var baseDirectoryPath = Path.Combine(_basePath, container[0]).EnsureEndsWith(Path.DirectorySeparatorChar);
-        var directoryPath = _GetDirectoryPath(container);
-        var completePath = Path.GetDirectoryName(Path.Combine(directoryPath, blobSearchPattern));
-
-        if (!Directory.Exists(completePath))
-        {
-            logger.LogReturningEmptyFileList(blobSearchPattern);
-
-            return PagedFileListResult.Empty;
-        }
-
-        // Hoist a single forward-only enumerator that every page advances, instead of re-enumerating the whole
-        // tree and Skip()-ping prior entries per page. This turns full enumeration from O(N^2 / pageSize) into
-        // O(N); the PagedFileListResult cursor only ever moves forward, so a single enumerator is sufficient.
-        var enumerator = Directory
-            .EnumerateFiles(directoryPath, blobSearchPattern, SearchOption.AllDirectories)
-            .GetEnumerator();
-
-        var result = new PagedFileListResult(
-            (_, _) =>
-                ValueTask.FromResult<INextPageResult>(
-                    _GetFiles(baseDirectoryPath, blobSearchPattern, pageSize, page: 1, enumerator, carryOver: null)
-                ),
-            // Deterministic cleanup: a caller that reads page 1 and stops while HasMore is still true can
-            // 'await using' the result to release the find handle, instead of waiting for finalization.
-            cleanup: () => enumerator.Dispose()
-        );
-
-        await result.NextPageAsync(cancellationToken).ConfigureAwait(false);
-
-        return result;
+        await File.WriteAllBytesAsync(sidecarPath, payload, cancellationToken).ConfigureAwait(false);
     }
 
-    private NextPageResult _GetFiles(
-        string baseDirectoryPath,
-        string searchPattern,
-        int pageSize,
-        int page,
-        IEnumerator<string> enumerator,
-        BlobInfo? carryOver
+    private async ValueTask<IReadOnlyDictionary<string, string>?> _ReadSidecarMetadataAsync(
+        string blobFullPath,
+        CancellationToken cancellationToken
     )
     {
-        logger.LogGettingFileList(searchPattern, page, pageSize);
+        var sidecarPath = blobFullPath + BlobStorageHelpers.SidecarSuffix;
 
-        var list = new List<BlobInfo>(pageSize);
-
-        // The lookahead entry pulled past the previous page (to learn that this page exists) starts this page.
-        if (carryOver is not null)
-        {
-            list.Add(carryOver);
-        }
-
-        BlobInfo? lookahead = null;
-        bool hasMore;
+        byte[] payload;
 
         try
         {
-            while (list.Count <= pageSize && enumerator.MoveNext())
-            {
-                var fileInfo = new FileInfo(enumerator.Current);
-
-                if (!fileInfo.Exists)
-                {
-                    continue;
-                }
-
-                var info = _CreateBlobInfo(fileInfo, _ToBlobKey(fileInfo, baseDirectoryPath));
-
-                // Pull one entry past the page to detect a further page, then carry it over rather than re-reading it.
-                if (list.Count == pageSize)
-                {
-                    lookahead = info;
-
-                    break;
-                }
-
-                list.Add(info);
-            }
-
-            hasMore = lookahead is not null;
+            payload = await File.ReadAllBytesAsync(sidecarPath, cancellationToken).ConfigureAwait(false);
         }
-        finally
+        catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
         {
-            // Release the find handle when the walk reaches its end (no further page) or throws mid-iteration;
-            // only an in-progress cursor with more pages keeps the enumerator alive for the next page. The
-            // abandoned-cursor case is covered by PagedFileListResult.DisposeAsync via the provider cleanup delegate.
-            if (lookahead is null)
-            {
-                enumerator.Dispose();
-            }
+            // A missing sidecar reads back as no metadata, not an error (KTD6).
+            return null;
         }
 
-        return new NextPageResult
-        {
-            Success = true,
-            HasMore = hasMore,
-            Blobs = list,
-            NextPageFunc = hasMore
-                ? (_, _) =>
-                    ValueTask.FromResult<INextPageResult>(
-                        _GetFiles(baseDirectoryPath, searchPattern, pageSize, page + 1, enumerator, lookahead)
-                    )
-                : null,
-        };
+        return _serializer.Deserialize<Dictionary<string, string>>(payload);
     }
 
     #endregion
 
     #region Helpers
 
-    private static BlobInfo _CreateBlobInfo(FileInfo fileInfo, string blobKey) =>
-        new()
+    private static BlobInfo _CreateBlobInfo(
+        FileInfo fileInfo,
+        string blobKey,
+        IReadOnlyDictionary<string, string>? metadata
+    )
+    {
+        return new BlobInfo
         {
             BlobKey = blobKey,
-            Created = new DateTimeOffset(fileInfo.CreationTimeUtc, TimeSpan.Zero),
+            // Prefer the sidecar upload-date when present (OQ6); fall back to the file creation time otherwise.
+            Created = BlobStorageHelpers.ParseUploadDate(
+                metadata,
+                fallback: new DateTimeOffset(fileInfo.CreationTimeUtc, TimeSpan.Zero)
+            ),
             Modified = new DateTimeOffset(fileInfo.LastWriteTimeUtc, TimeSpan.Zero),
             Size = fileInfo.Length,
+            // Surface only the caller's metadata: the framework-internal bookkeeping keys (upload date, extension)
+            // drive Created resolution above but are not user metadata, so a no-metadata upload reads back as no
+            // metadata rather than resurrecting framework keys.
+            Metadata = BlobStorageHelpers.ToUserMetadata(metadata),
         };
+    }
 
     /// <summary>
-    /// Derives the provider-relative blob key for <paramref name="fileInfo"/> by stripping the container base
-    /// directory and normalizing separators to '/'. Shared by GetBlobInfoAsync, GetBlobsAsync, and GetPagedListAsync
-    /// so the same physical blob yields the same key across all three.
+    /// Derives the container-relative blob key for <paramref name="fileFullName"/> by stripping the container
+    /// directory and normalizing separators to '/', so the same physical blob yields the same key through
+    /// <see cref="GetBlobInfoAsync"/> and <see cref="ListAsync"/>.
     /// </summary>
-    private static string _ToBlobKey(FileInfo fileInfo, string baseDirectoryPath) =>
-        fileInfo.FullName.Replace(baseDirectoryPath, string.Empty, StringComparison.Ordinal).Replace('\\', '/');
+    private static string _ToBlobKey(string fileFullName, string containerDirectory)
+    {
+        return fileFullName.Replace(containerDirectory, string.Empty, StringComparison.Ordinal).Replace('\\', '/');
+    }
 
     #endregion
 
-    #region Build Paths
-
-    private string _BuildBlobPath(string[] container, string blobName)
-    {
-        Argument.IsNotNullOrWhiteSpace(blobName);
-        Argument.IsNotNullOrEmpty(container);
-
-        PathValidation.ValidateContainer(container);
-        PathValidation.ValidatePathSegment(blobName);
-
-        var normalizedContainer = _NormalizeContainerSegments(container);
-        var normalizedBlobName = normalizer.NormalizeBlobName(blobName);
-
-        // Use single Path.Combine call to avoid intermediate string allocations
-        var segments = new string[container.Length + 2];
-        segments[0] = _basePath;
-        normalizedContainer.CopyTo(segments, 1);
-        segments[^1] = normalizedBlobName;
-
-        var path = Path.Combine(segments);
-        _ThrowIfPathTraversal(path, nameof(blobName));
-
-        return path;
-    }
-
-    private string _GetDirectoryPath(string[] container)
-    {
-        Argument.IsNotNullOrEmpty(container);
-        PathValidation.ValidateContainer(container);
-
-        var filePath = Path.Combine(_basePath, Path.Combine(_NormalizeContainerSegments(container)));
-        _ThrowIfPathTraversal(filePath, nameof(container));
-
-        return filePath.EnsureEndsWith(Path.DirectorySeparatorChar);
-    }
+    #region Path Resolution
 
     /// <summary>
-    /// Normalizes each container segment using the two-tier rule: the first segment is the top-level container
-    /// name; the remaining segments are treated as path (blob) segments.
+    /// Resolves <paramref name="location"/> through the single <see cref="BlobLocationResolver"/> seam, maps the
+    /// resolved key to a path under the base directory, and re-verifies the final full path stays inside it (H2).
+    /// No method builds a path from a raw, unresolved key.
     /// </summary>
-    private string[] _NormalizeContainerSegments(string[] container)
+    private (string Container, string Key, string FullPath) _ResolveLocation(BlobLocation location)
     {
-        var normalized = new string[container.Length];
+        var (container, key) = BlobLocationResolver.Resolve(location, _normalizer);
 
-        for (var i = 0; i < container.Length; i++)
-        {
-            normalized[i] =
-                i == 0 ? normalizer.NormalizeContainerName(container[i]) : normalizer.NormalizeBlobName(container[i]);
-        }
+        var relative = key.Replace('/', Path.DirectorySeparatorChar);
+        var fullPath = Path.Combine(_basePath, container, relative);
 
-        return normalized;
+        _ThrowIfPathTraversal(fullPath, nameof(location));
+
+        return (container, key, fullPath);
+    }
+
+    private string _ContainerDirectory(string normalizedContainer)
+    {
+        var directory = Path.Combine(_basePath, normalizedContainer);
+
+        _ThrowIfPathTraversal(directory, nameof(normalizedContainer));
+
+        return directory.EnsureEndsWith(Path.DirectorySeparatorChar);
     }
 
     private void _ThrowIfPathTraversal(string path, string paramName)
     {
         // Resolve '..'/'.' segments lexically, then verify the result stays under the base directory.
         // Path.GetRelativePath honors the platform's path-casing semantics (case-insensitive on Windows,
-        // case-sensitive on Linux), so the boundary check matches how the OS actually resolves the path —
-        // unlike a fixed OrdinalIgnoreCase prefix compare, which is wrong on case-sensitive file systems.
+        // case-sensitive on Linux), so the boundary check matches how the OS actually resolves the path.
         var fullPath = Path.GetFullPath(path);
         var relative = Path.GetRelativePath(_basePath, fullPath);
 
         if (relative.StartsWith("..", StringComparison.Ordinal) || Path.IsPathRooted(relative))
         {
-            // A rejected traversal attempt is a security-relevant event; surface it to logs and name the
-            // offending resolved path so an operator or agent can see exactly what was blocked.
-            logger.LogPathTraversalRejected(paramName, fullPath);
+            // A rejected traversal attempt is a security-relevant event; surface it to logs and name the offending
+            // resolved path so an operator or agent can see exactly what was blocked.
+            _logger.LogPathTraversalRejected(paramName, fullPath);
 
             throw new ArgumentException(
                 $"Path traversal detected: the resolved path escapes the base directory ('{fullPath}')",

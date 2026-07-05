@@ -88,7 +88,7 @@ public sealed class Range<T> : IEquatable<Range<T>>, IComparable<Range<T>>
     /// <returns><see langword="true"/> if both bounds of <paramref name="range"/> lie within <c>[From, To]</c>; otherwise, <see langword="false"/>.</returns>
     public bool InclusiveHas(Range<T> range)
     {
-        return InclusiveHas(range.From) && InclusiveHas(range.To);
+        return _LowerBoundLessThanOrEqual(From, range.From) && _UpperBoundGreaterThanOrEqual(To, range.To);
     }
 
     /// <summary>Determines whether <paramref name="range"/> is fully contained within this interval, with both bounds exclusive.</summary>
@@ -96,7 +96,7 @@ public sealed class Range<T> : IEquatable<Range<T>>, IComparable<Range<T>>
     /// <returns><see langword="true"/> if both bounds of <paramref name="range"/> lie within <c>(From, To)</c>; otherwise, <see langword="false"/>.</returns>
     public bool ExclusiveHas(Range<T> range)
     {
-        return ExclusiveHas(range.From) && ExclusiveHas(range.To);
+        return _LowerBoundLessThan(From, range.From) && _UpperBoundGreaterThan(To, range.To);
     }
 
     /// <summary>Determines whether <paramref name="range"/> lies within this interval using inclusive-lower, exclusive-upper containment for both of its bounds.</summary>
@@ -104,7 +104,7 @@ public sealed class Range<T> : IEquatable<Range<T>>, IComparable<Range<T>>
     /// <returns><see langword="true"/> if both bounds of <paramref name="range"/> lie within <c>[From, To)</c>; otherwise, <see langword="false"/>.</returns>
     public bool InRangeLowerInclusive(Range<T> range)
     {
-        return FromInclusiveToExclusiveHas(range.From) && FromInclusiveToExclusiveHas(range.To);
+        return _LowerBoundLessThanOrEqual(From, range.From) && _UpperBoundGreaterThan(To, range.To);
     }
 
     /// <summary>Determines whether <paramref name="range"/> lies within this interval using exclusive-lower, inclusive-upper containment for both of its bounds.</summary>
@@ -112,7 +112,7 @@ public sealed class Range<T> : IEquatable<Range<T>>, IComparable<Range<T>>
     /// <returns><see langword="true"/> if both bounds of <paramref name="range"/> lie within <c>(From, To]</c>; otherwise, <see langword="false"/>.</returns>
     public bool FromExclusiveToInclusiveHas(Range<T> range)
     {
-        return FromExclusiveToInclusiveHas(range.From) && FromExclusiveToInclusiveHas(range.To);
+        return _LowerBoundLessThan(From, range.From) && _UpperBoundGreaterThanOrEqual(To, range.To);
     }
 
     #endregion
@@ -124,7 +124,8 @@ public sealed class Range<T> : IEquatable<Range<T>>, IComparable<Range<T>>
     /// <returns><see langword="true"/> if the intervals share at least one point; otherwise, <see langword="false"/>.</returns>
     public bool IsOverlap(Range<T> other)
     {
-        return InclusiveHas(other.From) || InclusiveHas(other.To) || other.InclusiveHas(From) || other.InclusiveHas(To);
+        return _LowerBoundLessThanOrEqualToUpperBound(From, other.To)
+            && _LowerBoundLessThanOrEqualToUpperBound(other.From, To);
     }
 
     /// <summary>Returns the sub-ranges of this interval that remain after subtracting the overlapping portion with <paramref name="other"/>.</summary>
@@ -134,86 +135,51 @@ public sealed class Range<T> : IEquatable<Range<T>>, IComparable<Range<T>>
     /// <returns>The non-overlapping sub-ranges of this range; an empty sequence when this range is fully covered by <paramref name="other"/>.</returns>
     public IEnumerable<Range<T>> RemoveConflictRangeParts(Range<T> other, Func<T, T> addOne, Func<T, T> subtractOne)
     {
-        // 1. Same range
-        if (Equals(other))
+        if (!IsOverlap(other))
         {
-            yield break; // No remaining
+            yield return this;
+            yield break;
         }
 
-        // 2. The other range has the current range inside
         if (other.InclusiveHas(this))
         {
-            yield break; // No remaining
-        }
-
-        // 3. The current range has the other range inside
-        if (InclusiveHas(other))
-        {
-            if (From is not null && From.CompareTo(other.From) < 0)
-            {
-                if (other.From is null)
-                {
-                    yield return new(From, other.From);
-                }
-                else
-                {
-                    yield return new(From, subtractOne(other.From));
-                }
-            }
-
-            if (To is not null && To.CompareTo(other.To) > 0)
-            {
-                if (other.To is null)
-                {
-                    yield return new(other.To, To);
-                }
-                else
-                {
-                    yield return new(addOne(other.To), To);
-                }
-            }
-
             yield break;
         }
 
-        // 4. The current range is before the other range
-        if (To is not null && To.CompareTo(other.From) < 0)
+        if (other.From is not null && _LowerBoundLessThan(From, other.From))
         {
-            yield return this;
-            yield break;
+            yield return new(From, subtractOne(other.From));
         }
 
-        // 5. The current range is after the other range
-        if (From is not null && From.CompareTo(other.To) > 0)
+        if (other.To is not null && _UpperBoundGreaterThan(To, other.To))
         {
-            yield return this;
-            yield break;
+            yield return new(addOne(other.To), To);
         }
+    }
 
-        // 6. The current range is overlapped with the other range
-        if (From is not null && From.CompareTo(other.From) < 0)
-        {
-            if (other.From is null)
-            {
-                yield return new(From, other.From);
-            }
-            else
-            {
-                yield return new(From, subtractOne(other.From));
-            }
-        }
+    private static bool _LowerBoundLessThanOrEqual(T? left, T? right)
+    {
+        return left is null || (right is not null && left.CompareTo(right) <= 0);
+    }
 
-        if (To is not null && To.CompareTo(other.To) > 0)
-        {
-            if (other.To is null)
-            {
-                yield return new(other.To, To);
-            }
-            else
-            {
-                yield return new(addOne(other.To), To);
-            }
-        }
+    private static bool _LowerBoundLessThan(T? left, T? right)
+    {
+        return left is null ? right is not null : right is not null && left.CompareTo(right) < 0;
+    }
+
+    private static bool _UpperBoundGreaterThanOrEqual(T? left, T? right)
+    {
+        return left is null || (right is not null && left.CompareTo(right) >= 0);
+    }
+
+    private static bool _UpperBoundGreaterThan(T? left, T? right)
+    {
+        return left is null ? right is not null : right is not null && left.CompareTo(right) > 0;
+    }
+
+    private static bool _LowerBoundLessThanOrEqualToUpperBound(T? lower, T? upper)
+    {
+        return lower is null || upper is null || lower.CompareTo(upper) <= 0;
     }
 
     #endregion

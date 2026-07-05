@@ -82,10 +82,39 @@ internal sealed class NatsConsumerClient(
 
         foreach (var streamGroup in streamGroups)
         {
+            var subjects = new HashSet<string>(
+                BuildStreamSubjects(streamGroup, _ResolveShardedMessageNames(streamGroup)),
+                StringComparer.Ordinal
+            );
+
+            using var cts = new CancellationTokenSource(_natsOptions.StreamCreateTimeout);
+
+            // Several consumer groups can normalize to the same stream name, and each group only knows its
+            // own subjects. CreateOrUpdateStream REPLACES the subject list, so union with whatever the stream
+            // already carries (from an earlier group, or a pre-provisioned stream) to avoid clobbering them.
+            try
+            {
+                var existing = await _jsContext!
+                    .GetStreamAsync(streamGroup.Key, cancellationToken: cts.Token)
+                    .ConfigureAwait(false);
+
+                if (existing.Info.Config.Subjects is { } existingSubjects)
+                {
+                    subjects.UnionWith(existingSubjects);
+                }
+            }
+            catch (NatsJSApiException ex) when (ex.Error.Code == 404)
+            {
+                // Stream does not exist yet; it will be created below.
+            }
+
             var config = new StreamConfig
             {
                 Name = streamGroup.Key,
-                Subjects = [.. BuildStreamSubjects(streamGroup, _ResolveShardedMessageNames(streamGroup))],
+                // JetStream rejects a stream whose subject list contains overlapping entries, so drop any
+                // exact subject already covered by a '.>' wildcard in the union (e.g. a pre-provisioned
+                // 'prefix.>' catch-all subsumes the exact 'prefix.foo' subjects).
+                Subjects = [.. _PruneOverlappingSubjects(subjects)],
                 NoAck = false,
                 // File storage is the production default. Override via StreamOptions
                 // for dev/testing: config.Storage = StreamConfigStorage.Memory;
@@ -94,7 +123,6 @@ internal sealed class NatsConsumerClient(
 
             _natsOptions.StreamOptions?.Invoke(config);
 
-            using var cts = new CancellationTokenSource(_natsOptions.StreamCreateTimeout);
             await _jsContext!.CreateOrUpdateStreamAsync(config, cts.Token).ConfigureAwait(false);
         }
 
@@ -147,6 +175,34 @@ internal sealed class NatsConsumerClient(
         }
 
         return subjects;
+    }
+
+    // Removes subjects subsumed by a broader '.>' wildcard in the same set. JetStream rejects a stream config
+    // whose subject list overlaps (e.g. "a.b.>" together with "a.b.foo"), so a union that mixes a catch-all
+    // wildcard with the exact leaf subjects it already covers must be collapsed to the wildcard alone. A bare
+    // token equal to the wildcard's base (e.g. "a.b" vs "a.b.>") is NOT subsumed and is kept.
+    private static List<string> _PruneOverlappingSubjects(IEnumerable<string> subjects)
+    {
+        var all = subjects.Distinct(StringComparer.Ordinal).ToList();
+
+        var wildcardBases = all.Where(s => s.EndsWith(".>", StringComparison.Ordinal))
+            .Select(s => s[..^1]) // "a.b.>" -> "a.b."
+            .ToList();
+
+        if (wildcardBases.Count == 0)
+        {
+            return all;
+        }
+
+        return
+        [
+            .. all.Where(s =>
+                !wildcardBases.Exists(prefix =>
+                    !string.Equals(s, prefix + ">", StringComparison.Ordinal)
+                    && s.StartsWith(prefix, StringComparison.Ordinal)
+                )
+            ),
+        ];
     }
 
     public ValueTask SubscribeAsync(IEnumerable<string> messageNames)

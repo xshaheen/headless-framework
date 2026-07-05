@@ -131,6 +131,23 @@ public sealed class HttpCurrentUserTests : TestBase
     }
 
     [Fact]
+    public void should_return_null_user_id_when_identity_not_authenticated()
+    {
+        // given
+        var identity = new ClaimsIdentity([new Claim(UserClaimTypes.UserId, "user-456")]);
+        var principal = new ClaimsPrincipal(identity);
+        var accessor = Substitute.For<ICurrentPrincipalAccessor>();
+        accessor.Principal.Returns(principal);
+        var sut = new HttpCurrentUser(accessor);
+
+        // when
+        var result = sut.UserId;
+
+        // then
+        result.Should().BeNull();
+    }
+
+    [Fact]
     public void should_return_account_type_from_claims()
     {
         // given
@@ -195,6 +212,26 @@ public sealed class HttpCurrentUserTests : TestBase
     {
         // given
         var identity = new ClaimsIdentity([], "TestAuth");
+        var principal = new ClaimsPrincipal(identity);
+        var accessor = Substitute.For<ICurrentPrincipalAccessor>();
+        accessor.Principal.Returns(principal);
+        var sut = new HttpCurrentUser(accessor);
+
+        // when
+        var result = sut.Roles;
+
+        // then
+        result.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void should_return_empty_roles_when_identity_not_authenticated()
+    {
+        // given
+        var identity = new ClaimsIdentity([
+            new Claim(UserClaimTypes.Roles, "admin"),
+            new Claim(UserClaimTypes.Roles, "editor"),
+        ]);
         var principal = new ClaimsPrincipal(identity);
         var accessor = Substitute.For<ICurrentPrincipalAccessor>();
         accessor.Principal.Returns(principal);

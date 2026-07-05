@@ -106,8 +106,10 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddHeadlessInfrastructure();
 
 // Pick exactly one provider per feature; code only against the abstractions.
-builder.Services.AddFileSystemBlobStorage(options =>
-    options.BaseDirectoryPath = Path.Combine(builder.Environment.ContentRootPath, "storage")
+builder.Services.AddHeadlessBlobs(blobs =>
+    blobs.UseFileSystem(options =>
+        options.BaseDirectoryPath = Path.Combine(builder.Environment.ContentRootPath, "storage")
+    )
 );
 builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
 builder.Services.AddHeadlessJobs(options =>
@@ -117,6 +119,10 @@ builder.Services.AddHeadlessJobs(options =>
 builder.Services.AddScoped<DocumentService>();
 
 var app = builder.Build();
+
+// Containers are never auto-created (UploadAsync treats a missing container as an error):
+// provision once at startup via the DI-resolved manager, or out-of-band (IaC/dashboard).
+await app.Services.GetRequiredService<IBlobContainerManager>().EnsureContainerAsync("documents");
 
 app.UseHeadlessDefaults(); // StatusCodePages before ExceptionHandler, then auth/tenant, then endpoints
 
@@ -169,10 +175,9 @@ public sealed class DocumentService(
 
         await using var stream = new MemoryStream(request.Content);
         await storage.UploadAsync(
-            container: ["documents"],
-            blobName: id,
-            stream: stream,
-            metadata: new Dictionary<string, string?> { ["file-name"] = request.FileName },
+            new BlobLocation("documents", id),
+            stream,
+            metadata: new Dictionary<string, string> { ["file-name"] = request.FileName },
             cancellationToken: ct
         );
 
@@ -320,7 +325,8 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Caching.Hybrid` — L1 (memory) + L2 (distributed) cache.
 
 ### Captcha
-- `Headless.Captcha.Abstractions` — `ICaptchaVerifier`, request/result contracts, the `AddHeadlessCaptcha` builder, and `ICaptchaProvider`.
+- `Headless.Captcha.Abstractions` — `ICaptchaVerifier`, request/result contracts, and `ICaptchaProvider`.
+- `Headless.Captcha.Core` — `AddHeadlessCaptcha` setup builder, registration gates, and keyed `ICaptchaProvider` resolution.
 - `Headless.Captcha.ReCaptcha` — Google reCAPTCHA v2 (checkbox) and v3 (invisible score) verification with Razor tag helpers.
 - `Headless.Captcha.Turnstile` — Cloudflare Turnstile verification (pass/fail, `idempotency_key`, `cdata`) with Razor tag helpers.
 
@@ -415,7 +421,8 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Permissions.Storage.SqlServer` — SQL Server raw storage.
 
 ### Push Notifications
-- `Headless.PushNotifications.Abstractions` — Push notification interface.
+- `Headless.PushNotifications.Abstractions` — Push notification interface and `IPushNotificationServiceProvider`.
+- `Headless.PushNotifications.Core` — `AddHeadlessPushNotifications` setup builder and named `IPushNotificationServiceProvider` resolution.
 - `Headless.PushNotifications.Firebase` — Firebase Cloud Messaging.
 - `Headless.PushNotifications.Dev` — Dev no-op (use in local/dev).
 
@@ -441,7 +448,8 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Settings.Storage.SqlServer` — SQL Server raw storage.
 
 ### SMS
-- `Headless.Sms.Abstractions` — SMS sending interface.
+- `Headless.Sms.Abstractions` — SMS sending interface and `ISmsSenderProvider`.
+- `Headless.Sms.Core` — `AddHeadlessSms` setup builder and named `ISmsSenderProvider` resolution.
 - `Headless.Sms.Aws` — AWS SNS.
 - `Headless.Sms.Cequens` — Cequens.
 - `Headless.Sms.Connekio` — Connekio.

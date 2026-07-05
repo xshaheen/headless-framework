@@ -27,7 +27,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 if (builder.Environment.IsDevelopment())
 {
-    builder.Services.AddHeadlessSms(setup => setup.UseDev("sms-log.txt"));
+    builder.Services.AddHeadlessSms(setup => setup.UseDevelopment("sms-log.txt"));
 }
 ```
 
@@ -42,15 +42,26 @@ if (builder.Environment.IsDevelopment())
 }
 ```
 
+### As a Named Instance
+
+```csharp
+// Keyed ISmsSender "audit" writes to a file while the default sends for real:
+builder.Services.AddHeadlessSms(setup =>
+{
+    setup.UseTwilio(builder.Configuration.GetSection("Sms:Twilio")); // default (optional)
+    setup.AddNamed("audit", i => i.UseDevelopment("audit-sms.txt"));
+});
+```
+
 ## Configuration
 
 No configuration required.
 
 ## Dependencies
 
-- `Headless.Sms.Abstractions`
+- `Headless.Sms.Core`
 
 ## Side Effects
 
-- Registers `ISmsSender` and `IBulkSmsSender` as singleton (the bulk sender forwards to the same instance)
-- `DevSmsSender` writes to the specified file path
+- Default: registers `ISmsSender` and `IBulkSmsSender` (the bulk sender forwards to the same instance) as unkeyed singletons. `DevSmsSender` appends to the specified file on each send; `NoopSmsSender` discards silently.
+- Named (`AddNamed(name, i => i.UseDevelopment(path))` / `i.UseNoop()`): registers the same sender as a keyed `ISmsSender` (and keyed `IBulkSmsSender`) under the instance name.

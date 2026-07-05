@@ -87,7 +87,7 @@ app.MapPost("/webhooks", HandleWebhook)
 | `WinnerLockLease` | 5 minutes | Lease duration for the winner's distributed lock under `WaitAndReplay`. Must be >= `InFlightLockTimeout`. Capped at 1 hour. |
 | `MaxBodySizeForHashing` | 1 MiB | Maximum body size eligible for fingerprinting. Capped at 64 MiB. |
 | `OversizeBehavior` | `Reject` | `Reject` returns 413 (`g:idempotency_body_too_large`). `PassThrough` runs the handler without idempotency guarantees. |
-| `OnCacheError` | `FailOpen` | `FailOpen` logs a warning and bypasses idempotency for the failing request. `Throw` propagates the exception as 5xx. |
+| `OnCacheError` | `FailOpen` | `FailOpen` logs a warning and bypasses idempotency for pre-handler cache failures; post-handler finalize failures remove the marker and preserve the handler response. `Throw` propagates the exception as 5xx. |
 | `RequireUserIdentity` | `true` | When `true`, the default cache key requires an authenticated user; tenant-only anonymous requests pass through. Set `false` for webhook receivers / OAuth callbacks. |
 | `MismatchStatusCode` | 422 | Status code for fingerprint mismatch. Must be 409 or 422. |
 | `ReplayHeaderAllowlist` | Content-Type, Content-Language, Content-Encoding, Content-Disposition, Location, Link, ETag, Last-Modified, Cache-Control, Vary | Response headers copied into the cached record. `Set-Cookie` and `traceparent` are excluded by design. |
@@ -109,8 +109,8 @@ app.MapPost("/webhooks", HandleWebhook)
 
 ## Side Effects
 
-- Reads `ICurrentTenant.Id` and `ICurrentUser.UserId` for cache-key composition; when both are absent and no `KeyDeriver` is configured, the middleware passes through without applying idempotency.
+- Reads `ICurrentTenant.Id` and authenticated `ICurrentUser.UserId` for cache-key composition; when both are absent and no `KeyDeriver` is configured, the middleware passes through without applying idempotency.
 - Buffers the request body up to `MaxBodySizeForHashing + 1` bytes via `HttpRequest.EnableBuffering`.
 - On replay, writes `Idempotent-Replayed: true` to the response. Pre-existing allowlisted response headers set by upstream middleware are removed before captured headers are written for byte-equivalent replay.
-- On cache miss, inserts an `InFlight` sentinel marker before invoking the handler, then upserts the `Complete` record afterward using compare-and-swap (`TryReplaceIfEqualAsync`). The marker uses the same TTL as `IdempotencyKeyExpiration`.
+- On cache miss, inserts an `InFlight` sentinel marker before invoking the handler, then promotes it to the `Complete` record afterward using compare-and-swap (`TryReplaceIfEqualAsync`). The marker uses the same TTL as `IdempotencyKeyExpiration`.
 - When the **response** body exceeds `MaxBodySizeForHashing` (`captureStream.TruncatedCapture`), the completed record is not stored and replay does not apply. `OversizeBehavior` controls **request**-body handling only.

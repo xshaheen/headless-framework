@@ -21,4 +21,13 @@ public interface ICacheProvider
     /// <param name="name">The cache instance name (or role key).</param>
     /// <returns>The resolved cache, or <see langword="null"/>.</returns>
     ICache? GetCacheOrNull(string name);
+
+    /// <summary>
+    /// Gets the names of all registered named cache instances. Use this to validate an externally-supplied
+    /// name before resolving it, rather than probing <see cref="GetCacheOrNull"/> and handling
+    /// <see langword="null"/>. Lists only the named instances added through <c>setup.AddNamed(name, …)</c>:
+    /// the default (unnamed) cache is not included, and neither are the role keys (<c>MemoryCacheProvider</c>,
+    /// <c>RemoteCacheProvider</c>, <c>HybridCacheProvider</c>) even though <see cref="GetCache"/> resolves them.
+    /// </summary>
+    IReadOnlySet<string> RegisteredNames { get; }
 }

@@ -1,8 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Security.Claims;
-using AccountId = Headless.Primitives.AccountId;
-using UserId = Headless.Primitives.UserId;
+using Headless.Primitives;
 
 namespace Headless.Abstractions;
 
@@ -114,14 +113,14 @@ public sealed class PrincipalCurrentUser(ClaimsPrincipal? principal) : ICurrentU
     public bool IsAuthenticated => principal?.Identity?.IsAuthenticated == true;
 
     /// <inheritdoc/>
-    public UserId? UserId => principal.GetUserId();
+    public UserId? UserId => IsAuthenticated ? principal.GetUserId() : null;
 
     /// <inheritdoc/>
-    public string? AccountType => principal.GetAccountType();
+    public string? AccountType => IsAuthenticated ? principal.GetAccountType() : null;
 
     /// <inheritdoc/>
-    public AccountId? AccountId => principal.GetAccountId();
+    public AccountId? AccountId => IsAuthenticated ? principal.GetAccountId() : null;
 
     /// <inheritdoc/>
-    public IReadOnlySet<string> Roles => principal.GetRoles();
+    public IReadOnlySet<string> Roles => IsAuthenticated ? principal.GetRoles() : [];
 }

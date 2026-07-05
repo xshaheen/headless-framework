@@ -39,6 +39,13 @@ builder.Services.AddHeadlessSms(setup =>
         options.PhoneNumber = "+12025551234";
     })
 );
+
+// Named instance — a keyed ISmsSender plus a keyed ITwilioRestClient (resolvable via ISmsSenderProvider):
+builder.Services.AddHeadlessSms(setup =>
+{
+    setup.UseTwilio(builder.Configuration.GetSection("Sms:Twilio")); // default (optional)
+    setup.AddNamed("marketing", i => i.UseTwilio(builder.Configuration.GetSection("Sms:TwilioMarketing")));
+});
 ```
 
 ## Configuration
@@ -73,12 +80,11 @@ builder.Services.AddHeadlessSms(setup =>
 
 ## Dependencies
 
-- `Headless.Sms.Abstractions`
+- `Headless.Sms.Core`
 - `Twilio`
 - `Microsoft.Extensions.Http.Resilience`
 
 ## Side Effects
 
-- Registers `ITwilioRestClient` as singleton (backed by the named `HttpClient`).
-- Registers `ISmsSender` as singleton (`TwilioSmsSender`).
-- Registers a named `HttpClient` (`Headless:TwilioSms`) with a standard resilience handler (retry disabled).
+- Default: registers `ITwilioRestClient` via `TryAddSingleton` (a host-supplied client wins), `ISmsSender` (`TwilioSmsSender`) as an unkeyed singleton, and a named `HttpClient` (`Headless:TwilioSms`) with a standard resilience handler (retry disabled). No `IBulkSmsSender` — Twilio creates one message per recipient.
+- Named (`AddNamed(name, i => i.UseTwilio(…))`): registers a keyed `ITwilioRestClient` (built from that name's options and per-name HttpClient), a keyed `ISmsSender`, named options, and a per-name `HttpClient` (`Headless:TwilioSms:{name}`) with its own resilience pipeline.

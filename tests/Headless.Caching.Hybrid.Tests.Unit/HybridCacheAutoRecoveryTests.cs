@@ -398,11 +398,10 @@ public sealed class HybridCacheAutoRecoveryTests : TestBase
     public async Task should_replace_queued_publish_when_value_op_queued_for_same_key()
     {
         // given — a backplane-only outage queues a publish for the key
-        const bool failPublish = true;
         var publisher = Substitute.For<IBus>();
         publisher
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(_ => failPublish ? throw new InvalidOperationException("Publish failed") : Task.CompletedTask);
+            .Returns(_ => throw new InvalidOperationException("Publish failed"));
 
         var (cache, _, l2, _) = _CreateCache(new HybridCacheOptions { EnableAutoRecovery = true }, publisher);
         await using var _ = cache;

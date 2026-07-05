@@ -4,6 +4,7 @@
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Blobs.Azure.Tests.Integration" />
+    <InternalsVisibleTo Include="Headless.Blobs.Azure.Tests.Unit" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Azure.Storage.Blobs" />

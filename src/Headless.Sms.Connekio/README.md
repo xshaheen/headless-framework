@@ -41,6 +41,13 @@ builder.Services.AddHeadlessSms(setup =>
         options.Sender = "MyApp";
     })
 );
+
+// Named instance — an isolated HttpClient and options (keyed "marketing"):
+builder.Services.AddHeadlessSms(setup =>
+{
+    setup.UseConnekio(builder.Configuration.GetSection("Sms:Connekio")); // default (optional)
+    setup.AddNamed("marketing", i => i.UseConnekio(builder.Configuration.GetSection("Sms:ConnekioBulk")));
+});
 ```
 
 ## Configuration
@@ -75,10 +82,10 @@ builder.Services.AddHeadlessSms(setup =>
 
 ## Dependencies
 
-- `Headless.Sms.Abstractions`
+- `Headless.Sms.Core`
 - `Microsoft.Extensions.Http.Resilience`
 
 ## Side Effects
 
-- Registers `ISmsSender` as singleton (`ConnekioSmsSender`).
-- Registers a named `HttpClient` (`Headless:ConnekioSms`) with a standard resilience handler (retry disabled).
+- Default: registers `ISmsSender` (`ConnekioSmsSender`) and `IBulkSmsSender` (forwarding to the same instance) as unkeyed singletons, plus a named `HttpClient` (`Headless:ConnekioSms`) with a standard resilience handler (retry disabled).
+- Named (`AddNamed(name, i => i.UseConnekio(…))`): registers a keyed `ISmsSender` and keyed `IBulkSmsSender` (same instance), named options, and a per-name `HttpClient` (`Headless:ConnekioSms:{name}`) with its own resilience pipeline.

@@ -10,13 +10,17 @@ namespace Headless.Sms.Vodafone;
 
 internal sealed class VodafoneSmsSender(
     IHttpClientFactory httpClientFactory,
-    IOptions<VodafoneSmsOptions> optionsAccessor,
+    string httpClientName,
+    IOptionsMonitor<VodafoneSmsOptions> optionsMonitor,
+    string? optionsName,
     ILogger<VodafoneSmsSender> logger
 ) : ISmsSender, IBulkSmsSender
 {
-    private readonly VodafoneSmsOptions _options = optionsAccessor.Value;
-    private readonly Uri _uri = new(optionsAccessor.Value.SendSmsEndpoint);
-    private readonly byte[] _secureHash = Encoding.UTF8.GetBytes(optionsAccessor.Value.SecureHash);
+    // Snapshot for this instance's options name — never CurrentValue, which binds the default options and
+    // would bleed configuration across keyed instances.
+    private readonly VodafoneSmsOptions _options = optionsMonitor.Get(optionsName);
+    private readonly Uri _uri = new(optionsMonitor.Get(optionsName).SendSmsEndpoint);
+    private readonly byte[] _secureHash = Encoding.UTF8.GetBytes(optionsMonitor.Get(optionsName).SecureHash);
 
     public async ValueTask<SendSingleSmsResponse> SendAsync(
         SendSingleSmsRequest request,
@@ -75,7 +79,7 @@ internal sealed class VodafoneSmsSender(
         CancellationToken cancellationToken
     )
     {
-        using var httpClient = httpClientFactory.CreateClient(SetupVodafone.HttpClientName);
+        using var httpClient = httpClientFactory.CreateClient(httpClientName);
         using var requestMessage = new HttpRequestMessage(HttpMethod.Post, _uri);
         requestMessage.Content = new StringContent(_BuildPayload(destinations, text), Encoding.UTF8, "application/xml");
 

@@ -4,16 +4,17 @@ AWS S3 implementation of `IBlobStorage` for storing files in Amazon S3.
 
 ## Problem Solved
 
-Provides integration with AWS S3 for blob storage using the unified `IBlobStorage` abstraction, with per-store S3 client construction, presigned URL support, and opt-in bucket auto-create.
+Provides integration with AWS S3 for blob storage using the unified `IBlobStorage` abstraction, with per-store S3 client construction, presigned URL support, and an opt-in bucket-lifecycle capability.
 
 ## Key Features
 
-- Full `IBlobStorage` implementation for AWS S3.
-- Bulk upload/delete with optimized batching.
+- Full `IBlobStorage` implementation for AWS S3, routed through the shared resolve seam.
+- Bulk upload/delete with optimized batching, returning identity-carrying `BlobBulkResult` lists.
+- Native-token paging: `ListAsync` wraps the S3 `ListObjectsV2` continuation token in the shared opaque envelope as the `BlobPage` token; a malformed token throws `ArgumentException` instead of a raw `AmazonS3Exception`.
 - Two-tier name normalization: bucket name normalized to S3 rules; object-key path segments validated and preserved.
-- Metadata support.
-- Presigned download/upload URLs via `IPresignedUrlBlobStorage` (named stores only; feature-detect via cast for the default store).
-- Opt-in, cached bucket auto-create (`AutoCreateContainer`, default `true`).
+- Metadata support; `GetBlobInfoAsync` reads metadata from the HEAD response. (The list API omits per-object metadata, and its `Created` falls back to `LastModified`.)
+- Presigned download/upload URLs over a `BlobLocation` via `IPresignedUrlBlobStorage` (named stores only; feature-detect via cast for the default store).
+- Bucket lifecycle via a dedicated `AwsBlobContainerManager` resolved from DI (`EnsureContainerAsync` keeps a per-instance ensured-bucket cache). `UploadAsync` no longer auto-creates a missing bucket — that is an error.
 - Per-store `IAmazonS3` constructed via `S3ClientFactory`; optional `AWSOptions` to override the SDK credential/region chain.
 
 ## Installation
@@ -53,14 +54,23 @@ builder.Services.AddHeadlessBlobs(blobs =>
 );
 ```
 
-Buckets and keys are passed per operation:
+Blobs are addressed by `BlobLocation`; the bucket must already exist:
 
 ```csharp
-await storage.UploadAsync(["my-bucket"], "reports/q1.pdf", stream);
+var location = new BlobLocation("my-bucket", "reports/q1.pdf");
 
-// Feature-detect presigned on the default store:
+// Provision the bucket first (resolved from DI; not a cast from the store):
+var manager = serviceProvider.GetService<IBlobContainerManager>();
+if (manager is not null)
+    await manager.EnsureContainerAsync("my-bucket");
+
+await storage.UploadAsync(location, stream);
+
+// Presigned URL on the default store — feature-detect:
 if (storage is IPresignedUrlBlobStorage presigned)
-    var url = await presigned.GetPresignedDownloadUrlAsync(["my-bucket"], "file.pdf", TimeSpan.FromHours(1));
+{
+    var url = await presigned.GetPresignedDownloadUrlAsync(location, TimeSpan.FromHours(1));
+}
 ```
 
 ## Configuration
@@ -80,7 +90,6 @@ if (storage is IPresignedUrlBlobStorage presigned)
 ### Options
 
 ```csharp
-options.AutoCreateContainer = true; // create buckets on upload/copy (default true)
 options.CannedAcl = S3CannedACL.Private;
 options.UseChunkEncoding = true;
 options.DisablePayloadSigning = false;
@@ -90,6 +99,7 @@ options.MaxBulkParallelism = 10;
 ## Dependencies
 
 - `Headless.Blobs.Abstractions`
+- `Headless.Blobs.Core`
 - `Headless.Core`
 - `Headless.Hosting`
 - `AWSSDK.S3`
@@ -99,5 +109,5 @@ options.MaxBulkParallelism = 10;
 
 Registered via `AddHeadlessBlobs(b => b.UseAws(...))` or `AddNamed("name", i => i.UseAws(...))`:
 
-- Default (`UseAws`): registers `IBlobStorage` as unkeyed singleton. The per-store `IAmazonS3` is constructed inline; it is not registered in the DI container.
-- Named (`AddNamed ... UseAws`): registers `IBlobStorage` as keyed singleton (`name`); registers `IPresignedUrlBlobStorage` as keyed singleton (`name`, forwarded from the keyed `IBlobStorage`). The per-store `IAmazonS3` is constructed inline.
+- Default (`UseAws`): registers `IBlobStorage` as unkeyed singleton and `IBlobContainerManager` as unkeyed singleton (`AwsBlobContainerManager`). The per-store `IAmazonS3` is constructed inline; it is not registered in the DI container.
+- Named (`AddNamed ... UseAws`): registers `IBlobStorage`, `IPresignedUrlBlobStorage` (forwarded from the keyed `IBlobStorage`), and `IBlobContainerManager` each as keyed singleton (`name`). The per-store `IAmazonS3` is constructed inline.

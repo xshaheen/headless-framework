@@ -4,7 +4,7 @@ Cloudflare Turnstile verification (pass/fail, with `idempotency_key` and `cdata`
 
 ## Problem Solved
 
-Provides server-side verification for Cloudflare Turnstile against the `turnstile/v0/siteverify` endpoint, surfaces Turnstile's provider-only data (`cdata`, Enterprise `metadata`) and its `idempotency_key` re-verification through a typed interface, and ships Razor tag helpers that render the Turnstile client script and widget — composed through the shared captcha builder in `Headless.Captcha.Abstractions`.
+Provides server-side verification for Cloudflare Turnstile against the `turnstile/v0/siteverify` endpoint, surfaces Turnstile's provider-only data (`cdata`, Enterprise `metadata`) and its `idempotency_key` re-verification through a typed interface, and ships Razor tag helpers that render the Turnstile client script and widget — composed through the shared captcha builder in `Headless.Captcha.Core`.
 
 ## Key Features
 
@@ -104,7 +104,8 @@ Bound from `Headless:Captcha:Turnstile` when using the `IConfiguration` overload
 
 ## Dependencies
 
-- `Headless.Captcha.Abstractions`
+- `Headless.Captcha.Core`
+- `Headless.Extensions`
 - `Headless.Hosting`
 - `Microsoft.AspNetCore.App` (framework reference, for the Razor tag helpers)
 - `Microsoft.Extensions.Http.Resilience`

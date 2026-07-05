@@ -26,7 +26,7 @@ public sealed class VodafoneSmsSenderTests : TestBase, IClassFixture<SmsWireMock
 
     private VodafoneSmsSender _CreateSender()
     {
-        var options = Options.Create(
+        var options = new OptionsMonitorWrapper<VodafoneSmsOptions>(
             new VodafoneSmsOptions
             {
                 SendSmsEndpoint = $"{_fixture.BaseUrl}/submit",
@@ -37,7 +37,13 @@ public sealed class VodafoneSmsSenderTests : TestBase, IClassFixture<SmsWireMock
             }
         );
 
-        return new VodafoneSmsSender(_fixture.HttpClientFactory, options, NullLogger<VodafoneSmsSender>.Instance);
+        return new VodafoneSmsSender(
+            _fixture.HttpClientFactory,
+            SetupVodafone.HttpClientName,
+            options,
+            optionsName: null,
+            NullLogger<VodafoneSmsSender>.Instance
+        );
     }
 
     private void _StubSubmit(string body)
@@ -107,7 +113,7 @@ public sealed class VodafoneSmsSenderTests : TestBase, IClassFixture<SmsWireMock
     public async Task should_classify_resilience_rejections_as_transient(string rejectionKind)
     {
         var exception = ResilienceRejections.Create(rejectionKind);
-        var options = Options.Create(
+        var options = new OptionsMonitorWrapper<VodafoneSmsOptions>(
             new VodafoneSmsOptions
             {
                 SendSmsEndpoint = "http://localhost:1/submit",
@@ -119,7 +125,9 @@ public sealed class VodafoneSmsSenderTests : TestBase, IClassFixture<SmsWireMock
         );
         var sender = new VodafoneSmsSender(
             new ThrowingHttpClientFactory(exception),
+            SetupVodafone.HttpClientName,
             options,
+            optionsName: null,
             NullLogger<VodafoneSmsSender>.Instance
         );
 

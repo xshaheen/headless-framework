@@ -44,23 +44,31 @@ public static class FormFileExtensions
         CancellationToken token = default
     )
     {
-        var tasks = files.Select(async formFile =>
-        {
-            try
-            {
-                await formFile.SaveAsync(directoryPath, token).ConfigureAwait(false);
+        Argument.IsNotNull(files);
 
-                return Result<Exception>.Ok();
-            }
-            catch (Exception ex)
-            {
-                return Result<Exception>.Fail(ex);
-            }
-        });
+        var indexedFiles = files.Select((formFile, index) => (formFile, index)).ToArray();
+        var results = new Result<Exception>[indexedFiles.Length];
 
-        var result = await Task.WhenAll(tasks).WithAggregatedExceptions().ConfigureAwait(false);
+        await Parallel
+            .ForEachAsync(
+                indexedFiles,
+                new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount },
+                async (item, _) =>
+                {
+                    try
+                    {
+                        await item.formFile.SaveAsync(directoryPath, token).ConfigureAwait(false);
+                        results[item.index] = Result<Exception>.Ok();
+                    }
+                    catch (Exception ex)
+                    {
+                        results[item.index] = Result<Exception>.Fail(ex);
+                    }
+                }
+            )
+            .ConfigureAwait(false);
 
-        return result;
+        return results;
     }
 
     /// <summary>Computes the MD5 hash of the uploaded file's content stream.</summary>
@@ -89,7 +97,7 @@ public static class FormFileExtensions
 
     /// <summary>Reads all bytes from the uploaded file's content stream asynchronously.</summary>
     /// <param name="file">The uploaded file.</param>
-    /// <returns>A task that resolves to a byte array containing the full file content.</returns>
+    /// <returns>A byte array containing the full file content.</returns>
     public static async Task<byte[]> GetAllBytesAsync(this IFormFile file)
     {
         await using var stream = file.OpenReadStream();

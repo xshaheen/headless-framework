@@ -71,6 +71,76 @@ public sealed class DistributedLockTusFileLockTests : TestBase
     }
 
     [Fact]
+    public async Task should_use_custom_resource_prefix_when_provided()
+    {
+        // given - two endpoints sharing one lock backend must not contend on equal file ids
+        const string fileId = "my-upload-id";
+        await using var sut = new DistributedLockTusFileLock(fileId, _distributedLockProvider, "tus-avatars");
+
+        // when
+        await sut.Lock();
+
+        // then
+        await _distributedLockProvider
+            .Received(1)
+            .TryAcquireAsync(
+                "tus-avatars-my-upload-id",
+                Arg.Any<DistributedLockAcquireOptions?>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_not_reacquire_when_lock_already_held()
+    {
+        // given - a second Lock() on the same instance must not overwrite (and leak) the held lease
+        const string fileId = "test-file";
+        var distributedLock = Substitute.For<IDistributedLease>();
+
+        _distributedLockProvider
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(distributedLock);
+
+        await using var sut = new DistributedLockTusFileLock(fileId, _distributedLockProvider);
+        await sut.Lock();
+
+        // when
+        var second = await sut.Lock();
+
+        // then
+        second.Should().BeTrue();
+        await _distributedLockProvider
+            .Received(1)
+            .TryAcquireAsync(
+                Arg.Any<string>(),
+                Arg.Any<DistributedLockAcquireOptions?>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_retry_acquisition_when_previous_lock_attempt_failed()
+    {
+        // given - the re-entrancy guard must not turn a failed attempt into a permanent failure
+        const string fileId = "test-file";
+        var distributedLock = Substitute.For<IDistributedLease>();
+
+        _distributedLockProvider
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(null, distributedLock);
+
+        await using var sut = new DistributedLockTusFileLock(fileId, _distributedLockProvider);
+
+        // when
+        var first = await sut.Lock();
+        var second = await sut.Lock();
+
+        // then
+        first.Should().BeFalse();
+        second.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task should_use_finite_lease_so_a_crashed_holder_is_recoverable()
     {
         // given

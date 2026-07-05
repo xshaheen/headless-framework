@@ -2,6 +2,7 @@
 
 using Headless.Testing.Tests;
 using Headless.Tus.Models;
+using tusdotnet.Models;
 
 namespace Tests.Azure;
 
@@ -10,7 +11,7 @@ public sealed class TusAzureMetadataTests : TestBase
     #region FromTus - Parsing
 
     [Fact]
-    public void should_parse_tus_metadata_string()
+    public void should_store_raw_metadata_verbatim()
     {
         // given - base64 encoded values: "test.txt" -> "dGVzdC50eHQ=", "value1" -> "dmFsdWUx"
         const string tusString = "filename dGVzdC50eHQ=,custom dmFsdWUx";
@@ -18,14 +19,14 @@ public sealed class TusAzureMetadataTests : TestBase
         // when
         var metadata = TusAzureMetadata.FromTus(tusString);
 
-        // then
+        // then - the raw string is stored untouched in a single metadata entry
         var azure = metadata.ToAzure();
-        azure.Should().ContainKey("filename").WhoseValue.Should().Be("test.txt");
-        azure.Should().ContainKey("custom").WhoseValue.Should().Be("value1");
+        azure.Should().ContainSingle();
+        azure.Should().ContainKey(TusAzureMetadata.RawMetadataKey).WhoseValue.Should().Be(tusString);
     }
 
     [Fact]
-    public void should_handle_base64_encoded_values()
+    public void should_decode_base64_values_via_to_user()
     {
         // given - "Hello World!" base64 = "SGVsbG8gV29ybGQh"
         const string tusString = "message SGVsbG8gV29ybGQh";
@@ -34,8 +35,8 @@ public sealed class TusAzureMetadataTests : TestBase
         var metadata = TusAzureMetadata.FromTus(tusString);
 
         // then
-        var azure = metadata.ToAzure();
-        azure.Should().ContainKey("message").WhoseValue.Should().Be("Hello World!");
+        var user = metadata.ToUser();
+        user.Should().ContainKey("message").WhoseValue.Should().Be("Hello World!");
     }
 
     [Fact]
@@ -46,6 +47,7 @@ public sealed class TusAzureMetadataTests : TestBase
 
         // then
         metadata.ToAzure().Should().BeEmpty();
+        metadata.ToUser().Should().BeEmpty();
     }
 
     [Fact]
@@ -56,49 +58,136 @@ public sealed class TusAzureMetadataTests : TestBase
 
         // then
         metadata.ToAzure().Should().BeEmpty();
+        metadata.ToUser().Should().BeEmpty();
     }
 
     [Fact]
-    public void should_sanitize_azure_metadata_keys_to_lowercase()
+    public void should_preserve_original_key_casing()
     {
-        // given - Azure metadata keys must be lowercase alphanumeric
+        // given - TUS metadata keys are case-sensitive and must round-trip as the client sent them
         const string tusString = "FileName dGVzdC50eHQ=";
 
         // when
         var metadata = TusAzureMetadata.FromTus(tusString);
 
         // then
-        var azure = metadata.ToAzure();
-        azure.Should().ContainKey("filename");
-        azure.Should().NotContainKey("FileName");
+        metadata.ToTusString().Should().Be(tusString);
+        metadata.ToUser().Should().ContainKey("FileName");
     }
 
     [Fact]
-    public void should_sanitize_special_characters_in_keys()
+    public void should_preserve_keys_with_special_characters()
     {
-        // given - "key-with-dashes" should become "key_with_dashes" (lowercase)
+        // given - dashes are legal in TUS keys and must not be rewritten
         const string tusString = "key-with-dashes dmFsdWU=";
 
         // when
         var metadata = TusAzureMetadata.FromTus(tusString);
 
         // then
-        var azure = metadata.ToAzure();
-        azure.Should().ContainKey("key_with_dashes");
+        metadata.ToTusString().Should().Be(tusString);
+        metadata.ToUser().Should().ContainKey("key-with-dashes");
     }
 
     [Fact]
-    public void should_prefix_underscore_when_key_starts_with_number()
+    public void should_preserve_keys_starting_with_number()
     {
-        // given - keys starting with numbers need underscore prefix
+        // given
         const string tusString = "123key dmFsdWU=";
 
         // when
         var metadata = TusAzureMetadata.FromTus(tusString);
 
         // then
-        var azure = metadata.ToAzure();
-        azure.Should().ContainKey("_123key");
+        metadata.ToTusString().Should().Be(tusString);
+        metadata.ToUser().Should().ContainKey("123key");
+    }
+
+    [Fact]
+    public void should_support_non_ascii_metadata_values()
+    {
+        // given - an Arabic filename; the VALUE bytes are arbitrary UTF-8, but the raw TUS string
+        // itself stays ASCII (base64), so it is storable as an Azure metadata value
+        const string arabicFileName = "ملف.pdf";
+        var tusString = $"filename {arabicFileName.ToBase64()}";
+
+        // when
+        var metadata = TusAzureMetadata.FromTus(tusString);
+
+        // then
+        metadata.ToTusString().Should().Be(tusString);
+        metadata.ToUser().Should().ContainKey("filename").WhoseValue.Should().Be(arabicFileName);
+    }
+
+    [Fact]
+    public void should_allow_user_keys_matching_system_key_names()
+    {
+        // given - a user key that matches a reserved tus_* blob-metadata key; user metadata lives
+        // inside a single raw value now, so it can never overwrite the store's tracking keys
+        var tusString = $"{TusAzureMetadata.ExpirationKey} dmFsdWU=";
+
+        // when
+        var metadata = TusAzureMetadata.FromTus(tusString);
+        metadata.DateExpiration.Should().BeNull(); // system state untouched
+
+        // then
+        metadata.ToTusString().Should().Be(tusString);
+        metadata.ToUser().Should().ContainKey(TusAzureMetadata.ExpirationKey);
+    }
+
+    [Fact]
+    public void should_handle_valueless_keys()
+    {
+        // given - the TUS spec allows keys without a value ("is_confidential")
+        const string tusString = "is_confidential";
+
+        // when
+        var metadata = TusAzureMetadata.FromTus(tusString);
+
+        // then
+        metadata.ToTusString().Should().Be(tusString);
+        metadata.ToUser().Should().ContainKey("is_confidential").WhoseValue.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void should_reject_invalid_metadata_string()
+    {
+        // given - a value that is not valid base64
+        const string tusString = "filename not!!base64";
+
+        // when
+        var act = () => TusAzureMetadata.FromTus(tusString);
+
+        // then
+        act.Should().Throw<tusdotnet.Models.TusStoreException>();
+    }
+
+    [Fact]
+    public void should_reject_non_ascii_metadata_string()
+    {
+        // given - a raw string containing non-ASCII characters (invalid per the TUS spec and not
+        // storable as an Azure metadata value)
+        const string tusString = "ملف dmFsdWU=";
+
+        // when
+        var act = () => TusAzureMetadata.FromTus(tusString);
+
+        // then
+        act.Should().Throw<tusdotnet.Models.TusStoreException>().WithMessage("*ASCII*");
+    }
+
+    [Fact]
+    public void should_reject_oversized_metadata_string()
+    {
+        // given - a raw string beyond the Azure 8 KB blob-metadata budget
+        var bigValue = Convert.ToBase64String(new byte[6 * 1024]);
+        var tusString = $"blob {bigValue}";
+
+        // when
+        var act = () => TusAzureMetadata.FromTus(tusString);
+
+        // then
+        act.Should().Throw<tusdotnet.Models.TusStoreException>().WithMessage("*too large*");
     }
 
     #endregion
@@ -133,11 +222,12 @@ public sealed class TusAzureMetadataTests : TestBase
     [Fact]
     public void should_convert_to_user_dictionary_excluding_system_keys()
     {
-        // given
+        // given - user metadata plus the store's own tracking keys on the same blob
+        var customValue = "custom_value".ToBase64();
+        var anotherValue = "data".ToBase64();
         var dict = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            ["custom_key"] = "custom_value",
-            ["another"] = "data",
+            [TusAzureMetadata.RawMetadataKey] = $"custom_key {customValue},another {anotherValue}",
             [TusAzureMetadata.UploadLengthKey] = "12345",
             [TusAzureMetadata.ExpirationKey] = "2024-01-01T00:00:00Z",
             [TusAzureMetadata.CreatedDateKey] = "2024-01-01T00:00:00Z",
@@ -151,17 +241,10 @@ public sealed class TusAzureMetadataTests : TestBase
         // when
         var user = metadata.ToUser();
 
-        // then
+        // then - only the pairs from the raw Upload-Metadata value are surfaced
         user.Should().HaveCount(2);
         user.Should().ContainKey("custom_key").WhoseValue.Should().Be("custom_value");
         user.Should().ContainKey("another").WhoseValue.Should().Be("data");
-        user.Should().NotContainKey(TusAzureMetadata.UploadLengthKey);
-        user.Should().NotContainKey(TusAzureMetadata.ExpirationKey);
-        user.Should().NotContainKey(TusAzureMetadata.CreatedDateKey);
-        user.Should().NotContainKey(TusAzureMetadata.ConcatTypeKey);
-        user.Should().NotContainKey(TusAzureMetadata.PartialUploadsKey);
-        user.Should().NotContainKey(TusAzureMetadata.LastChunkBlocksKey);
-        user.Should().NotContainKey(TusAzureMetadata.LastChunkChecksumKey);
     }
 
     [Fact]
@@ -187,32 +270,24 @@ public sealed class TusAzureMetadataTests : TestBase
     #region ToTusString Conversion
 
     [Fact]
-    public void should_convert_to_tus_string()
+    public void should_return_raw_metadata_verbatim()
     {
-        // given
-        var dict = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["filename"] = "test.txt",
-            ["custom"] = "value1",
-        };
-        var metadata = TusAzureMetadata.FromAzure(dict);
+        // given - mixed-case and dashed keys must round-trip byte-for-byte (HEAD must echo
+        // Upload-Metadata "as specified by the Client")
+        const string tusString = "FileName dGVzdC50eHQ=,x-custom dmFsdWUx";
+        var metadata = TusAzureMetadata.FromTus(tusString);
 
-        // when
-        var tusString = metadata.ToTusString();
-
-        // then - values should be base64 encoded
-        // "test.txt" -> "dGVzdC50eHQ=", "value1" -> "dmFsdWUx"
-        tusString.Should().Contain("filename dGVzdC50eHQ=");
-        tusString.Should().Contain("custom dmFsdWUx");
+        // when / then
+        metadata.ToTusString().Should().Be(tusString);
     }
 
     [Fact]
     public void should_exclude_system_keys_from_tus_string()
     {
-        // given
+        // given - system tracking keys live next to the raw value on the same blob
         var dict = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            ["custom"] = "value",
+            [TusAzureMetadata.RawMetadataKey] = "custom dmFsdWU=",
             [TusAzureMetadata.UploadLengthKey] = "12345",
             [TusAzureMetadata.CreatedDateKey] = "2024-01-01T00:00:00Z",
         };
@@ -222,9 +297,7 @@ public sealed class TusAzureMetadataTests : TestBase
         var tusString = metadata.ToTusString();
 
         // then
-        tusString.Should().NotContain(TusAzureMetadata.UploadLengthKey);
-        tusString.Should().NotContain(TusAzureMetadata.CreatedDateKey);
-        tusString.Should().Contain("custom");
+        tusString.Should().Be("custom dmFsdWU=");
     }
 
     [Fact]
@@ -265,8 +338,7 @@ public sealed class TusAzureMetadataTests : TestBase
     public void should_convert_to_tus_metadata_dictionary()
     {
         // given
-        var dict = new Dictionary<string, string>(StringComparer.Ordinal) { ["filename"] = "test.txt" };
-        var metadata = TusAzureMetadata.FromAzure(dict);
+        var metadata = TusAzureMetadata.FromTus($"filename {"test.txt".ToBase64()}");
 
         // when
         var tus = metadata.ToTus();
@@ -276,26 +348,38 @@ public sealed class TusAzureMetadataTests : TestBase
         tus["filename"].GetString(Encoding.UTF8).Should().Be("test.txt");
     }
 
+    [Fact]
+    public void should_throw_when_stored_metadata_is_corrupted()
+    {
+        // given - blob metadata mutated out-of-band into something unparseable
+        var dict = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [TusAzureMetadata.RawMetadataKey] = "broken not!!base64",
+        };
+        var metadata = TusAzureMetadata.FromAzure(dict);
+
+        // when
+        var act = () => metadata.ToTus();
+
+        // then - fail loudly instead of silently dropping the client's metadata
+        act.Should().Throw<tusdotnet.Models.TusStoreException>().WithMessage("*corrupted*");
+    }
+
     #endregion
 
     #region Round-Trip Conversion
 
     [Fact]
-    public void should_round_trip_from_tus_to_tus_string_to_tus()
+    public void should_round_trip_from_tus_to_tus_string_byte_for_byte()
     {
-        // given
-        const string originalTusString = "filename dGVzdC50eHQ=,custom dmFsdWUx";
+        // given - key order, casing, and separators must all survive the round-trip
+        const string originalTusString = "ZFileName dGVzdC50eHQ=,a-custom dmFsdWUx,is_confidential";
 
         // when
         var metadata = TusAzureMetadata.FromTus(originalTusString);
-        var resultTusString = metadata.ToTusString();
-        var resultMetadata = TusAzureMetadata.FromTus(resultTusString);
 
         // then
-        var originalAzure = metadata.ToAzure();
-        var resultAzure = resultMetadata.ToAzure();
-        resultAzure["filename"].Should().Be(originalAzure["filename"]);
-        resultAzure["custom"].Should().Be(originalAzure["custom"]);
+        metadata.ToTusString().Should().Be(originalTusString);
     }
 
     #endregion
@@ -452,6 +536,21 @@ public sealed class TusAzureMetadataTests : TestBase
     }
 
     [Fact]
+    public void should_return_null_for_negative_upload_length()
+    {
+        // given - tusdotnet's Creation-Defer-Length sentinel (-1) persisted by an older version
+        var dict = new Dictionary<string, string>(StringComparer.Ordinal) { [TusAzureMetadata.UploadLengthKey] = "-1" };
+        var metadata = TusAzureMetadata.FromAzure(dict);
+
+        // when
+        var result = metadata.UploadLength;
+
+        // then: a negative length must read as "unknown" so HEAD reports Upload-Defer-Length,
+        // not "Upload-Length: -1", and the too-much-data guard stays inert
+        result.Should().BeNull();
+    }
+
+    [Fact]
     public void should_return_null_for_invalid_upload_length()
     {
         // given
@@ -552,91 +651,6 @@ public sealed class TusAzureMetadataTests : TestBase
 
         // then
         result.Should().BeNull();
-    }
-
-    #endregion
-
-    #region Filename Property
-
-    [Fact]
-    public void should_set_filename()
-    {
-        // given
-        var dict = new Dictionary<string, string>(StringComparer.Ordinal);
-        var metadata = TusAzureMetadata.FromAzure(dict);
-
-        // when
-        metadata.Filename = "document.pdf";
-
-        // then
-        metadata.Filename.Should().Be("document.pdf");
-        dict.Should().ContainKey(TusAzureMetadata.FileNameKey);
-    }
-
-    [Fact]
-    public void should_get_filename()
-    {
-        // given
-        var dict = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            [TusAzureMetadata.FileNameKey] = "image.png",
-        };
-        var metadata = TusAzureMetadata.FromAzure(dict);
-
-        // when
-        var result = metadata.Filename;
-
-        // then
-        result.Should().Be("image.png");
-    }
-
-    [Fact]
-    public void should_return_null_when_filename_not_set()
-    {
-        // given
-        var metadata = TusAzureMetadata.FromAzure(new Dictionary<string, string>(StringComparer.Ordinal));
-
-        // when
-        var result = metadata.Filename;
-
-        // then
-        result.Should().BeNull();
-    }
-
-    [Fact]
-    public void should_remove_filename_when_set_to_null()
-    {
-        // given
-        var dict = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            [TusAzureMetadata.FileNameKey] = "test.txt",
-        };
-        var metadata = TusAzureMetadata.FromAzure(dict);
-
-        // when
-        metadata.Filename = null;
-
-        // then
-        metadata.Filename.Should().BeNull();
-        dict.Should().NotContainKey(TusAzureMetadata.FileNameKey);
-    }
-
-    [Fact]
-    public void should_remove_filename_when_set_to_empty()
-    {
-        // given
-        var dict = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            [TusAzureMetadata.FileNameKey] = "test.txt",
-        };
-        var metadata = TusAzureMetadata.FromAzure(dict);
-
-        // when
-        metadata.Filename = string.Empty;
-
-        // then
-        metadata.Filename.Should().BeNull();
-        dict.Should().NotContainKey(TusAzureMetadata.FileNameKey);
     }
 
     #endregion
@@ -795,18 +809,19 @@ public sealed class TusAzureMetadataTests : TestBase
     #region LastChunkBlocks Property
 
     [Fact]
-    public void should_set_last_chunk_blocks()
+    public void should_set_last_chunk_blocks_as_constant_size_triple()
     {
         // given
         var dict = new Dictionary<string, string>(StringComparer.Ordinal);
         var metadata = TusAzureMetadata.FromAzure(dict);
 
         // when
-        metadata.LastChunkBlocks = ["block1", "block2"];
+        metadata.LastChunkBlocks = new TusStagedBlocks("1a2b3c4d", FirstIndex: 3, Count: 250_000);
 
-        // then
-        metadata.LastChunkBlocks.Should().BeEquivalentTo(["block1", "block2"]);
-        dict[TusAzureMetadata.LastChunkBlocksKey].Should().Be("block1,block2");
+        // then - the serialized value stays constant-size regardless of the block count, so the
+        // tracking can never approach Azure's 8 KB blob-metadata cap
+        metadata.LastChunkBlocks.Should().Be(new TusStagedBlocks("1a2b3c4d", 3, 250_000));
+        dict[TusAzureMetadata.LastChunkBlocksKey].Should().Be("1a2b3c4d:3:250000");
     }
 
     [Fact]
@@ -815,7 +830,7 @@ public sealed class TusAzureMetadataTests : TestBase
         // given
         var dict = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            [TusAzureMetadata.LastChunkBlocksKey] = "b1,b2,b3",
+            [TusAzureMetadata.LastChunkBlocksKey] = "deadbeef:0:3",
         };
         var metadata = TusAzureMetadata.FromAzure(dict);
 
@@ -823,7 +838,7 @@ public sealed class TusAzureMetadataTests : TestBase
         var result = metadata.LastChunkBlocks;
 
         // then
-        result.Should().BeEquivalentTo(["b1", "b2", "b3"]);
+        result.Should().Be(new TusStagedBlocks("deadbeef", 0, 3));
     }
 
     [Fact]
@@ -839,13 +854,23 @@ public sealed class TusAzureMetadataTests : TestBase
         result.Should().BeNull();
     }
 
-    [Fact]
-    public void should_return_null_when_last_chunk_blocks_is_empty_string()
+    [Theory]
+    [InlineData("")]
+    [InlineData("garbage")]
+    [InlineData("token:1")]
+    [InlineData("token:1:2:3")]
+    [InlineData(":1:2")]
+    [InlineData("token:x:2")]
+    [InlineData("token:1:x")]
+    [InlineData("token:-1:2")]
+    [InlineData("token:1:0")]
+    [InlineData("token:1:-2")]
+    public void should_return_null_when_last_chunk_blocks_is_malformed(string storedValue)
     {
-        // given
+        // given - corrupted metadata must degrade to "no staged chunk" rather than throw
         var dict = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            [TusAzureMetadata.LastChunkBlocksKey] = "",
+            [TusAzureMetadata.LastChunkBlocksKey] = storedValue,
         };
         var metadata = TusAzureMetadata.FromAzure(dict);
 
@@ -862,7 +887,7 @@ public sealed class TusAzureMetadataTests : TestBase
         // given
         var dict = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            [TusAzureMetadata.LastChunkBlocksKey] = "b1,b2",
+            [TusAzureMetadata.LastChunkBlocksKey] = "deadbeef:0:2",
         };
         var metadata = TusAzureMetadata.FromAzure(dict);
 
@@ -875,20 +900,137 @@ public sealed class TusAzureMetadataTests : TestBase
     }
 
     [Fact]
-    public void should_remove_last_chunk_blocks_when_set_to_empty_array()
+    public void should_remove_last_chunk_blocks_when_set_to_empty_range()
     {
         // given
         var dict = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            [TusAzureMetadata.LastChunkBlocksKey] = "b1,b2",
+            [TusAzureMetadata.LastChunkBlocksKey] = "deadbeef:0:2",
         };
         var metadata = TusAzureMetadata.FromAzure(dict);
 
         // when
-        metadata.LastChunkBlocks = [];
+        metadata.LastChunkBlocks = new TusStagedBlocks("deadbeef", 0, Count: 0);
 
         // then
         dict.Should().NotContainKey(TusAzureMetadata.LastChunkBlocksKey);
+    }
+
+    #endregion
+
+    #region FromTus Guard Rails
+
+    [Fact]
+    public void should_reject_metadata_with_non_ascii_characters()
+    {
+        // given - the raw Upload-Metadata string is persisted as a single Azure metadata value,
+        // which must be ASCII; a spec-conforming header (ASCII keys + base64 values) always is.
+        // tusdotnet's parser only validates structure and base64 values, so a non-ASCII KEY
+        // parses fine and must be stopped by the store's own guard.
+        const string metadata = "filename w6ZibGVy,café dmFsdWU=";
+
+        // when
+        var act = () => TusAzureMetadata.FromTus(metadata);
+
+        // then
+        act.Should().Throw<TusStoreException>().WithMessage("*printable ASCII*");
+    }
+
+    [Fact]
+    public void should_reject_metadata_with_control_characters()
+    {
+        // given
+        const string metadata = "filename\tdmFsdWU=";
+
+        // when
+        var act = () => TusAzureMetadata.FromTus(metadata);
+
+        // then
+        act.Should().Throw<TusStoreException>().WithMessage("*printable ASCII*");
+    }
+
+    [Fact]
+    public void should_reject_oversized_metadata()
+    {
+        // given - Azure caps total blob metadata at 8 KB; the store reserves headroom for its own
+        // tus_* keys and rejects raw Upload-Metadata above ~7 KB with an actionable message
+        var oversized = $"filename {Convert.ToBase64String("x"u8.ToArray())},k {new string('A', 7 * 1024)}";
+
+        // when
+        var act = () => TusAzureMetadata.FromTus(oversized);
+
+        // then
+        act.Should().Throw<TusStoreException>().WithMessage("*too large*");
+    }
+
+    [Fact]
+    public void should_accept_metadata_at_the_size_limit()
+    {
+        // given - exactly 7 KB must round-trip (the guard is exclusive); the value length is a
+        // multiple of 4 so it stays valid base64
+        var value = new string('A', (7 * 1024) - "fnm ".Length);
+        var metadata = $"fnm {value}";
+        metadata.Should().HaveLength(7 * 1024);
+
+        // when
+        var result = TusAzureMetadata.FromTus(metadata);
+
+        // then
+        result.ToTusString().Should().Be(metadata);
+    }
+
+    #endregion
+
+    #region LastChunkOffset Property
+
+    [Fact]
+    public void should_set_and_get_last_chunk_offset()
+    {
+        // given
+        var dict = new Dictionary<string, string>(StringComparer.Ordinal);
+        var metadata = TusAzureMetadata.FromAzure(dict);
+
+        // when
+        metadata.LastChunkOffset = 4_096L;
+
+        // then
+        metadata.LastChunkOffset.Should().Be(4_096L);
+        dict.Should().ContainKey(TusAzureMetadata.LastChunkOffsetKey).WhoseValue.Should().Be("4096");
+    }
+
+    [Fact]
+    public void should_remove_last_chunk_offset_when_set_to_null()
+    {
+        // given
+        var dict = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [TusAzureMetadata.LastChunkOffsetKey] = "100",
+        };
+        var metadata = TusAzureMetadata.FromAzure(dict);
+
+        // when
+        metadata.LastChunkOffset = null;
+
+        // then
+        metadata.LastChunkOffset.Should().BeNull();
+        dict.Should().NotContainKey(TusAzureMetadata.LastChunkOffsetKey);
+    }
+
+    [Fact]
+    public void should_return_null_for_negative_or_invalid_last_chunk_offset()
+    {
+        // given
+        var dict = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [TusAzureMetadata.LastChunkOffsetKey] = "-5",
+        };
+        var metadata = TusAzureMetadata.FromAzure(dict);
+
+        // when / then
+        metadata.LastChunkOffset.Should().BeNull();
+
+        dict[TusAzureMetadata.LastChunkOffsetKey] = "not-a-number";
+        metadata.LastChunkOffset.Should().BeNull();
     }
 
     #endregion
@@ -988,9 +1130,10 @@ public sealed class TusAzureMetadataTests : TestBase
         TusAzureMetadata.CreatedDateKey.Should().Be("tus_created");
         TusAzureMetadata.ConcatTypeKey.Should().Be("tus_concat_type");
         TusAzureMetadata.PartialUploadsKey.Should().Be("tus_partial_uploads");
-        TusAzureMetadata.FileNameKey.Should().Be("tus_filename");
+        TusAzureMetadata.RawMetadataKey.Should().Be("tus_metadata");
         TusAzureMetadata.LastChunkBlocksKey.Should().Be("tus_last_chunk_blocks");
         TusAzureMetadata.LastChunkChecksumKey.Should().Be("tus_last_chunk_checksum");
+        TusAzureMetadata.LastChunkOffsetKey.Should().Be("tus_last_chunk_offset");
     }
 
     #endregion

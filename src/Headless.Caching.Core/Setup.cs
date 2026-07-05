@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Frozen;
 using Headless.Checks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -32,12 +33,21 @@ public static class SetupCachingCore
         /// <summary>
         /// Registers <see cref="ICacheProvider"/> backed by the container's keyed <see cref="ICache"/>
         /// registrations. Called by every cache provider setup, so the provider is available whenever any
-        /// cache is registered. Safe to call multiple times.
+        /// cache is registered. Safe to call multiple times — only the first registration wins, so the
+        /// orchestrating <c>AddHeadlessCaching</c> call supplies <paramref name="registeredNames"/> before
+        /// any provider contribution runs; the provider packages call this parameterless as a no-op fallback.
         /// </summary>
+        /// <param name="registeredNames">
+        /// The named cache instance names to expose on <see cref="ICacheProvider.RegisteredNames"/>, or
+        /// <see langword="null"/> for an empty set.
+        /// </param>
         /// <returns>The service collection for chaining.</returns>
-        internal IServiceCollection AddCacheProvider()
+        internal IServiceCollection AddCacheProvider(IReadOnlySet<string>? registeredNames = null)
         {
-            services.TryAddSingleton<ICacheProvider>(provider => new KeyedServiceCacheProvider(provider));
+            services.TryAddSingleton<ICacheProvider>(provider => new KeyedServiceCacheProvider(
+                provider,
+                registeredNames ?? FrozenSet<string>.Empty
+            ));
 
             return services;
         }
@@ -74,7 +84,9 @@ public static class SetupCachingCore
 
         services.AddSingleton(new CachingProviderRegistration(defaultRoleKey));
 
-        services.AddCacheProvider();
+        // Named instances only — the default and the role keys are resolvable via GetCache but excluded here.
+        var registeredNames = setup.InstanceNames.ToFrozenSet(StringComparer.Ordinal);
+        services.AddCacheProvider(registeredNames);
 
         foreach (var (_, action) in setup.TierExtensions)
         {
