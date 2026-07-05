@@ -84,7 +84,7 @@ Code against `IAuditLog<TContext>` and `IReadAuditLog<TContext>` — never refer
 - On SQLite, override the default composite primary key `(CreatedAt, Id)` with a single-column key on `Id` — SQLite cannot autoincrement composite keys.
 - When reading `OldValues` / `NewValues` after a provider round-trip, expect `JsonElement` values; use `GetDecimal()`, `GetBoolean()`, etc. for typed access.
 - Raw providers (PostgreSql, SqlServer) attempt to enroll writes in the consumer's ambient EF transaction when the database drivers match. If there is no ambient transaction, audit rows commit on a separate connection before `SaveChanges` — an entity-save failure then leaves orphan audit rows. Use an explicit transaction on the EF side to guarantee atomicity.
-- `CaptureErrorStrategy` defaults to `Continue`: a capture failure logs an error and lets `SaveChanges` proceed without audit entries for that batch. Set to `Throw` to abort the save when capture fails.
+- `CaptureErrorStrategy` defaults to `Continue`: a capture failure logs an error and lets `SaveChanges` proceed — a per-entity failure skips only that entity's audit entry, a whole-capture failure skips the batch. Set to `Throw` to abort the save when capture fails.
 
 ## Core Concepts
 
@@ -169,7 +169,7 @@ Provides a provider-agnostic audit log API for capturing field-level entity chan
 - `IAuditLogStore` — storage abstraction called by the change-tracking pipeline; `Save`/`SaveAsync` take the saving `DbContext` and return `IAuditLogStoreEntry` handles.
 - `IAuditLogStoreEntry` — provider handle; orchestrator calls `DiscardPendingChanges()` on failure and `ReleaseAfterCommit()` after success. Both must be idempotent.
 - `IAuditChangeCapture` — scans ChangeTracker entries and produces `AuditLogEntryData` records.
-- `IAuditEntityIdResolver` — patches deferred entity IDs after `SaveChanges` assigns store-generated keys.
+- `IAuditEntityIdResolver` — patches deferred entity IDs and temporary property values (store-generated keys, FKs to just-added principals) after `SaveChanges` assigns real keys.
 - `IAmbientDbTransactionAccessor` — allows raw ADO.NET stores to enroll in the consumer's active `DbConnection`/`DbTransaction` without taking an EF dependency.
 - `IAuditLogStorageOptionsExtension` — setup-time hook for storage provider packages.
 - `HeadlessAuditLogSetupBuilder` — fluent builder passed to `AddHeadlessAuditLog(setup => ...)`; exposes `ConfigureOptions`, `ConfigureStorage`, and `RegisterExtension`.

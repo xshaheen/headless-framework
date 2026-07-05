@@ -15,6 +15,8 @@ public class AuditTestDbContext(
 
     public DbSet<GeneratedOrder> GeneratedOrders => Set<GeneratedOrder>();
 
+    public DbSet<GeneratedOrderLine> GeneratedOrderLines => Set<GeneratedOrderLine>();
+
     public override string DefaultSchema => "";
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -22,6 +24,11 @@ public class AuditTestDbContext(
         base.OnModelCreating(modelBuilder);
         modelBuilder.Entity<Order>().Property(e => e.Id).ValueGeneratedNever();
         modelBuilder.Entity<GeneratedOrder>().Property(e => e.Id).ValueGeneratedOnAdd();
+        modelBuilder.Entity<GeneratedOrderLine>(b =>
+        {
+            b.Property(e => e.Id).ValueGeneratedOnAdd();
+            b.HasOne(e => e.Order).WithMany().HasForeignKey(e => e.GeneratedOrderId);
+        });
         modelBuilder.AddHeadlessAuditLog(auditLogStorage.Value);
 
         // SQLite doesn't support ValueGeneratedOnAdd on composite-key columns (no sequence support).
