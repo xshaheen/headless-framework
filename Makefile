@@ -31,6 +31,7 @@ TEST_MAX_PARALLEL ?= 3
 TEST_TIMEOUT ?= 15m
 
 COVERAGE_ARGS ?= -p:EnableCodeCoverage=true --coverage-output-format cobertura
+CI_TEST_ARGS ?= --report-trx --coverage --coverage-output-format cobertura
 
 .PHONY: help
 help: ## Show available commands.
@@ -171,9 +172,9 @@ test-fast: ## Run all tests without restore/build. Requires existing $(CONFIGURA
 	$(DOTNET) test --solution "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER)
 
 .PHONY: ci-test
-ci-test: ## Run prebuilt tests with CI coverage output. Requires existing $(CONFIGURATION) build outputs.
+ci-test: ## Run prebuilt unit tests with CI coverage output. Requires existing $(CONFIGURATION) build outputs.
 	@mkdir -p "$(TEST_RESULTS_DIR)"
-	$(DOTNET) test --solution "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER) $(COVERAGE_ARGS)
+	$(DOTNET) test --test-modules "$(UNIT_TEST_MODULES)" --root-directory "$(CURDIR)" --results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER) $(CI_TEST_ARGS)
 
 .PHONY: test-modules
 test-modules: build ## Run prebuilt test DLLs via MTP --test-modules. Override TEST_MODULES if needed.

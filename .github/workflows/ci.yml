@@ -120,7 +120,7 @@ jobs:
           GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: make rebuild
 
-      - name: "Test with coverage"
+      - name: "Unit tests with coverage"
         run: make ci-test
 
       - name: "Generate coverage summary"
