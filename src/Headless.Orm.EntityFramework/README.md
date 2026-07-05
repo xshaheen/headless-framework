@@ -31,6 +31,7 @@ Provides a framework-aware base `DbContext` with conventions for auditing, soft 
 - **Client-side Guid generation is intentional.** The key is available before `SaveChanges`, usable for foreign keys, outbox rows, and domain events in the same unit of work. `Version7` (time-ordered) and `SqlServer` comb strategies ensure monotonic insertion order per provider, limiting index fragmentation.
 - **Synchronous enlist in commit coordination.** The save pipeline synchronously enlists the EF transaction in commit coordination so the ambient coordinator carries the live transaction. An `AsyncLocal` push inside an `async` helper does not flow back to the caller, making synchronous enlistment the only correct approach.
 - **Domain-event at-most-once guard.** A guard inside the execution-strategy retry ensures domain-event handlers are invoked only on the first attempt and are not re-invoked on a replay. Because publication precedes commit, a handler can run on an attempt that ultimately fails to commit — keep domain-event side effects idempotent.
+- **Negative index pagination is page-from-end.** `ToIndexPageAsync(index: -1, size: N)` returns the final page, not just the last `N` rows, and normalizes the returned `IndexPage.Index` to the actual zero-based page index. EF queries use `Skip`/`Take` so providers can translate the slice to SQL.
 
 ## Installation
 
