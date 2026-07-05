@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using FluentValidation;
-
 namespace Headless.AuditLog;
 
 /// <summary>Configuration options for the audit log subsystem.</summary>
@@ -82,18 +80,4 @@ public enum CaptureErrorStrategy
 
     /// <summary>Log the failure and rethrow so the entity save is aborted.</summary>
     Throw = 1,
-}
-
-/// <summary>Validates <see cref="AuditLogOptions"/>.</summary>
-internal sealed class AuditLogOptionsValidator : AbstractValidator<AuditLogOptions>
-{
-    public AuditLogOptionsValidator()
-    {
-        RuleFor(x => x.DefaultExcludedProperties).NotNull();
-
-        RuleFor(x => x.SensitiveValueTransformer)
-            .NotNull()
-            .When(x => x.SensitiveDataStrategy == SensitiveDataStrategy.Transform)
-            .WithMessage("SensitiveValueTransformer must be configured when SensitiveDataStrategy is Transform.");
-    }
 }

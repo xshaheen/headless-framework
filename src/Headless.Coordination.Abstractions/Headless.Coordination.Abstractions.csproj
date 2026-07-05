@@ -8,9 +8,6 @@
     <InternalsVisibleTo Include="Headless.Coordination.Abstractions.Tests.Unit" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="FluentValidation" />
-  </ItemGroup>
-  <ItemGroup>
     <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
   </ItemGroup>
 </Project>

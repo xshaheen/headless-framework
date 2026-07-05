@@ -66,7 +66,9 @@ services.AddSingleton<ISqlConnectionFactory>(sp =>
 
 ## Dependencies
 
+- `Headless.Checks`
 - `Headless.Sql.Abstractions`
+- `Microsoft.Extensions.Logging.Abstractions`
 - `Npgsql`
 
 ## Side Effects

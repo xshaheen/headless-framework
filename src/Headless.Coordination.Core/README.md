@@ -54,6 +54,7 @@ Set `HeartbeatInterval < SuspicionThreshold < DeadThreshold`; `DeadRetentionWind
 - `Headless.Core`
 - `Headless.Extensions`
 - `Headless.Hosting`
+- `FluentValidation`
 - `Microsoft.Extensions.Configuration.Abstractions`
 - `Microsoft.Extensions.Hosting.Abstractions`
 - `Microsoft.Extensions.Logging.Abstractions`

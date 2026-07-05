@@ -8,7 +8,7 @@ Provides SQL Server-native audit log storage without pulling Entity Framework in
 
 ## Key Features
 
-- No EF Core dependency — depends only on `Microsoft.Data.SqlClient` and `Headless.AuditLog.Abstractions`.
+- No EF Core dependency — depends only on `Microsoft.Data.SqlClient`, `Headless.AuditLog.Abstractions`, and `Headless.AuditLog.Core`.
 - `SqlServerAuditLogStore` — implements `IAuditLogStore`; enrolls in the consumer's ambient `SqlTransaction` when available; falls back to its own connection otherwise.
 - `SqlServerAuditLog<TContext>` — implements `IAuditLog<TContext>` for explicit event logging.
 - `SqlServerReadAuditLog<TContext>` — implements `IReadAuditLog<TContext>` via parameterized SQL queries using `TOP(@Limit)`.
@@ -78,7 +78,7 @@ setup.UseSqlServer(options =>
 ## Dependencies
 
 - `Headless.AuditLog.Abstractions`
-- `Headless.Hosting`
+- `Headless.AuditLog.Core`
 - `Headless.Serializer`
 - `Microsoft.Data.SqlClient`
 
