@@ -1,6 +1,8 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <Description>service defaults integration for Headless API.</Description>
+    <PackageTags>headless;api;service-defaults;dotnet</PackageTags>
     <RootNamespace>Headless.Api</RootNamespace>
   </PropertyGroup>
   <ItemGroup>

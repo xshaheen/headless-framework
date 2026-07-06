@@ -1,9 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Reflection;
 using Headless.Caching;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Time.Testing;
 
+#pragma warning disable REFL009 // The referenced member is not known to exist
 namespace Tests;
 
 public sealed class InMemoryCacheTagTests : TestBase
@@ -14,6 +16,34 @@ public sealed class InMemoryCacheTagTests : TestBase
     {
         options ??= new InMemoryCacheOptions();
         return new InMemoryCache(_timeProvider, options);
+    }
+
+    // The maintenance sweep (which prunes stale tag markers) runs on a throttled background task in production; drive
+    // it deterministically here via the same private entry point the performance tests invoke.
+    private static async Task _RunMaintenanceAsync(InMemoryCache cache)
+    {
+        var method = typeof(InMemoryCache).GetMethod(
+            "_DoMaintenanceAsync",
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            binder: null,
+            Type.EmptyTypes,
+            modifiers: null
+        );
+        method.Should().NotBeNull();
+
+        await (Task)method!.Invoke(cache, parameters: null)!;
+    }
+
+    private static int _GetTagMarkerCount(InMemoryCache cache)
+    {
+        var field = typeof(InMemoryCache).GetField(
+            "_tagMarkers",
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+        );
+        field.Should().NotBeNull();
+
+        var markers = field!.GetValue(cache)!;
+        return (int)markers.GetType().GetProperty("Count")!.GetValue(markers)!;
     }
 
     [Fact]
@@ -178,6 +208,72 @@ public sealed class InMemoryCacheTagTests : TestBase
 
         (await cache.GetAsync<string>("tagged", AbortToken)).HasValue.Should().BeFalse();
         (await cache.GetAsync<string>("untagged", AbortToken)).HasValue.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_keep_marker_and_not_resurrect_entry_when_pruning_before_max_lifetime_elapses()
+    {
+        // SAFETY (#546): a marker must NOT be pruned while a still-live entry it invalidates could be resurrected.
+        using var cache = _CreateCache(new InMemoryCacheOptions { MaintenanceInterval = TimeSpan.FromHours(1) });
+        var tag = Faker.Random.AlphaNumeric(8);
+        var duration = TimeSpan.FromMinutes(5); // maxObservedEntryLifetime becomes 5 minutes.
+
+        await cache.UpsertEntryAsync(
+            "key",
+            "value",
+            new CacheEntryOptions { Duration = duration, Tags = [tag] },
+            AbortToken
+        );
+
+        // Marker postdates the entry's birth, so the entry is logically invalidated.
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(10));
+        await cache.RemoveByTagAsync(tag, AbortToken);
+        _GetTagMarkerCount(cache).Should().Be(1);
+
+        // Advance LESS than the max lifetime: the entry is still physically present, so the marker is still needed.
+        _timeProvider.Advance(TimeSpan.FromMinutes(1));
+        await _RunMaintenanceAsync(cache);
+
+        // The marker must survive...
+        _GetTagMarkerCount(cache).Should().Be(1, "the marker is still needed by a physically-present entry");
+
+        // ...and the pre-marker entry must still read as invalidated (a wrongly-pruned marker would resurrect it).
+        (await cache.GetAsync<string>("key", AbortToken))
+            .HasValue.Should()
+            .BeFalse();
+    }
+
+    [Fact]
+    public async Task should_prune_tag_markers_older_than_max_observed_entry_lifetime()
+    {
+        // BOUND (#546): once every entry a marker could invalidate is guaranteed physically gone, the marker is
+        // pruned so the store cannot grow unbounded with process-lifetime distinct-tag cardinality.
+        using var cache = _CreateCache(new InMemoryCacheOptions { MaintenanceInterval = TimeSpan.FromHours(1) });
+        const int tagCount = 50;
+        var duration = TimeSpan.FromMinutes(1); // maxObservedEntryLifetime becomes 1 minute.
+
+        for (var i = 0; i < tagCount; i++)
+        {
+            var tag = $"tag-{i}";
+
+            await cache.UpsertEntryAsync(
+                $"key-{i}",
+                "value",
+                new CacheEntryOptions { Duration = duration, Tags = [tag] },
+                AbortToken
+            );
+            await cache.RemoveByTagAsync(tag, AbortToken);
+        }
+
+        _GetTagMarkerCount(cache).Should().Be(tagCount);
+
+        // Advance beyond the max observed lifetime: every entry is physically gone, so every marker is safe to prune.
+        _timeProvider.Advance(TimeSpan.FromMinutes(2));
+        await _RunMaintenanceAsync(cache);
+
+        _GetTagMarkerCount(cache)
+            .Should()
+            .Be(0, "markers whose invalidation instant predates now - maxObservedEntryLifetime must be pruned");
     }
 
     [Fact]

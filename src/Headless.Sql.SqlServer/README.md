@@ -62,6 +62,7 @@ services.AddSingleton<ISqlConnectionFactory>(sp =>
 
 - `Headless.Sql.Abstractions`
 - `Microsoft.Data.SqlClient`
+- `Microsoft.Extensions.Logging.Abstractions`
 
 ## Side Effects
 

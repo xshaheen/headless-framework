@@ -3,6 +3,7 @@
 using Headless.Caching;
 using Headless.Messaging;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
@@ -639,6 +640,99 @@ public sealed class HybridCacheAutoRecoveryTests : TestBase
         // circuit-open path skipped the live write entirely)
         cache.RecoveryQueue!.Count.Should().Be(1);
         l2.RemoveAttempts.Should().Be(attemptsBefore);
+    }
+
+    [Fact]
+    public async Task should_queue_scalar_upsert_without_attempting_l2_when_circuit_is_open()
+    {
+        // given — the distributed circuit is already open from a prior L2 read failure; auto-recovery on and
+        // background distributed ops OFF, so UpsertAsync takes the synchronous circuit-already-open branch.
+        var (cache, l1, l2, _) = _CreateCache(
+            new HybridCacheOptions
+            {
+                EnableAutoRecovery = true,
+                DistributedCacheCircuitBreakerDuration = TimeSpan.FromSeconds(30),
+            }
+        );
+        await using var _ = cache;
+
+        var primer = Faker.Random.AlphaNumeric(10);
+        await l2.UpsertAsync(primer, 1, TimeSpan.FromMinutes(5), AbortToken);
+        l2.FailReads = true;
+        await cache.GetAsync<int>(primer, AbortToken); // opens the circuit
+        l2.FailReads = false;
+
+        var key = Faker.Random.AlphaNumeric(10);
+        var value = Faker.Random.Int();
+        var attemptsBefore = l2.UpsertAttempts;
+
+        // when — a scalar upsert runs while the circuit is open
+        var updated = await cache.UpsertAsync(key, value, TimeSpan.FromMinutes(5), AbortToken);
+
+        // then — the caller succeeds against L1, the live L2 upsert was NOT attempted (circuit-open skip), and the
+        // write was queued for replay so it still reaches L2 once the circuit recovers.
+        updated.Should().BeTrue();
+        l2.UpsertAttempts.Should().Be(attemptsBefore, "the circuit-open branch must skip the live L2 upsert");
+        (await l1.GetAsync<int>(key, AbortToken)).Value.Should().Be(value);
+        (await l2.GetAsync<int>(key, AbortToken))
+            .HasValue.Should()
+            .BeFalse("nothing reached L2 while the circuit was open");
+        cache.RecoveryQueue!.Count.Should().Be(1);
+
+        // when — the recovery pass runs
+        _timeProvider.Advance(_Delay);
+        await cache.RecoveryQueue.ProcessAsync(AbortToken);
+
+        // then — the queued write replayed the value into L2 (a single upsert attempt) and the queue drained
+        cache.RecoveryQueue.Count.Should().Be(0);
+        (await l2.GetAsync<int>(key, AbortToken)).Value.Should().Be(value);
+        l2.UpsertAttempts.Should().Be(attemptsBefore + 1, "the replay performed exactly one L2 upsert");
+    }
+
+    [Fact]
+    public async Task should_await_in_flight_recovery_pass_on_drain_not_a_gate_blocked_noop_tick()
+    {
+        // given — a recovery queue with one item whose replay blocks on a gate we own, so a started pass parks
+        // mid-replay while holding the processing gate. The queue is driven through its own TimeProvider timer.
+        var options = new HybridCacheOptions { EnableAutoRecovery = true };
+        using var queue = new HybridCacheRecoveryQueue(options, _timeProvider, NullLogger.Instance);
+
+        var replayStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var replayGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var replayCount = 0;
+
+        queue.Enqueue(
+            Faker.Random.AlphaNumeric(10),
+            HybridCacheRecoveryKind.SetEntry,
+            _timeProvider.GetUtcNow().AddMinutes(5),
+            async ct =>
+            {
+                Interlocked.Increment(ref replayCount);
+                replayStarted.TrySetResult();
+                await replayGate.Task.WaitAsync(ct).ConfigureAwait(false);
+                return HybridCacheRecoveryReplayOutcome.Replayed;
+            }
+        );
+
+        // when — tick1 fires: it wins the processing gate, publishes the drain signal, starts the pass, and the
+        // replay parks on the gate (the gate is still held).
+        _timeProvider.Advance(options.AutoRecoveryDelay);
+        await replayStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // and — tick2 fires while the pass still holds the gate: its CAS loses, so it must NOT overwrite the running
+        // pass's drain signal with a fresh, immediately-completed one.
+        _timeProvider.Advance(options.AutoRecoveryDelay);
+
+        // then — DrainAsync awaits the actually-in-flight pass, which is still blocked on the replay gate.
+        var drainTask = queue.DrainAsync(CancellationToken.None);
+        drainTask.IsCompleted.Should().BeFalse("the real recovery pass is still replaying, so the drain must wait");
+
+        // when — the blocked replay completes, the pass finishes and signals its drain completion
+        replayGate.SetResult();
+
+        // then — the drain observes the real pass finishing, and the gate-blocked no-op tick never started a 2nd replay
+        await drainTask.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        replayCount.Should().Be(1, "the gate-blocked no-op tick must not start a second replay pass");
     }
 
     [Fact]

@@ -120,9 +120,11 @@ public sealed partial class HybridCache
             CacheDetachedTask.DisposeAfter(operationCts, operationTask);
             operationCts = null;
 
-            cancellationToken.ThrowIfCancellationRequested();
-
+            // Log the timeout before honouring caller cancellation: the L2 read genuinely timed out regardless of
+            // whether the caller token also fired, so an early throw must not swallow the diagnostic.
             _logger.LogDistributedCacheReadTimedOut(key, timeout, timeoutKind.ToString());
+
+            cancellationToken.ThrowIfCancellationRequested();
 
             return DistributedCacheReadResult<T>.TimedOut();
         }

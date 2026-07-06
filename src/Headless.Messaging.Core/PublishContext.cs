@@ -27,11 +27,7 @@ public abstract class PublishContext
         IntentType = intentType;
         OptionsCore = options;
         DelayTimeCore = delayTime;
-        Headers = new MessageHeader(
-            options?.Headers is null
-                ? new Dictionary<string, string?>(StringComparer.Ordinal)
-                : new Dictionary<string, string?>(options.Headers, StringComparer.Ordinal)
-        );
+        Headers = _CreateHeaders(options);
         MessageName = options?.MessageName;
         CancellationToken = cancellationToken;
     }
@@ -110,13 +106,12 @@ public abstract class PublishContext
 
     private protected void RefreshOptionSnapshot(MessageOptions? options)
     {
-        Headers = new MessageHeader(
-            options?.Headers is null
-                ? new Dictionary<string, string?>(StringComparer.Ordinal)
-                : new Dictionary<string, string?>(options.Headers, StringComparer.Ordinal)
-        );
+        Headers = _CreateHeaders(options);
         MessageName = options?.MessageName;
     }
+
+    private static MessageHeader _CreateHeaders(MessageOptions? options) =>
+        options?.Headers is null ? new MessageHeader() : new MessageHeader(options.Headers);
 
     private protected bool IsCompleted { get; private set; }
 

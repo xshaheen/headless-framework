@@ -174,7 +174,38 @@ public readonly record struct CacheEntryOptions
     /// a factory failure has nothing to fall back to and propagates even when <see cref="IsFailSafeEnabled"/> is
     /// set. Defaults to <see langword="false"/>.
     /// </summary>
+    /// <remarks>
+    /// This is the coarse both-tier form. <see cref="SkipMemoryCacheRead"/> and <see cref="SkipDistributedCacheRead"/>
+    /// are the granular per-tier form: setting both of them is equivalent to <see cref="SkipCacheRead"/> (no tier is
+    /// read, so the factory always runs with no reserve to fall back to). When <see cref="SkipCacheRead"/> is set it
+    /// wins outright — the coordinator issues no store read at all, so the two per-tier flags have no additional
+    /// effect.
+    /// </remarks>
     public bool SkipCacheRead { get; init; }
+
+    /// <summary>
+    /// Gets a value indicating whether the L1 (memory) tier must not be read on a factory-backed
+    /// <c>GetOrAddAsync</c>, so the read is served from (or refreshed against) the L2 (distributed) tier instead.
+    /// This is the granular, per-tier counterpart to <see cref="SkipCacheRead"/> (which skips both reads) and
+    /// mirrors FusionCache's <c>SkipMemoryCacheRead</c>. Hybrid-relevant: single-tier providers (the in-memory cache
+    /// has only L1, Redis only L2) ignore it — there is only one tier, so nothing is skipped. Unlike
+    /// <see cref="SkipCacheRead"/>, a value read from L2 is still honored, so an existing L2 reserve remains
+    /// available for fail-safe. Setting this together with <see cref="SkipDistributedCacheRead"/> reads neither tier
+    /// and is equivalent to <see cref="SkipCacheRead"/>. Defaults to <see langword="false"/>.
+    /// </summary>
+    public bool SkipMemoryCacheRead { get; init; }
+
+    /// <summary>
+    /// Gets a value indicating whether the L2 (distributed) tier must not be read on a factory-backed
+    /// <c>GetOrAddAsync</c>, so the read is served from the L1 (memory) tier when present and otherwise falls through
+    /// to the factory without an L2 round-trip. This is the granular, per-tier counterpart to
+    /// <see cref="SkipCacheRead"/> (which skips both reads) and mirrors FusionCache's <c>SkipDistributedCacheRead</c>.
+    /// Hybrid-relevant: single-tier providers (the in-memory cache has only L1, Redis only L2) ignore it — there is
+    /// only one tier, so nothing is skipped. A value or reserve found in L1 is still honored (including for
+    /// fail-safe). Setting this together with <see cref="SkipMemoryCacheRead"/> reads neither tier and is equivalent
+    /// to <see cref="SkipCacheRead"/>. Defaults to <see langword="false"/>.
+    /// </summary>
+    public bool SkipDistributedCacheRead { get; init; }
 
     /// <summary>Creates cache entry options from a cache duration.</summary>
     /// <param name="duration">The cache entry duration.</param>

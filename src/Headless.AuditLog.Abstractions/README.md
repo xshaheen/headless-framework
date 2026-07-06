@@ -25,7 +25,6 @@ Provides a provider-agnostic audit log API for capturing field-level entity chan
 - `IAuditChangeCapture` — scans ChangeTracker entries and produces `AuditLogEntryData` records.
 - `IAuditEntityIdResolver` — patches deferred entity IDs after `SaveChanges` assigns store-generated keys.
 - `IAmbientDbTransactionAccessor` — allows raw ADO.NET stores to enroll in the consumer's active `DbConnection`/`DbTransaction` without taking an EF dependency.
-- `HeadlessAuditLogSetupBuilder` — fluent builder passed to `AddHeadlessAuditLog(setup => ...)`; exposes `ConfigureOptions`, `ConfigureStorage`, and `RegisterExtension`.
 
 ## Installation
 
@@ -75,7 +74,7 @@ var entries = await readAuditLog.QueryAsync(
 );
 ```
 
-> This package registers options only. Add `Headless.AuditLog.Storage.EntityFramework`, `Headless.AuditLog.Storage.PostgreSql`, or `Headless.AuditLog.Storage.SqlServer` for storage.
+> This package defines contracts only. Add `Headless.AuditLog.Core` plus exactly one storage provider for DI setup.
 
 ## Configuration
 
@@ -102,10 +101,8 @@ Storage options (`AuditLogStorageOptions`):
 
 ## Dependencies
 
-- `Headless.Hosting`
-- `Microsoft.Extensions.DependencyInjection.Abstractions`
-- `Microsoft.Extensions.Options`
+- `Headless.Extensions`
 
 ## Side Effects
 
-None. This is an abstractions package; it registers `AuditLogOptions` and its validator only when `AddHeadlessAuditLog` is called.
+None. This is an abstractions package and registers no services.

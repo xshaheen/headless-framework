@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using FastExpressionCompiler;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Messages;
@@ -40,6 +41,13 @@ internal sealed class ConsumeMiddlewarePipeline(
     // Caches the IConsumeMiddleware<TContext> closed service type per concrete ConsumeContext type, so the
     // resolution path avoids running MakeGenericType on every dispatch.
     private static readonly ConcurrentDictionary<Type, Type> _TypedMiddlewareServiceTypes = new();
+
+    // Cache the tracked-type HashSet per (registry, direction). The registry instance is stable for
+    // the application's lifetime, so we never recompute the set on the hot consume path.
+    private static readonly ConditionalWeakTable<
+        IMiddlewareDescriptorRegistry,
+        ConcurrentDictionary<MiddlewareDirection, HashSet<Type>>
+    > _TrackedTypesByRegistry = [];
 
     private readonly ConcurrentDictionary<
         Type,
@@ -231,10 +239,17 @@ internal sealed class ConsumeMiddlewarePipeline(
         MiddlewareDirection direction
     )
     {
-        var trackedTypes = descriptorRegistry!
-            .Descriptors.Where(descriptor => descriptor.Direction == direction)
-            .Select(descriptor => descriptor.MiddlewareType)
-            .ToHashSet();
+        var perDirection = _TrackedTypesByRegistry.GetValue(descriptorRegistry!, static _ => new());
+        var trackedTypes = perDirection.GetOrAdd(
+            direction,
+            (dir, registry) =>
+                [
+                    .. registry
+                        .Descriptors.Where(descriptor => descriptor.Direction == dir)
+                        .Select(descriptor => descriptor.MiddlewareType),
+                ],
+            descriptorRegistry!
+        );
 
         return middleware.Where(current => !trackedTypes.Contains(current.GetType()));
     }

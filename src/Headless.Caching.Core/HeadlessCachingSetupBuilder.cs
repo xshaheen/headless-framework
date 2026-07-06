@@ -94,16 +94,14 @@ public sealed class HeadlessCachingSetupBuilder
         Argument.IsNotNullOrWhiteSpace(name);
         Argument.IsNotNull(configure);
 
-        if (CacheConstants.IsReservedProviderKey(name))
-        {
-            throw new ArgumentException(
-                $"The cache name '{name}' is reserved for the role-keyed registrations "
-                    + $"('{CacheConstants.MemoryCacheProvider}', '{CacheConstants.RemoteCacheProvider}', "
-                    + $"'{CacheConstants.HybridCacheProvider}', and the 'Headless.Caching:' "
-                    + "namespace). Pick a different instance name.",
-                nameof(name)
-            );
-        }
+        Argument.IsTrue(
+            !CacheConstants.IsReservedProviderKey(name),
+            $"The cache name '{name}' is reserved for the role-keyed registrations "
+                + $"('{CacheConstants.MemoryCacheProvider}', '{CacheConstants.RemoteCacheProvider}', "
+                + $"'{CacheConstants.HybridCacheProvider}', and the 'Headless.Caching:' "
+                + "namespace). Pick a different instance name.",
+            nameof(name)
+        );
 
         if (!_instanceNames.Add(name))
         {

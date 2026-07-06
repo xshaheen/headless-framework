@@ -306,6 +306,12 @@ internal static class CacheBenchmarkClientFactory
 #pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
         var multiplexer = ConnectionMultiplexer.Connect(_GetRequiredRedisConnectionString());
 #pragma warning restore MA0045
+        // #581: Foundatio.Redis 13.0.2 is compiled against StackExchange.Redis 2.x, but Central Package Management
+        // forces SE.Redis 3.x onto the whole benchmark project, so calls into SE.Redis members whose signatures
+        // changed between 2.x and 3.x can throw MissingMethodException at RUNTIME here (the build stays green — the
+        // mismatch is binary, not source). Benchmark-only: no shipped src/ package references Foundatio.Redis.
+        // Resolving it is a version-strategy decision (a Foundatio.Redis built against SE.Redis 3.x, or dropping /
+        // isolating this benchmark lane), not a code change at this call site.
         var cache = new ScopedCacheClient(
             new RedisCacheClient(options => options.ConnectionMultiplexer(multiplexer)),
             keyPrefix

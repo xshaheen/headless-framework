@@ -1,14 +1,13 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <Description>Contracts and shared abstractions for Headless coordination packages.</Description>
+    <PackageTags>headless;coordination;dotnet</PackageTags>
     <RootNamespace>Headless.Coordination</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Coordination.Core" />
     <InternalsVisibleTo Include="Headless.Coordination.Abstractions.Tests.Unit" />
-  </ItemGroup>
-  <ItemGroup>
-    <PackageReference Include="FluentValidation" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />

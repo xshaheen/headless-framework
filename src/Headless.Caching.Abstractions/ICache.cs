@@ -74,6 +74,10 @@ public interface ICache
     #region Update
 
     /// <summary>Sets the specified cacheKey, cacheValue and expiration.</summary>
+    /// <remarks>
+    /// A <see cref="TimeSpan.Zero"/> expiration is treated as expire-immediately: any existing entry is evicted and
+    /// the method returns <see langword="false"/> without writing a new value.
+    /// </remarks>
     ValueTask<bool> UpsertAsync<T>(
         string key,
         T? value,
@@ -157,6 +161,10 @@ public interface ICache
     /// creating the key if absent, and resets the expiration to <paramref name="expiration"/>.
     /// </summary>
     /// <returns>The new value after the increment.</returns>
+    /// <remarks>
+    /// A <see cref="TimeSpan.Zero"/> expiration is treated as expire-immediately: the key is evicted and the method
+    /// returns <c>0</c> without incrementing.
+    /// </remarks>
     ValueTask<double> IncrementAsync(
         string key,
         double amount,
@@ -169,6 +177,10 @@ public interface ICache
     /// creating the key if absent, and resets the expiration to <paramref name="expiration"/>.
     /// </summary>
     /// <returns>The new value after the increment.</returns>
+    /// <remarks>
+    /// A <see cref="TimeSpan.Zero"/> expiration is treated as expire-immediately: the key is evicted and the method
+    /// returns <c>0</c> without incrementing.
+    /// </remarks>
     ValueTask<long> IncrementAsync(
         string key,
         long amount,
@@ -179,8 +191,13 @@ public interface ICache
     /// <summary>
     /// Stores <paramref name="value"/> at <paramref name="key"/> only when it is greater than the current
     /// stored value. Returns the difference <c>(new - old)</c> when the store was updated, or <c>0</c> when
-    /// the current value was already ≥ <paramref name="value"/>.
+    /// the current value was already ≥ <paramref name="value"/>. When the key is absent the value is stored and
+    /// that stored value is returned (there is no prior value to compute a difference against).
     /// </summary>
+    /// <remarks>
+    /// A <see cref="TimeSpan.Zero"/> expiration is treated as expire-immediately: the key is evicted and the method
+    /// returns <c>0</c> without storing. Note that a return of <c>0</c> is ambiguous when <c>0</c> is a legitimate stored value: storing <c>0</c> into an absent key also returns <c>0</c>, indistinguishable from the no-op result; callers that must tell these apart should check <see cref="ExistsAsync"/> first.
+    /// </remarks>
     ValueTask<double> SetIfHigherAsync(
         string key,
         double value,
@@ -191,8 +208,15 @@ public interface ICache
     /// <summary>
     /// Stores <paramref name="value"/> at <paramref name="key"/> only when it is greater than the current
     /// stored value. Returns the difference <c>(new - old)</c> when the store was updated, or <c>0</c> when
-    /// the current value was already ≥ <paramref name="value"/>.
+    /// the current value was already ≥ <paramref name="value"/>. When the key is absent the value is stored and
+    /// that stored value is returned (there is no prior value to compute a difference against).
     /// </summary>
+    /// <remarks>
+    /// A <see cref="TimeSpan.Zero"/> expiration is treated as expire-immediately: the key is evicted and the method
+    /// returns <c>0</c> without storing. Note that a return of <c>0</c> is ambiguous when <c>0</c> is a legitimate stored value: storing <c>0</c> into an absent key also returns <c>0</c>, indistinguishable from the no-op result; callers that must tell these apart should check <see cref="ExistsAsync"/> first.
+    /// On the Redis provider the comparison and returned difference are computed in Lua with IEEE-754
+    /// doubles, so results are exact only for magnitudes up to 2^53; larger values lose precision.
+    /// </remarks>
     ValueTask<long> SetIfHigherAsync(
         string key,
         long value,
@@ -203,8 +227,13 @@ public interface ICache
     /// <summary>
     /// Stores <paramref name="value"/> at <paramref name="key"/> only when it is less than the current
     /// stored value. Returns the difference <c>(old - new)</c> when the store was updated, or <c>0</c> when
-    /// the current value was already ≤ <paramref name="value"/>.
+    /// the current value was already ≤ <paramref name="value"/>. When the key is absent the value is stored and
+    /// that stored value is returned (there is no prior value to compute a difference against).
     /// </summary>
+    /// <remarks>
+    /// A <see cref="TimeSpan.Zero"/> expiration is treated as expire-immediately: the key is evicted and the method
+    /// returns <c>0</c> without storing. Note that a return of <c>0</c> is ambiguous when <c>0</c> is a legitimate stored value: storing <c>0</c> into an absent key also returns <c>0</c>, indistinguishable from the no-op result; callers that must tell these apart should check <see cref="ExistsAsync"/> first.
+    /// </remarks>
     ValueTask<double> SetIfLowerAsync(
         string key,
         double value,
@@ -215,8 +244,15 @@ public interface ICache
     /// <summary>
     /// Stores <paramref name="value"/> at <paramref name="key"/> only when it is less than the current
     /// stored value. Returns the difference <c>(old - new)</c> when the store was updated, or <c>0</c> when
-    /// the current value was already ≤ <paramref name="value"/>.
+    /// the current value was already ≤ <paramref name="value"/>. When the key is absent the value is stored and
+    /// that stored value is returned (there is no prior value to compute a difference against).
     /// </summary>
+    /// <remarks>
+    /// A <see cref="TimeSpan.Zero"/> expiration is treated as expire-immediately: the key is evicted and the method
+    /// returns <c>0</c> without storing. Note that a return of <c>0</c> is ambiguous when <c>0</c> is a legitimate stored value: storing <c>0</c> into an absent key also returns <c>0</c>, indistinguishable from the no-op result; callers that must tell these apart should check <see cref="ExistsAsync"/> first.
+    /// On the Redis provider the comparison and returned difference are computed in Lua with IEEE-754
+    /// doubles, so results are exact only for magnitudes up to 2^53; larger values lose precision.
+    /// </remarks>
     ValueTask<long> SetIfLowerAsync(
         string key,
         long value,
@@ -225,10 +261,15 @@ public interface ICache
     );
 
     /// <summary>
-    /// Adds members to the set stored at <paramref name="key"/>, creating the set if absent. String members
-    /// are compared case-insensitively; other types use default equality. Null members are silently skipped.
-    /// Returns the number of members actually added (duplicates excluded).
+    /// Adds members to the set stored at <paramref name="key"/>, creating the set if absent. String members use
+    /// ordinal (case-sensitive) equality, matching the distributed providers. Non-string member equality is
+    /// provider-native: serialized-byte equality on Redis, default equality on InMemory.
+    /// Null members are silently skipped. Returns the number of members actually added (duplicates excluded).
     /// </summary>
+    /// <remarks>
+    /// A <see cref="TimeSpan.Zero"/> expiration is treated as expire-immediately: the given members are removed
+    /// from the set instead of added and the method returns <c>0</c> without adding.
+    /// </remarks>
     ValueTask<long> SetAddAsync<T>(
         string key,
         IEnumerable<T> value,
@@ -289,8 +330,11 @@ public interface ICache
     /// <summary>
     /// Reads an optionally-paginated page of members from the set stored at <paramref name="key"/>. Members
     /// that have individually expired within the set are excluded. Returns <see cref="CacheValue{T}.NoValue"/>
-    /// when the key is absent. <paramref name="pageIndex"/> is 1-based; pass <see langword="null"/> to
-    /// return all members.
+    /// (so <see cref="CacheValue{T}.HasValue"/> is <see langword="false"/> and <see cref="CacheValue{T}.Value"/>
+    /// is <see langword="null"/>) whenever the requested page has no members — the key is absent, the set is empty,
+    /// its live members are all expired, or <paramref name="pageIndex"/> is past the last live member. <c>HasValue</c>
+    /// reflects whether the requested page has members, not whether the key exists (no extra existence round-trip is
+    /// issued). <paramref name="pageIndex"/> is 1-based; pass <see langword="null"/> to return all members.
     /// </summary>
     ValueTask<CacheValue<ICollection<T>>> GetSetAsync<T>(
         string key,
@@ -370,8 +414,14 @@ public interface ICache
 
     /// <summary>
     /// Removes the specified members from the set stored at <paramref name="key"/>.
-    /// Returns the number of members that were present and removed.
+    /// Returns the number of members that were present and removed. String members use ordinal (case-sensitive)
+    /// equality, matching <c>SetAddAsync</c> and the distributed providers. Non-string member equality is
+    /// provider-native: serialized-byte equality on Redis, default equality on InMemory.
     /// </summary>
+    /// <remarks>
+    /// A <see cref="TimeSpan.Zero"/> expiration is allowed and does not alter the removal (removal applies no
+    /// expiration); a negative expiration throws.
+    /// </remarks>
     ValueTask<long> SetRemoveAsync<T>(
         string key,
         IEnumerable<T> value,

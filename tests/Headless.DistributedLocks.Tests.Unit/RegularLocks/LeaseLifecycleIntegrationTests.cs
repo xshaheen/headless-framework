@@ -223,7 +223,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         for (var i = 0; i < 4; i++)
         {
             _timeProvider.Advance(TimeSpan.FromSeconds(1));
-            await Task.Yield();
+            await _DrainUntilAsync(() => handle!.RenewalCount >= i + 1, AbortToken);
         }
 
         // then - LostToken still not fired (auto-extend kept storage row alive).

@@ -86,13 +86,13 @@ public sealed class ConnectionMonitorTests : TestBase
         fake.ExecuteNonQueryCount.Should().Be(0);
 
         // when (the cadence elapses)
-        for (var i = 0; i < 5 && fake.ExecuteNonQueryCount == 0; i++)
+        for (var i = 0; i < 20 && fake.ExecuteNonQueryCount == 0; i++)
         {
             _timeProvider.Advance(cadence);
             await _DrainUntilAsync(() => fake.ExecuteNonQueryCount >= 1, iterations: 200);
         }
 
-        // then (a single keepalive probe runs)
+        // then (a keepalive probe runs). Re-advance if the worker had not re-parked its fake-time delay yet.
         fake.ExecuteNonQueryCount.Should().BeGreaterThanOrEqualTo(1);
     }
 

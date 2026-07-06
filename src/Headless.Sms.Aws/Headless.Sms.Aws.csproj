@@ -1,6 +1,8 @@
 ﻿<Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <Description>AWS integration for Headless SMS delivery.</Description>
+    <PackageTags>headless;sms;aws;dotnet</PackageTags>
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Sms.Aws.Tests.Unit" />

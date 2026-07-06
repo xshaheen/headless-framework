@@ -13,6 +13,7 @@
     <ProjectReference Include="..\Headless.Caching.Hybrid.Tests.Harness\Headless.Caching.Hybrid.Tests.Harness.csproj" />
     <ProjectReference Include="..\..\src\Headless.Caching.Hybrid\Headless.Caching.Hybrid.csproj" />
     <ProjectReference Include="..\..\src\Headless.Caching.InMemory\Headless.Caching.InMemory.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Messaging.Core\Headless.Messaging.Core.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
   </ItemGroup>
 </Project>

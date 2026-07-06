@@ -105,7 +105,11 @@ builder.Services.AddHeadlessJobs(options =>
 ## Dependencies
 
 - `Headless.Jobs.Abstractions`
+- `Headless.Coordination.Abstractions`
+- `Headless.Coordination.Core`
+- `Headless.DistributedLocks.Abstractions`
 - `Headless.Extensions`
+- `NCrontab.Signed`
 
 ## Side Effects
 

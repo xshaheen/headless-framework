@@ -13,7 +13,7 @@ namespace Headless.Caching;
 internal sealed partial class HybridCacheBestPracticesAdvisor(
     HybridCacheOptions options,
     ILogger<HybridCacheBestPracticesAdvisor> logger,
-    bool invalidationConsumerRegistered
+    string? instanceName = null
 ) : IHostedLifecycleService
 {
     // AutoRecoveryDelay above this threshold produces a graveyard-sized replay lag.
@@ -24,6 +24,12 @@ internal sealed partial class HybridCacheBestPracticesAdvisor(
 
     public Task StartingAsync(CancellationToken cancellationToken)
     {
+        // Named instances advise under a logging scope so an operator can tell which hybrid cache a warning is
+        // about (the default/unnamed instance advises without the scope).
+        using var scope = instanceName is null
+            ? null
+            : logger.BeginScope("Named hybrid cache instance {CacheInstanceName}", instanceName);
+
         _Advise(options);
         return Task.CompletedTask;
     }
@@ -48,14 +54,18 @@ internal sealed partial class HybridCacheBestPracticesAdvisor(
             logger.LogAutoRecoveryDelayTooLarge(o.AutoRecoveryDelay, _AutoRecoveryDelayThreshold);
         }
 
-        // Check 5 — messaging backplane is wired (IBus is present) but no consumer for
-        // CacheInvalidationMessage was registered. The hybrid cache publishes invalidations on every
-        // write/remove, but without a consumer those messages are never received by any instance —
-        // creating a silent one-way backplane where peers never evict their local L1 entries.
-        if (!invalidationConsumerRegistered)
+        // Check 6 — auto-recovery is enabled but the distributed-cache circuit breaker is disabled (the default).
+        // Auto-recovery replays failed L2 writes on a bounded background cadence, but without a breaker there is no
+        // bypass window: every read that misses L1 still attempts L2 on each request during an outage. The L2 read
+        // timeouts (DistributedCacheSoftTimeout/HardTimeout) bound each attempt's latency but do not stop the
+        // repeated attempts, so a sustained L2 outage keeps hammering the down dependency.
+        if (o.EnableAutoRecovery && o.DistributedCacheCircuitBreakerDuration == TimeSpan.Zero)
         {
-            logger.LogInvalidationConsumerNotRegistered();
+            logger.LogAutoRecoveryWithoutCircuitBreaker();
         }
+
+        // (Check 5 — "backplane wired but no invalidation consumer" — was removed: UseHybrid now registers the
+        // consumer unconditionally through the order-independent ForMessage seam, so the condition is unreachable.)
 
         var entry = o.DefaultEntryOptions;
 
@@ -104,17 +114,8 @@ internal sealed partial class HybridCacheBestPracticesAdvisor(
 
 internal static partial class HybridCacheBestPracticesAdvisorLogger
 {
-    [LoggerMessage(
-        EventId = 5,
-        EventName = "InvalidationConsumerNotRegistered",
-        Level = LogLevel.Warning,
-        Message = "No consumer for CacheInvalidationMessage is registered. The hybrid cache publishes "
-            + "invalidation messages on every write and remove, but without a consumer those messages are "
-            + "never received — peers will never evict their local L1 entries (silent one-way backplane). "
-            + "Register HybridCacheInvalidationConsumer with Headless messaging, for example: "
-            + "services.ForMessage<CacheInvalidationMessage>(msg => msg.OnBus<HybridCacheInvalidationConsumer>())."
-    )]
-    public static partial void LogInvalidationConsumerNotRegistered(this ILogger logger);
+    // EventId 5 (InvalidationConsumerNotRegistered) is retired: the consumer is now registered unconditionally.
+    // Keep the id reserved — do not reuse it for a new advisor message.
 
     [LoggerMessage(
         EventId = 1,
@@ -174,4 +175,17 @@ internal static partial class HybridCacheBestPracticesAdvisorLogger
         float eagerRefreshThreshold,
         float limit
     );
+
+    [LoggerMessage(
+        EventId = 6,
+        EventName = "AutoRecoveryWithoutCircuitBreaker",
+        Level = LogLevel.Warning,
+        Message = "HybridCacheOptions.EnableAutoRecovery is true but DistributedCacheCircuitBreakerDuration is zero "
+            + "(the circuit breaker is disabled). Without a breaker there is no bypass window: every read that misses "
+            + "L1 still attempts L2 on each request during an outage — the L2 read timeouts bound each attempt's "
+            + "latency but not the repeated attempts — so a sustained L2 outage keeps hammering the down dependency. "
+            + "Set DistributedCacheCircuitBreakerDuration to a non-zero value to pair the breaker's bypass window "
+            + "with auto-recovery."
+    )]
+    public static partial void LogAutoRecoveryWithoutCircuitBreaker(this ILogger logger);
 }

@@ -18,6 +18,7 @@ public sealed partial class HybridCache
     {
         _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(key);
+        Argument.IsPositiveOrZero(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (expiration is { Ticks: <= 0 })
@@ -49,7 +50,10 @@ public sealed partial class HybridCache
 
         if (!_IsDistributedCacheCircuitClosed())
         {
+            // Circuit open: skip L2 but queue the write for replay (when recovery is on) so the value still reaches
+            // L2/peers once it recovers — mirrors the background path's circuit-open branch in _BackgroundScalarUpsertAsync.
             updated = true;
+            queueScalarRecovery = RecoveryQueue is not null;
         }
         else
         {
@@ -218,6 +222,7 @@ public sealed partial class HybridCache
     {
         _ThrowIfDisposed();
         Argument.IsNotNull(value);
+        Argument.IsPositive(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (value.Count == 0)
@@ -303,6 +308,7 @@ public sealed partial class HybridCache
     {
         _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(key);
+        Argument.IsPositive(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (expiration is { Ticks: <= 0 })
@@ -353,6 +359,7 @@ public sealed partial class HybridCache
     {
         _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(key);
+        Argument.IsPositive(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (expiration is { Ticks: <= 0 })
@@ -415,6 +422,7 @@ public sealed partial class HybridCache
     {
         _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(key);
+        Argument.IsPositive(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (expiration is { Ticks: <= 0 })
@@ -423,8 +431,15 @@ public sealed partial class HybridCache
             return false;
         }
 
-        var replaced = await l2Cache
-            .TryReplaceIfEqualAsync(key, expected, value, expiration, cancellationToken)
+        // CAS / non-replay-safe: never queue recovery — the compare-and-set outcome can't be safely replayed
+        // later. Wipe L1 so this node stops serving a value whose L2 state is now unknown (the CAS may have
+        // landed before the failure), mirroring RemoveIfEqualAsync.
+        var replaced = await _RunL2WriteWithBreakerGuardAsync(
+                key,
+                ct => l2Cache.TryReplaceIfEqualAsync(key, expected, value, expiration, ct),
+                async ct => await LocalCache.RemoveAsync(key, ct).ConfigureAwait(false),
+                cancellationToken
+            )
             .ConfigureAwait(false);
 
         if (replaced)
@@ -459,6 +474,7 @@ public sealed partial class HybridCache
     {
         _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(key);
+        Argument.IsPositiveOrZero(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (expiration is { Ticks: <= 0 })
@@ -470,7 +486,11 @@ public sealed partial class HybridCache
             key,
             expiration,
             ct => l2Cache.IncrementAsync(key, amount, expiration, ct),
-            static result => result != 0,
+            // Increment always writes and returns the NEW TOTAL; 0 is a valid stored value, not a no-op signal, so
+            // L1 must always be seeded. (Contrast SetIfHigher/Lower below, whose result is a difference where 0 means
+            // "unchanged" and L1 is correctly left untouched.)
+            static _ =>
+                true,
             static result => result,
             cancellationToken
         );
@@ -486,6 +506,7 @@ public sealed partial class HybridCache
     {
         _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(key);
+        Argument.IsPositiveOrZero(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (expiration is { Ticks: <= 0 })
@@ -497,7 +518,11 @@ public sealed partial class HybridCache
             key,
             expiration,
             ct => l2Cache.IncrementAsync(key, amount, expiration, ct),
-            static result => result != 0,
+            // Increment always writes and returns the NEW TOTAL; 0 is a valid stored value, not a no-op signal, so
+            // L1 must always be seeded. (Contrast SetIfHigher/Lower below, whose result is a difference where 0 means
+            // "unchanged" and L1 is correctly left untouched.)
+            static _ =>
+                true,
             static result => result,
             cancellationToken
         );
@@ -513,6 +538,7 @@ public sealed partial class HybridCache
     {
         _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(key);
+        Argument.IsPositiveOrZero(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (expiration is { Ticks: <= 0 })
@@ -540,6 +566,7 @@ public sealed partial class HybridCache
     {
         _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(key);
+        Argument.IsPositiveOrZero(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (expiration is { Ticks: <= 0 })
@@ -567,6 +594,7 @@ public sealed partial class HybridCache
     {
         _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(key);
+        Argument.IsPositiveOrZero(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (expiration is { Ticks: <= 0 })
@@ -594,6 +622,7 @@ public sealed partial class HybridCache
     {
         _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(key);
+        Argument.IsPositiveOrZero(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (expiration is { Ticks: <= 0 })
@@ -648,7 +677,16 @@ public sealed partial class HybridCache
         CancellationToken cancellationToken
     )
     {
-        var result = await l2Op(cancellationToken).ConfigureAwait(false);
+        // CAS / non-replay-safe numeric op: never queue recovery — the computed result can't be safely replayed
+        // later. Wipe L1 so this node stops serving a numeric value whose L2 state is now unknown (the op may
+        // have landed before the failure); the next read re-seeds from L2.
+        var result = await _RunL2WriteWithBreakerGuardAsync(
+                key,
+                l2Op,
+                async ct => await LocalCache.RemoveAsync(key, ct).ConfigureAwait(false),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
 
         if (isUpdated(result))
         {
@@ -672,6 +710,43 @@ public sealed partial class HybridCache
         return result;
     }
 
+    /// <summary>
+    /// Runs a non-replay-safe L2 write under the distributed-cache breaker guard. On a guarded failure it trips
+    /// the circuit so concurrent callers stop hammering a down L2, logs the failure, wipes the affected L1 state
+    /// (the write may have landed before the failure, so the L2 state is unknown), and rethrows. Recovery is
+    /// never queued — the callers' CAS/delta outcomes can't be safely replayed later. Caller cancellation, and
+    /// failures when neither auto-recovery nor the circuit breaker is configured, propagate untouched (the
+    /// exception filter does not match).
+    /// </summary>
+    /// <param name="circuitKey">The key (or prefix) used to trip the circuit and stamp the failure log entry.</param>
+    /// <param name="l2Op">The non-replay-safe L2 write to execute.</param>
+    /// <param name="wipeL1OnFailure">
+    /// Wipes the L1 state affected by the failed write; runs with <see cref="CancellationToken.None"/> so the
+    /// cleanup completes even when the caller is cancelling.
+    /// </param>
+    private async ValueTask<TResult> _RunL2WriteWithBreakerGuardAsync<TResult>(
+        string circuitKey,
+        Func<CancellationToken, ValueTask<TResult>> l2Op,
+        Func<CancellationToken, ValueTask> wipeL1OnFailure,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            return await l2Op(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+            when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken)
+                && (RecoveryQueue is not null || cacheOptions.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero)
+            )
+        {
+            _OpenDistributedCacheCircuit(exception, circuitKey);
+            _logger.LogFailedToWriteToL2Cache(exception, circuitKey);
+            await wipeL1OnFailure(CancellationToken.None).ConfigureAwait(false);
+            throw;
+        }
+    }
+
     /// <inheritdoc />
     public async ValueTask<long> SetAddAsync<T>(
         string key,
@@ -683,10 +758,21 @@ public sealed partial class HybridCache
         _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(key);
         Argument.IsNotNull(value);
+        Argument.IsPositiveOrZero(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
         var items = value.AsArray();
-        var addedCount = await l2Cache.SetAddAsync(key, items, expiration, cancellationToken).ConfigureAwait(false);
+
+        // CAS / non-replay-safe set mutation: never queue recovery — the set delta can't be safely replayed
+        // later. Wipe L1 so this node stops serving a set whose L2 state is now unknown (the mutation may have
+        // landed before the failure); the next read re-seeds from L2.
+        var addedCount = await _RunL2WriteWithBreakerGuardAsync(
+                key,
+                ct => l2Cache.SetAddAsync(key, items, expiration, ct),
+                async ct => await LocalCache.RemoveAsync(key, ct).ConfigureAwait(false),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
 
         if (addedCount == items.Length)
         {
@@ -739,8 +825,9 @@ public sealed partial class HybridCache
 
             if (RecoveryQueue is null)
             {
-                // No recovery queue to replay the removal: surface the failure so the caller knows the L2 remove
-                // may not have applied.
+                // Wipe L1 before surfacing the L2 failure so this node never keeps serving the value the caller
+                // asked to remove (mirrors RemoveAllAsync/TryReplaceAsync, which clear L1 first then rethrow).
+                await LocalCache.RemoveAsync(key, CancellationToken.None).ConfigureAwait(false);
                 throw;
             }
 
@@ -793,8 +880,9 @@ public sealed partial class HybridCache
 
             if (RecoveryQueue is null)
             {
-                // No recovery queue to replay the expiration: surface the failure so the caller knows the L2
-                // expire may not have applied.
+                // Logically expire L1 before surfacing the L2 failure so this node does not keep serving an entry
+                // the caller asked to expire (its fail-safe reserve is preserved, mirroring the success path).
+                await LocalCache.ExpireAsync(key, CancellationToken.None).ConfigureAwait(false);
                 throw;
             }
 
@@ -838,7 +926,16 @@ public sealed partial class HybridCache
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var removed = await l2Cache.RemoveIfEqualAsync(key, expected, cancellationToken).ConfigureAwait(false);
+        // CAS / non-replay-safe delete: never queue recovery — the compare-and-delete outcome can't be safely
+        // replayed. Wipe L1 so a possibly-stale local value is not served after the failure (mirrors
+        // TryReplaceIfEqualAsync).
+        var removed = await _RunL2WriteWithBreakerGuardAsync(
+                key,
+                ct => l2Cache.RemoveIfEqualAsync(key, expected, ct),
+                async ct => await LocalCache.RemoveAsync(key, ct).ConfigureAwait(false),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
 
         // Always remove from local cache unconditionally (local cache might have stale value)
         await LocalCache.RemoveAsync(key, cancellationToken).ConfigureAwait(false);
@@ -911,7 +1008,17 @@ public sealed partial class HybridCache
         Argument.IsNotNull(prefix);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var removed = await l2Cache.RemoveByPrefixAsync(prefix, cancellationToken).ConfigureAwait(false);
+        // Non-replay-safe bulk remove: never queue recovery — the prefix sweep isn't captured by auto-recovery.
+        // Wipe the matching L1 entries so this node stops serving keys the caller asked to delete (the L2 sweep
+        // may have partially landed), mirroring RemoveAllAsync's catch.
+        var removed = await _RunL2WriteWithBreakerGuardAsync(
+                prefix,
+                ct => l2Cache.RemoveByPrefixAsync(prefix, ct),
+                async ct => await LocalCache.RemoveByPrefixAsync(prefix, ct).ConfigureAwait(false),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
         await LocalCache.RemoveByPrefixAsync(prefix, cancellationToken).ConfigureAwait(false);
 
         // Only notify other nodes if keys were actually removed
@@ -1097,11 +1204,20 @@ public sealed partial class HybridCache
         _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(key);
         Argument.IsNotNull(value);
+        Argument.IsPositiveOrZero(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
         var items = value.AsArray();
-        var removedCount = await l2Cache
-            .SetRemoveAsync(key, items, expiration, cancellationToken)
+
+        // CAS / non-replay-safe set mutation: never queue recovery — the set delta can't be safely replayed
+        // later. Wipe L1 so this node stops serving a set whose L2 state is now unknown (the mutation may have
+        // landed before the failure); the next read re-seeds from L2.
+        var removedCount = await _RunL2WriteWithBreakerGuardAsync(
+                key,
+                ct => l2Cache.SetRemoveAsync(key, items, expiration, ct),
+                async ct => await LocalCache.RemoveAsync(key, ct).ConfigureAwait(false),
+                cancellationToken
+            )
             .ConfigureAwait(false);
 
         if (removedCount == items.Length)

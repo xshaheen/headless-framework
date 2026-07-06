@@ -1,6 +1,8 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <Description>hybrid cache integration for Headless caching.</Description>
+    <PackageTags>headless;caching;hybrid;dotnet</PackageTags>
     <RootNamespace>Headless.Caching</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
@@ -13,6 +15,12 @@
     <ProjectReference Include="..\Headless.Caching.Core\Headless.Caching.Core.csproj" />
     <ProjectReference Include="..\Headless.Messaging.Abstractions\Headless.Messaging.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Messaging.Bus.Abstractions\Headless.Messaging.Bus.Abstractions.csproj" />
+    <!-- Messaging.Core supplies the `ForMessage`/`OnBus` consumer-registration seam used by `SetupHybridCache`
+         to auto-register HybridCacheInvalidationConsumer with the backplane (see
+         HybridCacheInvalidationConsumerRegistration). Mirrors Headless.DistributedLocks.Core, which references
+         Messaging.Core for the same reason. Any real hybrid deployment already pulls Messaging.Core transitively
+         via its bus-transport package, since HybridCache requires a live IBus. -->
+    <ProjectReference Include="..\Headless.Messaging.Core\Headless.Messaging.Core.csproj" />
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
   </ItemGroup>
 </Project>

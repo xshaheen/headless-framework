@@ -10,7 +10,6 @@ Application code that works with raw SQL should not depend on a specific ADO.NET
 
 - `ISqlConnectionFactory` — create and manage database connections; `GetConnectionString()` retrieves the configured string; `CreateNewConnectionAsync()` returns an already-open `DbConnection`
 - `ISqlCurrentConnection` — ambient connection for unit-of-work scopes; lazy-opens on first call, re-opens on drop
-- `DefaultSqlCurrentConnection` — concrete thread-safe implementation of `ISqlCurrentConnection` backed by `AsyncLock`
 - `IConnectionStringChecker` — validate server reachability and database existence; returns `(bool Connected, bool DatabaseExists)`
 
 ## Installation
@@ -40,11 +39,7 @@ public sealed class OrderRepository(ISqlConnectionFactory connectionFactory)
 }
 ```
 
-Register `DefaultSqlCurrentConnection` as scoped when you need a shared ambient connection within a unit of work:
-
-```csharp
-builder.Services.AddScoped<ISqlCurrentConnection, DefaultSqlCurrentConnection>();
-```
+Add `Headless.Sql.Core` when you need the default scoped `ISqlCurrentConnection` implementation.
 
 ## Configuration
 
@@ -52,8 +47,7 @@ None. This is an abstractions-only package.
 
 ## Dependencies
 
-- `Headless.Hosting`
-- `Nito.AsyncEx` (transitively, via `DefaultSqlCurrentConnection`)
+None.
 
 ## Side Effects
 

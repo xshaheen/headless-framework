@@ -13,7 +13,11 @@ internal sealed class NullTimestampL2Adapter<TValue>(TValue value) : IRemoteCach
 {
     public CacheEntryOptions? DefaultEntryOptions => null;
 
-    public ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(string key, CancellationToken cancellationToken)
+    public ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(
+        string key,
+        CancellationToken cancellationToken,
+        FactoryCacheReadOptions readOptions = default
+    )
     {
         // Return a found entry with null timestamps regardless of type requested.
         // The test uses int, so cast works; for other types this returns default.
@@ -27,6 +31,32 @@ internal sealed class NullTimestampL2Adapter<TValue>(TValue value) : IRemoteCach
             SlidingExpiration: null
         );
         return new ValueTask<CacheStoreEntry<T>>(entry);
+    }
+
+    public ValueTask<CacheStoreEntry<T>[]> TryGetAllEntriesAsync<T>(
+        IReadOnlyList<string> keys,
+        CancellationToken cancellationToken,
+        FactoryCacheReadOptions readOptions = default
+    )
+    {
+        // Position-aligned: every key resolves to the same found-with-null-timestamps entry the single-key path
+        // returns, modelling a legacy/unframed L2 that carries no expiration metadata.
+        var typedValue = value is T typed ? typed : default;
+        var result = new CacheStoreEntry<T>[keys.Count];
+
+        for (var i = 0; i < keys.Count; i++)
+        {
+            result[i] = new CacheStoreEntry<T>(
+                Found: true,
+                IsNull: false,
+                Value: typedValue,
+                LogicalExpiresAt: null,
+                PhysicalExpiresAt: null,
+                SlidingExpiration: null
+            );
+        }
+
+        return new ValueTask<CacheStoreEntry<T>[]>(result);
     }
 
     public ValueTask<bool> SetEntryAsync<T>(

@@ -1,6 +1,8 @@
 ﻿<Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <Description>Testcontainers integration for Headless testing.</Description>
+    <PackageTags>headless;testing;testcontainers;dotnet</PackageTags>
     <IsTestProject>false</IsTestProject>
     <IsTestableProject>false</IsTestableProject>
   </PropertyGroup>

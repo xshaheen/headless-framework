@@ -48,7 +48,10 @@ public readonly record struct CacheStoreEntry<T>(
     /// The coordinator copies this stamp to <see cref="CacheStoreEntryWrite{T}.ExpectedConcurrencyStamp"/> for
     /// factory writes derived from an existing physical entry, so a late factory cannot resurrect a removed
     /// entry or clobber a concurrent writer. The value is provider-specific and must only be treated as an
-    /// equality token.
+    /// equality token; its collision-resistance is likewise provider-specific — the Redis provider stamps only the
+    /// fixed frame header, so two same-key writes that share identical options within a single millisecond can
+    /// produce equal stamps (a narrow window accepted for performance; set <c>JitterMaxDuration &gt; 0</c> to avoid
+    /// it — see issue #583).
     /// </remarks>
     public string? ConcurrencyStamp { get; init; }
 

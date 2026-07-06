@@ -29,9 +29,11 @@
     </Folder>
     <Folder Name="/AuditLog/">
         <Project Path="src\Headless.AuditLog.Abstractions\Headless.AuditLog.Abstractions.csproj" />
+        <Project Path="src\Headless.AuditLog.Core\Headless.AuditLog.Core.csproj" />
         <Project Path="src\Headless.AuditLog.Storage.EntityFramework\Headless.AuditLog.Storage.EntityFramework.csproj" />
         <Project Path="src\Headless.AuditLog.Storage.PostgreSql\Headless.AuditLog.Storage.PostgreSql.csproj" />
         <Project Path="src\Headless.AuditLog.Storage.SqlServer\Headless.AuditLog.Storage.SqlServer.csproj" />
+        <Project Path="tests\Headless.AuditLog.Core.Tests.Unit\Headless.AuditLog.Core.Tests.Unit.csproj" />
         <Project Path="tests\Headless.AuditLog.Tests.Unit\Headless.AuditLog.Tests.Unit.csproj" />
         <Project Path="tests\Headless.AuditLog.Storage.EntityFramework.Tests.Integration\Headless.AuditLog.Storage.EntityFramework.Tests.Integration.csproj" />
         <Project Path="tests\Headless.AuditLog.Storage.PostgreSql.Tests.Integration\Headless.AuditLog.Storage.PostgreSql.Tests.Integration.csproj" />
@@ -138,11 +140,13 @@
     <Folder Name="/Database/">
         <Project Path="src\Headless.Redis\Headless.Redis.csproj" />
         <Project Path="src\Headless.Sql.Abstractions\Headless.Sql.Abstractions.csproj" />
+        <Project Path="src\Headless.Sql.Core\Headless.Sql.Core.csproj" />
         <Project Path="src\Headless.Sql.PostgreSql\Headless.Sql.PostgreSql.csproj" />
         <Project Path="src\Headless.Sql.Sqlite\Headless.Sql.Sqlite.csproj" />
         <Project Path="src\Headless.Sql.SqlServer\Headless.Sql.SqlServer.csproj" />
         <Project Path="tests\Headless.Redis.Tests.Integration\Headless.Redis.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Redis.Tests.Unit\Headless.Redis.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Sql.Core.Tests.Unit\Headless.Sql.Core.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Sql.PostgreSql.Tests.Integration\Headless.Sql.PostgreSql.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Sql.Sqlite.Tests.Integration\Headless.Sql.Sqlite.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Sql.SqlServer.Tests.Integration\Headless.Sql.SqlServer.Tests.Integration.csproj" />

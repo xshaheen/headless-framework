@@ -244,4 +244,32 @@ public sealed class HybridCacheConformanceTests : CacheConformanceTestsBase
     [Fact]
     public override Task should_expire_raw_written_payload_after_duration() =>
         base.should_expire_raw_written_payload_after_duration();
+
+    [Fact]
+    public override Task should_add_only_new_set_members_and_compare_strings_case_sensitively() =>
+        base.should_add_only_new_set_members_and_compare_strings_case_sensitively();
+
+    [Fact]
+    public override Task should_evict_set_members_when_set_add_uses_zero_expiration() =>
+        base.should_evict_set_members_when_set_add_uses_zero_expiration();
+
+    [Fact]
+    public override Task should_return_no_value_from_get_set_when_key_is_absent() =>
+        base.should_return_no_value_from_get_set_when_key_is_absent();
+
+    [Fact]
+    public override Task should_return_no_value_from_get_set_when_page_is_past_live_members() =>
+        base.should_return_no_value_from_get_set_when_page_is_past_live_members();
+
+    [Fact]
+    public override Task should_return_no_value_from_get_set_when_all_members_expired() =>
+        base.should_return_no_value_from_get_set_when_all_members_expired();
+
+    [Fact]
+    public override Task should_keep_zero_total_after_decrementing_to_zero() =>
+        base.should_keep_zero_total_after_decrementing_to_zero();
+
+    [Fact]
+    public override Task should_preserve_ttl_when_set_if_higher_is_a_no_op() =>
+        base.should_preserve_ttl_when_set_if_higher_is_a_no_op();
 }

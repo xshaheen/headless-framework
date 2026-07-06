@@ -1,6 +1,8 @@
 ﻿<Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <Description>SQL Server storage provider for Headless permissions.</Description>
+    <PackageTags>headless;permissions;storage;sql-server;dotnet</PackageTags>
     <RootNamespace>Headless.Permissions.SqlServer</RootNamespace>
     <NoWarn>$(NoWarn);CA2100</NoWarn>
   </PropertyGroup>

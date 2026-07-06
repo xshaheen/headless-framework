@@ -5,8 +5,9 @@ using Headless.Caching;
 namespace Tests;
 
 /// <summary>
-/// An L2 remote cache whose read (TryGetEntryAsync) always throws to simulate a down store.
-/// Write operations are no-ops so the factory-success path still works if needed.
+/// An L2 remote cache whose framed read (TryGetEntryAsync) and prefix/count reads (GetByPrefixAsync,
+/// GetAllKeysByPrefixAsync, GetCountAsync) always throw to simulate a down store. Write operations are no-ops so
+/// the factory-success path still works if needed.
 /// </summary>
 internal sealed class ThrowingReadRemoteCache(TimeProvider timeProvider) : IRemoteCache, IFactoryCacheStore, IDisposable
 {
@@ -14,8 +15,17 @@ internal sealed class ThrowingReadRemoteCache(TimeProvider timeProvider) : IRemo
 
     private readonly InMemoryCache _inner = new(timeProvider, new InMemoryCacheOptions());
 
-    public ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(string key, CancellationToken cancellationToken) =>
-        throw new InvalidOperationException("L2 store is unavailable");
+    public ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(
+        string key,
+        CancellationToken cancellationToken,
+        FactoryCacheReadOptions readOptions = default
+    ) => throw new InvalidOperationException("L2 store is unavailable");
+
+    public ValueTask<CacheStoreEntry<T>[]> TryGetAllEntriesAsync<T>(
+        IReadOnlyList<string> keys,
+        CancellationToken cancellationToken,
+        FactoryCacheReadOptions readOptions = default
+    ) => throw new InvalidOperationException("L2 store is unavailable");
 
     public ValueTask<bool> SetEntryAsync<T>(
         string key,
@@ -161,14 +171,15 @@ internal sealed class ThrowingReadRemoteCache(TimeProvider timeProvider) : IRemo
     public ValueTask<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(
         string prefix,
         CancellationToken cancellationToken = default
-    ) => new(new Dictionary<string, CacheValue<T>>(StringComparer.Ordinal));
+    ) => throw new InvalidOperationException("L2 store is unavailable");
 
     public ValueTask<IReadOnlyList<string>> GetAllKeysByPrefixAsync(
         string prefix,
         CancellationToken cancellationToken = default
-    ) => new(Array.Empty<string>());
+    ) => throw new InvalidOperationException("L2 store is unavailable");
 
-    public ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default) => new(0L);
+    public ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default) =>
+        throw new InvalidOperationException("L2 store is unavailable");
 
     public ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default) => new(false);
 

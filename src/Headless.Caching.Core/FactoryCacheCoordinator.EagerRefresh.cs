@@ -53,6 +53,10 @@ public sealed partial class FactoryCacheCoordinator
         var ownsReleaser = true;
         IAsyncDisposable? distributedLease = null;
 
+        // Same per-tier read policy as the foreground operation, so an eager double-check reads the tiers the
+        // triggering GetOrAddAsync did (single-tier providers ignore the flags).
+        var readOptions = FactoryCacheReadOptions.FromEntryOptions(options);
+
         try
         {
             // Yield so the triggering caller returns its fresh value without paying for the gate write or
@@ -60,7 +64,8 @@ public sealed partial class FactoryCacheCoordinator
             await Task.Yield();
 
             // Double-check under the lock: a concurrent refresh may have already advanced or cleared the stamp.
-            var entry = await _TryGetEntryAsync<T>(store, key, CancellationToken.None).ConfigureAwait(false);
+            var entry = await _TryGetEntryAsync<T>(store, key, readOptions, CancellationToken.None)
+                .ConfigureAwait(false);
             var now = _GetUtcNow();
 
             if (
@@ -130,8 +135,38 @@ public sealed partial class FactoryCacheCoordinator
                 return;
             }
 
+            // Re-read the just-committed gate entry so the final eager write CAS-guards against the post-gate
+            // concurrency stamp: a concurrent Remove/Upsert landing during the (potentially long) factory run then
+            // fails the final write's CAS instead of being silently clobbered or the removed key resurrected. The
+            // gate write carried the original birth time forward, so the re-read's CreatedAt preserves it on the
+            // NotModified path.
+            var postGateEntry = await _TryGetEntryAsync<T>(store, key, readOptions, CancellationToken.None)
+                .ConfigureAwait(false);
+
+            // Fail closed when the re-read did not return a live entry. NotFound (ConcurrencyStamp == null) covers both
+            // a key concurrently removed between the gate commit and this re-read (Remove takes no factory lock) and a
+            // re-read that itself threw and degraded to NotFound. A null stamp makes _WriteFactoryResultAsync emit an
+            // UNCONDITIONAL write, which would resurrect the removed key or clobber a concurrent writer — exactly what
+            // the post-gate CAS exists to prevent. A proactive refresh of an entry that is now gone (or unreadable)
+            // has nothing to safely extend, so drop it; natural expiry and the next read take over. The finally below
+            // releases the lock and lease because ownsReleaser is still true here.
+            if (!postGateEntry.Found)
+            {
+                _logger.LogEagerRefreshAbandonedGateEntryLost(key);
+                return;
+            }
+
             ownsReleaser = false;
-            await _StartEagerFactoryAsync(store, key, context, factory, options, releaser, distributedLease)
+            await _StartEagerFactoryAsync(
+                    store,
+                    key,
+                    context,
+                    postGateEntry,
+                    factory,
+                    options,
+                    releaser,
+                    distributedLease
+                )
                 .ConfigureAwait(false);
         }
         finally
@@ -153,6 +188,7 @@ public sealed partial class FactoryCacheCoordinator
         IFactoryCacheStore store,
         string key,
         CacheFactoryContext<T> context,
+        CacheStoreEntry<T> sourceEntry,
         Func<CacheFactoryContext<T>, CancellationToken, ValueTask<CacheFactoryResult<T>>> factory,
         CacheEntryOptions options,
         IDisposable releaser,
@@ -167,6 +203,7 @@ public sealed partial class FactoryCacheCoordinator
                 store,
                 key,
                 context,
+                sourceEntry,
                 factoryTask,
                 internalCts,
                 options,
@@ -189,6 +226,7 @@ public sealed partial class FactoryCacheCoordinator
         IFactoryCacheStore store,
         string key,
         CacheFactoryContext<T> context,
+        CacheStoreEntry<T> sourceEntry,
         Task<CacheFactoryResult<T>> factoryTask,
         CancellationTokenSource internalCts,
         CacheEntryOptions options,
@@ -213,7 +251,7 @@ public sealed partial class FactoryCacheCoordinator
                     // The observe lambda runs inside the awaited race; the finally below disposes internalCts only
                     // when ctsTransferred is false (the factory was observed to completion), so the closure never
                     // touches a disposed CTS.
-                    () => _ObserveEagerFactoryAsync(store, key, context, factoryTask, internalCts)
+                    () => _ObserveEagerFactoryAsync(store, key, context, sourceEntry, factoryTask, internalCts)
                 )
                 .ConfigureAwait(false);
         }
@@ -239,6 +277,7 @@ public sealed partial class FactoryCacheCoordinator
         IFactoryCacheStore store,
         string key,
         CacheFactoryContext<T> context,
+        CacheStoreEntry<T> sourceEntry,
         Task<CacheFactoryResult<T>> factoryTask,
         CancellationTokenSource internalCts
     )
@@ -255,7 +294,7 @@ public sealed partial class FactoryCacheCoordinator
                         key,
                         context,
                         result,
-                        sourceEntry: CacheStoreEntry<T>.NotFound,
+                        sourceEntry: sourceEntry,
                         CancellationToken.None
                     )
                     .ConfigureAwait(false);

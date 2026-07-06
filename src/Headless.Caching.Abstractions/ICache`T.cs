@@ -143,7 +143,7 @@ public interface ICache<T>
     /// <summary>Gets the value for <paramref name="cacheKey"/>. Returns <see cref="CacheValue{T}.NoValue"/> on a miss, logical expiry, or tag-invalidation.</summary>
     ValueTask<CacheValue<T>> GetAsync(string cacheKey, CancellationToken cancellationToken = default);
 
-    /// <summary>Reads a page of members from the set stored at <paramref name="key"/>. <paramref name="pageIndex"/> is 1-based; pass <see langword="null"/> to return all members.</summary>
+    /// <summary>Reads a page of members from the set stored at <paramref name="key"/>. Returns <see cref="CacheValue{T}.NoValue"/> (<c>Value</c> is <see langword="null"/>) whenever the requested page has no members — absent key, empty set, all members expired, or page past the last live member; <c>HasValue</c> reflects whether the requested page has members, not whether the key exists. <paramref name="pageIndex"/> is 1-based; pass <see langword="null"/> to return all members.</summary>
     ValueTask<CacheValue<ICollection<T>>> GetSetAsync(
         string key,
         int? pageIndex = null,

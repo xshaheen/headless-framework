@@ -27,7 +27,7 @@ public sealed class HybridCacheBestPracticesAdvisorTests : TestBase
         };
 
         var logger = new CapturingLogger();
-        var advisor = new HybridCacheBestPracticesAdvisor(options, logger, invalidationConsumerRegistered: true);
+        var advisor = new HybridCacheBestPracticesAdvisor(options, logger);
 
         await advisor.StartingAsync(AbortToken);
 
@@ -44,7 +44,7 @@ public sealed class HybridCacheBestPracticesAdvisorTests : TestBase
         };
 
         var logger = new CapturingLogger();
-        var advisor = new HybridCacheBestPracticesAdvisor(options, logger, invalidationConsumerRegistered: true);
+        var advisor = new HybridCacheBestPracticesAdvisor(options, logger);
 
         await advisor.StartingAsync(AbortToken);
 
@@ -61,11 +61,66 @@ public sealed class HybridCacheBestPracticesAdvisorTests : TestBase
         };
 
         var logger = new CapturingLogger();
-        var advisor = new HybridCacheBestPracticesAdvisor(options, logger, invalidationConsumerRegistered: true);
+        var advisor = new HybridCacheBestPracticesAdvisor(options, logger);
 
         await advisor.StartingAsync(AbortToken);
 
         logger.HasWarning("AutoRecoveryDelayTooLarge").Should().BeFalse();
+    }
+
+    // ────────────────────────────────────────────────────────────
+    // Check 6 — auto-recovery enabled but circuit breaker disabled
+    // ────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task should_warn_when_auto_recovery_enabled_but_circuit_breaker_disabled()
+    {
+        var options = new HybridCacheOptions
+        {
+            EnableAutoRecovery = true,
+            DistributedCacheCircuitBreakerDuration = TimeSpan.Zero, // breaker disabled (the default) — no bypass window
+        };
+
+        var logger = new CapturingLogger();
+        var advisor = new HybridCacheBestPracticesAdvisor(options, logger);
+
+        await advisor.StartingAsync(AbortToken);
+
+        logger.HasWarning("AutoRecoveryWithoutCircuitBreaker").Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_not_warn_about_circuit_breaker_when_auto_recovery_disabled()
+    {
+        var options = new HybridCacheOptions
+        {
+            EnableAutoRecovery = false,
+            DistributedCacheCircuitBreakerDuration = TimeSpan.Zero,
+        };
+
+        var logger = new CapturingLogger();
+        var advisor = new HybridCacheBestPracticesAdvisor(options, logger);
+
+        await advisor.StartingAsync(AbortToken);
+
+        logger.HasWarning("AutoRecoveryWithoutCircuitBreaker").Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_not_warn_when_auto_recovery_paired_with_a_circuit_breaker()
+    {
+        var options = new HybridCacheOptions
+        {
+            EnableAutoRecovery = true,
+            DistributedCacheCircuitBreakerDuration = TimeSpan.FromSeconds(30), // breaker on — bypass window exists
+        };
+
+        var logger = new CapturingLogger();
+        var advisor = new HybridCacheBestPracticesAdvisor(options, logger);
+
+        await advisor.StartingAsync(AbortToken);
+
+        logger.HasWarning("AutoRecoveryWithoutCircuitBreaker").Should().BeFalse();
     }
 
     // ────────────────────────────────────────────────────────────
@@ -86,7 +141,7 @@ public sealed class HybridCacheBestPracticesAdvisorTests : TestBase
         };
 
         var logger = new CapturingLogger();
-        var advisor = new HybridCacheBestPracticesAdvisor(options, logger, invalidationConsumerRegistered: true);
+        var advisor = new HybridCacheBestPracticesAdvisor(options, logger);
 
         await advisor.StartingAsync(AbortToken);
 
@@ -107,7 +162,7 @@ public sealed class HybridCacheBestPracticesAdvisorTests : TestBase
         };
 
         var logger = new CapturingLogger();
-        var advisor = new HybridCacheBestPracticesAdvisor(options, logger, invalidationConsumerRegistered: true);
+        var advisor = new HybridCacheBestPracticesAdvisor(options, logger);
 
         await advisor.StartingAsync(AbortToken);
 
@@ -128,7 +183,7 @@ public sealed class HybridCacheBestPracticesAdvisorTests : TestBase
         };
 
         var logger = new CapturingLogger();
-        var advisor = new HybridCacheBestPracticesAdvisor(options, logger, invalidationConsumerRegistered: true);
+        var advisor = new HybridCacheBestPracticesAdvisor(options, logger);
 
         await advisor.StartingAsync(AbortToken);
 
@@ -149,7 +204,7 @@ public sealed class HybridCacheBestPracticesAdvisorTests : TestBase
         };
 
         var logger = new CapturingLogger();
-        var advisor = new HybridCacheBestPracticesAdvisor(options, logger, invalidationConsumerRegistered: true);
+        var advisor = new HybridCacheBestPracticesAdvisor(options, logger);
 
         await advisor.StartingAsync(AbortToken);
 
@@ -174,7 +229,7 @@ public sealed class HybridCacheBestPracticesAdvisorTests : TestBase
         };
 
         var logger = new CapturingLogger();
-        var advisor = new HybridCacheBestPracticesAdvisor(options, logger, invalidationConsumerRegistered: true);
+        var advisor = new HybridCacheBestPracticesAdvisor(options, logger);
 
         await advisor.StartingAsync(AbortToken);
 
@@ -197,7 +252,7 @@ public sealed class HybridCacheBestPracticesAdvisorTests : TestBase
         };
 
         var logger = new CapturingLogger();
-        var advisor = new HybridCacheBestPracticesAdvisor(options, logger, invalidationConsumerRegistered: true);
+        var advisor = new HybridCacheBestPracticesAdvisor(options, logger);
 
         await advisor.StartingAsync(AbortToken);
 
@@ -218,7 +273,7 @@ public sealed class HybridCacheBestPracticesAdvisorTests : TestBase
         };
 
         var logger = new CapturingLogger();
-        var advisor = new HybridCacheBestPracticesAdvisor(options, logger, invalidationConsumerRegistered: true);
+        var advisor = new HybridCacheBestPracticesAdvisor(options, logger);
 
         await advisor.StartingAsync(AbortToken);
 
@@ -242,7 +297,7 @@ public sealed class HybridCacheBestPracticesAdvisorTests : TestBase
         };
 
         var logger = new CapturingLogger();
-        var advisor = new HybridCacheBestPracticesAdvisor(options, logger, invalidationConsumerRegistered: true);
+        var advisor = new HybridCacheBestPracticesAdvisor(options, logger);
 
         await advisor.StartingAsync(AbortToken);
 
@@ -262,7 +317,7 @@ public sealed class HybridCacheBestPracticesAdvisorTests : TestBase
         };
 
         var logger = new CapturingLogger();
-        var advisor = new HybridCacheBestPracticesAdvisor(options, logger, invalidationConsumerRegistered: true);
+        var advisor = new HybridCacheBestPracticesAdvisor(options, logger);
 
         await advisor.StartingAsync(AbortToken);
 
@@ -282,7 +337,7 @@ public sealed class HybridCacheBestPracticesAdvisorTests : TestBase
         };
 
         var logger = new CapturingLogger();
-        var advisor = new HybridCacheBestPracticesAdvisor(options, logger, invalidationConsumerRegistered: true);
+        var advisor = new HybridCacheBestPracticesAdvisor(options, logger);
 
         await advisor.StartingAsync(AbortToken);
 
@@ -298,7 +353,7 @@ public sealed class HybridCacheBestPracticesAdvisorTests : TestBase
         };
 
         var logger = new CapturingLogger();
-        var advisor = new HybridCacheBestPracticesAdvisor(options, logger, invalidationConsumerRegistered: true);
+        var advisor = new HybridCacheBestPracticesAdvisor(options, logger);
 
         await advisor.StartingAsync(AbortToken);
 
@@ -315,7 +370,7 @@ public sealed class HybridCacheBestPracticesAdvisorTests : TestBase
         var options = new HybridCacheOptions(); // DefaultEntryOptions is null
 
         var logger = new CapturingLogger();
-        var advisor = new HybridCacheBestPracticesAdvisor(options, logger, invalidationConsumerRegistered: true);
+        var advisor = new HybridCacheBestPracticesAdvisor(options, logger);
 
         await advisor.StartingAsync(AbortToken);
 
@@ -351,7 +406,7 @@ public sealed class HybridCacheBestPracticesAdvisorTests : TestBase
         };
 
         var logger = new CapturingLogger();
-        var advisor = new HybridCacheBestPracticesAdvisor(options, logger, invalidationConsumerRegistered: true);
+        var advisor = new HybridCacheBestPracticesAdvisor(options, logger);
 
         await advisor.StartingAsync(AbortToken);
 
@@ -362,34 +417,27 @@ public sealed class HybridCacheBestPracticesAdvisorTests : TestBase
         logger.HasWarning("FactorySoftTimeoutInertWithoutFailSafe").Should().BeFalse();
     }
 
+    // (Check 5 — "no invalidation consumer registered" — was removed: UseHybrid now registers the consumer
+    // unconditionally, so the advisor no longer carries that input. Coverage lives in
+    // HybridCacheInvalidationConsumerRegistrationTests.)
+
     // ────────────────────────────────────────────────────────────
-    // Check 5 — no IConsume<CacheInvalidationMessage> consumer registered
+    // Named instances — the advisor inspects the named options (re-review N14)
     // ────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task should_warn_when_invalidation_consumer_is_not_registered()
+    public async Task should_advise_a_named_instance_using_its_own_options()
     {
-        var options = new HybridCacheOptions();
+        // A per-named-instance advisor inspects that instance's options; the instance-name logging scope must not
+        // suppress advising.
+        var options = new HybridCacheOptions { EnableAutoRecovery = true, AutoRecoveryDelay = TimeSpan.FromMinutes(6) };
 
         var logger = new CapturingLogger();
-        var advisor = new HybridCacheBestPracticesAdvisor(options, logger, invalidationConsumerRegistered: false);
+        var advisor = new HybridCacheBestPracticesAdvisor(options, logger, instanceName: "products");
 
         await advisor.StartingAsync(AbortToken);
 
-        logger.HasWarning("InvalidationConsumerNotRegistered").Should().BeTrue();
-    }
-
-    [Fact]
-    public async Task should_not_warn_when_invalidation_consumer_is_registered()
-    {
-        var options = new HybridCacheOptions();
-
-        var logger = new CapturingLogger();
-        var advisor = new HybridCacheBestPracticesAdvisor(options, logger, invalidationConsumerRegistered: true);
-
-        await advisor.StartingAsync(AbortToken);
-
-        logger.HasWarning("InvalidationConsumerNotRegistered").Should().BeFalse();
+        logger.HasWarning("AutoRecoveryDelayTooLarge").Should().BeTrue();
     }
 }
 

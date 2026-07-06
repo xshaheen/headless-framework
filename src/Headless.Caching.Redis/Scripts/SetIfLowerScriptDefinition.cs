@@ -4,13 +4,27 @@ using Headless.Redis;
 
 namespace Headless.Caching.Scripts;
 
-/// <summary>Sets a value only if it's lower than the current value. Creates the key if it doesn't exist.</summary>
+/// <summary>
+/// Sets a value only if it's lower than the current value. Creates the key if it doesn't exist. Returns the
+/// difference <c>(old - new)</c> when an existing value was lowered, the newly stored value when the key was
+/// absent, or <c>0</c> when the store was left unchanged — matching the <c>ICache.SetIfLowerAsync</c> contract.
+/// </summary>
+/// <remarks>
+/// One script serves both the long and double overloads through Lua numbers (IEEE-754 doubles), so the comparison
+/// and returned difference are exact only for magnitudes up to 2^53; long values beyond that lose precision. A
+/// bignum shim is disproportionate for Lua 5.1 — callers needing exact 64-bit semantics past 2^53 should not rely
+/// on SetIfLower.
+/// </remarks>
 internal sealed class SetIfLowerScriptDefinition : RedisScriptDefinition
 {
     public static SetIfLowerScriptDefinition Instance { get; } = new();
 
     private SetIfLowerScriptDefinition()
         : base(
+            // One script serves both the long and double overloads, so the difference is returned as a string:
+            // integer-valued differences use %d (avoids %.14g scientific notation that long.Parse would reject for
+            // large values), and fractional differences use tostring so the double overload keeps its precision.
+            // A Lua-number reply is never returned directly because Redis would truncate it to an integer.
             """
             local c = tonumber(redis.call('get', @key))
             local v = tonumber(@value)
@@ -20,14 +34,20 @@ internal sealed class SetIfLowerScriptDefinition : RedisScriptDefinition
                 if (@expires ~= nil and @expires ~= '') then
                   redis.call('pexpire', @key, math.ceil(@expires))
                 end
+                local d = c - v
+                if d == math.floor(d) then
+                  return string.format('%d', d)
+                end
+                return tostring(d)
               end
+              return 0
             else
               redis.call('set', @key, @value)
               if (@expires ~= nil and @expires ~= '') then
                 redis.call('pexpire', @key, math.ceil(@expires))
               end
+              return redis.call('get', @key)
             end
-            return redis.call('get', @key)
             """
         ) { }
 }

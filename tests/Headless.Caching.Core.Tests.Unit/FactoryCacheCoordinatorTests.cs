@@ -2473,6 +2473,121 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
     }
 
     [Fact]
+    public async Task should_not_resurrect_removed_key_when_eager_factory_write_lands_after_mid_flight_removal()
+    {
+        // given — a fresh entry past its eager point; the detached eager factory is started and held open
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "old", now.AddMinutes(5), now.AddMinutes(5), eagerRefreshAt: now.AddSeconds(-1));
+        var coordinator = _CreateCoordinator();
+        var backgroundFinished = _WaitForBackgroundFinished(coordinator);
+        var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var factoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var options = _CreateOptions(duration: TimeSpan.FromMinutes(10), eagerRefreshThreshold: 0.5f);
+
+        async ValueTask<string?> factory(CancellationToken cancellationToken)
+        {
+            factoryStarted.SetResult();
+            return await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // when — another actor removes the key while the eager factory is running, then the factory completes
+        var result = await coordinator.GetOrAddAsync(_store, key, factory, options, AbortToken);
+        await factoryStarted.Task.WaitAsync(AbortToken);
+        _RemoveEntryDirectly(_store, key);
+        _store.GetEntry(key).Should().BeNull("the concurrent removal must be visible before the eager write lands");
+        factoryGate.SetResult("fresh");
+        await backgroundFinished;
+
+        // then — the triggering caller was served the fresh-enough value, and the late eager write is CAS-guarded
+        // against the post-gate entry snapshot, so it must not resurrect a key another actor removed mid-flight.
+        result.Value.Should().Be("old");
+        _store.GetEntry(key).Should().BeNull();
+    }
+
+    // #3 — eager-refresh fail-closed: when the post-gate re-read returns NotFound (a Remove landed in the
+    // gate-write -> re-read window, or the re-read itself degraded), the eager write is ABANDONED before the factory
+    // runs, rather than degrading to an unconditional (null-stamp) write that would resurrect the removed key. This
+    // is distinct from the sibling test above, where the removal lands AFTER the post-gate read and the final write's
+    // CAS is what fails.
+    [Fact]
+    public async Task should_abandon_eager_refresh_without_factory_when_post_gate_reread_returns_not_found()
+    {
+        // given — a fresh entry past its eager point
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "old", now.AddMinutes(5), now.AddMinutes(5), eagerRefreshAt: now.AddSeconds(-1));
+        var coordinator = _CreateCoordinator();
+        var backgroundFinished = _WaitForBackgroundFinished(coordinator);
+        var factoryCalls = 0;
+        var options = _CreateOptions(duration: TimeSpan.FromMinutes(10), eagerRefreshThreshold: 0.5f);
+
+        // The eager gate write clears EagerRefreshAt; the first read AFTER that (the post-gate re-read) is where a
+        // concurrent Remove is modelled to have landed. Removing the key on that read forces the re-read to return
+        // NotFound, which drives the fail-closed guard. Earlier reads (pre-lock, under-lock double-check) still see the
+        // eager stamp set, so they are left untouched.
+        _store.TryGetEntryOverride = (k, _) =>
+        {
+            if (_store.GetEntry(k) is { EagerRefreshAt: null })
+            {
+                _store.RemoveEntry(k);
+            }
+
+            return null; // always fall through to the real (now-absent) store read
+        };
+
+        ValueTask<string?> factory(CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref factoryCalls);
+            return ValueTask.FromResult<string?>("fresh");
+        }
+
+        // when — the triggering caller returns the still-fresh value; the detached refresh re-reads NotFound post-gate
+        var result = await coordinator.GetOrAddAsync(_store, key, factory, options, AbortToken);
+        await backgroundFinished;
+
+        // then — the eager write was abandoned: the factory never ran, only the gate write happened (no result write),
+        // and the removed key was NOT resurrected. A regression to the unconditional null-stamp write would re-add it.
+        result.Value.Should().Be("old");
+        result.IsStale.Should().BeFalse();
+        factoryCalls.Should().Be(0, "a post-gate NotFound must abandon the refresh before the factory runs");
+        _store.SetEntryCalls.Should().Be(1, "only the gate write happened; the eager result write must not run");
+        _store.GetEntry(key).Should().BeNull("a lost/removed gate entry must not be resurrected by the eager write");
+    }
+
+    [Fact]
+    public async Task should_not_clobber_concurrent_upsert_when_eager_factory_write_lands_mid_flight()
+    {
+        // given — a fresh entry past its eager point; the detached eager factory is started and held open
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "old", now.AddMinutes(5), now.AddMinutes(5), eagerRefreshAt: now.AddSeconds(-1));
+        var coordinator = _CreateCoordinator();
+        var backgroundFinished = _WaitForBackgroundFinished(coordinator);
+        var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var factoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var options = _CreateOptions(duration: TimeSpan.FromMinutes(10), eagerRefreshThreshold: 0.5f);
+
+        async ValueTask<string?> factory(CancellationToken cancellationToken)
+        {
+            factoryStarted.SetResult();
+            return await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // when — a concurrent writer replaces the entry while the eager factory is running, then it completes
+        var result = await coordinator.GetOrAddAsync(_store, key, factory, options, AbortToken);
+        await factoryStarted.Task.WaitAsync(AbortToken);
+        _store.SetEntry(key, "concurrent", now.AddMinutes(5), now.AddMinutes(5));
+        factoryGate.SetResult("fresh");
+        await backgroundFinished;
+
+        // then — the stale eager write observes the changed concurrency stamp and fails without retry, leaving
+        // the concurrent writer's newer value intact.
+        result.Value.Should().Be("old");
+        _store.GetEntry(key)!.Value.Should().Be("concurrent");
+    }
+
+    [Fact]
     public async Task should_join_in_flight_eager_refresh_instead_of_second_factory_when_entry_expires_mid_refresh()
     {
         // given — a fresh entry past its eager point; the eager refresh factory is started and held open
@@ -3056,8 +3171,17 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         /// <summary>Completes when a restamp write has started (entered the gate-wait).</summary>
         public Task RestampStarted => _restampStartedTcs.Task;
 
-        public ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(string key, CancellationToken cancellationToken) =>
-            inner.TryGetEntryAsync<T>(key, cancellationToken);
+        public ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(
+            string key,
+            CancellationToken cancellationToken,
+            FactoryCacheReadOptions readOptions = default
+        ) => inner.TryGetEntryAsync<T>(key, cancellationToken, readOptions);
+
+        public ValueTask<CacheStoreEntry<T>[]> TryGetAllEntriesAsync<T>(
+            IReadOnlyList<string> keys,
+            CancellationToken cancellationToken,
+            FactoryCacheReadOptions readOptions = default
+        ) => inner.TryGetAllEntriesAsync<T>(keys, cancellationToken, readOptions);
 
         public ValueTask<bool> SetEntryAsync<T>(
             string key,
