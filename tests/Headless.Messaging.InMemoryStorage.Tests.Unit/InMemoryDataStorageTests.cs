@@ -185,6 +185,10 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
     public override Task should_delete_expired_messages() => base.should_delete_expired_messages();
 
     [Fact]
+    public override Task should_not_delete_expired_failed_messages_with_pending_retry() =>
+        base.should_not_delete_expired_failed_messages_with_pending_retry();
+
+    [Fact]
     public override Task should_delete_published_message() => base.should_delete_published_message();
 
     [Fact]
@@ -369,4 +373,70 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
         base.should_not_reclaim_dead_owner_rows_with_expired_lease();
 
     #endregion
+
+    [Fact]
+    public async Task should_respect_configured_retry_batch_size()
+    {
+        // given
+        var storage = _CreateStorage(retryBatchSize: 3);
+        var now = _fakeTimeProvider!.GetUtcNow().UtcDateTime;
+        var messages = new List<MediumMessage>();
+
+        for (var i = 0; i < 5; i++)
+        {
+            var stored = await storage.StoreMessageAsync(
+                "retry-batch-size",
+                CreateMessage(),
+                cancellationToken: AbortToken
+            );
+            stored.Retries = i;
+
+            await storage.ChangePublishStateAsync(
+                stored,
+                StatusName.Failed,
+                nextRetryAt: now.AddSeconds(-1),
+                cancellationToken: AbortToken
+            );
+            messages.Add(stored);
+        }
+
+        // when
+        var retriable = (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken)).ToList();
+
+        // then
+        retriable.Should().HaveCount(3);
+        retriable
+            .Select(message => message.StorageId)
+            .Should()
+            .BeSubsetOf(messages.Select(message => message.StorageId));
+    }
+
+    private InMemoryDataStorage _CreateStorage(int retryBatchSize)
+    {
+        _fakeTimeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+
+        var services = new ServiceCollection();
+        services.AddOptions();
+        services.AddLogging();
+        services.Configure<MessagingOptions>(x =>
+        {
+            x.Version = "v1";
+            x.RetryBatchSize = retryBatchSize;
+            x.RetryPolicy.MaxPersistedRetries = 4;
+            x.FailedMessageExpiredAfter = 3600;
+        });
+        services.AddSingleton<ISerializer, JsonUtf8Serializer>();
+        services.AddSingleton<TimeProvider>(_fakeTimeProvider);
+
+        var provider = services.BuildServiceProvider();
+        _serializer = provider.GetRequiredService<ISerializer>();
+
+        return new InMemoryDataStorage(
+            provider.GetRequiredService<IOptions<MessagingOptions>>(),
+            _serializer,
+            new SequentialGuidGenerator(SequentialGuidType.SqlServer),
+            _fakeTimeProvider,
+            NodeMembership
+        );
+    }
 }

@@ -559,10 +559,10 @@ Messaging keeps its lock provider under an **internal keyed-DI key** (`"headless
 
 ### What this is and isn't (correctness vs coordination)
 
-- Per-row `LockedUntil` (set to `DispatchTimeout` before each publish/consume attempt — see the [Retry Policy](#retry-policy) section) is the **correctness primitive**. It prevents the same row from being dispatched twice and works whether or not the distributed lock is enabled.
+- Per-row `LockedUntil` (set to `DispatchTimeout` before each publish/consume attempt — see the [Retry Policy](#retry-policy) section) is the storage concurrency primitive. It reduces concurrent dispatch of the same row and works whether or not the distributed lock is enabled, but delivery is still at-least-once under crash, broker redelivery, and broker-accept/storage-mark races.
 - Dead-owner recovery is a separate **always-on acceleration primitive**, independent of this lock (see [Dead-owner recovery](#dead-owner-recovery)). With a real `INodeMembership` a recovery bridge reclaims rows owned by `Dead` incarnations and pulls `LockedUntil` back to now; without Coordination, `Owner` remains `null` and rows recover at the normal `LockedUntil` floor.
 - The distributed lock is a **coarse-grained pickup mutex**, not a correctness requirement. It gates the entire retry-pickup tick so only one replica scans the backlog at a time.
-- Disabling `UseStorageLock` does not introduce double-dispatch risk. It introduces wasted pickup work on contended backlogs. If an acquired retry lock's `LostToken` fires (EventId 79), no new pickup starts under an already-lost lease; any in-flight dispatch remains governed by the per-row `LockedUntil` lease.
+- Disabling `UseStorageLock` does not change the at-least-once delivery contract. It introduces wasted pickup work on contended backlogs. If an acquired retry lock's `LostToken` fires (EventId 79), no new pickup starts under an already-lost lease; any in-flight dispatch remains governed by the per-row `LockedUntil` lease.
 
 ### When to enable
 
@@ -1124,6 +1124,8 @@ Provides Azure Service Bus topic and queue transports.
 
 `PartitionKey(...)` is producer-side only and limited to 128 characters. When sessions are enabled, Azure Service Bus requires `PartitionKey` to equal `SessionId`; the message builder rejects mismatches.
 
+Headless disables Azure SDK auto-complete internally and settles messages explicitly after durable receive storage and handler outcome.
+
 ### Installation
 
 ```bash
@@ -1142,7 +1144,7 @@ setup.ForMessage<OrderPlaced>(message =>
 
 ### Configuration
 
-Configure connection string or namespace, retry/client settings, queue/topic behavior, and session support through provider options.
+Configure connection string or namespace, retry/client settings, queue/topic behavior, session support, and SQL filters through provider options. Processor settlement is not configurable; Headless disables Azure SDK auto-complete and completes or abandons messages explicitly.
 
 ### Dependencies
 
@@ -1238,7 +1240,7 @@ Provides Kafka queue-intent transport for partitioned, consumer-group processing
 
 ### Design Notes
 
-Kafka is queue-intent only in this package. `PartitionBy(...)` maps to the Kafka key. The framework does not impose a Kafka key length cap; broker/client configuration owns practical limits.
+Kafka is queue-intent only in this package. `PartitionBy(...)` maps to the Kafka key. The framework does not impose a Kafka key length cap; broker/client configuration owns practical limits. Delivery remains at-least-once; consumers must dedupe by business key or message id.
 
 ### Installation
 

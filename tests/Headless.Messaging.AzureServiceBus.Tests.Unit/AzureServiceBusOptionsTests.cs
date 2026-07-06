@@ -59,16 +59,6 @@ public sealed class AzureServiceBusOptionsTests
     }
 
     [Fact]
-    public void should_have_default_auto_complete_messages_disabled()
-    {
-        // given, when
-        var options = new AzureServiceBusOptions();
-
-        // then
-        options.AutoCompleteMessages.Should().BeFalse();
-    }
-
-    [Fact]
     public void should_have_default_max_concurrent_calls()
     {
         // given, when

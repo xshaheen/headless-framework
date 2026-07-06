@@ -57,6 +57,12 @@
         "resolved": "0.1.2",
         "contentHash": "RQdzUtFVhwLwisP2Du7Ugm7ldwAzc+QJrlZWNIwHXcgq4b5fLwZgdN1203RdYiHS8OOALophC6yWekxu3UgN2g=="
       },
+      "GitHubActionsTestLogger": {
+        "type": "Direct",
+        "requested": "[3.0.4, )",
+        "resolved": "3.0.4",
+        "contentHash": "24fDBf5g5KuyeK9OIu4z0zIkOu6DE3JCmRP+NyNGL3PVmd2Yls8sR8dC1/j34t2tZQS/0arQs7GZTmwWYk4qbQ=="
+      },
       "JetBrains.Annotations": {
         "type": "Direct",
         "requested": "[2026.2.0, )",
@@ -499,7 +505,7 @@
           "Polly.Core": "[8.7.0, )",
           "System.Reactive": "[6.1.0, )",
           "TimeZoneConverter": "[7.2.0, )",
-          "libphonenumber-csharp": "[9.0.33, )",
+          "libphonenumber-csharp": "[9.0.34, )",
           "morelinq": "[4.4.0, )"
         }
       },
@@ -508,7 +514,7 @@
         "dependencies": {
           "FluentValidation": "[12.1.1, )",
           "Headless.Extensions": "[1.0.0, )",
-          "libphonenumber-csharp": "[9.0.33, )"
+          "libphonenumber-csharp": "[9.0.34, )"
         }
       },
       "headless.generator.primitives.abstractions": {
@@ -618,9 +624,9 @@
       },
       "libphonenumber-csharp": {
         "type": "CentralTransitive",
-        "requested": "[9.0.33, )",
-        "resolved": "9.0.33",
-        "contentHash": "RVf2Py2bQI4Syfp/fdjmCIte2C1MCOX+2dQhnUF0Ztk7Fp5EJChF0HMPseaohXnLkPXgeLs5n6HZ5n6+/mBT3A=="
+        "requested": "[9.0.34, )",
+        "resolved": "9.0.34",
+        "contentHash": "QmwQQk2ca/E3qyTTwmTnIoNj2sQ8daRWBQt4+6bkNkDyHgCjgggNGgvFqS6Gm9HQ1EbYkyKn58RjUC2jVM+RQw=="
       },
       "Meziantou.Extensions.Logging.Xunit.v3": {
         "type": "CentralTransitive",

@@ -3,6 +3,7 @@
 using Dapper;
 using Headless.Abstractions;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Serialization;
 using Headless.Messaging.Storage.PostgreSql;
@@ -200,6 +201,10 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     public override Task should_delete_expired_messages() => base.should_delete_expired_messages();
 
     [Fact]
+    public override Task should_not_delete_expired_failed_messages_with_pending_retry() =>
+        base.should_not_delete_expired_failed_messages_with_pending_retry();
+
+    [Fact]
     public override Task should_delete_published_message() => base.should_delete_published_message();
 
     [Fact]
@@ -366,6 +371,66 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
         // then
         monitoringApi.Should().BeOfType<PostgreSqlMonitoringApi>();
         await Task.CompletedTask;
+    }
+
+    [Theory]
+    [InlineData("published")]
+    [InlineData("received")]
+    public async Task should_terminalize_poison_retry_row_when_content_cannot_deserialize(string tableName)
+    {
+        // given
+        var storage = GetStorage();
+        var id = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+
+        await using (var connection = new NpgsqlConnection(fixture.ConnectionString))
+        {
+            await connection.OpenAsync(AbortToken);
+            await _InsertPoisonRetryRowAsync(connection, tableName, id, now);
+        }
+
+        // when
+        var picked =
+            tableName == "published"
+                ? await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken)
+                : await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken);
+
+        // then
+        picked.Should().NotContain(message => message.StorageId == id);
+
+        await using var assertConnection = new NpgsqlConnection(fixture.ConnectionString);
+        await assertConnection.OpenAsync(AbortToken);
+
+        var statusName = await assertConnection.ExecuteScalarAsync<string>(
+            $"""SELECT "StatusName" FROM messaging.{tableName} WHERE "Id" = @Id""",
+            new { Id = id }
+        );
+        var nextRetryAt = await assertConnection.ExecuteScalarAsync<DateTime?>(
+            $"""SELECT "NextRetryAt" FROM messaging.{tableName} WHERE "Id" = @Id""",
+            new { Id = id }
+        );
+        var lockedUntil = await assertConnection.ExecuteScalarAsync<DateTime?>(
+            $"""SELECT "LockedUntil" FROM messaging.{tableName} WHERE "Id" = @Id""",
+            new { Id = id }
+        );
+        var owner = await assertConnection.ExecuteScalarAsync<string?>(
+            $"""SELECT "Owner" FROM messaging.{tableName} WHERE "Id" = @Id""",
+            new { Id = id }
+        );
+
+        statusName.Should().Be(nameof(StatusName.Failed));
+        nextRetryAt.Should().BeNull();
+        lockedUntil.Should().BeNull();
+        owner.Should().BeNull();
+
+        if (tableName == "received")
+        {
+            var exceptionInfo = await assertConnection.ExecuteScalarAsync<string?>(
+                """SELECT "ExceptionInfo" FROM messaging.received WHERE "Id" = @Id""",
+                new { Id = id }
+            );
+            exceptionInfo.Should().Contain("JsonException");
+        }
     }
 
     [Theory]
@@ -621,6 +686,50 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
         }
 
         return indexNames;
+    }
+
+    private static async Task _InsertPoisonRetryRowAsync(
+        NpgsqlConnection connection,
+        string tableName,
+        Guid id,
+        DateTime now
+    )
+    {
+        if (tableName == "published")
+        {
+            await connection.ExecuteAsync(
+                """
+                INSERT INTO messaging.published
+                    ("Id", "Version", "Name", "Content", "IntentType", "Retries", "Added", "ExpiresAt", "NextRetryAt", "LockedUntil", "Owner", "StatusName", "MessageId")
+                VALUES
+                    (@Id, 'v1', 'poison-published', 'not-json', 0, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId);
+                """,
+                new
+                {
+                    Id = id,
+                    Now = now,
+                    NextRetryAt = now.AddMinutes(-1),
+                    MessageId = $"poison-{id:N}",
+                }
+            );
+            return;
+        }
+
+        await connection.ExecuteAsync(
+            """
+            INSERT INTO messaging.received
+                ("Id", "Version", "Name", "Group", "Content", "IntentType", "Retries", "Added", "ExpiresAt", "NextRetryAt", "LockedUntil", "Owner", "StatusName", "MessageId", "ExceptionInfo")
+            VALUES
+                (@Id, 'v1', 'poison-received', 'poison-group', 'not-json', 0, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId, NULL);
+            """,
+            new
+            {
+                Id = id,
+                Now = now,
+                NextRetryAt = now.AddMinutes(-1),
+                MessageId = $"poison-{id:N}",
+            }
+        );
     }
 
     private static void _WalkPlanForProperty(JsonElement plan, string propertyName, List<string> collector)

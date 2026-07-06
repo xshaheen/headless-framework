@@ -19,6 +19,9 @@ internal sealed class AzureServiceBusConsumerClient(
     IntentType intentType = IntentType.Bus
 ) : IConsumerClient
 {
+    // Headless must settle only after durable receive storage and handler outcome are known.
+    private const bool _AutoCompleteMessages = false;
+
     private readonly AzureServiceBusOptions _asbOptions = Argument.IsNotNull(options.Value);
     private readonly SemaphoreSlim _connectionLock = new(1, 1);
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
@@ -163,10 +166,7 @@ internal sealed class AzureServiceBusConsumerClient(
     public async ValueTask CommitAsync(object? sender)
     {
         var commitInput = (AzureServiceBusConsumerCommitInput)sender!;
-        if (!_asbOptions.AutoCompleteMessages)
-        {
-            await commitInput.CompleteMessageAsync().ConfigureAwait(false);
-        }
+        await commitInput.CompleteMessageAsync().ConfigureAwait(false);
     }
 
     public async ValueTask RejectAsync(object? sender)
@@ -396,7 +396,7 @@ internal sealed class AzureServiceBusConsumerClient(
                             subscriptionName,
                             new ServiceBusProcessorOptions
                             {
-                                AutoCompleteMessages = _asbOptions.AutoCompleteMessages,
+                                AutoCompleteMessages = _AutoCompleteMessages,
                                 MaxConcurrentCalls = _asbOptions.MaxConcurrentCalls,
                                 MaxAutoLockRenewalDuration = _asbOptions.MaxAutoLockRenewalDuration,
                             }
@@ -408,7 +408,7 @@ internal sealed class AzureServiceBusConsumerClient(
                             subscriptionName,
                             new ServiceBusSessionProcessorOptions
                             {
-                                AutoCompleteMessages = _asbOptions.AutoCompleteMessages,
+                                AutoCompleteMessages = _AutoCompleteMessages,
                                 MaxConcurrentCallsPerSession = _asbOptions.MaxConcurrentCalls,
                                 MaxAutoLockRenewalDuration = _asbOptions.MaxAutoLockRenewalDuration,
                                 MaxConcurrentSessions = _asbOptions.MaxConcurrentSessions,
@@ -451,7 +451,7 @@ internal sealed class AzureServiceBusConsumerClient(
                     queueName,
                     new ServiceBusProcessorOptions
                     {
-                        AutoCompleteMessages = _asbOptions.AutoCompleteMessages,
+                        AutoCompleteMessages = _AutoCompleteMessages,
                         MaxConcurrentCalls = _asbOptions.MaxConcurrentCalls,
                         MaxAutoLockRenewalDuration = _asbOptions.MaxAutoLockRenewalDuration,
                     }
@@ -462,7 +462,7 @@ internal sealed class AzureServiceBusConsumerClient(
                     queueName,
                     new ServiceBusSessionProcessorOptions
                     {
-                        AutoCompleteMessages = _asbOptions.AutoCompleteMessages,
+                        AutoCompleteMessages = _AutoCompleteMessages,
                         MaxConcurrentCallsPerSession = _asbOptions.MaxConcurrentCalls,
                         MaxAutoLockRenewalDuration = _asbOptions.MaxAutoLockRenewalDuration,
                         MaxConcurrentSessions = _asbOptions.MaxConcurrentSessions,

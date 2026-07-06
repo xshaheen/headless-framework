@@ -431,6 +431,83 @@ public abstract class DataStorageTestsBase : TestBase
         deletedCount.Should().BeGreaterThanOrEqualTo(0);
     }
 
+    public virtual async Task should_not_delete_expired_failed_messages_with_pending_retry()
+    {
+        if (!Capabilities.SupportsExpiration || !Capabilities.SupportsMonitoringApi)
+        {
+            Assert.Skip("Storage does not support expiration and monitoring roundtrip");
+        }
+
+        // given — Failed rows with a future NextRetryAt are retry-scheduled, not terminal poison.
+        // Expiration cleanup must only delete Failed/Succeeded rows once NextRetryAt is cleared.
+        var storage = GetStorage();
+        var initializer = GetInitializer();
+        var expiredAt = DateTime.UtcNow.AddMinutes(-10);
+        var cleanupCutoff = DateTime.UtcNow.AddMinutes(-1);
+        var nextRetryAt = DateTime.UtcNow.AddMinutes(10);
+
+        var published = await storage.StoreMessageAsync(
+            "retry-expiration-published",
+            CreateMessage(),
+            cancellationToken: AbortToken
+        );
+        published.ExpiresAt = expiredAt;
+
+        var publishedChanged = await storage.ChangePublishStateAsync(
+            published,
+            StatusName.Failed,
+            nextRetryAt: nextRetryAt,
+            cancellationToken: AbortToken
+        );
+        publishedChanged.Should().BeTrue();
+
+        var received = await storage.StoreReceivedMessageAsync(
+            "retry-expiration-received",
+            "retry-expiration-group",
+            CreateMessage(),
+            AbortToken
+        );
+        received.ExpiresAt = expiredAt;
+
+        var receivedChanged = await storage.ChangeReceiveStateAsync(
+            received,
+            StatusName.Failed,
+            nextRetryAt: nextRetryAt,
+            cancellationToken: AbortToken
+        );
+        receivedChanged.Should().BeTrue();
+
+        // when
+        var deletedPublished = await storage.DeleteExpiresAsync(
+            initializer.GetPublishedTableName(),
+            cleanupCutoff,
+            100,
+            AbortToken
+        );
+        var deletedReceived = await storage.DeleteExpiresAsync(
+            initializer.GetReceivedTableName(),
+            cleanupCutoff,
+            100,
+            AbortToken
+        );
+
+        // then
+        deletedPublished.Should().Be(0);
+        deletedReceived.Should().Be(0);
+
+        var persistedPublished = await storage
+            .GetMonitoringApi()
+            .GetPublishedMessageAsync(published.StorageId, AbortToken);
+        persistedPublished.Should().NotBeNull();
+        persistedPublished!.NextRetryAt.Should().NotBeNull().And.BeCloseTo(nextRetryAt, TimeSpan.FromSeconds(1));
+
+        var persistedReceived = await storage
+            .GetMonitoringApi()
+            .GetReceivedMessageAsync(received.StorageId, AbortToken);
+        persistedReceived.Should().NotBeNull();
+        persistedReceived!.NextRetryAt.Should().NotBeNull().And.BeCloseTo(nextRetryAt, TimeSpan.FromSeconds(1));
+    }
+
     public virtual async Task should_delete_published_message()
     {
         // given

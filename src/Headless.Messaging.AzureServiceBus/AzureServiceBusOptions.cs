@@ -91,13 +91,6 @@ public class AzureServiceBusOptions
     public int SubscriptionMaxDeliveryCount { get; set; } = 10;
 
     /// <summary>
-    /// Gets a value that indicates whether the processor should automatically complete messages after the message handler has
-    /// completed processing.
-    /// If the message handler triggers an exception, the message will not be automatically completed.
-    /// </summary>
-    public bool AutoCompleteMessages { get; set; }
-
-    /// <summary>
     /// Adds additional correlation properties to all correlation filters.
     /// https://learn.microsoft.com/en-us/azure/service-bus-messaging/topic-filters#correlation-filters
     /// </summary>

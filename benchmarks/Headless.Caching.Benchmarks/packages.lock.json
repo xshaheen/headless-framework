@@ -622,7 +622,7 @@
           "Polly.Core": "[8.7.0, )",
           "System.Reactive": "[6.1.0, )",
           "TimeZoneConverter": "[7.2.0, )",
-          "libphonenumber-csharp": "[9.0.33, )",
+          "libphonenumber-csharp": "[9.0.34, )",
           "morelinq": "[4.4.0, )"
         }
       },
@@ -631,7 +631,7 @@
         "dependencies": {
           "FluentValidation": "[12.1.1, )",
           "Headless.Extensions": "[1.0.0, )",
-          "libphonenumber-csharp": "[9.0.33, )"
+          "libphonenumber-csharp": "[9.0.34, )"
         }
       },
       "headless.generator.primitives.abstractions": {
@@ -734,9 +734,9 @@
       },
       "libphonenumber-csharp": {
         "type": "CentralTransitive",
-        "requested": "[9.0.33, )",
-        "resolved": "9.0.33",
-        "contentHash": "RVf2Py2bQI4Syfp/fdjmCIte2C1MCOX+2dQhnUF0Ztk7Fp5EJChF0HMPseaohXnLkPXgeLs5n6HZ5n6+/mBT3A=="
+        "requested": "[9.0.34, )",
+        "resolved": "9.0.34",
+        "contentHash": "QmwQQk2ca/E3qyTTwmTnIoNj2sQ8daRWBQt4+6bkNkDyHgCjgggNGgvFqS6Gm9HQ1EbYkyKn58RjUC2jVM+RQw=="
       },
       "Microsoft.Bcl.TimeProvider": {
         "type": "CentralTransitive",
@@ -746,9 +746,9 @@
       },
       "Microsoft.CodeAnalysis.Analyzers": {
         "type": "CentralTransitive",
-        "requested": "[5.3.0, )",
-        "resolved": "5.3.0",
-        "contentHash": "KuLhbZwB0L8JikL86AE5VWEp3RLNjIcp+j8yz9EJ/UBgRz4+qDEjHg/tluRFbpYpD/e37BqaaNFbQ0vqawBwWQ=="
+        "requested": "[5.6.0, )",
+        "resolved": "5.6.0",
+        "contentHash": "30ffAcvc+M4xXFN06dg2bKyH5eXgJQmyuB5H5cpC47559rQV5x7vZRyyC/YakNLQtBG3IdW/ZAyLCMeDBGDxXg=="
       },
       "Microsoft.CodeAnalysis.Common": {
         "type": "CentralTransitive",

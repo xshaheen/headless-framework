@@ -38,20 +38,20 @@
       },
       "AWSSDK.SimpleNotificationService": {
         "type": "Direct",
-        "requested": "[4.0.100, )",
-        "resolved": "4.0.100",
-        "contentHash": "adgqt1kgWt96MfYSRfaEXymQyh4coT9TopERWKfUDp9puXMmUTF9TFxy2gNyZ4AX5vfjUBHo+/0YW4qJ8fHG8w==",
+        "requested": "[4.0.100.2, )",
+        "resolved": "4.0.100.2",
+        "contentHash": "+MyA2cEfvl3g8vGhDBdYFyxjSnM5opYsfgBPb2riO2B6PLOl149ZnjCrQuFpgfl0ciLn+MZBXwISyQ06mkAxUQ==",
         "dependencies": {
-          "AWSSDK.Core": "[4.0.100, 5.0.0)"
+          "AWSSDK.Core": "[4.0.100.2, 5.0.0)"
         }
       },
       "AWSSDK.SQS": {
         "type": "Direct",
-        "requested": "[4.0.100, )",
-        "resolved": "4.0.100",
-        "contentHash": "XFNNBswnboZPValoHK9sdRjrlj5D45vWwjBo7qMq3zwY1Fm46y29JtaTJDciWT9WJ0bDUqvUYnPLXtTmzBTc5g==",
+        "requested": "[4.0.100.2, )",
+        "resolved": "4.0.100.2",
+        "contentHash": "7PQ7V1q2mL7ghsg3+Pc+EiPKmQn5PjqMXbQvvTInvDS/2brIXTAkkwAFu3MhNVGV2IKy3poTmCW5D1UOIG2R3A==",
         "dependencies": {
-          "AWSSDK.Core": "[4.0.100, 5.0.0)"
+          "AWSSDK.Core": "[4.0.100.2, 5.0.0)"
         }
       },
       "Bogus": {
@@ -222,8 +222,8 @@
       },
       "AWSSDK.Core": {
         "type": "Transitive",
-        "resolved": "4.0.100",
-        "contentHash": "7BqWwpzoTYsG5w7H2yuhdu7ZG2cw6GANhkKCzygGv0hoOaCXYy4fQu1satpGJ2wtTErM2aXkdo6qKDHgIeSVkA=="
+        "resolved": "4.0.100.2",
+        "contentHash": "1hz6lB2Meymkv9rdOy30p5pIbGpYLK0H4O8XUMGwEMmXUB4FJhyTNk69dLWIFdDUrY66h0NyKy9maHKXMRTwJA=="
       },
       "Castle.Core": {
         "type": "Transitive",
@@ -636,7 +636,7 @@
           "Polly.Core": "[8.7.0, )",
           "System.Reactive": "[6.1.0, )",
           "TimeZoneConverter": "[7.2.0, )",
-          "libphonenumber-csharp": "[9.0.33, )",
+          "libphonenumber-csharp": "[9.0.34, )",
           "morelinq": "[4.4.0, )"
         }
       },
@@ -645,7 +645,7 @@
         "dependencies": {
           "FluentValidation": "[12.1.1, )",
           "Headless.Extensions": "[1.0.0, )",
-          "libphonenumber-csharp": "[9.0.33, )"
+          "libphonenumber-csharp": "[9.0.34, )"
         }
       },
       "headless.generator.primitives.abstractions": {
@@ -671,8 +671,8 @@
       "headless.messaging.aws": {
         "type": "Project",
         "dependencies": {
-          "AWSSDK.SQS": "[4.0.100, )",
-          "AWSSDK.SimpleNotificationService": "[4.0.100, )",
+          "AWSSDK.SQS": "[4.0.100.2, )",
+          "AWSSDK.SimpleNotificationService": "[4.0.100.2, )",
           "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Core": "[1.0.0, )",
           "Headless.Messaging.Queue.Abstractions": "[1.0.0, )"
@@ -765,9 +765,9 @@
       },
       "libphonenumber-csharp": {
         "type": "CentralTransitive",
-        "requested": "[9.0.33, )",
-        "resolved": "9.0.33",
-        "contentHash": "RVf2Py2bQI4Syfp/fdjmCIte2C1MCOX+2dQhnUF0Ztk7Fp5EJChF0HMPseaohXnLkPXgeLs5n6HZ5n6+/mBT3A=="
+        "requested": "[9.0.34, )",
+        "resolved": "9.0.34",
+        "contentHash": "QmwQQk2ca/E3qyTTwmTnIoNj2sQ8daRWBQt4+6bkNkDyHgCjgggNGgvFqS6Gm9HQ1EbYkyKn58RjUC2jVM+RQw=="
       },
       "Meziantou.Extensions.Logging.Xunit.v3": {
         "type": "CentralTransitive",

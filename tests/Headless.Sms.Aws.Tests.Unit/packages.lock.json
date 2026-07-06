@@ -209,8 +209,8 @@
       },
       "AWSSDK.Core": {
         "type": "Transitive",
-        "resolved": "4.0.100",
-        "contentHash": "7BqWwpzoTYsG5w7H2yuhdu7ZG2cw6GANhkKCzygGv0hoOaCXYy4fQu1satpGJ2wtTErM2aXkdo6qKDHgIeSVkA=="
+        "resolved": "4.0.100.2",
+        "contentHash": "1hz6lB2Meymkv9rdOy30p5pIbGpYLK0H4O8XUMGwEMmXUB4FJhyTNk69dLWIFdDUrY66h0NyKy9maHKXMRTwJA=="
       },
       "Castle.Core": {
         "type": "Transitive",
@@ -1619,7 +1619,7 @@
           "Polly.Core": "[8.7.0, )",
           "System.Reactive": "[6.1.0, )",
           "TimeZoneConverter": "[7.2.0, )",
-          "libphonenumber-csharp": "[9.0.33, )",
+          "libphonenumber-csharp": "[9.0.34, )",
           "morelinq": "[4.4.0, )"
         }
       },
@@ -1628,7 +1628,7 @@
         "dependencies": {
           "FluentValidation": "[12.1.1, )",
           "Headless.Extensions": "[1.0.0, )",
-          "libphonenumber-csharp": "[9.0.33, )"
+          "libphonenumber-csharp": "[9.0.34, )"
         }
       },
       "headless.generator.primitives.abstractions": {
@@ -1659,14 +1659,14 @@
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Polly.Core": "[8.7.0, )",
-          "Polly.RateLimiting": "[8.6.4, )"
+          "Polly.RateLimiting": "[8.7.0, )"
         }
       },
       "headless.sms.aws": {
         "type": "Project",
         "dependencies": {
-          "AWSSDK.Extensions.NETCore.Setup": "[4.0.100, )",
-          "AWSSDK.SimpleNotificationService": "[4.0.100, )",
+          "AWSSDK.Extensions.NETCore.Setup": "[4.0.100.2, )",
+          "AWSSDK.SimpleNotificationService": "[4.0.100.2, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Sms.Core": "[1.0.0, )"
         }
@@ -1710,11 +1710,11 @@
       },
       "AWSSDK.Extensions.NETCore.Setup": {
         "type": "CentralTransitive",
-        "requested": "[4.0.100, )",
-        "resolved": "4.0.100",
-        "contentHash": "nRLxyw+WU6oJkA+Czm9OH6OILTiQWCGD62guUkSsGZUeeDPJ0I1SfN3ynkvygxh+qfbl7KnwFGEFNTZLP1flfA==",
+        "requested": "[4.0.100.2, )",
+        "resolved": "4.0.100.2",
+        "contentHash": "WTZP8ARqP7ekvb50t7F6QDo6iDLYGQd1f98RYx6TqbRdSeMuKaRS42c7mYTyHaCscCXwft7Qqs7gA+Vdu2300w==",
         "dependencies": {
-          "AWSSDK.Core": "4.0.100",
+          "AWSSDK.Core": "4.0.100.2",
           "Microsoft.Extensions.Configuration.Abstractions": "2.0.0",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "8.0.0",
           "Microsoft.Extensions.Logging.Abstractions": "2.0.0"
@@ -1722,11 +1722,11 @@
       },
       "AWSSDK.SimpleNotificationService": {
         "type": "CentralTransitive",
-        "requested": "[4.0.100, )",
-        "resolved": "4.0.100",
-        "contentHash": "adgqt1kgWt96MfYSRfaEXymQyh4coT9TopERWKfUDp9puXMmUTF9TFxy2gNyZ4AX5vfjUBHo+/0YW4qJ8fHG8w==",
+        "requested": "[4.0.100.2, )",
+        "resolved": "4.0.100.2",
+        "contentHash": "+MyA2cEfvl3g8vGhDBdYFyxjSnM5opYsfgBPb2riO2B6PLOl149ZnjCrQuFpgfl0ciLn+MZBXwISyQ06mkAxUQ==",
         "dependencies": {
-          "AWSSDK.Core": "[4.0.100, 5.0.0)"
+          "AWSSDK.Core": "[4.0.100.2, 5.0.0)"
         }
       },
       "CommunityToolkit.HighPerformance": {
@@ -1808,9 +1808,9 @@
       },
       "libphonenumber-csharp": {
         "type": "CentralTransitive",
-        "requested": "[9.0.33, )",
-        "resolved": "9.0.33",
-        "contentHash": "RVf2Py2bQI4Syfp/fdjmCIte2C1MCOX+2dQhnUF0Ztk7Fp5EJChF0HMPseaohXnLkPXgeLs5n6HZ5n6+/mBT3A=="
+        "requested": "[9.0.34, )",
+        "resolved": "9.0.34",
+        "contentHash": "QmwQQk2ca/E3qyTTwmTnIoNj2sQ8daRWBQt4+6bkNkDyHgCjgggNGgvFqS6Gm9HQ1EbYkyKn58RjUC2jVM+RQw=="
       },
       "Meziantou.Extensions.Logging.Xunit.v3": {
         "type": "CentralTransitive",
@@ -1830,9 +1830,9 @@
       },
       "Microsoft.CodeAnalysis.Analyzers": {
         "type": "CentralTransitive",
-        "requested": "[5.3.0, )",
-        "resolved": "5.3.0",
-        "contentHash": "KuLhbZwB0L8JikL86AE5VWEp3RLNjIcp+j8yz9EJ/UBgRz4+qDEjHg/tluRFbpYpD/e37BqaaNFbQ0vqawBwWQ=="
+        "requested": "[5.6.0, )",
+        "resolved": "5.6.0",
+        "contentHash": "30ffAcvc+M4xXFN06dg2bKyH5eXgJQmyuB5H5cpC47559rQV5x7vZRyyC/YakNLQtBG3IdW/ZAyLCMeDBGDxXg=="
       },
       "Microsoft.CodeAnalysis.Common": {
         "type": "CentralTransitive",
@@ -2137,11 +2137,11 @@
       },
       "Polly.RateLimiting": {
         "type": "CentralTransitive",
-        "requested": "[8.6.4, )",
-        "resolved": "8.6.4",
-        "contentHash": "Sy5CN4xeBqdJNnZ0XYlz2by9rJJ6kvXPBkU2L3XfRxN8FJf6pi0ZHMCkz1ZyZN5MIbrT2usQGueygHnvbBt2ZA==",
+        "requested": "[8.7.0, )",
+        "resolved": "8.7.0",
+        "contentHash": "PjbRSHNc0nCKYW26tXRuvj6gNny4HJOa2MHm5cZocyULYaNoGXnl5Q8Q1qKZB25d82E95B5pFvL2Kz6Yjh27GA==",
         "dependencies": {
-          "Polly.Core": "8.6.4",
+          "Polly.Core": "8.7.0",
           "System.Threading.RateLimiting": "8.0.0"
         }
       },
