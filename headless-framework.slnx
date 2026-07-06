@@ -232,6 +232,8 @@
     </Folder>
     <Folder Name="/Kernel/">
         <Project Path="src\Headless.Extensions\Headless.Extensions.csproj" />
+        <Project Path="src\Headless.Urls\Headless.Urls.csproj" />
+        <Project Path="src\Headless.Primitives\Headless.Primitives.csproj" />
         <Project Path="src\Headless.Core\Headless.Core.csproj" />
         <Project Path="src\Headless.Checks\Headless.Checks.csproj" />
         <Project Path="src\Headless.Domain.LocalEventBus\Headless.Domain.LocalEventBus.csproj" />
