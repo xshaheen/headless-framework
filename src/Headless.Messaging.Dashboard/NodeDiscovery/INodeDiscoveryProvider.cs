@@ -45,3 +45,8 @@ public interface INodeDiscoveryProvider
         throw new NotSupportedException();
     }
 }
+
+internal interface ICancellableNodeDiscoveryProvider
+{
+    Task<IList<Node>> ListServices(string? ns = null, CancellationToken cancellationToken = default);
+}

@@ -5,7 +5,7 @@ using Headless.Testing.Tests;
 
 namespace Tests;
 
-public sealed class K8SDiscoveryOptionsTests : TestBase
+public sealed class K8sDiscoveryOptionsTests : TestBase
 {
     [Fact]
     public void ShowOnlyExplicitVisibleNodes_should_default_to_true()
@@ -18,13 +18,13 @@ public sealed class K8SDiscoveryOptionsTests : TestBase
     }
 
     [Fact]
-    public void K8SClientConfig_should_have_default_configuration()
+    public void K8sClientConfig_should_have_default_configuration()
     {
         // given & when
         var options = new K8sDiscoveryOptions();
 
         // then
-        options.K8SClientConfig.Should().NotBeNull();
+        options.K8sClientConfig.Should().NotBeNull();
     }
 
     [Fact]
@@ -38,7 +38,7 @@ public sealed class K8SDiscoveryOptionsTests : TestBase
     }
 
     [Fact]
-    public void should_allow_custom_K8SClientConfig()
+    public void should_allow_custom_K8sClientConfig()
     {
         // given
         var customConfig = new k8s.KubernetesClientConfiguration
@@ -48,11 +48,11 @@ public sealed class K8SDiscoveryOptionsTests : TestBase
         };
 
         // when
-        var options = new K8sDiscoveryOptions { K8SClientConfig = customConfig };
+        var options = new K8sDiscoveryOptions { K8sClientConfig = customConfig };
 
         // then
-        options.K8SClientConfig.Should().BeSameAs(customConfig);
-        options.K8SClientConfig.Namespace.Should().Be("custom-namespace");
-        options.K8SClientConfig.Host.Should().Be("https://custom-host:6443");
+        options.K8sClientConfig.Should().BeSameAs(customConfig);
+        options.K8sClientConfig.Namespace.Should().Be("custom-namespace");
+        options.K8sClientConfig.Host.Should().Be("https://custom-host:6443");
     }
 }

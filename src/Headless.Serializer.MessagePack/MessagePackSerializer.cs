@@ -19,17 +19,15 @@ namespace Headless.Serializer;
 /// <para>
 /// With no <paramref name="options"/> the serializer uses <c>MessagePackSerializerOptions.Standard</c> with
 /// <c>ContractlessStandardResolver</c>, which maps .NET properties by name without requiring
-/// <c>[MessagePackObject]</c> attributes, at the library's trusted-data security default.
+/// <c>[MessagePackObject]</c> attributes, with <see cref="MessagePackSecurity.UntrustedData"/> applied by default.
 /// </para>
 /// <para>
-/// That default (<see cref="MessagePackSecurity.TrustedData"/>) is the fast path, appropriate when payloads come
-/// from inside the trust boundary (for example cache values the application wrote itself). When deserializing
-/// untrusted input (cross-service caches, external message producers), pass <c>untrustedData: true</c> to apply
-/// <see cref="MessagePackSecurity.UntrustedData"/> (recursion-depth limit + collision-resistant hashing). The
+/// The default security level is safe for untrusted payloads such as cross-service caches or external message
+/// producers. For trusted in-process payloads where the MessagePack-CSharp fast path is a deliberate choice, pass
+/// <c>untrustedData: false</c> or supply custom <see cref="MessagePackSerializerOptions"/>. The
 /// <c>untrustedData</c> switch configures only the default (no-<paramref name="options"/>) path: when you supply
-/// your own <see cref="MessagePackSerializerOptions"/> the serializer uses them verbatim — you own the security
-/// level there (set <c>Security</c> on the options) and the switch is not applied on top, so it can never override
-/// or relax a security level you chose explicitly.
+/// your own options the serializer uses them verbatim — you own the security level there (set <c>Security</c> on
+/// the options) and the switch is not applied on top.
 /// </para>
 /// <para>
 /// For compressed output wrap the resolver with <c>LZ4MessagePackSerializer</c> options at the call
@@ -43,10 +41,11 @@ namespace Headless.Serializer;
 /// <param name="untrustedData">
 /// When <see langword="true"/> and no <paramref name="options"/> are supplied, applies
 /// <see cref="MessagePackSecurity.UntrustedData"/> (recursion-depth limit + collision-resistant hashing) to the
-/// default options for safe deserialization of untrusted input. Ignored when <paramref name="options"/> are
-/// supplied. Defaults to <see langword="false"/>.
+/// default options for safe deserialization of untrusted input. Pass <see langword="false"/> only for trusted
+/// payloads where the MessagePack-CSharp fast path is intentional. Ignored when <paramref name="options"/> are
+/// supplied. Defaults to <see langword="true"/>.
 /// </param>
-public sealed class MessagePackSerializer(MessagePackSerializerOptions? options = null, bool untrustedData = false)
+public sealed class MessagePackSerializer(MessagePackSerializerOptions? options = null, bool untrustedData = true)
     : IBinarySerializer
 {
     private readonly MessagePackSerializerOptions _options = _ResolveOptions(options, untrustedData);

@@ -138,7 +138,7 @@ quality-analyzers: ## Report build warnings/errors and analyzer suggestions with
 	@if ! $(DOTNET) build "$(SOLUTION)" $(QUALITY_BUILD_ARGS) 2>&1 | tee "$(ARTIFACTS_DIR)/quality-analyzers.log" | awk '/(^|: )(warning|error) [A-Z]+[0-9]+:/'; then \
 		echo "Build failed. Full output:"; cat "$(ARTIFACTS_DIR)/quality-analyzers.log"; exit 1; \
 	fi
-	@$(DOTNET) format analyzers "$(SOLUTION)" $(QUALITY_FORMAT_ARGS)
+	@Configuration="$(CONFIGURATION)" $(DOTNET) format analyzers "$(SOLUTION)" $(QUALITY_FORMAT_ARGS)
 
 .PHONY: quality-analyzers-project
 quality-analyzers-project: ## Report build warnings/errors and analyzer suggestions for PROJECT.
@@ -148,7 +148,7 @@ quality-analyzers-project: ## Report build warnings/errors and analyzer suggesti
 	@if ! $(DOTNET) build "$(PROJECT)" $(QUALITY_BUILD_ARGS) 2>&1 | tee "$(ARTIFACTS_DIR)/quality-analyzers-project.log" | awk '/(^|: )(warning|error) [A-Z]+[0-9]+:/'; then \
 		echo "Build failed. Full output:"; cat "$(ARTIFACTS_DIR)/quality-analyzers-project.log"; exit 1; \
 	fi
-	@$(DOTNET) format analyzers "$(PROJECT)" $(QUALITY_FORMAT_ARGS)
+	@Configuration="$(CONFIGURATION)" $(DOTNET) format analyzers "$(PROJECT)" $(QUALITY_FORMAT_ARGS)
 
 .PHONY: dashboards
 dashboards: dashboard-jobs dashboard-messaging ## Rebuild every SPA dashboard (npm ci + vite build into wwwroot/dist).
@@ -275,7 +275,7 @@ pack: restore ## Pack NuGet packages with symbols.
 pack-built: ## Pack already-built source projects without restore/build; used by CI.
 	@mkdir -p "$(PACKAGES_DIR)"
 	@for csproj in src/*/*.csproj; do \
-		$(DOTNET) pack "$$csproj" --configuration "$(CONFIGURATION)" --no-restore --no-build --include-symbols --output "$(PACKAGES_DIR)"; \
+		$(DOTNET) pack "$$csproj" --configuration "$(CONFIGURATION)" --no-restore --no-build --include-symbols --output "$(PACKAGES_DIR)" /p:GenerateSBOM=true $(MSBUILD_ARGS); \
 	done
 
 .PHONY: pack-sbom

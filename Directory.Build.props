@@ -2,9 +2,19 @@
   <PropertyGroup>
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
     <LangVersion>latest</LangVersion>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <RestoreLockedMode Condition="'$(CI)' == 'true' or '$(ContinuousIntegrationBuild)' == 'true'">true</RestoreLockedMode>
+    <!-- Keep restore lockfiles stable; pack targets opt into SBOM explicitly. -->
+    <DisableSupportSbom>true</DisableSupportSbom>
+    <GenerateSBOM Condition="'$(GenerateSBOM)' == ''">false</GenerateSBOM>
   </PropertyGroup>
   <ItemGroup Label="Package References">
     <PackageReference Include="JetBrains.Annotations" PrivateAssets="all" />
+    <PackageReference
+      Include="Microsoft.Sbom.Targets"
+      PrivateAssets="all"
+      IncludeAssets="runtime; build; native; contentfiles; analyzers"
+    />
     <Using Include="JetBrains.Annotations" />
   </ItemGroup>
 </Project>

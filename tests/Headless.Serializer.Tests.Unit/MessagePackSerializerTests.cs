@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Buffers;
+using System.Reflection;
 using Headless.Serializer;
 using MessagePack;
 using MessagePackSerializer = Headless.Serializer.MessagePackSerializer;
@@ -250,7 +251,7 @@ public sealed class MessagePackSerializerTests
     [Fact]
     public void untrusted_data_serializer_roundtrips()
     {
-        // given — the untrustedData opt-in hardens deserialization; it must not change round-trip correctness.
+        // given — the untrustedData default hardens deserialization; it must not change round-trip correctness.
         var serializer = new MessagePackSerializer(untrustedData: true);
         var person = new Person { Name = "Trusted", Age = 21 };
 
@@ -262,6 +263,46 @@ public sealed class MessagePackSerializerTests
         result.Should().NotBeNull();
         result.Name.Should().Be("Trusted");
         result.Age.Should().Be(21);
+    }
+
+    [Fact]
+    public void parameterless_serializer_should_use_untrusted_security_by_default()
+    {
+        // given
+        var serializer = new MessagePackSerializer();
+
+        // when
+        var options = _ReadOptions(serializer);
+
+        // then
+        options.Security.Should().BeSameAs(MessagePackSecurity.UntrustedData);
+    }
+
+    [Fact]
+    public void trusted_data_opt_out_should_use_trusted_security()
+    {
+        // given
+        var serializer = new MessagePackSerializer(untrustedData: false);
+
+        // when
+        var options = _ReadOptions(serializer);
+
+        // then
+        options.Security.Should().BeSameAs(MessagePackSecurity.TrustedData);
+    }
+
+    [Fact]
+    public void supplied_options_should_own_security_level()
+    {
+        // given
+        var suppliedOptions = MessagePackSerializerOptions.Standard.WithSecurity(MessagePackSecurity.TrustedData);
+
+        // when
+        var serializer = new MessagePackSerializer(suppliedOptions);
+        var resolvedOptions = _ReadOptions(serializer);
+
+        // then
+        resolvedOptions.Should().BeSameAs(suppliedOptions);
     }
 
     [Fact]
@@ -296,6 +337,14 @@ public sealed class MessagePackSerializerTests
         var second = first.Append(data.AsMemory(mid));
 
         return new ReadOnlySequence<byte>(first, 0, second, second.Memory.Length);
+    }
+
+    private static MessagePackSerializerOptions _ReadOptions(MessagePackSerializer serializer)
+    {
+        var field = typeof(MessagePackSerializer).GetField("_options", BindingFlags.Instance | BindingFlags.NonPublic);
+
+        return field?.GetValue(serializer) as MessagePackSerializerOptions
+            ?? throw new InvalidOperationException("Unable to read resolved MessagePack serializer options.");
     }
 
     private sealed class BufferSegment : ReadOnlySequenceSegment<byte>

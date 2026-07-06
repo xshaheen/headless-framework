@@ -49,6 +49,7 @@ packages: Messaging.Abstractions, Messaging.Bus.Abstractions, Messaging.Queue.Ab
 - [Headless.Messaging.Dashboard](#headlessmessagingdashboard)
     - [Problem Solved](#problem-solved-4)
     - [Key Features](#key-features-4)
+    - [Design Notes](#design-notes-2)
     - [Installation](#installation-4)
     - [Quick Start](#quick-start-4)
     - [Configuration](#configuration-4)
@@ -65,7 +66,7 @@ packages: Messaging.Abstractions, Messaging.Bus.Abstractions, Messaging.Queue.Ab
 - [Headless.Messaging.OpenTelemetry](#headlessmessagingopentelemetry)
     - [Problem Solved](#problem-solved-6)
     - [Key Features](#key-features-6)
-    - [Design Notes](#design-notes-2)
+    - [Design Notes](#design-notes-3)
     - [Installation](#installation-6)
     - [Quick Start](#quick-start-6)
     - [Configuration](#configuration-6)
@@ -74,7 +75,7 @@ packages: Messaging.Abstractions, Messaging.Bus.Abstractions, Messaging.Queue.Ab
 - [Headless.Messaging.Aws](#headlessmessagingaws)
     - [Problem Solved](#problem-solved-7)
     - [Key Features](#key-features-7)
-    - [Design Notes](#design-notes-3)
+    - [Design Notes](#design-notes-4)
     - [Installation](#installation-7)
     - [Quick Start](#quick-start-7)
     - [Configuration](#configuration-7)
@@ -83,7 +84,7 @@ packages: Messaging.Abstractions, Messaging.Bus.Abstractions, Messaging.Queue.Ab
 - [Headless.Messaging.AzureServiceBus](#headlessmessagingazureservicebus)
     - [Problem Solved](#problem-solved-8)
     - [Key Features](#key-features-8)
-    - [Design Notes](#design-notes-4)
+    - [Design Notes](#design-notes-5)
     - [Installation](#installation-8)
     - [Quick Start](#quick-start-8)
     - [Configuration](#configuration-8)
@@ -108,7 +109,7 @@ packages: Messaging.Abstractions, Messaging.Bus.Abstractions, Messaging.Queue.Ab
 - [Headless.Messaging.Kafka](#headlessmessagingkafka)
     - [Problem Solved](#problem-solved-11)
     - [Key Features](#key-features-11)
-    - [Design Notes](#design-notes-5)
+    - [Design Notes](#design-notes-6)
     - [Installation](#installation-11)
     - [Quick Start](#quick-start-11)
     - [Configuration](#configuration-11)
@@ -117,7 +118,7 @@ packages: Messaging.Abstractions, Messaging.Bus.Abstractions, Messaging.Queue.Ab
 - [Headless.Messaging.Nats](#headlessmessagingnats)
     - [Problem Solved](#problem-solved-12)
     - [Key Features](#key-features-12)
-    - [Design Notes](#design-notes-6)
+    - [Design Notes](#design-notes-7)
     - [Installation](#installation-12)
     - [Quick Start](#quick-start-12)
     - [Configuration](#configuration-12)
@@ -134,7 +135,7 @@ packages: Messaging.Abstractions, Messaging.Bus.Abstractions, Messaging.Queue.Ab
 - [Headless.Messaging.RabbitMq](#headlessmessagingrabbitmq)
     - [Problem Solved](#problem-solved-14)
     - [Key Features](#key-features-14)
-    - [Design Notes](#design-notes-7)
+    - [Design Notes](#design-notes-8)
     - [Installation](#installation-14)
     - [Quick Start](#quick-start-14)
     - [Configuration](#configuration-14)
@@ -167,7 +168,7 @@ packages: Messaging.Abstractions, Messaging.Bus.Abstractions, Messaging.Queue.Ab
 - [Headless.Messaging.Testing](#headlessmessagingtesting)
     - [Problem Solved](#problem-solved-18)
     - [Key Features](#key-features-18)
-    - [Design Notes](#design-notes-8)
+    - [Design Notes](#design-notes-9)
     - [Installation](#installation-18)
     - [Quick Start](#quick-start-18)
     - [Configuration](#configuration-18)
@@ -206,7 +207,7 @@ services.AddHeadlessMessaging(setup =>
 - **Use `InMemory` + `InMemoryStorage` only for dev/testing**, never in production. Data is lost on restart.
 - **Add `Messaging.OpenTelemetry`** for tracing in any production deployment.
 - **Add `Messaging.Testing`** in test projects for integration testing with awaitable assertions. Use `AddMessagingTestHarness()` to decorate an existing host's DI container (WebApplicationFactory, IHost), or `MessagingTestHarness.CreateAsync()` for standalone harness.
-- **Add `Messaging.Dashboard`** when monitoring UI is needed; it defaults to no authentication — configure `WithBasicAuth`, `WithApiKey`, or `WithHostAuthentication` for production.
+- **Add `Messaging.Dashboard`** when monitoring UI is needed; it defaults to no authentication and exposes operational message actions, so configure `WithBasicAuth`, `WithApiKey`, `WithHostAuthentication`, or `WithCustomAuth` plus explicit CORS before production exposure.
 - **Messages are type-safe**: Define message types as classes/records. Register explicit consumers implementing `IConsume<TMessage>` with `setup.ForMessage<TMessage>(...)`. Use `setup.ForMessagesFromAssemblyContaining<TMarker>()` or `setup.ForMessagesFromAssembly(assembly)` inside `AddHeadlessMessaging(...)` for assembly scanning. Use the scan callback overloads to set per-consumer queue/bus intent, group, concurrency, handler id, circuit-breaker override, or `Skip()`; keep message-name overrides on explicit `ForMessage<TMessage>(...)` registrations.
 - **Library-owned consumers can register out of order**: `IServiceCollection.ForMessage<TMessage>(...)` can run before or after `AddHeadlessMessaging(...)` during service configuration — both entry points share one found-or-created `ConsumerRegistry`. `MessageName(...)` mappings are registered eagerly, so a publish that races ahead of startup (e.g. an `IHostedService` publishing in `StartAsync`) still resolves the explicit name rather than the convention fallback. Consumer metadata still drains before startup topology reads, so package setup methods do not need to force an app-level call order.
 - **Runtime handlers are first-class**: Use `IRuntimeSubscriber` for ephemeral broker-attached delegates. They share scoped DI, middleware, diagnostics, retry, and correlation semantics with class handlers.
@@ -927,6 +928,10 @@ Provides real-time visibility into message processing, failures, retries, and sy
 - **Performance Metrics**: Consumer processing stats and bottlenecks
 - **Five authentication modes** (shared with the Jobs Dashboard via `Headless.Dashboard.Authentication`): none, Basic, API key, host-app auth, custom.
 
+### Design Notes
+
+The dashboard exposes operational endpoints for inspecting, retrying, re-executing, and deleting message records. Treat `WithNoAuth()` as development-only unless the dashboard is isolated behind trusted network controls. Production deployments should use `WithHostAuthentication(...)`, `WithBasicAuth(...)`, `WithApiKey(...)`, or `WithCustomAuth(...)`, and should set an explicit CORS policy before exposing the dashboard cross-origin.
+
 ### Installation
 
 ```bash
@@ -947,11 +952,11 @@ builder.Services.AddHeadlessMessaging(setup =>
 
 ### Configuration
 
-Configured through `MessagingDashboardOptionsBuilder` inside `UseDashboard(...)`. Authentication is opt-in — with `WithNoAuth()` (the default) the dashboard is public, so configure an auth mode for production.
+Configured through `MessagingDashboardOptionsBuilder` inside `UseDashboard(...)`. Authentication is opt-in — with `WithNoAuth()` (the default) the dashboard is public, so configure authentication and CORS before production exposure.
 
 | Method | Default | Description |
 | --- | --- | --- |
-| `WithNoAuth()` | (default) | Public dashboard, no authentication. |
+| `WithNoAuth()` | (default) | Public dashboard, no authentication; development or trusted-network use only. |
 | `WithBasicAuth(username, password)` | — | HTTP Basic authentication. |
 | `WithApiKey(apiKey)` | — | API-key authentication. |
 | `WithHostAuthentication(policy?)` | — | Reuse the host app's auth, with an optional authorization policy. |

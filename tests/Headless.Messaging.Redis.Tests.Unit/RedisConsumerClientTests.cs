@@ -50,8 +50,12 @@ public sealed class RedisConsumerClientTests : TestBase
         await client.SubscribeAsync(messageNames);
 
         // then
-        await _mockStreamManager.Received(1).CreateStreamWithConsumerGroupAsync("messageName-1", "my-group");
-        await _mockStreamManager.Received(1).CreateStreamWithConsumerGroupAsync("messageName-2", "my-group");
+        await _mockStreamManager
+            .Received(1)
+            .CreateStreamWithConsumerGroupAsync("messageName-1", "my-group", Arg.Any<CancellationToken>());
+        await _mockStreamManager
+            .Received(1)
+            .CreateStreamWithConsumerGroupAsync("messageName-2", "my-group", Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -79,7 +83,9 @@ public sealed class RedisConsumerClientTests : TestBase
         await client.CommitAsync(sender);
 
         // then
-        await _mockStreamManager.Received(1).Ack("test-stream", "test-group", "1234567-0");
+        await _mockStreamManager
+            .Received(1)
+            .Ack("test-stream", "test-group", "1234567-0", Arg.Any<CancellationToken>());
     }
 
     [Fact]

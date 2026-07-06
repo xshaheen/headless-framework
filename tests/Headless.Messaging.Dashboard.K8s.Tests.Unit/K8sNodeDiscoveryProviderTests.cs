@@ -10,13 +10,13 @@ using Microsoft.Extensions.Caching.Memory;
 #pragma warning disable REFL009 // The referenced member is not known to exist
 namespace Tests;
 
-public sealed class K8SNodeDiscoveryProviderTests : TestBase
+public sealed class K8sNodeDiscoveryProviderTests : TestBase
 {
     private readonly K8sNodeDiscoveryProvider _provider;
     private readonly K8sDiscoveryOptions _options;
     private readonly MemoryCache _cache = new(new MemoryCacheOptions());
 
-    public K8SNodeDiscoveryProviderTests()
+    public K8sNodeDiscoveryProviderTests()
     {
         _options = new K8sDiscoveryOptions();
         _provider = new K8sNodeDiscoveryProvider(LoggerFactory, _cache, _options);

@@ -8,7 +8,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.Dashboard.K8s;
 
-// ReSharper disable once InconsistentNaming
 /// <summary>
 /// Kubernetes-backed implementation of <see cref="INodeDiscoveryProvider"/>.
 /// Queries the Kubernetes API for services in the configured namespace and maps them to
@@ -16,7 +15,8 @@ namespace Headless.Messaging.Dashboard.K8s;
 /// <c>headless.messaging.*</c> labels on each service.
 /// </summary>
 public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache, K8sDiscoveryOptions options)
-    : INodeDiscoveryProvider
+    : INodeDiscoveryProvider,
+        ICancellableNodeDiscoveryProvider
 {
     private const string _TagPrefix = "headless.messaging";
     private readonly ILogger<K8sNodeDiscoveryProvider> _logger = logger.CreateLogger<K8sNodeDiscoveryProvider>();
@@ -25,7 +25,7 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache,
     {
         try
         {
-            using var client = new Kubernetes(options.K8SClientConfig);
+            using var client = new Kubernetes(options.K8sClientConfig);
             var service = await client
                 .CoreV1.ReadNamespacedServiceAsync(nodeName, ns, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
@@ -39,9 +39,13 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache,
                 Tags = string.Join(',', service.Labels()?.Select(x => x.Key + ":" + x.Value) ?? []),
             };
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception e)
         {
-            _logger.LogGetK8SNodeFailed(e, e.Message);
+            _logger.LogGetK8sNodeFailed(e, e.Message);
         }
 
         return null;
@@ -51,24 +55,28 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache,
     {
         try
         {
-            ns = options.K8SClientConfig.Namespace;
+            ns ??= options.K8sClientConfig.Namespace;
 
             if (ns == null)
             {
                 return [];
             }
 
-            var nodes = await ListServices(ns).ConfigureAwait(false);
+            var nodes = await _ListServices(ns, cancellationToken).ConfigureAwait(false);
 
             cache.Set("messaging.nodes.count", nodes.Count, TimeSpan.FromSeconds(60));
 
             return nodes;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             cache.Set("messaging.nodes.count", 0, TimeSpan.FromSeconds(20));
 
-            _logger.LogGetK8SServicesFailed(ex);
+            _logger.LogGetK8sServicesFailed(ex);
 
             return [];
         }
@@ -76,7 +84,7 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache,
 
     public async Task<List<string>> GetNamespaces(CancellationToken cancellationToken)
     {
-        using var client = new Kubernetes(options.K8SClientConfig);
+        using var client = new Kubernetes(options.K8sClientConfig);
 
         try
         {
@@ -86,23 +94,39 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache,
 
             return [.. namespaces.Items.Select(x => x.Name())];
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
 #pragma warning disable ERP022
         catch (Exception)
         {
-            if (string.IsNullOrEmpty(options.K8SClientConfig.Namespace))
+            if (string.IsNullOrEmpty(options.K8sClientConfig.Namespace))
             {
                 return [];
             }
 
-            return [options.K8SClientConfig.Namespace];
+            return [options.K8sClientConfig.Namespace];
         }
 #pragma warning restore ERP022
     }
 
-    public async Task<IList<Node>> ListServices(string? ns = null)
+    public Task<IList<Node>> ListServices(string? ns = null)
     {
-        using var client = new Kubernetes(options.K8SClientConfig);
-        var services = await client.CoreV1.ListNamespacedServiceAsync(ns).ConfigureAwait(false);
+        return _ListServices(ns, CancellationToken.None);
+    }
+
+    Task<IList<Node>> ICancellableNodeDiscoveryProvider.ListServices(string? ns, CancellationToken cancellationToken)
+    {
+        return _ListServices(ns, cancellationToken);
+    }
+
+    private async Task<IList<Node>> _ListServices(string? ns, CancellationToken cancellationToken)
+    {
+        using var client = new Kubernetes(options.K8sClientConfig);
+        var services = await client
+            .CoreV1.ListNamespacedServiceAsync(ns, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
 
         var result = new List<Node>();
         foreach (var service in services.Items)
@@ -317,7 +341,7 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache,
     }
 }
 
-internal static partial class K8SNodeDiscoveryProviderLog
+internal static partial class K8sNodeDiscoveryProviderLog
 {
     [LoggerMessage(
         EventId = 1,
@@ -325,7 +349,7 @@ internal static partial class K8SNodeDiscoveryProviderLog
         Level = LogLevel.Error,
         Message = "Get k8s node raised an exception. Exception:{Message}"
     )]
-    public static partial void LogGetK8SNodeFailed(this ILogger logger, Exception exception, string message);
+    public static partial void LogGetK8sNodeFailed(this ILogger logger, Exception exception, string message);
 
     [LoggerMessage(
         EventId = 2,
@@ -333,5 +357,5 @@ internal static partial class K8SNodeDiscoveryProviderLog
         Level = LogLevel.Error,
         Message = "Get k8s services raised an exception"
     )]
-    public static partial void LogGetK8SServicesFailed(this ILogger logger, Exception exception);
+    public static partial void LogGetK8sServicesFailed(this ILogger logger, Exception exception);
 }

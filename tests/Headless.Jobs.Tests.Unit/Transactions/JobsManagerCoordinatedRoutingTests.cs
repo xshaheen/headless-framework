@@ -26,10 +26,6 @@ public sealed class JobsManagerCoordinatedRoutingTests
 
     static JobsManagerCoordinatedRoutingTests()
     {
-        // AddHeadlessJobs normally seeds this from the scheduler options; the manager's cron-expression validation
-        // needs it set or GetNextOccurrenceOrDefault returns null and AddAsync reports a parse failure.
-        CronScheduleCache.TimeZoneInfo = TimeZoneInfo.Utc;
-
         // The manager validates the function exists before routing. No other unit test mutates JobFunctionProvider, so
         // a one-time static registration is stable for this assembly.
         JobFunctionProvider.RegisterFunctions(
@@ -472,6 +468,7 @@ public sealed class JobsManagerCoordinatedRoutingTests
             new JobsExecutionContext(),
             dispatcher,
             new FakeCurrentCommitCoordinator(coordinator),
+            new CronScheduleCache(TimeZoneInfo.Utc),
             logger
         );
 
