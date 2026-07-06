@@ -60,16 +60,16 @@ public sealed class SetupTests : TestBase
         // when
         services.AddMessagingDashboardStandalone(
             option => option.SetBasePath("/custom-path"),
-            k8SOption => k8SOption.ShowOnlyExplicitVisibleNodes = false
+            configureK8s => configureK8s.ShowOnlyExplicitVisibleNodes = false
         );
 
         // then
         var provider = services.BuildServiceProvider();
         var builder = provider.GetRequiredService<MessagingDashboardOptionsBuilder>();
-        var k8SOptions = provider.GetRequiredService<K8sDiscoveryOptions>();
+        var k8sOptions = provider.GetRequiredService<K8sDiscoveryOptions>();
 
         builder.BasePath.Should().Be("/custom-path");
-        k8SOptions.ShowOnlyExplicitVisibleNodes.Should().BeFalse();
+        k8sOptions.ShowOnlyExplicitVisibleNodes.Should().BeFalse();
     }
 
     [Fact]

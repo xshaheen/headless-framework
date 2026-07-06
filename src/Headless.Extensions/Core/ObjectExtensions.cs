@@ -43,7 +43,7 @@ public static class ObjectExtensions
     [JetBrainsPure]
     [SystemPure]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-#nullable disable
+#nullable disable // Preserve nullability-oblivious params behavior for nullable and non-nullable T callers.
     public static bool In<T>(this T item, params T[] collection)
 #nullable restore
     {

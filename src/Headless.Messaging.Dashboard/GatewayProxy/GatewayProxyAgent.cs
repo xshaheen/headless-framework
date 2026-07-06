@@ -69,7 +69,9 @@ public class GatewayProxyAgent(
                 var cacheKey = $"{requestNodeName}\0{ns}";
                 if (!cache.TryGetValue(cacheKey, out node))
                 {
-                    node = await discoveryProvider.GetNode(requestNodeName, ns).ConfigureAwait(false);
+                    node = await discoveryProvider
+                        .GetNode(requestNodeName, ns, context.RequestAborted)
+                        .ConfigureAwait(false);
                     cache.Set(cacheKey, node);
                 }
             }
@@ -87,7 +89,9 @@ public class GatewayProxyAgent(
 
             if (!cache.TryGetValue(requestNodeName, out node))
             {
-                node = await discoveryProvider.GetNode(requestNodeName).ConfigureAwait(false);
+                node = await discoveryProvider
+                    .GetNode(requestNodeName, cancellationToken: context.RequestAborted)
+                    .ConfigureAwait(false);
                 cache.Set(requestNodeName, node);
             }
         }
@@ -110,9 +114,13 @@ public class GatewayProxyAgent(
                     .SendAsync(downstreamRequest, context.RequestAborted)
                     .ConfigureAwait(false);
 
-                await _SetResponseOnHttpContext(context, response).ConfigureAwait(false);
+                await _SetResponseOnHttpContext(context, response, context.RequestAborted).ConfigureAwait(false);
 
                 return true;
+            }
+            catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
@@ -127,7 +135,11 @@ public class GatewayProxyAgent(
         return false;
     }
 
-    private static async Task _SetResponseOnHttpContext(HttpContext context, HttpResponseMessage response)
+    private static async Task _SetResponseOnHttpContext(
+        HttpContext context,
+        HttpResponseMessage response,
+        CancellationToken cancellationToken
+    )
     {
         foreach (var httpResponseHeader in response.Content.Headers)
         {
@@ -148,7 +160,7 @@ public class GatewayProxyAgent(
 
         if (response.StatusCode != HttpStatusCode.NotModified)
         {
-            await response.Content.CopyToAsync(context.Response.Body).ConfigureAwait(false);
+            await response.Content.CopyToAsync(context.Response.Body, cancellationToken).ConfigureAwait(false);
         }
     }
 

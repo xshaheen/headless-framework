@@ -23,6 +23,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     JobsExecutionContext executionContext,
     IJobsDispatcher dispatcher,
     ICurrentCommitCoordinator currentCommitCoordinator,
+    CronScheduleCache cronScheduleCache,
     ILogger<JobsManager<TTimeJob, TCronJob>> logger
 ) : ICronJobManager<TCronJob>, ITimeJobManager<TTimeJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
@@ -32,6 +33,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     private readonly IJobsDispatcher _dispatcher = Argument.IsNotNull(dispatcher);
     private readonly JobsExecutionContext _executionContext = Argument.IsNotNull(executionContext);
     private readonly ICurrentCommitCoordinator _currentCommitCoordinator = Argument.IsNotNull(currentCommitCoordinator);
+    private readonly CronScheduleCache _cronScheduleCache = Argument.IsNotNull(cronScheduleCache);
     private readonly ILogger<JobsManager<TTimeJob, TCronJob>> _logger = Argument.IsNotNull(logger);
 
     // Add is the transaction-enlisting op: it returns the persisted entity and THROWS on any failure — validation
@@ -196,7 +198,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         }
 
         if (
-            CronScheduleCache.GetNextOccurrenceOrDefault(entity.Expression, timeProvider.GetUtcNow().UtcDateTime)
+            _cronScheduleCache.GetNextOccurrenceOrDefault(entity.Expression, timeProvider.GetUtcNow().UtcDateTime)
             is not { } nextOccurrence
         )
         {
@@ -292,7 +294,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         }
 
         if (
-            CronScheduleCache.GetNextOccurrenceOrDefault(cronJob.Expression, timeProvider.GetUtcNow().UtcDateTime)
+            _cronScheduleCache.GetNextOccurrenceOrDefault(cronJob.Expression, timeProvider.GetUtcNow().UtcDateTime)
             is not { } nextOccurrence
         )
         {
@@ -356,14 +358,14 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         return new JobResult<TTimeJob>(affectedRows);
     }
 
-    private static DateTime _ConvertToUtcIfNeeded(DateTime dateTime)
+    private DateTime _ConvertToUtcIfNeeded(DateTime dateTime)
     {
         // If DateTime.Kind is Unspecified, assume it's in system timezone
         return dateTime.Kind switch
         {
             DateTimeKind.Utc => dateTime,
             DateTimeKind.Local => dateTime.ToUniversalTime(),
-            DateTimeKind.Unspecified => TimeZoneInfo.ConvertTimeToUtc(dateTime, CronScheduleCache.TimeZoneInfo),
+            DateTimeKind.Unspecified => TimeZoneInfo.ConvertTimeToUtc(dateTime, _cronScheduleCache.TimeZoneInfo),
             _ => dateTime,
         };
     }
@@ -552,7 +554,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             }
 
             if (
-                CronScheduleCache.GetNextOccurrenceOrDefault(entity.Expression, timeProvider.GetUtcNow().UtcDateTime)
+                _cronScheduleCache.GetNextOccurrenceOrDefault(entity.Expression, timeProvider.GetUtcNow().UtcDateTime)
                 is not { } nextOccurrence
             )
             {
@@ -704,7 +706,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             }
 
             if (
-                CronScheduleCache.GetNextOccurrenceOrDefault(cronJob.Expression, timeProvider.GetUtcNow().UtcDateTime)
+                _cronScheduleCache.GetNextOccurrenceOrDefault(cronJob.Expression, timeProvider.GetUtcNow().UtcDateTime)
                 is not { } nextOccurrence
             )
             {

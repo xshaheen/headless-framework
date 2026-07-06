@@ -7,14 +7,14 @@ using StackExchange.Redis;
 
 namespace Headless.Messaging.Redis;
 
-internal sealed class RedisConnectionPool : IRedisConnectionPool, IDisposable
+internal sealed class RedisConnectionPool : IRedisConnectionPool, IDisposable, IAsyncDisposable
 {
     private readonly ConcurrentBag<AsyncLazyRedisConnection> _connections = [];
 
     private readonly ILoggerFactory _loggerFactory;
     private readonly SemaphoreSlim _poolLock = new(1);
     private readonly MessagingRedisOptions _redisOptions;
-    private bool _isDisposed;
+    private int _isDisposed;
     private bool _poolAlreadyConfigured;
 
     public RedisConnectionPool(IOptions<MessagingRedisOptions> options, ILoggerFactory loggerFactory)
@@ -26,41 +26,78 @@ internal sealed class RedisConnectionPool : IRedisConnectionPool, IDisposable
 
     private AsyncLazyRedisConnection? QuietConnection =>
         _poolAlreadyConfigured
-            ? _connections.OrderBy(static c => c.CreatedConnection?.ConnectionCapacity ?? int.MaxValue).First()
+            ? _connections.OrderBy(static c => c.CreatedConnection?.ConnectionCapacity ?? int.MaxValue).FirstOrDefault()
             : null;
 
     public void Dispose()
     {
-        _Dispose(disposing: true);
+        if (Interlocked.Exchange(ref _isDisposed, 1) != 0)
+        {
+            return;
+        }
+
+        _DisposeCreatedConnections();
+        _poolLock.Dispose();
+
+        GC.SuppressFinalize(this);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (Interlocked.Exchange(ref _isDisposed, 1) != 0)
+        {
+            return;
+        }
+
+        await _DisposeCreatedConnectionsAsync().ConfigureAwait(false);
+        _poolLock.Dispose();
+
         GC.SuppressFinalize(this);
     }
 
     public async Task<IConnectionMultiplexer> ConnectAsync(CancellationToken cancellationToken = default)
     {
-        if (QuietConnection == null)
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _isDisposed) != 0, this);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (QuietConnection is not { } quietConnection)
         {
             _poolAlreadyConfigured =
                 _connections.Count(static c => c.IsValueCreated) == _redisOptions.ConnectionPoolSize;
-            if (QuietConnection != null)
+            quietConnection = QuietConnection;
+            if (quietConnection?.CreatedConnection is { } createdConnection)
             {
-                return QuietConnection.CreatedConnection!.Connection;
+                return createdConnection.Connection;
             }
+        }
+        else if (quietConnection.CreatedConnection is { } createdConnection)
+        {
+            return createdConnection.Connection;
         }
 
         foreach (var lazy in _connections)
         {
             if (!lazy.IsValueCreated)
             {
-                return (await lazy).Connection;
+                return (await lazy.GetValueAsync(cancellationToken).ConfigureAwait(false)).Connection;
             }
 
-            if (lazy.CreatedConnection!.ConnectionCapacity == 0)
+            if (lazy.CreatedConnection is not { } createdConnection)
             {
-                return lazy.CreatedConnection.Connection;
+                return (await lazy.GetValueAsync(cancellationToken).ConfigureAwait(false)).Connection;
+            }
+
+            if (createdConnection.ConnectionCapacity == 0)
+            {
+                return createdConnection.Connection;
             }
         }
 
-        return (await _connections.OrderBy(static c => c.CreatedConnection!.ConnectionCapacity).First()).Connection;
+        var selected = _connections
+            .OrderBy(static c => c.CreatedConnection?.ConnectionCapacity ?? int.MaxValue)
+            .First();
+
+        return (await selected.GetValueAsync(cancellationToken).ConfigureAwait(false)).Connection;
     }
 
     private void _Init()
@@ -94,39 +131,59 @@ internal sealed class RedisConnectionPool : IRedisConnectionPool, IDisposable
         }
     }
 
-    private void _Dispose(bool disposing)
+    private void _DisposeCreatedConnections()
     {
-        if (_isDisposed)
+        foreach (var connection in _connections)
         {
-            return;
-        }
-
-        if (disposing)
-        {
-            foreach (var connection in _connections)
+            if (!connection.IsValueCreated)
             {
-                if (!connection.IsValueCreated)
-                {
-                    continue;
-                }
-
-                connection.CreatedConnection!.Dispose();
+                continue;
             }
 
-            _poolLock.Dispose();
+            connection.CreatedConnection?.Dispose();
         }
+    }
 
-        _isDisposed = true;
+    private async ValueTask _DisposeCreatedConnectionsAsync()
+    {
+        foreach (var connection in _connections)
+        {
+            if (!connection.IsValueCreated)
+            {
+                continue;
+            }
+
+            RedisConnection createdConnection;
+
+            try
+            {
+                createdConnection = await connection.GetValueAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                continue;
+            }
+            catch (InvalidOperationException)
+            {
+                continue;
+            }
+            catch (RedisException)
+            {
+                continue;
+            }
+
+            createdConnection.Dispose();
+        }
     }
 
 #pragma warning disable MA0055 // Dispose methods should call SuppressFinalize
     ~RedisConnectionPool()
 #pragma warning restore MA0055
     {
-        if (!_isDisposed)
+        if (Volatile.Read(ref _isDisposed) == 0)
         {
             System.Diagnostics.Debug.Fail(
-                "RedisConnectionPool was not disposed. Call Dispose() to release SemaphoreSlim."
+                "RedisConnectionPool was not disposed. Call Dispose() or DisposeAsync() to release resources."
             );
         }
     }

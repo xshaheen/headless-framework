@@ -6,8 +6,13 @@ namespace Headless.Messaging.Redis;
 
 internal interface IRedisStreamManager
 {
-    Task CreateStreamWithConsumerGroupAsync(string stream, string consumerGroup);
-    Task PublishAsync(string stream, NameValueEntry[] message);
+    Task CreateStreamWithConsumerGroupAsync(
+        string stream,
+        string consumerGroup,
+        CancellationToken cancellationToken = default
+    );
+
+    Task PublishAsync(string stream, NameValueEntry[] message, CancellationToken cancellationToken = default);
 
     IAsyncEnumerable<IEnumerable<RedisStream>> PollStreamsLatestMessagesAsync(
         string[] streams,
@@ -23,5 +28,5 @@ internal interface IRedisStreamManager
         CancellationToken token
     );
 
-    Task Ack(string stream, string consumerGroup, string messageId);
+    Task Ack(string stream, string consumerGroup, string messageId, CancellationToken cancellationToken = default);
 }

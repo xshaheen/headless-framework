@@ -84,14 +84,16 @@ public sealed class RedisTransportTests : TestBase
         var body = """{"data":"test"}"""u8.ToArray();
         var message = new TransportMessage(headers, body);
 
-        _mockStreamManager.PublishAsync(Arg.Any<string>(), Arg.Any<NameValueEntry[]>()).Returns(Task.CompletedTask);
+        _mockStreamManager
+            .PublishAsync(Arg.Any<string>(), Arg.Any<NameValueEntry[]>(), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
 
         // when
         var result = await _sut.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeTrue();
-        await _mockStreamManager.Received(1).PublishAsync("test-topic", Arg.Any<NameValueEntry[]>());
+        await _mockStreamManager.Received(1).PublishAsync("test-topic", Arg.Any<NameValueEntry[]>(), AbortToken);
     }
 
     [Fact]
@@ -106,7 +108,9 @@ public sealed class RedisTransportTests : TestBase
         var message = new TransportMessage(headers, ReadOnlyMemory<byte>.Empty);
 
         var expectedException = new RedisException("Connection failed");
-        _mockStreamManager.PublishAsync(Arg.Any<string>(), Arg.Any<NameValueEntry[]>()).ThrowsAsync(expectedException);
+        _mockStreamManager
+            .PublishAsync(Arg.Any<string>(), Arg.Any<NameValueEntry[]>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(expectedException);
 
         // when
         var result = await _sut.SendAsync(message, AbortToken);
@@ -132,7 +136,11 @@ public sealed class RedisTransportTests : TestBase
 
         NameValueEntry[]? capturedEntries = null;
         _mockStreamManager
-            .PublishAsync(Arg.Any<string>(), Arg.Do<NameValueEntry[]>(x => capturedEntries = x))
+            .PublishAsync(
+                Arg.Any<string>(),
+                Arg.Do<NameValueEntry[]>(x => capturedEntries = x),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(Task.CompletedTask);
 
         // when

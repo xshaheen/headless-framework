@@ -4,7 +4,6 @@ using k8s;
 
 namespace Headless.Messaging.Dashboard.K8s;
 
-// ReSharper disable once InconsistentNaming
 /// <summary>
 /// Configuration for Kubernetes-based node discovery used by the Messaging Dashboard.
 /// Controls which Kubernetes services are listed as peer nodes and how the Kubernetes
@@ -17,7 +16,7 @@ public class K8sDiscoveryOptions
     /// Defaults to the ambient in-cluster or kubeconfig-file configuration
     /// resolved by <c>KubernetesClientConfiguration.BuildDefaultConfig()</c>.
     /// </summary>
-    public KubernetesClientConfiguration K8SClientConfig { get; set; } =
+    public KubernetesClientConfiguration K8sClientConfig { get; set; } =
         KubernetesClientConfiguration.BuildDefaultConfig();
 
     /// <summary>

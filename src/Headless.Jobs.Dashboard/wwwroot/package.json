@@ -33,7 +33,6 @@
   "devDependencies": {
     "@mdi/font": "^7.4.47",
     "@tsconfig/node22": "^22.0.0",
-    "@types/axios": "^0.14.4",
     "@types/node": "^26.1.0",
     "@vitejs/plugin-vue": "^6.0.7",
     "@vue/eslint-config-prettier": "^10.1.0",

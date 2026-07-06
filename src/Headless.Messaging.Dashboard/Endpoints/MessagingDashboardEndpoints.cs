@@ -228,7 +228,7 @@ public static class MessagingDashboardEndpoints
         );
     }
 
-    private static async Task<IResult> _Stats(IServiceProvider sp)
+    private static async Task<IResult> _Stats(IServiceProvider sp, HttpContext httpContext)
     {
         var dataStorage = sp.GetRequiredService<IDataStorage>();
         var monitoringApi = dataStorage.GetMonitoringApi();
@@ -250,7 +250,9 @@ public static class MessagingDashboardEndpoints
             if (sp.GetService<ConsulDiscoveryOptions>() != null)
             {
                 var discoveryProvider = sp.GetRequiredService<INodeDiscoveryProvider>();
-                var nodes = await discoveryProvider.GetNodes().ConfigureAwait(false);
+                var nodes = await discoveryProvider
+                    .GetNodes(cancellationToken: httpContext.RequestAborted)
+                    .ConfigureAwait(false);
                 result.Servers = nodes.Count;
             }
         }
@@ -666,7 +668,7 @@ public static class MessagingDashboardEndpoints
         }
     }
 
-    private static async Task<IResult> _Nodes(IServiceProvider sp)
+    private static async Task<IResult> _Nodes(IServiceProvider sp, HttpContext httpContext)
     {
         var discoveryProvider = sp.GetService<INodeDiscoveryProvider>();
         if (discoveryProvider == null)
@@ -674,7 +676,8 @@ public static class MessagingDashboardEndpoints
             return Results.Json(new List<Node>());
         }
 
-        var result = await discoveryProvider.GetNodes().ConfigureAwait(false) ?? [];
+        var result =
+            await discoveryProvider.GetNodes(cancellationToken: httpContext.RequestAborted).ConfigureAwait(false) ?? [];
         return Results.Json(result);
     }
 
@@ -695,7 +698,7 @@ public static class MessagingDashboardEndpoints
         return Results.Json(nsList);
     }
 
-    private static async Task<IResult> _ListServices(string @namespace, IServiceProvider sp)
+    private static async Task<IResult> _ListServices(string @namespace, IServiceProvider sp, HttpContext httpContext)
     {
         var discoveryProvider = sp.GetService<INodeDiscoveryProvider>();
         if (discoveryProvider == null)
@@ -703,7 +706,12 @@ public static class MessagingDashboardEndpoints
             return Results.Json(new List<Node>());
         }
 
-        var result = await discoveryProvider.ListServices(@namespace).ConfigureAwait(false);
+        var result = discoveryProvider is ICancellableNodeDiscoveryProvider cancellableDiscoveryProvider
+            ? await cancellableDiscoveryProvider
+                .ListServices(@namespace, httpContext.RequestAborted)
+                .ConfigureAwait(false)
+            : await discoveryProvider.ListServices(@namespace).ConfigureAwait(false);
+
         return Results.Json(result);
     }
 
@@ -711,7 +719,8 @@ public static class MessagingDashboardEndpoints
         string? endpoint,
         IServiceProvider sp,
         IHttpClientFactory httpClientFactory,
-        MessagingDashboardOptionsBuilder config
+        MessagingDashboardOptionsBuilder config,
+        HttpContext httpContext
     )
     {
         if (string.IsNullOrWhiteSpace(endpoint))
@@ -725,7 +734,9 @@ public static class MessagingDashboardEndpoints
             return Results.BadRequest("Node discovery is not configured.");
         }
 
-        var nodes = await discoveryProvider.GetNodes().ConfigureAwait(false);
+        var nodes = await discoveryProvider
+            .GetNodes(cancellationToken: httpContext.RequestAborted)
+            .ConfigureAwait(false);
         var isRegistered = nodes.Any(n =>
             endpoint.StartsWith(
                 string.Create(CultureInfo.InvariantCulture, $"http://{n.Address}:{n.Port}"),

@@ -14,10 +14,10 @@ internal sealed class K8sDiscoveryOptionsExtension(Action<K8sDiscoveryOptions>? 
 {
     public void AddServices(IServiceCollection services)
     {
-        var k8SOptions = new K8sDiscoveryOptions();
+        var k8sOptions = new K8sDiscoveryOptions();
 
-        option?.Invoke(k8SOptions);
-        services.AddSingleton(k8SOptions);
+        option?.Invoke(k8sOptions);
+        services.AddSingleton(k8sOptions);
 
         services.AddHttpClient();
         services.TryAddSingleton<IRequestMapper, RequestMapper>();

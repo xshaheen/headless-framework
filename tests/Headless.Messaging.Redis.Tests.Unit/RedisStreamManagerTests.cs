@@ -4,6 +4,7 @@ using Headless.Messaging.Redis;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 using StackExchange.Redis;
 
 namespace Tests;
@@ -24,7 +25,7 @@ public sealed class RedisStreamManagerTests : TestBase
         _mockMultiplexer = Substitute.For<IConnectionMultiplexer>();
         _mockDatabase = Substitute.For<IDatabase>();
 
-        _mockConnectionPool.ConnectAsync().Returns(Task.FromResult(_mockMultiplexer));
+        _mockConnectionPool.ConnectAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult(_mockMultiplexer));
         _mockMultiplexer.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(_mockDatabase);
 
         var options = Options.Create(
@@ -57,10 +58,10 @@ public sealed class RedisStreamManagerTests : TestBase
             .Returns(new RedisValue("1234567-0"));
 
         // when
-        await _sut.PublishAsync("test-stream", entries);
+        await _sut.PublishAsync("test-stream", entries, TestContext.Current.CancellationToken);
 
         // then
-        await _mockConnectionPool.Received(1).ConnectAsync(CancellationToken.None);
+        await _mockConnectionPool.Received(1).ConnectAsync(TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -81,7 +82,7 @@ public sealed class RedisStreamManagerTests : TestBase
             .Returns(new RedisValue("1234567-0"));
 
         // when
-        await _sut.PublishAsync("orders-stream", entries);
+        await _sut.PublishAsync("orders-stream", entries, TestContext.Current.CancellationToken);
 
         // then - verify database was obtained from multiplexer
         _mockMultiplexer.Received().GetDatabase(Arg.Any<int>(), Arg.Any<object?>());
@@ -101,7 +102,7 @@ public sealed class RedisStreamManagerTests : TestBase
             .Returns(1L);
 
         // when
-        await _sut.Ack("test-stream", "my-group", "1234567-0");
+        await _sut.Ack("test-stream", "my-group", "1234567-0", TestContext.Current.CancellationToken);
 
         // then
         await _mockDatabase
@@ -123,9 +124,52 @@ public sealed class RedisStreamManagerTests : TestBase
             .Returns(1L);
 
         // when
-        await _sut.Ack("stream", "group", "id");
+        await _sut.Ack("stream", "group", "id", TestContext.Current.CancellationToken);
 
         // then
-        await _mockConnectionPool.Received(1).ConnectAsync(CancellationToken.None);
+        await _mockConnectionPool.Received(1).ConnectAsync(TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task should_wait_asynchronously_between_latest_poll_iterations()
+    {
+        // given
+        var timeProvider = new FakeTimeProvider();
+        var sut = _CreateSut(timeProvider);
+        var pollDelay = TimeSpan.FromMinutes(1);
+
+        await using var enumerator = sut.PollStreamsLatestMessagesAsync(
+                [],
+                "group",
+                pollDelay,
+                TestContext.Current.CancellationToken
+            )
+            .GetAsyncEnumerator(TestContext.Current.CancellationToken);
+
+        // when
+        var firstMove = await enumerator.MoveNextAsync();
+        var secondMoveTask = enumerator.MoveNextAsync().AsTask();
+
+        // then
+        firstMove.Should().BeTrue();
+        secondMoveTask.IsCompleted.Should().BeFalse();
+
+        timeProvider.Advance(pollDelay);
+
+        (await secondMoveTask).Should().BeTrue();
+    }
+
+    private RedisStreamManager _CreateSut(TimeProvider timeProvider)
+    {
+        var options = Options.Create(
+            new MessagingRedisOptions
+            {
+                Configuration = ConfigurationOptions.Parse("localhost:6379"),
+                StreamEntriesCount = 10,
+            }
+        );
+
+        var logger = LoggerFactory.CreateLogger<RedisStreamManager>();
+        return new RedisStreamManager(_mockConnectionPool, options, logger, timeProvider);
     }
 }
