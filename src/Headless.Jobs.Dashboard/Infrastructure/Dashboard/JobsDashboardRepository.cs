@@ -441,7 +441,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
         {
             var occurrence = acquired[0];
             acquiredOccurrence = occurrence;
-            var context = new InternalFunctionContext
+            var context = new JobExecutionState
             {
                 ParentId = occurrence.CronJobId,
                 FunctionName = occurrence.CronJob.Function,

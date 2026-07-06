@@ -66,17 +66,13 @@ internal sealed class NoOpJobsNotificationHubSender : IJobsNotificationHubSender
         return Task.CompletedTask;
     }
 
-    public Task UpdateTimeJobFromInternalFunctionContext<TTimeJobEntity>(
-        InternalFunctionContext internalFunctionContext
-    )
+    public Task UpdateTimeJobFromExecutionState<TTimeJobEntity>(JobExecutionState executionState)
         where TTimeJobEntity : TimeJobEntity<TTimeJobEntity>, new()
     {
         return Task.CompletedTask;
     }
 
-    public Task UpdateCronOccurrenceFromInternalFunctionContext<TCronJobEntity>(
-        InternalFunctionContext internalFunctionContext
-    )
+    public Task UpdateCronOccurrenceFromExecutionState<TCronJobEntity>(JobExecutionState executionState)
         where TCronJobEntity : CronJobEntity, new()
     {
         return Task.CompletedTask;

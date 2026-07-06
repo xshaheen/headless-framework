@@ -18,11 +18,11 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     IAsyncEnumerable<TimeJobEntity> QueueTimedOutTimeJobs(CancellationToken cancellationToken = default);
     Task ReleaseAcquiredTimeJobs(Guid[] timeJobIds, CancellationToken cancellationToken = default);
     Task<TimeJobEntity[]> GetEarliestTimeJobs(CancellationToken cancellationToken = default);
-    Task<int> UpdateTimeJob(InternalFunctionContext functionContext, CancellationToken cancellationToken = default);
+    Task<int> UpdateTimeJob(JobExecutionState functionContext, CancellationToken cancellationToken = default);
     Task<byte[]> GetTimeJobRequest(Guid id, CancellationToken cancellationToken);
     Task UpdateTimeJobsWithUnifiedContext(
         Guid[] timeJobIds,
-        InternalFunctionContext functionContext,
+        JobExecutionState functionContext,
         CancellationToken cancellationToken = default
     );
     Task<TimeJobEntity[]> AcquireImmediateTimeJobsAsync(Guid[] ids, CancellationToken cancellationToken = default);
@@ -60,7 +60,7 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
         CancellationToken cancellationToken = default
     );
     IAsyncEnumerable<CronJobOccurrenceEntity<TCronJob>> QueueCronJobOccurrences(
-        (DateTime Key, InternalManagerContext[] Items) cronJobOccurrences,
+        (DateTime Key, JobManagerDispatchContext[] Items) cronJobOccurrences,
         CancellationToken cancellationToken = default
     );
     IAsyncEnumerable<CronJobOccurrenceEntity<TCronJob>> QueueTimedOutCronJobOccurrences(
@@ -69,15 +69,12 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
 
     // Returns the affected-row count: 0 when the #5 completion fence excluded the row (foreign owner or terminal
     // status), 1 when the completion was applied — mirroring UpdateTimeJob so the cron fence is observable/testable.
-    Task<int> UpdateCronJobOccurrence(
-        InternalFunctionContext functionContext,
-        CancellationToken cancellationToken = default
-    );
+    Task<int> UpdateCronJobOccurrence(JobExecutionState functionContext, CancellationToken cancellationToken = default);
     Task ReleaseAcquiredCronJobOccurrences(Guid[] occurrenceIds, CancellationToken cancellationToken = default);
     Task<byte[]> GetCronJobOccurrenceRequest(Guid jobId, CancellationToken cancellationToken = default);
     Task UpdateCronJobOccurrencesWithUnifiedContext(
         Guid[] timeJobIds,
-        InternalFunctionContext functionContext,
+        JobExecutionState functionContext,
         CancellationToken cancellationToken = default
     );
     Task<int> ReleaseDeadNodeOccurrenceResources(

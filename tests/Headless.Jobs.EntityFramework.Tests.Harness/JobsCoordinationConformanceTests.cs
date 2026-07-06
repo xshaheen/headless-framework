@@ -226,12 +226,11 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
             var terminalId = Guid.NewGuid();
             await fixture.SeedTimeJobAsync(terminalId, "terminal", (int)JobStatus.Failed, "node-a@5", ct);
 
-            var foreignCompletion = new InternalFunctionContext
-            {
-                FunctionName = "foreign",
-                JobId = foreignId,
-            }.SetProperty(x => x.Status, JobStatus.Succeeded);
-            var terminalCompletion = new InternalFunctionContext
+            var foreignCompletion = new JobExecutionState { FunctionName = "foreign", JobId = foreignId }.SetProperty(
+                x => x.Status,
+                JobStatus.Succeeded
+            );
+            var terminalCompletion = new JobExecutionState
             {
                 FunctionName = "terminal",
                 JobId = terminalId,
@@ -273,7 +272,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
             // The context mirrors what the manager builds from the cron entity (OnNodeDeath copied off the cron).
-            var context = new InternalManagerContext(cronId)
+            var context = new JobManagerDispatchContext(cronId)
             {
                 FunctionName = "cron-skip",
                 Expression = "* * * * *",
@@ -837,15 +836,15 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
                 ct
             );
 
-            var owned = new InternalFunctionContext { FunctionName = "Cron", JobId = ownedId }.SetProperty(
+            var owned = new JobExecutionState { FunctionName = "Cron", JobId = ownedId }.SetProperty(
                 x => x.Status,
                 JobStatus.Succeeded
             );
-            var foreign = new InternalFunctionContext { FunctionName = "Cron", JobId = foreignId }.SetProperty(
+            var foreign = new JobExecutionState { FunctionName = "Cron", JobId = foreignId }.SetProperty(
                 x => x.Status,
                 JobStatus.Succeeded
             );
-            var terminal = new InternalFunctionContext { FunctionName = "Cron", JobId = terminalId }.SetProperty(
+            var terminal = new JobExecutionState { FunctionName = "Cron", JobId = terminalId }.SetProperty(
                 x => x.Status,
                 JobStatus.Succeeded
             );

@@ -92,7 +92,7 @@ public sealed class RetryBehaviorTests : TestBase
 
         // Renewal fires fast (100 ms cadence) and throws on the first attempt, simulating a DB outage mid-job.
         internalManager
-            .RenewLeaseAsync(Arg.Any<InternalFunctionContext>(), Arg.Any<CancellationToken>())
+            .RenewLeaseAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
             .Returns(_ => Task.FromException<int>(new TimeoutException("simulated DB outage")));
 
         var handler = new JobsExecutionTaskHandler(
@@ -108,7 +108,7 @@ public sealed class RetryBehaviorTests : TestBase
             NullLogger<JobsExecutionTaskHandler>.Instance
         );
 
-        var context = new InternalFunctionContext
+        var context = new JobExecutionState
         {
             JobId = Guid.NewGuid(),
             FunctionName = "LongJob",
@@ -130,7 +130,7 @@ public sealed class RetryBehaviorTests : TestBase
         context.Status.Should().NotBe(JobStatus.Cancelled);
         await internalManager
             .DidNotReceive()
-            .UpdateTickerAsync(Arg.Any<InternalFunctionContext>(), Arg.Any<CancellationToken>());
+            .UpdateTickerAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -148,7 +148,7 @@ public sealed class RetryBehaviorTests : TestBase
 
         // Renewal hangs until its (linked timeout) token cancels — i.e. it never completes within the cadence.
         internalManager
-            .RenewLeaseAsync(Arg.Any<InternalFunctionContext>(), Arg.Any<CancellationToken>())
+            .RenewLeaseAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
             .Returns(async call => await Task.Delay(Timeout.Infinite, call.Arg<CancellationToken>()));
 
         var handler = new JobsExecutionTaskHandler(
@@ -164,7 +164,7 @@ public sealed class RetryBehaviorTests : TestBase
             NullLogger<JobsExecutionTaskHandler>.Instance
         );
 
-        var context = new InternalFunctionContext
+        var context = new JobExecutionState
         {
             JobId = Guid.NewGuid(),
             FunctionName = "LongJob",
@@ -182,7 +182,7 @@ public sealed class RetryBehaviorTests : TestBase
         context.LeaseLost.Should().BeTrue();
         await internalManager
             .DidNotReceive()
-            .UpdateTickerAsync(Arg.Any<InternalFunctionContext>(), Arg.Any<CancellationToken>());
+            .UpdateTickerAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -203,7 +203,7 @@ public sealed class RetryBehaviorTests : TestBase
         var secondRenewalReached = new TaskCompletionSource();
         var renewalCalls = 0;
         internalManager
-            .RenewLeaseAsync(Arg.Any<InternalFunctionContext>(), Arg.Any<CancellationToken>())
+            .RenewLeaseAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 if (Interlocked.Increment(ref renewalCalls) >= 2)
@@ -215,7 +215,7 @@ public sealed class RetryBehaviorTests : TestBase
             });
         // Completion write applies (1) so the #462 reconciliation path is not triggered here.
         internalManager
-            .UpdateTickerAsync(Arg.Any<InternalFunctionContext>(), Arg.Any<CancellationToken>())
+            .UpdateTickerAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(1));
 
         var logger = new CapturingLogger<JobsExecutionTaskHandler>();
@@ -232,7 +232,7 @@ public sealed class RetryBehaviorTests : TestBase
             logger
         );
 
-        var context = new InternalFunctionContext
+        var context = new JobExecutionState
         {
             JobId = Guid.NewGuid(),
             FunctionName = "LongJob",
@@ -269,7 +269,7 @@ public sealed class RetryBehaviorTests : TestBase
 
         // Membership never re-establishes — every renewal reports membership-unknown.
         internalManager
-            .RenewLeaseAsync(Arg.Any<InternalFunctionContext>(), Arg.Any<CancellationToken>())
+            .RenewLeaseAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(-1));
 
         var handler = new JobsExecutionTaskHandler(
@@ -285,7 +285,7 @@ public sealed class RetryBehaviorTests : TestBase
             NullLogger<JobsExecutionTaskHandler>.Instance
         );
 
-        var context = new InternalFunctionContext
+        var context = new JobExecutionState
         {
             JobId = Guid.NewGuid(),
             FunctionName = "LongJob",
@@ -305,7 +305,7 @@ public sealed class RetryBehaviorTests : TestBase
         context.LeaseLost.Should().BeTrue(); // bound tripped -> cancel-on-loss, no terminal write
         await internalManager
             .DidNotReceive()
-            .UpdateTickerAsync(Arg.Any<InternalFunctionContext>(), Arg.Any<CancellationToken>());
+            .UpdateTickerAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -322,11 +322,11 @@ public sealed class RetryBehaviorTests : TestBase
         var serviceProvider = services.BuildServiceProvider();
 
         internalManager
-            .RenewLeaseAsync(Arg.Any<InternalFunctionContext>(), Arg.Any<CancellationToken>())
+            .RenewLeaseAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(1));
         // The completion write is fenced out (0 rows) — the row was already terminalized by a sweep.
         internalManager
-            .UpdateTickerAsync(Arg.Any<InternalFunctionContext>(), Arg.Any<CancellationToken>())
+            .UpdateTickerAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(0));
 
         var logger = new CapturingLogger<JobsExecutionTaskHandler>();
@@ -339,7 +339,7 @@ public sealed class RetryBehaviorTests : TestBase
             logger
         );
 
-        var context = new InternalFunctionContext
+        var context = new JobExecutionState
         {
             JobId = Guid.NewGuid(),
             FunctionName = "QuickJob",
@@ -389,7 +389,7 @@ public sealed class RetryBehaviorTests : TestBase
     // Helpers
     private static (
         JobsExecutionTaskHandler handler,
-        InternalFunctionContext context,
+        JobExecutionState context,
         IInternalJobManager manager,
         List<Attempt> attempts
     ) _SetupRetryTestFixture(int[] retryIntervals, int retries, int? succeedOnRetryCount = null)
@@ -402,7 +402,7 @@ public sealed class RetryBehaviorTests : TestBase
         // Task<int> to 0, so without this stub every retry test is one renewal interval away from a spurious
         // cancel-on-loss. Return 1 ("lease held") so these tests exercise retry timing, not lease loss.
         internalManager
-            .RenewLeaseAsync(Arg.Any<InternalFunctionContext>(), Arg.Any<CancellationToken>())
+            .RenewLeaseAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(1));
 
         services.AddSingleton(internalManager);
@@ -420,7 +420,7 @@ public sealed class RetryBehaviorTests : TestBase
 
         var attempts = new List<Attempt>();
 
-        var context = new InternalFunctionContext
+        var context = new JobExecutionState
         {
             JobId = Guid.NewGuid(),
             FunctionName = "TestFunction",

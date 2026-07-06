@@ -254,10 +254,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
         var job = _TimeJob(JobStatus.Queued, _NodeB, _Now.AddMinutes(1)); // re-claimed by NodeB before we start it
         await provider.AddTimeJobs([job], AbortToken);
 
-        var unified = new InternalFunctionContext { FunctionName = "fn" }.SetProperty(
-            x => x.Status,
-            JobStatus.InProgress
-        );
+        var unified = new JobExecutionState { FunctionName = "fn" }.SetProperty(x => x.Status, JobStatus.InProgress);
         await provider.UpdateTimeJobsWithUnifiedContext([job.Id], unified, AbortToken);
 
         var row = await provider.GetTimeJobById(job.Id, AbortToken);
@@ -272,10 +269,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
         var job = _TimeJob(JobStatus.Queued, _NodeA, _Now.AddMinutes(1));
         await provider.AddTimeJobs([job], AbortToken);
 
-        var unified = new InternalFunctionContext { FunctionName = "fn" }.SetProperty(
-            x => x.Status,
-            JobStatus.InProgress
-        );
+        var unified = new JobExecutionState { FunctionName = "fn" }.SetProperty(x => x.Status, JobStatus.InProgress);
         await provider.UpdateTimeJobsWithUnifiedContext([job.Id], unified, AbortToken);
 
         (await provider.GetTimeJobById(job.Id, AbortToken))!.Status.Should().Be(JobStatus.InProgress);
@@ -398,7 +392,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
             NodeDeathPolicy.Retry
         );
 
-        var context = new InternalManagerContext(Guid.NewGuid())
+        var context = new JobManagerDispatchContext(Guid.NewGuid())
         {
             FunctionName = "fn",
             Expression = "* * * * *",

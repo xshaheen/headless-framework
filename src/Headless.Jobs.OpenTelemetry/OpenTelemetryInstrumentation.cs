@@ -14,7 +14,7 @@ internal sealed class OpenTelemetryInstrumentation(
     IJobsOwnerIdentity ownerIdentity
 ) : JobsBaseLoggerInstrumentation(logger, ownerIdentity), IJobsInstrumentation
 {
-    public override Activity? StartJobActivity(string activityName, InternalFunctionContext context)
+    public override Activity? StartJobActivity(string activityName, JobExecutionState context)
     {
         var activity = JobsDiagnostics.Start(activityName);
 

@@ -371,7 +371,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     }
 
     // Batch operations implementation
-    private static void _CacheFunctionReferences(Span<InternalFunctionContext> functions)
+    private static void _CacheFunctionReferences(Span<JobExecutionState> functions)
     {
         for (var i = 0; i < functions.Length; i++)
         {
@@ -391,14 +391,14 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         }
     }
 
-    private InternalFunctionContext[] _BuildImmediateContextsFromNonGeneric(IEnumerable<TimeJobEntity> jobs)
+    private JobExecutionState[] _BuildImmediateContextsFromNonGeneric(IEnumerable<TimeJobEntity> jobs)
     {
         return [.. jobs.Select(_BuildContextFromNonGeneric)];
     }
 
-    private InternalFunctionContext _BuildContextFromNonGeneric(TimeJobEntity job)
+    private JobExecutionState _BuildContextFromNonGeneric(TimeJobEntity job)
     {
-        var context = new InternalFunctionContext
+        var context = new JobExecutionState
         {
             FunctionName = job.Function,
             JobId = job.Id,
@@ -685,7 +685,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         var errors = new List<Exception>();
         var nextOccurrences = new List<DateTime>();
         var needsRestart = false;
-        var internalFunctionsToUpdate = new List<InternalFunctionContext>();
+        var internalFunctionsToUpdate = new List<JobExecutionState>();
 
         foreach (var cronJob in cronJobs)
         {

@@ -199,10 +199,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         return Task.FromResult(result);
     }
 
-    public Task<int> UpdateTimeJob(
-        InternalFunctionContext functionContext,
-        CancellationToken cancellationToken = default
-    )
+    public Task<int> UpdateTimeJob(JobExecutionState functionContext, CancellationToken cancellationToken = default)
     {
         if (_timeJobs.TryGetValue(functionContext.JobId, out var job))
         {
@@ -239,7 +236,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
     public Task UpdateTimeJobsWithUnifiedContext(
         Guid[] timeJobIds,
-        InternalFunctionContext functionContext,
+        JobExecutionState functionContext,
         CancellationToken cancellationToken = default
     )
     {
@@ -914,7 +911,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     // single row — storage-level dedup is the correctness boundary. A coarse lock would add no correctness and only
     // serialize independent ids. Revisit only if evidence shows storage dedup is insufficient (plan #267 follow-up).
     public async IAsyncEnumerable<CronJobOccurrenceEntity<TCronJob>> QueueCronJobOccurrences(
-        (DateTime Key, InternalManagerContext[] Items) cronJobOccurrences,
+        (DateTime Key, JobManagerDispatchContext[] Items) cronJobOccurrences,
         [EnumeratorCancellation] CancellationToken cancellationToken = default
     )
     {
@@ -955,7 +952,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                     Status = JobStatus.Queued,
                     OwnerId = _ownerId,
                     LockedUntil = now.Add(_leaseDuration),
-                    // Death policy comes from the InternalManagerContext (canonical, sourced from the cron def via
+                    // Death policy comes from the JobManagerDispatchContext (canonical, sourced from the cron def via
                     // _EarliestCronJobGroup) — set unconditionally so a MarkFailed/Skip cron never degrades to the
                     // Retry enum default when the cron row is absent from _cronJobs. Mirrors the EF QueueCronJobOccurrences
                     // projection, which always stamps item.OnNodeDeath.
@@ -1014,7 +1011,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     }
 
     public Task<int> UpdateCronJobOccurrence(
-        InternalFunctionContext functionContext,
+        JobExecutionState functionContext,
         CancellationToken cancellationToken = default
     )
     {
@@ -1184,7 +1181,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
     public Task UpdateCronJobOccurrencesWithUnifiedContext(
         Guid[] timeJobIds,
-        InternalFunctionContext functionContext,
+        JobExecutionState functionContext,
         CancellationToken cancellationToken = default
     )
     {
@@ -1667,50 +1664,47 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         };
     }
 
-    private void _ApplyFunctionContextToTicker(TTimeJob job, InternalFunctionContext context)
+    private void _ApplyFunctionContextToTicker(TTimeJob job, JobExecutionState context)
     {
         var propsToUpdate = context.PropertiesToUpdate;
 
         // STATUS / SKIPPED
-        if (propsToUpdate.Contains(nameof(InternalFunctionContext.Status)) && context.Status != JobStatus.Skipped)
+        if (propsToUpdate.Contains(nameof(JobExecutionState.Status)) && context.Status != JobStatus.Skipped)
         {
             job.Status = context.Status;
         }
-        else if (propsToUpdate.Contains(nameof(InternalFunctionContext.Status)))
+        else if (propsToUpdate.Contains(nameof(JobExecutionState.Status)))
         {
             job.Status = context.Status;
             job.SkippedReason = context.ExceptionDetails;
         }
 
         // EXECUTED_AT
-        if (propsToUpdate.Contains(nameof(InternalFunctionContext.ExecutedAt)))
+        if (propsToUpdate.Contains(nameof(JobExecutionState.ExecutedAt)))
         {
             job.ExecutedAt = context.ExecutedAt;
         }
 
         // EXCEPTION DETAILS
-        if (
-            propsToUpdate.Contains(nameof(InternalFunctionContext.ExceptionDetails))
-            && context.Status != JobStatus.Skipped
-        )
+        if (propsToUpdate.Contains(nameof(JobExecutionState.ExceptionDetails)) && context.Status != JobStatus.Skipped)
         {
             job.ExceptionMessage = context.ExceptionDetails;
         }
 
         // ELAPSED_TIME
-        if (propsToUpdate.Contains(nameof(InternalFunctionContext.ElapsedTime)))
+        if (propsToUpdate.Contains(nameof(JobExecutionState.ElapsedTime)))
         {
             job.ElapsedTime = context.ElapsedTime;
         }
 
         // RETRY COUNT
-        if (propsToUpdate.Contains(nameof(InternalFunctionContext.RetryCount)))
+        if (propsToUpdate.Contains(nameof(JobExecutionState.RetryCount)))
         {
             job.RetryCount = context.RetryCount;
         }
 
         // RELEASE LOCK
-        if (propsToUpdate.Contains(nameof(InternalFunctionContext.ReleaseLock)))
+        if (propsToUpdate.Contains(nameof(JobExecutionState.ReleaseLock)))
         {
             job.OwnerId = null;
             job.LockedUntil = null;
@@ -1722,51 +1716,48 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
     private void _ApplyFunctionContextToCronOccurrence(
         CronJobOccurrenceEntity<TCronJob> occurrence,
-        InternalFunctionContext context
+        JobExecutionState context
     )
     {
         var propsToUpdate = context.PropertiesToUpdate;
 
         // STATUS / SKIPPED
-        if (propsToUpdate.Contains(nameof(InternalFunctionContext.Status)) && context.Status != JobStatus.Skipped)
+        if (propsToUpdate.Contains(nameof(JobExecutionState.Status)) && context.Status != JobStatus.Skipped)
         {
             occurrence.Status = context.Status;
         }
-        else if (propsToUpdate.Contains(nameof(InternalFunctionContext.Status)))
+        else if (propsToUpdate.Contains(nameof(JobExecutionState.Status)))
         {
             occurrence.Status = context.Status;
             occurrence.SkippedReason = context.ExceptionDetails;
         }
 
         // EXECUTED_AT
-        if (propsToUpdate.Contains(nameof(InternalFunctionContext.ExecutedAt)))
+        if (propsToUpdate.Contains(nameof(JobExecutionState.ExecutedAt)))
         {
             occurrence.ExecutedAt = context.ExecutedAt;
         }
 
         // EXCEPTION DETAILS
-        if (
-            propsToUpdate.Contains(nameof(InternalFunctionContext.ExceptionDetails))
-            && context.Status != JobStatus.Skipped
-        )
+        if (propsToUpdate.Contains(nameof(JobExecutionState.ExceptionDetails)) && context.Status != JobStatus.Skipped)
         {
             occurrence.ExceptionMessage = context.ExceptionDetails;
         }
 
         // ELAPSED_TIME
-        if (propsToUpdate.Contains(nameof(InternalFunctionContext.ElapsedTime)))
+        if (propsToUpdate.Contains(nameof(JobExecutionState.ElapsedTime)))
         {
             occurrence.ElapsedTime = context.ElapsedTime;
         }
 
         // RETRY COUNT
-        if (propsToUpdate.Contains(nameof(InternalFunctionContext.RetryCount)))
+        if (propsToUpdate.Contains(nameof(JobExecutionState.RetryCount)))
         {
             occurrence.RetryCount = context.RetryCount;
         }
 
         // RELEASE LOCK
-        if (propsToUpdate.Contains(nameof(InternalFunctionContext.ReleaseLock)))
+        if (propsToUpdate.Contains(nameof(JobExecutionState.ReleaseLock)))
         {
             occurrence.OwnerId = null;
             occurrence.LockedUntil = null;

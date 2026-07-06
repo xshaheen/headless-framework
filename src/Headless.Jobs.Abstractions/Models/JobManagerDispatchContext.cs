@@ -5,10 +5,10 @@ using Headless.Jobs.Enums;
 namespace Headless.Jobs.Models;
 
 /// <summary>
-/// Internal projection of a cron job definition used by the scheduler to generate and manage occurrences.
-/// Carries the fields needed by the scheduler loop without loading the full entity graph.
+/// SPI projection of a cron job definition that the manager dispatches to a persistence provider to generate and
+/// manage occurrences. Carries only the fields the scheduler loop needs, without loading the full entity graph.
 /// </summary>
-public class InternalManagerContext(Guid id)
+public class JobManagerDispatchContext(Guid id)
 {
     /// <summary>Identifier of the cron job definition.</summary>
     public Guid Id { get; set; } = id;

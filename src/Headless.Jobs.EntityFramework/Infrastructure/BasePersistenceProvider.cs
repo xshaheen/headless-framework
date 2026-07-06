@@ -217,7 +217,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ConfigureAwait(false);
     }
 
-    public async Task<int> UpdateTimeJob(InternalFunctionContext functionContexts, CancellationToken cancellationToken)
+    public async Task<int> UpdateTimeJob(JobExecutionState functionContexts, CancellationToken cancellationToken)
     {
         // #5 completion fence: only the still-owning node may write a completion onto a non-terminal row.
         // A node the dead-node sweep already transitioned (MarkFailed/Skip -> terminal, or released -> owner
@@ -244,7 +244,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
     public async Task UpdateTimeJobsWithUnifiedContext(
         Guid[] timeJobIds,
-        InternalFunctionContext functionContext,
+        JobExecutionState functionContext,
         CancellationToken cancellationToken = default
     )
     {
@@ -806,7 +806,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
     #region Core_Cron_TickerOccurrence_Methods
     public async Task<int> UpdateCronJobOccurrence(
-        InternalFunctionContext functionContext,
+        JobExecutionState functionContext,
         CancellationToken cancellationToken
     )
     {
@@ -1103,7 +1103,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     // is the correctness boundary here. A coarse lock would only serialize independent occurrence ids for no benefit.
     // Revisit only if evidence shows storage dedup is insufficient (see plan #267 deferred follow-up).
     public async IAsyncEnumerable<CronJobOccurrenceEntity<TCronJob>> QueueCronJobOccurrences(
-        (DateTime Key, InternalManagerContext[] Items) cronJobOccurrences,
+        (DateTime Key, JobManagerDispatchContext[] Items) cronJobOccurrences,
         [EnumeratorCancellation] CancellationToken cancellationToken = default
     )
     {
@@ -1264,7 +1264,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
     public async Task UpdateCronJobOccurrencesWithUnifiedContext(
         Guid[] cronOccurrenceIds,
-        InternalFunctionContext functionContext,
+        JobExecutionState functionContext,
         CancellationToken cancellationToken = default
     )
     {

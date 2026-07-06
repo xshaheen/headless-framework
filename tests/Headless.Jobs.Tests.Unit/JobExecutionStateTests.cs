@@ -4,12 +4,12 @@ using Headless.Jobs.Models;
 
 namespace Tests;
 
-public sealed class InternalFunctionContextTests
+public sealed class JobExecutionStateTests
 {
     [Fact]
     public void SetProperty_Tracks_Updated_Properties()
     {
-        var context = new InternalFunctionContext() { FunctionName = "Test" };
+        var context = new JobExecutionState() { FunctionName = "Test" };
 
         context
             .SetProperty(c => c.Status, JobStatus.InProgress)
@@ -23,9 +23,9 @@ public sealed class InternalFunctionContextTests
             .Contain(
                 new[]
                 {
-                    nameof(InternalFunctionContext.Status),
-                    nameof(InternalFunctionContext.ElapsedTime),
-                    nameof(InternalFunctionContext.ReleaseLock),
+                    nameof(JobExecutionState.Status),
+                    nameof(JobExecutionState.ElapsedTime),
+                    nameof(JobExecutionState.ReleaseLock),
                 }
             );
 
@@ -38,7 +38,7 @@ public sealed class InternalFunctionContextTests
     [Fact]
     public void ResetUpdateProps_Clears_Tracked_Properties()
     {
-        var context = new InternalFunctionContext() { FunctionName = "Test" };
+        var context = new JobExecutionState() { FunctionName = "Test" };
 
         context.SetProperty(c => c.Status, JobStatus.Succeeded).SetProperty(c => c.ElapsedTime, 500L);
 
@@ -52,7 +52,7 @@ public sealed class InternalFunctionContextTests
     [Fact]
     public void ResetUpdateProps_Does_Not_Reset_Property_Values()
     {
-        var context = new InternalFunctionContext() { FunctionName = "Test" };
+        var context = new JobExecutionState() { FunctionName = "Test" };
 
         context.SetProperty(c => c.Status, JobStatus.Succeeded).SetProperty(c => c.ElapsedTime, 250L);
 
@@ -66,7 +66,7 @@ public sealed class InternalFunctionContextTests
     [Fact]
     public void PropertiesToUpdate_Defaults_To_Empty_Set_And_Tracks_Updates()
     {
-        var context = new InternalFunctionContext() { FunctionName = "Test" };
+        var context = new JobExecutionState() { FunctionName = "Test" };
 
         context.PropertiesToUpdate.Should().BeEmpty();
 
@@ -74,27 +74,27 @@ public sealed class InternalFunctionContextTests
 
         var updated = context.PropertiesToUpdate;
         updated.Should().NotBeNull();
-        updated.Should().Contain(nameof(InternalFunctionContext.Status));
+        updated.Should().Contain(nameof(JobExecutionState.Status));
     }
 
     [Fact]
     public void SetProperty_Allows_Multiple_Updates_To_Same_Property()
     {
-        var context = new InternalFunctionContext() { FunctionName = "Test" };
+        var context = new JobExecutionState() { FunctionName = "Test" };
 
         context.SetProperty(c => c.Status, JobStatus.InProgress).SetProperty(c => c.Status, JobStatus.Failed);
 
         context.Status.Should().Be(JobStatus.Failed);
 
         var updated = context.PropertiesToUpdate;
-        updated.Should().Contain(nameof(InternalFunctionContext.Status));
+        updated.Should().Contain(nameof(JobExecutionState.Status));
         updated.Should().ContainSingle();
     }
 
     [Fact]
     public void SetProperty_Throws_For_NonProperty_Expression()
     {
-        var context = new InternalFunctionContext() { FunctionName = "Test" };
+        var context = new JobExecutionState() { FunctionName = "Test" };
 
         Action act = () => context.SetProperty(c => c.ElapsedTime + 1, 10L);
 
@@ -104,12 +104,12 @@ public sealed class InternalFunctionContextTests
     [Fact]
     public void TimeJobChildren_Defaults_To_Empty_List_And_Can_Add()
     {
-        var context = new InternalFunctionContext() { FunctionName = "Test" };
+        var context = new JobExecutionState() { FunctionName = "Test" };
 
         context.TimeJobChildren.Should().NotBeNull();
         context.TimeJobChildren.Should().BeEmpty();
 
-        var child = new InternalFunctionContext
+        var child = new JobExecutionState
         {
             JobId = Guid.NewGuid(),
             ParentId = Guid.NewGuid(),
@@ -125,7 +125,7 @@ public sealed class InternalFunctionContextTests
     [Fact]
     public void CachedDelegate_And_Priority_Can_Be_Assigned()
     {
-        var context = new InternalFunctionContext() { FunctionName = "Test" };
+        var context = new JobExecutionState() { FunctionName = "Test" };
         JobFunctionDelegate handler = (_, _, _) => Task.CompletedTask;
 
         context.CachedDelegate = handler;
@@ -138,7 +138,7 @@ public sealed class InternalFunctionContextTests
     [Fact]
     public void SetProperty_Supports_Array_And_String_Properties()
     {
-        var context = new InternalFunctionContext() { FunctionName = "Test" };
+        var context = new JobExecutionState() { FunctionName = "Test" };
         var intervals = new[] { 1, 5, 10 };
         const string exceptionDetails = "Something went wrong";
 
@@ -150,12 +150,6 @@ public sealed class InternalFunctionContextTests
         var updated = context.PropertiesToUpdate;
         updated
             .Should()
-            .Contain(
-                new[]
-                {
-                    nameof(InternalFunctionContext.RetryIntervals),
-                    nameof(InternalFunctionContext.ExceptionDetails),
-                }
-            );
+            .Contain(new[] { nameof(JobExecutionState.RetryIntervals), nameof(JobExecutionState.ExceptionDetails) });
     }
 }
