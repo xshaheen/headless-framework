@@ -116,6 +116,8 @@ options.EnableSubscriberParallelExecute = false;
 - Use `AzureServiceBusHeaders.SessionId` for ordered delivery. `ConsumerThreadCount` only affects parallelism around those sessions.
 - Entity names, property sizes, and payload limits follow Azure Service Bus limits.
 
+**Registration overloads:** `UseAzureServiceBus(...)` accepts the standard trio — an `IConfiguration` section, an `Action<AzureServiceBusMessagingOptions>` delegate, or an `Action<AzureServiceBusMessagingOptions, IServiceProvider>` delegate — plus the connection-string convenience form. Authentication is an either/or contract: set either `ConnectionString` or both `Namespace` and `TokenCredential` (both nullable `string?`; the validator enforces exactly one mode at start).
+
 ## Dependencies
 
 - `Headless.Messaging.Core`

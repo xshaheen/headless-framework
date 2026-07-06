@@ -59,6 +59,8 @@ options.UsePulsar(pulsar =>
 - Shared subscriptions favor throughput over strict ordering. Single-threaded consumption gives the most stable order.
 - Topic names, property sizes, and payload limits follow Pulsar broker limits.
 
+**Registration overloads:** `UsePulsar(...)` accepts the standard trio — an `IConfiguration` section, an `Action<PulsarMessagingOptions>` delegate, or an `Action<PulsarMessagingOptions, IServiceProvider>` delegate — plus the service-URL convenience form.
+
 ## Dependencies
 
 - `Headless.Messaging.Core`

@@ -123,6 +123,8 @@ options.EnableSubscriberParallelExecute = false; // Disable parallel execution
 - Partition keys control ordering. Parallel handlers or multiple partitions can reorder observed processing.
 - Topic names, header sizes, and record sizes follow Kafka broker limits.
 
+**Registration overloads:** `UseKafka(...)` accepts the standard trio — an `IConfiguration` section, an `Action<KafkaMessagingOptions>` delegate, or an `Action<KafkaMessagingOptions, IServiceProvider>` delegate — plus the bootstrap-servers convenience form. `RetriableErrorCodes` / `DefaultRetriableErrorCodes` are `int` values of Confluent's `ErrorCode` enum, so configuring retries needs no compile-time `Confluent.Kafka` reference.
+
 ## Dependencies
 
 - `Headless.Messaging.Core`

@@ -279,6 +279,16 @@ services.AddHeadlessMessaging(setup =>
 | RabbitMQ | Exchange | Queue | None | `PrefetchCount(...)` |
 | Redis | Pub/Sub | Queue-like Redis transport | None | None |
 
+### Registration Overloads
+
+Every transport `Use{Provider}(...)` (except `UseInMemory()`, which has no options) exposes the standard overload trio alongside any scalar-convenience form:
+
+- `Use{Provider}(IConfiguration config)` — binds and validates the options from a configuration section.
+- `Use{Provider}(Action<TOptions> configure)` — imperative configuration.
+- `Use{Provider}(Action<TOptions, IServiceProvider> configure)` — imperative configuration with access to the resolved service provider (for example to pull a secret, connection string, or credential from DI while configuring).
+
+Options are validated on start through their FluentValidation validators. Each provider keeps the `{ProviderToken}MessagingOptions` naming shape (`AmazonSqsMessagingOptions`, `AzureServiceBusMessagingOptions`, `KafkaMessagingOptions`, `NatsMessagingOptions`, `PulsarMessagingOptions`, `RabbitMqMessagingOptions`, `RedisMessagingOptions`, `RedisPubSubMessagingOptions`).
+
 ### Storage Providers
 
 | Provider          | Outbox + persisted retry storage | Schema initializer            |
@@ -1099,7 +1109,7 @@ setup.ForMessage<OrderPlaced>(message =>
 
 ### Configuration
 
-Configure AWS region, service URLs, and credentials through `AmazonSqsOptions`.
+Configure AWS region, service URLs, and credentials through `AmazonSqsMessagingOptions`.
 
 ### Dependencies
 
@@ -1146,7 +1156,7 @@ setup.ForMessage<OrderPlaced>(message =>
 
 ### Configuration
 
-Configure connection string or namespace, retry/client settings, queue/topic behavior, session support, and SQL filters through provider options. Processor settlement is not configurable; Headless disables Azure SDK auto-complete and completes or abandons messages explicitly.
+Configure connection string or namespace, retry/client settings, queue/topic behavior, session support, and SQL filters through `AzureServiceBusMessagingOptions`. Authentication is an either/or contract: supply either `ConnectionString` or both `Namespace` and `TokenCredential` — both are nullable (`string?`) and the validator enforces that exactly one mode is configured at start. Processor settlement is not configurable; Headless disables Azure SDK auto-complete and completes or abandons messages explicitly.
 
 ### Dependencies
 
@@ -1267,7 +1277,7 @@ setup.ForMessage<OrderPlaced>(message =>
 
 ### Configuration
 
-Configure bootstrap servers, main Kafka config, topic options, custom headers, and retriable error codes through `MessagingKafkaOptions`.
+Configure bootstrap servers, main Kafka config, topic options, custom headers, and retriable error codes through `KafkaMessagingOptions`. `RetriableErrorCodes` / `DefaultRetriableErrorCodes` are `int` values of Confluent's `ErrorCode` enum (not the native enum type), so configuring retries needs no compile-time `Confluent.Kafka` reference; the framework casts back to `ErrorCode` internally.
 
 ### Dependencies
 
@@ -1316,7 +1326,7 @@ setup.ForMessage<OrderPlaced>(message =>
 
 ### Configuration
 
-Configure NATS servers, credentials, stream behavior, durable names, and connection settings through `MessagingNatsOptions`.
+Configure NATS servers, credentials, stream behavior, durable names, and connection settings through `NatsMessagingOptions`.
 
 ### Dependencies
 
@@ -1352,7 +1362,7 @@ setup.UsePulsar(options => options.ServiceUrl = "pulsar://localhost:6650");
 
 ### Configuration
 
-Configure service URL, authentication, and TLS through `MessagingPulsarOptions`.
+Configure service URL, authentication, and TLS through `PulsarMessagingOptions`.
 
 ### Dependencies
 
@@ -1391,6 +1401,8 @@ setup.UseRabbitMq(options =>
 {
     options.HostName = "localhost";
     options.Port = 5672;
+    options.UserName = "app_user"; // required
+    options.Password = "app_secret"; // required
 });
 
 setup.ForMessage<OrderPlaced>(message =>
@@ -1400,7 +1412,7 @@ setup.ForMessage<OrderPlaced>(message =>
 
 ### Configuration
 
-Configure host, credentials, exchange, queue arguments, QoS defaults, and custom headers through `RabbitMqOptions`.
+Configure host, credentials, exchange, queue arguments, QoS defaults, and custom headers through `RabbitMqMessagingOptions`. `UserName` and `Password` are `required` and must be set explicitly; the validator rejects the RabbitMQ default `guest`/`guest` credentials for production safety.
 
 ### Dependencies
 
