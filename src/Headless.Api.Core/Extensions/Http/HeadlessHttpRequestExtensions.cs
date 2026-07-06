@@ -9,7 +9,7 @@ namespace Microsoft.AspNetCore.Http;
 
 /// <summary><see cref="HttpRequest"/> extension methods.</summary>
 [PublicAPI]
-public static class HttpRequestExtensions
+public static class HeadlessHttpRequestExtensions
 {
     private const string _XmlHttpRequest = "XMLHttpRequest";
 

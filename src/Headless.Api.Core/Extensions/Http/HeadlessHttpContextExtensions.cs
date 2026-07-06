@@ -12,7 +12,7 @@ using Microsoft.Net.Http.Headers;
 namespace Microsoft.AspNetCore.Http;
 
 [PublicAPI]
-public static class HttpContextExtensions
+public static class HeadlessHttpContextExtensions
 {
     private static readonly ActionDescriptor _EmptyActionDescriptor = new();
     private const string _NoCache = "no-cache";

@@ -8,7 +8,7 @@ using Headless.Primitives;
 namespace Microsoft.AspNetCore.Http;
 
 [PublicAPI]
-public static class FormFileExtensions
+public static class HeadlessFormFileExtensions
 {
     /// <summary>Saves the uploaded file to <paramref name="directoryPath"/> on the local filesystem.</summary>
     /// <param name="formFile">The form file to save.</param>

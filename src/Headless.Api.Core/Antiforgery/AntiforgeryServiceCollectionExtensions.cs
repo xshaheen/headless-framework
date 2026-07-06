@@ -12,7 +12,7 @@ using Microsoft.Extensions.Options;
 namespace Microsoft.Extensions.DependencyInjection;
 
 [PublicAPI]
-public static class ServiceCollectionExtensions
+public static class AntiforgeryServiceCollectionExtensions
 {
     /// <summary>
     /// Registers ASP.NET Core antiforgery with Headless-standard defaults: the <c>X-XSRF-TOKEN</c>
