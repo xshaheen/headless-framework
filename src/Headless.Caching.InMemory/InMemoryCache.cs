@@ -573,7 +573,7 @@ public sealed class InMemoryCache
             key,
             amount,
             expiration,
-            static (double? current, double input) =>
+            static (current, input) =>
             {
                 var total = current.HasValue ? current.Value + input : input;
                 return new NumericOpResult<double>(Replace: true, NewValue: total, Result: total);
@@ -591,7 +591,7 @@ public sealed class InMemoryCache
             key,
             amount,
             expiration,
-            static (long? current, long input) =>
+            static (current, input) =>
             {
                 var total = current.HasValue ? current.Value + input : input;
                 return new NumericOpResult<long>(Replace: true, NewValue: total, Result: total);
@@ -609,8 +609,8 @@ public sealed class InMemoryCache
             key,
             value,
             expiration,
-            static (double? current, double input) =>
-                current.HasValue && current.Value < input
+            static (current, input) =>
+                current < input
                     ? new NumericOpResult<double>(Replace: true, NewValue: input, Result: input - current.Value)
                     : new NumericOpResult<double>(Replace: false, NewValue: default, Result: 0),
             cancellationToken
@@ -626,8 +626,8 @@ public sealed class InMemoryCache
             key,
             value,
             expiration,
-            static (long? current, long input) =>
-                current.HasValue && current.Value < input
+            static (current, input) =>
+                current < input
                     ? new NumericOpResult<long>(Replace: true, NewValue: input, Result: input - current.Value)
                     : new NumericOpResult<long>(Replace: false, NewValue: default, Result: 0),
             cancellationToken
@@ -643,8 +643,8 @@ public sealed class InMemoryCache
             key,
             value,
             expiration,
-            static (double? current, double input) =>
-                current.HasValue && current.Value > input
+            static (current, input) =>
+                current > input
                     ? new NumericOpResult<double>(Replace: true, NewValue: input, Result: current.Value - input)
                     : new NumericOpResult<double>(Replace: false, NewValue: default, Result: 0),
             cancellationToken
@@ -660,8 +660,8 @@ public sealed class InMemoryCache
             key,
             value,
             expiration,
-            static (long? current, long input) =>
-                current.HasValue && current.Value > input
+            static (current, input) =>
+                current > input
                     ? new NumericOpResult<long>(Replace: true, NewValue: input, Result: current.Value - input)
                     : new NumericOpResult<long>(Replace: false, NewValue: default, Result: 0),
             cancellationToken

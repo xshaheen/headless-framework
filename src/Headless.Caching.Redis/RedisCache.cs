@@ -779,7 +779,7 @@ public sealed class RedisCache(
                 }
 
                 var framedValue = _DeserializeValueSegment<T>(frame.ValueSegment);
-                return new CacheValue<T>(framedValue, true);
+                return new CacheValue<T>(framedValue, hasValue: true);
             }
 
             if (redisValue == _NullValue)
@@ -788,7 +788,7 @@ public sealed class RedisCache(
             }
 
             var value = _FromRedisValue<T>(redisValue);
-            return new CacheValue<T>(value, true);
+            return new CacheValue<T>(value, hasValue: true);
         }
         catch (Exception e)
         {
@@ -1915,11 +1915,11 @@ public sealed class RedisCache(
 
                 // Raise-only (mirrors SeedTagMarker): a stale durable read must not lower a newer per-tag marker
                 // a backplane push already seeded. FetchedTicks is still refreshed so the freshness window holds.
-                var resolved = _RaiseTagMarker(stale[i], ms, fetchedTicks);
+                var (markerMs, _) = _RaiseTagMarker(stale[i], ms, fetchedTicks);
 
-                if (resolved.MarkerMs > newestMs)
+                if (markerMs > newestMs)
                 {
-                    newestMs = resolved.MarkerMs;
+                    newestMs = markerMs;
                 }
             }
 
@@ -2688,7 +2688,7 @@ public sealed class RedisCache(
         var bytes = (byte[])value!;
         var length = Math.Min(bytes.Length, RedisCacheEntryFrame.HeaderLength);
 
-        return string.Concat("b64:", bytes.AsSpan(0, length).ToBase64());
+        return $"b64:{bytes.AsSpan(0, length).ToBase64()}";
     }
 
     private static bool _TryDecodeConcurrencyStamp(string stamp, out RedisValue value)
