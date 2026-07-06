@@ -91,12 +91,6 @@ public class AzureServiceBusOptions
     public int SubscriptionMaxDeliveryCount { get; set; } = 10;
 
     /// <summary>
-    /// Must remain <see langword="false"/>. Headless completes or abandons messages only after the
-    /// framework has durably recorded the receive row and decided the commit/reject outcome.
-    /// </summary>
-    public bool AutoCompleteMessages { get; set; }
-
-    /// <summary>
     /// Adds additional correlation properties to all correlation filters.
     /// https://learn.microsoft.com/en-us/azure/service-bus-messaging/topic-filters#correlation-filters
     /// </summary>
@@ -194,8 +188,5 @@ internal sealed class AzureServiceBusOptionsValidator : AbstractValidator<AzureS
         RuleFor(x => x.TopicPath).NotEmpty();
         RuleFor(x => x.MaxConcurrentCalls).GreaterThanOrEqualTo(1);
         RuleFor(x => x.SubscriptionMaxDeliveryCount).GreaterThanOrEqualTo(1);
-        RuleFor(x => x.AutoCompleteMessages)
-            .Equal(false)
-            .WithMessage("Azure Service Bus AutoCompleteMessages must remain false because Headless owns settlement.");
     }
 }

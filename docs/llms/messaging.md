@@ -1119,7 +1119,7 @@ Provides Azure Service Bus topic and queue transports.
 
 `PartitionKey(...)` is producer-side only and limited to 128 characters. When sessions are enabled, Azure Service Bus requires `PartitionKey` to equal `SessionId`; the message builder rejects mismatches.
 
-`AutoCompleteMessages` must remain `false`; options validation rejects `true` because Headless owns explicit settlement after durable receive storage and handler outcome.
+Headless disables Azure SDK auto-complete internally and settles messages explicitly after durable receive storage and handler outcome.
 
 ### Installation
 
@@ -1139,7 +1139,7 @@ setup.ForMessage<OrderPlaced>(message =>
 
 ### Configuration
 
-Configure connection string or namespace, retry/client settings, queue/topic behavior, session support, and SQL filters through provider options. Do not enable `AutoCompleteMessages`; Headless completes or abandons messages explicitly.
+Configure connection string or namespace, retry/client settings, queue/topic behavior, session support, and SQL filters through provider options. Processor settlement is not configurable; Headless disables Azure SDK auto-complete and completes or abandons messages explicitly.
 
 ### Dependencies
 
