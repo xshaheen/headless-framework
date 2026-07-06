@@ -702,8 +702,9 @@ internal sealed class SqlServerDataStorage(
 
     /// <summary>
     /// Atomically selects delayed and stale-queued messages within a database transaction and
-    /// invokes <paramref name="scheduleTask"/> to re-enqueue them. Uses <c>UPDLOCK, READPAST</c>
-    /// so concurrent replicas skip rows another node is scheduling.
+    /// invokes <paramref name="scheduleTask"/> to re-enqueue them. Uses branch-bounded ordered
+    /// <c>TOP</c> reads with <c>UPDLOCK, READPAST</c> so concurrent replicas skip rows another
+    /// node is scheduling without locking an unbounded candidate set.
     /// The transaction is committed after <paramref name="scheduleTask"/> completes.
     /// </summary>
     public async ValueTask ScheduleMessagesOfDelayedAsync(
@@ -712,14 +713,22 @@ internal sealed class SqlServerDataStorage(
     )
     {
         var sql = $"""
-            WITH Candidates AS (
-                SELECT Id, Content, IntentType, Retries, Added, ExpiresAt FROM {_publishedTable} WITH (UPDLOCK, READPAST)
-                WHERE Version = @Version AND StatusName = '{nameof(
-                StatusName.Delayed
-            )}' AND ExpiresAt < @TwoMinutesLater
+            WITH DelayedCandidates AS (
+                SELECT TOP (@BatchSize) Id, Content, IntentType, Retries, Added, ExpiresAt
+                FROM {_publishedTable} WITH (UPDLOCK, READPAST)
+                WHERE Version = @Version AND StatusName = @DelayedStatusName AND ExpiresAt < @TwoMinutesLater
+                ORDER BY ExpiresAt, Id
+            ),
+            QueuedCandidates AS (
+                SELECT TOP (@BatchSize) Id, Content, IntentType, Retries, Added, ExpiresAt
+                FROM {_publishedTable} WITH (UPDLOCK, READPAST)
+                WHERE Version = @Version AND StatusName = @QueuedStatusName AND ExpiresAt < @OneMinutesAgo
+                ORDER BY ExpiresAt, Id
+            ),
+            Candidates AS (
+                SELECT Id, Content, IntentType, Retries, Added, ExpiresAt FROM DelayedCandidates
                 UNION ALL
-                SELECT Id, Content, IntentType, Retries, Added, ExpiresAt FROM {_publishedTable} WITH (UPDLOCK, READPAST)
-                WHERE Version = @Version AND StatusName = '{nameof(StatusName.Queued)}' AND ExpiresAt < @OneMinutesAgo
+                SELECT Id, Content, IntentType, Retries, Added, ExpiresAt FROM QueuedCandidates
             )
             SELECT TOP (@BatchSize) Id, Content, IntentType, Retries, Added, ExpiresAt
             FROM Candidates
@@ -729,6 +738,8 @@ internal sealed class SqlServerDataStorage(
         object[] sqlParams =
         [
             new SqlParameter("@Version", messagingOptions.Value.Version),
+            new SqlParameter("@DelayedStatusName", nameof(StatusName.Delayed)),
+            new SqlParameter("@QueuedStatusName", nameof(StatusName.Queued)),
             new SqlParameter("@TwoMinutesLater", timeProvider.GetUtcNow().UtcDateTime.Add(_DelayedMessageLookahead)),
             new SqlParameter("@OneMinutesAgo", timeProvider.GetUtcNow().UtcDateTime.Subtract(_QueuedMessageLookback)),
             new SqlParameter("@BatchSize", messagingOptions.Value.SchedulerBatchSize),

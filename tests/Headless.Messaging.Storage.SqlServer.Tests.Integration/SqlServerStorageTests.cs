@@ -495,6 +495,78 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
     }
 
     [Fact]
+    public async Task should_not_lock_scheduler_candidates_beyond_batch_size()
+    {
+        // given
+        var firstStorage = _CreateStorage(new MessagingOptions { Version = "v1", SchedulerBatchSize = 1 });
+        var secondStorage = _CreateStorage(new MessagingOptions { Version = "v1", SchedulerBatchSize = 1 });
+        var serializer = GetSerializer();
+        var now = DateTime.UtcNow;
+
+        await using (var connection = new SqlConnection(fixture.ConnectionString))
+        {
+            await connection.OpenAsync(AbortToken);
+
+            for (var index = 0; index < 3; index++)
+            {
+                await _InsertPublishedRowAsync(
+                    connection,
+                    Guid.NewGuid(),
+                    serializer.Serialize(CreateMessage($"sql-delayed-{index}")),
+                    StatusName.Delayed,
+                    expiresAt: now.AddMinutes(-10 + index),
+                    nextRetryAt: null
+                );
+                await _InsertPublishedRowAsync(
+                    connection,
+                    Guid.NewGuid(),
+                    serializer.Serialize(CreateMessage($"sql-queued-{index}")),
+                    StatusName.Queued,
+                    expiresAt: now.AddMinutes(-20 + index),
+                    nextRetryAt: null
+                );
+            }
+        }
+
+        var firstMessages = new List<MediumMessage>();
+        var secondMessages = new List<MediumMessage>();
+        var firstSchedulerEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirstScheduler = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // when
+        var firstSchedule = firstStorage
+            .ScheduleMessagesOfDelayedAsync(
+                async (_, messages) =>
+                {
+                    firstMessages.AddRange(messages);
+                    firstSchedulerEntered.SetResult();
+                    await releaseFirstScheduler.Task.WaitAsync(AbortToken);
+                },
+                AbortToken
+            )
+            .AsTask();
+
+        await firstSchedulerEntered.Task.WaitAsync(AbortToken);
+
+        await secondStorage.ScheduleMessagesOfDelayedAsync(
+            (_, messages) =>
+            {
+                secondMessages.AddRange(messages);
+                return ValueTask.CompletedTask;
+            },
+            AbortToken
+        );
+
+        releaseFirstScheduler.SetResult();
+        await firstSchedule.WaitAsync(AbortToken);
+
+        // then
+        firstMessages.Should().ContainSingle();
+        secondMessages.Should().ContainSingle();
+        secondMessages[0].StorageId.Should().NotBe(firstMessages[0].StorageId);
+    }
+
+    [Fact]
     public async Task should_pick_oldest_retry_rows_with_configured_batch_size()
     {
         // given
