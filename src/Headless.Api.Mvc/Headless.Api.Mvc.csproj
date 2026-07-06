@@ -1,13 +1,14 @@
 ﻿<Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <Description>MVC integration for Headless API.</Description>
+    <PackageTags>headless;api;mvc;dotnet</PackageTags>
     <RootNamespace>Headless.Api</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Asp.Versioning.Mvc" />
     <PackageReference Include="Asp.Versioning.Mvc.ApiExplorer" />
     <PackageReference Include="Mediator.Abstractions" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Api.Core\Headless.Api.Core.csproj" />

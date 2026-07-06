@@ -70,6 +70,7 @@ jobs:
         with:
           lfs: false
           fetch-depth: 0
+          persist-credentials: false
 
       - name: "Setup .NET SDK"
         uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
@@ -105,16 +106,84 @@ jobs:
         run: make dashboards
         shell: bash
 
-      - name: "Format, build, and pack"
-        # Dashboards are already built above (before the token is present), so we skip
-        # the in-build npm step (BuildDashboardSpa=false) and no lifecycle scripts run
-        # while the credential is available. GITHUB_PACKAGES_TOKEN is scoped to THIS step
-        # only — the earlier `npm ci` never sees it, and it is never written to disk.
-        # NuGet expands it from nuget.config's %GITHUB_PACKAGES_TOKEN% credential entry.
+      - name: "Format check"
+        run: make format-check
+
+      - name: "Build"
+        # Dashboards are already built above (before the token is present), so the
+        # solution build runs with BuildDashboardSpa=false and no lifecycle scripts
+        # run while the credential is available. GITHUB_PACKAGES_TOKEN is scoped to
+        # this restore/build step only and is expanded from nuget.config's
+        # %GITHUB_PACKAGES_TOKEN% credential entry.
         env:
           BuildDashboardSpa: "false"
           GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: make ci-build
+        run: make rebuild
+
+      - name: "Unit tests with coverage"
+        run: make ci-test
+
+      - name: "Generate coverage summary"
+        if: always()
+        run: |
+          set -euo pipefail
+
+          if [ -d "${TEST_RESULTS_DIR}" ] && find "${TEST_RESULTS_DIR}" -name '*.cobertura.xml' -print -quit | grep -q .; then
+            dotnet reportgenerator \
+              -reports:"${TEST_RESULTS_DIR}/**/*.cobertura.xml" \
+              -targetdir:"./artifacts/coverage/report" \
+              -reporttypes:"Html;JsonSummary"
+          else
+            echo "::warning::No Cobertura coverage files were found under ${TEST_RESULTS_DIR}."
+          fi
+        shell: bash
+
+      - name: "Pack"
+        run: make pack-built
+
+      - name: "Verify package artifacts"
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          packages=("${PACKAGES_DIR}"/*.nupkg)
+          symbols=("${PACKAGES_DIR}"/*.snupkg)
+
+          if [ "${#packages[@]}" -eq 0 ]; then
+            echo "No .nupkg files were created in ${PACKAGES_DIR}."
+            exit 1
+          fi
+
+          if [ "${#symbols[@]}" -eq 0 ]; then
+            echo "No .snupkg files were created in ${PACKAGES_DIR}."
+            exit 1
+          fi
+
+          echo "Created ${#packages[@]} package(s) and ${#symbols[@]} symbol package(s)."
+        shell: bash
+
+      - name: "Upload test results"
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-results
+          path: |
+            artifacts/test-results/**/*.trx
+            artifacts/test-results/**/*.dmp
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: "Upload coverage results"
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-results
+          path: |
+            artifacts/test-results/**/*.cobertura.xml
+            artifacts/test-results/**/*.coverage
+            artifacts/coverage/report/**
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: "Publish Artifacts"
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

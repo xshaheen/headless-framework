@@ -4,7 +4,7 @@ Apache Kafka transport provider for the messaging system.
 
 ## Problem Solved
 
-Enables high-throughput, distributed event streaming using Apache Kafka with consumer groups and partitions while preserving Headless's at-least-once delivery contract.
+Enables high-throughput, distributed event streaming using Apache Kafka with consumer groups, partitions, broker-level ordering controls, and Headless's at-least-once delivery contract.
 
 ## Key Features
 
@@ -13,6 +13,7 @@ Enables high-throughput, distributed event streaming using Apache Kafka with con
 - **Consumer Groups**: Load balancing across consumers
 - **Retention**: Persistent message storage with configurable retention
 - **At-Least-Once Delivery**: Broker delivery plus Headless retry/outbox recovery; consumers must remain idempotent
+- **Kafka Configuration Access**: Exposes raw Kafka producer and consumer settings through `MainConfig` and consumer-specific options
 
 ## Installation
 
@@ -113,7 +114,7 @@ options.EnableSubscriberParallelExecute = false; // Disable parallel execution
 ## Messaging Semantics
 
 - Publish writes the serialized body as record bytes and forwards framework headers.
-- Delivery remains at-least-once. A broker accept followed by a failed success-mark write can redeliver, so consumers must dedupe by business key or message id.
+- Delivery remains at-least-once. A broker accept followed by a failed success-mark write can redeliver; configure Kafka idempotence or read-committed isolation for broker-level features, and keep consumers idempotent.
 - Delay stays in the core pipeline. This provider does not add broker-native scheduling.
 - Commit commits the consumed partition offset.
 - Reject seeks back to the failed offset so Kafka can redeliver on the next poll.

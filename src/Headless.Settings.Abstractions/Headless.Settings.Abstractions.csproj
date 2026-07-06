@@ -1,6 +1,8 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <Description>Contracts and shared abstractions for Headless settings packages.</Description>
+    <PackageTags>headless;settings;dotnet</PackageTags>
     <RootNamespace>Headless.Settings</RootNamespace>
   </PropertyGroup>
   <ItemGroup>

@@ -31,74 +31,90 @@ dotnet add package Headless.Messaging.Core
 
 ## Quick Start
 
+For a local, dependency-free first run, install the in-memory transport and storage providers alongside Core:
+
+```bash
+dotnet add package Headless.Messaging.Core
+dotnet add package Headless.Messaging.InMemory
+dotnet add package Headless.Messaging.InMemoryStorage
+```
+
 ```csharp
-// Register messaging with storage and transport
+using Headless.Messaging;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+
+var builder = Host.CreateApplicationBuilder(args);
+
 builder.Services.AddHeadlessMessaging(setup =>
 {
-    setup.ForMessagesFromAssemblyContaining<Program>(
-        (ctx, consumer) =>
-        {
-            if (ctx.ConsumerType.Name.EndsWith("Worker", StringComparison.Ordinal))
-            {
-                consumer.OnQueue().Group("imports").Concurrency(4);
-            }
+    setup.UseInMemoryStorage();
+    setup.UseInMemory();
 
-            if (ctx.ConsumerType.Namespace?.Contains(".Experimental.", StringComparison.Ordinal) == true)
-            {
-                consumer.Skip();
-            }
-        }
+    setup.ForMessage<OrderPlaced>(message =>
+        message
+            .MessageName("orders.placed")
+            .OnBus<OrderPlacedConsumer>(consumer => consumer.Group("orders").Concurrency(4))
     );
-
-    // Core configuration (value-typed options live under setup.Options)
-    setup.Options.SucceedMessageExpiredAfter = 24 * 3600;
-    setup.Options.RetryPolicy.MaxPersistedRetries = 50;
-    setup.UseConventions(c =>
-    {
-        c.UseKebabCaseMessageNames();
-        c.UseApplicationId("ordering-api");
-        c.UseVersion("v1");
-    });
-
-    // Add exactly one storage provider (required)
-    setup.UsePostgreSql("connection_string");
-
-    // Add transport (required)
-    setup.UseRabbitMq(rmq =>
-    {
-        rmq.HostName = "localhost";
-        rmq.Port = 5672;
-    });
 });
 
-// Publish broadcast messages with the transactional outbox (reliable delivery).
-// NOTE: on the EF storage path (setup.UseEntityFramework<TContext>()) the outbox is on by default and the
-// commit interceptor is attached for you — see "Transactional Outbox (Atomic Publish)" above. The manual
-// EnlistCommitCoordination below is the raw-ADO / advanced seam: it makes the open transaction the ambient
-// commit coordinator so the outbox writer stores rows INSIDE it; the EF transaction interceptor dispatches
-// them post-commit and discards them on rollback. The enlist is synchronous on purpose — it must run in the
-// caller's frame so the ambient scope flows to the publish below.
-public sealed class OrderService(IOutboxBus bus, AppDbContext dbContext, IServiceProvider services)
-{
-    public async Task PlaceOrderAsync(Order order, CancellationToken ct)
-    {
-        await using var tx = await dbContext.Database.BeginTransactionAsync(ct);
-        await using var _ = dbContext.Database.EnlistCommitCoordination(tx, services);
+using var app = builder.Build();
 
-        await bus.PublishAsync(order, new PublishOptions { MessageName = "orders.placed" }, ct);
-        await dbContext.SaveChangesAsync(ct);
-        await tx.CommitAsync(ct);
+await app.Services.GetRequiredService<IBootstrapper>()
+    .BootstrapAsync(CancellationToken.None);
+
+await app.Services.GetRequiredService<IOutboxBus>()
+    .PublishAsync(
+        new OrderPlaced("order-123"),
+        new PublishOptions { MessageName = "orders.placed" },
+        CancellationToken.None
+    );
+
+public sealed record OrderPlaced(string OrderId);
+
+public sealed class OrderPlacedConsumer(ILogger<OrderPlacedConsumer> logger) : IConsume<OrderPlaced>
+{
+    public ValueTask ConsumeAsync(ConsumeContext<OrderPlaced> context, CancellationToken cancellationToken)
+    {
+        logger.LogInformation("Processing order {OrderId}", context.Message.OrderId);
+        return ValueTask.CompletedTask;
     }
 }
+```
 
-// Enqueue point-to-point work directly (fire-and-forget)
-public sealed class ImportService(IQueue queue)
+Publish through the outbox when durability matters:
+
+```csharp
+await serviceProvider.GetRequiredService<IOutboxBus>()
+    .PublishAsync(
+        new OrderPlaced("order-123"),
+        new PublishOptions { MessageName = "orders.placed" },
+        cancellationToken
+    );
+```
+
+For durable infrastructure, replace the in-memory providers with exactly one storage provider and one transport provider:
+
+```csharp
+builder.Services.AddHeadlessMessaging(setup =>
 {
-    public async Task StartAsync(ImportRequested request, CancellationToken ct)
+    setup.UsePostgreSql(options =>
     {
-        await queue.EnqueueAsync(request, new EnqueueOptions { MessageName = "imports.requested" }, ct);
-    }
-}
+        options.ConnectionString = builder.Configuration.GetConnectionString("Messaging");
+    });
+
+    setup.UseRabbitMq(options =>
+    {
+        options.HostName = builder.Configuration["RabbitMq:HostName"]!;
+        options.UserName = builder.Configuration["RabbitMq:UserName"]!;
+        options.Password = builder.Configuration["RabbitMq:Password"]!;
+    });
+
+    setup.ForMessage<OrderPlaced>(message =>
+        message.MessageName("orders.placed").OnBus<OrderPlacedConsumer>()
+    );
+});
 ```
 
 ## Transactional Outbox (Atomic Publish)

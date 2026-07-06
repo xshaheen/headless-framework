@@ -439,6 +439,8 @@ Core owns logical metadata and provider-independent correctness. Provider packag
 
 ```bash
 dotnet add package Headless.Messaging.Core
+dotnet add package Headless.Messaging.InMemory
+dotnet add package Headless.Messaging.InMemoryStorage
 ```
 
 ### Quick Start
@@ -446,7 +448,7 @@ dotnet add package Headless.Messaging.Core
 ```csharp
 services.AddHeadlessMessaging(setup =>
 {
-    setup.UseInMemoryTransport();
+    setup.UseInMemory();
     setup.UseInMemoryStorage();
 
     setup.ForMessage<OrderPlaced>(message =>
@@ -1155,7 +1157,7 @@ Provides in-process bus and queue transport for local development and tests.
 
 ### Key Features
 
-- `setup.UseInMemoryTransport()`.
+- `setup.UseInMemory()`.
 - In-process bus and queue delivery.
 - No external broker.
 
@@ -1168,7 +1170,7 @@ dotnet add package Headless.Messaging.InMemory
 ### Quick Start
 
 ```csharp
-setup.UseInMemoryTransport();
+setup.UseInMemory();
 ```
 
 ### Configuration

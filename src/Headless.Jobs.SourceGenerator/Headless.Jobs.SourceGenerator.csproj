@@ -1,6 +1,8 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
+    <Description>Roslyn source generator for Headless background jobs compile-time support.</Description>
+    <PackageTags>headless;jobs;source-generator;dotnet</PackageTags>
     <IncludeBuildOutput>false</IncludeBuildOutput>
   </PropertyGroup>
   <PropertyGroup>
@@ -18,10 +20,18 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" PrivateAssets="all" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" PrivateAssets="all" />
-    <PackageReference Include="System.Memory" />
+    <PackageReference Include="System.Buffers" GeneratePathProperty="true" PrivateAssets="all" />
+    <PackageReference Include="System.Memory" GeneratePathProperty="true" PrivateAssets="all" />
+    <PackageReference Include="System.Numerics.Vectors" GeneratePathProperty="true" PrivateAssets="all" />
+    <PackageReference Include="System.Runtime.CompilerServices.Unsafe" GeneratePathProperty="true" PrivateAssets="all" />
   </ItemGroup>
   <ItemGroup Label="This ensures the library will be packaged as a source generator when we use `dotnet pack`">
     <None Include="$(OutputPath)\$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+    <None Include="$(OutputPath)\$(AssemblyName).pdb" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+    <None Include="$(PkgSystem_Buffers)\lib\netstandard2.0\System.Buffers.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+    <None Include="$(PkgSystem_Memory)\lib\netstandard2.0\System.Memory.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+    <None Include="$(PkgSystem_Numerics_Vectors)\lib\netstandard2.0\System.Numerics.Vectors.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+    <None Include="$(PkgSystem_Runtime_CompilerServices_Unsafe)\lib\netstandard2.0\System.Runtime.CompilerServices.Unsafe.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
     <None Include="lib\netstandard2.0\_._" Pack="true" PackagePath="lib\netstandard2.0\" />
   </ItemGroup>
 </Project>

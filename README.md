@@ -7,68 +7,371 @@
 [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4)](https://dotnet.microsoft.com)
 [![GitHub Stars](https://img.shields.io/github/stars/xshaheen/headless-framework?style=social)](https://github.com/xshaheen/headless-framework)
 
-150+ NuGet packages &bull; Abstraction + Provider pattern &bull; Zero lock-in
+150+ NuGet packages &bull; Abstraction + Provider pattern &bull; Explicit infrastructure
 
-[Quick Start](#quick-start) &bull; [Packages](#packages) &bull; [Architecture](#architecture) &bull; [Using with AI Agents](#using-headless-with-ai-agents) &bull; [Contributing](#contributing)
+[Quick Start](#quick-start) &bull; [Install By Goal](#install-by-goal) &bull; [Messaging](#messaging) &bull; [Packages](#packages) &bull; [Production Guidance](#production-guidance) &bull; [Contributing](#contributing)
 
 </div>
 
 ---
 
-## Why Headless?
+## What Problem It Solves
 
-Most .NET frameworks force opinions on you — folder structures, ORM choices, messaging transports, cloud providers. **Headless doesn't.**
+Headless Framework is a modular .NET framework for services that need production infrastructure without binding application code to one vendor, broker, database, or hosting shape.
 
-Every feature ships as a pair: a thin **abstraction** package (interfaces and contracts) and one or more **provider** packages (concrete implementations). You pick the pieces you need, wire them up, and own the result.
+Most services eventually need the same infrastructure patterns: reliable message publishing, background consumers, retry policies, caching, blob storage, email delivery, API health checks, OpenTelemetry, and provider-specific configuration. Without a framework layer, business code tends to depend directly on Redis, RabbitMQ, Kafka, Azure, AWS, SQL Server, PostgreSQL, and other implementation details.
 
-- **Composable** — 150+ standalone packages. Use one or use fifty.
-- **Swappable** — Switch from Redis to in-memory caching, or AWS to Azure blob storage, by changing one line.
-- **Explicit** — No hidden conventions, no magic. Every behavior is visible in your code.
-- **Testable** — Every abstraction is mockable. Every provider is integration-tested with Testcontainers.
+Headless separates those concerns:
+
+- **Abstractions** give application code stable interfaces such as `IBus`, `IOutboxBus`, `IQueue`, `IOutboxQueue`, cache, blob, email, and distributed-lock contracts.
+- **Providers** supply concrete infrastructure integrations.
+- **Setup extensions** compose only the packages each service needs.
+- **Local and testing providers** let developers run without cloud or broker dependencies.
+
+Use Headless when you want provider-swappable infrastructure with explicit setup and source-visible behavior. Production correctness still depends on choosing the right provider, storage, retry, transaction, and idempotency model for your service.
+
+## Install By Goal
+
+| Goal | Start With | Add Provider Packages |
+|------|------------|-----------------------|
+| API defaults, health checks, OpenTelemetry, common middleware | `Headless.Api.ServiceDefaults` | None unless your app needs other domains |
+| Local messaging without external infrastructure | `Headless.Messaging.Core` | `Headless.Messaging.InMemory`, `Headless.Messaging.InMemoryStorage` |
+| Durable messaging with RabbitMQ | `Headless.Messaging.Core` | `Headless.Messaging.RabbitMq` plus one durable storage provider |
+| Durable messaging with Kafka | `Headless.Messaging.Core` | `Headless.Messaging.Kafka` plus one durable storage provider |
+| Durable messaging with Azure Service Bus | `Headless.Messaging.Core` | `Headless.Messaging.AzureServiceBus` plus one durable storage provider |
+| Durable outbox storage with PostgreSQL | `Headless.Messaging.Core` | `Headless.Messaging.Storage.PostgreSql` |
+| Durable outbox storage with SQL Server | `Headless.Messaging.Core` | `Headless.Messaging.Storage.SqlServer` |
+| EF Core-backed transactional outbox | `Headless.Messaging.Core` | `Headless.Messaging.Storage.PostgreSql` or `Headless.Messaging.Storage.SqlServer`, then call `UseEntityFramework<TContext>()` |
+| Cache abstraction | `Headless.Caching.Core` | `Headless.Caching.InMemory`, `Headless.Caching.Redis`, or `Headless.Caching.Hybrid` |
+| Blob storage abstraction | `Headless.Blobs.Core` | Azure, AWS, Cloudflare R2, filesystem, Redis, or SFTP provider |
+| Email abstraction | `Headless.Emails.Core` | AWS, Azure Communication Services, MailKit SMTP, or dev provider |
+| Test-only infrastructure | Domain core package | In-memory provider or testing package for that domain |
+
+Messaging always needs:
+
+1. `Headless.Messaging.Core`
+2. One transport provider
+3. One storage provider when using durable outbox, retries, or delayed dispatch
+4. Consumer registrations for messages handled by the service
 
 ## Quick Start
 
+### Start an API
+
 ```bash
 dotnet add package Headless.Api.ServiceDefaults
-dotnet add package Headless.Caching.Redis
-dotnet add package Headless.Blobs.Azure
-dotnet add package Headless.Emails.Aws
 ```
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-// Service defaults: OpenTelemetry, OpenAPI, problem details, JSON, health checks, and more.
-// Binds secrets from the "Headless:StringEncryption" and "Headless:StringHash" config sections.
+// OpenTelemetry, OpenAPI, problem details, JSON, health checks, forwarded headers,
+// compression, exception handling, HSTS, status-code pages, and Headless endpoints.
 builder.AddHeadless();
-
-// Caching — pick a provider on the unified setup builder. Swap UseRedis for UseInMemory
-// (or add an L1/L2 tier) without touching call sites.
-var redis = ConnectionMultiplexer.Connect("localhost:6379");
-builder.Services.AddHeadlessCaching(setup =>
-    setup.UseRedis(options => options.ConnectionMultiplexer = redis)
-);
-
-// Blob storage — the Azure provider consumes a BlobServiceClient registered in DI.
-builder.Services.AddSingleton(new BlobServiceClient(builder.Configuration["Azure:Storage:ConnectionString"]));
-builder.Services.AddHeadlessBlobs(blobs =>
-    blobs.UseAzure(options => options.AutoCreateContainer = true)
-);
-
-// Email — AWS SES reads region/credentials from AWSOptions (here, the "AWS:*" config section).
-builder.Services.AddHeadlessEmails(setup =>
-    setup.UseAwsSes(builder.Configuration.GetAWSOptions())
-);
 
 var app = builder.Build();
 
-// Applies the Headless middleware pipeline (forwarded headers, compression, exception handler,
-// HSTS, status-code pages) and maps the health/alive/OpenAPI endpoints.
 app.UseHeadless();
 app.MapHeadlessEndpoints();
 
 app.Run();
 ```
+
+### Add Local Messaging
+
+This example runs messaging in memory. Use it for learning, local development, and tests. It is not durable production messaging.
+
+```bash
+dotnet add package Headless.Messaging.Core
+dotnet add package Headless.Messaging.InMemory
+dotnet add package Headless.Messaging.InMemoryStorage
+```
+
+```csharp
+using Headless.Messaging;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+
+var builder = Host.CreateApplicationBuilder(args);
+
+builder.Services.AddHeadlessMessaging(setup =>
+{
+    setup.UseInMemoryStorage();
+    setup.UseInMemory();
+
+    setup.ForMessage<OrderPlaced>(message =>
+        message
+            .MessageName("orders.placed")
+            .OnBus<OrderPlacedConsumer>(consumer => consumer.Group("orders").Concurrency(4))
+    );
+});
+
+using var app = builder.Build();
+
+await app.Services.GetRequiredService<IBootstrapper>()
+    .BootstrapAsync(CancellationToken.None);
+
+await app.Services.GetRequiredService<IOutboxBus>()
+    .PublishAsync(
+        new OrderPlaced("order-123"),
+        new PublishOptions { MessageName = "orders.placed" },
+        CancellationToken.None
+    );
+
+public sealed record OrderPlaced(string OrderId);
+
+public sealed class OrderPlacedConsumer(ILogger<OrderPlacedConsumer> logger) : IConsume<OrderPlaced>
+{
+    public ValueTask ConsumeAsync(ConsumeContext<OrderPlaced> context, CancellationToken cancellationToken)
+    {
+        logger.LogInformation("Processing order {OrderId}", context.Message.OrderId);
+        return ValueTask.CompletedTask;
+    }
+}
+```
+
+## Messaging
+
+`Headless.Messaging.Core` separates logical publish intent from transport delivery.
+
+- Use `IBus` to publish directly to the configured broadcast transport.
+- Use `IQueue` to enqueue directly to the configured point-to-point transport.
+- Use `IOutboxBus` to persist broadcast intent first, then let the outbox deliver it.
+- Use `IOutboxQueue` to persist queue intent first, then let the outbox deliver it.
+- Implement `IConsume<TMessage>` for processors and consumers.
+
+### Durable RabbitMQ + PostgreSQL
+
+```bash
+dotnet add package Headless.Messaging.Core
+dotnet add package Headless.Messaging.RabbitMq
+dotnet add package Headless.Messaging.Storage.PostgreSql
+```
+
+```csharp
+builder.Services.AddHeadlessMessaging(setup =>
+{
+    setup.UsePostgreSql(options =>
+    {
+        options.ConnectionString = builder.Configuration.GetConnectionString("Messaging");
+    });
+
+    setup.UseRabbitMq(options =>
+    {
+        options.HostName = builder.Configuration["RabbitMq:HostName"]!;
+        options.Port = builder.Configuration.GetValue("RabbitMq:Port", 5672);
+        options.UserName = builder.Configuration["RabbitMq:UserName"]!;
+        options.Password = builder.Configuration["RabbitMq:Password"]!;
+        options.VirtualHost = "/";
+    });
+
+    setup.ForMessage<OrderPlaced>(message =>
+        message
+            .MessageName("orders.placed")
+            .OnBus<OrderPlacedConsumer>(consumer => consumer.Group("orders").Concurrency(8))
+    );
+});
+```
+
+Call `IBootstrapper.BootstrapAsync(...)` during service startup when you use a manual host path, so Headless can initialize topology before messages are published or consumed.
+
+### Outbox
+
+Use the outbox when publish intent must survive process failure or must be coordinated with application state.
+
+```csharp
+public sealed class OrderPublisher(IOutboxBus outboxBus)
+{
+    public Task PublishAsync(string orderId, CancellationToken cancellationToken)
+    {
+        return outboxBus.PublishAsync(
+            new OrderPlaced(orderId),
+            new PublishOptions
+            {
+                MessageName = "orders.placed",
+                Delay = TimeSpan.FromSeconds(30),
+            },
+            cancellationToken
+        );
+    }
+}
+```
+
+The outbox stores intent first and dispatches later through the configured transport. The EF storage path (`setup.UseEntityFramework<TContext>()` from the SQL Server or PostgreSQL storage packages) enables the transactional outbox by default: a publish inside a coordinated transaction writes the outbox row in the same database transaction and discards it on rollback.
+
+The raw ADO storage paths (`UsePostgreSql(...)` / `UseSqlServer(...)` by connection string, no `DbContext`) stay explicit opt-in: register the matching commit-coordination provider and use the coordinated-transaction helpers.
+
+See:
+
+- [`demo/Headless.Messaging.RabbitMq.SqlServer.Demo`](demo/Headless.Messaging.RabbitMq.SqlServer.Demo)
+- [`demo/Headless.Messaging.Kafka.PostgreSql.Demo`](demo/Headless.Messaging.Kafka.PostgreSql.Demo)
+- [`docs/llms/messaging.md`](docs/llms/messaging.md)
+
+### Retry and Backoff
+
+Retry policy is configured through `MessagingOptions.RetryPolicy`.
+
+```csharp
+using Headless.Messaging.Retry;
+
+builder.Services.AddHeadlessMessaging(setup =>
+{
+    setup.Options.RetryPolicy.MaxInlineRetries = 2;
+    setup.Options.RetryPolicy.MaxPersistedRetries = 15;
+    setup.Options.RetryPolicy.InitialDispatchGrace = TimeSpan.FromSeconds(30);
+    setup.Options.RetryPolicy.DispatchTimeout = TimeSpan.FromMinutes(5);
+    setup.Options.RetryPolicy.BackoffStrategy = new ExponentialBackoffStrategy(
+        initialDelay: TimeSpan.FromSeconds(2),
+        maxDelay: TimeSpan.FromMinutes(5),
+        backoffMultiplier: 2.0
+    );
+
+    // Add one storage provider and one transport provider.
+});
+```
+
+Defaults from `RetryPolicyOptions`:
+
+- `MaxInlineRetries`: `2`
+- `MaxPersistedRetries`: `15`
+- `InitialDispatchGrace`: `30 seconds`
+- `DispatchTimeout`: `5 minutes`
+- `BackoffStrategy`: exponential backoff with jitter
+
+Total observable attempts are `(MaxInlineRetries + 1) * (MaxPersistedRetries + 1)`. With defaults, that is 48 attempts. Delivery remains at-least-once, so consumers must be safe to run more than once.
+
+### Processor and Consumer
+
+```csharp
+public sealed class OrderPlacedConsumer(ILogger<OrderPlacedConsumer> logger) : IConsume<OrderPlaced>
+{
+    public ValueTask ConsumeAsync(ConsumeContext<OrderPlaced> context, CancellationToken cancellationToken)
+    {
+        logger.LogInformation("Order placed: {OrderId}", context.Message.OrderId);
+        return ValueTask.CompletedTask;
+    }
+}
+```
+
+Register a consumer on a broadcast bus or point-to-point queue:
+
+```csharp
+setup.ForMessage<OrderPlaced>(message =>
+{
+    message.OnBus<OrderPlacedConsumer>(consumer =>
+        consumer.Group("order-projections").Concurrency(4)
+    );
+
+    message.OnQueue<OrderPlacedConsumer>(consumer =>
+        consumer.Group("order-workers").Concurrency(2)
+    );
+});
+```
+
+Use consumer groups to separate independent processing groups. Use concurrency to control how many messages a consumer group processes in parallel within the service instance.
+
+## Configuration Examples
+
+Headless setup is programmatic. Bind provider options from configuration when your service needs environment-specific values.
+
+```csharp
+builder.Services.AddHeadlessMessaging(setup =>
+{
+    var rabbit = builder.Configuration.GetSection("RabbitMq");
+
+    setup.UseRabbitMq(options =>
+    {
+        options.HostName = rabbit["HostName"]!;
+        options.Port = rabbit.GetValue("Port", 5672);
+        options.UserName = rabbit["UserName"]!;
+        options.Password = rabbit["Password"]!;
+        options.VirtualHost = rabbit["VirtualHost"] ?? "/";
+    });
+
+    setup.UsePostgreSql(options =>
+    {
+        options.ConnectionString =
+            builder.Configuration.GetConnectionString("Messaging");
+    });
+});
+```
+
+```json
+{
+  "ConnectionStrings": {
+    "Messaging": "Host=localhost;Database=headless_messaging;Username=postgres;Password=postgres"
+  },
+  "RabbitMq": {
+    "HostName": "localhost",
+    "Port": 5672,
+    "UserName": "myapp_user",
+    "Password": "replace-with-a-secret",
+    "VirtualHost": "/"
+  }
+}
+```
+
+## Guarantees and Limits
+
+Messaging guarantees depend on the configured transport, storage provider, and transaction coordination.
+
+Headless Messaging provides:
+
+- Provider-swappable publishing and consuming APIs.
+- Durable outbox intent when using `IOutboxBus` or `IOutboxQueue` with a durable storage provider.
+- Delay support for outbox-backed `PublishOptions.Delay` and `EnqueueOptions.Delay`.
+- Inline and persisted retry policy configuration.
+- Consumer registration with group and concurrency settings.
+- At-least-once delivery semantics.
+
+Headless Messaging does not guarantee:
+
+- Exactly-once delivery.
+- Idempotent business behavior without idempotent consumer code.
+- Durable delivery when using in-memory transport or in-memory storage.
+- Atomic outbox writes unless application state and Headless storage are coordinated in the same transaction.
+- Uniform broker features across RabbitMQ, Kafka, Azure Service Bus, NATS, Pulsar, Redis, AWS, and in-memory transports.
+
+Consumer guidance:
+
+- Make consumers idempotent.
+- Store processed message IDs or business operation IDs when duplicate processing would be harmful.
+- Treat retry callbacks and exhaustion callbacks as at-least-once signals.
+- Keep consumer side effects safe under process crash and broker redelivery.
+
+## Production Guidance
+
+Before using messaging in production:
+
+- Choose a durable transport provider.
+- Choose exactly one durable storage provider for outbox, retries, and delayed dispatch.
+- Bootstrap topology during service startup.
+- Use `IOutboxBus` or `IOutboxQueue` when publishing must survive process failure.
+- Coordinate the outbox transaction with application state changes when atomicity matters.
+- Configure retry and backoff deliberately.
+- Treat `UseStorageLock` as retry-pickup coordination, not an exactly-once guarantee.
+- Add OpenTelemetry and logs around publish, consume, retry, and exhaustion paths.
+- Protect dashboard endpoints with production authentication.
+- Write integration tests with the actual transport and storage provider combination.
+- Document provider-specific limits such as ordering, delay support, partitioning, dead-letter behavior, queue arguments, and topic naming.
+
+## Examples
+
+| Example | Shows |
+|---------|-------|
+| [`demo/Headless.Messaging.Console.Demo`](demo/Headless.Messaging.Console.Demo) | In-memory transport/storage, consumer registration, bootstrap, publish, callbacks |
+| [`demo/Headless.Messaging.RabbitMq.SqlServer.Demo`](demo/Headless.Messaging.RabbitMq.SqlServer.Demo) | RabbitMQ transport, SQL Server storage, EF coordination, raw ADO coordination, rollback, delayed publish |
+| [`demo/Headless.Messaging.Kafka.PostgreSql.Demo`](demo/Headless.Messaging.Kafka.PostgreSql.Demo) | Kafka transport, PostgreSQL storage, raw coordination, EF coordination |
+
+## Versioning and Compatibility
+
+- Most packages target `.NET 10`.
+- Source generator packages target `netstandard2.0`.
+- The repository pins the .NET SDK in [`global.json`](global.json).
+- Package release notes are published from [GitHub releases](https://github.com/xshaheen/headless-framework/releases).
+
+Check release notes before upgrading, especially for configuration APIs, provider setup, storage schema, retry behavior, and source-generated code.
 
 ## Packages
 

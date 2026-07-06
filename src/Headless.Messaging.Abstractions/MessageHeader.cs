@@ -15,9 +15,16 @@ namespace Headless.Messaging;
 /// <see cref="RewriteCallback"/> for the supported write paths inside a consumer handler.
 /// </remarks>
 [PublicAPI]
-public sealed class MessageHeader(IDictionary<string, string?> dictionary)
-    : ReadOnlyDictionary<string, string?>(new Dictionary<string, string?>(dictionary, StringComparer.Ordinal))
+public sealed class MessageHeader : ReadOnlyDictionary<string, string?>
 {
+    /// <summary>Initializes a new snapshot from the supplied header dictionary.</summary>
+    /// <param name="dictionary">The source headers to copy.</param>
+    public MessageHeader(IDictionary<string, string?> dictionary)
+        : base(new Dictionary<string, string?>(dictionary, StringComparer.Ordinal)) { }
+
+    internal MessageHeader()
+        : base(new Dictionary<string, string?>(StringComparer.Ordinal)) { }
+
     internal IDictionary<string, string?>? ResponseHeader { get; set; }
 
     /// <summary>

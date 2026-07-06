@@ -113,5 +113,28 @@ public sealed class PublishContextTests : TestBase
         baseContext.MessageName.Should().Be("orders");
     }
 
+    [Fact]
+    public void should_snapshot_headers_from_publish_options()
+    {
+        // given
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal) { ["x-feature"] = "enabled" };
+        var options = new PublishOptions { Headers = headers };
+
+        // when
+        var context = new PublishingContext<OrderPlaced>(
+            new OrderPlaced("order-1"),
+            IntentType.Bus,
+            options,
+            delayTime: null
+        );
+        headers["x-feature"] = "disabled";
+        headers["x-new"] = "new";
+
+        // then
+        context.Headers.Should().ContainKey("x-feature");
+        context.Headers["x-feature"].Should().Be("enabled");
+        context.Headers.Should().NotContainKey("x-new");
+    }
+
     private sealed record OrderPlaced(string OrderId);
 }

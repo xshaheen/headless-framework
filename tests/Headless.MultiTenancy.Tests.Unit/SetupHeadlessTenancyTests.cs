@@ -262,6 +262,61 @@ public sealed class SetupHeadlessTenancyTests
     }
 
     [Fact]
+    public async Task should_not_run_validators_when_startup_cancellation_is_already_requested()
+    {
+        // given
+        var builder = Host.CreateApplicationBuilder();
+        var validator = new CountingValidator();
+        builder.Services.AddSingleton<IHeadlessTenancyValidator>(validator);
+        builder.AddHeadlessTenancy(_ => { });
+
+        await using var provider = builder.Services.BuildServiceProvider();
+        var hostedService = (IHostedLifecycleService)
+            provider
+                .GetServices<IHostedService>()
+                .Single(service =>
+                    string.Equals(service.GetType().Name, "HeadlessTenancyStartupValidator", StringComparison.Ordinal)
+                );
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        // when
+        var act = () => hostedService.StartingAsync(cts.Token);
+
+        // then
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        validator.Calls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_propagate_validator_cancellation_without_synthetic_diagnostic()
+    {
+        // given
+        var builder = Host.CreateApplicationBuilder();
+        var cancellation = new CancellationToken(canceled: true);
+        builder.Services.AddSingleton<IHeadlessTenancyValidator>(new CancelingValidator(cancellation));
+        builder.Services.AddSingleton<IHeadlessTenancyValidator>(
+            new TestValidator("HEADLESS_OTHER", "Other seam failed.")
+        );
+        builder.AddHeadlessTenancy(_ => { });
+
+        await using var provider = builder.Services.BuildServiceProvider();
+        var hostedService = (IHostedLifecycleService)
+            provider
+                .GetServices<IHostedService>()
+                .Single(service =>
+                    string.Equals(service.GetType().Name, "HeadlessTenancyStartupValidator", StringComparison.Ordinal)
+                );
+
+        // when
+        var act = () => hostedService.StartingAsync(CancellationToken.None);
+
+        // then
+        var exception = (await act.Should().ThrowAsync<OperationCanceledException>()).Which;
+        exception.CancellationToken.Should().Be(cancellation);
+    }
+
+    [Fact]
     public void should_replace_factory_manifest_registration_with_a_singleton_instance()
     {
         // given — a consumer pre-registers the manifest via a factory (the documented blind-spot)
@@ -346,6 +401,26 @@ public sealed class SetupHeadlessTenancyTests
         public IEnumerable<HeadlessTenancyDiagnostic> Validate(HeadlessTenancyValidationContext context)
         {
             throw new InvalidOperationException(message);
+        }
+    }
+
+    private sealed class CancelingValidator(CancellationToken cancellationToken) : IHeadlessTenancyValidator
+    {
+        public IEnumerable<HeadlessTenancyDiagnostic> Validate(HeadlessTenancyValidationContext context)
+        {
+            throw new OperationCanceledException(cancellationToken);
+        }
+    }
+
+    private sealed class CountingValidator : IHeadlessTenancyValidator
+    {
+        public int Calls { get; private set; }
+
+        public IEnumerable<HeadlessTenancyDiagnostic> Validate(HeadlessTenancyValidationContext context)
+        {
+            Calls++;
+
+            return [];
         }
     }
 }
