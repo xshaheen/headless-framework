@@ -42,8 +42,9 @@ public sealed class PaymobCashInAuthenticator : IPaymobCashInAuthenticator, IDis
         _tokenLock.Dispose();
     }
 
-    public Task<CashInAuthenticationTokenResponse> RequestAuthenticationTokenAsync() =>
-        _RequestAuthenticationTokenAsync(CancellationToken.None);
+    public Task<CashInAuthenticationTokenResponse> RequestAuthenticationTokenAsync(
+        CancellationToken cancellationToken = default
+    ) => _RequestAuthenticationTokenAsync(cancellationToken);
 
     private async Task<CashInAuthenticationTokenResponse> _RequestAuthenticationTokenAsync(
         CancellationToken cancellationToken

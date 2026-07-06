@@ -61,7 +61,9 @@ public sealed partial class PaymobCashInAuthenticatorTests
             fixture.OptionsAccessor
         );
 
-        var invocation = FluentActions.Awaiting(authenticator.RequestAuthenticationTokenAsync);
+        var invocation = FluentActions.Awaiting(() =>
+            authenticator.RequestAuthenticationTokenAsync(TestContext.Current.CancellationToken)
+        );
 
         // then
         var assertions = await invocation.Should().ThrowAsync<PaymobCashInException>();
