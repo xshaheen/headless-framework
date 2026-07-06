@@ -513,7 +513,7 @@ The circuit breaker operates **per-process only**. There is no cross-instance co
 
 ## Distributed Lock Integration
 
-`MessagingOptions.UseStorageLock` (default `false`) enables `IDistributedLock`-backed mutual exclusion in `MessageNeedToRetryProcessor`. When `true`, the retry processor acquires a named lock before each retry pickup cycle, preventing duplicate work across replicas.
+`MessagingOptions.UseStorageLock` (default `false`) enables `IDistributedLock`-backed mutual exclusion in `MessageNeedToRetryProcessor`. When `true`, the retry processor acquires a named lock before each retry pickup cycle, reducing duplicate retry-pickup work across replicas. Delivery remains at-least-once; consumers must still be idempotent.
 
 Use `MessagingBuilder.UseDistributedLock(...)` to wire the provider — calling this implicitly sets `UseStorageLock = true`:
 
@@ -538,7 +538,7 @@ If only the default `NullNodeMembership` is registered, the bootstrapper logs **
 
 Retry locks use non-blocking acquire (`AcquireTimeout = TimeSpan.Zero`), a finite lease window equal to the current polling interval, and `LockMonitoringMode.AutoExtend`. If a lease's `LostToken` fires, the processor logs EventId 79 and does not start new pickup under an already-lost lease; in-flight dispatch remains guarded by per-row `LockedUntil`.
 
-When `UseStorageLock = false` (default), `IDistributedLock` is never called; skip this for single-replica deployments or when the storage provider natively prevents duplicate retry pickup. Dead-owner recovery is unaffected — it runs independently of this lock (see [Coordination Recovery](#coordination-recovery)).
+When `UseStorageLock = false` (default), `IDistributedLock` is never called; skip this for single-replica deployments or when the storage provider natively prevents duplicate retry pickup. This does not change the at-least-once delivery contract. Dead-owner recovery is unaffected — it runs independently of this lock (see [Coordination Recovery](#coordination-recovery)).
 
 ### Coordination Recovery
 

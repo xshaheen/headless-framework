@@ -69,6 +69,28 @@ public sealed class AzureServiceBusOptionsTests
     }
 
     [Fact]
+    public void should_reject_auto_complete_messages()
+    {
+        // given
+        var options = new AzureServiceBusOptions
+        {
+            ConnectionString =
+                "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=abc123",
+            AutoCompleteMessages = true,
+        };
+        var validator = new AzureServiceBusOptionsValidator();
+
+        // when
+        var result = validator.Validate(options);
+
+        // then
+        result.IsValid.Should().BeFalse();
+        result
+            .Errors.Should()
+            .Contain(error => error.PropertyName == nameof(AzureServiceBusOptions.AutoCompleteMessages));
+    }
+
+    [Fact]
     public void should_have_default_max_concurrent_calls()
     {
         // given, when

@@ -82,7 +82,8 @@ internal sealed class SqlServerDataStorage(
         var tvpParam = _BuildIdListTvpParameter(storageIds);
         var statusParam = new SqlParameter("@StatusName", nameof(StatusName.Delayed));
 
-        var sql = $"UPDATE {_publishedTable} SET [StatusName]=@StatusName WHERE [Id] IN (SELECT [Id] FROM @Ids);";
+        var sql =
+            $"UPDATE {_publishedTable} SET [StatusName]=@StatusName WHERE [Id] IN (SELECT [Id] FROM @Ids) AND {_TerminalRowGuardSimple};";
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
 
@@ -711,11 +712,18 @@ internal sealed class SqlServerDataStorage(
     )
     {
         var sql = $"""
-            SELECT TOP (@BatchSize) Id, Content, IntentType, Retries, Added, ExpiresAt FROM {_publishedTable} WITH (UPDLOCK, READPAST)
-            WHERE Version = @Version AND StatusName = '{nameof(StatusName.Delayed)}' AND ExpiresAt < @TwoMinutesLater
-            UNION ALL
-            SELECT TOP (@BatchSize) Id, Content, IntentType, Retries, Added, ExpiresAt FROM {_publishedTable} WITH (UPDLOCK, READPAST)
-            WHERE Version = @Version AND StatusName = '{nameof(StatusName.Queued)}' AND ExpiresAt < @OneMinutesAgo;
+            WITH Candidates AS (
+                SELECT Id, Content, IntentType, Retries, Added, ExpiresAt FROM {_publishedTable} WITH (UPDLOCK, READPAST)
+                WHERE Version = @Version AND StatusName = '{nameof(
+                StatusName.Delayed
+            )}' AND ExpiresAt < @TwoMinutesLater
+                UNION ALL
+                SELECT Id, Content, IntentType, Retries, Added, ExpiresAt FROM {_publishedTable} WITH (UPDLOCK, READPAST)
+                WHERE Version = @Version AND StatusName = '{nameof(StatusName.Queued)}' AND ExpiresAt < @OneMinutesAgo
+            )
+            SELECT TOP (@BatchSize) Id, Content, IntentType, Retries, Added, ExpiresAt
+            FROM Candidates
+            ORDER BY ExpiresAt, Id;
             """;
 
         object[] sqlParams =
@@ -729,6 +737,7 @@ internal sealed class SqlServerDataStorage(
         await using var connection = new SqlConnection(options.Value.ConnectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        var poisonMessages = new List<PoisonMessage>();
         var messageList = await connection
             .ExecuteReaderAsync(
                 sql,
@@ -759,6 +768,7 @@ internal sealed class SqlServerDataStorage(
 #pragma warning restore CA1031
                         {
                             logger.LogPoisonMessageSkipped(storageId, _publishedTable, ex);
+                            poisonMessages.Add(_CreatePoisonMessage(storageId, ex));
                             continue;
                         }
 
@@ -775,6 +785,15 @@ internal sealed class SqlServerDataStorage(
             .ConfigureAwait(false);
 
         logger.LogSchedulerBatchFetched(messageList.Count, _publishedTable);
+
+        await _MarkPoisonMessagesTerminalAsync(
+                connection,
+                transaction,
+                _publishedTable,
+                poisonMessages,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
 
         await scheduleTask(transaction, messageList).ConfigureAwait(false);
 
@@ -996,14 +1015,21 @@ internal sealed class SqlServerDataStorage(
         // and SQL providers share identical pickup semantics — keeps tests with a fake clock honest
         // and avoids subtle drift between application time and DB time.
         var sql = $"""
-            UPDATE TOP (@BatchSize) {tableName} WITH (UPDLOCK, READPAST, ROWLOCK)
+            WITH Candidates AS (
+                SELECT TOP (@BatchSize) Id
+                FROM {tableName} WITH (UPDLOCK, READPAST, ROWLOCK)
+                WHERE Retries <= @Retries
+                  AND Version = @Version
+                  AND NextRetryAt IS NOT NULL AND NextRetryAt <= @Now
+                  AND (LockedUntil IS NULL OR LockedUntil <= @Now)
+                  AND {_TerminalRowGuardSimple}
+                ORDER BY NextRetryAt, Id
+            )
+            UPDATE target
             SET LockedUntil = @NewLease, Owner = @Owner
             OUTPUT inserted.Id, inserted.Content, inserted.IntentType, inserted.Retries, inserted.Added, inserted.NextRetryAt, inserted.LockedUntil, inserted.Owner
-            WHERE Retries <= @Retries
-              AND Version = @Version
-              AND NextRetryAt IS NOT NULL AND NextRetryAt <= @Now
-              AND (LockedUntil IS NULL OR LockedUntil <= @Now)
-              AND {_TerminalRowGuardSimple};
+            FROM {tableName} AS target
+            INNER JOIN Candidates ON target.Id = Candidates.Id;
             """;
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
@@ -1021,6 +1047,7 @@ internal sealed class SqlServerDataStorage(
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
 
+        var poisonMessages = new List<PoisonMessage>();
         var result = await connection
             .ExecuteReaderAsync(
                 sql,
@@ -1059,6 +1086,7 @@ internal sealed class SqlServerDataStorage(
 #pragma warning restore CA1031
                         {
                             logger.LogPoisonMessageSkipped(storageId, tableName, ex);
+                            poisonMessages.Add(_CreatePoisonMessage(storageId, ex));
                             continue;
                         }
 
@@ -1073,7 +1101,63 @@ internal sealed class SqlServerDataStorage(
             )
             .ConfigureAwait(false);
 
+        await _MarkPoisonMessagesTerminalAsync(
+                connection,
+                transaction: null,
+                tableName,
+                poisonMessages,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
         return result;
+    }
+
+    private async ValueTask _MarkPoisonMessagesTerminalAsync(
+        DbConnection connection,
+        DbTransaction? transaction,
+        string tableName,
+        IReadOnlyList<PoisonMessage> poisonMessages,
+        CancellationToken cancellationToken
+    )
+    {
+        if (poisonMessages.Count == 0)
+        {
+            return;
+        }
+
+        var expiresAt = timeProvider
+            .GetUtcNow()
+            .UtcDateTime.AddSeconds(messagingOptions.Value.FailedMessageExpiredAfter);
+        var isReceivedTable = string.Equals(tableName, _receivedTable, StringComparison.Ordinal);
+        var sql = isReceivedTable
+            ? $"UPDATE {tableName} SET StatusName=@StatusName, NextRetryAt=NULL, LockedUntil=NULL, Owner=NULL, ExpiresAt=@ExpiresAt, ExceptionInfo=@ExceptionInfo WHERE Id=@Id AND {_TerminalRowGuardSimple};"
+            : $"UPDATE {tableName} SET StatusName=@StatusName, NextRetryAt=NULL, LockedUntil=NULL, Owner=NULL, ExpiresAt=@ExpiresAt WHERE Id=@Id AND {_TerminalRowGuardSimple};";
+
+        foreach (var poisonMessage in poisonMessages)
+        {
+            object[] sqlParams =
+            [
+                new SqlParameter("@Id", poisonMessage.StorageId),
+                new SqlParameter("@StatusName", nameof(StatusName.Failed)),
+                new SqlParameter("@ExpiresAt", SqlDbType.DateTime2) { Value = expiresAt },
+            ];
+
+            if (isReceivedTable)
+            {
+                sqlParams = [.. sqlParams, new SqlParameter("@ExceptionInfo", poisonMessage.ExceptionInfo)];
+            }
+
+            await connection
+                .ExecuteNonQueryAsync(
+                    sql,
+                    transaction: transaction,
+                    commandTimeout: messagingOptions.Value.CommandTimeout,
+                    sqlParams: sqlParams,
+                    cancellationToken: cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
     }
 
     private async ValueTask<int> _ReclaimDeadOwnersAsync(
@@ -1148,4 +1232,9 @@ internal sealed class SqlServerDataStorage(
         {
             Value = nodeMembership.GetOwnerParameterValue(lockedUntil),
         };
+
+    private static PoisonMessage _CreatePoisonMessage(Guid storageId, Exception exception) =>
+        new(storageId, $"{exception.GetType().FullName}: {exception.Message}");
+
+    private readonly record struct PoisonMessage(Guid StorageId, string ExceptionInfo);
 }

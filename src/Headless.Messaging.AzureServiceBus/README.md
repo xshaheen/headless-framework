@@ -110,6 +110,7 @@ options.EnableSubscriberParallelExecute = false;
 - Delay stays in the core pipeline unless you add broker scheduling separately.
 - Commit completes the message.
 - Reject abandons the message. Redelivery and dead-lettering follow entity lock and delivery settings.
+- `AutoCompleteMessages` must remain `false`; options validation rejects `true` because Headless owns explicit settlement after durable receive storage and handler outcome.
 - `AutoProvision` creates topics, subscriptions, and rules when enabled.
 - `SubscribeAsync(...)` keeps subscription rules aligned with topic names and SQL filters.
 - Use `AzureServiceBusHeaders.SessionId` for ordered delivery. `ConsumerThreadCount` only affects parallelism around those sessions.

@@ -29,6 +29,7 @@ internal sealed class Dispatcher : IDispatcher
     private readonly int _publishChannelSize;
 
     private CancellationTokenSource? _tasksCts;
+    private Task? _schedulerTask;
 
     // Volatile because writers (DisposeAsync, _ResetStateIfNeeded) race readers on channel-writer
     // and processing-loop threads. Without the barrier, a stale `false` read can slip past the
@@ -100,8 +101,8 @@ internal sealed class Dispatcher : IDispatcher
             await _StartProcessingTasksAsync().ConfigureAwait(false);
         }
 
-        var schedulerTask = _StartSchedulerTaskAsync();
-        _ = schedulerTask.ContinueWith(
+        _schedulerTask = _StartSchedulerTaskAsync();
+        _ = _schedulerTask.ContinueWith(
             _OnSchedulerLoopFaulted,
             CancellationToken.None,
             TaskContinuationOptions.OnlyOnFaulted,
@@ -245,11 +246,16 @@ internal sealed class Dispatcher : IDispatcher
             return;
         }
 
-        // Flush scheduler queue to storage BEFORE cancelling/disposing _tasksCts. Earlier
-        // implementations did this in a CancellationToken.Register callback that ran synchronously
-        // on the stopping thread; we used .GetAwaiter().GetResult() which blocks the threadpool slot
-        // the async storage continuation needs and creates a shutdown deadlock window. Performing
-        // the async flush here keeps the operation cooperatively async.
+        _disposed = true;
+
+        if (_tasksCts is not null)
+        {
+            await _tasksCts.CancelAsync().ConfigureAwait(false);
+            await _WaitForSchedulerTaskAsync().ConfigureAwait(false);
+        }
+
+        // Flush after the scheduler task has observed cancellation, so no concurrent consumer can
+        // remove and publish a row while this shutdown path is moving remaining queued ids back to Delayed.
         await _FlushSchedulerQueueAsync().ConfigureAwait(false);
 
         if (_tasksCts is not null)
@@ -258,8 +264,6 @@ internal sealed class Dispatcher : IDispatcher
         }
 
         await castAndDispose(_schedulerQueue).ConfigureAwait(false);
-
-        _disposed = true;
 
         return;
 
@@ -318,6 +322,7 @@ internal sealed class Dispatcher : IDispatcher
         {
             _tasksCts?.Dispose();
             _tasksCts = null;
+            _schedulerTask = null;
             _disposed = false;
         }
     }
@@ -425,6 +430,33 @@ internal sealed class Dispatcher : IDispatcher
             },
             TasksCts.Token
         );
+    }
+
+    private async ValueTask _WaitForSchedulerTaskAsync()
+    {
+        if (_schedulerTask is not { } schedulerTask)
+        {
+            return;
+        }
+
+        try
+        {
+            await schedulerTask.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected during shutdown.
+        }
+        catch (Exception ex)
+        {
+            // The fault continuation has already requested host shutdown; disposal should still drain
+            // durable scheduler state rather than fail before _FlushSchedulerQueueAsync runs.
+            _logger.DelayedMessagePublishFailed(ex, ex.Message);
+        }
+        finally
+        {
+            _schedulerTask = null;
+        }
     }
 
     #endregion

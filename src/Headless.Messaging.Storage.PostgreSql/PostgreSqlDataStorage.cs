@@ -89,7 +89,8 @@ internal sealed class PostgreSqlDataStorage(
             return;
         }
 
-        var sql = $"UPDATE {_publishedTable} SET \"StatusName\"=@StatusName WHERE \"Id\" = ANY(@Ids);";
+        var sql =
+            $"UPDATE {_publishedTable} SET \"StatusName\"=@StatusName WHERE \"Id\" = ANY(@Ids) AND {_TerminalRowGuardSimple};";
 
         object[] sqlParams =
         [
@@ -708,6 +709,7 @@ internal sealed class PostgreSqlDataStorage(
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
+        var poisonMessages = new List<PoisonMessage>();
         var messageList = await connection
             .ExecuteReaderAsync(
                 sql,
@@ -740,6 +742,7 @@ internal sealed class PostgreSqlDataStorage(
 #pragma warning restore CA1031
                         {
                             logger.LogPoisonMessageSkipped(storageId, _publishedTable, ex);
+                            poisonMessages.Add(_CreatePoisonMessage(storageId, ex));
                             continue;
                         }
 
@@ -756,6 +759,15 @@ internal sealed class PostgreSqlDataStorage(
             .ConfigureAwait(false);
 
         logger.LogSchedulerBatchFetched(messageList.Count, _publishedTable);
+
+        await _MarkPoisonMessagesTerminalAsync(
+                connection,
+                transaction,
+                _publishedTable,
+                poisonMessages,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
 
         await scheduleTask(transaction, messageList).ConfigureAwait(false);
 
@@ -1014,6 +1026,7 @@ internal sealed class PostgreSqlDataStorage(
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
 
+        var poisonMessages = new List<PoisonMessage>();
         var result = await connection
             .ExecuteReaderAsync(
                 sql,
@@ -1051,9 +1064,8 @@ internal sealed class PostgreSqlDataStorage(
                         catch (Exception ex)
 #pragma warning restore CA1031
                         {
-                            // #3 — poison row: skip so the rest of the leased batch still dispatches. The row stays
-                            // leased until LockedUntil expires, then is re-picked and re-skipped (no head-of-line stall).
                             logger.LogPoisonMessageSkipped(storageId, tableName, ex);
+                            poisonMessages.Add(_CreatePoisonMessage(storageId, ex));
                             continue;
                         }
 
@@ -1068,7 +1080,63 @@ internal sealed class PostgreSqlDataStorage(
             )
             .ConfigureAwait(false);
 
+        await _MarkPoisonMessagesTerminalAsync(
+                connection,
+                transaction: null,
+                tableName,
+                poisonMessages,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
         return result;
+    }
+
+    private async ValueTask _MarkPoisonMessagesTerminalAsync(
+        DbConnection connection,
+        DbTransaction? transaction,
+        string tableName,
+        IReadOnlyList<PoisonMessage> poisonMessages,
+        CancellationToken cancellationToken
+    )
+    {
+        if (poisonMessages.Count == 0)
+        {
+            return;
+        }
+
+        var expiresAt = timeProvider
+            .GetUtcNow()
+            .UtcDateTime.AddSeconds(messagingOptions.Value.FailedMessageExpiredAfter);
+        var isReceivedTable = string.Equals(tableName, _receivedTable, StringComparison.Ordinal);
+        var sql = isReceivedTable
+            ? $"UPDATE {tableName} SET \"StatusName\"=@StatusName,\"NextRetryAt\"=NULL,\"LockedUntil\"=NULL,\"Owner\"=NULL,\"ExpiresAt\"=@ExpiresAt,\"ExceptionInfo\"=@ExceptionInfo WHERE \"Id\"=@Id AND {_TerminalRowGuardSimple};"
+            : $"UPDATE {tableName} SET \"StatusName\"=@StatusName,\"NextRetryAt\"=NULL,\"LockedUntil\"=NULL,\"Owner\"=NULL,\"ExpiresAt\"=@ExpiresAt WHERE \"Id\"=@Id AND {_TerminalRowGuardSimple};";
+
+        foreach (var poisonMessage in poisonMessages)
+        {
+            object[] sqlParams =
+            [
+                new NpgsqlParameter("@Id", poisonMessage.StorageId),
+                new NpgsqlParameter("@StatusName", nameof(StatusName.Failed)),
+                new NpgsqlParameter("@ExpiresAt", expiresAt),
+            ];
+
+            if (isReceivedTable)
+            {
+                sqlParams = [.. sqlParams, new NpgsqlParameter("@ExceptionInfo", poisonMessage.ExceptionInfo)];
+            }
+
+            await connection
+                .ExecuteNonQueryAsync(
+                    sql,
+                    transaction: transaction,
+                    commandTimeout: messagingOptions.Value.CommandTimeout,
+                    sqlParams: sqlParams,
+                    cancellationToken: cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
     }
 
     private async ValueTask<int> _ReclaimDeadOwnersAsync(
@@ -1111,4 +1179,9 @@ internal sealed class PostgreSqlDataStorage(
             )
             .ConfigureAwait(false);
     }
+
+    private static PoisonMessage _CreatePoisonMessage(Guid storageId, Exception exception) =>
+        new(storageId, $"{exception.GetType().FullName}: {exception.Message}");
+
+    private readonly record struct PoisonMessage(Guid StorageId, string ExceptionInfo);
 }

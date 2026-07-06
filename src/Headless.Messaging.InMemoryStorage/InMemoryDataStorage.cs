@@ -55,7 +55,20 @@ internal sealed class InMemoryDataStorage(
         foreach (var storageId in storageIds)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            PublishedMessages[storageId].StatusName = StatusName.Delayed;
+            if (!PublishedMessages.TryGetValue(storageId, out var message))
+            {
+                continue;
+            }
+
+            lock (message)
+            {
+                if ((message.StatusName is StatusName.Succeeded or StatusName.Failed) && message.NextRetryAt is null)
+                {
+                    continue;
+                }
+
+                message.StatusName = StatusName.Delayed;
+            }
         }
 
         return ValueTask.CompletedTask;
@@ -581,7 +594,9 @@ internal sealed class InMemoryDataStorage(
         {
             var ids = PublishedMessages
                 .Values.Where(x =>
-                    x.ExpiresAt < timeout && (x.StatusName == StatusName.Succeeded || x.StatusName == StatusName.Failed)
+                    x.ExpiresAt < timeout
+                    && x.NextRetryAt is null
+                    && (x.StatusName == StatusName.Succeeded || x.StatusName == StatusName.Failed)
                 )
                 .Select(x => x.StorageId)
                 .Take(batchCount);
@@ -592,7 +607,9 @@ internal sealed class InMemoryDataStorage(
         {
             var ids = ReceivedMessages
                 .Values.Where(x =>
-                    x.ExpiresAt < timeout && (x.StatusName == StatusName.Succeeded || x.StatusName == StatusName.Failed)
+                    x.ExpiresAt < timeout
+                    && x.NextRetryAt is null
+                    && (x.StatusName == StatusName.Succeeded || x.StatusName == StatusName.Failed)
                 )
                 .Select(x => x.StorageId)
                 .Take(batchCount)
@@ -654,6 +671,7 @@ internal sealed class InMemoryDataStorage(
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var newLease = now.Add(messagingOptions.Value.RetryPolicy.DispatchTimeout);
         var maxPersistedRetries = messagingOptions.Value.RetryPolicy.MaxPersistedRetries;
+        var retryBatchSize = messagingOptions.Value.RetryBatchSize;
         var version = messagingOptions.Value.Version;
 
         // Atomic claim-and-return mirrors the SQL providers' single-statement UPDATE...RETURNING/
@@ -670,7 +688,7 @@ internal sealed class InMemoryDataStorage(
         var claimed = new List<MediumMessage>();
         foreach (var candidate in source.Values)
         {
-            if (claimed.Count >= 200)
+            if (claimed.Count >= retryBatchSize)
             {
                 break;
             }

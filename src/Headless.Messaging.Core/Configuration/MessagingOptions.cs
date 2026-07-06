@@ -174,8 +174,8 @@ public sealed class MessagingOptions
 
     /// <summary>
     /// Gets or sets a value indicating whether to use distributed storage locking when retrying failed messages.
-    /// When enabled, only one instance in a distributed system will perform message retries, preventing duplicate processing.
-    /// This is essential for clustered deployments to ensure exactly-once retry semantics.
+    /// When enabled, only one instance in a distributed system performs retry pickup at a time, reducing duplicate
+    /// retry dispatch between nodes. Message delivery remains at-least-once, so consumers must still be idempotent.
     /// Default is false.
     /// </summary>
     public bool UseStorageLock { get; set; }
