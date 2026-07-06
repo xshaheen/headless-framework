@@ -47,7 +47,7 @@ public static class AssemblyHelper
     /// <exception cref="BadImageFormatException">Thrown when a discovered file is not a valid managed assembly.</exception>
     /// <exception cref="FileLoadException">Thrown when a discovered assembly file is found but cannot be loaded.</exception>
     [RequiresUnreferencedCode("Loading assemblies from path might load types that cannot be statically analyzed.")]
-    public static List<Assembly> LoadAssemblies(string folderPath, SearchOption searchOption)
+    public static IReadOnlyList<Assembly> LoadAssemblies(string folderPath, SearchOption searchOption)
     {
         return [.. GetAssemblyFiles(folderPath, searchOption).Select(AssemblyLoadContext.Default.LoadFromAssemblyPath)];
     }
