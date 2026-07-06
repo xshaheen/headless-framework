@@ -792,13 +792,13 @@ await timeJobManager.AddAsync(
 public sealed class MyJobExceptionHandler(ILogger<MyJobExceptionHandler> logger)
     : IJobExceptionHandler
 {
-    public Task HandleExceptionAsync(Exception ex, Guid jobId, JobType jobType)
+    public Task HandleExceptionAsync(Exception ex, Guid jobId, JobType jobType, CancellationToken cancellationToken = default)
     {
         logger.LogError(ex, "Job {JobId} ({JobType}) failed", jobId, jobType);
         return Task.CompletedTask;
     }
 
-    public Task HandleCanceledExceptionAsync(Exception ex, Guid jobId, JobType jobType)
+    public Task HandleCanceledExceptionAsync(Exception ex, Guid jobId, JobType jobType, CancellationToken cancellationToken = default)
     {
         logger.LogWarning("Job {JobId} ({JobType}) was cancelled", jobId, jobType);
         return Task.CompletedTask;

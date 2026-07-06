@@ -293,7 +293,9 @@ internal sealed class JobsExecutionTaskHandler(
 
                 if (serviceProvider.GetService(typeof(IJobExceptionHandler)) is IJobExceptionHandler handler)
                 {
-                    await handler.HandleCanceledExceptionAsync(ex, context.JobId, context.Type).ConfigureAwait(false);
+                    await handler
+                        .HandleCanceledExceptionAsync(ex, context.JobId, context.Type, cancellationToken)
+                        .ConfigureAwait(false);
                 }
 
                 // Terminal-status write must persist even on graceful host-stop (cancellationToken already cancelled)
@@ -404,7 +406,9 @@ internal sealed class JobsExecutionTaskHandler(
 
             if (serviceProvider.GetService(typeof(IJobExceptionHandler)) is IJobExceptionHandler handler)
             {
-                await handler.HandleExceptionAsync(lastException, context.JobId, context.Type).ConfigureAwait(false);
+                await handler
+                    .HandleExceptionAsync(lastException, context.JobId, context.Type, cancellationToken)
+                    .ConfigureAwait(false);
             }
 
             // Terminal-status write must persist regardless of host-stop/lease-loss (completion fence guards it).
