@@ -10,10 +10,12 @@ namespace Headless.Messaging.Redis;
 internal sealed class RedisStreamManager(
     IRedisConnectionPool connectionsPool,
     IOptions<MessagingRedisOptions> options,
-    ILogger<RedisStreamManager> logger
+    ILogger<RedisStreamManager> logger,
+    TimeProvider? timeProvider = null
 ) : IRedisStreamManager
 {
     private readonly MessagingRedisOptions _options = options.Value;
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private IConnectionMultiplexer? _redis;
 
     public async Task CreateStreamWithConsumerGroupAsync(
@@ -59,7 +61,7 @@ internal sealed class RedisStreamManager(
 
             yield return result;
 
-            token.WaitHandle.WaitOne(pollDelay);
+            await _timeProvider.Delay(pollDelay, token).ConfigureAwait(false);
         }
 
         // ReSharper disable once IteratorNeverReturns
@@ -94,7 +96,7 @@ internal sealed class RedisStreamManager(
                 break;
             }
 
-            token.WaitHandle.WaitOne(pollDelay);
+            await _timeProvider.Delay(pollDelay, token).ConfigureAwait(false);
         }
     }
 

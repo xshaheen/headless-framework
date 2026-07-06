@@ -57,6 +57,7 @@ internal sealed class RedisConnectionPool : IRedisConnectionPool, IDisposable, I
 
     public async Task<IConnectionMultiplexer> ConnectAsync(CancellationToken cancellationToken = default)
     {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _isDisposed) != 0, this);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (QuietConnection is not { } quietConnection)

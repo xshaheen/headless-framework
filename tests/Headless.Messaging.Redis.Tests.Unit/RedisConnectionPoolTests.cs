@@ -155,4 +155,50 @@ public sealed class RedisConnectionPoolTests : TestBase
 
         await action.Should().NotThrowAsync();
     }
+
+    [Fact]
+#pragma warning disable MA0045, VSTHRD103 // This test intentionally verifies synchronous Dispose remains supported.
+    public async Task should_throw_when_connect_called_after_sync_dispose()
+    {
+        // given
+        var options = Options.Create(
+            new MessagingRedisOptions
+            {
+                Configuration = ConfigurationOptions.Parse("localhost:6379"),
+                ConnectionPoolSize = 2,
+            }
+        );
+
+        var pool = new RedisConnectionPool(options, LoggerFactory);
+        pool.Dispose();
+
+        // when
+        var action = async () => await pool.ConnectAsync(AbortToken);
+
+        // then
+        await action.Should().ThrowAsync<ObjectDisposedException>();
+    }
+#pragma warning restore MA0045, VSTHRD103
+
+    [Fact]
+    public async Task should_throw_when_connect_called_after_async_dispose()
+    {
+        // given
+        var options = Options.Create(
+            new MessagingRedisOptions
+            {
+                Configuration = ConfigurationOptions.Parse("localhost:6379"),
+                ConnectionPoolSize = 2,
+            }
+        );
+
+        await using var pool = new RedisConnectionPool(options, LoggerFactory);
+        await pool.DisposeAsync();
+
+        // when
+        var action = async () => await pool.ConnectAsync(AbortToken);
+
+        // then
+        await action.Should().ThrowAsync<ObjectDisposedException>();
+    }
 }

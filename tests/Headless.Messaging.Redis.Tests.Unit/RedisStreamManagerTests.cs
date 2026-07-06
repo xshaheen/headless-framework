@@ -4,6 +4,7 @@ using Headless.Messaging.Redis;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 using StackExchange.Redis;
 
 namespace Tests;
@@ -127,5 +128,48 @@ public sealed class RedisStreamManagerTests : TestBase
 
         // then
         await _mockConnectionPool.Received(1).ConnectAsync(TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task should_wait_asynchronously_between_latest_poll_iterations()
+    {
+        // given
+        var timeProvider = new FakeTimeProvider();
+        var sut = _CreateSut(timeProvider);
+        var pollDelay = TimeSpan.FromMinutes(1);
+
+        await using var enumerator = sut.PollStreamsLatestMessagesAsync(
+                [],
+                "group",
+                pollDelay,
+                TestContext.Current.CancellationToken
+            )
+            .GetAsyncEnumerator(TestContext.Current.CancellationToken);
+
+        // when
+        var firstMove = await enumerator.MoveNextAsync();
+        var secondMoveTask = enumerator.MoveNextAsync().AsTask();
+
+        // then
+        firstMove.Should().BeTrue();
+        secondMoveTask.IsCompleted.Should().BeFalse();
+
+        timeProvider.Advance(pollDelay);
+
+        (await secondMoveTask).Should().BeTrue();
+    }
+
+    private RedisStreamManager _CreateSut(TimeProvider timeProvider)
+    {
+        var options = Options.Create(
+            new MessagingRedisOptions
+            {
+                Configuration = ConfigurationOptions.Parse("localhost:6379"),
+                StreamEntriesCount = 10,
+            }
+        );
+
+        var logger = LoggerFactory.CreateLogger<RedisStreamManager>();
+        return new RedisStreamManager(_mockConnectionPool, options, logger, timeProvider);
     }
 }
