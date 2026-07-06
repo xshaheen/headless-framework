@@ -60,7 +60,6 @@ No additional configuration required.
 - `Headless.Api.Core`
 - `Asp.Versioning.Mvc`
 - `Asp.Versioning.Mvc.ApiExplorer`
-- `Microsoft.EntityFrameworkCore`
 
 ## Side Effects
 

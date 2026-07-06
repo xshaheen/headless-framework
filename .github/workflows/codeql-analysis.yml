@@ -43,6 +43,7 @@ jobs:
         with:
           lfs: false
           fetch-depth: 0
+          persist-credentials: false
 
       - name: "Setup .NET SDK"
         uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
@@ -57,13 +58,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      - name: "Authenticate GitHub Packages"
-        env:
-          GH_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: dotnet nuget update source github.com --username xshaheen --password "$GH_PACKAGES_TOKEN" --store-password-in-clear-text --configfile nuget.config
-        shell: bash
-
       - name: "Restore"
+        env:
+          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: make restore
 
       - name: Initialize CodeQL

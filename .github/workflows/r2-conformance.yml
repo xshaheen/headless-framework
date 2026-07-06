@@ -39,6 +39,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: "Setup .NET SDK"
         uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
@@ -53,16 +54,18 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      - name: "Authenticate GitHub Packages"
+      - name: "Restore"
         env:
-          GH_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: dotnet nuget update source github.com --username xshaheen --password "$GH_PACKAGES_TOKEN" --store-password-in-clear-text --configfile nuget.config
-        shell: bash
+          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: make restore-project PROJECT=tests/Headless.Blobs.CloudflareR2.Tests.Integration/Headless.Blobs.CloudflareR2.Tests.Integration.csproj
+
+      - name: "Build"
+        run: make build-project-no-restore PROJECT=tests/Headless.Blobs.CloudflareR2.Tests.Integration/Headless.Blobs.CloudflareR2.Tests.Integration.csproj
 
       - name: "Run R2 conformance suite"
         env:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-        run: make test-project TEST_PROJECT=tests/Headless.Blobs.CloudflareR2.Tests.Integration/Headless.Blobs.CloudflareR2.Tests.Integration.csproj
+        run: make test-project-fast TEST_PROJECT=tests/Headless.Blobs.CloudflareR2.Tests.Integration/Headless.Blobs.CloudflareR2.Tests.Integration.csproj
         shell: bash

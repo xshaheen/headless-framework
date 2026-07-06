@@ -356,13 +356,13 @@
       "headless.coordination.abstractions": {
         "type": "Project",
         "dependencies": {
-          "FluentValidation": "[12.1.1, )",
           "Headless.Checks": "[1.0.0, )"
         }
       },
       "headless.coordination.core": {
         "type": "Project",
         "dependencies": {
+          "FluentValidation": "[12.1.1, )",
           "Headless.Checks": "[1.0.0, )",
           "Headless.Coordination.Abstractions": "[1.0.0, )",
           "Headless.Core": "[1.0.0, )",

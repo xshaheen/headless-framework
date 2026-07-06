@@ -353,8 +353,7 @@
       "headless.auditlog.abstractions": {
         "type": "Project",
         "dependencies": {
-          "Headless.Extensions": "[1.0.0, )",
-          "Headless.Hosting": "[1.0.0, )"
+          "Headless.Extensions": "[1.0.0, )"
         }
       },
       "headless.caching.abstractions": {

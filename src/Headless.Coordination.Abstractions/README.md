@@ -44,7 +44,6 @@ Configure through provider setup plus `CoordinationOptions`.
 ## Dependencies
 
 - `Headless.Checks`
-- `FluentValidation`
 
 ## Side Effects
 

@@ -734,7 +734,15 @@
       "headless.auditlog.abstractions": {
         "type": "Project",
         "dependencies": {
-          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )"
+        }
+      },
+      "headless.auditlog.core": {
+        "type": "Project",
+        "dependencies": {
+          "FluentValidation": "[12.1.1, )",
+          "Headless.AuditLog.Abstractions": "[1.0.0, )",
+          "Headless.Checks": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.9, )",
           "Microsoft.Extensions.Options": "[10.0.9, )"
@@ -744,6 +752,7 @@
         "type": "Project",
         "dependencies": {
           "Headless.AuditLog.Abstractions": "[1.0.0, )",
+          "Headless.AuditLog.Core": "[1.0.0, )",
           "Headless.Core": "[1.0.0, )",
           "Headless.Serializer.Json": "[1.0.0, )",
           "Npgsql": "[10.0.3, )"

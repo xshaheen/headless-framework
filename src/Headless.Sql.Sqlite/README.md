@@ -61,6 +61,7 @@ Pass the connection string directly to the constructor. SQLite connection string
 
 - `Headless.Sql.Abstractions`
 - `Microsoft.Data.Sqlite`
+- `Microsoft.Extensions.Logging.Abstractions`
 
 ## Side Effects
 

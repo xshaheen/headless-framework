@@ -4,7 +4,7 @@ Apache Kafka transport provider for the messaging system.
 
 ## Problem Solved
 
-Enables high-throughput, distributed event streaming using Apache Kafka with consumer groups, partitions, and exactly-once semantics.
+Enables high-throughput, distributed event streaming using Apache Kafka with consumer groups, partitions, and broker-level ordering controls.
 
 ## Key Features
 
@@ -12,7 +12,7 @@ Enables high-throughput, distributed event streaming using Apache Kafka with con
 - **Partitioning**: Parallel processing with ordered delivery per partition
 - **Consumer Groups**: Load balancing across consumers
 - **Retention**: Persistent message storage with configurable retention
-- **Exactly-Once**: Transactional publishing and consuming
+- **Kafka Configuration Access**: Exposes raw Kafka producer and consumer settings through `MainConfig` and consumer-specific options
 
 ## Installation
 
@@ -119,6 +119,7 @@ options.EnableSubscriberParallelExecute = false; // Disable parallel execution
 - `FetchTopicsAsync(...)` creates concrete topics when auto-create is enabled and normalizes wildcard subscriptions.
 - `SubscribeAsync(...)` joins the configured consumer group to those topics.
 - Partition keys control ordering. Parallel handlers or multiple partitions can reorder observed processing.
+- Headless delivery remains at-least-once. Configure Kafka idempotence or read-committed isolation when you need those broker-level features, and keep consumers idempotent.
 - Topic names, header sizes, and record sizes follow Kafka broker limits.
 
 ## Dependencies

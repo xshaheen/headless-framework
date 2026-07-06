@@ -1,23 +1,24 @@
-# Headless.Messaging.RabbitMQ
+# Headless.Messaging.RabbitMq
 
 RabbitMQ transport provider for the messaging system.
 
 ## Problem Solved
 
-Enables reliable message delivery using RabbitMQ with exchanges, queues, routing keys, and advanced AMQP features for flexible pub/sub patterns.
+Enables Headless bus and queue delivery over RabbitMQ using a topic exchange, queue bindings, routing keys, publisher confirms, consumer acknowledgements, and configurable queue arguments.
 
 ## Key Features
 
-- **Exchange/Queue Model**: Flexible routing with topic, direct, fanout, and headers exchanges
-- **Reliability**: Publisher confirms, consumer acknowledgments, and dead-letter exchanges
+- **Topic Exchange/Queue Model**: Declares a topic exchange and binds consumer queues with routing keys derived from message registrations
+- **Reliability**: Optional publisher confirms plus consumer acknowledgments and rejects
 - **Auto-Provisioning**: Automatic exchange and queue creation
-- **Clustering**: High availability with RabbitMQ clusters
-- **Priority Queues**: Message priority support
+- **Clustering**: Comma-separated broker host names for RabbitMQ cluster connectivity
+- **Queue Arguments**: Queue TTL, queue mode, and queue type are exposed through `RabbitMqOptions.QueueArguments`
+- **Consumer QoS**: Global and per-consumer prefetch configuration
 
 ## Installation
 
 ```bash
-dotnet add package Headless.Messaging.RabbitMQ
+dotnet add package Headless.Messaging.RabbitMq
 ```
 
 ## Quick Start
@@ -104,7 +105,7 @@ options.EnableSubscriberParallelExecute = false; // No parallel execution
 
 - **Single consumer**: Messages arrive in publication order
 - **Multiple consumers (`ConsumerThreadCount > 1`)**: No ordering guarantee; concurrent processing
-- **Priority queues**: Higher priority messages delivered first, breaking FIFO order
+- **Broker policies and queue arguments**: Broker-side settings can change observable delivery order
 - **Redelivery after failure**: Failed messages may be redelivered out of order
 
 ### Recommendations
@@ -131,5 +132,6 @@ options.EnableSubscriberParallelExecute = false; // No parallel execution
 ## Side Effects
 
 - Creates exchanges and queues if they don't exist
+- Binds routing keys for configured consumers
 - Establishes persistent connections to RabbitMQ
-- Configures dead-letter exchanges for failed messages
+- Rejects messages with `BasicReject(requeue: true)`; dead-letter behavior follows queue arguments and broker policies outside this package

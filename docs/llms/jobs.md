@@ -284,7 +284,8 @@ None at the abstractions layer. All configuration is done in `Headless.Jobs.Core
 
 ### Dependencies
 
-None. Zero external NuGet dependencies.
+- `Headless.CommitCoordination.Abstractions`
+- `Microsoft.Extensions.DependencyInjection.Abstractions`
 
 ### Side Effects
 
@@ -400,7 +401,11 @@ builder.Services.AddHeadlessJobs(options =>
 ### Dependencies
 
 - `Headless.Jobs.Abstractions`
+- `Headless.Coordination.Abstractions`
+- `Headless.Coordination.Core`
+- `Headless.DistributedLocks.Abstractions`
 - `Headless.Extensions`
+- `NCrontab.Signed`
 
 ### Side Effects
 

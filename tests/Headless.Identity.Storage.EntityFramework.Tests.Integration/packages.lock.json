@@ -827,10 +827,7 @@
       "headless.auditlog.abstractions": {
         "type": "Project",
         "dependencies": {
-          "Headless.Extensions": "[1.0.0, )",
-          "Headless.Hosting": "[1.0.0, )",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.9, )",
-          "Microsoft.Extensions.Options": "[10.0.9, )"
+          "Headless.Extensions": "[1.0.0, )"
         }
       },
       "headless.checks": {

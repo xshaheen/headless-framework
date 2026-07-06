@@ -964,7 +964,6 @@ No additional configuration required.
 - `Headless.Api.Core` (and `Headless.Api.ServiceDefaults` if you want the orchestrator)
 - `Asp.Versioning.Mvc`
 - `Asp.Versioning.Mvc.ApiExplorer`
-- `Microsoft.EntityFrameworkCore`
 
 ### Side Effects
 

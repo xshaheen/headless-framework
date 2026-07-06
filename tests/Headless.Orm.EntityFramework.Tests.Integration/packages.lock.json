@@ -854,10 +854,7 @@
       "headless.auditlog.abstractions": {
         "type": "Project",
         "dependencies": {
-          "Headless.Extensions": "[1.0.0, )",
-          "Headless.Hosting": "[1.0.0, )",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.9, )",
-          "Microsoft.Extensions.Options": "[10.0.9, )"
+          "Headless.Extensions": "[1.0.0, )"
         }
       },
       "headless.checks": {
@@ -998,16 +995,14 @@
         }
       },
       "headless.sql.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Hosting": "[1.0.0, )"
-        }
+        "type": "Project"
       },
       "headless.sql.sqlite": {
         "type": "Project",
         "dependencies": {
           "Headless.Sql.Abstractions": "[1.0.0, )",
-          "Microsoft.Data.Sqlite": "[10.0.9, )"
+          "Microsoft.Data.Sqlite": "[10.0.9, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.9, )"
         }
       },
       "headless.testing": {
