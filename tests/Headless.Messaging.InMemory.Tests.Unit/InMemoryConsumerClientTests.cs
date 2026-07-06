@@ -207,9 +207,10 @@ public sealed class InMemoryConsumerClientTests : TestBase
 
         await Task.Delay(50, AbortToken);
 
-        // when
+        // when: awaiting the listener task itself (bounded) instead of a fixed post-cancel
+        // delay keeps the assertion deterministic under CI scheduling pressure
         await cts.CancelAsync();
-        await Task.Delay(100, AbortToken);
+        await listenTask.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         // then
         listenerStopped.Should().BeTrue();
