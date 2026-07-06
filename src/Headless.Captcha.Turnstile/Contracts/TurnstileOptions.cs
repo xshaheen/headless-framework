@@ -13,13 +13,13 @@ namespace Headless.Captcha;
 public sealed class TurnstileOptions
 {
     /// <summary>The base URL of the Cloudflare Turnstile API. Defaults to the public Cloudflare endpoint.</summary>
-    public string VerifyBaseUrl { get; set; } = "https://challenges.cloudflare.com/";
+    public string VerifyBaseUrl { get; init; } = "https://challenges.cloudflare.com/";
 
     /// <summary>The Turnstile site key rendered into the client widget.</summary>
-    public required string SiteKey { get; set; }
+    public required string SiteKey { get; init; }
 
     /// <summary>The Turnstile secret key used for server-side verification.</summary>
-    public required string SiteSecret { get; set; }
+    public required string SiteSecret { get; init; }
 }
 
 internal sealed class TurnstileOptionsValidator : AbstractValidator<TurnstileOptions>

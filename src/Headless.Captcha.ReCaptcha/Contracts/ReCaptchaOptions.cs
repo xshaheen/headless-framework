@@ -10,13 +10,13 @@ namespace Headless.Captcha;
 public sealed class ReCaptchaOptions
 {
     /// <summary>The base URL of the reCAPTCHA API. Defaults to the public Google endpoint.</summary>
-    public string VerifyBaseUrl { get; set; } = "https://www.google.com/";
+    public string VerifyBaseUrl { get; init; } = "https://www.google.com/";
 
     /// <summary>The reCAPTCHA site key rendered into the client widget/script.</summary>
-    public required string SiteKey { get; set; }
+    public required string SiteKey { get; init; }
 
     /// <summary>The reCAPTCHA secret key used for server-side verification.</summary>
-    public required string SiteSecret { get; set; }
+    public required string SiteSecret { get; init; }
 }
 
 internal sealed class ReCaptchaOptionsValidator : AbstractValidator<ReCaptchaOptions>

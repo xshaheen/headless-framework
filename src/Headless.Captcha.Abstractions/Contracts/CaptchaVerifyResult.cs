@@ -30,5 +30,5 @@ public class CaptchaVerifyResult
     public string? Action { get; init; }
 
     /// <summary>The provider error codes, when the provider returns them (typically on failure).</summary>
-    public string[]? ErrorCodes { get; init; }
+    public IReadOnlyList<string>? ErrorCodes { get; init; }
 }

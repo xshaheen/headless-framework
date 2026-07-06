@@ -4,6 +4,11 @@
 namespace Headless.Captcha;
 
 /// <summary>Error codes returned by the Google reCAPTCHA siteverify API.</summary>
+/// <remarks>
+/// New members may be added in minor versions as Google introduces additional error codes. Consumers that
+/// <c>switch</c> on this enum must always handle <see cref="Unknown"/> / the <c>default</c> case so a newly added
+/// member degrades to "treat as unknown" rather than falling through unhandled.
+/// </remarks>
 [PublicAPI]
 public enum ReCaptchaError
 {
@@ -35,12 +40,24 @@ public static class ReCaptchaErrorCodesExtensions
 {
     /// <summary>
     /// Maps Google's <c>error-codes</c> strings to <see cref="ReCaptchaError"/> values; unrecognized codes
-    /// map to <see cref="ReCaptchaError.Unknown"/>. A <see langword="null"/> input yields an empty array.
+    /// map to <see cref="ReCaptchaError.Unknown"/>. A <see langword="null"/> or empty input yields an empty list.
     /// </summary>
     /// <param name="errorCodes">The raw error-code strings, typically <c>response.ErrorCodes</c>.</param>
-    /// <returns>The parsed error values (never <see langword="null"/>).</returns>
-    public static ReCaptchaError[] ToReCaptchaErrors(this string[]? errorCodes)
+    /// <returns>The parsed error values, in input order (never <see langword="null"/>).</returns>
+    public static IReadOnlyList<ReCaptchaError> ToReCaptchaErrors(this IReadOnlyList<string>? errorCodes)
     {
-        return errorCodes?.ConvertAll(static code => code.ToReCaptchaError()) ?? [];
+        if (errorCodes is null || errorCodes.Count == 0)
+        {
+            return [];
+        }
+
+        var errors = new ReCaptchaError[errorCodes.Count];
+
+        for (var i = 0; i < errorCodes.Count; i++)
+        {
+            errors[i] = errorCodes[i].ToReCaptchaError();
+        }
+
+        return errors;
     }
 }

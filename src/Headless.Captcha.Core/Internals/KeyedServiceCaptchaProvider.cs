@@ -7,7 +7,7 @@ namespace Headless.Captcha.Internals;
 
 /// <summary>
 /// <see cref="ICaptchaProvider"/> over the container's keyed <see cref="ICaptchaVerifier"/> registrations — resolves
-/// both named instances (added through the name-taking setup overloads) and a default provider's canonical key.
+/// both named instances (added through <c>AddNamed</c>) and a default provider's canonical key.
 /// </summary>
 internal sealed class KeyedServiceCaptchaProvider(
     IServiceProvider serviceProvider,
@@ -28,9 +28,9 @@ internal sealed class KeyedServiceCaptchaProvider(
                             ? $"Registered names: {string.Join(", ", registeredNames)}. "
                             : "No captcha providers are registered. "
                     )
-                    + $"Register it through the builder first — for example AddHeadlessCaptcha(b => b.UseTurnstile(\"{name}\", …)) "
-                    + $"or b.UseReCaptchaV3(\"{name}\", …) — or use a default provider's canonical key (one of the "
-                    + "'Headless.Captcha:' constants on CaptchaConstants)."
+                    + $"Register it through the builder first — for example AddHeadlessCaptcha(b => b.AddNamed(\"{name}\", "
+                    + "i => i.UseTurnstile(…))) or i.UseReCaptchaV3(…) — or use a default provider's canonical key (one "
+                    + "of the 'Headless.Captcha:' constants on CaptchaConstants)."
             );
     }
 

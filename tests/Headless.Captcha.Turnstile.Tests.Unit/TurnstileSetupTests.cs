@@ -14,13 +14,7 @@ public sealed class TurnstileSetupTests
     public void default_provider_resolves_unkeyed_and_by_canonical_key()
     {
         var services = new ServiceCollection();
-        services.AddHeadlessCaptcha(builder =>
-            builder.UseTurnstile(options =>
-            {
-                options.SiteKey = "k";
-                options.SiteSecret = "s";
-            })
-        );
+        services.AddHeadlessCaptcha(builder => builder.UseTurnstile(_ => { }));
 
         using var serviceProvider = services.BuildServiceProvider();
 
@@ -36,20 +30,7 @@ public sealed class TurnstileSetupTests
     {
         var services = new ServiceCollection();
         services.AddHeadlessCaptcha(builder =>
-            builder
-                .UseTurnstile(options =>
-                {
-                    options.SiteKey = "tk";
-                    options.SiteSecret = "ts";
-                })
-                .UseReCaptchaV3(
-                    "recaptcha",
-                    options =>
-                    {
-                        options.SiteKey = "rk";
-                        options.SiteSecret = "rs";
-                    }
-                )
+            builder.UseTurnstile(_ => { }).AddNamed("recaptcha", instance => instance.UseReCaptchaV3(_ => { }))
         );
 
         using var serviceProvider = services.BuildServiceProvider();
@@ -65,20 +46,7 @@ public sealed class TurnstileSetupTests
     {
         var services = new ServiceCollection();
         services.AddHeadlessCaptcha(builder =>
-            builder
-                .UseTurnstile(options =>
-                {
-                    options.SiteKey = "tk";
-                    options.SiteSecret = "ts";
-                })
-                .UseReCaptchaV3(
-                    "recaptcha",
-                    options =>
-                    {
-                        options.SiteKey = "rk";
-                        options.SiteSecret = "rs";
-                    }
-                )
+            builder.UseTurnstile(_ => { }).AddNamed("recaptcha", instance => instance.UseReCaptchaV3(_ => { }))
         );
 
         using var serviceProvider = services.BuildServiceProvider();
@@ -91,13 +59,7 @@ public sealed class TurnstileSetupTests
     public void missing_site_secret_fails_options_validation()
     {
         var services = new ServiceCollection();
-        services.AddHeadlessCaptcha(builder =>
-            builder.UseTurnstile(options =>
-            {
-                options.SiteKey = "k";
-                options.SiteSecret = "";
-            })
-        );
+        services.AddHeadlessCaptcha(builder => builder.UseTurnstile(_Section("Turnstile", key: "k", secret: "")));
 
         using var serviceProvider = services.BuildServiceProvider();
 
@@ -113,13 +75,7 @@ public sealed class TurnstileSetupTests
     public void resolving_unregistered_name_throws_actionable_error()
     {
         var services = new ServiceCollection();
-        services.AddHeadlessCaptcha(builder =>
-            builder.UseTurnstile(options =>
-            {
-                options.SiteKey = "k";
-                options.SiteSecret = "s";
-            })
-        );
+        services.AddHeadlessCaptcha(builder => builder.UseTurnstile(_ => { }));
 
         using var serviceProvider = services.BuildServiceProvider();
         var provider = serviceProvider.GetRequiredService<ICaptchaProvider>();
@@ -165,15 +121,7 @@ public sealed class TurnstileSetupTests
     public void default_service_provider_overload_resolves_verifier()
     {
         var services = new ServiceCollection();
-        services.AddHeadlessCaptcha(builder =>
-            builder.UseTurnstile(
-                (options, _) =>
-                {
-                    options.SiteKey = "k";
-                    options.SiteSecret = "s";
-                }
-            )
-        );
+        services.AddHeadlessCaptcha(builder => builder.UseTurnstile((_, _) => { }));
 
         using var serviceProvider = services.BuildServiceProvider();
 
@@ -183,18 +131,10 @@ public sealed class TurnstileSetupTests
     [Fact]
     public void named_configuration_overload_resolves_by_name()
     {
-        var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(
-                new Dictionary<string, string?>(StringComparer.Ordinal)
-                {
-                    ["ts:SiteKey"] = "ck",
-                    ["ts:SiteSecret"] = "cs",
-                }
-            )
-            .Build();
-
         var services = new ServiceCollection();
-        services.AddHeadlessCaptcha(builder => builder.UseTurnstile("ts-cfg", configuration.GetSection("ts")));
+        services.AddHeadlessCaptcha(builder =>
+            builder.AddNamed("ts-cfg", instance => instance.UseTurnstile(_Section("ts", "ck", "cs")))
+        );
 
         using var serviceProvider = services.BuildServiceProvider();
 
@@ -210,14 +150,7 @@ public sealed class TurnstileSetupTests
     {
         var services = new ServiceCollection();
         services.AddHeadlessCaptcha(builder =>
-            builder.UseTurnstile(
-                "ts-sp",
-                (options, _) =>
-                {
-                    options.SiteKey = "k";
-                    options.SiteSecret = "s";
-                }
-            )
+            builder.AddNamed("ts-sp", instance => instance.UseTurnstile((_, _) => { }))
         );
 
         using var serviceProvider = services.BuildServiceProvider();
@@ -228,4 +161,16 @@ public sealed class TurnstileSetupTests
             .Should()
             .BeAssignableTo<ITurnstileVerifier>();
     }
+
+    private static IConfigurationSection _Section(string section, string key, string secret) =>
+        new ConfigurationBuilder()
+            .AddInMemoryCollection(
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    [$"{section}:SiteKey"] = key,
+                    [$"{section}:SiteSecret"] = secret,
+                }
+            )
+            .Build()
+            .GetSection(section);
 }
