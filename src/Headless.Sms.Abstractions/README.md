@@ -17,7 +17,8 @@ Provides a provider-agnostic SMS sending API so application code stays decoupled
 - `SendSingleSmsResponse` — closed result type; `Success` (bool), optional `ProviderMessageId`, `FailureError` (string? non-null on failure), and `FailureKind` (`SmsFailureKind`). Built via `Succeeded`, `Failed`, or `FromException`.
 - `SendBulkSmsResponse` — per-recipient bulk result; `Results` (one `SmsRecipientResult` each), `AllSucceeded`/`AnySucceeded`, optional `ProviderBatchId`. Built via `FromResults` or `FromAggregate`.
 - `SmsFailureKinds` — shared transport classifier (`FromException`) so every provider maps network faults and the standard resilience pipeline's rejections (timeout, open-circuit, rate-limiter) to the same `SmsFailureKind` (`None`, `Unknown`, `Transient`, `RateLimited`, `InvalidRecipient`, `AuthFailure`, `OutOfCredit`). Provider-specific failures are classified by each provider from its own contract (typed SDK exceptions, documented response statuses) and stay `Unknown` when the backend documents no signal — kinds are never inferred from generic HTTP status semantics.
-- Never throws for provider errors — only `OperationCanceledException` and argument-validation exceptions (malformed request) propagate.
+- Never throws for provider errors — only `OperationCanceledException` and argument-validation exceptions (malformed request) propagate. This is a deliberate contrast with the Captcha family, whose `ICaptchaVerifier.VerifyAsync` *throws* on the same class of transport failure: a rejected SMS send is ordinary data (branch on `FailureKind`), whereas an unverifiable captcha challenge is exceptional.
+- `SmsFailureKind` may gain members in minor versions. Always handle `SmsFailureKind.Unknown` / the `default` case in a `switch` so a newly added member degrades to "treat as unknown" rather than falling through unhandled.
 
 ## Installation
 

@@ -9,7 +9,7 @@ Owns the unified captcha setup builder (`AddHeadlessCaptcha`) and the `ICaptchaP
 ## Key Features
 
 - `AddHeadlessCaptcha(Action<HeadlessCaptchaSetupBuilder>)` — the single provider-agnostic registration entry point, with an at-least-one-provider gate and a once-per-collection guard.
-- `HeadlessCaptchaSetupBuilder` — the root builder with two slots (at most one default, unlimited named); `RegisterDefault(providerKey, action)` and `RegisterNamed(name, action)` are the hooks providers extend with their `Use*` members.
+- `HeadlessCaptchaSetupBuilder` — the root builder with two slots (at most one default, unlimited named); a default is selected by a provider's `Use*` member, and `AddNamed(name, configure)` adds a named instance through a nested `HeadlessCaptchaInstanceBuilder`. The `RegisterDefault(providerKey, action)` / `RegisterProvider(action)` plumbing that provider `Use*` members build on is `[EditorBrowsable(Never)]`.
 - `ICaptchaProvider` — registered automatically by the gate (keyed-service-backed via `KeyedServiceCaptchaProvider`); resolves named instances and a default provider's canonical key, and exposes `RegisteredNames`.
 - Deferred registration: provider contributions are queued and run only after the gates pass — the default first, then each named instance — so a setup that fails a gate leaves the `IServiceCollection` unchanged.
 
@@ -30,16 +30,11 @@ dotnet add package Headless.Captcha.Core
 // Provider-agnostic registration entry point (a provider package supplies the Use* member):
 builder.Services.AddHeadlessCaptcha(captcha =>
 {
-    captcha.UseTurnstile(o =>                          // default (optional, at most one)
-    {
-        o.SiteKey = "…";
-        o.SiteSecret = "…";
-    });
-    captcha.UseReCaptchaV3("recaptcha", o =>           // named instance, keyed "recaptcha"
-    {
-        o.SiteKey = "…";
-        o.SiteSecret = "…";
-    });
+    // default (optional, at most one) — call the Use* member on the setup builder
+    captcha.UseTurnstile(builder.Configuration.GetSection("Headless:Captcha:Turnstile"));
+
+    // named instance, keyed "recaptcha" — one provider per AddNamed call
+    captcha.AddNamed("recaptcha", i => i.UseReCaptchaV3(builder.Configuration.GetSection("Headless:Captcha:ReCaptchaV3")));
 });
 
 // Resolve a named verifier:

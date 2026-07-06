@@ -8,11 +8,11 @@ Provides server-side verification for Cloudflare Turnstile against the `turnstil
 
 ## Key Features
 
-- `setup.UseTurnstile(...)` - builder entry point (default and name-taking variants), each with the overload trio: `Action<TurnstileOptions>`, `Action<TurnstileOptions, IServiceProvider>`, and `IConfiguration`. Binds config section `Headless:Captcha:Turnstile`.
+- `setup.UseTurnstile(...)` - builder entry point, available as a default variant on `HeadlessCaptchaSetupBuilder` and a named variant on `HeadlessCaptchaInstanceBuilder` (added through `setup.AddNamed("name", i => i.UseTurnstile(...))`). Carries the overload trio in order: `IConfiguration`, `Action<TurnstileOptions>`, `Action<TurnstileOptions, IServiceProvider>`. `TurnstileOptions` is init-only, so bind config section `Headless:Captcha:Turnstile` (or object-initialize it inside the delegate).
 - `ITurnstileVerifier : ICaptchaVerifier` - adds `new Task<TurnstileVerifyResult> VerifyAsync(TurnstileVerifyRequest, CancellationToken)`. Inject it to read Turnstile-only data; the base `ICaptchaVerifier` view returns pass/fail only.
 - `TurnstileVerifyRequest : CaptchaVerifyRequest` - adds `string? IdempotencyKey`, so the same token can be safely re-verified without a duplicate-token error.
 - `TurnstileVerifyResult : CaptchaVerifyResult` - adds `string? CData` (the `cdata` echoed back from the widget) and `JsonElement? Metadata` (the Enterprise `metadata` object when present). Turnstile returns no score.
-- `ITurnstileLanguageCodeProvider` (+ `CultureInfoTurnstileLanguageCodeProvider`) - supplies the `data-language` value on the widget; defaults to the current UI culture.
+- `ICaptchaLanguageCodeProvider` (shared with reCAPTCHA; default `CultureInfoCaptchaLanguageCodeProvider`) - supplies the `data-language` value on the widget; defaults to the current UI culture.
 - Tag helpers: `<turnstile-script>` (props `ScriptAsync`, `ScriptDefer`, `ExplicitRender` → `?render=explicit`, `Onload`) rendering `turnstile/v0/api.js`; `<turnstile-widget>` (props `Theme`, `Size`, `Callback`, `ErrorCallback`, `ExpiredCallback`, `Action`, `CData`, `Language`) rendering `<div class="cf-turnstile" data-sitekey="…" …>`. They read the default Turnstile provider's options.
 
 ## Design Notes
@@ -35,11 +35,7 @@ using Headless.Captcha;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddHeadlessCaptcha(captcha =>
-    captcha.UseTurnstile(options =>
-    {
-        options.SiteKey = builder.Configuration["Headless:Captcha:Turnstile:SiteKey"]!;
-        options.SiteSecret = builder.Configuration["Headless:Captcha:Turnstile:SiteSecret"]!;
-    })
+    captcha.UseTurnstile(builder.Configuration.GetSection("Headless:Captcha:Turnstile"))
 );
 
 // Verify and read Turnstile-only data by injecting the concrete interface.
@@ -67,18 +63,10 @@ Compose with a second provider (only one default allowed — the rest are named)
 ```csharp
 builder.Services.AddHeadlessCaptcha(captcha =>
     captcha
-        .UseTurnstile(o =>
-        {
-            o.SiteKey = builder.Configuration["Headless:Captcha:Turnstile:SiteKey"]!;
-            o.SiteSecret = builder.Configuration["Headless:Captcha:Turnstile:SiteSecret"]!;
-        })
-        .UseReCaptchaV3(
+        .UseTurnstile(builder.Configuration.GetSection("Headless:Captcha:Turnstile")) // default
+        .AddNamed(
             "recaptcha",
-            o =>
-            {
-                o.SiteKey = builder.Configuration["Headless:Captcha:ReCaptchaV3:SiteKey"]!;
-                o.SiteSecret = builder.Configuration["Headless:Captcha:ReCaptchaV3:SiteSecret"]!;
-            }
+            i => i.UseReCaptchaV3(builder.Configuration.GetSection("Headless:Captcha:ReCaptchaV3"))
         )
 );
 
@@ -113,5 +101,5 @@ Bound from `Headless:Captcha:Turnstile` when using the `IConfiguration` overload
 ## Side Effects
 
 - Each `UseTurnstile` registration adds a named `HttpClient` (with the standard resilience handler) pointed at `VerifyBaseUrl`, configures `TurnstileOptions` (with FluentValidation, validated on start), and registers a keyed `ITurnstileVerifier` + `ICaptchaVerifier` under the registration name. A default registration also adds the unkeyed `ITurnstileVerifier` / `ICaptchaVerifier`.
-- Registers `ITurnstileLanguageCodeProvider` (transient, `TryAdd`) the first time a Turnstile provider is added.
+- Registers `ICaptchaLanguageCodeProvider` (`CultureInfoCaptchaLanguageCodeProvider`, transient, `TryAdd`) the first time a Turnstile provider is added.
 - Tag helpers emit HTML/script output during Razor rendering. No background services.

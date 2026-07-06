@@ -8,13 +8,13 @@ Provides server-side verification for both Google reCAPTCHA v2 and v3 against Go
 
 ## Key Features
 
-- `setup.UseReCaptchaV2(...)` / `setup.UseReCaptchaV3(...)` - builder entry points (default and name-taking variants), each with the overload trio: `Action<ReCaptchaOptions>`, `Action<ReCaptchaOptions, IServiceProvider>`, and `IConfiguration`. Bind config section `Headless:Captcha:ReCaptchaV2` / `Headless:Captcha:ReCaptchaV3`.
+- `setup.UseReCaptchaV2(...)` / `setup.UseReCaptchaV3(...)` - builder entry points, available as default variants on `HeadlessCaptchaSetupBuilder` and named variants on `HeadlessCaptchaInstanceBuilder` (added through `setup.AddNamed("name", i => i.UseReCaptchaV3(...))`). Each carries the overload trio in order: `IConfiguration`, `Action<ReCaptchaOptions>`, `Action<ReCaptchaOptions, IServiceProvider>`. `ReCaptchaOptions` is init-only, so bind config section `Headless:Captcha:ReCaptchaV2` / `Headless:Captcha:ReCaptchaV3` (or object-initialize it inside the delegate).
 - `IReCaptchaV3Verifier : ICaptchaVerifier` - adds `new Task<ReCaptchaV3VerifyResult> VerifyAsync(CaptchaVerifyRequest, CancellationToken)`. Inject it to read the score; the base `ICaptchaVerifier` view returns pass/fail only.
 - reCAPTCHA v2 implements the plain `ICaptchaVerifier` (no provider-only data beyond the base contract) — resolve it as `ICaptchaVerifier` (default unkeyed, or keyed by name / `CaptchaConstants.ReCaptchaV2Provider`). Returns a `ReCaptchaV2VerifyResult` at runtime.
 - `ReCaptchaV3VerifyResult : CaptchaVerifyResult, IReCaptchaVerifyResult` - adds `float Score` (0.0–1.0; defaults to `0f` on failure when no score is present in the wire response).
 - `ReCaptchaV2VerifyResult : CaptchaVerifyResult, IReCaptchaVerifyResult` - concrete v2 result type; carries no extra fields beyond the base contract.
 - `ReCaptchaError` enum and `ReCaptchaResultExtensions.ToReCaptchaErrors(this IReCaptchaVerifyResult)` - parse the raw `ErrorCodes` into the typed reCAPTCHA error enum. Scoped to `IReCaptchaVerifyResult` so it does not appear on unrelated types such as `TurnstileVerifyResult`.
-- `IReCaptchaLanguageCodeProvider` (+ `CultureInfoReCaptchaLanguageCodeProvider`) - supplies the `?hl=` language code appended to the script URL; defaults to the current UI culture.
+- `ICaptchaLanguageCodeProvider` (shared with Turnstile; default `CultureInfoCaptchaLanguageCodeProvider`) - supplies the `?hl=` language code appended to the script URL; defaults to the current UI culture.
 - Tag helpers: `<recaptcha-script-v2>`, `<recaptcha-div-v2>`, the `recaptcha-v2-*` attribute element helper, `<recaptcha-script-v3>`, and `<recaptcha-script-v3-js>`. They read the default provider's options under the matching canonical key.
 
 ## Design Notes
@@ -37,11 +37,7 @@ using Headless.Captcha;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddHeadlessCaptcha(captcha =>
-    captcha.UseReCaptchaV3(options =>
-    {
-        options.SiteKey = builder.Configuration["Headless:Captcha:ReCaptchaV3:SiteKey"]!;
-        options.SiteSecret = builder.Configuration["Headless:Captcha:ReCaptchaV3:SiteSecret"]!;
-    })
+    captcha.UseReCaptchaV3(builder.Configuration.GetSection("Headless:Captcha:ReCaptchaV3"))
 );
 
 // Read the v3 score by injecting the concrete interface.
@@ -89,5 +85,5 @@ Bound from `Headless:Captcha:ReCaptchaV2` / `Headless:Captcha:ReCaptchaV3` when 
 ## Side Effects
 
 - Each `UseReCaptchaV2` / `UseReCaptchaV3` registration adds a named `HttpClient` (with the standard resilience handler) pointed at `VerifyBaseUrl`, configures `ReCaptchaOptions` (with FluentValidation, validated on start), and registers a keyed `ICaptchaVerifier` (v2) / keyed `IReCaptchaV3Verifier` + `ICaptchaVerifier` (v3) under the registration name. A default registration also adds the unkeyed verifier(s).
-- Registers `IReCaptchaLanguageCodeProvider` (transient, `TryAdd`) the first time a reCAPTCHA provider is added.
+- Registers `ICaptchaLanguageCodeProvider` (`CultureInfoCaptchaLanguageCodeProvider`, transient, `TryAdd`) the first time a reCAPTCHA provider is added.
 - Tag helpers emit HTML/script output during Razor rendering. No background services.
