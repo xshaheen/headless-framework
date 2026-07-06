@@ -1,16 +1,20 @@
 <Project>
   <Import Project="../Directory.Build.props" />
-  <PropertyGroup Label="Packages Source Link">
-    <!-- Optional: Embed source files that are not tracked by the source control manager to the PDB -->
+  <PropertyGroup Label="Packages Symbols">
+    <!-- Embed PDBs in the assemblies: symbols travel with the package on both nuget.org and
+         GitHub Packages (which has no symbol server) without shipping loose .pdb or .snupkg
+         artifacts. Source generator projects opt out of symbol packaging on their own. -->
+    <DebugType>embedded</DebugType>
+    <!-- Embed source files that are not tracked by the source control manager into the PDB -->
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
-    <!-- Optional: Include PDB in the built .nupkg -->
-    <AllowedOutputExtensionsInPackageBuildOutputFolder>$(AllowedOutputExtensionsInPackageBuildOutputFolder);.pdb</AllowedOutputExtensionsInPackageBuildOutputFolder>
+    <!-- Symbols are embedded above; no separate .snupkg is produced -->
+    <IncludeSymbols>false</IncludeSymbols>
   </PropertyGroup>
   <PropertyGroup Label="Packages Information">
     <Product>Headless Framework</Product>
     <Authors>Mahmoud Shaheen</Authors>
     <Company>Mahmoud Shaheen</Company>
-    <Copyright>Copyright (c) Mahmoud Shaheen. All rights Reserved</Copyright>
+    <Copyright>Copyright (c) Mahmoud Shaheen. All rights reserved.</Copyright>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageIcon>logo.png</PackageIcon>
   </PropertyGroup>
@@ -20,15 +24,14 @@
     <PackageReleaseNotes>https://github.com/xshaheen/headless-framework/releases</PackageReleaseNotes>
   </PropertyGroup>
   <ItemGroup Label="Package References">
-    <PackageReference
-      Condition="'$(Configuration)' == 'Release'"
-      Include="Microsoft.SourceLink.GitHub"
-      PrivateAssets="All"
-    >
+    <!-- Unconditional (not Release-only): both are PrivateAssets build-time tools, and a
+         configuration condition makes the restore graph — and the committed packages.lock.json
+         files — depend on the restore configuration, causing lock-file churn. -->
+    <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    <PackageReference Condition="'$(Configuration)' == 'Release'" Include="MinVer" PrivateAssets="All">
+    <PackageReference Include="MinVer" PrivateAssets="All">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>

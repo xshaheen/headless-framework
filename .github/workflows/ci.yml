@@ -137,20 +137,15 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
 
+          # Symbols are embedded in the assemblies (DebugType=embedded); no .snupkg is produced.
           packages=("${PACKAGES_DIR}"/*.nupkg)
-          symbols=("${PACKAGES_DIR}"/*.snupkg)
 
           if [ "${#packages[@]}" -eq 0 ]; then
             echo "No .nupkg files were created in ${PACKAGES_DIR}."
             exit 1
           fi
 
-          if [ "${#symbols[@]}" -eq 0 ]; then
-            echo "No .snupkg files were created in ${PACKAGES_DIR}."
-            exit 1
-          fi
-
-          echo "Created ${#packages[@]} package(s) and ${#symbols[@]} symbol package(s)."
+          echo "Created ${#packages[@]} package(s)."
         shell: bash
 
       - name: "Upload test results"
@@ -223,15 +218,6 @@ jobs:
               --api-key "$GITHUB_TOKEN" \
               --skip-duplicate
           done
-
-          symbols=(./*.snupkg)
-
-          for symbol in "${symbols[@]}"; do
-            dotnet nuget push "$symbol" \
-              --source "https://nuget.pkg.github.com/xshaheen/index.json" \
-              --api-key "$GITHUB_TOKEN" \
-              --skip-duplicate
-          done
         shell: bash
 
   push-nuget-packages:
@@ -272,20 +258,5 @@ jobs:
               --source "https://api.nuget.org/v3/index.json" \
               --api-key "$NUGET_API_KEY" \
               --skip-duplicate
-          done
-
-          symbols=(./*.snupkg)
-
-          for symbol in "${symbols[@]}"; do
-            if ! unzip -Z1 "$symbol" | grep -Eiq '\.pdb$'; then
-              echo "Skipping $symbol because it does not contain any .pdb files."
-              continue
-            fi
-
-            dotnet nuget push "$symbol" \
-              --source "https://api.nuget.org/v3/index.json" \
-              --api-key "$NUGET_API_KEY" \
-              --skip-duplicate \
-              || echo "::warning::Skipping failed symbol package push for $symbol."
           done
         shell: bash
