@@ -76,21 +76,15 @@ public sealed record PaymobCashInOptions
     /// </summary>
     public required string SecretKey { get; set; }
 
-    // Redact the secrets so the compiler-generated ToString() never leaks them into logs or diagnostics.
-    private bool PrintMembers(StringBuilder builder)
+    // Override ToString() (instead of the record's synthesized one) so ApiKey, Hmac, and SecretKey
+    // never leak into logs or diagnostics; non-secret configuration stays visible.
+    public override string ToString()
     {
-        builder.Append("ApiBaseUrl = ").Append(ApiBaseUrl);
-        builder.Append(", CreateIntentionUrl = ").Append(CreateIntentionUrl);
-        builder.Append(", RefundUrl = ").Append(RefundUrl);
-        builder.Append(", VoidRefundUrl = ").Append(VoidRefundUrl);
-        builder.Append(", IframeBaseUrl = ").Append(IframeBaseUrl);
-        builder.Append(", ApiKey = ***");
-        builder.Append(", Hmac = ***");
-        builder.Append(", ExpirationPeriod = ").Append(ExpirationPeriod);
-        builder.Append(", TokenRefreshBuffer = ").Append(TokenRefreshBuffer);
-        builder.Append(", SecretKey = ***");
-
-        return true;
+        return $"{nameof(PaymobCashInOptions)} {{ ApiBaseUrl = {ApiBaseUrl}, "
+            + $"CreateIntentionUrl = {CreateIntentionUrl}, RefundUrl = {RefundUrl}, "
+            + $"VoidRefundUrl = {VoidRefundUrl}, IframeBaseUrl = {IframeBaseUrl}, "
+            + $"ApiKey = ***, Hmac = ***, ExpirationPeriod = {ExpirationPeriod.ToString(CultureInfo.InvariantCulture)}, "
+            + $"TokenRefreshBuffer = {TokenRefreshBuffer}, SecretKey = *** }}";
     }
 }
 
