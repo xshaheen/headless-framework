@@ -6,7 +6,14 @@ using Headless.Domain;
 namespace Headless.Settings.Entities;
 
 /// <summary>Persistence entity that stores a setting value for a specific provider and optional provider key.</summary>
-public sealed class SettingValueRecord : Entity<Guid>, IAggregateRoot<Guid>, ICreateAudit, IUpdateAudit
+/// <remarks>
+/// Settings scope tenancy through <see cref="ProviderName"/>/<see cref="ProviderKey"/> (with
+/// <c>ProviderName == "Tenant"</c> and the tenant id in <see cref="ProviderKey"/>). It deliberately has
+/// no first-class <c>TenantId</c> column nor <c>IMultiTenant</c> — a scoping value provider fully expresses
+/// tenant, user, global, and other scopes uniformly. This is an intentional divergence from
+/// <c>PermissionGrantRecord</c>, not drift.
+/// </remarks>
+public sealed class SettingValueRecord : AggregateRoot<Guid>, ICreateAudit, IUpdateAudit
 {
     /// <summary>Parameterless constructor for ORM/serializer use only.</summary>
     [SetsRequiredMembers]
@@ -20,24 +27,23 @@ public sealed class SettingValueRecord : Entity<Guid>, IAggregateRoot<Guid>, ICr
 
     /// <summary>Initializes a new <see cref="SettingValueRecord"/>.</summary>
     /// <param name="id">Unique identifier for the record.</param>
-    /// <param name="name">Setting name. Must not be <see langword="null"/>.</param>
-    /// <param name="value">Setting value. Must not be <see langword="null"/>.</param>
-    /// <param name="providerName">Name of the value provider. Must not be <see langword="null"/>.</param>
+    /// <param name="name">Setting name. Must not be <see langword="null"/>, empty, or white space.</param>
+    /// <param name="value">Setting value. Must not be <see langword="null"/>, empty, or white space.</param>
+    /// <param name="providerName">Name of the value provider. Must not be <see langword="null"/>, empty, or white space.</param>
     /// <param name="providerKey">Optional key scoping the value within the provider (e.g. tenant id).</param>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="name"/>, <paramref name="value"/>, or <paramref name="providerName"/> is <see langword="null"/>.
     /// </exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="name"/>, <paramref name="value"/>, or <paramref name="providerName"/> is empty or white space.
+    /// </exception>
     [SetsRequiredMembers]
     public SettingValueRecord(Guid id, string name, string value, string providerName, string? providerKey = null)
     {
-        Argument.IsNotNull(name);
-        Argument.IsNotNull(value);
-        Argument.IsNotNull(providerName);
-
         Id = id;
-        Name = name;
-        Value = value;
-        ProviderName = providerName;
+        Name = Argument.IsNotNullOrWhiteSpace(name);
+        Value = Argument.IsNotNullOrWhiteSpace(value);
+        ProviderName = Argument.IsNotNullOrWhiteSpace(providerName);
         ProviderKey = providerKey;
     }
 

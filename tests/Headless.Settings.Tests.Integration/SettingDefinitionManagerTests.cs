@@ -10,7 +10,7 @@ namespace Tests;
 
 public sealed class SettingDefinitionManagerTests(SettingsTestFixture fixture) : SettingsTestBase(fixture)
 {
-    private static readonly List<SettingDefinition> _Definitions = TestData.CreateDefinitionFaker().Generate(5);
+    private static readonly List<SettingDefinition> _Definitions = TestData.CreateDefinitions(5);
 
     [Fact]
     public async Task should_get_empty_when_call_GetAllAsync_and_no_definitions()
@@ -61,7 +61,7 @@ public sealed class SettingDefinitionManagerTests(SettingsTestFixture fixture) :
 
         // then
         definition.Should().NotBeNull();
-        definition.Should().Be(oneOfTheDefinedSetting);
+        definition.Should().BeEquivalentTo(oneOfTheDefinedSetting);
     }
 
     [Fact]

@@ -16,7 +16,7 @@ namespace Microsoft.Extensions.DependencyInjection;
 /// that wires EF Core as the settings storage backend.
 /// </summary>
 [PublicAPI]
-public static class SetupSettings
+public static class SetupSettingsEntityFramework
 {
     extension(HeadlessSettingsSetupBuilder setup)
     {

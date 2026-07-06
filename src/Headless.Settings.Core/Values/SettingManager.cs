@@ -22,7 +22,7 @@ public sealed class SettingManager(
     /// <inheritdoc/>
     /// <exception cref="ArgumentNullException"><paramref name="settingName"/> is <see langword="null"/>.</exception>
     /// <exception cref="Headless.Exceptions.ConflictException">The setting named <paramref name="settingName"/> is not defined.</exception>
-    public Task<string?> FindAsync(
+    public Task<SettingValue> GetAsync(
         string settingName,
         string? providerName = null,
         string? providerKey = null,
@@ -45,15 +45,13 @@ public sealed class SettingManager(
 
         var allSettingDefinitions = await definitionManager.GetAllAsync(cancellationToken).ConfigureAwait(false);
         var settingDefinitions = allSettingDefinitions.Where(x => settingNames.Contains(x.Name)).ToList();
+        var definitionMap = settingDefinitions.ToDictionary(x => x.Name, StringComparer.Ordinal);
 
-        var result = settingDefinitions.ToDictionary(
-            x => x.Name,
-            x => new SettingValue(x.Name, value: null),
-            StringComparer.Ordinal
-        );
+        // Accumulate the resolved value per setting first, then build the immutable SettingValue
+        // records at the end (Value is init-only on the record, so it cannot be patched in place).
+        var resolvedValues = settingDefinitions.ToDictionary(x => x.Name, _ => (string?)null, StringComparer.Ordinal);
 
         var processedNames = new HashSet<string>(StringComparer.Ordinal);
-        var definitionMap = settingDefinitions.ToDictionary(x => x.Name, StringComparer.Ordinal);
 
         foreach (var provider in valueProviderManager.Providers.Reverse())
         {
@@ -72,15 +70,14 @@ public sealed class SettingManager(
             foreach (var settingValue in notNullValues)
             {
                 var settingDefinition = definitionMap[settingValue.Name];
+                var value = settingDefinition.IsEncrypted
+                    ? encryptionService.Decrypt(settingDefinition, settingValue.Value)
+                    : settingValue.Value;
 
-                if (settingDefinition.IsEncrypted)
+                // Highest-priority provider wins (providers iterated in reverse == priority order).
+                if (resolvedValues.TryGetValue(settingValue.Name, out var existing) && existing is null)
                 {
-                    settingValue.Value = encryptionService.Decrypt(settingDefinition, settingValue.Value);
-                }
-
-                if (result.TryGetValue(settingValue.Name, out var value) && value.Value == null)
-                {
-                    value.Value = settingValue.Value;
+                    resolvedValues[settingValue.Name] = value;
                 }
             }
 
@@ -95,12 +92,16 @@ public sealed class SettingManager(
             }
         }
 
-        return result;
+        return settingDefinitions.ToDictionary(
+            x => x.Name,
+            x => new SettingValue(x.Name, resolvedValues[x.Name]),
+            StringComparer.Ordinal
+        );
     }
 
     /// <inheritdoc/>
     /// <exception cref="ArgumentNullException"><paramref name="providerName"/> is <see langword="null"/>.</exception>
-    public async Task<List<SettingValue>> GetAllAsync(
+    public async Task<IReadOnlyList<SettingValue>> GetAllAsync(
         string providerName,
         string? providerKey = null,
         bool fallback = true,
@@ -216,7 +217,7 @@ public sealed class SettingManager(
                 )
                 .ConfigureAwait(false);
 
-            if (string.Equals(fallbackValue, value, StringComparison.Ordinal))
+            if (string.Equals(fallbackValue.Value, value, StringComparison.Ordinal))
             {
                 // Clear the value if it is same as it's fallback value
                 value = null;
@@ -263,8 +264,8 @@ public sealed class SettingManager(
         }
     }
 
-    /// <summary>Resolves a setting value by walking the provider chain, applying decryption when required.</summary>
-    private async Task<string?> _CoreGetOrDefaultAsync(
+    /// <summary>Resolves a setting value by walking the provider chain, applying decryption when required, and attributing the resolving provider.</summary>
+    private async Task<SettingValue> _CoreGetOrDefaultAsync(
         string settingName,
         string? providerName,
         string? providerKey,
@@ -295,26 +296,24 @@ public sealed class SettingManager(
             providers = providers.TakeWhile(c => string.Equals(c.Name, providerName, StringComparison.Ordinal));
         }
 
-        string? value = null;
-        var isFromStoreProvider = false;
-
         foreach (var provider in providers)
         {
             var pk = string.Equals(provider.Name, providerName, StringComparison.Ordinal) ? providerKey : null;
-            value = await provider.GetOrDefaultAsync(definition, pk, cancellationToken).ConfigureAwait(false);
+            var value = await provider.GetOrDefaultAsync(definition, pk, cancellationToken).ConfigureAwait(false);
 
-            if (value is not null)
+            if (value is null)
             {
-                isFromStoreProvider = provider is StoreSettingValueProvider;
-                break;
+                continue;
             }
+
+            if (definition.IsEncrypted && provider is StoreSettingValueProvider)
+            {
+                value = encryptionService.Decrypt(definition, value);
+            }
+
+            return new SettingValue(settingName, value, new SettingValueProvider(provider.Name, pk));
         }
 
-        if (definition.IsEncrypted && isFromStoreProvider)
-        {
-            value = encryptionService.Decrypt(definition, value);
-        }
-
-        return value;
+        return new SettingValue(settingName, Value: null, Provider: null);
     }
 }

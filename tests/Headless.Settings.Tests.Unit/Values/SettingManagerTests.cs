@@ -37,7 +37,7 @@ public sealed class SettingManagerTests : TestBase
         );
     }
 
-    #region FindAsync
+    #region GetAsync
 
     [Fact]
     public async Task should_find_value_from_providers()
@@ -53,10 +53,10 @@ public sealed class SettingManagerTests : TestBase
         _valueProviderManager.Providers.Returns([provider]);
 
         // when
-        var result = await _sut.FindAsync(settingName, cancellationToken: AbortToken);
+        var result = await _sut.GetAsync(settingName, cancellationToken: AbortToken);
 
         // then
-        result.Should().Be(expectedValue);
+        result.Value.Should().Be(expectedValue);
     }
 
     [Fact]
@@ -67,7 +67,7 @@ public sealed class SettingManagerTests : TestBase
         _definitionManager.FindAsync(settingName, AbortToken).Returns((SettingDefinition?)null);
 
         // when
-        var action = async () => await _sut.FindAsync(settingName, cancellationToken: AbortToken);
+        var action = async () => await _sut.GetAsync(settingName, cancellationToken: AbortToken);
 
         // then
         await action.Should().ThrowExactlyAsync<ConflictException>();
@@ -91,10 +91,10 @@ public sealed class SettingManagerTests : TestBase
         _valueProviderManager.Providers.Returns([provider1, provider2, provider3]);
 
         // when
-        var result = await _sut.FindAsync(settingName, providerName: "Provider2", cancellationToken: AbortToken);
+        var result = await _sut.GetAsync(settingName, providerName: "Provider2", cancellationToken: AbortToken);
 
         // then
-        result.Should().Be("value2");
+        result.Value.Should().Be("value2");
     }
 
     [Fact]
@@ -111,7 +111,7 @@ public sealed class SettingManagerTests : TestBase
         _valueProviderManager.Providers.Returns([provider]);
 
         // when
-        var result = await _sut.FindAsync(
+        var result = await _sut.GetAsync(
             settingName,
             providerName: "Provider1",
             providerKey: providerKey,
@@ -119,7 +119,7 @@ public sealed class SettingManagerTests : TestBase
         );
 
         // then
-        result.Should().Be("keyed-value");
+        result.Value.Should().Be("keyed-value");
     }
 
     [Fact]
@@ -139,10 +139,10 @@ public sealed class SettingManagerTests : TestBase
         _valueProviderManager.Providers.Returns([provider1, provider2, provider3]);
 
         // when
-        var result = await _sut.FindAsync(settingName, fallback: true, cancellationToken: AbortToken);
+        var result = await _sut.GetAsync(settingName, fallback: true, cancellationToken: AbortToken);
 
         // then
-        result.Should().Be("fallback-value");
+        result.Value.Should().Be("fallback-value");
     }
 
     [Fact]
@@ -161,7 +161,7 @@ public sealed class SettingManagerTests : TestBase
         _valueProviderManager.Providers.Returns([provider1, provider2]);
 
         // when
-        var result = await _sut.FindAsync(
+        var result = await _sut.GetAsync(
             settingName,
             providerName: "Provider1",
             fallback: false,
@@ -169,7 +169,7 @@ public sealed class SettingManagerTests : TestBase
         );
 
         // then
-        result.Should().BeNull();
+        result.Value.Should().BeNull();
     }
 
     [Fact]
@@ -190,10 +190,10 @@ public sealed class SettingManagerTests : TestBase
         _encryptionService.Decrypt(definition, encryptedValue).Returns(decryptedValue);
 
         // when
-        var result = await _sut.FindAsync(settingName, cancellationToken: AbortToken);
+        var result = await _sut.GetAsync(settingName, cancellationToken: AbortToken);
 
         // then
-        result.Should().Be(decryptedValue);
+        result.Value.Should().Be(decryptedValue);
         _encryptionService.Received(1).Decrypt(definition, encryptedValue);
     }
 
@@ -201,7 +201,7 @@ public sealed class SettingManagerTests : TestBase
     public async Task should_throw_when_setting_name_null()
     {
         // when
-        var action = async () => await _sut.FindAsync(null!, cancellationToken: AbortToken);
+        var action = async () => await _sut.GetAsync(null!, cancellationToken: AbortToken);
 
         // then
         await action.Should().ThrowExactlyAsync<ArgumentNullException>();

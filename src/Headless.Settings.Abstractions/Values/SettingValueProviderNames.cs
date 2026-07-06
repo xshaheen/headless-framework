@@ -3,6 +3,7 @@
 namespace Headless.Settings.Values;
 
 /// <summary>Well-known provider name constants used to address specific setting value providers.</summary>
+[PublicAPI]
 public static class SettingValueProviderNames
 {
     /// <summary>Provider that supplies the static default value declared on the <see cref="Headless.Settings.Models.SettingDefinition"/>.</summary>

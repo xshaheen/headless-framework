@@ -19,6 +19,7 @@ public sealed class SettingValueTests
         // then
         settingValue.Name.Should().Be(name);
         settingValue.Value.Should().Be(value);
+        settingValue.Provider.Should().BeNull();
     }
 
     [Fact]
@@ -33,34 +34,37 @@ public sealed class SettingValueTests
         // then
         settingValue.Name.Should().Be(name);
         settingValue.Value.Should().BeNull();
+        settingValue.Provider.Should().BeNull();
     }
 
     [Fact]
-    public void should_store_name_property()
+    public void should_carry_provider_attribution()
     {
         // given
         const string name = "App.Language";
 
         // when
-        var settingValue = new SettingValue(name);
+        var settingValue = new SettingValue(name, "en", new SettingValueProvider("Tenant", "tenant-1"));
 
         // then
         settingValue.Name.Should().Be(name);
+        settingValue.Value.Should().Be("en");
+        settingValue.Provider.Should().NotBeNull();
+        settingValue.Provider!.Name.Should().Be("Tenant");
+        settingValue.Provider.Key.Should().Be("tenant-1");
     }
 
     [Fact]
-    public void should_store_value_property()
+    public void should_compare_by_value()
     {
         // given
-        const string name = "App.Theme";
+        var provider = new SettingValueProvider("Global", Key: null);
 
-        var settingValue = new SettingValue(name)
-        {
-            // when
-            Value = "light",
-        };
+        // when
+        var a = new SettingValue("App.Theme", "light", provider);
+        var b = new SettingValue("App.Theme", "light", provider);
 
         // then
-        settingValue.Value.Should().Be("light");
+        a.Should().Be(b);
     }
 }
