@@ -341,7 +341,10 @@ public sealed class MessagePackSerializerTests
 
     private static MessagePackSerializerOptions _ReadOptions(MessagePackSerializer serializer)
     {
-        var field = typeof(MessagePackSerializer).GetField("_options", BindingFlags.Instance | BindingFlags.NonPublic);
+        var field = typeof(MessagePackSerializer).GetField(
+            "_options",
+            BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly
+        );
 
         return field?.GetValue(serializer) as MessagePackSerializerOptions
             ?? throw new InvalidOperationException("Unable to read resolved MessagePack serializer options.");
