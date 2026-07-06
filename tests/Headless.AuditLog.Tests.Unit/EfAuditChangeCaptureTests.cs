@@ -75,6 +75,12 @@ public class CompositeKeyOrder : IAuditTracked
     public string Name { get; set; } = "";
 }
 
+public class GeneratedKeyOrder : IAuditTracked
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = "";
+}
+
 public class Address
 {
     public string Street { get; set; } = "";
@@ -94,6 +100,7 @@ public class TestDbContext(DbContextOptions<TestDbContext> options) : DbContext(
     public DbSet<PropertyTransformOrder> PropertyTransformOrders => Set<PropertyTransformOrder>();
     public DbSet<FrameworkManagedOrder> FrameworkManagedOrders => Set<FrameworkManagedOrder>();
     public DbSet<CompositeKeyOrder> CompositeKeyOrders => Set<CompositeKeyOrder>();
+    public DbSet<GeneratedKeyOrder> GeneratedKeyOrders => Set<GeneratedKeyOrder>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -105,6 +112,7 @@ public class TestDbContext(DbContextOptions<TestDbContext> options) : DbContext(
         modelBuilder.Entity<PropertyTransformOrder>().Property(e => e.Id).ValueGeneratedNever();
         modelBuilder.Entity<FrameworkManagedOrder>().Property(e => e.Id).ValueGeneratedNever();
         modelBuilder.Entity<CompositeKeyOrder>().HasKey(e => new { e.TenantId, e.OrderId });
+        modelBuilder.Entity<GeneratedKeyOrder>().Property(e => e.Id).ValueGeneratedOnAdd();
     }
 }
 
@@ -1022,6 +1030,128 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             // then - non-EntityEntry objects are silently skipped; valid entry is captured
             result.Should().ContainSingle();
             result[0].Action.Should().Be(AuditActionNames.Created);
+        }
+    }
+
+    [Fact]
+    public async Task resolve_entity_ids_patches_temporary_store_generated_values_after_save()
+    {
+        // given - a store-generated key holds an EF temporary value at capture time
+        var (db, conn) = _CreateDb();
+        await using (conn)
+        await using (db)
+        {
+            var order = new GeneratedKeyOrder { Name = "gen" };
+            db.GeneratedKeyOrders.Add(order);
+
+            var sut = _CreateSut();
+            var result = _Capture(sut, db);
+            result.Should().ContainSingle();
+
+            // when
+            await db.SaveChangesAsync(AbortToken);
+            sut.ResolveEntityIds(result);
+
+            // then - both EntityId and the captured Id value reflect the real post-save key
+            order.Id.Should().BePositive();
+            result[0].EntityId.Should().Be(order.Id.ToString(CultureInfo.InvariantCulture));
+            result[0].NewValues.Should().ContainKey("Id").WhoseValue.Should().Be(order.Id);
+        }
+    }
+
+    [Fact]
+    public async Task resolve_entity_ids_resolves_passed_entries_when_another_capture_interleaves()
+    {
+        // given - one scoped capture instance shared by two contexts (e.g. a domain-event
+        // handler saving a second DbContext mid-save must not clobber the outer capture's state)
+        var (db, conn) = _CreateDb();
+        var (db2, conn2) = _CreateDb();
+        await using (conn)
+        await using (db)
+        await using (conn2)
+        await using (db2)
+        {
+            var order = new GeneratedKeyOrder { Name = "outer" };
+            db.GeneratedKeyOrders.Add(order);
+
+            var sut = _CreateSut();
+            var outerResult = _Capture(sut, db);
+            outerResult.Should().ContainSingle();
+
+            // when - an interleaved capture for a second context runs before the outer resolve
+            db2.GeneratedKeyOrders.Add(new GeneratedKeyOrder { Name = "inner" });
+            _ = _Capture(sut, db2);
+
+            await db.SaveChangesAsync(AbortToken);
+            sut.ResolveEntityIds(outerResult);
+
+            // then - the outer entries still resolve to their real post-save values
+            outerResult[0].EntityId.Should().Be(order.Id.ToString(CultureInfo.InvariantCulture));
+            outerResult[0].NewValues.Should().ContainKey("Id").WhoseValue.Should().Be(order.Id);
+        }
+    }
+
+    [Fact]
+    public async Task capture_error_strategy_continue_skips_failing_entity_and_keeps_others()
+    {
+        // given - the entity filter throws for one entity type only
+        var (db, conn) = _CreateDb();
+        await using (conn)
+        await using (db)
+        {
+            db.Orders.Add(
+                new Order
+                {
+                    Id = Guid.NewGuid(),
+                    CustomerName = "ok",
+                    Email = "a@b.com",
+                    Phone = "555",
+                }
+            );
+            db.Customers.Add(new Customer { Id = Guid.NewGuid(), Name = "boom" });
+
+            var sut = _CreateSut(options =>
+                options.EntityFilter = type =>
+                    type == typeof(Customer) ? throw new InvalidOperationException("boom") : false
+            );
+
+            // when
+            var result = _Capture(sut, db);
+
+            // then - the failing entity's entry is skipped; the healthy entity is still captured
+            result.Should().ContainSingle(e => e.EntityType == typeof(Order).FullName);
+        }
+    }
+
+    [Fact]
+    public async Task capture_error_strategy_throw_propagates_per_entity_capture_failure()
+    {
+        // given
+        var (db, conn) = _CreateDb();
+        await using (conn)
+        await using (db)
+        {
+            db.Orders.Add(
+                new Order
+                {
+                    Id = Guid.NewGuid(),
+                    CustomerName = "ok",
+                    Email = "a@b.com",
+                    Phone = "555",
+                }
+            );
+
+            var sut = _CreateSut(options =>
+            {
+                options.CaptureErrorStrategy = CaptureErrorStrategy.Throw;
+                options.EntityFilter = _ => throw new InvalidOperationException("boom");
+            });
+
+            // when
+            var act = () => _Capture(sut, db);
+
+            // then - the per-entity failure aborts the capture instead of being swallowed
+            act.Should().Throw<InvalidOperationException>().WithMessage("boom");
         }
     }
 

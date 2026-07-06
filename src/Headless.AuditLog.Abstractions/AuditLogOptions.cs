@@ -65,8 +65,10 @@ public sealed class AuditLogOptions
         };
 
     /// <summary>
-    /// Strategy applied when audit capture (<c>IAuditChangeCapture.CaptureChanges</c>) throws.
-    /// Default: <see cref="CaptureErrorStrategy.Continue"/> — log an error and continue the entity save without audit entries for that batch.
+    /// Strategy applied when audit capture (<c>IAuditChangeCapture.CaptureChanges</c>) throws,
+    /// for both per-entity capture failures and whole-capture failures.
+    /// Default: <see cref="CaptureErrorStrategy.Continue"/> — log an error and continue the entity save;
+    /// a per-entity failure skips only that entity's audit entry, a whole-capture failure skips the batch.
     /// Set to <see cref="CaptureErrorStrategy.Throw"/> to abort the save when audit capture fails.
     /// </summary>
     public CaptureErrorStrategy CaptureErrorStrategy { get; set; } = CaptureErrorStrategy.Continue;
@@ -75,7 +77,11 @@ public sealed class AuditLogOptions
 /// <summary>Strategy applied when audit capture throws.</summary>
 public enum CaptureErrorStrategy
 {
-    /// <summary>Log the failure as an error and continue the entity save without audit entries for that batch.</summary>
+    /// <summary>
+    /// Log the failure as an error and continue the entity save. A per-entity capture failure
+    /// skips only that entity's audit entry; a whole-capture failure skips all audit entries
+    /// for the batch.
+    /// </summary>
     Continue = 0,
 
     /// <summary>Log the failure and rethrow so the entity save is aborted.</summary>

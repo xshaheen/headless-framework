@@ -152,6 +152,74 @@ public sealed class AuditLogIntegrationTests : TestBase
     }
 
     [Fact]
+    public async Task created_entity_with_store_generated_key_persists_real_key_in_new_values()
+    {
+        // Regression: NewValues used to persist the EF temporary key (e.g. -2147482647) because
+        // values were captured before SaveChanges and only EntityId was patched afterwards.
+
+        // given
+        var (sp, conn) = await AuditIntegrationFixture.CreateAsync();
+        await using var _ = conn;
+        await using var __ = sp;
+        await using var scope = sp.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<AuditTestDbContext>();
+
+        var order = new GeneratedOrder { CustomerName = "Generated" };
+        db.GeneratedOrders.Add(order);
+
+        // when
+        await db.SaveChangesAsync(AbortToken);
+        db.ChangeTracker.Clear();
+
+        // then
+        var entries = await db.Set<AuditLogEntry>().AsNoTracking().ToListAsync(AbortToken);
+        entries.Should().ContainSingle();
+
+        var entry = entries[0];
+        entry.EntityId.Should().Be(order.Id.ToString(CultureInfo.InvariantCulture));
+        entry.NewValues.Should().ContainKey("Id");
+        entry.NewValues!["Id"].Should().BeOfType<JsonElement>().Subject.GetInt32().Should().Be(order.Id);
+    }
+
+    [Fact]
+    public async Task created_child_with_fk_to_new_parent_persists_real_fk_in_new_values()
+    {
+        // A child's FK to a just-added parent also carries an EF temporary value at capture time
+        // and must resolve to the real parent key post-save.
+
+        // given
+        var (sp, conn) = await AuditIntegrationFixture.CreateAsync();
+        await using var _ = conn;
+        await using var __ = sp;
+        await using var scope = sp.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<AuditTestDbContext>();
+
+        var order = new GeneratedOrder { CustomerName = "Parent" };
+        var line = new GeneratedOrderLine { Order = order, Sku = "sku-1" };
+        db.GeneratedOrders.Add(order);
+        db.GeneratedOrderLines.Add(line);
+
+        // when
+        await db.SaveChangesAsync(AbortToken);
+        db.ChangeTracker.Clear();
+
+        // then
+        var entries = await db.Set<AuditLogEntry>().AsNoTracking().ToListAsync(AbortToken);
+        entries.Should().HaveCount(2);
+
+        var lineEntry = entries.Single(e => e.EntityType == typeof(GeneratedOrderLine).FullName);
+        lineEntry.EntityId.Should().Be(line.Id.ToString(CultureInfo.InvariantCulture));
+        lineEntry.NewValues.Should().ContainKey("GeneratedOrderId");
+        lineEntry
+            .NewValues!["GeneratedOrderId"]
+            .Should()
+            .BeOfType<JsonElement>()
+            .Subject.GetInt32()
+            .Should()
+            .Be(order.Id);
+    }
+
+    [Fact]
     public async Task read_audit_log_query_returns_dto_results()
     {
         // given

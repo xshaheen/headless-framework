@@ -23,7 +23,7 @@ Provides a provider-agnostic audit log API for capturing field-level entity chan
 - `IAuditLogStore` — storage abstraction called by the change-tracking pipeline; `Save`/`SaveAsync` take the saving `DbContext` and return `IAuditLogStoreEntry` handles.
 - `IAuditLogStoreEntry` — provider handle; orchestrator calls `DiscardPendingChanges()` on failure and `ReleaseAfterCommit()` after success. Both must be idempotent.
 - `IAuditChangeCapture` — scans ChangeTracker entries and produces `AuditLogEntryData` records.
-- `IAuditEntityIdResolver` — patches deferred entity IDs after `SaveChanges` assigns store-generated keys.
+- `IAuditEntityIdResolver` — patches deferred entity IDs and temporary property values (store-generated keys, FKs to just-added principals) after `SaveChanges` assigns real keys.
 - `IAmbientDbTransactionAccessor` — allows raw ADO.NET stores to enroll in the consumer's active `DbConnection`/`DbTransaction` without taking an EF dependency.
 
 ## Installation
