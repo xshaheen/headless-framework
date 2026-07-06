@@ -125,7 +125,7 @@
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Polly.Core": "[8.7.0, )",
-          "Polly.RateLimiting": "[8.6.4, )"
+          "Polly.RateLimiting": "[8.7.0, )"
         }
       },
       "Polly.Core": {
@@ -136,11 +136,11 @@
       },
       "Polly.RateLimiting": {
         "type": "CentralTransitive",
-        "requested": "[8.6.4, )",
-        "resolved": "8.6.4",
-        "contentHash": "Sy5CN4xeBqdJNnZ0XYlz2by9rJJ6kvXPBkU2L3XfRxN8FJf6pi0ZHMCkz1ZyZN5MIbrT2usQGueygHnvbBt2ZA==",
+        "requested": "[8.7.0, )",
+        "resolved": "8.7.0",
+        "contentHash": "PjbRSHNc0nCKYW26tXRuvj6gNny4HJOa2MHm5cZocyULYaNoGXnl5Q8Q1qKZB25d82E95B5pFvL2Kz6Yjh27GA==",
         "dependencies": {
-          "Polly.Core": "8.6.4",
+          "Polly.Core": "8.7.0",
           "System.Threading.RateLimiting": "8.0.0"
         }
       }
