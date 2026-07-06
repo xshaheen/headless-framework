@@ -52,6 +52,8 @@ env:
   CONFIGURATION: Release
   # Packages Directory
   PACKAGES_DIR: ./artifacts/packages-results
+  # Test Results Directory
+  TEST_RESULTS_DIR: ./artifacts/test-results
   # Set the NuGet packages restore cache directory.
   NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
   # Disable the Husky pre-commit hooks.
