@@ -183,7 +183,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
         db.Entities.Add(entity);
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
-        entity.AddIntegrationEvent(new RuntimeDistributedMessage("needs-outbox"));
+        entity.EmitIntegrationEvent(new RuntimeDistributedMessage("needs-outbox"));
 
         // when
         var act = async () => await db.SaveChangesAsync(TestContext.Current.CancellationToken);
@@ -232,7 +232,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
         db.Entities.Add(entity);
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
-        entity.AddIntegrationEvent(new RuntimeDistributedMessage("needs-outbox"));
+        entity.EmitIntegrationEvent(new RuntimeDistributedMessage("needs-outbox"));
 
         // when
         var act = async () => await db.SaveChangesAsync(TestContext.Current.CancellationToken);
@@ -308,8 +308,8 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
         dispatcher.LocalEmitters.Clear();
         dispatcher.DistributedEmitters.Clear();
 
-        entity.AddDomainEvent(new RuntimeLocalMessage("local-later"));
-        entity.AddIntegrationEvent(new RuntimeDistributedMessage("distributed-later"));
+        entity.EmitDomainEvent(new RuntimeLocalMessage("local-later"));
+        entity.EmitIntegrationEvent(new RuntimeDistributedMessage("distributed-later"));
 
         // when
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
@@ -603,8 +603,8 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
                 return;
             }
 
-            entity.AddDomainEvent(new RuntimeLocalMessage("custom-local"));
-            entity.AddIntegrationEvent(new RuntimeDistributedMessage("custom-distributed"));
+            entity.EmitDomainEvent(new RuntimeLocalMessage("custom-local"));
+            entity.EmitIntegrationEvent(new RuntimeDistributedMessage("custom-distributed"));
         }
     }
 
@@ -648,6 +648,11 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
         public Guid Id { get; private init; }
 
         public required string Name { get; init; }
+
+        // Domain behavior that raises events through the encapsulated (protected) aggregate mutators.
+        public void EmitDomainEvent(IDomainEvent domainEvent) => AddDomainEvent(domainEvent);
+
+        public void EmitIntegrationEvent(IIntegrationEvent integrationEvent) => AddIntegrationEvent(integrationEvent);
 
         public override IReadOnlyList<object> GetKeys() => [Id];
     }

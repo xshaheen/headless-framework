@@ -55,7 +55,7 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<BridgeTestDbContext>();
         var order = new OrderEntity { Name = "ship" };
-        order.AddIntegrationEvent(new OrderShipped($"{marker}-1"));
+        order.EmitIntegrationEvent(new OrderShipped($"{marker}-1"));
         db.Orders.Add(order);
 
         // when — no ambient transaction: the pipeline opens one, writes business + outbox rows, commits.
@@ -76,8 +76,8 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<BridgeTestDbContext>();
         var order = new OrderEntity { Name = "multi" };
-        order.AddIntegrationEvent(new OrderShipped($"{marker}-shipped"));
-        order.AddIntegrationEvent(new OrderInvoiced($"{marker}-invoiced"));
+        order.EmitIntegrationEvent(new OrderShipped($"{marker}-shipped"));
+        order.EmitIntegrationEvent(new OrderInvoiced($"{marker}-invoiced"));
         db.Orders.Add(order);
 
         // when
@@ -99,7 +99,7 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
         using var scope = provider.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<BridgeTestDbContext>();
         var order = new OrderEntity { Name = "sync" };
-        order.AddIntegrationEvent(new OrderShipped($"{marker}-1"));
+        order.EmitIntegrationEvent(new OrderShipped($"{marker}-1"));
         db.Orders.Add(order);
 
         // when — sync save path drives the sync Dispatch (sync-over-async) bridge.
@@ -128,7 +128,7 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
         var db = scope.ServiceProvider.GetRequiredService<BridgeTestDbContext>();
         await using var transaction = await db.Database.BeginTransactionAsync(AbortToken);
         var order = new OrderEntity { Name = "consumer-plain" };
-        order.AddIntegrationEvent(new OrderShipped($"{marker}-1"));
+        order.EmitIntegrationEvent(new OrderShipped($"{marker}-1"));
         db.Orders.Add(order);
 
         // when — save under the un-enlisted consumer transaction.
@@ -159,7 +159,7 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
             async (ctx, ct) =>
             {
                 var order = new OrderEntity { Name = "coordinated-nested" };
-                order.AddIntegrationEvent(new OrderShipped($"{marker}-1"));
+                order.EmitIntegrationEvent(new OrderShipped($"{marker}-1"));
                 ctx.Orders.Add(order);
                 await ctx.SaveChangesAsync(ct);
             },
@@ -186,7 +186,7 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<BridgeTestDbContext>();
         var order = new OrderEntity { Name = "pipeline-atomic" };
-        order.AddIntegrationEvent(new OrderShipped($"{marker}-1"));
+        order.EmitIntegrationEvent(new OrderShipped($"{marker}-1"));
         db.Orders.Add(order);
 
         // when — pipeline opens the coordinated transaction, writes business + outbox rows, commits atomically.
@@ -341,6 +341,9 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
         public Guid Id { get; private init; }
 
         public required string Name { get; init; }
+
+        // Domain behavior that raises events through the encapsulated (protected) aggregate mutator.
+        public void EmitIntegrationEvent(IIntegrationEvent integrationEvent) => AddIntegrationEvent(integrationEvent);
 
         public override IReadOnlyList<object> GetKeys() => [Id];
     }

@@ -11,6 +11,12 @@ namespace Headless.Domain;
 public interface IIntegrationEventEmitter
 {
     /// <summary>Appends an integration event to the pending outbox.</summary>
+    /// <remarks>
+    /// This is the infrastructure enqueue contract. Domain code raises events through an aggregate's own
+    /// behavior methods (the base <c>AggregateRoot.AddIntegrationEvent</c> is <see langword="protected"/>);
+    /// this member stays public so infrastructure that cannot derive from the aggregate can enqueue across
+    /// assemblies.
+    /// </remarks>
     /// <param name="integrationEvent">The integration event to enqueue.</param>
     void AddIntegrationEvent(IIntegrationEvent integrationEvent);
 

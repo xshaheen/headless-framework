@@ -56,5 +56,10 @@ public sealed class TestEntity
 
     public void MarkSuspended() => IsSuspended = true;
 
+    // Domain behavior that raises events through the encapsulated (protected) aggregate mutators.
+    public void EmitDomainEvent(IDomainEvent domainEvent) => AddDomainEvent(domainEvent);
+
+    public void EmitIntegrationEvent(IIntegrationEvent integrationEvent) => AddIntegrationEvent(integrationEvent);
+
     public override IReadOnlyList<object> GetKeys() => [Id];
 }

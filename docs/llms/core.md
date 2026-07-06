@@ -298,8 +298,8 @@ Provides building blocks for implementing DDD patterns: entities with identity, 
 - **Auditing**: `ICreateAudit`, `IUpdateAudit`, `IDeleteAudit`, `ISuspendAudit`
 - **Concurrency**: `IHasConcurrencyStamp`, `IHasETag`
 - **Multi-tenancy**: `IMultiTenant`
-- **Domain Events (in-process)**: `IDomainEvent`, `IDomainEventEmitter`, `IDomainEventHandler<T>`, `DomainEventHandlerOrderAttribute`. `AggregateRoot` implements `IDomainEventEmitter` (`AddDomainEvent`, `ClearDomainEvents`, `GetDomainEvents`). Dispatch is provided by `Headless.Domain.LocalEventBus`.
-- **Integration Events (distributed)**: `IIntegrationEvent`, `IIntegrationEventEmitter`. `AggregateRoot` implements `IIntegrationEventEmitter` (`AddIntegrationEvent`, `ClearIntegrationEvents`, `GetIntegrationEvents`). This package only defines the contract and the emitter — integration events are dispatched by the ORM/messaging layer (`Headless.Orm.EntityFramework.Messaging`), not from `Headless.Domain` (see [orm.md](orm.md)).
+- **Domain Events (in-process)**: `IDomainEvent`, `IDomainEventEmitter`, `IDomainEventHandler<T>`, `DomainEventHandlerOrderAttribute`. An aggregate raises its own events through the `protected AddDomainEvent`; the readers/clearers (`GetDomainEvents`, `ClearDomainEvents`) and the `IDomainEventEmitter` contract stay public for infrastructure that collects and dispatches them. Dispatch is provided by `Headless.Domain.LocalEventBus`.
+- **Integration Events (distributed)**: `IIntegrationEvent`, `IIntegrationEventEmitter`. An aggregate raises its own events through the `protected AddIntegrationEvent`; `GetIntegrationEvents`/`ClearIntegrationEvents` and the `IIntegrationEventEmitter` contract stay public for infrastructure. This package only defines the contract and the emitter — integration events are dispatched by the ORM/messaging layer (`Headless.Orm.EntityFramework.Messaging`), not from `Headless.Domain` (see [orm.md](orm.md)).
 - **Entity Events**: `EntityCreatedEventData`, `EntityUpdatedEventData`, `EntityDeletedEventData`
 
 ### Installation
