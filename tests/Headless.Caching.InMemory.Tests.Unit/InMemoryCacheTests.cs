@@ -1293,6 +1293,24 @@ public sealed class InMemoryCacheTests : TestBase
         paged.Value.Should().BeNull();
     }
 
+    [Fact]
+    public async Task should_page_object_set_items_after_filtering_expired_items()
+    {
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        await cache.SetAddAsync(key, new[] { 1, 2 }, TimeSpan.FromSeconds(1), AbortToken);
+        _timeProvider.Advance(TimeSpan.FromSeconds(2));
+        await cache.SetAddAsync(key, new[] { 3, 4, 5 }, TimeSpan.FromMinutes(5), AbortToken);
+
+        // when
+        var result = await cache.GetSetAsync<object>(key, pageIndex: 2, pageSize: 2, cancellationToken: AbortToken);
+
+        // then
+        result.HasValue.Should().BeTrue();
+        result.Value.Should().BeEquivalentTo([5]);
+    }
+
     #endregion
 
     #region SetRemoveAsync
@@ -1451,6 +1469,24 @@ public sealed class InMemoryCacheTests : TestBase
         // then
         page.HasValue.Should().BeTrue();
         page.Value.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task should_page_string_set_items_after_filtering_expired_items()
+    {
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        await cache.SetAddAsync(key, new[] { "expired-a", "expired-b" }, TimeSpan.FromSeconds(1), AbortToken);
+        _timeProvider.Advance(TimeSpan.FromSeconds(2));
+        await cache.SetAddAsync(key, new[] { "live-a", "live-b", "live-c" }, TimeSpan.FromMinutes(5), AbortToken);
+
+        // when
+        var result = await cache.GetSetAsync<string>(key, pageIndex: 2, pageSize: 2, cancellationToken: AbortToken);
+
+        // then
+        result.HasValue.Should().BeTrue();
+        result.Value.Should().BeEquivalentTo(["live-c"]);
     }
 
     #endregion
