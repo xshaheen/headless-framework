@@ -14,4 +14,4 @@ namespace Headless.Primitives;
 /// available on this resource (e.g., approve, cancel). <see langword="null"/> when no
 /// operations apply.
 /// </param>
-public sealed record OperationsDataEnvelop<T>(T Data, IReadOnlyList<OperationDescriptor>? Operations = null);
+public sealed record OperationsDataEnvelope<T>(T Data, IReadOnlyList<OperationDescriptor>? Operations = null);

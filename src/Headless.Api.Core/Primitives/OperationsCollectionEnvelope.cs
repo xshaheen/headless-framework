@@ -15,7 +15,7 @@ namespace Headless.Primitives;
 /// available on this collection (e.g., bulk-delete, export). <see langword="null"/> when no
 /// operations apply.
 /// </param>
-public sealed record OperationsCollectionEnvelop<T>(
+public sealed record OperationsCollectionEnvelope<T>(
     IReadOnlyCollection<T> Items,
     IReadOnlyList<OperationDescriptor>? Operations = null
 );

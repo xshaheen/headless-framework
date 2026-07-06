@@ -9,14 +9,14 @@ namespace Headless.Primitives;
 /// </summary>
 /// <typeparam name="T">The type of the wrapped value.</typeparam>
 /// <param name="Data">The wrapped value.</param>
-public sealed record DataEnvelop<T>(T Data)
+public sealed record DataEnvelope<T>(T Data)
 {
-    /// <summary>Implicitly wraps <paramref name="operand"/> in a <see cref="DataEnvelop{T}"/>.</summary>
-    public static implicit operator DataEnvelop<T>(T operand) => new(operand);
+    /// <summary>Implicitly wraps <paramref name="operand"/> in a <see cref="DataEnvelope{T}"/>.</summary>
+    public static implicit operator DataEnvelope<T>(T operand) => new(operand);
 
     /// <summary>
     /// Returns this envelope unchanged. Provided as a named factory alternative to the implicit
     /// conversion so callers that cannot rely on implicit casts have a discoverable entry point.
     /// </summary>
-    public DataEnvelop<T> FromT() => this;
+    public DataEnvelope<T> FromT() => this;
 }

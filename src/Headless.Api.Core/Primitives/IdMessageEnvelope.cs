@@ -5,32 +5,32 @@ namespace Headless.Primitives;
 
 /// <summary>
 /// API response envelope that pairs a resource identifier with a human-readable
-/// <see cref="MessageDescriptor"/>. Combines <see cref="IIdEnvelop"/> and
-/// <see cref="IMessageEnvelop"/> for responses that must convey both a new ID and a status message
+/// <see cref="MessageDescriptor"/>. Combines <see cref="IIdEnvelope"/> and
+/// <see cref="IMessageEnvelope"/> for responses that must convey both a new ID and a status message
 /// (e.g., "Record created" + the new record's ID).
 /// Serializes as <c>{ "id": "...", "message": { ... } }</c>.
 /// </summary>
 /// <param name="Id">The string representation of the resource identifier.</param>
 /// <param name="Message">The human-readable status message.</param>
-public sealed record IdMessageEnvelop(string Id, MessageDescriptor Message) : IIdEnvelop, IMessageEnvelop
+public sealed record IdMessageEnvelope(string Id, MessageDescriptor Message) : IIdEnvelope, IMessageEnvelope
 {
     /// <summary>
-    /// Initializes an <see cref="IdMessageEnvelop"/> from a <see cref="Guid"/> identifier.
+    /// Initializes an <see cref="IdMessageEnvelope"/> from a <see cref="Guid"/> identifier.
     /// </summary>
-    public IdMessageEnvelop(Guid id, MessageDescriptor message)
+    public IdMessageEnvelope(Guid id, MessageDescriptor message)
         : this(id.ToString(), message) { }
 
     /// <summary>
-    /// Initializes an <see cref="IdMessageEnvelop"/> from a <see cref="long"/> identifier,
+    /// Initializes an <see cref="IdMessageEnvelope"/> from a <see cref="long"/> identifier,
     /// formatted with <see cref="CultureInfo.InvariantCulture"/>.
     /// </summary>
-    public IdMessageEnvelop(long id, MessageDescriptor message)
+    public IdMessageEnvelope(long id, MessageDescriptor message)
         : this(id.ToString(CultureInfo.InvariantCulture), message) { }
 
     /// <summary>
-    /// Initializes an <see cref="IdMessageEnvelop"/> from an <see cref="int"/> identifier,
+    /// Initializes an <see cref="IdMessageEnvelope"/> from an <see cref="int"/> identifier,
     /// formatted with <see cref="CultureInfo.InvariantCulture"/>.
     /// </summary>
-    public IdMessageEnvelop(int id, MessageDescriptor message)
+    public IdMessageEnvelope(int id, MessageDescriptor message)
         : this(id.ToString(CultureInfo.InvariantCulture), message) { }
 }

@@ -4,7 +4,7 @@
 namespace Headless.Primitives;
 
 /// <summary>Marker contract for response envelopes that carry a human-readable status message.</summary>
-public interface IMessageEnvelop
+public interface IMessageEnvelope
 {
     /// <summary>The human-readable status message descriptor.</summary>
     MessageDescriptor Message { get; }
@@ -16,23 +16,23 @@ public interface IMessageEnvelop
 /// but must communicate a user-facing outcome (e.g., "Email sent", "Password updated").
 /// </summary>
 /// <param name="Message">The human-readable status message.</param>
-public sealed record MessageEnvelop(MessageDescriptor Message) : IMessageEnvelop
+public sealed record MessageEnvelope(MessageDescriptor Message) : IMessageEnvelope
 {
-    /// <summary>Wraps a <see cref="MessageDescriptor"/> in a <see cref="MessageEnvelop"/>.</summary>
-    public static MessageEnvelop FromMessageDescriptor(MessageDescriptor operand) => new(operand);
+    /// <summary>Wraps a <see cref="MessageDescriptor"/> in a <see cref="MessageEnvelope"/>.</summary>
+    public static MessageEnvelope FromMessageDescriptor(MessageDescriptor operand) => new(operand);
 
-    /// <summary>Implicitly wraps a <see cref="MessageDescriptor"/> in a <see cref="MessageEnvelop"/>.</summary>
-    public static implicit operator MessageEnvelop(MessageDescriptor operand) => new(operand);
+    /// <summary>Implicitly wraps a <see cref="MessageDescriptor"/> in a <see cref="MessageEnvelope"/>.</summary>
+    public static implicit operator MessageEnvelope(MessageDescriptor operand) => new(operand);
 
     /// <summary>
     /// Wraps a plain string message. The string is implicitly converted to a
     /// <see cref="MessageDescriptor"/> before wrapping.
     /// </summary>
-    public static MessageEnvelop FromString(string operand) => new(operand);
+    public static MessageEnvelope FromString(string operand) => new(operand);
 
     /// <summary>
     /// Implicitly wraps a plain string message. The string is implicitly converted to a
     /// <see cref="MessageDescriptor"/> before wrapping.
     /// </summary>
-    public static implicit operator MessageEnvelop(string operand) => new(operand);
+    public static implicit operator MessageEnvelope(string operand) => new(operand);
 }
