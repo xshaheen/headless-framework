@@ -231,8 +231,9 @@ public static class ObjectPropertiesHelper
 
         public void SetValue(object obj, object? value)
         {
-            // Value-type receivers keep reflection SetValue (a compiled unbox-assign would mutate a copy).
-            if (Property.DeclaringType?.IsValueType != false)
+            // Value-type receivers keep reflection SetValue (a compiled unbox-assign would mutate a copy),
+            // and static setters keep it too (Expression.Call rejects an instance expression for them).
+            if (Property.DeclaringType?.IsValueType != false || Property.SetMethod?.IsStatic != false)
             {
                 Property.SetValue(obj, value);
 
