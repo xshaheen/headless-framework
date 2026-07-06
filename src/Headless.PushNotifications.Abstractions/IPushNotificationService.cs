@@ -18,21 +18,15 @@ public interface IPushNotificationService
     /// Sends a single notification to one device identified by its registration token.
     /// </summary>
     /// <param name="clientToken">The device registration token issued by the push provider.</param>
-    /// <param name="title">The notification title shown to the user.</param>
-    /// <param name="body">The notification body shown to the user.</param>
-    /// <param name="data">
-    /// Optional custom key/value payload delivered alongside the notification. Keys reserved by the
-    /// underlying provider may be rejected by the implementation.
-    /// </param>
+    /// <param name="request">The notification to deliver (title, body, and optional data payload).</param>
+    /// <param name="cancellationToken">Token to cancel the send operation.</param>
     /// <returns>
     /// A response describing the outcome for <paramref name="clientToken"/>: delivered (with a provider
     /// message id), failed (with an error description), or unregistered when the token is no longer valid.
     /// </returns>
     ValueTask<PushNotificationResponse> SendToDeviceAsync(
         string clientToken,
-        string title,
-        string body,
-        IReadOnlyDictionary<string, string>? data = null,
+        PushNotificationRequest request,
         CancellationToken cancellationToken = default
     );
 
@@ -40,12 +34,8 @@ public interface IPushNotificationService
     /// Sends the same notification to many devices in a single call.
     /// </summary>
     /// <param name="clientTokens">The device registration tokens to deliver to.</param>
-    /// <param name="title">The notification title shown to the user.</param>
-    /// <param name="body">The notification body shown to the user.</param>
-    /// <param name="data">
-    /// Optional custom key/value payload delivered alongside the notification. Keys reserved by the
-    /// underlying provider may be rejected by the implementation.
-    /// </param>
+    /// <param name="request">The notification to deliver (title, body, and optional data payload).</param>
+    /// <param name="cancellationToken">Token to cancel the send operation.</param>
     /// <returns>
     /// An aggregate response carrying one per-token outcome for every entry in <paramref name="clientTokens"/>
     /// plus overall success and failure counts.
@@ -57,9 +47,7 @@ public interface IPushNotificationService
     /// </remarks>
     ValueTask<BatchPushNotificationResponse> SendMulticastAsync(
         IReadOnlyList<string> clientTokens,
-        string title,
-        string body,
-        IReadOnlyDictionary<string, string>? data = null,
+        PushNotificationRequest request,
         CancellationToken cancellationToken = default
     );
 }

@@ -11,9 +11,7 @@ internal sealed class NoopPushNotificationService : IPushNotificationService
 {
     public ValueTask<PushNotificationResponse> SendToDeviceAsync(
         string clientToken,
-        string title,
-        string body,
-        IReadOnlyDictionary<string, string>? data = null,
+        PushNotificationRequest request,
         CancellationToken cancellationToken = default
     )
     {
@@ -24,9 +22,7 @@ internal sealed class NoopPushNotificationService : IPushNotificationService
 
     public ValueTask<BatchPushNotificationResponse> SendMulticastAsync(
         IReadOnlyList<string> clientTokens,
-        string title,
-        string body,
-        IReadOnlyDictionary<string, string>? data = null,
+        PushNotificationRequest request,
         CancellationToken cancellationToken = default
     )
     {

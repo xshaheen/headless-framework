@@ -56,11 +56,14 @@ Sending:
 
 ```csharp
 var response = await pushService.SendToDeviceAsync(
-    clientToken: deviceToken,
-    title: "Order shipped",
-    body: "Your order #1234 is on its way.",
-    data: new Dictionary<string, string> { ["orderId"] = "1234" },
-    cancellationToken: ct
+    deviceToken,
+    new PushNotificationRequest
+    {
+        Title = "Order shipped",
+        Body = "Your order #1234 is on its way.",
+        Data = new Dictionary<string, string> { ["orderId"] = "1234" },
+    },
+    ct
 );
 
 if (response.IsUnregistered())
