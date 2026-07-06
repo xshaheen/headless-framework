@@ -3,8 +3,12 @@ name: "CodeQL"
 on:
   pull_request:
     branches: [ main ]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - '.github/**/*.md'
   schedule:
-    # Weekly full scan covers everything outside the pull request gate.
+    # Weekly full scan covers everything regardless of the path filters above.
     - cron: "0 8 * * 4"
   workflow_dispatch:
 
