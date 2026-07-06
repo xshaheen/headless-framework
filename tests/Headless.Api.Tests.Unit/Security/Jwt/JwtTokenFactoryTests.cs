@@ -64,11 +64,14 @@ public sealed class JwtTokenFactoryTests : TestBase
         // when
         var token = factory.CreateJwtToken(
             claims,
-            TimeSpan.FromHours(1),
-            _TestSigningKey,
-            encryptingKey: null,
-            _TestIssuer,
-            _TestAudience
+            new JwtTokenRequest
+            {
+                Ttl = TimeSpan.FromHours(1),
+                SigningKey = _TestSigningKey,
+                EncryptingKey = null,
+                Issuer = _TestIssuer,
+                Audience = _TestAudience,
+            }
         );
 
         // then
@@ -95,11 +98,14 @@ public sealed class JwtTokenFactoryTests : TestBase
         // when
         var token = factory.CreateJwtToken(
             claims,
-            TimeSpan.FromHours(1),
-            _TestSigningKey,
-            encryptingKey: null,
-            _TestIssuer,
-            _TestAudience
+            new JwtTokenRequest
+            {
+                Ttl = TimeSpan.FromHours(1),
+                SigningKey = _TestSigningKey,
+                EncryptingKey = null,
+                Issuer = _TestIssuer,
+                Audience = _TestAudience,
+            }
         );
 
         // then
@@ -122,11 +128,14 @@ public sealed class JwtTokenFactoryTests : TestBase
         // when
         var token = factory.CreateJwtToken(
             claims,
-            ttl,
-            _TestSigningKey,
-            encryptingKey: null,
-            _TestIssuer,
-            _TestAudience
+            new JwtTokenRequest
+            {
+                Ttl = ttl,
+                SigningKey = _TestSigningKey,
+                EncryptingKey = null,
+                Issuer = _TestIssuer,
+                Audience = _TestAudience,
+            }
         );
 
         // then
@@ -150,12 +159,15 @@ public sealed class JwtTokenFactoryTests : TestBase
         // when
         var token = factory.CreateJwtToken(
             claims,
-            TimeSpan.FromHours(1),
-            _TestSigningKey,
-            encryptingKey: null,
-            _TestIssuer,
-            _TestAudience,
-            notBefore
+            new JwtTokenRequest
+            {
+                Ttl = TimeSpan.FromHours(1),
+                SigningKey = _TestSigningKey,
+                EncryptingKey = null,
+                Issuer = _TestIssuer,
+                Audience = _TestAudience,
+                NotBefore = notBefore,
+            }
         );
 
         // then
@@ -178,12 +190,15 @@ public sealed class JwtTokenFactoryTests : TestBase
         // when
         var token = factory.CreateJwtToken(
             claims,
-            TimeSpan.FromHours(1),
-            _TestSigningKey,
-            encryptingKey: null,
-            _TestIssuer,
-            _TestAudience,
-            notBefore: null
+            new JwtTokenRequest
+            {
+                Ttl = TimeSpan.FromHours(1),
+                SigningKey = _TestSigningKey,
+                EncryptingKey = null,
+                Issuer = _TestIssuer,
+                Audience = _TestAudience,
+                NotBefore = null,
+            }
         );
 
         // then
@@ -204,11 +219,14 @@ public sealed class JwtTokenFactoryTests : TestBase
         // when
         var token = factory.CreateJwtToken(
             claims,
-            TimeSpan.FromHours(1),
-            _TestSigningKey,
-            encryptingKey: null,
-            _TestIssuer,
-            _TestAudience
+            new JwtTokenRequest
+            {
+                Ttl = TimeSpan.FromHours(1),
+                SigningKey = _TestSigningKey,
+                EncryptingKey = null,
+                Issuer = _TestIssuer,
+                Audience = _TestAudience,
+            }
         );
 
         // then
@@ -228,11 +246,14 @@ public sealed class JwtTokenFactoryTests : TestBase
         // when
         var token = factory.CreateJwtToken(
             claims,
-            TimeSpan.FromHours(1),
-            _TestSigningKey,
-            _TestEncryptingKey,
-            _TestIssuer,
-            _TestAudience
+            new JwtTokenRequest
+            {
+                Ttl = TimeSpan.FromHours(1),
+                SigningKey = _TestSigningKey,
+                EncryptingKey = _TestEncryptingKey,
+                Issuer = _TestIssuer,
+                Audience = _TestAudience,
+            }
         );
 
         // then
@@ -257,11 +278,14 @@ public sealed class JwtTokenFactoryTests : TestBase
         // when
         var token = factory.CreateJwtToken(
             claims,
-            TimeSpan.FromHours(1),
-            _TestSigningKey,
-            encryptingKey: null,
-            _TestIssuer,
-            _TestAudience
+            new JwtTokenRequest
+            {
+                Ttl = TimeSpan.FromHours(1),
+                SigningKey = _TestSigningKey,
+                EncryptingKey = null,
+                Issuer = _TestIssuer,
+                Audience = _TestAudience,
+            }
         );
 
         // then
@@ -280,11 +304,14 @@ public sealed class JwtTokenFactoryTests : TestBase
         // when
         var token = factory.CreateJwtToken(
             claims,
-            TimeSpan.FromHours(1),
-            _TestSigningKey,
-            encryptingKey: null,
-            _TestIssuer,
-            _TestAudience
+            new JwtTokenRequest
+            {
+                Ttl = TimeSpan.FromHours(1),
+                SigningKey = _TestSigningKey,
+                EncryptingKey = null,
+                Issuer = _TestIssuer,
+                Audience = _TestAudience,
+            }
         );
 
         // then
@@ -307,11 +334,14 @@ public sealed class JwtTokenFactoryTests : TestBase
         var act = () =>
             factory.CreateJwtToken(
                 claims,
-                TimeSpan.FromHours(1),
-                shortKey,
-                encryptingKey: null,
-                _TestIssuer,
-                _TestAudience
+                new JwtTokenRequest
+                {
+                    Ttl = TimeSpan.FromHours(1),
+                    SigningKey = shortKey,
+                    EncryptingKey = null,
+                    Issuer = _TestIssuer,
+                    Audience = _TestAudience,
+                }
             );
 
         // then
@@ -330,11 +360,14 @@ public sealed class JwtTokenFactoryTests : TestBase
         var claims = _CreateTestClaims();
         var token = factory.CreateJwtToken(
             claims,
-            TimeSpan.FromHours(1),
-            _TestSigningKey,
-            encryptingKey: null,
-            _TestIssuer,
-            _TestAudience
+            new JwtTokenRequest
+            {
+                Ttl = TimeSpan.FromHours(1),
+                SigningKey = _TestSigningKey,
+                EncryptingKey = null,
+                Issuer = _TestIssuer,
+                Audience = _TestAudience,
+            }
         );
 
         // when
@@ -364,11 +397,14 @@ public sealed class JwtTokenFactoryTests : TestBase
 
         var token = factory.CreateJwtToken(
             claims,
-            TimeSpan.FromMinutes(5),
-            _TestSigningKey,
-            encryptingKey: null,
-            _TestIssuer,
-            _TestAudience
+            new JwtTokenRequest
+            {
+                Ttl = TimeSpan.FromMinutes(5),
+                SigningKey = _TestSigningKey,
+                EncryptingKey = null,
+                Issuer = _TestIssuer,
+                Audience = _TestAudience,
+            }
         );
 
         // Advance time past expiration
@@ -396,11 +432,14 @@ public sealed class JwtTokenFactoryTests : TestBase
         var claims = _CreateTestClaims();
         var token = factory.CreateJwtToken(
             claims,
-            TimeSpan.FromHours(1),
-            _TestSigningKey,
-            encryptingKey: null,
-            _TestIssuer,
-            _TestAudience
+            new JwtTokenRequest
+            {
+                Ttl = TimeSpan.FromHours(1),
+                SigningKey = _TestSigningKey,
+                EncryptingKey = null,
+                Issuer = _TestIssuer,
+                Audience = _TestAudience,
+            }
         );
 
         const string differentKey = "this-is-a-different-signing-key-must-be-32-bytes";
@@ -427,11 +466,14 @@ public sealed class JwtTokenFactoryTests : TestBase
         var claims = _CreateTestClaims();
         var token = factory.CreateJwtToken(
             claims,
-            TimeSpan.FromHours(1),
-            _TestSigningKey,
-            encryptingKey: null,
-            _TestIssuer,
-            _TestAudience
+            new JwtTokenRequest
+            {
+                Ttl = TimeSpan.FromHours(1),
+                SigningKey = _TestSigningKey,
+                EncryptingKey = null,
+                Issuer = _TestIssuer,
+                Audience = _TestAudience,
+            }
         );
 
         // when
@@ -456,11 +498,14 @@ public sealed class JwtTokenFactoryTests : TestBase
         var claims = _CreateTestClaims();
         var token = factory.CreateJwtToken(
             claims,
-            TimeSpan.FromHours(1),
-            _TestSigningKey,
-            encryptingKey: null,
-            _TestIssuer,
-            _TestAudience
+            new JwtTokenRequest
+            {
+                Ttl = TimeSpan.FromHours(1),
+                SigningKey = _TestSigningKey,
+                EncryptingKey = null,
+                Issuer = _TestIssuer,
+                Audience = _TestAudience,
+            }
         );
 
         // when
@@ -485,11 +530,14 @@ public sealed class JwtTokenFactoryTests : TestBase
         var claims = _CreateTestClaims();
         var token = factory.CreateJwtToken(
             claims,
-            TimeSpan.FromHours(1),
-            _TestSigningKey,
-            encryptingKey: null,
-            _TestIssuer,
-            _TestAudience
+            new JwtTokenRequest
+            {
+                Ttl = TimeSpan.FromHours(1),
+                SigningKey = _TestSigningKey,
+                EncryptingKey = null,
+                Issuer = _TestIssuer,
+                Audience = _TestAudience,
+            }
         );
 
         // when
@@ -515,11 +563,14 @@ public sealed class JwtTokenFactoryTests : TestBase
         var claims = _CreateTestClaims();
         var token = factory.CreateJwtToken(
             claims,
-            TimeSpan.FromHours(1),
-            _TestSigningKey,
-            encryptingKey: null,
-            _TestIssuer,
-            _TestAudience
+            new JwtTokenRequest
+            {
+                Ttl = TimeSpan.FromHours(1),
+                SigningKey = _TestSigningKey,
+                EncryptingKey = null,
+                Issuer = _TestIssuer,
+                Audience = _TestAudience,
+            }
         );
 
         // when
@@ -546,11 +597,14 @@ public sealed class JwtTokenFactoryTests : TestBase
         var claims = _CreateTestClaims();
         var token = factory.CreateJwtToken(
             claims,
-            TimeSpan.FromHours(1),
-            _TestSigningKey,
-            _TestEncryptingKey,
-            _TestIssuer,
-            _TestAudience
+            new JwtTokenRequest
+            {
+                Ttl = TimeSpan.FromHours(1),
+                SigningKey = _TestSigningKey,
+                EncryptingKey = _TestEncryptingKey,
+                Issuer = _TestIssuer,
+                Audience = _TestAudience,
+            }
         );
 
         // when
@@ -579,11 +633,14 @@ public sealed class JwtTokenFactoryTests : TestBase
 
         var token = factory.CreateJwtToken(
             claims,
-            TimeSpan.FromMinutes(5),
-            _TestSigningKey,
-            encryptingKey: null,
-            _TestIssuer,
-            _TestAudience
+            new JwtTokenRequest
+            {
+                Ttl = TimeSpan.FromMinutes(5),
+                SigningKey = _TestSigningKey,
+                EncryptingKey = null,
+                Issuer = _TestIssuer,
+                Audience = _TestAudience,
+            }
         );
 
         // Advance time exactly to expiration + 1 second (no skew allowed)
