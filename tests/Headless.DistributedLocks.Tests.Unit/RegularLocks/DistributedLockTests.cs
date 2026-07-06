@@ -1195,6 +1195,38 @@ public sealed class DistributedLockTests : TestBase
     }
 
     [Fact]
+    public async Task should_return_without_publishing_when_release_exceeds_dispose_timeout()
+    {
+        // given — storage hangs forever on remove. DisposeTimeout bounds the release so application
+        // shutdown is never blocked by sustained storage unavailability; on timeout the release
+        // returns without throwing, skips the outbox publish, and the record TTL is the fallback.
+        var storage = Substitute.For<IDistributedLockStorage>();
+        storage
+            .RemoveIfEqualAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => new ValueTask<bool>(new TaskCompletionSource<bool>().Task));
+
+        var options = new DistributedLockOptions { DisposeTimeout = TimeSpan.FromSeconds(5) };
+        var provider = _CreateProvider(options, storage: storage);
+
+        // when — run release and advance time past the dispose timeout
+        var releaseTask = provider.ReleaseAsync("resource", "lock-id", AbortToken);
+
+        for (var i = 0; i < 10; i++)
+        {
+            await Task.Yield();
+            _timeProvider.Advance(TimeSpan.FromSeconds(1));
+        }
+
+        var act = async () => await releaseTask;
+
+        // then — no throw and no publish (an unconfirmed release must not wake waiters early)
+        await act.Should().NotThrowAsync();
+        await _outboxBus
+            .DidNotReceive()
+            .PublishAsync(Arg.Any<DistributedLockReleased>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task should_acquire_waiting_lock_with_polling_when_outbox_bus_is_absent()
     {
         // given
