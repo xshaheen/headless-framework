@@ -1,6 +1,7 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <Description>Audit log DI setup package with options validation, setup builders, and exactly-one-storage-provider registration.</Description>
     <RootNamespace>Headless.AuditLog</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
