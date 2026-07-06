@@ -13,7 +13,7 @@ public sealed class PdfMediaFileTextProviderTests
         var separator = Path.DirectorySeparatorChar;
         var pdfFilePath = Path.Combine(
             AppDomain.CurrentDomain.BaseDirectory,
-            $"..{separator}..{separator}..{separator}Files{separator}TestPdf.pdf"
+            $"..{separator}..{separator}..{separator}Files{separator}TestPDF.pdf"
         );
         await using var fileStream = File.OpenRead(pdfFilePath);
 

@@ -12,7 +12,9 @@ public static class InterlockedExtensions
     /// <paramref name="location"/> when the loop settled: <paramref name="value"/> when the raise won, otherwise
     /// the equal-or-greater value another thread already published.
     /// </summary>
+#pragma warning disable CA1045 // Do not pass types by reference
     public static long InterlockedRaiseTo(this ref long location, long value)
+#pragma warning restore CA1045
     {
         long current;
 

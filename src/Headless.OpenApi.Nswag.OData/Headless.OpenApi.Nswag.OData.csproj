@@ -1,6 +1,8 @@
 ﻿<Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <Description>NSwag OData integration for Headless OpenAPI documentation.</Description>
+    <PackageTags>headless;openapi;nswag;odata;dotnet</PackageTags>
     <RootNamespace>Headless.Api</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
