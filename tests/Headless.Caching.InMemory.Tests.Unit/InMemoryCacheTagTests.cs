@@ -5,6 +5,7 @@ using Headless.Caching;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Time.Testing;
 
+#pragma warning disable REFL009 // The referenced member is not known to exist
 namespace Tests;
 
 public sealed class InMemoryCacheTagTests : TestBase

@@ -460,7 +460,7 @@ public sealed class HybridCacheTagTests : TestBase
 
         for (var i = 0; i < 50; i++)
         {
-            var key = Faker.Random.AlphaNumeric(10) + i;
+            var key = string.Create(CultureInfo.InvariantCulture, $"{Faker.Random.AlphaNumeric(10)}{i}");
             expected[key] = i;
 
             await ((IFactoryCacheStore)l2).SetEntryAsync(
