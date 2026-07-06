@@ -14,6 +14,14 @@ namespace Headless.DistributedLocks;
 /// Implementations must be safe for concurrent use across acquirers. The provider performs all retry,
 /// timeout, and waiter accounting unless <see cref="BlocksServerSide"/> is enabled; in that mode the
 /// storage receives the remaining acquire timeout and owns the native blocking wait.
+/// <para>
+/// <b>Evolution policy — this backend SPI is frozen as of v1.0.</b> Custom database lock providers implement
+/// it, so adding a member is a breaking change for every implementer. New capability arrives as a C# default
+/// interface member whenever a safe default exists — <see cref="BlocksServerSide"/> is that precedent, a DIM
+/// defaulting to non-blocking so existing stores need not implement it — or as a separate opt-in seam (as
+/// <c>IFencingTokenSource</c> and <c>IReleaseSignal</c> do) where no meaningful default is possible, rather
+/// than as a required member here.
+/// </para>
 /// </remarks>
 [PublicAPI]
 public interface IConnectionScopedLockStorage

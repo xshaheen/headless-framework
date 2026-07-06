@@ -15,6 +15,13 @@ namespace Headless.DistributedLocks;
 /// Tokens are issued only for exclusive locks — shared (reader) acquisitions never request one. The
 /// provider calls <see cref="NextAsync"/> after storage acquisition succeeds but before the handle is
 /// returned to the caller; if it throws, the provider releases the just-acquired lock and propagates.
+/// <para>
+/// <b>Evolution policy — this seam is frozen as of v1.0.</b> Custom token sources implement it, so adding a
+/// member is a breaking change for every implementer. New capability arrives as a C# default interface member
+/// whenever a safe default exists (the framework precedent is
+/// <see cref="IConnectionScopedLockStorage.BlocksServerSide"/>), or as a separate opt-in seam where no
+/// meaningful default is possible, rather than as a required member here.
+/// </para>
 /// </remarks>
 [PublicAPI]
 public interface IFencingTokenSource

@@ -387,6 +387,8 @@ Background completion uses a detached coordinator-owned cancellation token, not 
 
 `DefaultEntryOptions` is explicit-at-registration, never magic: the option-less `GetOrAddAsync` extension overloads throw `InvalidOperationException` when the cache instance has no configured default, so a missing default is a loud configuration error instead of a silent surprise duration.
 
+**Evolution policy — `ICache` is frozen as of v1.0.** `ICache` is a broad contract every provider (Redis, InMemory, Hybrid, BCL, OutputCache) must implement, so adding a member is a breaking change for all of them. New capabilities therefore ship as separate, feature-detected capability interfaces a consumer probes for — `IBufferCache` (byte-oriented fast path) and `ISeedableTagMarkerCache` (backplane marker seeding) are the established examples — rather than as new members on `ICache`. Consumers do not hand-roll the feature test: the capability's own extension helpers (for example `BufferCacheExtensions.TryGetToOrFallbackAsync`) take the fast path when the cache implements it and fall back to the generic `ICache` path otherwise. `ISeedableTagMarkerCache` is itself frozen the same way: future marker families grow it via a C# default interface member where a safe default exists (so existing implementers are not broken), or via a further capability interface where none does. Add to `ICache` only for a genuinely universal primitive every backend can honor.
+
 ### Installation
 
 ```bash

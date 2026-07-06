@@ -14,6 +14,13 @@ namespace Headless.DistributedLocks;
 /// All methods must be safe to call concurrently from multiple threads. Implementations must
 /// guarantee that <see cref="TryAcquireAsync"/> and <see cref="ReleaseAsync"/> are atomic with
 /// respect to the slot count so the semaphore capacity limit is never exceeded under contention.
+/// <para>
+/// <b>Evolution policy — this backend SPI is frozen as of v1.0.</b> Custom semaphore providers implement it,
+/// so adding a member is a breaking change for every implementer. New capability arrives as a C# default
+/// interface member whenever a safe default exists (the framework precedent is
+/// <c>IConnectionScopedLockStorage.BlocksServerSide</c>), or as a separate opt-in seam where no meaningful
+/// default is possible, rather than as a required member here.
+/// </para>
 /// </remarks>
 [PublicAPI]
 public interface IDistributedSemaphoreStorage

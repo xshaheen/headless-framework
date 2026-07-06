@@ -13,6 +13,14 @@ namespace Headless.DistributedLocks;
 /// guarantee that <see cref="InsertAsync"/> and <see cref="RemoveIfEqualAsync"/> are
 /// compare-and-set atomic operations so the mutual-exclusion guarantee holds under concurrent
 /// callers.
+/// <para>
+/// <b>Evolution policy — this backend SPI is frozen as of v1.0.</b> Custom lock providers implement it, so
+/// adding a member is a breaking change for every implementer. New capability therefore arrives as a C#
+/// default interface member whenever a safe default exists (the precedent is
+/// <c>IConnectionScopedLockStorage.BlocksServerSide</c>, a DIM that defaults to the non-blocking behavior);
+/// where no meaningful default is possible it ships as a separate opt-in seam (as <c>IFencingTokenSource</c>
+/// does) rather than as a required member here.
+/// </para>
 /// </remarks>
 public interface IDistributedLockStorage
 {
