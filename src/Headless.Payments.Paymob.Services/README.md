@@ -36,7 +36,7 @@ dotnet add package Headless.Payments.Paymob.Services
 
 ## Quick Start
 
-Register the underlying brokers first, then register the service classes:
+Register the underlying brokers first, then register the service layer with `AddPaymobServices`:
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -58,9 +58,13 @@ builder.Services.AddPaymobCashOut(options =>
     options.ClientSecret = builder.Configuration["Paymob:CashOut:ClientSecret"]!;
 });
 
-// Register service layer
-builder.Services.AddScoped<IPaymobCashInService, PaymobCashInService>();
-builder.Services.AddScoped<ICashOutService, PaymobCashOutService>();
+// Register the service layer (IPaymobCashInService, ICashOutService, IPaymobCashInFeesCalculator)
+builder.Services.AddPaymobServices();
+```
+
+`AddPaymobServices` registers the fees calculator with Paymob's default fee structure (6 EGP fixed fee, 2.5% rate, 14% VAT on the fee). To use merchant-specific rates, register your own `IPaymobCashInFeesCalculator` before the call — the registrations use `TryAdd`, so an existing one is preserved:
+
+```csharp
 builder.Services.AddSingleton<IPaymobCashInFeesCalculator>(
     new PaymobCashInFeesCalculator(
         fixedFeesPerTransaction: 6m,
@@ -68,6 +72,7 @@ builder.Services.AddSingleton<IPaymobCashInFeesCalculator>(
         vatPercentOnFees: 0.14m
     )
 );
+builder.Services.AddPaymobServices();
 ```
 
 Start a card payment (legacy iframe flow):
@@ -89,7 +94,8 @@ public sealed class CheckoutService(IPaymobCashInService cashIn)
                 Customer: customer,
                 CardIntegrationId: cardIntegrationId,
                 IframeSrc: iframeId
-            )
+            ),
+            ct
         );
         return response.IframeSrc;
     }
@@ -110,7 +116,8 @@ public sealed class PayoutService(ICashOutService cashOut)
                 BankCode: bankCode,
                 Type: BankTransactionType.CashTransfer,
                 FullName: "Ahmed Ali"
-            )
+            ),
+            ct
         );
 
         if (!result.Succeeded)
@@ -133,4 +140,4 @@ No additional configuration beyond `Headless.Payments.Paymob.CashIn` and `Headle
 
 ## Side Effects
 
-None. The Services package does not register services internally — register `IPaymobCashInService`, `ICashOutService`, and `IPaymobCashInFeesCalculator` manually as shown above.
+`AddPaymobServices()` registers `IPaymobCashInService` and `ICashOutService` as **scoped** (they depend on the scoped brokers) and `IPaymobCashInFeesCalculator` as a **singleton** with Paymob's default fee structure. All three use `TryAdd`, so pre-existing registrations are preserved. It does not register the brokers themselves — call `AddPaymobCashIn` and `AddPaymobCashOut` first.
