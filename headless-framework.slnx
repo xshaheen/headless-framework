@@ -325,6 +325,7 @@
     </Folder>
     <Folder Name="/Observability/">
         <Project Path="src\Headless.Logging.Serilog\Headless.Logging.Serilog.csproj" />
+        <Project Path="tests\Headless.Logging.Serilog.Tests.Unit\Headless.Logging.Serilog.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Orms/">
         <Project Path="demo\Headless.EntityFramework.Migrations.Startup\Headless.EntityFramework.Migrations.Startup.csproj" />

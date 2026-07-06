@@ -16,9 +16,13 @@ internal sealed class RedisStreamManager(
     private readonly MessagingRedisOptions _options = options.Value;
     private IConnectionMultiplexer? _redis;
 
-    public async Task CreateStreamWithConsumerGroupAsync(string stream, string consumerGroup)
+    public async Task CreateStreamWithConsumerGroupAsync(
+        string stream,
+        string consumerGroup,
+        CancellationToken cancellationToken = default
+    )
     {
-        await _ConnectAsync().ConfigureAwait(false);
+        await _ConnectAsync(cancellationToken).ConfigureAwait(false);
 
         //The object returned from GetDatabase is a cheap pass - thru object, and does not need to be stored
         var database = _redis!.GetDatabase();
@@ -26,9 +30,13 @@ internal sealed class RedisStreamManager(
         await database.TryGetOrCreateStreamConsumerGroupAsync(stream, consumerGroup).ConfigureAwait(false);
     }
 
-    public async Task PublishAsync(string stream, NameValueEntry[] message)
+    public async Task PublishAsync(
+        string stream,
+        NameValueEntry[] message,
+        CancellationToken cancellationToken = default
+    )
     {
-        await _ConnectAsync().ConfigureAwait(false);
+        await _ConnectAsync(cancellationToken).ConfigureAwait(false);
 
         //The object returned from GetDatabase is a cheap pass - thru object, and does not need to be stored
         await _redis!.GetDatabase().StreamAddAsync(stream, message).ConfigureAwait(false);
@@ -90,9 +98,14 @@ internal sealed class RedisStreamManager(
         }
     }
 
-    public async Task Ack(string stream, string consumerGroup, string messageId)
+    public async Task Ack(
+        string stream,
+        string consumerGroup,
+        string messageId,
+        CancellationToken cancellationToken = default
+    )
     {
-        await _ConnectAsync().ConfigureAwait(false);
+        await _ConnectAsync(cancellationToken).ConfigureAwait(false);
 
         await _redis!.GetDatabase().StreamAcknowledgeAsync(stream, consumerGroup, messageId).ConfigureAwait(false);
     }
@@ -109,7 +122,7 @@ internal sealed class RedisStreamManager(
 
             List<StreamPosition> createdPositions = [];
 
-            await _ConnectAsync().ConfigureAwait(false);
+            await _ConnectAsync(token).ConfigureAwait(false);
 
             var database = _redis!.GetDatabase();
 
@@ -156,9 +169,9 @@ internal sealed class RedisStreamManager(
         return [];
     }
 
-    private async Task _ConnectAsync()
+    private async Task _ConnectAsync(CancellationToken cancellationToken = default)
     {
-        _redis = await connectionsPool.ConnectAsync().ConfigureAwait(false);
+        _redis = await connectionsPool.ConnectAsync(cancellationToken).ConfigureAwait(false);
     }
 }
 

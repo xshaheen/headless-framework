@@ -29,6 +29,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         // given
         const byte concurrent = 2;
         const string groupName = "test-group";
+        var consumeFailed = _CreateSignal();
         var exceptionThrown = false;
         var consumeCallCount = 0;
 
@@ -47,7 +48,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             concurrent,
             groupName,
             msgCallback,
-            args => _loggedEvents.Add(args),
+            args => _RecordLog(args, consumeFailed),
             null,
             _serviceProvider
         );
@@ -67,8 +68,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             CancellationToken.None
         );
 
-        // Allow async task to complete
-        await Task.Delay(100, AbortToken);
+        await _WaitForSignalAsync(consumeFailed.Task);
 
         // then
         exceptionThrown.Should().BeTrue();
@@ -85,6 +85,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         // given
         const byte concurrent = 2;
         const string groupName = "test-group";
+        var consumeFailed = _CreateSignal();
 
         static Task callback(TransportMessage transportMessage, object? o) =>
             throw new InvalidOperationException("Simulated consumption error");
@@ -96,7 +97,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             concurrent,
             groupName,
             callback,
-            args => _loggedEvents.Add(args),
+            args => _RecordLog(args, consumeFailed),
             null,
             _serviceProvider
         );
@@ -116,8 +117,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             CancellationToken.None
         );
 
-        // Allow async task to complete
-        await Task.Delay(100, AbortToken);
+        await _WaitForSignalAsync(consumeFailed.Task);
 
         // then - reject is owned by the framework callback wrapper, not the transport callback shell
         await _channel
@@ -135,6 +135,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         // given
         const byte concurrent = 2;
         const string groupName = "test-group";
+        var consumeFailed = _CreateSignal();
 
         static Task callback(TransportMessage transportMessage, object? o) =>
             throw new InvalidOperationException("Simulated consumption error");
@@ -146,7 +147,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             concurrent,
             groupName,
             callback,
-            args => _loggedEvents.Add(args),
+            args => _RecordLog(args, consumeFailed),
             null,
             _serviceProvider
         );
@@ -166,8 +167,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             CancellationToken.None
         );
 
-        // Allow async task to complete
-        await Task.Delay(100, AbortToken);
+        await _WaitForSignalAsync(consumeFailed.Task);
 
         // then
         await _channel
@@ -184,11 +184,13 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         // given
         const byte concurrent = 2;
         const string groupName = "test-group";
+        var callbackCompleted = _CreateSignal();
         var consumeCallCount = 0;
 
         Task callback(TransportMessage transportMessage, object? o)
         {
             consumeCallCount++;
+            callbackCompleted.TrySetResult();
 
             return Task.CompletedTask;
         }
@@ -217,8 +219,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             CancellationToken.None
         );
 
-        // Allow background task to complete (concurrent mode fires Task.Run)
-        await Task.Delay(200, AbortToken);
+        await _WaitForSignalAsync(callbackCompleted.Task);
 
         // then
         consumeCallCount.Should().Be(1);
@@ -749,6 +750,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
     {
         // given
         _channel.IsOpen.Returns(true);
+        var consumeFailed = _CreateSignal();
         var callbackInvoked = false;
 
         static List<KeyValuePair<string, string>> throwingBuilder(BasicDeliverEventArgs _, IServiceProvider __)
@@ -765,7 +767,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
                 callbackInvoked = true;
                 return Task.CompletedTask;
             },
-            args => _loggedEvents.Add(args),
+            args => _RecordLog(args, consumeFailed),
             throwingBuilder,
             _serviceProvider
         );
@@ -782,7 +784,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             CancellationToken.None
         );
 
-        await Task.Delay(200, AbortToken);
+        await _WaitForSignalAsync(consumeFailed.Task);
 
         // then — message should be nacked, not left unacked
         callbackInvoked.Should().BeFalse();
@@ -790,6 +792,16 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         _loggedEvents.Should().ContainSingle(e => e.LogType == MqLogType.ConsumeError);
         _loggedEvents[0].Reason.Should().Contain("bad header builder");
     }
+
+    private TaskCompletionSource _CreateSignal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    private void _RecordLog(LogMessageEventArgs args, TaskCompletionSource signal)
+    {
+        _loggedEvents.Add(args);
+        signal.TrySetResult();
+    }
+
+    private async Task _WaitForSignalAsync(Task signal) => await signal.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
     [Fact]
     public async Task should_nack_when_custom_headers_builder_throws_without_concurrent_processing()

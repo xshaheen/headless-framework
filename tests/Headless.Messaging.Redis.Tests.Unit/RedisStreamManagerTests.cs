@@ -24,7 +24,7 @@ public sealed class RedisStreamManagerTests : TestBase
         _mockMultiplexer = Substitute.For<IConnectionMultiplexer>();
         _mockDatabase = Substitute.For<IDatabase>();
 
-        _mockConnectionPool.ConnectAsync().Returns(Task.FromResult(_mockMultiplexer));
+        _mockConnectionPool.ConnectAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult(_mockMultiplexer));
         _mockMultiplexer.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(_mockDatabase);
 
         var options = Options.Create(
@@ -57,10 +57,10 @@ public sealed class RedisStreamManagerTests : TestBase
             .Returns(new RedisValue("1234567-0"));
 
         // when
-        await _sut.PublishAsync("test-stream", entries);
+        await _sut.PublishAsync("test-stream", entries, TestContext.Current.CancellationToken);
 
         // then
-        await _mockConnectionPool.Received(1).ConnectAsync(CancellationToken.None);
+        await _mockConnectionPool.Received(1).ConnectAsync(TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -81,7 +81,7 @@ public sealed class RedisStreamManagerTests : TestBase
             .Returns(new RedisValue("1234567-0"));
 
         // when
-        await _sut.PublishAsync("orders-stream", entries);
+        await _sut.PublishAsync("orders-stream", entries, TestContext.Current.CancellationToken);
 
         // then - verify database was obtained from multiplexer
         _mockMultiplexer.Received().GetDatabase(Arg.Any<int>(), Arg.Any<object?>());
@@ -101,7 +101,7 @@ public sealed class RedisStreamManagerTests : TestBase
             .Returns(1L);
 
         // when
-        await _sut.Ack("test-stream", "my-group", "1234567-0");
+        await _sut.Ack("test-stream", "my-group", "1234567-0", TestContext.Current.CancellationToken);
 
         // then
         await _mockDatabase
@@ -123,9 +123,9 @@ public sealed class RedisStreamManagerTests : TestBase
             .Returns(1L);
 
         // when
-        await _sut.Ack("stream", "group", "id");
+        await _sut.Ack("stream", "group", "id", TestContext.Current.CancellationToken);
 
         // then
-        await _mockConnectionPool.Received(1).ConnectAsync(CancellationToken.None);
+        await _mockConnectionPool.Received(1).ConnectAsync(TestContext.Current.CancellationToken);
     }
 }

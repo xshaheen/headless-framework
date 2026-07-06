@@ -7,7 +7,7 @@ namespace Headless.Messaging.Redis;
 
 internal interface IRedisPubSubConnectionProvider : IAsyncDisposable
 {
-    Task<IConnectionMultiplexer> ConnectAsync();
+    Task<IConnectionMultiplexer> ConnectAsync(CancellationToken cancellationToken = default);
 }
 
 internal sealed class RedisPubSubConnectionProvider(IOptions<RedisPubSubOptions> optionsAccessor)
@@ -15,29 +15,64 @@ internal sealed class RedisPubSubConnectionProvider(IOptions<RedisPubSubOptions>
 {
     private readonly SemaphoreSlim _lock = new(1, 1);
     private ConnectionMultiplexer? _connection;
+    private Task<ConnectionMultiplexer>? _connectionTask;
 
-    public async Task<IConnectionMultiplexer> ConnectAsync()
+    public async Task<IConnectionMultiplexer> ConnectAsync(CancellationToken cancellationToken = default)
     {
         if (_connection is not null)
         {
             return _connection;
         }
 
-        await _lock.WaitAsync().ConfigureAwait(false);
+        Task<ConnectionMultiplexer> connectionTask;
+
+        await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
 
         try
         {
 #pragma warning disable CA1508 // Justification: other threads can initialize it while waiting for the lock.
-            _connection ??= await ConnectionMultiplexer
-                .ConnectAsync(optionsAccessor.Value.Configuration!)
-                .ConfigureAwait(false);
+            if (_connection is not null)
+            {
+                return _connection;
+            }
+
+            if (_connectionTask is null || _connectionTask.IsFaulted || _connectionTask.IsCanceled)
+            {
+                _connectionTask = ConnectionMultiplexer.ConnectAsync(optionsAccessor.Value.Configuration!);
+            }
+
+            connectionTask = _connectionTask;
 #pragma warning restore CA1508
-            return _connection;
         }
         finally
         {
             _lock.Release();
         }
+
+        try
+        {
+            _connection = await connectionTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch when (connectionTask.IsFaulted || connectionTask.IsCanceled)
+        {
+            await _lock.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+
+            try
+            {
+                if (ReferenceEquals(_connectionTask, connectionTask))
+                {
+                    _connectionTask = null;
+                }
+            }
+            finally
+            {
+                _lock.Release();
+            }
+
+            throw;
+        }
+
+        return _connection;
     }
 
     public async ValueTask DisposeAsync()

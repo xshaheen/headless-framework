@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
-public sealed class K8SDiscoveryOptionsExtensionsTests : TestBase
+public sealed class K8sDiscoveryOptionsExtensionsTests : TestBase
 {
     [Fact]
     public void UseK8sDiscovery_should_return_same_setup_instance()

@@ -55,8 +55,6 @@ public static class JobsServiceExtensions
         // The soft lease/fallback ordering warning (LeaseDuration < FallbackIntervalChecker) is emitted at startup by
         // JobsInitializationHostedService, where an ILogger is available.
 
-        CronScheduleCache.TimeZoneInfo = schedulerOptionsBuilder.SchedulerTimeZone;
-
         // Apply JSON serializer options for job requests if configured during service registration
         if (optionInstance.RequestJsonSerializerOptions != null)
         {
@@ -75,6 +73,7 @@ public static class JobsServiceExtensions
         services.AddSingleton<IInternalJobManager, InternalJobsManager<TTimeJob, TCronJob>>();
         // Default owner identity for the in-memory path + always-on instrumentation; the durable path overrides it.
         services.TryAddSingleton<IJobsOwnerIdentity, DefaultJobsOwnerIdentity>();
+        services.AddSingleton(new CronScheduleCache(schedulerOptionsBuilder.SchedulerTimeZone));
         services.AddSingleton<
             IJobPersistenceProvider<TTimeJob, TCronJob>,
             JobsInMemoryPersistenceProvider<TTimeJob, TCronJob>

@@ -4,7 +4,7 @@ Kubernetes-aware node discovery for the messaging dashboard in clustered environ
 
 ## Problem Solved
 
-Enables automatic discovery and monitoring of messaging nodes in Kubernetes clusters by querying pod endpoints for multi-instance dashboard visibility.
+Enables automatic discovery and monitoring of messaging nodes in Kubernetes clusters by querying Services for multi-instance dashboard visibility.
 
 ## Key Features
 
@@ -52,7 +52,7 @@ builder.Services.AddMessagingDashboardStandalone(
         dashboard.WithNoAuth();
         dashboard.SetBasePath("/messaging");
     },
-    k8SOption: k8s =>
+    configureK8s: k8s =>
     {
         k8s.ShowOnlyExplicitVisibleNodes = true;
     }
@@ -66,6 +66,6 @@ builder.Services.AddMessagingDashboardStandalone(
 
 ## Side Effects
 
-- Queries Kubernetes API for pod endpoints
-- Requires appropriate RBAC permissions (read pods/endpoints)
+- Queries Kubernetes API for Services
+- Requires appropriate RBAC permissions (read services/namespaces)
 - Periodically polls for cluster topology changes

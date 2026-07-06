@@ -112,4 +112,4 @@ builder.Services.AddHeadlessJobs(options =>
 - Registers `ITimeJobManager<TimeJobEntity>` and `ICronJobManager<CronJobEntity>` as singletons.
 - Registers background hosted services: `JobsInitializationHostedService` (always), `JobsSchedulerBackgroundService`, `JobsFallbackBackgroundService`, and `JobsExecutionTaskHandler` (unless `DisableBackgroundServices()` is called).
 - Registers `JobsTaskScheduler` (custom thread pool bounded by `MaxConcurrency`).
-- Sets global `CronScheduleCache.TimeZoneInfo` and `JobsHelper` JSON/compression settings.
+- Registers a scheduler-scoped cron schedule cache and sets `JobsHelper` JSON/compression settings.

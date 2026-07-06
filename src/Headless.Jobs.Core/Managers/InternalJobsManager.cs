@@ -11,7 +11,8 @@ namespace Headless.Jobs.Managers;
 internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
     IJobPersistenceProvider<TTimeJob, TCronJob> persistenceProvider,
     TimeProvider timeProvider,
-    IJobsNotificationHubSender notificationHubSender
+    IJobsNotificationHubSender notificationHubSender,
+    CronScheduleCache cronScheduleCache
 ) : IInternalJobManager
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
@@ -258,7 +259,7 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
         return _EarliestCronJobGroup(cronJobs, now, earliestAvailableCronOccurrence);
     }
 
-    private static (DateTime Next, InternalManagerContext[] Items)? _EarliestCronJobGroup(
+    private (DateTime Next, InternalManagerContext[] Items)? _EarliestCronJobGroup(
         CronJobEntity[] cronJobs,
         DateTime now,
         CronJobOccurrenceEntity<TCronJob> earliestStored
@@ -270,7 +271,7 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
 
         foreach (var cronJob in cronJobs)
         {
-            var next = CronScheduleCache.GetNextOccurrenceOrDefault(cronJob.Expression, now);
+            var next = cronScheduleCache.GetNextOccurrenceOrDefault(cronJob.Expression, now);
             if (next is null)
             {
                 continue;

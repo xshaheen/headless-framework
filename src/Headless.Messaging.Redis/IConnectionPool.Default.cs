@@ -26,7 +26,7 @@ internal sealed class RedisConnectionPool : IRedisConnectionPool, IDisposable
 
     private AsyncLazyRedisConnection? QuietConnection =>
         _poolAlreadyConfigured
-            ? _connections.OrderBy(static c => c.CreatedConnection?.ConnectionCapacity ?? int.MaxValue).First()
+            ? _connections.OrderBy(static c => c.CreatedConnection?.ConnectionCapacity ?? int.MaxValue).FirstOrDefault()
             : null;
 
     public void Dispose()
@@ -37,30 +37,46 @@ internal sealed class RedisConnectionPool : IRedisConnectionPool, IDisposable
 
     public async Task<IConnectionMultiplexer> ConnectAsync(CancellationToken cancellationToken = default)
     {
-        if (QuietConnection == null)
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (QuietConnection is not { } quietConnection)
         {
             _poolAlreadyConfigured =
                 _connections.Count(static c => c.IsValueCreated) == _redisOptions.ConnectionPoolSize;
-            if (QuietConnection != null)
+            quietConnection = QuietConnection;
+            if (quietConnection?.CreatedConnection is { } createdConnection)
             {
-                return QuietConnection.CreatedConnection!.Connection;
+                return createdConnection.Connection;
             }
+        }
+        else if (quietConnection.CreatedConnection is { } createdConnection)
+        {
+            return createdConnection.Connection;
         }
 
         foreach (var lazy in _connections)
         {
             if (!lazy.IsValueCreated)
             {
-                return (await lazy).Connection;
+                return (await lazy.GetValueAsync(cancellationToken).ConfigureAwait(false)).Connection;
             }
 
-            if (lazy.CreatedConnection!.ConnectionCapacity == 0)
+            if (lazy.CreatedConnection is not { } createdConnection)
             {
-                return lazy.CreatedConnection.Connection;
+                return (await lazy.GetValueAsync(cancellationToken).ConfigureAwait(false)).Connection;
+            }
+
+            if (createdConnection.ConnectionCapacity == 0)
+            {
+                return createdConnection.Connection;
             }
         }
 
-        return (await _connections.OrderBy(static c => c.CreatedConnection!.ConnectionCapacity).First()).Connection;
+        var selected = _connections
+            .OrderBy(static c => c.CreatedConnection?.ConnectionCapacity ?? int.MaxValue)
+            .First();
+
+        return (await selected.GetValueAsync(cancellationToken).ConfigureAwait(false)).Connection;
     }
 
     private void _Init()
@@ -110,7 +126,7 @@ internal sealed class RedisConnectionPool : IRedisConnectionPool, IDisposable
                     continue;
                 }
 
-                connection.CreatedConnection!.Dispose();
+                connection.CreatedConnection?.Dispose();
             }
 
             _poolLock.Dispose();

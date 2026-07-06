@@ -25,7 +25,11 @@ public class AsyncLazyRedisConnection(
     /// Returns the established <see cref="RedisConnection"/> when the lazy value has already been
     /// resolved; otherwise <see langword="null"/>.
     /// </summary>
-    public RedisConnection? CreatedConnection => IsValueCreated ? Value.GetAwaiter().GetResult() : null;
+    public RedisConnection? CreatedConnection => IsValueCreated && Value.IsCompletedSuccessfully ? Value.Result : null;
+
+    /// <summary>Returns the connection task, cancelling only this caller's wait when requested.</summary>
+    public async Task<RedisConnection> GetValueAsync(CancellationToken cancellationToken = default) =>
+        await Value.WaitAsync(cancellationToken).ConfigureAwait(false);
 
     /// <summary>Returns an awaiter so the connection can be awaited directly.</summary>
     public TaskAwaiter<RedisConnection> GetAwaiter()

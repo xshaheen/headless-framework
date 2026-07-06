@@ -45,7 +45,7 @@ public sealed class RedisPubSubBusTransportTests : TestBase
         var connection = Substitute.For<IConnectionMultiplexer>();
         var subscriber = Substitute.For<ISubscriber>();
         connection.GetSubscriber().Returns(subscriber);
-        connectionProvider.ConnectAsync().Returns(_ReturnConnectionAsync(connection));
+        connectionProvider.ConnectAsync(Arg.Any<CancellationToken>()).Returns(_ReturnConnectionAsync(connection));
         subscriber.PublishAsync(Arg.Any<RedisChannel>(), Arg.Any<RedisValue>(), Arg.Any<CommandFlags>()).Returns(1L);
 
         var logger = Substitute.For<ILogger<RedisPubSubBusTransport>>();
@@ -87,7 +87,7 @@ public sealed class RedisPubSubBusTransportTests : TestBase
         var connection = Substitute.For<IConnectionMultiplexer>();
         var subscriber = Substitute.For<ISubscriber>();
         connection.GetSubscriber().Returns(subscriber);
-        connectionProvider.ConnectAsync().Returns(_ReturnConnectionAsync(connection));
+        connectionProvider.ConnectAsync(Arg.Any<CancellationToken>()).Returns(_ReturnConnectionAsync(connection));
         subscriber
             .PublishAsync(Arg.Any<RedisChannel>(), Arg.Any<RedisValue>(), Arg.Any<CommandFlags>())
             .ThrowsAsync(new RedisConnectionException(ConnectionFailureType.UnableToConnect, "Network error"));
@@ -129,7 +129,7 @@ public sealed class RedisPubSubBusTransportTests : TestBase
 
         // then
         await act.Should().ThrowAsync<OperationCanceledException>();
-        await connectionProvider.DidNotReceive().ConnectAsync();
+        await connectionProvider.DidNotReceive().ConnectAsync(Arg.Any<CancellationToken>());
     }
 
     private static async Task<IConnectionMultiplexer> _ReturnConnectionAsync(IConnectionMultiplexer connection)
