@@ -75,6 +75,23 @@ public sealed record PaymobCashInOptions
     /// This is separate from <c>ApiKey</c> and is issued alongside the intention-flow integration.
     /// </summary>
     public required string SecretKey { get; set; }
+
+    // Redact the secrets so the compiler-generated ToString() never leaks them into logs or diagnostics.
+    private bool PrintMembers(StringBuilder builder)
+    {
+        builder.Append("ApiBaseUrl = ").Append(ApiBaseUrl);
+        builder.Append(", CreateIntentionUrl = ").Append(CreateIntentionUrl);
+        builder.Append(", RefundUrl = ").Append(RefundUrl);
+        builder.Append(", VoidRefundUrl = ").Append(VoidRefundUrl);
+        builder.Append(", IframeBaseUrl = ").Append(IframeBaseUrl);
+        builder.Append(", ApiKey = ***");
+        builder.Append(", Hmac = ***");
+        builder.Append(", ExpirationPeriod = ").Append(ExpirationPeriod);
+        builder.Append(", TokenRefreshBuffer = ").Append(TokenRefreshBuffer);
+        builder.Append(", SecretKey = ***");
+
+        return true;
+    }
 }
 
 internal sealed class PaymobCashInOptionsValidator : AbstractValidator<PaymobCashInOptions>
