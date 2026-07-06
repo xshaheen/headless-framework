@@ -127,6 +127,12 @@ Single-backend packages with no provider choice keep plain `Add{Feature}` extens
 
 - Each package's `public` surface IS its NuGet contract — keep types `internal sealed` and promote to `public` only when consumers must reference them.
 
+**Namespace Policy:**
+
+- A package's public types live in a namespace matching (or prefixed by) the package identity. No package may declare a namespace that IS another package's identity (e.g. only the `Headless.Api.Abstractions` package may own the `Headless.Api.Abstractions` namespace).
+- Injecting into foreign namespaces (`System.*`, `Microsoft.*`, third-party) is allowed ONLY for static extension-method holder classes — never data types, records, interfaces, or enums. Registration extensions (`Add*`/`Use*`) conventionally live in `Microsoft.Extensions.DependencyInjection`; app/endpoint-builder extensions (`Map*`/`Use*` on `IApplicationBuilder`/`IEndpointRouteBuilder`) in `Microsoft.AspNetCore.Builder`.
+- Holder class names in foreign namespaces must be collision-proof: prefix with `Headless` or the feature (`AntiforgeryServiceCollectionExtensions`, `HeadlessHttpContextExtensions`) — never bare BCL-adjacent names (`ServiceCollectionExtensions`, `CollectionExtensions`, `TupleExtensions`), which collide with same-name BCL/ASP.NET types and produce CS0433 for consumers.
+
 **Source File Header:**
 
 Every `.cs` file starts with: `// Copyright (c) Mahmoud Shaheen. All rights reserved.`
