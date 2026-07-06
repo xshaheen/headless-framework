@@ -12,7 +12,7 @@ builder.Services.AddRazorPages();
 builder.Services.AddHeadlessCaptcha(captcha =>
     captcha
         .UseTurnstile(builder.Configuration.GetSection("Headless:Captcha:Turnstile"))
-        .UseReCaptchaV3("recaptcha", builder.Configuration.GetSection("Headless:Captcha:ReCaptchaV3"))
+        .AddNamed("recaptcha", i => i.UseReCaptchaV3(builder.Configuration.GetSection("Headless:Captcha:ReCaptchaV3")))
 );
 
 var app = builder.Build();
