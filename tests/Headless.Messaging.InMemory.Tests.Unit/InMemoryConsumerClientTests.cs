@@ -110,11 +110,11 @@ public sealed class InMemoryConsumerClientTests : TestBase
         // given
         await _client.SubscribeAsync(["test-messageName"]);
 
-        var commitCalled = false;
+        var committed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _client.OnMessageCallback = async (_, sender) =>
         {
             await _client.CommitAsync(sender);
-            commitCalled = true;
+            committed.SetResult();
         };
 
         using var cts = new CancellationTokenSource();
@@ -136,11 +136,11 @@ public sealed class InMemoryConsumerClientTests : TestBase
         // when
         _queue.SendBus(_CreateTestMessage("msg-1", "test-messageName"));
 
-        await Task.Delay(100, AbortToken);
+        await committed.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         await cts.CancelAsync();
 
         // then
-        commitCalled.Should().BeTrue();
+        committed.Task.IsCompletedSuccessfully.Should().BeTrue();
     }
 
     [Fact]
@@ -149,11 +149,11 @@ public sealed class InMemoryConsumerClientTests : TestBase
         // given
         await _client.SubscribeAsync(["test-messageName"]);
 
-        var rejectCalled = false;
+        var rejected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _client.OnMessageCallback = async (_, sender) =>
         {
             await _client.RejectAsync(sender);
-            rejectCalled = true;
+            rejected.SetResult();
         };
 
         using var cts = new CancellationTokenSource();
@@ -174,11 +174,11 @@ public sealed class InMemoryConsumerClientTests : TestBase
         // when
         _queue.SendBus(_CreateTestMessage("msg-1", "test-messageName"));
 
-        await Task.Delay(100, AbortToken);
+        await rejected.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         await cts.CancelAsync();
 
         // then
-        rejectCalled.Should().BeTrue();
+        rejected.Task.IsCompletedSuccessfully.Should().BeTrue();
     }
 
     [Fact]
