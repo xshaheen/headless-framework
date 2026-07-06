@@ -37,6 +37,30 @@ public sealed class JsonConstantsTests
         model2.Should().BeEquivalentTo(_model2);
     }
 
+    [Fact]
+    public void shared_presets_should_be_read_only()
+    {
+        JsonConstants.DefaultWebJsonOptions.IsReadOnly.Should().BeTrue();
+        JsonConstants.DefaultInternalJsonOptions.IsReadOnly.Should().BeTrue();
+        JsonConstants.DefaultPrettyJsonOptions.IsReadOnly.Should().BeTrue();
+    }
+
+    [Fact]
+    public void mutating_a_shared_preset_should_throw()
+    {
+        var mutate = () => JsonConstants.DefaultWebJsonOptions.WriteIndented = true;
+
+        mutate.Should().ThrowExactly<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void create_factories_should_return_mutable_instances()
+    {
+        JsonConstants.CreateWebJsonOptions().IsReadOnly.Should().BeFalse();
+        JsonConstants.CreateInternalJsonOptions().IsReadOnly.Should().BeFalse();
+        JsonConstants.CreatePrettyJsonOptions().IsReadOnly.Should().BeFalse();
+    }
+
     private sealed class TestModel1(string name)
     {
         public string Name { get; init; } = name;

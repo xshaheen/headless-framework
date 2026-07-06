@@ -206,10 +206,11 @@ Provides JSON serialization via System.Text.Json with a battle-tested default co
 
 - `SystemJsonSerializer` — `IJsonSerializer` implementation; accepts an optional `IJsonOptionsProvider`
 - `IJsonOptionsProvider` / `DefaultJsonOptionsProvider` — injectable options split into separate serialize and deserialize `JsonSerializerOptions`
-- `JsonConstants` — shared, pre-configured option sets:
+- `JsonConstants` — shared, pre-configured, **read-only** (frozen) option sets. Customize by copying via a `Create*JsonOptions()` factory rather than mutating a preset:
   - `DefaultWebJsonOptions` — camelCase, case-insensitive read, enum-as-camelCase-string, `IpAddressJsonConverter`, nullable-annotations respected, trailing commas allowed, cycles ignored
   - `DefaultInternalJsonOptions` — strict (no case-insensitive read, no trailing commas, `WhenWritingNull`)
   - `DefaultPrettyJsonOptions` — `DefaultWebJsonOptions` with `WriteIndented = true`
+  - `CreateWebJsonOptions()` / `CreateInternalJsonOptions()` / `CreatePrettyJsonOptions()` — return a fresh **mutable** instance with the matching preset applied
   - `ConfigureWebJsonOptions(JsonSerializerOptions)` / `ConfigureInternalJsonOptions(JsonSerializerOptions)` — apply settings to an existing instance
 - Built-in converters (all in namespace `Headless.Serializer.Converters`):
   - `UnixTimeJsonConverter` — `DateTimeOffset` ↔ Unix epoch seconds (reads number or string)
@@ -227,11 +228,13 @@ Provides JSON serialization via System.Text.Json with a battle-tested default co
   - `JsonSerializerModifiersOptions` — holds the modifier list
   - `JsonPropertiesModifiers<TClass>.CreateIgnorePropertyModifyAction` — exclude a property from serialization
   - `JsonPropertiesModifiers<TClass>.CreateIncludeNonPublicPropertiesModifyAction` — enable non-public setter deserialization
-- `ToObjectExtensions.To<T>(this object?, JsonSerializerOptions?)` — extension on `object?` that converts via `Convert.ChangeType`, `TypeDescriptor`, enum parse, or STJ deserialization depending on the input type
+- `ToObjectExtensions.To<T>(this object?, JsonSerializerOptions?)` (namespace `Headless.Serializer`) — extension on `object?` that converts via `Convert.ChangeType`, `TypeDescriptor`, enum parse, or STJ deserialization depending on the input type. Requires `using Headless.Serializer;`
 
 ### Design Notes
 
 `SystemJsonSerializer` is annotated `[RequiresUnreferencedCode]` and `[RequiresDynamicCode]` because it uses reflection-based STJ APIs. This means it is **not AOT-safe** out of the box. The annotation propagates to call sites — you will see trim warnings in NativeAOT or PublishTrimmed builds. For AOT scenarios, write a source-generated `IJsonSerializer` wrapper using `JsonSerializerContext` and register it instead.
+
+The three `JsonConstants` presets (`DefaultWebJsonOptions`, `DefaultInternalJsonOptions`, `DefaultPrettyJsonOptions`) are frozen (`JsonSerializerOptions.IsReadOnly == true`) at initialization so they can be shared process-wide without a caller silently reconfiguring framework serialization. Mutating a preset throws `InvalidOperationException` — start from a fresh mutable copy via `CreateWebJsonOptions()` / `CreateInternalJsonOptions()` / `CreatePrettyJsonOptions()` instead.
 
 `DefaultWebJsonOptions` adds `JsonStringEnumConverter(CamelCase)` and `IpAddressJsonConverter` automatically. Creating a custom `IJsonOptionsProvider` that calls `JsonConstants.ConfigureWebJsonOptions` inherits these converters without duplication.
 
