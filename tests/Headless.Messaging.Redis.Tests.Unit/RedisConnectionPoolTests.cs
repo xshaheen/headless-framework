@@ -10,14 +10,12 @@ namespace Tests;
 
 /// <summary>
 /// Unit tests for <see cref="RedisConnectionPool"/>.
-/// These tests verify the connection pool behavior, especially the CRITICAL sync-over-async bug.
+/// These tests verify connection pool construction and disposal behavior without requiring a Redis server.
 /// </summary>
 public sealed class RedisConnectionPoolTests : TestBase
 {
     /// <summary>
-    /// CRITICAL TEST: Verifies that the constructor does NOT block due to sync-over-async pattern.
-    /// The current implementation uses `.GetAwaiter().GetResult()` which can deadlock.
-    /// This test documents the existing bug (todo #003).
+    /// Verifies that the constructor does not eagerly connect to Redis.
     /// </summary>
     [Fact]
     public void constructor_should_not_block_when_initializing_pool()
@@ -67,6 +65,7 @@ public sealed class RedisConnectionPoolTests : TestBase
     }
 
     [Fact]
+#pragma warning disable MA0045 // This test intentionally verifies synchronous Dispose remains supported.
     public void should_dispose_without_error_when_no_connections_created()
     {
         // given
@@ -84,8 +83,10 @@ public sealed class RedisConnectionPoolTests : TestBase
         var action = () => pool.Dispose();
         action.Should().NotThrow();
     }
+#pragma warning restore MA0045
 
     [Fact]
+#pragma warning disable MA0045 // This test intentionally verifies synchronous Dispose remains supported.
     public void should_allow_multiple_dispose_calls()
     {
         // given
@@ -108,5 +109,50 @@ public sealed class RedisConnectionPoolTests : TestBase
         };
 
         action.Should().NotThrow();
+    }
+#pragma warning restore MA0045
+
+    [Fact]
+    public async Task should_dispose_async_without_error_when_no_connections_created()
+    {
+        // given
+        var options = Options.Create(
+            new MessagingRedisOptions
+            {
+                Configuration = ConfigurationOptions.Parse("localhost:6379"),
+                ConnectionPoolSize = 3,
+            }
+        );
+
+        await using var pool = new RedisConnectionPool(options, LoggerFactory);
+
+        // when & then - async dispose should not throw
+        var action = async () => await pool.DisposeAsync();
+        await action.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task should_allow_multiple_dispose_async_calls()
+    {
+        // given
+        var options = Options.Create(
+            new MessagingRedisOptions
+            {
+                Configuration = ConfigurationOptions.Parse("localhost:6379"),
+                ConnectionPoolSize = 2,
+            }
+        );
+
+        await using var pool = new RedisConnectionPool(options, LoggerFactory);
+
+        // when & then - multiple async dispose calls should not throw
+        var action = async () =>
+        {
+            await pool.DisposeAsync();
+            await pool.DisposeAsync();
+            await pool.DisposeAsync();
+        };
+
+        await action.Should().NotThrowAsync();
     }
 }
