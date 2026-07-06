@@ -5,8 +5,8 @@ using System.Runtime.CompilerServices;
 using FluentValidation;
 using FluentValidation.Internal;
 using FluentValidation.Validators;
-using Headless.Api.SchemaProcessors.FluentValidation;
-using Headless.Api.SchemaProcessors.FluentValidation.Models;
+using Headless.OpenApi.Nswag.SchemaProcessors.FluentValidation;
+using Headless.OpenApi.Nswag.SchemaProcessors.FluentValidation.Models;
 using Headless.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -14,7 +14,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Namotion.Reflection;
 using NJsonSchema.Generation;
 
-namespace Headless.Api.SchemaProcessors;
+namespace Headless.OpenApi.Nswag.SchemaProcessors;
 
 /// <summary>
 /// NSwag schema processor that translates FluentValidation validator rules into OpenAPI schema

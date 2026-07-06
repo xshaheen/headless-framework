@@ -4,7 +4,7 @@ using FluentValidation.Validators;
 using NJsonSchema;
 using NJsonSchema.Generation;
 
-namespace Headless.Api.SchemaProcessors.FluentValidation.Models;
+namespace Headless.OpenApi.Nswag.SchemaProcessors.FluentValidation.Models;
 
 /// <summary>
 /// Carries the context passed to a <see cref="FluentValidationRule.Apply"/> delegate, giving it access

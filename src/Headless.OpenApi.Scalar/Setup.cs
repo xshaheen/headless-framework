@@ -3,7 +3,8 @@
 using Microsoft.AspNetCore.Routing;
 using Scalar.AspNetCore;
 
-namespace Headless.Api;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Microsoft.AspNetCore.Builder;
 
 /// <summary>
 /// Registration helper for mounting the Scalar API reference UI.

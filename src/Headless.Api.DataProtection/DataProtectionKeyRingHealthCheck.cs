@@ -7,14 +7,14 @@ using Microsoft.AspNetCore.DataProtection.Repositories;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Api;
+namespace Headless.Api.DataProtection;
 
 /// <summary>
 /// Readiness health check for the blob-backed data-protection key ring — the continuous complement to the
 /// <c>ValidateKeyRingAtStartup</c> boot gate: the gate validates once before the host starts, this check keeps
 /// validating on every probe, catching a container deleted or write permission revoked AFTER boot (which the
 /// one-shot gate cannot see). Registered by
-/// <see cref="DataProtectionHealthChecksExtensions.AddDataProtectionKeyRing"/>.
+/// <see cref="Microsoft.Extensions.DependencyInjection.DataProtectionHealthChecksExtensions.AddDataProtectionKeyRing"/>.
 /// </summary>
 /// <remarks>
 /// <para>

@@ -4,7 +4,7 @@ using System.Buffers;
 using System.Security.Cryptography;
 using Headless.Abstractions;
 using Headless.Api.Abstractions;
-using Headless.Api.Resources;
+using Headless.Api.Idempotency.Resources;
 using Headless.Caching;
 using Headless.Constants;
 using Headless.DistributedLocks;
@@ -16,7 +16,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 
-namespace Headless.Api;
+namespace Headless.Api.Idempotency;
 
 internal sealed partial class IdempotencyMiddleware(
     IOptionsMonitor<IdempotencyOptions> optionsMonitor,

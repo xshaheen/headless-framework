@@ -3,7 +3,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <Description>service defaults integration for Headless API.</Description>
     <PackageTags>headless;api;service-defaults;dotnet</PackageTags>
-    <RootNamespace>Headless.Api</RootNamespace>
+    <RootNamespace>Headless.Api.ServiceDefaults</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />

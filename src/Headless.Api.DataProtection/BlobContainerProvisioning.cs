@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Api;
+namespace Headless.Api.DataProtection;
 
 /// <summary>
 /// How the <c>DataProtection</c> key container is expected to come into existence when persisting data-protection

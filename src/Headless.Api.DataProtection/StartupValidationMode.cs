@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Api;
+namespace Headless.Api.DataProtection;
 
 /// <summary>How data-protection startup validation failures are surfaced to the host.</summary>
 [PublicAPI]

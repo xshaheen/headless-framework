@@ -2,6 +2,7 @@
 
 using Headless.Api;
 using Headless.Constants;
+using Headless.OpenApi.Nswag;
 using Microsoft.IdentityModel.Logging;
 using Microsoft.IdentityModel.Tokens;
 

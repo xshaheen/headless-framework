@@ -2,6 +2,7 @@
 
 using System.Reflection;
 using Headless.Api;
+using Headless.Api.ServiceDefaults;
 using Headless.DistributedLocks;
 using Headless.DistributedLocks.Redis;
 using Headless.EntityFramework.Migrations.Startup;

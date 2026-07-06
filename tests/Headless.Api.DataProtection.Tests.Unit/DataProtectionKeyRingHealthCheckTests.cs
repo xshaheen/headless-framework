@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Api;
+using Headless.Api.DataProtection;
 using Headless.Blobs;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.DataProtection;

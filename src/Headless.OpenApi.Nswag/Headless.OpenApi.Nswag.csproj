@@ -4,7 +4,7 @@
     <Description>NSwag integration for Headless OpenAPI documentation.</Description>
     <PackageTags>headless;openapi;nswag;dotnet</PackageTags>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <RootNamespace>Headless.Api</RootNamespace>
+    <RootNamespace>Headless.OpenApi.Nswag</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Asp.Versioning.Mvc.ApiExplorer" />

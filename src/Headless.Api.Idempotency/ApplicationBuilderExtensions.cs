@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using IdempotencyMiddleware = Headless.Api.IdempotencyMiddleware;
+using IdempotencyMiddleware = Headless.Api.Idempotency.IdempotencyMiddleware;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.AspNetCore.Builder;

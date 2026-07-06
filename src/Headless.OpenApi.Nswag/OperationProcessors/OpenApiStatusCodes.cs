@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Api.OperationProcessors;
+namespace Headless.OpenApi.Nswag.OperationProcessors;
 
 internal static class OpenApiStatusCodes
 {
