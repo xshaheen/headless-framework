@@ -13,6 +13,7 @@ Provides the foundational runtime for reliable distributed messaging with transa
 - **Scheduled Delivery**: `PublishOptions.Delay` and `EnqueueOptions.Delay` defer outbox dispatch
 - **Consumer Management**: `ForMessage<TMessage>(...)`, `setup.ForMessagesFromAssembly(...)`, invocation, and per-dispatch lifecycle handling
 - **Registration Builders**: callback interfaces such as `IMessageBuilder<TMessage>` and `IBusConsumerBuilder<TConsumer>` live under `Headless.Messaging.Registration`; lambda setup usually infers them, while explicit references should import that namespace
+- **Public Runtime SPI**: the blessed cross-package contracts consumed by storage providers, transports, and dashboards — `IProcessingServer`, `IConsumerServiceSelector`, `MethodMatcherCache`, and the `TransportNaming` / `RuntimeTypeInspection` helpers — live under `Headless.Messaging.Runtime` (previously `Headless.Messaging.Internal`, which now holds only implementation detail); monitoring status is the typed `StatusName` enum under `Headless.Messaging.Monitoring`, so `MessageView.StatusName` and the `MessageQuery.StatusName` filter are compile-time safe while the persisted/serialized value stays the enum member name
 - **Runtime Delegate Support**: Broker-attached function handlers with scoped DI and the same consume pipeline as class handlers
 - **Message Processing**: Retry processor, delayed message scheduler, transport health checks
 - **Durable Intent Dispatch**: Outbox rows carry bus/queue intent so retry drainers use the matching transport
