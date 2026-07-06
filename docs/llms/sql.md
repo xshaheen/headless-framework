@@ -117,7 +117,7 @@ public interface ISqlCurrentConnection : IAsyncDisposable
 
 ### Connection string checker
 
-`IConnectionStringChecker` returns `(bool Connected, bool DatabaseExists)`. The `Connected` flag indicates whether the server is reachable; `DatabaseExists` indicates whether the target database exists. Use this in health checks or startup validation. Behavior differs by provider:
+`IConnectionStringChecker.CheckAsync` returns a `ConnectionCheckResult` readonly record struct (`Connected`, `DatabaseExists`) and accepts an optional `CancellationToken`. The `Connected` flag indicates whether the server is reachable; `DatabaseExists` indicates whether the target database exists. A cancelled token throws `OperationCanceledException`; all other connection errors are logged and surfaced through the result. Use this in health checks or startup validation. Behavior differs by provider:
 
 - **PostgreSQL**: connects to `postgres` system database first, then calls `ChangeDatabaseAsync` to verify the target database.
 - **SQL Server**: connects to `master`, then calls `ChangeDatabaseAsync` to verify the target database.
@@ -144,7 +144,7 @@ Application code that works with raw SQL should not depend on a specific ADO.NET
 
 - `ISqlConnectionFactory` — create and manage database connections; `GetConnectionString()` retrieves the configured string; `CreateNewConnectionAsync()` returns an already-open `DbConnection`
 - `ISqlCurrentConnection` — ambient connection for unit-of-work scopes; lazy-opens on first call, re-opens on drop
-- `IConnectionStringChecker` — validate server reachability and database existence; returns `(bool Connected, bool DatabaseExists)`
+- `IConnectionStringChecker` — validate server reachability and database existence; `CheckAsync(connectionString, cancellationToken)` returns a `ConnectionCheckResult` record struct (`Connected`, `DatabaseExists`)
 
 ### Installation
 
@@ -390,7 +390,7 @@ Provides the `ISqlConnectionFactory` and `IConnectionStringChecker` implementati
 
 ### Design Notes
 
-`SqliteConnectionStringChecker` differs from the PostgreSQL and SQL Server implementations: because SQLite creates the database file when the connection opens, there is no meaningful distinction between "server reachable" and "database exists". Both tuple fields are set to `true` together on a successful open, or both remain `false` on failure.
+`SqliteConnectionStringChecker` differs from the PostgreSQL and SQL Server implementations: because SQLite creates the database file when the connection opens, there is no meaningful distinction between "server reachable" and "database exists". Both `ConnectionCheckResult` fields are set to `true` together on a successful open, or both remain `false` on failure.
 
 For in-process testing, prefer `"Data Source=:memory:"` — the database is private to the connection and disappears when the connection closes.
 
