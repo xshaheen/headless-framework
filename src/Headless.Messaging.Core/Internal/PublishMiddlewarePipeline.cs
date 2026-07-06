@@ -46,6 +46,12 @@ internal sealed class PublishMiddlewarePipeline(
 
     private readonly IServiceProvider _serviceProvider = Argument.IsNotNull(serviceProvider);
 
+    // Registration existence is fixed once the container is built, so cache per closed context type whether any
+    // direct middleware is registered at all and skip the scoped GetServices + array build on the (common)
+    // zero-middleware publish path. A null probe (non-conforming container) always takes the slow path.
+    private readonly IServiceProviderIsService? _serviceProbe = serviceProvider.GetService<IServiceProviderIsService>();
+    private readonly ConcurrentDictionary<Type, bool> _hasDirectMiddleware = new();
+
     public async Task ExecuteAsync<T>(
         T? content,
         IntentType intentType,
@@ -160,10 +166,24 @@ internal sealed class PublishMiddlewarePipeline(
         return directMiddleware;
     }
 
-    private static object[] _ResolveDirectMiddleware(IServiceProvider provider, PublishContext context)
+    private object[] _ResolveDirectMiddleware(IServiceProvider provider, PublishContext context)
     {
+        var contextType = context.GetType();
+
+        if (
+            _serviceProbe is not null
+            && !_hasDirectMiddleware.GetOrAdd(
+                contextType,
+                static (type, self) => self._HasAnyDirectMiddleware(type),
+                this
+            )
+        )
+        {
+            return [];
+        }
+
         var typedServiceType = _TypedMiddlewareServiceTypes.GetOrAdd(
-            context.GetType(),
+            contextType,
             static contextType => typeof(IPublishMiddleware<>).MakeGenericType(contextType)
         );
         var busMiddleware = provider.GetServices<IPublishMiddleware<PublishContext>>().Cast<object>();
@@ -173,6 +193,17 @@ internal sealed class PublishMiddlewarePipeline(
             .Cast<object>();
 
         return [.. busMiddleware, .. typedMiddleware];
+    }
+
+    private bool _HasAnyDirectMiddleware(Type contextType)
+    {
+        var typedServiceType = _TypedMiddlewareServiceTypes.GetOrAdd(
+            contextType,
+            static type => typeof(IPublishMiddleware<>).MakeGenericType(type)
+        );
+
+        return _serviceProbe!.IsService(typeof(IPublishMiddleware<PublishContext>))
+            || _serviceProbe.IsService(typedServiceType);
     }
 
     private IEnumerable<object> _GetUntrackedDirectMiddleware(
