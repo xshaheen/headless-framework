@@ -25,6 +25,7 @@ Eliminates repetitive utility code — result/error modeling, strongly-typed dom
 
 ## Design Notes
 
+- **`Headless.Primitives` and `Headless.Urls` are separate packages.** The value objects, result pattern, paging models, and domain primitives live in `Headless.Primitives`; the URL builder lives in `Headless.Urls`. `Headless.Extensions` references both, so every type they contain stays available to `Headless.Extensions` consumers transitively — the value-object and result notes below apply either way. Consumers who need only the value model or the URL builder can depend on the smaller package directly. See the `Headless.Primitives` and `Headless.Urls` package READMEs.
 - **`Currency` scaling is scalar-only.** `operator *` and `operator /` take a `decimal` factor and round the result to 2 decimal places with `MidpointRounding.ToEven`; there is no `Currency × Currency` multiply. `operator +` / `operator -` require matching currency codes and throw otherwise. Comparison operators exist against both `Currency` and `decimal`, and `Currency` is a total order (mixed-code lists sort by code then amount).
 - **`Money` ≠ `Currency`.** `Money` is a source-generated `IPrimitive<decimal>` with no currency code; `GetRounded()` rounds to 2 dp using banker's rounding. Use `Currency` when an amount must travel with its code.
 - **`Range<T>` uses side-specific infinity semantics for `null` bounds.** A `null` `From` is unbounded below; a `null` `To` is unbounded above. Range-to-range containment, overlap, and `RemoveConflictRangeParts` compare lower and upper bounds separately, so subtracting `[m, p]` from `[null, z]` can return both `[null, predecessor(m)]` and `[successor(p), z]`. The value-level containment overloads still test a single point, so do not use `null` as a concrete point value.
@@ -131,6 +132,8 @@ None. This package has no options and no DI registration; reference its types an
 ## Dependencies
 
 - `Headless.Checks`
+- `Headless.Primitives` (re-exported)
+- `Headless.Urls` (re-exported)
 - `Headless.Generator.Primitives` (source generator; analyzer-only)
 - `Headless.Generator.Primitives.Abstractions`
 - `CommunityToolkit.HighPerformance`

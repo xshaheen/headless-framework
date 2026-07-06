@@ -1,6 +1,6 @@
 ---
 domain: Extensions
-packages: Extensions
+packages: Extensions, Primitives, Urls
 ---
 
 # Extensions
@@ -23,14 +23,33 @@ packages: Extensions
     - [Configuration](#configuration)
     - [Dependencies](#dependencies)
     - [Side Effects](#side-effects)
+- [Headless.Primitives](#headlessprimitives)
+    - [Problem Solved](#problem-solved-1)
+    - [Key Features](#key-features-1)
+    - [Design Notes](#design-notes-1)
+    - [Installation](#installation-1)
+    - [Quick Start](#quick-start-1)
+    - [Configuration](#configuration-1)
+    - [Dependencies](#dependencies-1)
+    - [Side Effects](#side-effects-1)
+- [Headless.Urls](#headlessurls)
+    - [Problem Solved](#problem-solved-2)
+    - [Key Features](#key-features-2)
+    - [Design Notes](#design-notes-2)
+    - [Installation](#installation-2)
+    - [Quick Start](#quick-start-2)
+    - [Configuration](#configuration-2)
+    - [Dependencies](#dependencies-2)
+    - [Side Effects](#side-effects-2)
 
 > Foundational extension methods, domain primitives, value objects, the result pattern, and collection/IO/threading/reflection helpers shared across every Headless package.
 
 ## Quick Orientation
 
-`Headless.Extensions` is the framework's base library — almost every other `Headless.*` package depends on it. It is a single package with no DI registration and no configuration; you reference types and call extension methods directly. The surface is organized by namespace, each solving one category of repetitive utility code:
+`Headless.Extensions` is the framework's base library — almost every other `Headless.*` package depends on it. It has no DI registration and no configuration; you reference types and call extension methods directly. The surface is organized by namespace, each solving one category of repetitive utility code. The `Headless.Primitives` (value objects, result pattern, paging) and `Headless.Urls` (URL builder) namespaces ship as **separate packages** that `Headless.Extensions` references — so every type below remains available to `Headless.Extensions` consumers transitively, but a consumer who only needs the value model or URL builder can depend on the smaller package directly. Both are documented as their own sections below.
 
-- **`Headless.Primitives`** — the result pattern (`ApiResult`, `ApiResult<T>`, `Result<TValue, TError>`, `Result<TError>`, `ResultError` hierarchy, `ErrorDescriptor`), source-generated domain primitives (`UserId`, `AccountId`, `Money`, `Month`, `PhoneNumber`), validated value objects (`Currency`, `GeoCoordinate`, `FullGeoCoordinate`, `Range<T>`, `PreferredLocale`, `TimeUnit`), pagination (`IndexPage<T>`, `ContinuationPage<T>`), `ExtraProperties`, `AsyncEvent<T>`, `NameValue<T>`, `OrderBy`, `File`/`Image`, `PageMetadata`, `TenantInformation`.
+- **`Headless.Primitives`** (separate package) — the result pattern (`ApiResult`, `ApiResult<T>`, `Result<TValue, TError>`, `Result<TError>`, `ResultError` hierarchy, `ErrorDescriptor`), source-generated domain primitives (`UserId`, `AccountId`, `Money`, `Month`, `PhoneNumber`), validated value objects (`Currency`, `GeoCoordinate`, `FullGeoCoordinate`, `Range<T>`, `PreferredLocale`, `TimeUnit`), pagination (`IndexPage<T>`, `ContinuationPage<T>`), `ExtraProperties`, `AsyncEvent<T>`, `NameValue<T>`, `OrderBy`, `File`/`Image`, `PageMetadata`, `TenantInformation`.
+- **`Headless.Urls`** (separate package) — a fluent, mutable `Url` builder/parser plus `QueryParamCollection`, derived from Flurl (MIT).
 - **`Headless.Collections`** — `ParallelForEachAsync` / `ForEachAsync`, `DetectChanges` (added/removed/updated classification), `EquatableArray<T>`, `ComparerFactory`, `TypeList`.
 - **`Headless.Linq`** — `PredicateBuilder` for composing EF Core `Expression<Func<T,bool>>` filters (`And`, `Or`, `Not`, `True`/`False`).
 - **`Headless.Threading`** — `KeyedAsyncLock` (per-key async mutual exclusion), `TaskExtensions` (`Forget`, `WithCancellation`, `GetResultOrDefault`), `AsyncExExtensions`, `Async` (`RunSync`, deterministic `Using`), `InterlockedExtensions` (`InterlockedRaiseTo` — lock-free raise-only max on a `ref long`).
@@ -230,6 +249,8 @@ None. This package has no options and no DI registration; reference its types an
 ### Dependencies
 
 - `Headless.Checks`
+- `Headless.Primitives` (re-exported; see its section below)
+- `Headless.Urls` (re-exported; see its section below)
 - `Headless.Generator.Primitives` (source generator; analyzer-only)
 - `Headless.Generator.Primitives.Abstractions`
 - `CommunityToolkit.HighPerformance`
@@ -247,3 +268,113 @@ None. This package has no options and no DI registration; reference its types an
 ### Side Effects
 
 None. No DI registrations, hosted services, or process-level effects — it is a pure utility library.
+
+---
+
+## Headless.Primitives
+
+### Problem Solved
+
+Domain code that passes raw `Guid`, `decimal`, or `(double, double)`, or throws-and-catches for expected failures, loses intent and permits invalid states. `Headless.Primitives` supplies the framework's shared value model: a result pattern for expected failures, validated value objects that cannot hold invalid data, and consistent paging and error shapes.
+
+### Key Features
+
+- Result pattern: `ApiResult`, `ApiResult<T>`, `Result<TValue, TError>`, `Result<TError>`, the `ResultError` hierarchy, `ErrorDescriptor`, `ApiResultError`.
+- Source-generated domain primitives: `UserId`, `AccountId`, `Money`, `Month`, `PhoneNumber` (implement `IPrimitive<T>`).
+- Hand-written value objects: `Currency`, `GeoCoordinate`, `FullGeoCoordinate`, `Range<T>`, `PreferredLocale`, `TimeUnit`.
+- Paging: `IndexPage<T>`, `IndexPageRequest`, `ContinuationPage<T>`, `ContinuationPageRequest`, `PageMetadata`, `OrderBy`, `IHasOrderByRequest` / `IHasMultiOrderByRequest`.
+- Misc: `ExtraProperties` / `IHasExtraProperties`, `Locales` / `LocaleAttribute`, `AsyncEvent<T>`, `NameValue` / `NameValue<T>`, `File` / `Image`, `TenantInformation`.
+
+### Design Notes
+
+Split out of `Headless.Extensions` so a consumer can depend on the value model without the full base library; `Headless.Extensions` keeps a `ProjectReference`, so these types stay transitively available. `OrderBy(string Property, bool Ascending = true)` defaults to **ascending** (a bare `new OrderBy("Name")` sorts ascending, matching the near-universal convention). `ExtraProperties` and `Locales` derive from `Dictionary<,>` (the established `IHasExtraProperties` pattern) and are `sealed`.
+
+### Installation
+
+```bash
+dotnet add package Headless.Primitives
+```
+
+### Quick Start
+
+```csharp
+using Headless.Primitives;
+
+public async Task<ApiResult<User>> GetUserAsync(Guid id, CancellationToken ct)
+{
+    var user = await _repo.FindAsync(id, ct);
+    if (user is null)
+        return ApiResult<User>.NotFound(entity: "User", key: id.ToString());
+
+    return user; // implicit conversion from T to ApiResult<T>
+}
+
+var order = new OrderBy("CreatedAt");                    // ascending by default
+var descending = new OrderBy("CreatedAt", Ascending: false);
+```
+
+### Configuration
+
+None. Types are constructed directly; no DI registration or options.
+
+### Dependencies
+
+- `Headless.Checks`
+- `Headless.Generator.Primitives.Abstractions`
+- `Headless.Generator.Primitives` (source generator; analyzer-only)
+- `libphonenumber-csharp`
+
+### Side Effects
+
+None. No DI registrations or ambient state.
+
+---
+
+## Headless.Urls
+
+### Problem Solved
+
+Assembling and editing URLs with string concatenation is error-prone — double slashes, missing encoding, duplicated query parameters, fragile parsing. `Headless.Urls` provides a mutable `Url` builder and an ordered, multi-value `QueryParamCollection` that compose and edit path segments, query parameters, and fragments without hand-rolled encoding.
+
+### Key Features
+
+- `Url` mutable builder with `Scheme` / `Host` / `Path` / `Query` / `Fragment` accessors.
+- `Url.Parse` / `Url.ParseQueryParams` / `Url.ParsePathSegments` parsing entry points.
+- `AppendPathSegment(s)`, `SetQueryParam` / `AppendQueryParam` / `RemoveQueryParam` with `NullValueHandling` control.
+- `QueryParamCollection` — ordered, duplicate-preserving query-parameter store.
+
+### Design Notes
+
+Derived from [Flurl](https://github.com/tmenier/Flurl)'s `Flurl.Url` API (MIT); attributed in the package's `THIRD-PARTY-NOTICES.md`. Packaged separately from `Headless.Extensions` so URL-only consumers do not pull the base library. `NullValueHandling` has explicit backing values (`NameOnly = 0`, `Remove = 1`, `Ignore = 2`) that must not be reordered.
+
+### Installation
+
+```bash
+dotnet add package Headless.Urls
+```
+
+### Quick Start
+
+```csharp
+using Headless.Urls;
+
+var url = Url.Parse("https://api.example.com")
+    .AppendPathSegment("v1")
+    .AppendPathSegments("users", "42")
+    .SetQueryParam("include", "profile");
+
+string result = url.ToString();
+// https://api.example.com/v1/users/42?include=profile
+```
+
+### Configuration
+
+None. `Url` is constructed directly; no DI registration or options.
+
+### Dependencies
+
+- `Headless.Checks`
+
+### Side Effects
+
+None. Pure value/builder types with no DI registration or ambient state.
