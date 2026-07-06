@@ -275,7 +275,7 @@ pack: restore ## Pack NuGet packages with symbols.
 pack-built: ## Pack already-built source projects without restore/build; used by CI.
 	@mkdir -p "$(PACKAGES_DIR)"
 	@for csproj in src/*/*.csproj; do \
-		$(DOTNET) pack "$$csproj" --configuration "$(CONFIGURATION)" --no-restore --no-build --include-symbols --output "$(PACKAGES_DIR)"; \
+		$(DOTNET) pack "$$csproj" --configuration "$(CONFIGURATION)" --no-restore --no-build --include-symbols --output "$(PACKAGES_DIR)" /p:GenerateSBOM=true $(MSBUILD_ARGS); \
 	done
 
 .PHONY: pack-sbom

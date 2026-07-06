@@ -35,6 +35,7 @@ packages: Jobs.Abstractions, Jobs.Core, Jobs.Dashboard, Jobs.SourceGenerator, Jo
 - [Headless.Jobs.Dashboard](#headlessjobsdashboard)
     - [Problem Solved](#problem-solved-2)
     - [Key Features](#key-features-2)
+    - [Design Notes](#design-notes-1)
     - [Installation](#installation-2)
     - [Quick Start](#quick-start-2)
     - [Configuration](#configuration-2)
@@ -59,7 +60,7 @@ packages: Jobs.Abstractions, Jobs.Core, Jobs.Dashboard, Jobs.SourceGenerator, Jo
 - [Headless.Jobs.EntityFramework](#headlessjobsentityframework)
     - [Problem Solved](#problem-solved-5)
     - [Key Features](#key-features-5)
-    - [Design Notes](#design-notes-1)
+    - [Design Notes](#design-notes-2)
     - [Installation](#installation-5)
     - [Quick Start](#quick-start-5)
     - [Configuration](#configuration-5)
@@ -426,11 +427,15 @@ Provides operational visibility into the Jobs scheduler — job queues, executio
 ### Key Features
 
 - **Embedded SPA**: served from the host process, no separate deployment.
-- **Authentication options**: `WithBasicAuth(username, password)`, `WithApiKey(apiKey)`, `WithHostAuthentication(policy?)` (delegates to host app's auth), or no auth for public dashboards.
+- **Authentication options**: `WithBasicAuth(username, password)`, `WithApiKey(apiKey)`, `WithHostAuthentication(policy?)` (delegates to host app's auth), or explicit no-auth mode for isolated development dashboards.
 - **Live cluster view**: `GET /api/nodes` returns live node projections from `Headless.Coordination` membership; `NodeJoined` / `NodeLeft` / `NodeSuspected` push updates over SignalR — no polling required.
 - **Error monitoring**: surfaces failed, cancelled, and skipped jobs; retry counts; execution timings; exception messages.
 - **Fluent builder**: `SetBasePath(path)`, `SetBackendDomain(domain)`, `SetCorsPolicy(policy)`.
 - **Pair with OpenTelemetry**: Dashboard for operational triage; `Jobs.OpenTelemetry` for trace-level diagnostics.
+
+### Design Notes
+
+The dashboard exposes operational endpoints that can create, update, delete, run, cancel, start, stop, and restart jobs. Treat `WithNoAuth()` or omitted auth as development-only unless the dashboard is isolated behind trusted network controls. Production deployments should use `WithHostAuthentication(...)`, `WithBasicAuth(...)`, or `WithApiKey(...)`, and should set an explicit CORS policy instead of relying on open cross-origin access.
 
 ### Installation
 
@@ -473,7 +478,7 @@ builder
         dashboard.WithApiKey("my-api-key"); // Bearer token / query param
         dashboard.WithHostAuthentication(); // delegate to host auth
         dashboard.WithHostAuthentication("AdminPolicy"); // host auth + policy
-        // Omitting auth = public dashboard
+        // Omitting auth = public dashboard; use only in isolated development environments.
     });
 ```
 
@@ -490,6 +495,7 @@ Auth detection is automatic: no auth → public; basic auth → username/passwor
 - Mounts dashboard HTTP API and SignalR hub under `SetBasePath` path via `IStartupFilter` (no explicit `app.Use…` call needed).
 - Subscribes to `Headless.Coordination` membership events for live-node push updates.
 - Serves embedded frontend SPA assets; requires Node 22 on `PATH` when building from source (build target `make dashboards`).
+- Exposes mutating operational endpoints; configure authentication and CORS before exposing the dashboard outside an isolated development environment.
 
 ---
 
