@@ -1,10 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting.Seeders;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Headless.Hosting.Seeders;
+namespace Headless.EntityFramework.Seeders;
 
 /// <summary>
 /// An <c>ISeeder</c> that applies pending EF Core migrations for <typeparamref name="TDbContext"/> at

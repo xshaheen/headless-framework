@@ -2,9 +2,10 @@
 
 using System.Linq.Expressions;
 using System.Runtime.CompilerServices;
+using Headless.Primitives;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Headless.Primitives;
+namespace Headless.EntityFramework;
 
 /// <summary>
 /// Thrown when a sort property name passed to a string-based ordering extension does not correspond

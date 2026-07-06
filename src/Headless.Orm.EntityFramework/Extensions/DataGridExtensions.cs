@@ -1,9 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Primitives;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Headless.Primitives;
+namespace Headless.EntityFramework;
 
 /// <summary>
 /// Contract for data-grid query requests that carry an optional page descriptor and an ordered list

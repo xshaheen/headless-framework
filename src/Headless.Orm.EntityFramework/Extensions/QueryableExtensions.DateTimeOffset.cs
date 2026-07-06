@@ -3,13 +3,11 @@
 using System.Linq.Expressions;
 using System.Reflection;
 using Headless.Checks;
+using Headless.EntityFramework;
 using Headless.Linq;
 
 // ReSharper disable once CheckNamespace
 namespace Microsoft.EntityFrameworkCore;
-
-/// <summary>A month bucket returned by <c>CountPerMonthAsync</c> with a <c>DateTimeOffset</c> date selector.</summary>
-public sealed record EntityPerDateTimeOffset(DateTimeOffset Date, int Count);
 
 public static partial class QueryableExtensions
 {

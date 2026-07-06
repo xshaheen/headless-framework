@@ -2,10 +2,11 @@
 
 using System.Linq.Expressions;
 using Headless.Checks;
+using Headless.Primitives;
 using Microsoft.EntityFrameworkCore;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Headless.Primitives;
+namespace Headless.EntityFramework;
 
 /// <summary>
 /// Extension members for materializing <see cref="IQueryable{T}"/> results into paginated
