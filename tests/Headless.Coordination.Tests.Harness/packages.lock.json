@@ -57,6 +57,12 @@
         "resolved": "0.1.2",
         "contentHash": "RQdzUtFVhwLwisP2Du7Ugm7ldwAzc+QJrlZWNIwHXcgq4b5fLwZgdN1203RdYiHS8OOALophC6yWekxu3UgN2g=="
       },
+      "GitHubActionsTestLogger": {
+        "type": "Direct",
+        "requested": "[3.0.4, )",
+        "resolved": "3.0.4",
+        "contentHash": "24fDBf5g5KuyeK9OIu4z0zIkOu6DE3JCmRP+NyNGL3PVmd2Yls8sR8dC1/j34t2tZQS/0arQs7GZTmwWYk4qbQ=="
+      },
       "JetBrains.Annotations": {
         "type": "Direct",
         "requested": "[2026.2.0, )",
