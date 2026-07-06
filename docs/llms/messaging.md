@@ -464,7 +464,7 @@ services.AddHeadlessMessaging(setup =>
 ### Configuration
 
 - `MessagingOptions.DefaultGroupName`, `GroupNamePrefix`, `MessageNamePrefix`, and `Version` control naming and isolation. `Version` is validated non-empty and at most 20 characters — the SQL storage providers persist it as a literal into a `VARCHAR(20)`/`nvarchar(20)` column, so an over-long value is rejected at startup instead of failing every outbox insert.
-- Retry configuration lives under `RetryPolicy`, publish/receive retry processors, and storage cleanup options. `RetryBatchSize` (default 200) caps the retry-pickup batch and `SchedulerBatchSize` (default 1,000) caps the delayed/queued scheduler batch.
+- Retry configuration lives under `RetryPolicy`, publish/receive retry processors, and storage cleanup options. `RetryBatchSize` (default 200, `> 0`) caps the retry-pickup batch and `SchedulerBatchSize` (default 1,000, `> 0`) caps the delayed/queued scheduler batch.
 - `UseStorageLock` coordinates retry processors through a messaging-keyed distributed lock provider.
 - `DeadNodeReconcileInterval` (default 1 minute, `> 0`) sets the always-on dead-owner recovery reconcile cadence (see [Dead-owner recovery](#dead-owner-recovery)). Independent of `UseStorageLock`.
 - Register middleware through `MessagingBuilder.AddBusPublishMiddleware<T>()`, `AddBusConsumeMiddleware<T>()`, `AddPublishMiddlewareFor<TMiddleware,TMessage>()`, and `AddConsumeMiddlewareFor<TMiddleware,TMessage>(groupName)`.
@@ -765,7 +765,7 @@ Message ordering guarantees depend on the transport provider and configuration:
 
 ### Transport-Specific Ordering
 
-- **Kafka**: Messages with same partition key are strictly ordered within partitions
+- **Kafka**: Messages with same partition key are strictly ordered within partitions. With concurrent consumers, Headless commits offsets only through the contiguous completed watermark for each partition, so a fast high offset does not acknowledge lower in-flight messages.
 - **Azure Service Bus**: FIFO ordering when sessions are enabled (`EnableSessions = true`)
 - **RabbitMQ**: No ordering guarantees by default; consumers may process messages concurrently
 - **AWS SQS**: FIFO queues provide strict ordering; standard queues do not
@@ -1240,7 +1240,7 @@ Provides Kafka queue-intent transport for partitioned, consumer-group processing
 
 ### Design Notes
 
-Kafka is queue-intent only in this package. `PartitionBy(...)` maps to the Kafka key. The framework does not impose a Kafka key length cap; broker/client configuration owns practical limits. Delivery remains at-least-once; consumers must dedupe by business key or message id.
+Kafka is queue-intent only in this package. `PartitionBy(...)` maps to the Kafka key. The framework does not impose a Kafka key length cap; broker/client configuration owns practical limits. Delivery remains at-least-once; consumers must dedupe by business key or message id. When consumer concurrency is greater than one, successful handlers can finish out of order, but Kafka commits advance only through the contiguous completed offset watermark per partition; a completed high offset does not commit past lower in-flight offsets.
 
 ### Installation
 

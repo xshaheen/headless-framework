@@ -21,6 +21,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
     private readonly KafkaConsumerConfig? _consumerConfig;
     private readonly Func<ConsumerConfig, IConsumer<string, byte[]>> _consumerFactory;
     private readonly Func<AdminClientConfig, IAdminClient> _adminClientFactory;
+    private readonly KafkaOffsetCommitTracker? _offsetCommitTracker;
 
     // volatile is required: Connect performs double-checked locking on this field, and
     // CommitAsync/RejectAsync read it without taking _lock. Without volatile a reader could
@@ -40,7 +41,12 @@ internal sealed class KafkaConsumerClient : IConsumerClient
     {
         _groupId = groupId;
         _kafkaOptions = Argument.IsNotNull(options.Value);
-        _semaphore = groupConcurrent > 1 ? new SemaphoreSlim(groupConcurrent, groupConcurrent) : null;
+        if (groupConcurrent > 1)
+        {
+            _semaphore = new SemaphoreSlim(groupConcurrent, groupConcurrent);
+            _offsetCommitTracker = new KafkaOffsetCommitTracker();
+        }
+
         _serviceProvider = serviceProvider;
         _consumerConfig = consumerConfig;
         _consumerFactory = consumerFactory ?? _BuildConsumer;
@@ -165,6 +171,34 @@ internal sealed class KafkaConsumerClient : IConsumerClient
                 {
                     continue;
                 }
+
+                var delivery = _TrackDelivery(consumerResult);
+
+                if (_semaphore is not null)
+                {
+                    await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+                    _ObserveBackgroundHandler(
+                        Task.Run(
+                            async () =>
+                            {
+                                try
+                                {
+                                    await _ConsumeAsync(delivery).ConfigureAwait(false);
+                                }
+                                finally
+                                {
+                                    _ReleaseSemaphore();
+                                }
+                            },
+                            CancellationToken.None
+                        )
+                    );
+
+                    continue;
+                }
+
+                await _ConsumeAsync(delivery).ConfigureAwait(false);
             }
             catch (ConsumeException e) when (_kafkaOptions.RetriableErrorCodes.Contains(e.Error.Code))
             {
@@ -176,33 +210,6 @@ internal sealed class KafkaConsumerClient : IConsumerClient
                 OnLogCallback!(logArgs);
 
                 continue;
-            }
-
-            if (_semaphore is not null)
-            {
-                var currentResult = consumerResult;
-                await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
-
-                _ObserveBackgroundHandler(
-                    Task.Run(
-                        async () =>
-                        {
-                            try
-                            {
-                                await _ConsumeAsync(currentResult).ConfigureAwait(false);
-                            }
-                            finally
-                            {
-                                _ReleaseSemaphore();
-                            }
-                        },
-                        CancellationToken.None
-                    )
-                );
-            }
-            else
-            {
-                await _ConsumeAsync(consumerResult).ConfigureAwait(false);
             }
         }
         // ReSharper disable once FunctionNeverReturns
@@ -216,14 +223,36 @@ internal sealed class KafkaConsumerClient : IConsumerClient
     public ValueTask CommitAsync(object? sender)
     {
         // ReSharper disable once InconsistentlySynchronizedField -- volatile read; null-check fast path.
-        if (sender is not ConsumeResult<string, byte[]> consumerResult || _consumerClient is null)
+        if (!_TryGetDelivery(sender, out var delivery))
         {
             return ValueTask.CompletedTask;
         }
 
         lock (_lock)
         {
-            _consumerClient.Commit(consumerResult);
+            var consumerClient = _consumerClient;
+
+            if (consumerClient is null)
+            {
+                return ValueTask.CompletedTask;
+            }
+
+            if (_offsetCommitTracker is null)
+            {
+                consumerClient.Commit(delivery.ConsumerResult);
+
+                return ValueTask.CompletedTask;
+            }
+
+            if (delivery.IsTracked)
+            {
+                var committableOffsets = _offsetCommitTracker.MarkCommitted(delivery);
+
+                if (committableOffsets.Count > 0)
+                {
+                    consumerClient.Commit(committableOffsets);
+                }
+            }
         }
 
         return ValueTask.CompletedTask;
@@ -232,14 +261,26 @@ internal sealed class KafkaConsumerClient : IConsumerClient
     public ValueTask RejectAsync(object? sender)
     {
         // ReSharper disable once InconsistentlySynchronizedField -- volatile read; null-check fast path.
-        if (sender is not ConsumeResult<string, byte[]> consumerResult || _consumerClient is null)
+        if (!_TryGetDelivery(sender, out var delivery))
         {
             return ValueTask.CompletedTask;
         }
 
         lock (_lock)
         {
-            _consumerClient.Seek(consumerResult.TopicPartitionOffset);
+            var consumerClient = _consumerClient;
+
+            if (consumerClient is null)
+            {
+                return ValueTask.CompletedTask;
+            }
+
+            if (_offsetCommitTracker is not null && delivery.IsTracked)
+            {
+                _offsetCommitTracker.MarkRejected(delivery);
+            }
+
+            consumerClient.Seek(delivery.ConsumerResult.TopicPartitionOffset);
         }
 
         return ValueTask.CompletedTask;
@@ -348,8 +389,22 @@ internal sealed class KafkaConsumerClient : IConsumerClient
         }
     }
 
-    private async Task _ConsumeAsync(ConsumeResult<string, byte[]> consumerResult)
+    private KafkaDelivery _TrackDelivery(ConsumeResult<string, byte[]> consumerResult)
     {
+        if (_offsetCommitTracker is null)
+        {
+            return new KafkaDelivery(consumerResult, KafkaDelivery.UntrackedGeneration);
+        }
+
+        lock (_lock)
+        {
+            return _offsetCommitTracker.Track(consumerResult);
+        }
+    }
+
+    private async Task _ConsumeAsync(KafkaDelivery delivery)
+    {
+        var consumerResult = delivery.ConsumerResult;
         TransportMessage message;
         try
         {
@@ -383,11 +438,11 @@ internal sealed class KafkaConsumerClient : IConsumerClient
                 }
             );
 
-            await RejectAsync(consumerResult).ConfigureAwait(false);
+            await RejectAsync(delivery).ConfigureAwait(false);
             return;
         }
 
-        await OnMessageCallback!(message, consumerResult).ConfigureAwait(false);
+        await OnMessageCallback!(message, delivery).ConfigureAwait(false);
     }
 
     private IConsumer<string, byte[]> _BuildConsumer(ConsumerConfig config)
@@ -448,5 +503,133 @@ internal sealed class KafkaConsumerClient : IConsumerClient
             Reason = $"An error occurred during connect kafka --> {e.Reason}",
         };
         OnLogCallback!(logArgs);
+    }
+
+    private static bool _TryGetDelivery(object? sender, out KafkaDelivery delivery)
+    {
+        switch (sender)
+        {
+            case KafkaDelivery tracked:
+                delivery = tracked;
+
+                return true;
+
+            case ConsumeResult<string, byte[]> consumerResult:
+                delivery = new KafkaDelivery(consumerResult, KafkaDelivery.UntrackedGeneration);
+
+                return true;
+
+            default:
+                delivery = null!;
+
+                return false;
+        }
+    }
+
+    private sealed class KafkaDelivery(ConsumeResult<string, byte[]> consumerResult, long generation)
+    {
+        public const long UntrackedGeneration = -1;
+
+        public ConsumeResult<string, byte[]> ConsumerResult { get; } = consumerResult;
+
+        public long Generation { get; } = generation;
+
+        public bool IsTracked => Generation != UntrackedGeneration;
+    }
+
+    private sealed class KafkaOffsetCommitTracker
+    {
+        private readonly Dictionary<TopicPartition, PartitionCommitState> _partitions = [];
+
+        public KafkaDelivery Track(ConsumeResult<string, byte[]> consumerResult)
+        {
+            var offset = consumerResult.TopicPartitionOffset.Offset.Value;
+
+            if (offset < 0)
+            {
+                return new KafkaDelivery(consumerResult, KafkaDelivery.UntrackedGeneration);
+            }
+
+            var topicPartition = consumerResult.TopicPartition;
+
+            if (!_partitions.TryGetValue(topicPartition, out var state))
+            {
+                state = new PartitionCommitState();
+                _partitions.Add(topicPartition, state);
+            }
+
+            if (state.NextCommitOffset is null || offset < state.NextCommitOffset.Value)
+            {
+                state.NextCommitOffset = offset;
+            }
+
+            return new KafkaDelivery(consumerResult, state.Generation);
+        }
+
+        public List<TopicPartitionOffset> MarkCommitted(KafkaDelivery delivery)
+        {
+            var consumerResult = delivery.ConsumerResult;
+            var offset = consumerResult.TopicPartitionOffset.Offset.Value;
+
+            if (
+                offset < 0
+                || !_partitions.TryGetValue(consumerResult.TopicPartition, out var state)
+                || state.Generation != delivery.Generation
+                || state.NextCommitOffset is not { } nextCommitOffset
+            )
+            {
+                return [];
+            }
+
+            if (offset < nextCommitOffset)
+            {
+                return [];
+            }
+
+            state.CompletedOffsets.Add(offset);
+            var advanced = false;
+
+            while (state.CompletedOffsets.Remove(nextCommitOffset))
+            {
+                nextCommitOffset++;
+                advanced = true;
+            }
+
+            if (!advanced)
+            {
+                return [];
+            }
+
+            state.NextCommitOffset = nextCommitOffset;
+
+            return [new TopicPartitionOffset(consumerResult.TopicPartition, new Offset(nextCommitOffset))];
+        }
+
+        public void MarkRejected(KafkaDelivery delivery)
+        {
+            var consumerResult = delivery.ConsumerResult;
+
+            if (
+                !_partitions.TryGetValue(consumerResult.TopicPartition, out var state)
+                || state.Generation != delivery.Generation
+            )
+            {
+                return;
+            }
+
+            var offset = consumerResult.TopicPartitionOffset.Offset.Value;
+            state.Generation++;
+            state.NextCommitOffset = offset >= 0 ? offset : null;
+            state.CompletedOffsets.Clear();
+        }
+
+        private sealed class PartitionCommitState
+        {
+            public long Generation { get; set; }
+
+            public long? NextCommitOffset { get; set; }
+
+            public SortedSet<long> CompletedOffsets { get; } = [];
+        }
     }
 }

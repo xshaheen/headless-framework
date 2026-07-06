@@ -382,6 +382,7 @@ internal sealed class ConsumerRegister(
                             catch (Exception e)
                             {
                                 startupReady.TrySetException(e);
+                                _isHealthy = false;
                                 _logger.ConsumerProcessingLoopFailed(e);
                             }
                         },

@@ -494,6 +494,7 @@ internal sealed class MessagingOptionsValidator : AbstractValidator<MessagingOpt
             .WithMessage("Version must not be empty.")
             .MaximumLength(20)
             .WithMessage("Version must not exceed 20 characters (it is stored in a VARCHAR(20) column).");
+        RuleFor(x => x.SchedulerBatchSize).GreaterThan(0).WithMessage("SchedulerBatchSize must be greater than zero.");
         RuleFor(x => x.RetryBatchSize).GreaterThan(0).WithMessage("RetryBatchSize must be greater than zero.");
         RuleFor(x => x).Custom((_, _) => _ValidateMiddlewareDescriptors(middlewareDescriptorRegistry));
     }
