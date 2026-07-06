@@ -52,12 +52,12 @@ tools: ## Restore repo-pinned .NET tools.
 
 .PHONY: restore
 restore: ## Restore NuGet packages.
-	$(DOTNET) restore "$(SOLUTION)"
+	$(DOTNET) restore "$(SOLUTION)" -p:Configuration="$(CONFIGURATION)"
 
 .PHONY: restore-project
 restore-project: ## Restore one project; preferred for focused project work.
 	@test -n "$(PROJECT)" || (echo "PROJECT is required. Example: make restore-project PROJECT=src/Headless.Api/Headless.Api.csproj" && exit 2)
-	$(DOTNET) restore "$(PROJECT)"
+	$(DOTNET) restore "$(PROJECT)" -p:Configuration="$(CONFIGURATION)"
 
 .PHONY: hooks
 hooks: ## Point git at the committed hooks (per clone/worktree).

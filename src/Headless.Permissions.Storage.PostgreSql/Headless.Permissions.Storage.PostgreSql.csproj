@@ -1,6 +1,8 @@
 ﻿<Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <Description>PostgreSQL storage provider for Headless permissions.</Description>
+    <PackageTags>headless;permissions;storage;postgresql;dotnet</PackageTags>
     <RootNamespace>Headless.Permissions.PostgreSql</RootNamespace>
     <NoWarn>$(NoWarn);CA2100</NoWarn>
   </PropertyGroup>

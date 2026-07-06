@@ -1,6 +1,8 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
+    <Description>Roslyn source generator for Headless primitive types and converters.</Description>
+    <PackageTags>headless;generator;primitives;source-generator;dotnet</PackageTags>
     <IncludeBuildOutput>false</IncludeBuildOutput>
   </PropertyGroup>
   <PropertyGroup>

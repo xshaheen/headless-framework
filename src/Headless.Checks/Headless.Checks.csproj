@@ -1,5 +1,7 @@
 ﻿<Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <Description>Argument and state validation helpers for Headless Framework packages and consumers.</Description>
+    <PackageTags>headless;checks;dotnet</PackageTags>
   </PropertyGroup>
 </Project>
