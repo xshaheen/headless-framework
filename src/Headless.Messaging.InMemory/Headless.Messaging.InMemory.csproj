@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <Description>in-memory integration for Headless messaging.</Description>
+    <Description>In-memory bus and queue transport provider for local development and tests without an external broker.</Description>
     <PackageTags>headless;messaging;in-memory;dotnet</PackageTags>
   </PropertyGroup>
   <ItemGroup>
