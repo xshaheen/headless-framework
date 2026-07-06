@@ -14,10 +14,12 @@ public static class SetupAuditLog
     extension(IServiceCollection services)
     {
         /// <summary>
-        /// Registers audit log options. Add exactly one storage provider through
-        /// <c>AddHeadlessAuditLog(setup =&gt; setup.Use...)</c>.
+        /// Registers audit log options without a storage provider. Internal funnel used by the
+        /// public builder overload so <see cref="AuditLogOptions"/> is registered exactly once;
+        /// public consumers must call <c>AddHeadlessAuditLog(setup =&gt; setup.Use...)</c> and add
+        /// exactly one storage provider.
         /// </summary>
-        public IServiceCollection AddHeadlessAuditLog(Action<AuditLogOptions>? configure = null)
+        internal IServiceCollection AddHeadlessAuditLog(Action<AuditLogOptions>? configure = null)
         {
             services.AddOptions<AuditLogOptions, AuditLogOptionsValidator>();
 

@@ -16,6 +16,7 @@ Provides PostgreSQL-native audit log storage without pulling Entity Framework in
 - Batched INSERT: up to 500 rows per command (cached per row count).
 - `jsonb` by default for JSON columns; override via `AuditLogStorageOptions.JsonColumnType` (`Jsonb` or `Json` accepted; `NvarcharMax` rejected at options validation).
 - `PostgreSqlAuditLogOptions` — `ConnectionString` (required) and `CommandTimeout` (default 30 s).
+- `UsePostgreSql` ships the full provider overload trio: `(string connectionString)`, `(IConfiguration configuration)`, `(Action<PostgreSqlAuditLogOptions>)`, and `(Action<PostgreSqlAuditLogOptions, IServiceProvider>)`.
 - Same index set as `Headless.AuditLog.Storage.EntityFramework`: tenant+time, tenant+action+time, tenant+entity+time, tenant+actor+time, correlation ID.
 
 ## Design Notes
@@ -62,6 +63,14 @@ setup.UsePostgreSql(options =>
     options.ConnectionString = connectionString;
     options.CommandTimeout = TimeSpan.FromSeconds(60);
 });
+```
+
+Bind provider options from configuration, or configure with service resolution:
+
+```csharp
+setup.UsePostgreSql(builder.Configuration.GetSection("Headless:AuditLog:PostgreSql"));
+setup.UsePostgreSql((options, sp) =>
+    options.ConnectionString = sp.GetRequiredService<IConfiguration>().GetConnectionString("AuditLog")!);
 ```
 
 ## Configuration

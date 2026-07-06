@@ -55,9 +55,6 @@ public static class AuditIntegrationFixture
         services.AddSingleton<IGuidGenerator>(new SequentialGuidGenerator(SequentialGuidType.Version7));
         services.AddHeadlessDbContextServices();
 
-        // Audit services
-        services.AddHeadlessAuditLog(configure);
-
         // Keep connection alive with the provider lifetime
         services.AddSingleton(connection);
 
@@ -83,7 +80,15 @@ public static class AuditIntegrationFixture
                 new TestHeadlessServicesOptionsExtension(clock, currentUser, currentTenant)
             );
         });
-        services.AddHeadlessAuditLog(setup => setup.UseEntityFramework<TContext>());
+        services.AddHeadlessAuditLog(setup =>
+        {
+            if (configure is not null)
+            {
+                setup.ConfigureOptions(configure);
+            }
+
+            setup.UseEntityFramework<TContext>();
+        });
 
         // Run consumer-supplied overrides last so they can swap any default registration.
         configureServices?.Invoke(services);
