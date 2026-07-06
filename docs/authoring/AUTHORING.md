@@ -147,3 +147,12 @@ A code change does **not** require a README update for the same exclusions liste
 2. Verify `Dependencies` matches `<PackageReference>` entries (transitively-pulled framework packages can be omitted; direct dependencies must be listed).
 3. Verify `Side Effects` matches what `Setup<Provider>.Add<Feature>(...)` actually registers.
 4. Confirm the matching `## Headless.<Package>` section in `docs/llms/<domain>.md` says the same things — fix whichever side is wrong, or both.
+
+## Provider SDK types in options — policy
+
+A provider options class may expose a property whose type comes straight from the backend SDK (`AWSSDK.S3`, `Azure.Storage.Blobs`, `Azure.Core`, `MailKit`, `SixLabors.ImageSharp`, `SSH.NET`, `StackExchange.Redis`, …). This is **deliberate and allowed** — do not "abstract it away" reflexively. Decide by fidelity:
+
+- **Full-fidelity pass-throughs are the intended shape.** When the SDK type carries a large or open-ended surface that a Headless wrapper could only re-expose lossily — `AWSOptions`, a `BlobServiceClient` factory, `IImageEncoder`, `IConnectionMultiplexer`, `ConfigurationOptions`, `TokenCredential`, MailKit's socket enums, `S3CannedACL`, `PublicAccessType`, `ProxyTypes` — pass the SDK type through verbatim so no backend capability is lost. Wrapping it would trade fidelity for a false sense of decoupling: the consumer still needs the SDK on their reference graph to construct the value. Accept the coupling openly instead.
+- **Low-fidelity, trivially-abstractable enums should be wrapped** in a Headless type when practical: a small, closed, stable enum with an obvious one-to-one Headless equivalent does not justify pulling the SDK into the option's type just to name three values.
+
+**Every SDK pass-through option property must carry an XML `<remarks>` noting the coupling** — one sentence stating it is a deliberate full-fidelity pass-through of the named SDK type and that it intentionally couples the option to that package. This makes the decision auditable (a reviewer sees it was a choice, not an oversight) and warns the consumer their reference graph now includes the SDK. See `AwsBlobStorageOptions.CannedAcl`, `AzureStorageOptions.ContainerPublicAccessType`, `SshBlobStorageOptions.ProxyType`, `ImageSharpOptions.*CompressEncoder`, `MailkitSmtpOptions.SocketOptions`, `AzureCommunicationEmailOptions.TokenCredential`, and `MessagingRedisOptions`/`RedisPubSubOptions.Configuration` for the established shape.

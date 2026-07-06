@@ -25,6 +25,11 @@ public sealed class AwsBlobStorageOptions
     /// Canned ACL applied to every uploaded object. Defaults to <see cref="S3CannedACL.Private"/>. Set to
     /// <see langword="null"/> for backends without ACL support (for example Cloudflare R2).
     /// </summary>
+    /// <remarks>
+    /// This is a deliberate full-fidelity pass-through of the AWS SDK type <see cref="S3CannedACL"/>: the whole
+    /// canned-ACL vocabulary is exposed verbatim so no S3 option is lost behind a lossy Headless wrapper. It
+    /// intentionally couples this option to <c>AWSSDK.S3</c>.
+    /// </remarks>
     public S3CannedACL? CannedAcl { get; set; } = S3CannedACL.Private;
 
     /// <summary>Maximum degree of parallelism for bulk operations. Default is 10.</summary>

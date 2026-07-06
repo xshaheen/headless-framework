@@ -24,6 +24,11 @@ public sealed class SshBlobStorageOptions
     /// Proxy type to use with <see cref="Proxy"/>. Defaults to <see cref="ProxyTypes.None"/>. When a proxy
     /// URI is provided and this is <see cref="ProxyTypes.None"/>, HTTP proxy is auto-detected from the URI scheme.
     /// </summary>
+    /// <remarks>
+    /// This is a deliberate full-fidelity pass-through of the SSH.NET type <see cref="ProxyTypes"/>: the whole
+    /// proxy-type vocabulary is exposed verbatim so no SSH.NET option is lost behind a lossy Headless wrapper. It
+    /// intentionally couples this option to <c>SSH.NET</c>.
+    /// </remarks>
     public ProxyTypes ProxyType { get; set; } = ProxyTypes.None;
 
     /// <summary>

@@ -11,6 +11,11 @@ public sealed class AzureStorageOptions
     /// <summary>
     /// Access type applied when <see cref="IBlobContainerManager.EnsureContainerAsync"/> creates a new container.
     /// </summary>
+    /// <remarks>
+    /// This is a deliberate full-fidelity pass-through of the Azure SDK type <see cref="PublicAccessType"/>: the
+    /// whole container-access vocabulary is exposed verbatim so no Azure option is lost behind a lossy Headless
+    /// wrapper. It intentionally couples this option to <c>Azure.Storage.Blobs</c>.
+    /// </remarks>
     public PublicAccessType ContainerPublicAccessType { get; set; } = PublicAccessType.None;
 
     /// <summary>Maximum degree of parallelism for bulk upload operations. Default is 10.</summary>

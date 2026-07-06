@@ -21,6 +21,12 @@ public class MessagingRedisOptions
     /// The native StackExchange.Redis connection options. When <see langword="null"/>,
     /// the transport connects to <c>localhost</c> on the default Redis port.
     /// </summary>
+    /// <remarks>
+    /// This is a deliberate full-fidelity pass-through of the StackExchange.Redis type
+    /// <see cref="ConfigurationOptions"/>: the whole connection-configuration surface is exposed verbatim so no
+    /// StackExchange.Redis option is lost behind a lossy Headless wrapper. It intentionally couples this option to
+    /// <c>StackExchange.Redis</c>.
+    /// </remarks>
     public ConfigurationOptions? Configuration { get; set; }
 
     // BrokerAddress is emitted to telemetry and dashboards, so expose only broker endpoints here.

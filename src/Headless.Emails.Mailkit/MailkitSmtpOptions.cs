@@ -36,6 +36,11 @@ public sealed class MailkitSmtpOptions
     /// The TLS/SSL negotiation strategy. Defaults to <see cref="SecureSocketOptions.StartTls"/>
     /// (opportunistic upgrade on port 587).
     /// </summary>
+    /// <remarks>
+    /// This is a deliberate full-fidelity pass-through of the MailKit type <see cref="SecureSocketOptions"/>: the
+    /// whole TLS-negotiation vocabulary is exposed verbatim so no MailKit option is lost behind a lossy Headless
+    /// wrapper. It intentionally couples this option to <c>MailKit</c>.
+    /// </remarks>
     public SecureSocketOptions SocketOptions { get; set; } = SecureSocketOptions.StartTls;
 
     /// <summary>

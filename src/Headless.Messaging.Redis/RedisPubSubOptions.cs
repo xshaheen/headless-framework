@@ -19,6 +19,12 @@ public sealed class RedisPubSubOptions
     /// <summary>
     /// Gets or sets the native StackExchange.Redis connection options.
     /// </summary>
+    /// <remarks>
+    /// This is a deliberate full-fidelity pass-through of the StackExchange.Redis type
+    /// <see cref="ConfigurationOptions"/>: the whole connection-configuration surface is exposed verbatim so no
+    /// StackExchange.Redis option is lost behind a lossy Headless wrapper. It intentionally couples this option to
+    /// <c>StackExchange.Redis</c>.
+    /// </remarks>
     public ConfigurationOptions? Configuration { get; set; }
 
     /// <summary>
