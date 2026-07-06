@@ -5,8 +5,9 @@ using Headless.Checks;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace System.Collections.Generic;
 
+/// <summary>Extension methods for adding to and removing from generic collections.</summary>
 [PublicAPI]
-public static class CollectionExtensions
+public static class HeadlessCollectionExtensions
 {
     // Above this list size, a per-item List<T>.Contains scan (O(n)) is worth replacing with a one-time
     // HashSet snapshot so membership checks become O(1). Below it the snapshot allocation is not worthwhile.
