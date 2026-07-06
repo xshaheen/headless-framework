@@ -116,10 +116,10 @@ public sealed class InMemoryQueueTransportTests : TestBase
         // given
         await _consumerClient.SubscribeAsync(["test-messageName"]);
 
-        TransportMessage? receivedMessage = null;
+        var received = new TaskCompletionSource<TransportMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
         _consumerClient.OnMessageCallback = (msg, _) =>
         {
-            receivedMessage = msg;
+            received.TrySetResult(msg);
             return Task.CompletedTask;
         };
 
@@ -151,13 +151,12 @@ public sealed class InMemoryQueueTransportTests : TestBase
         // when
         await _transport.SendAsync(message, AbortToken);
 
-        await Task.Delay(100, AbortToken);
+        var receivedMessage = await received.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         await cts.CancelAsync();
 
         // then
-        receivedMessage.Should().NotBeNull();
-        receivedMessage!.Value.GetCorrelationId().Should().Be("corr-123");
-        receivedMessage.Value.Headers["custom-header"].Should().Be("custom-value");
+        receivedMessage.GetCorrelationId().Should().Be("corr-123");
+        receivedMessage.Headers["custom-header"].Should().Be("custom-value");
     }
 
     [Fact]
