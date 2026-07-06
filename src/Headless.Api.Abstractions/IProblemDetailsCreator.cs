@@ -4,6 +4,7 @@ using Headless.Constants;
 using Headless.Primitives;
 using Microsoft.AspNetCore.Mvc;
 
+#pragma warning disable IDE0130 // Namespace does not match folder structure
 namespace Headless.Api.Abstractions;
 
 /// <summary>
@@ -72,14 +73,14 @@ public interface IProblemDetailsCreator
 
     /// <summary>
     /// Builds a normalized 422 <see cref="ProblemDetails"/> for validation failures (typically
-    /// mapped from <see cref="FluentValidation.ValidationException"/>).
+    /// mapped from <c>FluentValidation.ValidationException</c>).
     /// </summary>
     /// <param name="errors">
     /// Field-keyed map of validation errors written to <c>Extensions["errors"]</c>. Keys are member
     /// paths (e.g., <c>"email"</c>, <c>"address.city"</c>) and values are the descriptors that
     /// failed for that field.
     /// </param>
-    ProblemDetails UnprocessableEntity(Dictionary<string, List<ErrorDescriptor>> errors);
+    ProblemDetails UnprocessableEntity(IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>> errors);
 
     /// <summary>
     /// Builds a normalized 409 <see cref="ProblemDetails"/> for conflicts (typically mapped from

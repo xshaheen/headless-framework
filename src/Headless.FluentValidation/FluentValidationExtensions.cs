@@ -55,7 +55,7 @@ public static class FluentValidationExtensions
     /// A dictionary keyed by camelCase property path, with each value being the list of
     /// <see cref="ErrorDescriptor"/> instances for that property.
     /// </returns>
-    public static Dictionary<string, List<ErrorDescriptor>> ToErrorDescriptors(
+    public static IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>> ToErrorDescriptors(
         this IEnumerable<ValidationFailure> failures
     )
     {
@@ -98,7 +98,7 @@ public static class FluentValidationExtensions
             )
             .ToDictionary(
                 failureGroup => failureGroup.Key.CamelizePropertyPath(),
-                failureGroup => failureGroup.ToList(),
+                IReadOnlyList<ErrorDescriptor> (failureGroup) => failureGroup.ToList(),
                 StringComparer.Ordinal
             );
     }

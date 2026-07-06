@@ -488,7 +488,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
 
         var problemDetailsCreator = Substitute.For<IProblemDetailsCreator>();
         problemDetailsCreator
-            .UnprocessableEntity(Arg.Any<Dictionary<string, List<ErrorDescriptor>>>())
+            .UnprocessableEntity(Arg.Any<IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>>>())
             .Returns(new ProblemDetails { Status = 422 });
 
         var middleware = CreateMiddleware(cache: cache, problemDetailsCreator: problemDetailsCreator);
@@ -508,9 +508,9 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
         problemDetailsCreator
             .Received(1)
             .UnprocessableEntity(
-                Arg.Is<Dictionary<string, List<ErrorDescriptor>>>(d =>
+                Arg.Is<IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>>>(d =>
                     d.ContainsKey("idempotency_key")
-                    && d["idempotency_key"].Exists(e => e.Code == "g:idempotency_key_reused")
+                    && d["idempotency_key"].Any(e => e.Code == "g:idempotency_key_reused")
                 )
             );
     }
@@ -553,7 +553,9 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
             .Conflict(
                 Arg.Is<IReadOnlyCollection<ErrorDescriptor>>(es => es.Any(e => e.Code == "g:idempotency_key_reused"))
             );
-        problemDetailsCreator.DidNotReceive().UnprocessableEntity(Arg.Any<Dictionary<string, List<ErrorDescriptor>>>());
+        problemDetailsCreator
+            .DidNotReceive()
+            .UnprocessableEntity(Arg.Any<IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>>>());
     }
 
     // ── in-flight Reject (AE3) ────────────────────────────────────────────────
@@ -682,7 +684,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
 
         var problemDetailsCreator = Substitute.For<IProblemDetailsCreator>();
         problemDetailsCreator
-            .UnprocessableEntity(Arg.Any<Dictionary<string, List<ErrorDescriptor>>>())
+            .UnprocessableEntity(Arg.Any<IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>>>())
             .Returns(new ProblemDetails { Status = 422 });
 
         var middleware = CreateMiddleware(cache: cache, problemDetailsCreator: problemDetailsCreator);
@@ -693,9 +695,9 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
         problemDetailsCreator
             .Received(1)
             .UnprocessableEntity(
-                Arg.Is<Dictionary<string, List<ErrorDescriptor>>>(d =>
+                Arg.Is<IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>>>(d =>
                     d.ContainsKey("idempotency_key")
-                    && d["idempotency_key"].Exists(e => e.Code == "g:idempotency_key_reused")
+                    && d["idempotency_key"].Any(e => e.Code == "g:idempotency_key_reused")
                 )
             );
     }
@@ -904,7 +906,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
 
         var problemDetailsCreator = Substitute.For<IProblemDetailsCreator>();
         problemDetailsCreator
-            .UnprocessableEntity(Arg.Any<Dictionary<string, List<ErrorDescriptor>>>())
+            .UnprocessableEntity(Arg.Any<IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>>>())
             .Returns(new ProblemDetails { Status = 422 });
 
         var middleware = _CreateMiddlewareWithLock(cache, lockProvider, problemDetailsCreator);
@@ -915,9 +917,9 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
         problemDetailsCreator
             .Received(1)
             .UnprocessableEntity(
-                Arg.Is<Dictionary<string, List<ErrorDescriptor>>>(d =>
+                Arg.Is<IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>>>(d =>
                     d.ContainsKey("idempotency_key")
-                    && d["idempotency_key"].Exists(e => e.Code == "g:idempotency_key_reused")
+                    && d["idempotency_key"].Any(e => e.Code == "g:idempotency_key_reused")
                 )
             );
     }
@@ -1481,7 +1483,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
 
         var problemDetailsCreator = Substitute.For<IProblemDetailsCreator>();
         problemDetailsCreator
-            .UnprocessableEntity(Arg.Any<Dictionary<string, List<ErrorDescriptor>>>())
+            .UnprocessableEntity(Arg.Any<IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>>>())
             .Returns(new ProblemDetails { Status = 422 });
 
         var middleware = CreateMiddleware(cache: cache, problemDetailsCreator: problemDetailsCreator);
@@ -1493,8 +1495,8 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
         problemDetailsCreator
             .Received(1)
             .UnprocessableEntity(
-                Arg.Is<Dictionary<string, List<ErrorDescriptor>>>(d =>
-                    d["idempotency_key"].Exists(e => e.Code == "g:idempotency_key_reused")
+                Arg.Is<IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>>>(d =>
+                    d["idempotency_key"].Any(e => e.Code == "g:idempotency_key_reused")
                 )
             );
     }

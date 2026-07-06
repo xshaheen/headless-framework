@@ -171,11 +171,12 @@ public sealed record ValidationError : ResultError
     /// Converts the <see cref="FieldErrors"/> into a dictionary of <see cref="ErrorDescriptor"/> lists keyed by field name.
     /// </summary>
     /// <returns>A dictionary mapping each field name to its list of <see cref="ErrorDescriptor"/> entries.</returns>
-    public Dictionary<string, List<ErrorDescriptor>> ToErrorDescriptorDictionary()
+    public IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>> ToErrorDescriptorDictionary()
     {
         return FieldErrors.ToDictionary(
             kv => kv.Key,
-            kv => kv.Value.Select(msg => new ErrorDescriptor($"validation:{kv.Key}", msg)).ToList(),
+            IReadOnlyList<ErrorDescriptor> (kv) =>
+                kv.Value.Select(msg => new ErrorDescriptor($"validation:{kv.Key}", msg)).ToList(),
             StringComparer.Ordinal
         );
     }

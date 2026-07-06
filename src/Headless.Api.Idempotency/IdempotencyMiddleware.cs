@@ -402,7 +402,7 @@ internal sealed partial class IdempotencyMiddleware(
             options.MismatchStatusCode == 409
                 ? problemDetailsCreator.Conflict(descriptor)
                 : problemDetailsCreator.UnprocessableEntity(
-                    new Dictionary<string, List<ErrorDescriptor>>(StringComparer.Ordinal)
+                    new Dictionary<string, IReadOnlyList<ErrorDescriptor>>(StringComparer.Ordinal)
                     {
                         ["idempotency_key"] = [descriptor],
                     }

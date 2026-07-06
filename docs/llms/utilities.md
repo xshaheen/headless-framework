@@ -173,7 +173,7 @@ RuleFor(x => x.Total)
 #### Processing Validation Results
 
 ```csharp
-var errors = result.Errors.ToErrorDescriptors(); // Dictionary<string, List<ErrorDescriptor>>
+var errors = result.Errors.ToErrorDescriptors(); // IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>>
 ```
 
 ### Available Validators
