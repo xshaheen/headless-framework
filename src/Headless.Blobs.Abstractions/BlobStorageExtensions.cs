@@ -3,6 +3,7 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json.Serialization.Metadata;
 using Headless.Blobs.Internals;
+using Headless.Checks;
 using Headless.Serializer;
 
 namespace Headless.Blobs;
@@ -95,23 +96,28 @@ public static class BlobStorageExtensions
         /// <paramref name="limit"/> is reached.
         /// </summary>
         /// <param name="query">The container plus optional prefix and page size to enumerate.</param>
-        /// <param name="limit">Maximum total number of blobs to return. Defaults to 1 000 000 when not specified.</param>
+        /// <param name="limit">
+        /// Maximum total number of blobs to return. When <see langword="null"/> (the default), every matching blob is
+        /// materialized with no cap. Must be positive when specified.
+        /// </param>
         /// <param name="cancellationToken">Cancellation token.</param>
         /// <returns>A materialized list of matching <see cref="BlobInfo"/> records.</returns>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="limit"/> is specified and is not positive.</exception>
         public async Task<IReadOnlyList<BlobInfo>> GetBlobsListAsync(
             BlobQuery query,
             int? limit = null,
             CancellationToken cancellationToken = default
         )
         {
-            var max = limit ?? 1_000_000;
+            Argument.IsPositive(limit);
+
             var files = new List<BlobInfo>();
 
             await foreach (var blob in storage.GetBlobsAsync(query, cancellationToken).ConfigureAwait(false))
             {
                 files.Add(blob);
 
-                if (files.Count >= max)
+                if (limit is not null && files.Count >= limit.Value)
                 {
                     break;
                 }
