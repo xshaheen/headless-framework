@@ -1,6 +1,8 @@
 ﻿<Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <Description>JSON integration for Headless serialization.</Description>
+    <PackageTags>headless;serializer;json;dotnet</PackageTags>
     <RootNamespace>Headless.Serializer</RootNamespace>
   </PropertyGroup>
   <ItemGroup>

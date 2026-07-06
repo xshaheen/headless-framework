@@ -1,6 +1,8 @@
 ﻿<Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <Description>SQL Server storage provider for Headless settings.</Description>
+    <PackageTags>headless;settings;storage;sql-server;dotnet</PackageTags>
     <RootNamespace>Headless.Settings.SqlServer</RootNamespace>
     <NoWarn>$(NoWarn);CA2100</NoWarn>
   </PropertyGroup>

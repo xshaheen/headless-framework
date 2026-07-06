@@ -1,6 +1,8 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <Description>ASP.NET Core integration for Headless testing.</Description>
+    <PackageTags>headless;testing;aspnetcore;dotnet</PackageTags>
     <IsTestProject>false</IsTestProject>
     <IsTestableProject>false</IsTestableProject>
   </PropertyGroup>
