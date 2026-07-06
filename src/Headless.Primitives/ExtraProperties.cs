@@ -4,7 +4,6 @@ using System.ComponentModel;
 using System.Reflection;
 using System.Text.Json.Serialization.Metadata;
 using Headless.Checks;
-using Headless.Reflection;
 
 namespace Headless.Primitives;
 
@@ -272,12 +271,16 @@ public static class IncludeExtraPropertiesModifiers
             && x.Set is null
         );
 
-        if (propertyJsonInfo is null)
+        // Only wire a setter when the CLR property actually has one (including a non-public setter). This is the
+        // read-only-property-during-deserialization case the modifier exists to unblock.
+        if (
+            propertyJsonInfo?.AttributeProvider is not PropertyInfo clrProperty
+            || clrProperty.GetSetMethod(nonPublic: true) is null
+        )
         {
             return;
         }
 
-        propertyJsonInfo.Set = (obj, value) =>
-            ObjectPropertiesHelper.TrySetProperty((IHasExtraProperties)obj, x => x.ExtraProperties, () => value);
+        propertyJsonInfo.Set = (obj, value) => clrProperty.SetValue(obj, value);
     }
 }

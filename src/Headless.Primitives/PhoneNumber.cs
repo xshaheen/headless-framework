@@ -2,7 +2,6 @@
 
 using System.ComponentModel.DataAnnotations.Schema;
 using Headless.Checks;
-using Headless.Text;
 using PhoneNumbers;
 using UtilsPhoneNumber = PhoneNumbers.PhoneNumber;
 
@@ -145,7 +144,7 @@ public sealed class PhoneNumber : IEquatable<PhoneNumber>
 
     /// <summary>Returns a normalized canonical representation of this phone number derived from its string form.</summary>
     /// <returns>The normalized phone number string.</returns>
-    public string Normalize() => _normalizedCache ??= LookupNormalizer.NormalizePhoneNumber(ToString());
+    public string Normalize() => _normalizedCache ??= PhoneNumberNormalizer.NormalizePhoneNumber(ToString());
 
     /// <summary>
     /// Reduces a national number to its canonical digits-only form, dropping formatting characters such as
@@ -214,7 +213,7 @@ public sealed class PhoneNumber : IEquatable<PhoneNumber>
         var phoneNumber = $"+{code.ToString(CultureInfo.InvariantCulture)}{number}";
         var international = GetInternationalFormat(phoneNumber);
 
-        return LookupNormalizer.NormalizePhoneNumber(international ?? phoneNumber);
+        return PhoneNumberNormalizer.NormalizePhoneNumber(international ?? phoneNumber);
     }
 
     /// <summary>Formats the given phone number string in its national format.</summary>
