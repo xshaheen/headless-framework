@@ -6,10 +6,10 @@ using Headless.Dashboard.Authentication;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Dashboard.GatewayProxy;
 using Headless.Messaging.Dashboard.NodeDiscovery;
-using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
+using Headless.Messaging.Runtime;
 using Headless.Messaging.Transport;
 using Headless.Primitives;
 using Microsoft.AspNetCore.Builder;
@@ -505,6 +505,14 @@ public static class MessagingDashboardEndpoints
     {
         var pageSize = Math.Clamp(perPage, 1, _MaxPageSize);
 
+        if (!_TryParseStatusFilter(status, out var statusFilter))
+        {
+            // An unrecognized status matches no rows (the persisted status set is fixed).
+            return Results.Json(
+                _MapMessagePage(new IndexPage<MessageView>([], currentPage - 1, pageSize, totalItems: 0))
+            );
+        }
+
         var dataStorage = sp.GetRequiredService<IDataStorage>();
         var monitoringApi = dataStorage.GetMonitoringApi();
 
@@ -514,7 +522,7 @@ public static class MessagingDashboardEndpoints
             Name = name ?? string.Empty,
             Content = content ?? string.Empty,
             IntentType = intentType,
-            StatusName = status,
+            StatusName = statusFilter,
             CurrentPage = currentPage - 1,
             PageSize = pageSize,
         };
@@ -536,6 +544,14 @@ public static class MessagingDashboardEndpoints
     {
         var pageSize = Math.Clamp(perPage, 1, _MaxPageSize);
 
+        if (!_TryParseStatusFilter(status, out var statusFilter))
+        {
+            // An unrecognized status matches no rows (the persisted status set is fixed).
+            return Results.Json(
+                _MapMessagePage(new IndexPage<MessageView>([], currentPage - 1, pageSize, totalItems: 0))
+            );
+        }
+
         var dataStorage = sp.GetRequiredService<IDataStorage>();
         var monitoringApi = dataStorage.GetMonitoringApi();
 
@@ -546,7 +562,7 @@ public static class MessagingDashboardEndpoints
             Name = name ?? string.Empty,
             Content = content ?? string.Empty,
             IntentType = intentType,
-            StatusName = status,
+            StatusName = statusFilter,
             CurrentPage = currentPage - 1,
             PageSize = pageSize,
         };
@@ -603,10 +619,19 @@ public static class MessagingDashboardEndpoints
             message.Added,
             message.ExpiresAt,
             message.Retries,
-            message.StatusName,
+            // Serialize the status as its enum name (e.g. "Succeeded") so the dashboard SPA wire shape is
+            // unchanged now that MessageView.StatusName is a StatusName enum rather than a string.
+            StatusName = message.StatusName.ToString("G"),
             message.NextRetryAt,
             message.LockedUntil,
         };
+    }
+
+    private static bool _TryParseStatusFilter(string status, out StatusName statusFilter)
+    {
+        // Accept the enum member names case-insensitively (route segment). Reject numeric/undefined values so an
+        // unknown status short-circuits to an empty page instead of falling through to an unfiltered query.
+        return Enum.TryParse(status, ignoreCase: true, out statusFilter) && Enum.IsDefined(statusFilter);
     }
 
     private static object _MapMessagePage(IndexPage<MessageView> page)

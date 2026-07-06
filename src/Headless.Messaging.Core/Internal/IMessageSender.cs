@@ -5,6 +5,7 @@ using Headless.Checks;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Diagnostics;
 using Headless.Messaging.Messages;
+using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Retry;
 using Headless.Messaging.Serialization;

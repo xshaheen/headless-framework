@@ -2,7 +2,6 @@
 
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
-using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
@@ -723,7 +722,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         attempted.Should().BeTrue("the failing response consumer should have attempted to serialize a response");
         callbackReceived.Should().BeFalse("serialization failure should prevent callback publication");
 
-        var succeeded = await _FindReceivedMessagesAsync(messageId, nameof(StatusName.Succeeded), AbortToken);
+        var succeeded = await _FindReceivedMessagesAsync(messageId, StatusName.Succeeded, AbortToken);
         succeeded.Should().BeEmpty("response serialization failure must not mark the request consume as succeeded");
     }
 
@@ -782,7 +781,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
 
     private async Task<IReadOnlyList<MessageView>> _FindReceivedMessagesAsync(
         string messageId,
-        string statusName,
+        StatusName statusName,
         CancellationToken cancellationToken
     )
     {

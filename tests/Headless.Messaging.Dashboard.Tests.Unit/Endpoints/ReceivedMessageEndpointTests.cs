@@ -105,7 +105,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
                     Content = "{\"received\":\"data\"}",
                     Added = new DateTime(2026, 03, 24, 11, 00, 00, DateTimeKind.Utc),
                     Retries = 1,
-                    StatusName = "Failed",
+                    StatusName = StatusName.Failed,
                 },
             ],
             index: 0,
@@ -152,7 +152,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
             .GetMessagesAsync(
                 Arg.Is<MessageQuery>(query =>
                     query.MessageType == MessageType.Subscribe
-                    && query.StatusName == "Failed"
+                    && query.StatusName == StatusName.Failed
                     && query.Group == "workers"
                     && query.IntentType == IntentType.Queue
                     && query.CurrentPage == 0
@@ -188,7 +188,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
             .GetMessagesAsync(
                 Arg.Is<MessageQuery>(query =>
                     query.MessageType == MessageType.Subscribe
-                    && query.StatusName == "Failed"
+                    && query.StatusName == StatusName.Failed
                     && query.Group == "workers"
                     && query.IntentType == null
                     && query.CurrentPage == 0

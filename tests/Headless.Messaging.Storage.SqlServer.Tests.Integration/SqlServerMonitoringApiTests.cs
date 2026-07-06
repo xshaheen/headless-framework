@@ -298,7 +298,7 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
         var query = new MessageQuery
         {
             MessageType = MessageType.Publish,
-            StatusName = nameof(StatusName.Succeeded),
+            StatusName = StatusName.Succeeded,
             CurrentPage = 0,
             PageSize = 2,
         };
@@ -325,7 +325,7 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
         var query = new MessageQuery
         {
             MessageType = MessageType.Publish,
-            StatusName = nameof(StatusName.Succeeded),
+            StatusName = StatusName.Succeeded,
             CurrentPage = 3,
             PageSize = 2,
         };
@@ -349,7 +349,7 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
         var query = new MessageQuery
         {
             MessageType = MessageType.Publish,
-            StatusName = nameof(StatusName.Failed),
+            StatusName = StatusName.Failed,
             CurrentPage = 0,
             PageSize = 10,
         };
@@ -359,7 +359,7 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
 
         // then
         result.Items.Should().HaveCount(2);
-        result.Items.Should().AllSatisfy(m => m.StatusName.Should().Be(nameof(StatusName.Failed)));
+        result.Items.Should().AllSatisfy(m => m.StatusName.Should().Be(StatusName.Failed));
     }
 
     [Fact]

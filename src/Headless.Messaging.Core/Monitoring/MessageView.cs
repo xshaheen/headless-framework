@@ -38,8 +38,8 @@ public class MessageView
     /// <summary>Gets or sets the number of delivery attempts made for this message.</summary>
     public int Retries { get; set; }
 
-    /// <summary>Gets or sets the current status of this message row (e.g., <c>"Succeeded"</c>, <c>"Failed"</c>, <c>"Scheduled"</c>).</summary>
-    public required string StatusName { get; set; }
+    /// <summary>Gets or sets the current status of this message row.</summary>
+    public required StatusName StatusName { get; set; }
 
     /// <summary>UTC timestamp at which the retry processor should re-dispatch this message; <see langword="null"/> when the row is terminal or has no pending retry.</summary>
     public DateTime? NextRetryAt { get; set; }

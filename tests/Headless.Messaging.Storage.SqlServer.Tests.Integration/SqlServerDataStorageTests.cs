@@ -7,6 +7,7 @@ using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
+using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Serialization;
 using Headless.Messaging.Storage.SqlServer;

@@ -227,7 +227,7 @@ public sealed class NatsPostgreSqlMessagingIntegrationTests(NatsPostgreSqlFixtur
             new MessageQuery
             {
                 MessageType = MessageType.Publish,
-                StatusName = "Succeeded",
+                StatusName = StatusName.Succeeded,
                 CurrentPage = 0,
                 PageSize = 50,
             },
@@ -238,7 +238,7 @@ public sealed class NatsPostgreSqlMessagingIntegrationTests(NatsPostgreSqlFixtur
             new MessageQuery
             {
                 MessageType = MessageType.Subscribe,
-                StatusName = "Succeeded",
+                StatusName = StatusName.Succeeded,
                 CurrentPage = 0,
                 PageSize = 50,
             },

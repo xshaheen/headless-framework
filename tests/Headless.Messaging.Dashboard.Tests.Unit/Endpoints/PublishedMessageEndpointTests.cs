@@ -101,7 +101,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
                     Content = "{\"key\":\"value\"}",
                     Added = new DateTime(2026, 03, 24, 10, 00, 00, DateTimeKind.Utc),
                     Retries = 2,
-                    StatusName = "Succeeded",
+                    StatusName = StatusName.Succeeded,
                 },
             ],
             index: 1,
@@ -150,7 +150,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
             .GetMessagesAsync(
                 Arg.Is<MessageQuery>(query =>
                     query.MessageType == MessageType.Publish
-                    && query.StatusName == "Succeeded"
+                    && query.StatusName == StatusName.Succeeded
                     && query.IntentType == IntentType.Queue
                     && query.CurrentPage == 1
                     && query.PageSize == 20
@@ -185,7 +185,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
             .GetMessagesAsync(
                 Arg.Is<MessageQuery>(query =>
                     query.MessageType == MessageType.Publish
-                    && query.StatusName == "Succeeded"
+                    && query.StatusName == StatusName.Succeeded
                     && query.IntentType == null
                     && query.CurrentPage == 1
                     && query.PageSize == 20
