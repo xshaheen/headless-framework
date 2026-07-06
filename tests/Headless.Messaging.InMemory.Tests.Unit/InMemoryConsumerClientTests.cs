@@ -66,12 +66,12 @@ public sealed class InMemoryConsumerClientTests : TestBase
         // given
         await _client.SubscribeAsync(["test-messageName"]);
 
-        TransportMessage? receivedMessage = null;
-        object? receivedSender = null;
+        var received = new TaskCompletionSource<(TransportMessage Message, object? Sender)>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
         _client.OnMessageCallback = (msg, sender) =>
         {
-            receivedMessage = msg;
-            receivedSender = sender;
+            received.TrySetResult((msg, sender));
             return Task.CompletedTask;
         };
 
@@ -95,12 +95,11 @@ public sealed class InMemoryConsumerClientTests : TestBase
         // when
         _queue.SendBus(message);
 
-        await Task.Delay(100, AbortToken);
+        var (receivedMessage, receivedSender) = await received.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         await cts.CancelAsync();
 
         // then
-        receivedMessage.Should().NotBeNull();
-        receivedMessage!.Value.Id.Should().Be("msg-1");
+        receivedMessage.Id.Should().Be("msg-1");
         receivedSender.Should().BeNull();
     }
 
@@ -326,9 +325,15 @@ public sealed class InMemoryConsumerClientTests : TestBase
         await client.SubscribeAsync(["sequential-messageName"]);
 
         var processOrder = new List<string>();
+        var allProcessed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         client.OnMessageCallback = (msg, _) =>
         {
             processOrder.Add(msg.Id);
+            if (processOrder.Count == 3)
+            {
+                allProcessed.TrySetResult();
+            }
+
             return Task.CompletedTask;
         };
 
@@ -352,7 +357,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
         queue.SendBus(_CreateTestMessage("2", "sequential-messageName"));
         queue.SendBus(_CreateTestMessage("3", "sequential-messageName"));
 
-        await Task.Delay(200, AbortToken);
+        await allProcessed.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         await cts.CancelAsync();
         await client.DisposeAsync();
 
@@ -381,10 +386,10 @@ public sealed class InMemoryConsumerClientTests : TestBase
         // given
         await _client.SubscribeAsync(["test-messageName"]);
 
-        TransportMessage? receivedMessage = null;
+        var received = new TaskCompletionSource<TransportMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
         _client.OnMessageCallback = (msg, _) =>
         {
-            receivedMessage = msg;
+            received.TrySetResult(msg);
             return Task.CompletedTask;
         };
 
@@ -406,12 +411,11 @@ public sealed class InMemoryConsumerClientTests : TestBase
         // when
         _queue.SendBus(_CreateTestMessage("msg-1", "test-messageName"));
 
-        await Task.Delay(100, AbortToken);
+        var receivedMessage = await received.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         await cts.CancelAsync();
 
         // then
-        receivedMessage.Should().NotBeNull();
-        receivedMessage!.Value.GetGroup().Should().Be("test-group");
+        receivedMessage.GetGroup().Should().Be("test-group");
     }
 
     // -------------------------------------------------------------------------
@@ -454,9 +458,11 @@ public sealed class InMemoryConsumerClientTests : TestBase
         await _client.SubscribeAsync(["test-messageName"]);
 
         var receivedCount = 0;
+        var received = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _client.OnMessageCallback = (_, _) =>
         {
             Interlocked.Increment(ref receivedCount);
+            received.TrySetResult();
             return Task.CompletedTask;
         };
 
@@ -483,9 +489,9 @@ public sealed class InMemoryConsumerClientTests : TestBase
         // then — message not delivered while paused
         receivedCount.Should().Be(0);
 
-        // cleanup — resume and cancel
+        // cleanup — resume, then wait for the resumed delivery deterministically
         await _client.ResumeAsync(AbortToken);
-        await Task.Delay(200, AbortToken);
+        await received.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         await cts.CancelAsync();
 
         // message should now have been delivered after resume
