@@ -1546,7 +1546,7 @@ public sealed class HybridCacheTests : TestBase
         // given — circuit breaker on, auto-recovery off (RecoveryQueue null). An L2 RemoveAsync failure must not
         // leave this node's L1 serving the value the caller asked to remove. (re-review N1)
         using var l2 = new TogglableRemoteCache(_timeProvider);
-        var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         var publisher = Substitute.For<IBus>();
         publisher
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
