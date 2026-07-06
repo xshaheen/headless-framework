@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers;
 using System.Globalization;
 using System.Text;
 using Headless.Abstractions;
@@ -187,18 +188,55 @@ public sealed class RedisBlobStorage : IBlobStorage
                 content.Seek(0, SeekOrigin.Begin);
             }
 
-            await using var memory = new MemoryStream();
-            await _CopyWithSizeLimitAsync(content, memory, cancellationToken).ConfigureAwait(false);
-            var fileSize = memory.Length;
+            byte[] blobData;
+            long fileSize;
 
-            // Zero-copy: TryGetBuffer avoids a ToArray() allocation.
-            if (!memory.TryGetBuffer(out var blobSegment))
+            if (content.CanSeek && content.Length <= int.MaxValue)
             {
-                throw new InvalidOperationException("Failed to get buffer from MemoryStream");
-            }
+                // Right-size from Length (already validated against the cap above): a single exact-size read
+                // instead of MemoryStream growth copies plus a final exact-size copy.
+                var length = (int)content.Length;
+                blobData = new byte[length];
 
-            var blobData = new byte[blobSegment.Count];
-            Buffer.BlockCopy(blobSegment.Array!, blobSegment.Offset, blobData, 0, blobSegment.Count);
+                var filled = 0;
+
+                while (filled < length)
+                {
+                    var read = await content
+                        .ReadAsync(blobData.AsMemory(filled), cancellationToken)
+                        .ConfigureAwait(false);
+
+                    if (read == 0)
+                    {
+                        break;
+                    }
+
+                    filled += read;
+                }
+
+                if (filled < length)
+                {
+                    // The stream ended before Length bytes: store what it actually yielded (the buffered
+                    // path below has the same tolerance for streams whose Length over-reports).
+                    Array.Resize(ref blobData, filled);
+                }
+
+                fileSize = filled;
+            }
+            else
+            {
+                await using var memory = new MemoryStream();
+                await _CopyWithSizeLimitAsync(content, memory, cancellationToken).ConfigureAwait(false);
+                fileSize = memory.Length;
+
+                if (!memory.TryGetBuffer(out var blobSegment))
+                {
+                    throw new InvalidOperationException("Failed to get buffer from MemoryStream");
+                }
+
+                blobData = new byte[blobSegment.Count];
+                Buffer.BlockCopy(blobSegment.Array!, blobSegment.Offset, blobData, 0, blobSegment.Count);
+            }
 
             var now = _clock.UtcNow;
 
@@ -808,26 +846,35 @@ public sealed class RedisBlobStorage : IBlobStorage
             return;
         }
 
-        var buffer = new byte[0x14000];
-        long totalBytes = 0;
-        int bytesRead;
+        var buffer = ArrayPool<byte>.Shared.Rent(0x14000);
 
-        while ((bytesRead = await source.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
+        try
         {
-            totalBytes += bytesRead;
+            long totalBytes = 0;
+            int bytesRead;
 
-            if (totalBytes > _options.MaxBlobSizeBytes)
+            while ((bytesRead = await source.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
             {
-                throw new ArgumentException(
-                    string.Create(
-                        CultureInfo.InvariantCulture,
-                        $"Blob exceeds maximum size of {_options.MaxBlobSizeBytes} bytes. Redis blob storage is intended for small/ephemeral blobs only."
-                    ),
-                    nameof(source)
-                );
-            }
+                totalBytes += bytesRead;
 
-            await destination.WriteAsync(buffer.AsMemory(0, bytesRead), ct).ConfigureAwait(false);
+                if (totalBytes > _options.MaxBlobSizeBytes)
+                {
+                    throw new ArgumentException(
+                        string.Create(
+                            CultureInfo.InvariantCulture,
+                            $"Blob exceeds maximum size of {_options.MaxBlobSizeBytes} bytes. Redis blob storage is intended for small/ephemeral blobs only."
+                        ),
+                        nameof(source)
+                    );
+                }
+
+                await destination.WriteAsync(buffer.AsMemory(0, bytesRead), ct).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            // Blob content is user data; do not leak it into the shared pool.
+            ArrayPool<byte>.Shared.Return(buffer, clearArray: true);
         }
     }
 

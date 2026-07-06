@@ -233,6 +233,13 @@ public sealed class DynamicFeatureDefinitionStore(
 
         var context = new FeatureDefinitionContext();
 
+        // Pre-group once: the per-group scans and the recursive per-record ParentName scans over the full
+        // record list are O(records²) for large feature sets. Lookups preserve source order per key.
+        var featuresByGroup = featureRecords.ToLookup(p => p.GroupName, StringComparer.Ordinal);
+        var featuresByParent = featureRecords
+            .Where(p => p.ParentName is not null)
+            .ToLookup(p => p.ParentName!, StringComparer.Ordinal);
+
         foreach (var featureGroupRecord in featureGroupRecords)
         {
             var featureGroup = context.AddGroup(featureGroupRecord.Name, featureGroupRecord.DisplayName);
@@ -244,18 +251,17 @@ public sealed class DynamicFeatureDefinitionStore(
                 featureGroup[property.Key] = property.Value;
             }
 
-            var featureRecordsInThisGroup = featureRecords.Where(p =>
-                string.Equals(p.GroupName, featureGroup.Name, StringComparison.Ordinal)
-            );
-
-            foreach (var featureRecord in featureRecordsInThisGroup.Where(x => x.ParentName is null))
+            foreach (var featureRecord in featuresByGroup[featureGroup.Name])
             {
-                _UpdateInMemoryStoreCacheAddFeatureRecursively(
-                    featureGroup,
-                    featureRecord,
-                    featureRecords,
-                    newFeatureCache
-                );
+                if (featureRecord.ParentName is null)
+                {
+                    _UpdateInMemoryStoreCacheAddFeatureRecursively(
+                        featureGroup,
+                        featureRecord,
+                        featuresByParent,
+                        newFeatureCache
+                    );
+                }
             }
         }
 
@@ -268,7 +274,7 @@ public sealed class DynamicFeatureDefinitionStore(
     private static void _UpdateInMemoryStoreCacheAddFeatureRecursively(
         ICanCreateChildFeature featureContainer,
         FeatureDefinitionRecord featureRecord,
-        List<FeatureDefinitionRecord> allFeatureRecords,
+        ILookup<string, FeatureDefinitionRecord> featuresByParent,
         ImmutableDictionary<string, FeatureDefinition>.Builder featureCacheBuilder
     )
     {
@@ -293,13 +299,9 @@ public sealed class DynamicFeatureDefinitionStore(
             feature[property.Key] = property.Value;
         }
 
-        foreach (
-            var subFeature in allFeatureRecords.Where(p =>
-                string.Equals(p.ParentName, featureRecord.Name, StringComparison.Ordinal)
-            )
-        )
+        foreach (var subFeature in featuresByParent[featureRecord.Name])
         {
-            _UpdateInMemoryStoreCacheAddFeatureRecursively(feature, subFeature, allFeatureRecords, featureCacheBuilder);
+            _UpdateInMemoryStoreCacheAddFeatureRecursively(feature, subFeature, featuresByParent, featureCacheBuilder);
         }
     }
 
