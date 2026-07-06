@@ -60,7 +60,19 @@ public sealed class MinimalApiValidatorFilter<TRequest> : IEndpointFilter
         }
 
         var requestType = typeof(TRequest);
-        var request = context.Arguments.OfType<TRequest>().FirstOrDefault(request => request?.GetType() == requestType);
+
+        // Manual scan instead of OfType().FirstOrDefault(predicate): avoids two iterator allocations
+        // and a closure on every validated request. Exact-type match (not subtype) is intentional.
+        TRequest? request = default;
+
+        foreach (var argument in context.Arguments)
+        {
+            if (argument is TRequest candidate && candidate.GetType() == requestType)
+            {
+                request = candidate;
+                break;
+            }
+        }
 
         if (request is null)
         {
