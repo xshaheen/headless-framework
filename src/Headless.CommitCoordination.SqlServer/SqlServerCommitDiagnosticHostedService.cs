@@ -78,7 +78,7 @@ internal sealed partial class SqlServerCommitDiagnosticHostedService(
 
         var mode = options.Value.DiagnosticProbeMode;
 
-        if (mode == SqlServerCommitDiagnosticProbeMode.Disabled)
+        if (mode == CommitProbeMode.Disabled)
         {
             probeState.MarkSkipped("SQL Server commit diagnostic self-probe is disabled.");
 
@@ -94,7 +94,7 @@ internal sealed partial class SqlServerCommitDiagnosticHostedService(
             return;
         }
 
-        if (mode == SqlServerCommitDiagnosticProbeMode.Strict)
+        if (mode == CommitProbeMode.Strict)
         {
             probeState.MarkFailed(result.Message, result.Exception);
             LogDiagnosticProbeFailedStrict(_logger, result.Exception, result.Message);

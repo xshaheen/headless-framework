@@ -15,8 +15,8 @@ public enum SqlServerCommitDiagnosticProbeStatus
     NotRun = 0,
 
     /// <summary>
-    /// The probe was skipped — either <see cref="SqlServerCommitDiagnosticProbeMode.Disabled" /> was set, or
-    /// the mode is <see cref="SqlServerCommitDiagnosticProbeMode.Warn" /> and no connection factory was
+    /// The probe was skipped — either <see cref="CommitProbeMode.Disabled" /> was set, or
+    /// the mode is <see cref="CommitProbeMode.Warn" /> and no connection factory was
     /// configured.
     /// </summary>
     Skipped = 1,
@@ -30,13 +30,13 @@ public enum SqlServerCommitDiagnosticProbeStatus
     /// <summary>
     /// The probe ran but could not verify diagnostic compatibility — for example, the diagnostic event was not
     /// received within the configured timeout. The host started anyway because the mode was
-    /// <see cref="SqlServerCommitDiagnosticProbeMode.Warn" />.
+    /// <see cref="CommitProbeMode.Warn" />.
     /// </summary>
     Degraded = 3,
 
     /// <summary>
     /// The probe ran but could not verify diagnostic compatibility, and the mode was
-    /// <see cref="SqlServerCommitDiagnosticProbeMode.Strict" />, so startup was aborted.
+    /// <see cref="CommitProbeMode.Strict" />, so startup was aborted.
     /// </summary>
     Failed = 4,
 }

@@ -46,7 +46,7 @@ await connection.ExecuteCoordinatedTransactionAsync(
 ```csharp
 services.AddSqlServerCommitCoordination(options =>
 {
-    options.DiagnosticProbeMode = SqlServerCommitDiagnosticProbeMode.Strict;
+    options.DiagnosticProbeMode = CommitProbeMode.Strict;
     options.DiagnosticProbeTimeout = TimeSpan.FromSeconds(5);
     options.DiagnosticProbeConnectionFactory = ct => ValueTask.FromResult(new SqlConnection(connectionString));
 });

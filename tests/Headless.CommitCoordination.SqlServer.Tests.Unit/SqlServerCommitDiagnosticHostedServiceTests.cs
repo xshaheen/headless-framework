@@ -46,7 +46,7 @@ public sealed class SqlServerCommitDiagnosticHostedServiceTests
         await using var service = _CreateService(
             probe,
             state,
-            new SqlServerCommitCoordinationOptions { DiagnosticProbeMode = SqlServerCommitDiagnosticProbeMode.Disabled }
+            new SqlServerCommitCoordinationOptions { DiagnosticProbeMode = CommitProbeMode.Disabled }
         );
 
         await service.StartAsync(TestContext.Current.CancellationToken);
@@ -88,7 +88,7 @@ public sealed class SqlServerCommitDiagnosticHostedServiceTests
         await using var service = _CreateService(
             probe,
             state,
-            new SqlServerCommitCoordinationOptions { DiagnosticProbeMode = SqlServerCommitDiagnosticProbeMode.Strict }
+            new SqlServerCommitCoordinationOptions { DiagnosticProbeMode = CommitProbeMode.Strict }
         );
 
         await service

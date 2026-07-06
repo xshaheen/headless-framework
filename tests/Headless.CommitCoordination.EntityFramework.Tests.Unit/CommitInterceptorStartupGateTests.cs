@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.CommitCoordination;
 using Headless.CommitCoordination.EntityFramework;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -39,7 +40,7 @@ public sealed class CommitInterceptorStartupGateTests
         await using var provider = _BuildProvider(
             connection,
             wireInterceptor: false,
-            mode: CommitInterceptorProbeMode.Strict
+            mode: CommitProbeMode.Strict
         );
 
         // when — the interceptor never fires, so the commit edge is not observed.
@@ -67,7 +68,7 @@ public sealed class CommitInterceptorStartupGateTests
         await using var provider = _BuildProvider(
             connection,
             wireInterceptor: false,
-            mode: CommitInterceptorProbeMode.Warn
+            mode: CommitProbeMode.Warn
         );
 
         // when — Warn is the default posture: surface the mis-wire but let the host start (relay recovers).
@@ -83,7 +84,7 @@ public sealed class CommitInterceptorStartupGateTests
         var provider = new SpyServiceProvider();
         var gate = new CommitInterceptorStartupGate<GateTestDbContext>(
             provider,
-            Options.Create(new CommitInterceptorProbeOptions { Mode = CommitInterceptorProbeMode.Disabled }),
+            Options.Create(new CommitInterceptorProbeOptions { Mode = CommitProbeMode.Disabled }),
             NullLogger<CommitInterceptorStartupGate<GateTestDbContext>>.Instance
         );
 
@@ -100,7 +101,7 @@ public sealed class CommitInterceptorStartupGateTests
         var provider = new SpyServiceProvider();
         var gate = new CommitInterceptorStartupGate<GateTestDbContext>(
             provider,
-            Options.Create(new CommitInterceptorProbeOptions { Mode = CommitInterceptorProbeMode.Strict }),
+            Options.Create(new CommitInterceptorProbeOptions { Mode = CommitProbeMode.Strict }),
             NullLogger<CommitInterceptorStartupGate<GateTestDbContext>>.Instance
         );
 
@@ -113,7 +114,7 @@ public sealed class CommitInterceptorStartupGateTests
     private static ServiceProvider _BuildProvider(
         SqliteConnection connection,
         bool wireInterceptor,
-        CommitInterceptorProbeMode mode = CommitInterceptorProbeMode.Warn
+        CommitProbeMode mode = CommitProbeMode.Warn
     )
     {
         var services = new ServiceCollection();
