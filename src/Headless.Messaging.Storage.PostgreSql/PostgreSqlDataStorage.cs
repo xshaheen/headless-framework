@@ -181,7 +181,7 @@ internal sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@Id", message.StorageId),
             new NpgsqlParameter("@Content", serializer.Serialize(message.Origin)),
             new NpgsqlParameter("@Retries", message.Retries),
-            new NpgsqlParameter("@ExpiresAt", message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value),
+            new NpgsqlParameter("@ExpiresAt", message.ExpiresAt.ToUtcParameterValue()),
             new NpgsqlParameter("@NextRetryAt", nextRetryAt.ToUtcParameterValue()),
             new NpgsqlParameter("@LockedUntil", lockedUntil.ToUtcParameterValue()),
             new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar)
@@ -263,7 +263,7 @@ internal sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@IntentType", (short)stored.IntentType),
             new NpgsqlParameter("@Retries", stored.Retries),
             new NpgsqlParameter("@Added", stored.Added),
-            new NpgsqlParameter("@ExpiresAt", stored.ExpiresAt.HasValue ? stored.ExpiresAt.Value : DBNull.Value),
+            new NpgsqlParameter("@ExpiresAt", stored.ExpiresAt.ToUtcParameterValue()),
             new NpgsqlParameter("@NextRetryAt", stored.NextRetryAt.ToUtcParameterValue()),
             new NpgsqlParameter("@LockedUntil", stored.LockedUntil.ToUtcParameterValue()),
             new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar) { Value = DBNull.Value },
@@ -456,10 +456,7 @@ internal sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@IntentType", (short)mediumMessage.IntentType),
             new NpgsqlParameter("@Retries", mediumMessage.Retries),
             new NpgsqlParameter("@Added", mediumMessage.Added),
-            new NpgsqlParameter(
-                "@ExpiresAt",
-                mediumMessage.ExpiresAt.HasValue ? mediumMessage.ExpiresAt.Value : DBNull.Value
-            ),
+            new NpgsqlParameter("@ExpiresAt", mediumMessage.ExpiresAt.ToUtcParameterValue()),
             new NpgsqlParameter("@NextRetryAt", mediumMessage.NextRetryAt.ToUtcParameterValue()),
             new NpgsqlParameter("@LockedUntil", mediumMessage.LockedUntil.ToUtcParameterValue()),
             new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar) { Value = DBNull.Value },
@@ -796,7 +793,7 @@ internal sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@Id", message.StorageId),
             new NpgsqlParameter("@Content", serializer.Serialize(message.Origin)),
             new NpgsqlParameter("@Retries", message.Retries),
-            new NpgsqlParameter("@ExpiresAt", message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value),
+            new NpgsqlParameter("@ExpiresAt", message.ExpiresAt.ToUtcParameterValue()),
             new NpgsqlParameter("@NextRetryAt", nextRetryAt.ToUtcParameterValue()),
             new NpgsqlParameter("@LockedUntil", lockedUntil.ToUtcParameterValue()),
             new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar)
