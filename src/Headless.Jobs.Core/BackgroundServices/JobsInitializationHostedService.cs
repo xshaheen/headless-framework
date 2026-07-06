@@ -139,8 +139,8 @@ internal sealed class JobsInitializationHostedService(
         var internalJobsManager = serviceProvider.GetRequiredService<IInternalJobManager>();
 
         var functionsToSeed = JobFunctionProvider
-            .JobFunctions.Where(x => !string.IsNullOrEmpty(x.Value.cronExpression))
-            .Select(x => (x.Key, x.Value.cronExpression))
+            .JobFunctions.Where(x => !string.IsNullOrEmpty(x.Value.CronExpression))
+            .Select(x => (x.Key, x.Value.CronExpression))
             .ToArray();
 
         // No lock configured (default): run the seed directly. Seeded rows carry a DETERMINISTIC primary key derived

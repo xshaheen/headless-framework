@@ -29,9 +29,15 @@ public sealed class JobsManagerCoordinatedRoutingTests
         // The manager validates the function exists before routing. No other unit test mutates JobFunctionProvider, so
         // a one-time static registration is stable for this assembly.
         JobFunctionProvider.RegisterFunctions(
-            new Dictionary<string, (string, JobPriority, JobFunctionDelegate, int)>(StringComparer.Ordinal)
+            new Dictionary<string, JobFunctionRegistration>(StringComparer.Ordinal)
             {
-                [_FunctionName] = ("0 0 * * *", JobPriority.LongRunning, (_, _, _) => Task.CompletedTask, 1),
+                [_FunctionName] = new JobFunctionRegistration
+                {
+                    CronExpression = "0 0 * * *",
+                    Priority = JobPriority.LongRunning,
+                    Delegate = (_, _, _) => Task.CompletedTask,
+                    MaxConcurrency = 1,
+                },
             }
         );
         JobFunctionProvider.Build();

@@ -151,9 +151,15 @@ public static class JobsCoordinationFixtureExtensions
     public static IHost BuildCoordinatedEnqueueHost(this IJobsCoordinationFixture fixture, string nodeId)
     {
         JobFunctionProvider.RegisterFunctions(
-            new Dictionary<string, (string, JobPriority, JobFunctionDelegate, int)>(StringComparer.Ordinal)
+            new Dictionary<string, JobFunctionRegistration>(StringComparer.Ordinal)
             {
-                [CoordinatedFunctionName] = (string.Empty, JobPriority.LongRunning, (_, _, _) => Task.CompletedTask, 1),
+                [CoordinatedFunctionName] = new JobFunctionRegistration
+                {
+                    CronExpression = string.Empty,
+                    Priority = JobPriority.LongRunning,
+                    Delegate = (_, _, _) => Task.CompletedTask,
+                    MaxConcurrency = 1,
+                },
             }
         );
 
