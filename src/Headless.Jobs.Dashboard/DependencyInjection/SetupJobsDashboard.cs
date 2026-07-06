@@ -15,7 +15,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Jobs.DependencyInjection;
 
-public static class ServiceExtensions
+public static class SetupJobsDashboard
 {
     /// <summary>
     /// Registers the Jobs dashboard: an embedded SPA served at a configurable base path with a

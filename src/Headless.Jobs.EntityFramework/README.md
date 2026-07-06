@@ -9,7 +9,7 @@ Provides persistence of time jobs and cron occurrences across restarts and acros
 ## Key Features
 
 - **Durable storage**: persists `TimeJobEntity`, `CronJobEntity`, and `CronJobOccurrenceEntity` in EF Core-mapped tables (default schema: `jobs`).
-- **`AddOperationalStore(ef => …)`**: the EF registration extension on `JobsOptionsBuilder`.
+- **`UseEntityFramework(ef => …)`**: the EF registration extension on `JobsOptionsBuilder`.
 - **`UseJobsDbContext<TDbContext>(dbOptions, schema?)`**: registers a dedicated `JobsDbContext` with configurable schema.
 - **`UseApplicationDbContext<TDbContext>(ConfigurationType)`**: shares an existing application `DbContext` instead of a dedicated one.
 - **Database-clock lease authority**: lease renewal comparisons use the database server clock (`now()`/`GETUTCDATE()`), not the node's `TimeProvider`. Cross-node clock skew cannot reclaim a healthy renewing job.
@@ -48,7 +48,7 @@ builder
     {
         options.ConfigureScheduler(scheduler => scheduler.SchedulerTimeZone = TimeZoneInfo.Utc);
     })
-    .AddOperationalStore(ef =>
+    .UseEntityFramework(ef =>
     {
         ef.UseJobsDbContext<JobsDbContext>(db => db.UseSqlServer(conn));
     });
@@ -73,7 +73,7 @@ builder
             scheduler.DeadNodeReconcileInterval = TimeSpan.FromMinutes(1); // default: 1 min
         });
     })
-    .AddOperationalStore(ef =>
+    .UseEntityFramework(ef =>
     {
         ef.UseJobsDbContext<JobsDbContext>(db => db.UseSqlServer(conn));
         ef.SetDbContextPoolSize(512); // default: 1024

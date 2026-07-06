@@ -6,7 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Jobs.DependencyInjection;
 
-public static class ServiceExtension
+public static class SetupJobsEntityFramework
 {
     /// <summary>
     /// Registers the Entity Framework Core operational store as the persistence backend for the Jobs
@@ -25,7 +25,7 @@ public static class ServiceExtension
     /// (pool size 1024, schema "jobs").
     /// </param>
     /// <exception cref="ArgumentOutOfRangeException">The configured pool size is ≤ 0.</exception>
-    public static JobsOptionsBuilder<TTimeJob, TCronJob> AddOperationalStore<TTimeJob, TCronJob>(
+    public static JobsOptionsBuilder<TTimeJob, TCronJob> UseEntityFramework<TTimeJob, TCronJob>(
         this JobsOptionsBuilder<TTimeJob, TCronJob> jobsConfiguration,
         Action<JobsEfCoreOptionBuilder<TTimeJob, TCronJob>>? efConfiguration = null
     )

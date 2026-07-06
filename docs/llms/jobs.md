@@ -99,7 +99,7 @@ For durable persistence register a coordination provider first, then add the EF 
 builder.Services.AddHeadlessCoordination(c => c.UseSqlServer(conn));
 builder
     .Services.AddHeadlessJobs()
-    .AddOperationalStore(ef => ef.UseJobsDbContext<JobsDbContext>(db => db.UseSqlServer(conn)));
+    .UseEntityFramework(ef => ef.UseJobsDbContext<JobsDbContext>(db => db.UseSqlServer(conn)));
 ```
 
 Mark job methods with `[JobFunction("name")]` (or `[JobFunction("name", cronExpression: "* * * * *")]` for cron) and add `Jobs.SourceGenerator` for compile-time zero-reflection discovery.
@@ -110,7 +110,7 @@ Mark job methods with `[JobFunction("name")]` (or `[JobFunction("name", cronExpr
 - The registration attribute is `[JobFunction]` (`JobFunctionAttribute` in `Headless.Jobs.Base`). The first positional argument is the function name; `cronExpression` is a named parameter. Add `Headless.Jobs.SourceGenerator` to the project for compile-time registration.
 - Call `AddHeadlessJobs()` on `IServiceCollection`. There is no `app.UseJobs()` call — the scheduler starts automatically through `IHostedService` registered by `AddHeadlessJobs`.
 - Use `Jobs.EntityFramework` for durable persistence. Without it, jobs live in memory and are lost on restart.
-- For the durable operational store, register `AddHeadlessCoordination(c => c.Use…(conn))` BEFORE `AddHeadlessJobs(o => o.AddOperationalStore(…))`. Without coordination, startup throws `InvalidOperationException` naming `AddHeadlessCoordination`.
+- For the durable operational store, register `AddHeadlessCoordination(c => c.Use…(conn))` BEFORE `AddHeadlessJobs(o => o.UseEntityFramework(…))`. Without coordination, startup throws `InvalidOperationException` naming `AddHeadlessCoordination`.
 - On the durable path, node identity is `node@incarnation` (store-allocated by Coordination), not `Environment.MachineName`. `SchedulerOptionsBuilder.NodeId` is only a pre-registration display fallback — it is NOT the row owner on the durable path.
 - Running jobs slide their pickup lease forward on the `LeaseRenewalInterval` cadence (default ≈ `LeaseDuration / 3`), so `LeaseDuration` (default 5 min) no longer needs to exceed the longest job runtime. Keep `LeaseDuration` ≥ `FallbackIntervalChecker` to avoid spurious re-claims of rows that are claimed but not yet started.
 - Set `OnNodeDeath = NodeDeathPolicy.MarkFailed` or `Skip` on non-idempotent jobs — default `Retry` will re-run the job after a node crash.
@@ -666,7 +666,7 @@ Provides persistence of time jobs and cron occurrences across restarts and acros
 ### Key Features
 
 - **Durable storage**: persists `TimeJobEntity`, `CronJobEntity`, and `CronJobOccurrenceEntity` in EF Core-mapped tables (default schema: `jobs`).
-- **`AddOperationalStore(ef => …)`**: the EF registration extension on `JobsOptionsBuilder`.
+- **`UseEntityFramework(ef => …)`**: the EF registration extension on `JobsOptionsBuilder`.
 - **`UseJobsDbContext<TDbContext>(dbOptions, schema?)`**: registers a dedicated `JobsDbContext` with configurable schema.
 - **`UseApplicationDbContext<TDbContext>(ConfigurationType)`**: shares an existing application `DbContext` instead of a dedicated one.
 - **Database-clock lease authority**: on the EF path, lease renewal comparisons (`LockedUntil`) use the database server clock (`now()`/`GETUTCDATE()`), not the node's `TimeProvider`. Cross-node clock skew cannot reclaim a healthy renewing job.
@@ -705,7 +705,7 @@ builder
     {
         options.ConfigureScheduler(scheduler => scheduler.SchedulerTimeZone = TimeZoneInfo.Utc);
     })
-    .AddOperationalStore(ef =>
+    .UseEntityFramework(ef =>
     {
         ef.UseJobsDbContext<JobsDbContext>(db => db.UseSqlServer(conn));
     });
@@ -719,7 +719,7 @@ builder.Services.AddHeadlessCaching(setup =>
 Without a registered coordination provider the durable path throws at startup:
 ```
 InvalidOperationException: The durable Jobs operational store requires a coordination provider.
-Register one with AddHeadlessCoordination(...) before AddHeadlessJobs(... AddOperationalStore(...)).
+Register one with AddHeadlessCoordination(...) before AddHeadlessJobs(... UseEntityFramework(...)).
 ```
 
 ### Configuration
@@ -734,7 +734,7 @@ builder
             scheduler.DeadNodeReconcileInterval = TimeSpan.FromMinutes(1); // default: 1 min
         });
     })
-    .AddOperationalStore(ef =>
+    .UseEntityFramework(ef =>
     {
         ef.UseJobsDbContext<JobsDbContext>(db => db.UseSqlServer(conn));
         ef.SetDbContextPoolSize(512); // default: 1024

@@ -23,7 +23,7 @@ var host = Host.CreateDefaultBuilder(args)
             // Configure Jobs with a PostgreSQL operational store.
             services.AddHeadlessJobs(options =>
             {
-                options.AddOperationalStore(efOptions =>
+                options.UseEntityFramework(efOptions =>
                 {
                     efOptions.UseJobsDbContext<JobsDbContext>(dbOptions =>
                         dbOptions.UseNpgsql(

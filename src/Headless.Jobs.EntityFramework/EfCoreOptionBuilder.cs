@@ -10,7 +10,7 @@ namespace Headless.Jobs;
 
 /// <summary>
 /// Fluent builder for configuring the Entity Framework Core operational store registered by
-/// <c>AddOperationalStore</c>. Allows selecting the DbContext strategy, connection pool size,
+/// <c>UseEntityFramework</c>. Allows selecting the DbContext strategy, connection pool size,
 /// and database schema.
 /// </summary>
 /// <typeparam name="TTimeJob">The concrete time job entity type for this application.</typeparam>

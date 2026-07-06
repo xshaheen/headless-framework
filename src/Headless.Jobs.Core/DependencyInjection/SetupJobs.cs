@@ -23,7 +23,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Headless.Jobs.DependencyInjection;
 
-public static class JobsServiceExtensions
+public static class SetupJobs
 {
     public static IServiceCollection AddHeadlessJobs(
         this IServiceCollection services,
@@ -157,7 +157,7 @@ public static class JobsServiceExtensions
         // register a NullNodeMembership fallback first and have coordination replace it. Inspect the LAST descriptor
         // — the one DI will actually resolve — not the first; FirstOrDefault would see the null fallback and reject a
         // valid config. A factory-registered NullNodeMembership cannot be detected pre-build, so AddHeadlessCoordination
-        // must be registered before AddHeadlessJobs(... AddOperationalStore(...)).
+        // must be registered before AddHeadlessJobs(... UseEntityFramework(...)).
         var membershipDescriptor = services.LastOrDefault(descriptor =>
             descriptor.ServiceType == typeof(INodeMembership)
         );
@@ -170,7 +170,7 @@ public static class JobsServiceExtensions
         {
             throw new InvalidOperationException(
                 "The durable Jobs operational store requires a coordination provider. Register one with "
-                    + "AddHeadlessCoordination(...) before AddHeadlessJobs(... AddOperationalStore(...))."
+                    + "AddHeadlessCoordination(...) before AddHeadlessJobs(... UseEntityFramework(...))."
             );
         }
 

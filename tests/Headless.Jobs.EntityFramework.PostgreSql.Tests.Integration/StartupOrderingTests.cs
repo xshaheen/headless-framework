@@ -25,7 +25,7 @@ public sealed class StartupOrderingTests
 
         var act = () =>
             services.AddHeadlessJobs(options =>
-                options.AddOperationalStore(ef =>
+                options.UseEntityFramework(ef =>
                     ef.UseJobsDbContext<JobsDbContext>(db => db.UseNpgsql(_DummyConnectionString), schema: "jobs")
                 )
             );
@@ -42,7 +42,7 @@ public sealed class StartupOrderingTests
 
         var act = () =>
             services.AddHeadlessJobs(options =>
-                options.AddOperationalStore(ef =>
+                options.UseEntityFramework(ef =>
                     ef.UseJobsDbContext<JobsDbContext>(db => db.UseNpgsql(_DummyConnectionString), schema: "jobs")
                 )
             );

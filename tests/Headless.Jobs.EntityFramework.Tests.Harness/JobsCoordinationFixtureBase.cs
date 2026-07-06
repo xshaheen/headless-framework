@@ -124,7 +124,7 @@ public static class JobsCoordinationFixtureExtensions
             // The scheduler is disabled so it never races the tests' direct persistence calls. Dead-node recovery
             // is driven by the MembershipRecoveryBridge + coordination heartbeat, both of which still run.
             options.DisableBackgroundServices();
-            options.AddOperationalStore(ef =>
+            options.UseEntityFramework(ef =>
                 ef.UseJobsDbContext<JobsDbContext>(fixture.ConfigureStore, schema: "jobs")
             );
         });
@@ -183,7 +183,7 @@ public static class JobsCoordinationFixtureExtensions
         builder.Services.AddHeadlessJobs(options =>
         {
             options.DisableBackgroundServices();
-            options.AddOperationalStore(ef =>
+            options.UseEntityFramework(ef =>
                 ef.UseJobsDbContext<JobsDbContext>(fixture.ConfigureStore, schema: "jobs")
             );
         });

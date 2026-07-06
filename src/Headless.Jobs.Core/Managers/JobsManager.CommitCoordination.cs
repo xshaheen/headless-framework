@@ -74,7 +74,7 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
         throw new InvalidOperationException(
             "A relational commit coordinator is active but the configured job persistence provider does not support "
                 + "coordinated writes. The coordinated-enqueue path requires the EF Core operational store "
-                + "(AddOperationalStore)."
+                + "(UseEntityFramework)."
         );
     }
 
