@@ -228,9 +228,10 @@ public sealed class PermissionManager(
             return result;
         }
 
-        // First pass: check for explicit denials (Prohibited)
-        // AWS IAM-style: explicit deny overrides all grants
-        var explicitDenials = new HashSet<string>(StringComparer.Ordinal);
+        // Evaluate each matching provider exactly once - CheckAsync typically fans out to the distributed
+        // grant cache (per role for the role provider), so the denial and grant passes below share these
+        // results instead of doubling those round-trips per authorization check.
+        var providerGrantsList = new List<(string ProviderName, MultiplePermissionGrantStatusResult Grants)>();
 
         foreach (var provider in grantProviderManager.ValueProviders)
         {
@@ -243,6 +244,15 @@ public sealed class PermissionManager(
                 .CheckAsync(checkNeededPermissions, currentUser, cancellationToken)
                 .ConfigureAwait(false);
 
+            providerGrantsList.Add((provider.Name, providerGrants));
+        }
+
+        // First pass: check for explicit denials (Prohibited)
+        // AWS IAM-style: explicit deny overrides all grants
+        var explicitDenials = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var (_, providerGrants) in providerGrantsList)
+        {
             foreach (var (permissionName, providerResult) in providerGrants)
             {
                 if (providerResult.Status is PermissionGrantStatus.Prohibited)
@@ -252,18 +262,12 @@ public sealed class PermissionManager(
             }
         }
 
-        // Second pass: apply grants only if not explicitly denied
-        foreach (var provider in grantProviderManager.ValueProviders)
+        // Second pass: apply grants only if not explicitly denied. Index results by name once instead of a
+        // linear First() scan per granted permission (quadratic for large permission batches).
+        var resultsByName = result.ToDictionary(x => x.Name, StringComparer.Ordinal);
+
+        foreach (var (grantProviderName, providerGrants) in providerGrantsList)
         {
-            if (providerName is not null && !string.Equals(provider.Name, providerName, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            var providerGrants = await provider
-                .CheckAsync(checkNeededPermissions, currentUser, cancellationToken)
-                .ConfigureAwait(false);
-
             foreach (var (permissionName, providerResult) in providerGrants)
             {
                 if (providerResult.Status is not PermissionGrantStatus.Granted)
@@ -277,10 +281,10 @@ public sealed class PermissionManager(
                     continue;
                 }
 
-                var grant = result.First(x => string.Equals(x.Name, permissionName, StringComparison.Ordinal));
+                var grant = resultsByName[permissionName];
 
                 grant.IsGranted = true;
-                grant.Providers.Add(new GrantPermissionProvider(provider.Name, providerResult.ProviderKeys));
+                grant.Providers.Add(new GrantPermissionProvider(grantProviderName, providerResult.ProviderKeys));
             }
         }
 
