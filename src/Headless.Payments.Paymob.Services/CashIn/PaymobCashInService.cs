@@ -44,7 +44,6 @@ public interface IPaymobCashInService
     /// A response containing the iframe embed URL (<c>IframeSrc</c>), raw payment key, order ID,
     /// and expiration in seconds.
     /// </returns>
-    [Pure]
     Task<PaymobCardCashInResponse> StartAsync(PaymobCardCashInRequest request);
 
     /// <summary>
@@ -55,7 +54,6 @@ public interface IPaymobCashInService
     /// A response indicating whether the charge succeeded, whether 3-D Secure is required
     /// (with a redirect URL), and the resulting transaction and order IDs.
     /// </returns>
-    [Pure]
     Task<PaymobCardSavedTokenCashInResponse> StartAsync(PaymobCardSavedTokenCashInRequest request);
 
     /// <summary>
@@ -63,7 +61,6 @@ public interface IPaymobCashInService
     /// </summary>
     /// <param name="request">Wallet payment parameters including the wallet phone number and integration ID.</param>
     /// <returns>A response containing the redirect URL the customer must follow and the order ID.</returns>
-    [Pure]
     Task<PaymobWalletCashInResponse> StartAsync(PaymobWalletCashInRequest request);
 
     /// <summary>
@@ -71,7 +68,6 @@ public interface IPaymobCashInService
     /// </summary>
     /// <param name="request">Kiosk payment parameters including the integration ID.</param>
     /// <returns>A response containing the billing reference number and the order ID.</returns>
-    [Pure]
     Task<PaymobKioskCashInResponse> StartAsync(PaymobKioskCashInRequest request);
 
     /// <summary>
@@ -81,7 +77,6 @@ public interface IPaymobCashInService
     /// <returns>
     /// The intention response from Paymob, or <see langword="null"/> when the response body is empty.
     /// </returns>
-    [Pure]
     Task<CashInCreateIntentionResponse?> StartAsync(CashInCreateIntentionRequest request);
 
     /// <summary>
@@ -91,7 +86,6 @@ public interface IPaymobCashInService
     /// <returns>
     /// The resulting refund transaction from Paymob, or <see langword="null"/> when the response body is empty.
     /// </returns>
-    [Pure]
     Task<CashInCallbackTransaction?> RefundAsync(PaymobRefundRequest request);
 
     /// <summary>
@@ -101,7 +95,6 @@ public interface IPaymobCashInService
     /// <returns>
     /// The resulting void transaction from Paymob, or <see langword="null"/> when the response body is empty.
     /// </returns>
-    [Pure]
     Task<CashInCallbackTransaction?> VoidAsync(PaymobVoidRequest request);
 }
 

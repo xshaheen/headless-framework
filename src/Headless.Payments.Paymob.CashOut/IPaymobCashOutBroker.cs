@@ -44,7 +44,6 @@ public interface IPaymobCashOutBroker
     /// <c>IsPending</c>, and <c>IsFailed</c> to determine the disbursement outcome.
     /// </returns>
     /// <exception cref="PaymobCashOutException">The HTTP request to Paymob failed.</exception>
-    [Pure]
     Task<CashOutTransaction> Disburse(CashOutDisburseRequest request, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -54,7 +53,6 @@ public interface IPaymobCashOutBroker
     /// <returns>The raw JSON string returned by the Paymob budget inquiry endpoint.</returns>
     /// <remarks>Paymob rate-limits this endpoint to 5 requests per minute.</remarks>
     /// <exception cref="PaymobCashOutException">The HTTP request to Paymob failed.</exception>
-    [Pure]
     Task<string> GetBudgetAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -72,7 +70,6 @@ public interface IPaymobCashOutBroker
     /// <exception cref="PaymobCashOutException">The HTTP request to Paymob failed.</exception>
     /// <exception cref="ArgumentNullException"><paramref name="transactionsIds"/> is <see langword="null"/> or empty.</exception>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="page"/> is not positive.</exception>
-    [Pure]
     Task<string> GetTransactionsAsync(
         IReadOnlyList<string> transactionsIds,
         bool isBankTransactions,
