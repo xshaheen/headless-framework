@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <Description>local file-system integration for Headless blob storage.</Description>
+    <Description>Local file-system integration for Headless blob storage.</Description>
     <PackageTags>headless;blobs;file-system;dotnet</PackageTags>
   </PropertyGroup>
   <ItemGroup>

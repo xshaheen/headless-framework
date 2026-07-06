@@ -1,7 +1,7 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <Description>hybrid cache integration for Headless caching.</Description>
+    <Description>Two-tier hybrid cache (in-memory L1 + remote L2) integration for Headless caching.</Description>
     <PackageTags>headless;caching;hybrid;dotnet</PackageTags>
     <RootNamespace>Headless.Caching</RootNamespace>
   </PropertyGroup>

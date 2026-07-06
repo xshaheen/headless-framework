@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <Description>logging Serilog integration for Headless API.</Description>
+    <Description>Serilog logging integration for Headless API.</Description>
     <PackageTags>headless;api;logging;serilog;dotnet</PackageTags>
     <RootNamespace>Headless.Logging</RootNamespace>
   </PropertyGroup>
