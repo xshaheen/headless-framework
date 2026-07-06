@@ -21,8 +21,8 @@ dotnet add package Headless.Sql.Abstractions
 ## Quick Start
 
 ```csharp
-// Register a concrete factory (provider package required):
-builder.Services.AddSingleton<ISqlConnectionFactory>(new NpgsqlConnectionFactory(connectionString));
+// Register a provider (provider package required — e.g. Headless.Sql.PostgreSql):
+builder.Services.AddPostgreSqlSql(connectionString);
 
 // Inject and use in a repository:
 public sealed class OrderRepository(ISqlConnectionFactory connectionFactory)
