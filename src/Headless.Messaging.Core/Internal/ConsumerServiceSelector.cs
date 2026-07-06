@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using Headless.Checks;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Messages;
+using Headless.Messaging.Runtime;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -13,34 +14,10 @@ using Microsoft.Extensions.Options;
 namespace Headless.Messaging.Internal;
 
 /// <summary>
-/// Defines an interface for selecting an consumer service method to invoke for the current message.
+/// Default <see cref="IConsumerServiceSelector"/> that discovers <see cref="IConsume{TMessage}"/> registrations
+/// and matches incoming message names against them (exact match before wildcard regex).
 /// </summary>
-public interface IConsumerServiceSelector
-{
-    /// <summary>
-    /// Selects a set of <see cref="ConsumerExecutorDescriptor" /> candidates for the current message associated with
-    /// </summary>
-    /// <returns>A set of <see cref="ConsumerExecutorDescriptor" /> candidates or <see langword="null"/>.</returns>
-    IReadOnlyList<ConsumerExecutorDescriptor> SelectCandidates();
-
-    /// <summary>
-    /// Selects the best <see cref="ConsumerExecutorDescriptor" /> candidate from <paramref name="candidates" /> for the
-    /// current message associated.
-    /// </summary>
-    /// <param name="key">message name or exchange router key.</param>
-    /// <param name="candidates">the set of <see cref="ConsumerExecutorDescriptor" /> candidates.</param>
-    ConsumerExecutorDescriptor? SelectBestCandidate(string key, IReadOnlyList<ConsumerExecutorDescriptor> candidates);
-
-    /// <summary>
-    /// Clears any cached candidate data, forcing re-evaluation on the next selection.
-    /// </summary>
-    void Invalidate();
-}
-
-/// <summary>
-/// Creates a new <see cref="ConsumerServiceSelector" />.
-/// </summary>
-public sealed class ConsumerServiceSelector(IServiceProvider serviceProvider) : IConsumerServiceSelector
+internal sealed class ConsumerServiceSelector(IServiceProvider serviceProvider) : IConsumerServiceSelector
 {
     /// <summary>
     /// since this class be designed as a Singleton service,the following two list must be thread safe!
@@ -223,7 +200,7 @@ public sealed class ConsumerServiceSelector(IServiceProvider serviceProvider) : 
             [
                 .. executeDescriptor.Select(x => new RegexExecuteDescriptor<ConsumerExecutorDescriptor>
                 {
-                    Name = Helper.WildcardToRegex(x.MessageName),
+                    Name = TransportNaming.WildcardToRegex(x.MessageName),
                     Descriptor = x,
                 }),
             ];

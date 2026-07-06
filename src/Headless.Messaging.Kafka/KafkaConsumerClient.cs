@@ -3,7 +3,7 @@
 using Confluent.Kafka;
 using Confluent.Kafka.Admin;
 using Headless.Checks;
-using Headless.Messaging.Internal;
+using Headless.Messaging.Runtime;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Options;
 
@@ -64,7 +64,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
         {
             if (topicName.Contains('*', StringComparison.Ordinal) || topicName.Contains('#', StringComparison.Ordinal))
             {
-                normalizedTopics.Add(Helper.WildcardToRegex(topicName));
+                normalizedTopics.Add(TransportNaming.WildcardToRegex(topicName));
                 continue;
             }
 

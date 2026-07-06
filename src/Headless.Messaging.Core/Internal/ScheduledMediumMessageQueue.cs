@@ -5,7 +5,7 @@ using Headless.Messaging.Messages;
 
 namespace Headless.Messaging.Internal;
 
-public sealed class ScheduledMediumMessageQueue(TimeProvider timeProvider) : IDisposable
+internal sealed class ScheduledMediumMessageQueue(TimeProvider timeProvider) : IDisposable
 {
     private readonly SortedSet<(long, MediumMessage)> _queue = new(
         Comparer<(long, MediumMessage)>.Create(

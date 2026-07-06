@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
-using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
+using Headless.Messaging.Runtime;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
@@ -77,8 +77,8 @@ internal sealed class ConfigurePostgreSqlOptions(IServiceScopeFactory serviceSco
         }
 
         if (
-            Helper.IsUsingType<IOutboxBus>(options.DbContextType)
-            || Helper.IsUsingType<IOutboxQueue>(options.DbContextType)
+            RuntimeTypeInspection.DeclaresFieldOfType<IOutboxBus>(options.DbContextType)
+            || RuntimeTypeInspection.DeclaresFieldOfType<IOutboxQueue>(options.DbContextType)
         )
         {
             throw new InvalidOperationException(

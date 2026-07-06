@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.Internal;
+using Headless.Messaging.Runtime;
 
 namespace Headless.Messaging.Dashboard.NodeDiscovery;
 

@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using Headless.Checks;
 using Headless.Messaging;
-using Headless.Messaging.Internal;
+using Headless.Messaging.Runtime;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;

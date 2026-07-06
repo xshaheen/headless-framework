@@ -9,6 +9,7 @@ using Headless.Messaging.Exceptions;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Retry;
+using Headless.Messaging.Runtime;
 using Headless.Messaging.Serialization;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
@@ -20,7 +21,7 @@ namespace Headless.Messaging.Internal;
 /// <summary>
 /// Handler received message of subscribed.
 /// </summary>
-public interface IConsumerRegister : IProcessingServer
+internal interface IConsumerRegister : IProcessingServer
 {
     bool IsHealthy();
 

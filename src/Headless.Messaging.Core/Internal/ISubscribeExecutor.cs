@@ -8,8 +8,10 @@ using Headless.Messaging.Configuration;
 using Headless.Messaging.Diagnostics;
 using Headless.Messaging.Exceptions;
 using Headless.Messaging.Messages;
+using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Retry;
+using Headless.Messaging.Runtime;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -56,7 +58,7 @@ internal sealed class SubscribeExecutor(
         MessageDiagnosticListenerNames.DiagnosticListenerName
     );
 
-    private readonly string? _hostName = Helper.GetInstanceHostname();
+    private readonly string? _hostName = HostIdentity.GetInstanceHostname();
     private readonly MessagingOptions _options = options.Value;
     private readonly RetryPolicyOptions _retryPolicy = options.Value.RetryPolicy;
 

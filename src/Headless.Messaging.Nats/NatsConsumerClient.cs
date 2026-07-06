@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using Headless.Checks;
 using Headless.Messaging.Internal;
+using Headless.Messaging.Runtime;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -137,8 +138,8 @@ internal sealed class NatsConsumerClient(
     internal static string BuildDurableName(string groupName, string subject, IntentType intentType)
     {
         return intentType == IntentType.Queue
-            ? Helper.Normalized("queue-" + subject)
-            : Helper.Normalized(groupName + "-" + subject);
+            ? TransportNaming.Normalize("queue-" + subject)
+            : TransportNaming.Normalize(groupName + "-" + subject);
     }
 
     internal static IReadOnlyList<string> BuildConsumerSubjects(
@@ -225,7 +226,7 @@ internal sealed class NatsConsumerClient(
 
         foreach (var streamGroup in streamGroups)
         {
-            var groupName = Helper.Normalized(name);
+            var groupName = TransportNaming.Normalize(name);
             var shardedMessageNames = _ResolveShardedMessageNames(streamGroup);
 
             foreach (var subject in BuildConsumerSubjects(streamGroup, shardedMessageNames))

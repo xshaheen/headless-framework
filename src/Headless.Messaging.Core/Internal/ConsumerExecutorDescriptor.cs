@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.Internal;
 
-public class ConsumerExecutorDescriptorComparer(ILogger logger) : IEqualityComparer<ConsumerExecutorDescriptor>
+internal sealed class ConsumerExecutorDescriptorComparer(ILogger logger) : IEqualityComparer<ConsumerExecutorDescriptor>
 {
     public bool Equals(ConsumerExecutorDescriptor? x, ConsumerExecutorDescriptor? y)
     {

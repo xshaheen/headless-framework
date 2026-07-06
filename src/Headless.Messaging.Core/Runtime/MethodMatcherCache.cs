@@ -2,9 +2,16 @@
 
 using System.Collections.Concurrent;
 using Headless.Messaging.Messages;
+using JetBrains.Annotations;
 
-namespace Headless.Messaging.Internal;
+namespace Headless.Messaging.Runtime;
 
+/// <summary>
+/// Caches the resolved consumer topology (message name plus group to executor descriptor) so the
+/// dispatch hot path and dashboards can look up handlers without re-running consumer selection. The
+/// snapshot is lazily built on first access and rebuilt after <see cref="Invalidate"/>.
+/// </summary>
+[PublicAPI]
 public class MethodMatcherCache(IConsumerServiceSelector selector)
 {
     private readonly Lock _lock = new();
@@ -92,6 +99,8 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
         }
     }
 
+    /// <summary>Gets the maximum consumer concurrency configured for the supplied group, or <c>1</c> when unknown.</summary>
+    /// <param name="group">The consumer group name.</param>
     public byte GetGroupConcurrentLimit(string group)
     {
         _EnsureEntries();
@@ -104,6 +113,7 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
         return _intentGroupConcurrent.TryGetValue(group, out var value) ? value : (byte)1;
     }
 
+    /// <summary>Gets the message names of every registered consumer across all groups.</summary>
     public List<string> GetAllMessageNames()
     {
         if (_entries.IsEmpty)
@@ -167,6 +177,7 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
         return false;
     }
 
+    /// <summary>Discards the cached topology so the next access rebuilds it from the consumer selector.</summary>
     public void Invalidate()
     {
         lock (_lock)

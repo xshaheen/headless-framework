@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.Processor;
 
-public sealed class TransportCheckProcessor(ILogger<TransportCheckProcessor> logger, IConsumerRegister register)
+internal sealed class TransportCheckProcessor(ILogger<TransportCheckProcessor> logger, IConsumerRegister register)
     : IProcessor
 {
     private readonly TimeSpan _waitingInterval = TimeSpan.FromSeconds(30);
