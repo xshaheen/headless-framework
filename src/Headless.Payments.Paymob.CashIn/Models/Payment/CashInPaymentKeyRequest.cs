@@ -10,7 +10,7 @@ public sealed class CashInPaymentKeyRequest
         int integrationId,
         int orderId,
         CashInBillingData billingData,
-        int amountCents,
+        long amountCents,
         string currency = "EGP",
         bool lockOrderWhenPaid = true,
         int? expiration = null
@@ -40,7 +40,8 @@ public sealed class CashInPaymentKeyRequest
 
     public int OrderId { get; }
 
-    public int AmountCents { get; }
+    /// <summary>The amount in the smallest currency unit (integer cents), e.g. <c>10000</c> for 100.00 EGP.</summary>
+    public long AmountCents { get; }
 
     public string Currency { get; }
 

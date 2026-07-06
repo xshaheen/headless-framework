@@ -26,8 +26,9 @@ public sealed class CashInKioskPayData
     [JsonPropertyName("paid_through")]
     public required string PaidThrough { get; init; }
 
+    /// <summary>The amount due at the kiosk in the smallest currency unit (integer cents).</summary>
     [JsonPropertyName("due_amount")]
-    public int DueAmount { get; init; }
+    public long DueAmount { get; init; }
 
     [JsonPropertyName("biller")]
     public object? Biller { get; init; }

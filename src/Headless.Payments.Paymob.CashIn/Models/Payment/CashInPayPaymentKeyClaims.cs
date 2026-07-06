@@ -9,7 +9,7 @@ public sealed class CashInPayPaymentKeyClaims
     public int IntegrationId { get; init; }
 
     [JsonPropertyName("amount_cents")]
-    public int AmountCents { get; init; }
+    public long AmountCents { get; init; }
 
     [JsonPropertyName("user_id")]
     public int UserId { get; init; }

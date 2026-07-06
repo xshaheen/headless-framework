@@ -21,7 +21,7 @@ public sealed class CashInTransaction
     public bool ErrorOccured { get; init; }
 
     [JsonPropertyName("amount_cents")]
-    public int AmountCents { get; init; }
+    public long AmountCents { get; init; }
 
     /// <summary>"N/A" or decimal number</summary>
     [JsonPropertyName("fees")]
@@ -48,7 +48,7 @@ public sealed class CashInTransaction
     public bool IsCapture { get; init; }
 
     [JsonPropertyName("refunded_amount_cents")]
-    public int RefundedAmountCents { get; init; }
+    public long RefundedAmountCents { get; init; }
 
     [JsonPropertyName("source_id")]
     public int SourceId { get; init; }
@@ -57,7 +57,7 @@ public sealed class CashInTransaction
     public bool IsCaptured { get; init; }
 
     [JsonPropertyName("captured_amount")]
-    public int CapturedAmount { get; init; }
+    public long CapturedAmount { get; init; }
 
     [JsonPropertyName("owner")]
     public int Owner { get; init; }

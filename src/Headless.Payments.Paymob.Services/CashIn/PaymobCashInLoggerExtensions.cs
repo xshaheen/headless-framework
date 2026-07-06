@@ -62,7 +62,7 @@ internal static partial class PaymobCashInLoggerExtensions
         Exception exception,
         int orderId,
         int integrationId,
-        int amountCents
+        long amountCents
     );
 
     [LoggerMessage(
@@ -71,5 +71,5 @@ internal static partial class PaymobCashInLoggerExtensions
         Level = LogLevel.Error,
         Message = "Cannot create order, amount cents: {AmountCents}"
     )]
-    public static partial void LogCannotCreateOrder(this ILogger logger, Exception exception, int amountCents);
+    public static partial void LogCannotCreateOrder(this ILogger logger, Exception exception, long amountCents);
 }

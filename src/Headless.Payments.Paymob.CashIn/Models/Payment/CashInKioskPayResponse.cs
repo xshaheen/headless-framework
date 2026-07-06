@@ -15,7 +15,7 @@ public sealed class CashInKioskPayResponse
     public bool Pending { get; init; }
 
     [JsonPropertyName("amount_cents")]
-    public int AmountCents { get; init; }
+    public long AmountCents { get; init; }
 
     [JsonPropertyName("success")]
     public bool Success { get; init; }
@@ -58,7 +58,7 @@ public sealed class CashInKioskPayResponse
     public required string ApiSource { get; init; }
 
     [JsonPropertyName("merchant_commission")]
-    public int MerchantCommission { get; init; }
+    public long MerchantCommission { get; init; }
 
     [JsonPropertyName("is_void")]
     public bool IsVoid { get; init; }
@@ -76,7 +76,7 @@ public sealed class CashInKioskPayResponse
     public bool IsLive { get; init; }
 
     [JsonPropertyName("refunded_amount_cents")]
-    public int RefundedAmountCents { get; init; }
+    public long RefundedAmountCents { get; init; }
 
     [JsonPropertyName("owner")]
     public int Owner { get; init; }
@@ -88,7 +88,7 @@ public sealed class CashInKioskPayResponse
     public bool IsCaptured { get; init; }
 
     [JsonPropertyName("captured_amount")]
-    public int CapturedAmount { get; init; }
+    public long CapturedAmount { get; init; }
 
     [JsonPropertyName("terminal_id")]
     public string? TerminalId { get; init; }

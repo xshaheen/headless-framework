@@ -11,8 +11,9 @@ public sealed class CashInCreateOrderRequestOrderItem
     [JsonPropertyName("description")]
     public required string Description { get; init; }
 
+    /// <summary>The line-item amount in the smallest currency unit (integer cents).</summary>
     [JsonPropertyName("amount_cents")]
-    public int AmountCents { get; init; }
+    public long AmountCents { get; init; }
 
     [JsonPropertyName("quantity")]
     public int Quantity { get; init; }

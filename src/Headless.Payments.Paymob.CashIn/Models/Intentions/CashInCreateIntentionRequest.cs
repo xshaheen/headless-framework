@@ -6,7 +6,7 @@ public sealed class CashInCreateIntentionRequest
 {
     /// <summary>Pass the total amount in cents in this parameter.</summary>
     [JsonPropertyName("amount")]
-    public required decimal Amount { get; init; }
+    public required long Amount { get; init; }
 
     /// <summary>
     /// Specify the currency for the specific region in this parameter. It should be similar to

@@ -47,8 +47,9 @@ public sealed class CashInWalletData
     [JsonPropertyName("message")]
     public required string Message { get; init; }
 
+    /// <summary>The paid amount in the smallest currency unit (integer cents).</summary>
     [JsonPropertyName("amount")]
-    public int Amount { get; init; }
+    public long Amount { get; init; }
 
     [JsonPropertyName("currency")]
     public required string Currency { get; init; }

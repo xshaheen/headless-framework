@@ -18,7 +18,8 @@ public sealed class CashInCreateOrderRequest
 {
     private CashInCreateOrderRequest() { }
 
-    public int AmountCents { get; private init; }
+    /// <summary>The order amount in the smallest currency unit (integer cents), e.g. <c>10000</c> for 100.00 EGP.</summary>
+    public long AmountCents { get; private init; }
 
     public string Currency { get; private init; } = null!;
 
@@ -52,7 +53,7 @@ public sealed class CashInCreateOrderRequest
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="amountCents"/> is not positive.</exception>
     /// <exception cref="ArgumentException"><paramref name="currency"/> is null or empty.</exception>
     public static CashInCreateOrderRequest CreateOrder(
-        int amountCents,
+        long amountCents,
         string currency = "EGP",
         string? merchantOrderId = null
     )
@@ -84,7 +85,7 @@ public sealed class CashInCreateOrderRequest
         CashInCreateOrderRequestShippingDetails shippingDetails,
         CashInCreateOrderRequestShippingData shippingData,
         ICollection<CashInCreateOrderRequestOrderItem> items,
-        int amountCents,
+        long amountCents,
         string currency = "EGP",
         string? merchantOrderId = null
     )

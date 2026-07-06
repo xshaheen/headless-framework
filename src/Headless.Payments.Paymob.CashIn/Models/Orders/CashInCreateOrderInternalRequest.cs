@@ -9,7 +9,7 @@ internal sealed class CashInCreateOrderInternalRequest(string authToken, CashInC
     public string AuthToken { get; } = authToken;
 
     [JsonPropertyName("amount_cents")]
-    public int AmountCents { get; } = request.AmountCents;
+    public long AmountCents { get; } = request.AmountCents;
 
     [JsonPropertyName("currency")]
     public string Currency { get; } = request.Currency;

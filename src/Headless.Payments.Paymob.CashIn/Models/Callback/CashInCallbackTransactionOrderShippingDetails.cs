@@ -9,7 +9,7 @@ public sealed class CashInCallbackTransactionOrderShippingDetails
     public int Id { get; init; }
 
     [JsonPropertyName("cash_on_delivery_amount")]
-    public int CashOnDeliveryAmount { get; init; }
+    public long CashOnDeliveryAmount { get; init; }
 
     [JsonPropertyName("cash_on_delivery_type")]
     public string? CashOnDeliveryType { get; init; }

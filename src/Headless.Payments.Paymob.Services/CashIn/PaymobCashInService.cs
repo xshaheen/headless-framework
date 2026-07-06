@@ -258,7 +258,7 @@ public sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<Paym
     {
         Argument.IsNotNull(request);
 
-        var amountCents = (int)Math.Ceiling(request.Amount * 100);
+        var amountCents = (long)Math.Ceiling(request.Amount * 100);
 
         return broker.RefundTransactionAsync(
             new(request.TransactionId, amountCents.ToString(CultureInfo.InvariantCulture))
@@ -275,7 +275,7 @@ public sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<Paym
         string? merchantOrderId
     )
     {
-        var amountCents = (int)Math.Ceiling(amount * 100);
+        var amountCents = (long)Math.Ceiling(amount * 100);
         var orderResponse = await _CreateOrderAsync(amountCents, merchantOrderId).ConfigureAwait(false);
 
         var paymentKeyResponse = await _CreatePaymentKeyAsync(
@@ -301,7 +301,7 @@ public sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<Paym
         PaymobCashInCustomerData customer,
         int integrationId,
         int orderId,
-        int amountCents,
+        long amountCents,
         int expiration = 3600
     )
     {
@@ -333,7 +333,7 @@ public sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<Paym
         }
     }
 
-    private async Task<CashInCreateOrderResponse> _CreateOrderAsync(int amountCents, string? merchantOrderId)
+    private async Task<CashInCreateOrderResponse> _CreateOrderAsync(long amountCents, string? merchantOrderId)
     {
         var request = CashInCreateOrderRequest.CreateOrder(amountCents, merchantOrderId: merchantOrderId);
 
