@@ -10,8 +10,7 @@ public sealed record BenchmarkPayload(string Value);
 
 /// <summary>
 /// A no-op <see cref="IMessageDispatcher"/>. Registered in the benchmark service provider so the consume
-/// pipeline's reflection dispatch fallback (no runtime invoker) resolves a target that does no handler work,
-/// isolating the per-dispatch plumbing cost.
+/// pipeline resolves a target that does no handler work, isolating the per-dispatch plumbing cost.
 /// </summary>
 internal sealed class NoOpMessageDispatcher : IMessageDispatcher
 {
@@ -38,4 +37,10 @@ internal sealed class NoOpMessageDispatcher : IMessageDispatcher
 internal sealed class NoOpConsumeMiddleware : IConsumeMiddleware<ConsumeContext>
 {
     public ValueTask InvokeAsync(ConsumeContext context, Func<ValueTask> next) => next();
+}
+
+/// <summary>A pass-through publish middleware used to vary the registered middleware count per publish.</summary>
+internal sealed class NoOpPublishMiddleware : IPublishMiddleware<PublishContext>
+{
+    public ValueTask InvokeAsync(PublishContext context, Func<ValueTask> next) => next();
 }

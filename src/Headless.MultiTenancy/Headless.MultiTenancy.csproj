@@ -1,6 +1,8 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <Description>Multi-tenant context abstractions and helpers for Headless Framework applications.</Description>
+    <PackageTags>headless;multi-tenancy;dotnet</PackageTags>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />

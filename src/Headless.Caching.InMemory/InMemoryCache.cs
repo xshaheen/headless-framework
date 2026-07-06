@@ -1171,7 +1171,7 @@ public sealed class InMemoryCache
         // miss for that page (Redis parity; HasValue reflects the requested page's members, not key existence).
         var skip = (pageIndex.Value - 1) * pageSize;
         var skipped = 0;
-        var page = new List<T>();
+        var page = new List<T>(pageSize);
 
         foreach (var kvp in dictionary)
         {
