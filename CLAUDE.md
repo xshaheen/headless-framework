@@ -125,7 +125,12 @@ Single-backend packages with no provider choice keep plain `Add{Feature}` extens
 
 **Public API Discipline:**
 
-- Each package's `public` surface IS its NuGet contract — keep types `internal sealed` and promote to `public` only when consumers must reference them.
+- Each package's `public` surface IS its NuGet contract — keep types `internal sealed` and promote to `public` only when consumers must reference them — "DI resolves it" is not a reason to be public.
+- New namespace matches the owning package; no types (only extension methods, per documented policy) in System.*/Microsoft.*/third-party namespaces; holder class names are prefixed (HeadlessXxxExtensions), never bare BCL-collision names.
+- Async public methods take a trailing CancellationToken cancellationToken = default — including "callback" and "handler" interfaces.
+- Public contracts return IReadOnlyList<>/IReadOnlyDictionary<,>, never mutable List<>/Dictionary<,>.
+- New enums get explicit values; enums consumers may switch on ship a catch-all member and a "members may be added" doc note; sentinel value = 0.
+- [PublicAPI] on externally-consumed types; [EditorBrowsable(Never)] on must-be-public plumbing; XML docs on everything public
 
 **Source File Header:**
 
