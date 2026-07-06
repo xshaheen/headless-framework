@@ -280,7 +280,7 @@ public sealed class PermissionManager(
                 var grant = result.First(x => string.Equals(x.Name, permissionName, StringComparison.Ordinal));
 
                 grant.IsGranted = true;
-                grant.Providers.Add(new GrantPermissionProvider(provider.Name, providerResult.ProviderKeys));
+                grant.AddProvider(new GrantPermissionProvider(provider.Name, providerResult.ProviderKeys));
             }
         }
 

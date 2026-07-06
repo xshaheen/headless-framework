@@ -123,6 +123,8 @@ internal sealed partial class PostgreSqlPermissionsStorageInitializer(
                 "ProviderKey" character varying({PermissionGrantRecordConstants.ProviderKeyMaxLength}) NOT NULL,
                 "TenantId" character varying({PermissionGrantRecordConstants.TenantIdMaxLength}),
                 "IsGranted" boolean NOT NULL DEFAULT TRUE,
+                "DateCreated" timestamp with time zone NOT NULL,
+                "DateUpdated" timestamp with time zone,
                 CONSTRAINT "PK_{options.PermissionGrantsTableName}" PRIMARY KEY ("Id")
             );
             """;

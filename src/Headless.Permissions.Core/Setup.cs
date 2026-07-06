@@ -4,6 +4,7 @@ using Headless.Abstractions;
 using Headless.Caching;
 using Headless.Checks;
 using Headless.Hosting.Initialization;
+using Headless.Permissions;
 using Headless.Permissions.Definitions;
 using Headless.Permissions.GrantProviders;
 using Headless.Permissions.Grants;
@@ -11,12 +12,11 @@ using Headless.Permissions.Models;
 using Headless.Permissions.Requirements;
 using Headless.Permissions.Resources;
 using Headless.Permissions.Seeders;
-using Headless.Permissions.Testing;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace Headless.Permissions;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Microsoft.Extensions.DependencyInjection;
 
 /// <summary>
 /// Extension methods for registering the Headless Permissions management core and its storage provider.
@@ -85,19 +85,6 @@ public static class SetupPermissions
                     options.GrantProviders.Add<T>();
                 }
             });
-
-            return services;
-        }
-
-        /// <summary>
-        /// Replaces <see cref="IPermissionManager"/> with <see cref="AlwaysAllowPermissionManager"/> and
-        /// <see cref="IAuthorizationService"/> with <see cref="AlwaysAllowAuthorizationService"/>, bypassing all
-        /// permission and authorization checks. Intended for integration tests only; do not call in production.
-        /// </summary>
-        public IServiceCollection AddAlwaysAllowAuthorization()
-        {
-            services.AddOrReplaceSingleton<IPermissionManager, AlwaysAllowPermissionManager>();
-            services.AddOrReplaceSingleton<IAuthorizationService, AlwaysAllowAuthorizationService>();
 
             return services;
         }

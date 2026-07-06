@@ -12,13 +12,13 @@ Provides a provider-agnostic permission management API, enabling dynamic permiss
 - `PermissionManagerExtensions` — convenience helpers: `IsGrantedAsync` (boolean overloads), `GrantToUserAsync`, `RevokeFromUserAsync`, `SetToUserAsync`, `GrantToRoleAsync`, `RevokeFromRoleAsync`, `SetToRoleAsync`
 - `IPermissionDefinitionProvider` — contributes permission groups and definitions at startup via `IPermissionDefinitionContext`
 - `IPermissionDefinitionManager` — looks up and enumerates all defined permissions (`FindAsync`, `GetPermissionsAsync`, `GetGroupsAsync`)
-- `IPermissionDefinitionContext` — mutable builder passed to `IPermissionDefinitionProvider.Define`; `AddGroup`, `GetGroup`, `GetGroupOrNull`, `RemoveGroup`, `GetPermissionOrDefault`
-- `PermissionGroupDefinition` — named container for permissions; `AddChild`, `GetFlatPermissions`, `GetPermissionOrDefault`
-- `PermissionDefinition` — single permission; `AddChild` for nesting, `Providers` list for restricting which grant providers can manage it
+- `IPermissionDefinitionContext` — mutable builder passed to `IPermissionDefinitionProvider.Define`; `AddGroup(name, displayName)`, `GetGroup`, `GetGroupOrDefault`, `RemoveGroup`, `GetPermissionOrDefault`. Groups are created only through `AddGroup(name, ...)` — there is no instance-taking `AddGroup(PermissionGroupDefinition)` overload and `PermissionGroupDefinition`'s constructor is internal
+- `PermissionGroupDefinition` — named container for permissions; `AddChild`, `GetFlatPermissions`, `GetPermissionOrDefault`. Constructed via `IPermissionDefinitionContext.AddGroup`, not directly
+- `PermissionDefinition` — single permission; `AddChild` for nesting, `RemoveChild(name)` to detach a child, `Providers` list for restricting which grant providers can manage it
 - `ICanAddChildPermission` — shared interface on both group and definition, enabling uniform `AddChild` calls in tree-building code
-- `GrantedPermissionResult` — result of `GetAsync`; `Name`, `IsGranted`, `Providers` (the contributing grant providers with their keys)
+- `GrantedPermissionResult` — result of `GetAsync`; `Name`, `IsGranted`, and `Providers` (`IReadOnlyList<GrantPermissionProvider>` — the contributing grant providers with their keys; the framework populates it)
 - `GrantPermissionProvider` — identifies a contributing provider by `Name` and the `Keys` (user id or role names) that granted the permission
-- `MultiplePermissionGrantResult` — `Dictionary<string, bool>` with `AllGranted` and `AllProhibited` shorthand properties; returned by batch `IsGrantedAsync`
+- `MultiplePermissionGrantResult` — read-only name-to-granted map (`IReadOnlyDictionary<string, bool>`) with `AllGranted` and `AllProhibited` shorthand properties; returned by batch `IsGrantedAsync`
 - `PermissionGrantProviderNames` — constants `User` and `Role` for the built-in providers
 
 ## Installation

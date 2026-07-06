@@ -15,7 +15,7 @@ namespace Microsoft.Extensions.DependencyInjection;
 /// Registers the Entity Framework Core storage provider for Headless Permissions.
 /// </summary>
 [PublicAPI]
-public static class SetupPermissions
+public static class SetupPermissionsEntityFramework
 {
     extension(HeadlessPermissionsSetupBuilder setup)
     {

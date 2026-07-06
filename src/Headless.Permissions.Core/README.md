@@ -19,17 +19,19 @@ Provides the full permission management runtime: AWS IAM-style grant resolution 
 - `HeadlessPermissionsBuilder` — returned by `AddHeadlessPermissions`; exposes `Services` for post-registration additions
 - `services.AddPermissionDefinitionProvider<T>()` — registers a custom `IPermissionDefinitionProvider` as singleton
 - `services.AddPermissionGrantProvider<T>()` — registers an additional grant provider (last-registered = highest priority)
-- `services.AddAlwaysAllowAuthorization()` — replaces `IPermissionManager` and `IAuthorizationService` with always-allow stubs for integration testing
 - `IGrantPermissionsSeedHelper` / `GrantPermissionsSeedHelper` — seed-time helper for granting all allowed permissions to a role idempotently
 - `PermissionRequirement` / `PermissionRequirementHandler` — ASP.NET Core `IAuthorizationRequirement` for a single permission
 - `PermissionsRequirement` / `PermissionsRequirementHandler` — multi-permission requirement with AND (`RequiresAll = true`) or OR semantics
-- `AlwaysAllowPermissionManager` / `AlwaysAllowAuthorizationService` — test doubles
+
+The always-allow test doubles (`AlwaysAllowPermissionManager` / `AlwaysAllowAuthorizationService`) and `services.AddAlwaysAllowAuthorization()` live in the separate `Headless.Permissions.Testing` package, not Core.
 
 ## Design Notes
 
 - Grant providers are stored in registration order with last-registered = highest priority. Built-in registration is `Role` first, then `User`, making User the highest-priority built-in provider. Custom providers added via `AddPermissionGrantProvider<T>()` are appended after `User` and override both built-ins.
 - `AddHeadlessPermissions` is guarded on `IPermissionGrantStore` so calling it more than once is safe — the management core registers once. Registering a second storage provider extension throws at host startup.
 - The grant cache is tenant-scoped (`ScopedCache<PermissionGrantCacheItem>` keyed on `ICurrentTenant.Id`). A permission check for tenant A never returns a cached result for tenant B.
+- `PermissionGrantRecord` implements `ICreateAudit` / `IUpdateAudit` and carries `DateCreated` (non-null) and `DateUpdated` (nullable). Grants are insert-only — a revoke deletes and re-inserts rather than updating — so `DateUpdated` is normally null. The EF provider stamps `DateCreated` via the audit save-processor; the raw-SQL providers stamp it from the injected `TimeProvider`. Use `PermissionGrantRecord.FromStorage(...)` to hydrate with audit fields.
+- **Tenancy divergence (intentional).** `PermissionGrantRecord` keeps a first-class `TenantId` column and implements `IMultiTenant`, unlike `SettingValueRecord` / `FeatureValueRecord` (which scope tenancy through `ProviderName`/`ProviderKey`). Grants need tenant-scoped uniqueness in the `(Name, ProviderName, ProviderKey, TenantId)` unique index so the same grant can coexist per tenant and for the host. This is a deliberate decision, not drift.
 
 ## Installation
 

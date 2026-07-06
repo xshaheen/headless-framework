@@ -17,6 +17,36 @@ public static class TestData
         );
     }
 
+    /// <summary>
+    /// Replays a prebuilt <paramref name="source"/> group (and all of its permissions, recursively) into
+    /// <paramref name="context"/> using only the public string-based API — the interface no longer exposes
+    /// an instance-taking <c>AddGroup(PermissionGroupDefinition)</c> overload.
+    /// </summary>
+    public static PermissionGroupDefinition AddGroup(
+        this IPermissionDefinitionContext context,
+        PermissionGroupDefinition source
+    )
+    {
+        var group = context.AddGroup(source.Name, source.DisplayName);
+
+        foreach (var permission in source.Permissions)
+        {
+            _ReplayPermission(group, permission);
+        }
+
+        return group;
+    }
+
+    private static void _ReplayPermission(ICanAddChildPermission parent, PermissionDefinition source)
+    {
+        var permission = parent.AddChild(source.Name, source.DisplayName, source.IsEnabled);
+
+        foreach (var child in source.Children)
+        {
+            _ReplayPermission(permission, child);
+        }
+    }
+
     public static PermissionDefinition AddGeneratedDefinition(this PermissionGroupDefinition group)
     {
         return group.AddChild(

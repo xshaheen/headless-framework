@@ -9,7 +9,7 @@ namespace Headless.Permissions.Testing;
 /// <summary>
 /// Test double for <see cref="IAuthorizationService"/> that unconditionally returns
 /// <see cref="AuthorizationResult.Success()"/> for every authorization call. Registered by
-/// <see cref="SetupPermissions.AddAlwaysAllowAuthorization"/>; do not use in production.
+/// <c>services.AddAlwaysAllowAuthorization()</c>; do not use in production.
 /// </summary>
 public sealed class AlwaysAllowAuthorizationService(ICurrentPrincipalAccessor principalAccessor) : IAuthorizationService
 {

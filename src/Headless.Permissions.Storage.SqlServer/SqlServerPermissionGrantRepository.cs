@@ -13,10 +13,12 @@ namespace Headless.Permissions.SqlServer;
 internal sealed class SqlServerPermissionGrantRepository(
     IOptions<SqlServerPermissionsOptions> providerOptions,
     IOptions<PermissionsStorageOptions> storageOptions,
-    IServiceProvider services
+    IServiceProvider services,
+    TimeProvider timeProvider
 ) : IPermissionGrantRepository
 {
-    private const string _GrantColumns = "[Id],[Name],[ProviderName],[ProviderKey],[TenantId],[IsGranted]";
+    private const string _GrantColumns =
+        "[Id],[Name],[ProviderName],[ProviderKey],[TenantId],[IsGranted],[DateCreated],[DateUpdated]";
     private const string _TenantFilter = "(([TenantId] IS NULL AND @TenantId IS NULL) OR [TenantId]=@TenantId)";
 
     public async Task<PermissionGrantRecord?> FindAsync(
@@ -92,7 +94,7 @@ internal sealed class SqlServerPermissionGrantRepository(
     public Task InsertAsync(PermissionGrantRecord permissionGrant, CancellationToken cancellationToken = default)
     {
         var sql =
-            $"INSERT INTO {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGrantsTableName)} ([Id],[Name],[ProviderName],[ProviderKey],[TenantId],[IsGranted]) VALUES (@Id,@Name,@ProviderName,@ProviderKey,@TenantId,@IsGranted);";
+            $"INSERT INTO {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGrantsTableName)} ([Id],[Name],[ProviderName],[ProviderKey],[TenantId],[IsGranted],[DateCreated]) VALUES (@Id,@Name,@ProviderName,@ProviderKey,@TenantId,@IsGranted,@DateCreated);";
 
         return _ExecuteAsync(sql, cancellationToken, _Parameters(permissionGrant));
     }
@@ -106,7 +108,7 @@ internal sealed class SqlServerPermissionGrantRepository(
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         var sql =
-            $"INSERT INTO {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGrantsTableName)} ([Id],[Name],[ProviderName],[ProviderKey],[TenantId],[IsGranted]) VALUES (@Id,@Name,@ProviderName,@ProviderKey,@TenantId,@IsGranted);";
+            $"INSERT INTO {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGrantsTableName)} ([Id],[Name],[ProviderName],[ProviderKey],[TenantId],[IsGranted],[DateCreated]) VALUES (@Id,@Name,@ProviderName,@ProviderKey,@TenantId,@IsGranted,@DateCreated);";
 
         foreach (var permissionGrant in permissionGrants)
         {
@@ -169,13 +171,17 @@ internal sealed class SqlServerPermissionGrantRepository(
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             result.Add(
-                new PermissionGrantRecord(
+                PermissionGrantRecord.FromStorage(
                     reader.GetGuid(0),
                     reader.GetString(1),
                     reader.GetString(2),
                     reader.GetString(3),
                     reader.GetBoolean(5),
-                    await reader.IsDBNullAsync(4, cancellationToken).ConfigureAwait(false) ? null : reader.GetString(4)
+                    await reader.IsDBNullAsync(4, cancellationToken).ConfigureAwait(false) ? null : reader.GetString(4),
+                    await reader.GetFieldValueAsync<DateTimeOffset>(6, cancellationToken).ConfigureAwait(false),
+                    await reader.IsDBNullAsync(7, cancellationToken).ConfigureAwait(false)
+                        ? null
+                        : await reader.GetFieldValueAsync<DateTimeOffset>(7, cancellationToken).ConfigureAwait(false)
                 )
             );
         }
@@ -229,7 +235,14 @@ internal sealed class SqlServerPermissionGrantRepository(
         };
     }
 
-    private static SqlParameter[] _Parameters(PermissionGrantRecord permissionGrant) =>
+    private SqlParameter[] _Parameters(PermissionGrantRecord permissionGrant)
+    {
+        // Preserve caller-supplied DateCreated when present; otherwise stamp from the TimeProvider.
+        // Grants are insert-only (revocation deletes then re-inserts), so DateUpdated is never written here.
+        var dateCreated =
+            permissionGrant.DateCreated == default ? timeProvider.GetUtcNow() : permissionGrant.DateCreated;
+
+        return
         [
             _Param("Id", permissionGrant.Id),
             _Param("Name", permissionGrant.Name),
@@ -237,7 +250,9 @@ internal sealed class SqlServerPermissionGrantRepository(
             _Param("ProviderKey", permissionGrant.ProviderKey),
             _Param("TenantId", permissionGrant.TenantId),
             _Param("IsGranted", permissionGrant.IsGranted),
+            _Param("DateCreated", dateCreated),
         ];
+    }
 
     private static SqlParameter _Param(string name, object? value) => new($"@{name}", value ?? DBNull.Value);
 }

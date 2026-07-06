@@ -38,7 +38,7 @@ public sealed class GrantedPermissionResultTests : TestBase
         var provider = new GrantPermissionProvider("Role", ["admin", "manager"]);
 
         // when
-        result.Providers.Add(provider);
+        result.AddProvider(provider);
 
         // then
         result.Providers.Should().ContainSingle();

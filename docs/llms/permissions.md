@@ -1,6 +1,6 @@
 ---
 domain: Permissions
-packages: Permissions.Abstractions, Permissions.Core, Permissions.Storage.EntityFramework, Permissions.Storage.PostgreSql, Permissions.Storage.SqlServer
+packages: Permissions.Abstractions, Permissions.Core, Permissions.Storage.EntityFramework, Permissions.Storage.PostgreSql, Permissions.Storage.SqlServer, Permissions.Testing
 ---
 
 # Permissions
@@ -59,6 +59,14 @@ packages: Permissions.Abstractions, Permissions.Core, Permissions.Storage.Entity
     - [Configuration](#configuration-4)
     - [Dependencies](#dependencies-4)
     - [Side Effects](#side-effects-4)
+- [Headless.Permissions.Testing](#headlesspermissionstesting)
+    - [Problem Solved](#problem-solved-5)
+    - [Key Features](#key-features-5)
+    - [Installation](#installation-5)
+    - [Quick Start](#quick-start-5)
+    - [Configuration](#configuration-5)
+    - [Dependencies](#dependencies-5)
+    - [Side Effects](#side-effects-5)
 
 > Dynamic permission management with hierarchical grant resolution (User > Role), explicit-deny semantics, caching, and database persistence via EF Core, PostgreSQL, or SQL Server.
 
@@ -97,7 +105,7 @@ Provider packages:
 - `SetAsync` throws `ConflictException` when the permission is not defined, is disabled, restricts its providers and excludes the given `providerName`, or when no grant provider with that name is registered. Catch this for user-facing validation.
 - Batch writes via `SetAsync(IReadOnlyCollection<string>, ...)` are all-or-nothing — a single invalid name rejects the entire batch.
 - `PermissionDefinition.Providers` restricts which grant providers can read/write that permission. An empty list allows all providers.
-- For integration tests, call `services.AddAlwaysAllowAuthorization()` to replace both `IPermissionManager` and `IAuthorizationService` with always-allow stubs.
+- For integration tests, reference `Headless.Permissions.Testing` and call `services.AddAlwaysAllowAuthorization()` to replace both `IPermissionManager` and `IAuthorizationService` with always-allow stubs. This lives in a separate test-only package so the production `Headless.Permissions.Core` surface never ships an authorization bypass.
 - Grant caching is tenant-scoped: the cache key includes the current tenant id. A permission check for tenant A does not serve a cached result for tenant B.
 
 ## Core Concepts
@@ -191,13 +199,13 @@ Provides a provider-agnostic permission management API, enabling dynamic permiss
 - `PermissionManagerExtensions` — convenience helpers: `IsGrantedAsync` (boolean overloads), `GrantToUserAsync`, `RevokeFromUserAsync`, `SetToUserAsync`, `GrantToRoleAsync`, `RevokeFromRoleAsync`, `SetToRoleAsync`
 - `IPermissionDefinitionProvider` — contributes permission groups and definitions at startup via `IPermissionDefinitionContext`
 - `IPermissionDefinitionManager` — looks up and enumerates all defined permissions (`FindAsync`, `GetPermissionsAsync`, `GetGroupsAsync`)
-- `IPermissionDefinitionContext` — mutable builder passed to `IPermissionDefinitionProvider.Define`; `AddGroup`, `GetGroup`, `GetGroupOrNull`, `RemoveGroup`, `GetPermissionOrDefault`
-- `PermissionGroupDefinition` — named container for permissions; `AddChild`, `GetFlatPermissions`, `GetPermissionOrDefault`
-- `PermissionDefinition` — single permission; `AddChild` for nesting, `Providers` list for restricting which grant providers can manage it
+- `IPermissionDefinitionContext` — mutable builder passed to `IPermissionDefinitionProvider.Define`; `AddGroup(name, displayName)`, `GetGroup`, `GetGroupOrDefault`, `RemoveGroup`, `GetPermissionOrDefault`. Groups are created only through `AddGroup(name, ...)` — there is no instance-taking `AddGroup(PermissionGroupDefinition)` overload and `PermissionGroupDefinition`'s constructor is internal
+- `PermissionGroupDefinition` — named container for permissions; `AddChild`, `GetFlatPermissions`, `GetPermissionOrDefault`. Constructed via `IPermissionDefinitionContext.AddGroup`, not directly
+- `PermissionDefinition` — single permission; `AddChild` for nesting, `RemoveChild(name)` to detach a child, `Providers` list for restricting which grant providers can manage it
 - `ICanAddChildPermission` — shared interface on both group and definition, enabling uniform `AddChild` calls in tree-building code
-- `GrantedPermissionResult` — result of `GetAsync`; `Name`, `IsGranted`, `Providers` (the contributing grant providers with their keys)
+- `GrantedPermissionResult` — result of `GetAsync`; `Name`, `IsGranted`, and `Providers` (`IReadOnlyList<GrantPermissionProvider>` — the contributing grant providers with their keys; the framework populates it)
 - `GrantPermissionProvider` — identifies a contributing provider by `Name` and the `Keys` (user id or role names) that granted the permission
-- `MultiplePermissionGrantResult` — `Dictionary<string, bool>` with `AllGranted` and `AllProhibited` shorthand properties; returned by batch `IsGrantedAsync`
+- `MultiplePermissionGrantResult` — read-only name-to-granted map (`IReadOnlyDictionary<string, bool>`) with `AllGranted` and `AllProhibited` shorthand properties; returned by batch `IsGrantedAsync`
 - `PermissionGrantProviderNames` — constants `User` and `Role` for the built-in providers
 
 ### Installation
@@ -291,11 +299,11 @@ Provides the full permission management runtime: AWS IAM-style grant resolution 
 - `HeadlessPermissionsBuilder` — returned by `AddHeadlessPermissions`; exposes `Services` for post-registration additions
 - `services.AddPermissionDefinitionProvider<T>()` — registers a custom `IPermissionDefinitionProvider` as singleton
 - `services.AddPermissionGrantProvider<T>()` — registers an additional grant provider (last-registered = highest priority)
-- `services.AddAlwaysAllowAuthorization()` — replaces `IPermissionManager` and `IAuthorizationService` with always-allow stubs for integration testing
 - `IGrantPermissionsSeedHelper` / `GrantPermissionsSeedHelper` — seed-time helper for granting all allowed permissions to a role idempotently
 - `PermissionRequirement` / `PermissionRequirementHandler` — ASP.NET Core `IAuthorizationRequirement` for a single permission
 - `PermissionsRequirement` / `PermissionsRequirementHandler` — multi-permission requirement with AND (`RequiresAll = true`) or OR semantics
-- `AlwaysAllowPermissionManager` / `AlwaysAllowAuthorizationService` — test doubles
+
+The always-allow test doubles (`AlwaysAllowPermissionManager` / `AlwaysAllowAuthorizationService`) and `services.AddAlwaysAllowAuthorization()` live in the separate `Headless.Permissions.Testing` package, not Core.
 
 ### Design Notes
 
@@ -303,6 +311,8 @@ Provides the full permission management runtime: AWS IAM-style grant resolution 
 - `AddHeadlessPermissions` is guarded on `IPermissionGrantStore` so calling it more than once is safe — the management core registers once. However, registering a second storage provider extension throws at host startup.
 - The grant cache is tenant-scoped (`ScopedCache<PermissionGrantCacheItem>` keyed on `ICurrentTenant.Id`). A permission check for tenant A never returns a cached result for tenant B.
 - `PermissionsInitializationBackgroundService` implements `IInitializer`: anything awaiting `WaitForInitializationAsync()` blocks until both the save and pre-cache steps complete. If the host stops before initialization finishes, the `TaskCompletionSource` is cancelled.
+- `PermissionGrantRecord` implements `ICreateAudit` / `IUpdateAudit` and carries `DateCreated` (non-null) and `DateUpdated` (nullable) audit timestamps. Grants are insert-only — a revoke deletes the row and inserts a replacement rather than updating — so `DateUpdated` is normally null. The EF provider stamps `DateCreated` through the audit save-processor; the raw-SQL providers stamp it from the injected `TimeProvider`. Hydrate from storage with the `PermissionGrantRecord.FromStorage(...)` factory, which sets the audit fields.
+- **Tenancy divergence (intentional).** `PermissionGrantRecord` keeps a first-class `TenantId` column and implements `IMultiTenant`, unlike `SettingValueRecord` / `FeatureValueRecord`, which scope tenancy through `ProviderName`/`ProviderKey` and have no tenant column. Grants need tenant-scoped uniqueness expressed directly in the `(Name, ProviderName, ProviderKey, TenantId)` unique index so the same grant can coexist per tenant and for the host. This is a deliberate design decision, not drift.
 
 ### Installation
 
@@ -683,3 +693,47 @@ Configure schema and table names through `PermissionsStorageOptions` via `setup.
 - Registers `SqlServerPermissionsStorageInitializer` as `IHostedService` and `IInitializer`
 - Registers `SqlServerPermissionGrantRepository` as `IPermissionGrantRepository` (singleton)
 - Registers `SqlServerPermissionDefinitionRecordRepository` as `IPermissionDefinitionRecordRepository` (singleton)
+
+---
+
+## Headless.Permissions.Testing
+
+Test-only doubles that bypass all permission and authorization checks.
+
+### Problem Solved
+
+Integration tests often need to exercise endpoints without wiring up real grants. This package supplies always-allow replacements for `IPermissionManager` and `IAuthorizationService`, kept out of `Headless.Permissions.Core` so the production surface never ships an authorization bypass.
+
+### Key Features
+
+- `services.AddAlwaysAllowAuthorization()` — replaces `IPermissionManager` with `AlwaysAllowPermissionManager` and `IAuthorizationService` with `AlwaysAllowAuthorizationService`, granting every permission and authorizing every request
+- `AlwaysAllowPermissionManager` — `IPermissionManager` that reports every permission as granted; `SetAsync` / `DeleteAsync` are no-ops
+- `AlwaysAllowAuthorizationService` — `IAuthorizationService` that returns `AuthorizationResult.Success()` for every call
+
+### Installation
+
+```bash
+dotnet add package Headless.Permissions.Testing
+```
+
+### Quick Start
+
+```csharp
+// In an integration-test host builder, after AddHeadlessPermissions:
+builder.Services.AddAlwaysAllowAuthorization();
+```
+
+### Configuration
+
+None.
+
+### Dependencies
+
+- `Headless.Permissions.Core`
+- `Headless.Hosting`
+- `Microsoft.AspNetCore.Authorization`
+
+### Side Effects
+
+- Replaces the registered `IPermissionManager` with `AlwaysAllowPermissionManager` (singleton)
+- Replaces the registered `IAuthorizationService` with `AlwaysAllowAuthorizationService` (singleton)

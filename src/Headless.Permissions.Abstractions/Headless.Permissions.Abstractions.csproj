@@ -10,5 +10,6 @@
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Permissions.Core" />
+    <InternalsVisibleTo Include="Headless.Permissions.Tests.Unit" />
   </ItemGroup>
 </Project>

@@ -420,6 +420,7 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Permissions.Storage.EntityFramework` — EF Core storage.
 - `Headless.Permissions.Storage.PostgreSql` — PostgreSQL raw storage.
 - `Headless.Permissions.Storage.SqlServer` — SQL Server raw storage.
+- `Headless.Permissions.Testing` — test-only always-allow authorization bypass (kept out of production `Core`).
 
 ### Push Notifications
 - `Headless.PushNotifications.Abstractions` — Push notification interface and `IPushNotificationServiceProvider`.
