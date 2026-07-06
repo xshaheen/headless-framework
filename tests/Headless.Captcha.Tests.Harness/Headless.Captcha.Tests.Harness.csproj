@@ -3,7 +3,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Tests</RootNamespace>
     <IsTestProject>false</IsTestProject>
-    <IsTestableProject>true</IsTestableProject>
+    <IsTestableProject>false</IsTestableProject>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Captcha.Abstractions\Headless.Captcha.Abstractions.csproj" />

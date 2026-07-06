@@ -176,7 +176,14 @@ public sealed class InfiniteRetryProcessorTests : TestBase
                 }
             }
 
-            timer.Fire();
+            try
+            {
+                timer.Fire();
+            }
+            finally
+            {
+                timer.Dispose();
+            }
         }
 
         public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)

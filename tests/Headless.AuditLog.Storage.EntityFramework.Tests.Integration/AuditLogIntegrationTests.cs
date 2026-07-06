@@ -207,7 +207,9 @@ public sealed class AuditLogIntegrationTests : TestBase
         var entries = await db.Set<AuditLogEntry>().AsNoTracking().ToListAsync(AbortToken);
         entries.Should().HaveCount(2);
 
-        var lineEntry = entries.Single(e => e.EntityType == typeof(GeneratedOrderLine).FullName);
+        var lineEntry = entries.Single(e =>
+            string.Equals(e.EntityType, typeof(GeneratedOrderLine).FullName, StringComparison.Ordinal)
+        );
         lineEntry.EntityId.Should().Be(line.Id.ToString(CultureInfo.InvariantCulture));
         lineEntry.NewValues.Should().ContainKey("GeneratedOrderId");
         lineEntry

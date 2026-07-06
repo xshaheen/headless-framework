@@ -402,10 +402,9 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
         }
 
         // when
-        var picked =
-            tableName == "Published"
-                ? await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken)
-                : await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken);
+        var picked = string.Equals(tableName, "Published", StringComparison.Ordinal)
+            ? await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken)
+            : await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken);
 
         // then
         picked.Should().NotContain(message => message.StorageId == id);
@@ -435,7 +434,7 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
         lockedUntil.Should().BeNull();
         owner.Should().BeNull();
 
-        if (tableName == "Received")
+        if (string.Equals(tableName, "Received", StringComparison.Ordinal))
         {
             var exceptionInfo = await assertConnection.ExecuteScalarAsync<string?>(
                 "SELECT ExceptionInfo FROM messaging.Received WHERE Id = @Id",
@@ -767,7 +766,7 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
         DateTime now
     )
     {
-        if (tableName == "Published")
+        if (string.Equals(tableName, "Published", StringComparison.Ordinal))
         {
             await connection.ExecuteAsync(
                 """

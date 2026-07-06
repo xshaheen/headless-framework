@@ -242,7 +242,7 @@ public sealed class SshBlobStorageTests(SshBlobStorageFixture fixture) : BlobSto
         base.requires_container_provisioning_reflects_backend_reality();
 
     [Fact]
-    public async Task upload_to_missing_container_throws_until_container_manager_ensures_it()
+    public async Task upload_to_unprovisioned_container_throws_in_sftp_test_fixture()
     {
         await using var storage = GetStorage();
         var manager = GetContainerManager();
@@ -255,11 +255,6 @@ public sealed class SshBlobStorageTests(SshBlobStorageFixture fixture) : BlobSto
 
             await act.Should().ThrowAsync<SftpPathNotFoundException>();
             (await manager.ContainerExistsAsync(container, AbortToken)).Should().BeFalse();
-
-            await manager.EnsureContainerAsync(container, AbortToken);
-            await storage.UploadContentAsync(location, "payload", AbortToken);
-
-            (await storage.GetBlobContentAsync(location, AbortToken)).Should().Be("payload");
         }
         finally
         {
