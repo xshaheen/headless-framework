@@ -2,6 +2,7 @@
 
 using Headless.Caching;
 using Headless.Redis;
+using Headless.Redis.Testing;
 using Headless.Serializer;
 using Microsoft.Extensions.Logging;
 

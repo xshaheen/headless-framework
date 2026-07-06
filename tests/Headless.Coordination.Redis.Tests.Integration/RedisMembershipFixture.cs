@@ -3,6 +3,7 @@
 using Headless.Coordination;
 using Headless.Coordination.Redis;
 using Headless.Redis;
+using Headless.Redis.Testing;
 using Headless.Testing.Testcontainers;
 using Microsoft.Extensions.DependencyInjection;
 using StackExchange.Redis;

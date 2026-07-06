@@ -9,35 +9,6 @@ namespace Headless.Redis;
 public static class ConnectionMultiplexerExtensions
 {
     /// <summary>
-    /// Flushes all databases on every writable (non-replica) endpoint of <paramref name="muxer"/>.
-    /// </summary>
-    /// <param name="muxer">The multiplexer whose endpoints to flush.</param>
-    /// <remarks>
-    /// Replica endpoints are skipped automatically. If the multiplexer has no endpoints the method
-    /// returns immediately without error. Intended for integration-test teardown; do not call against
-    /// production data.
-    /// </remarks>
-    public static async Task FlushAllAsync(this IConnectionMultiplexer muxer)
-    {
-        var endpoints = muxer.GetEndPoints();
-
-        if (endpoints.Length == 0)
-        {
-            return;
-        }
-
-        foreach (var endpoint in endpoints)
-        {
-            var server = muxer.GetServer(endpoint);
-
-            if (!server.IsReplica)
-            {
-                await server.FlushAllDatabasesAsync();
-            }
-        }
-    }
-
-    /// <summary>
     /// Returns the total number of keys stored across all writable (non-replica) endpoints.
     /// </summary>
     /// <param name="muxer">The multiplexer whose endpoints to query.</param>
