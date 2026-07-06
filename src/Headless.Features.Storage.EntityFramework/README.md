@@ -12,6 +12,7 @@ Provides EF Core repository implementations for feature values, feature definiti
 - `modelBuilder.AddHeadlessFeatures(DbContext context)` — applies entity configurations by resolving `FeaturesStorageOptions` from the context's service provider (no constructor injection required)
 - `modelBuilder.AddHeadlessFeatures(FeaturesStorageOptions options)` — overload for when you already hold the options
 - EF repositories for `IFeatureValueRecordRepository` and `IFeatureDefinitionRecordRepository`
+- `FeatureValueRecord` maps `DateCreated` / `DateUpdated` audit columns (via `ConfigureHeadlessConvention`); the Headless audit save-processor stamps them on `SaveChanges`
 - `FeaturesStorageOptions` for schema and table-name configuration (shared with raw-DDL providers)
 - Startup validation gate that inspects the EF model before hosted services start and fails with an actionable message if any feature entity is missing from the model
 

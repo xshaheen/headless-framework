@@ -38,7 +38,7 @@ public sealed class FeatureManager(
 
     /// <inheritdoc/>
     /// <exception cref="ArgumentNullException"><paramref name="providerName"/> is <see langword="null"/>.</exception>
-    public async Task<List<FeatureValue>> GetAllAsync(
+    public async Task<IReadOnlyList<FeatureValue>> GetAllAsync(
         string providerName,
         string? providerKey = null,
         bool fallback = true,

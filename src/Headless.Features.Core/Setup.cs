@@ -3,6 +3,7 @@
 using Headless.Abstractions;
 using Headless.Caching;
 using Headless.Checks;
+using Headless.Features;
 using Headless.Features.Definitions;
 using Headless.Features.Filters;
 using Headless.Features.Models;
@@ -12,15 +13,15 @@ using Headless.Features.Seeders;
 using Headless.Features.ValueProviders;
 using Headless.Features.Values;
 using Headless.Hosting.Initialization;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Features;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Microsoft.Extensions.DependencyInjection;
 
 /// <summary>DI entry point for the Headless Features Core module.</summary>
 [PublicAPI]
-public static class SetupCore
+public static class SetupFeatures
 {
     extension(IServiceCollection services)
     {

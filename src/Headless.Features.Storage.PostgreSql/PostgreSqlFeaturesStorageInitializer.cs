@@ -138,6 +138,8 @@ internal sealed partial class PostgreSqlFeaturesStorageInitializer(
                 "Value" character varying({FeatureValueRecordConstants.ValueMaxLength}) NOT NULL,
                 "ProviderName" character varying({FeatureValueRecordConstants.ProviderNameMaxLength}) NOT NULL,
                 "ProviderKey" character varying({FeatureValueRecordConstants.ProviderKeyMaxLength}),
+                "DateCreated" timestamp with time zone NOT NULL,
+                "DateUpdated" timestamp with time zone,
                 CONSTRAINT "PK_{options.FeatureValuesTableName}" PRIMARY KEY ("Id")
             );
             """;

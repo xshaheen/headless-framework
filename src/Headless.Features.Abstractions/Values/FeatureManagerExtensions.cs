@@ -3,6 +3,7 @@
 using Headless.Checks;
 using Headless.Exceptions;
 using Headless.Features.Resources;
+using Headless.Serializer;
 
 namespace Headless.Features.Values;
 
@@ -85,14 +86,14 @@ public static class FeatureManagerExtensions
             return false;
         }
 
-        /// <summary>Gets and converts a feature value to <typeparamref name="T"/>.</summary>
-        /// <typeparam name="T">The target type to convert the string feature value to.</typeparam>
+        /// <summary>Gets a feature value and deserializes it to <typeparamref name="T"/>.</summary>
+        /// <typeparam name="T">The target type to deserialize the stored JSON value into.</typeparam>
         /// <param name="name">The feature name.</param>
         /// <param name="providerName">The provider to query. When <see langword="null"/>, uses the first provider with a value.</param>
         /// <param name="providerKey">Provider-specific key (e.g., tenant ID). When <see langword="null"/>, uses the provider's default logic.</param>
         /// <param name="fallback">When <see langword="true"/>, falls back to other providers when the specified provider has no value.</param>
         /// <param name="cancellationToken">The abort token.</param>
-        /// <returns>The feature value converted to <typeparamref name="T"/>, or the default value of <typeparamref name="T"/> if no value exists.</returns>
+        /// <returns>The deserialized value, or <see langword="default"/> when the feature has no value.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
         public async Task<T?> GetAsync<T>(
             string name,
@@ -109,7 +110,9 @@ public static class FeatureManagerExtensions
                 .GetAsync(name, providerName, providerKey, fallback, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
 
-            return value.To<T>();
+            return string.IsNullOrEmpty(value.Value)
+                ? default
+                : JsonSerializer.Deserialize<T>(value.Value, JsonConstants.DefaultInternalJsonOptions);
         }
 
         /// <summary>Throws <see cref="Headless.Exceptions.ConflictException"/> when the feature with <paramref name="featureName"/> is not enabled.</summary>

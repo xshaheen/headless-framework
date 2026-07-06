@@ -17,6 +17,40 @@ public static class TestData
         );
     }
 
+    /// <summary>
+    /// Replays a prebuilt <paramref name="source"/> group (and all of its features, recursively) into
+    /// <paramref name="context"/> using only the public string-based API — the interface no longer exposes
+    /// an instance-taking <c>AddGroup(FeatureGroupDefinition)</c> overload.
+    /// </summary>
+    public static FeatureGroupDefinition AddGroup(this IFeatureDefinitionContext context, FeatureGroupDefinition source)
+    {
+        var group = context.AddGroup(source.Name, source.DisplayName);
+
+        foreach (var feature in source.Features)
+        {
+            _ReplayFeature(group, feature);
+        }
+
+        return group;
+    }
+
+    private static void _ReplayFeature(ICanAddChildFeature parent, FeatureDefinition source)
+    {
+        var feature = parent.AddChild(
+            source.Name,
+            source.DefaultValue,
+            source.DisplayName,
+            source.Description,
+            source.IsVisibleToClients,
+            source.IsAvailableToHost
+        );
+
+        foreach (var child in source.Children)
+        {
+            _ReplayFeature(feature, child);
+        }
+    }
+
     public static FeatureDefinition AddGeneratedFeatureDefinition(this FeatureGroupDefinition group)
     {
         return group.AddChild(

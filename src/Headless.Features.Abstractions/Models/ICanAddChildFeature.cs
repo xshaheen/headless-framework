@@ -3,7 +3,7 @@
 namespace Headless.Features.Models;
 
 /// <summary>Implemented by types that can own child <see cref="FeatureDefinition"/> entries (groups and features).</summary>
-public interface ICanCreateChildFeature
+public interface ICanAddChildFeature
 {
     /// <summary>Creates and registers a child feature definition.</summary>
     /// <param name="name">Unique name of the child feature. Must not be null or white space.</param>

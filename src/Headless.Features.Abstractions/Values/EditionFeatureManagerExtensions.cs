@@ -23,8 +23,8 @@ public static class EditionFeatureManagerExtensions
         /// <summary>Gets all feature values scoped to the given edition.</summary>
         /// <param name="editionId">The edition identifier used as the provider key.</param>
         /// <param name="fallback">When <see langword="true"/>, falls back to other providers when the edition provider has no value.</param>
-        /// <returns>A list of <see cref="FeatureValue"/> instances for the given edition.</returns>
-        public Task<List<FeatureValue>> GetAllForEditionAsync(string editionId, bool fallback = true)
+        /// <returns>A read-only list of <see cref="FeatureValue"/> instances for the given edition.</returns>
+        public Task<IReadOnlyList<FeatureValue>> GetAllForEditionAsync(string editionId, bool fallback = true)
         {
             return featureManager.GetAllAsync(FeatureValueProviderNames.Edition, editionId, fallback);
         }
