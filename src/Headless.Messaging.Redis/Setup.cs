@@ -6,6 +6,7 @@ using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Redis;
 using Headless.Messaging.Transport;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
@@ -66,18 +67,56 @@ public static class SetupRedisMessaging
         }
 
         /// <summary>
+        /// Registers Redis Streams as the queue transport, binding and validating
+        /// <see cref="RedisMessagingOptions"/> from configuration.
+        /// </summary>
+        /// <param name="config">Configuration section containing <see cref="RedisMessagingOptions"/> values.</param>
+        /// <returns>The same <paramref name="setup"/> builder for chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="config"/> is <see langword="null"/>.</exception>
+        public MessagingSetupBuilder UseRedis(IConfiguration config)
+        {
+            Argument.IsNotNull(config);
+
+            return _RegisterRedis(
+                setup,
+                services => services.Configure<RedisMessagingOptions, RedisMessagingOptionsValidator>(config)
+            );
+        }
+
+        /// <summary>
         /// Registers Redis Streams as the queue transport with full programmatic configuration.
         /// </summary>
-        /// <param name="configure">A delegate that configures <see cref="MessagingRedisOptions"/>.</param>
+        /// <param name="configure">A delegate that configures <see cref="RedisMessagingOptions"/>.</param>
         /// <returns>The same <paramref name="setup"/> builder for chaining.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null"/>.</exception>
-        public MessagingSetupBuilder UseRedis(Action<MessagingRedisOptions> configure)
+        public MessagingSetupBuilder UseRedis(Action<RedisMessagingOptions> configure)
         {
             Argument.IsNotNull(configure);
 
-            setup.RegisterExtension(new RedisOptionsExtension(configure));
+            return _RegisterRedis(
+                setup,
+                services => services.Configure<RedisMessagingOptions, RedisMessagingOptionsValidator>(configure)
+            );
+        }
 
-            return setup;
+        /// <summary>
+        /// Registers Redis Streams as the queue transport, configuring <see cref="RedisMessagingOptions"/>
+        /// with access to the resolved service provider.
+        /// </summary>
+        /// <param name="configure">
+        /// A delegate that configures <see cref="RedisMessagingOptions"/> using the service provider
+        /// (for example to resolve secrets or connection settings from DI).
+        /// </param>
+        /// <returns>The same <paramref name="setup"/> builder for chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null"/>.</exception>
+        public MessagingSetupBuilder UseRedis(Action<RedisMessagingOptions, IServiceProvider> configure)
+        {
+            Argument.IsNotNull(configure);
+
+            return _RegisterRedis(
+                setup,
+                services => services.Configure<RedisMessagingOptions, RedisMessagingOptionsValidator>(configure)
+            );
         }
 
         /// <summary>
@@ -85,7 +124,7 @@ public static class SetupRedisMessaging
         /// </summary>
         /// <remarks>
         /// <b>At-most-once delivery:</b> Redis Pub/Sub drops messages when no subscriber is connected at publish
-        /// time and provides no built-in retry or dead-letter support. Configure <see cref="RedisPubSubOptions.OnDispatchFailed"/>
+        /// time and provides no built-in retry or dead-letter support. Configure <see cref="RedisPubSubMessagingOptions.OnDispatchFailed"/>
         /// to handle or record failed dispatches.
         /// </remarks>
         public MessagingSetupBuilder UseRedisPubSub()
@@ -99,7 +138,7 @@ public static class SetupRedisMessaging
         /// <param name="connection">A StackExchange.Redis comma-delimited configuration string.</param>
         /// <remarks>
         /// <b>At-most-once delivery:</b> Redis Pub/Sub drops messages when no subscriber is connected at publish
-        /// time and provides no built-in retry or dead-letter support. Configure <see cref="RedisPubSubOptions.OnDispatchFailed"/>
+        /// time and provides no built-in retry or dead-letter support. Configure <see cref="RedisPubSubMessagingOptions.OnDispatchFailed"/>
         /// to handle or record failed dispatches.
         /// </remarks>
         public MessagingSetupBuilder UseRedisPubSub(string connection)
@@ -108,28 +147,98 @@ public static class SetupRedisMessaging
         }
 
         /// <summary>
+        /// Use Redis Pub/Sub as the bus (fan-out) transport, binding and validating
+        /// <see cref="RedisPubSubMessagingOptions"/> from configuration.
+        /// </summary>
+        /// <param name="config">Configuration section containing <see cref="RedisPubSubMessagingOptions"/> values.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="config"/> is <see langword="null"/>.</exception>
+        /// <remarks>
+        /// <b>At-most-once delivery:</b> Redis Pub/Sub drops messages when no subscriber is connected at publish
+        /// time and provides no built-in retry or dead-letter support. Configure <see cref="RedisPubSubMessagingOptions.OnDispatchFailed"/>
+        /// to handle or record failed dispatches.
+        /// </remarks>
+        public MessagingSetupBuilder UseRedisPubSub(IConfiguration config)
+        {
+            Argument.IsNotNull(config);
+
+            return _RegisterRedisPubSub(
+                setup,
+                services =>
+                    services.Configure<RedisPubSubMessagingOptions, RedisPubSubMessagingOptionsValidator>(config)
+            );
+        }
+
+        /// <summary>
         /// Use Redis Pub/Sub as the bus (fan-out) transport.
         /// </summary>
-        /// <param name="configure">Configures <see cref="RedisPubSubOptions"/>.</param>
+        /// <param name="configure">Configures <see cref="RedisPubSubMessagingOptions"/>.</param>
         /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
         /// <remarks>
         /// <b>At-most-once delivery:</b> Redis Pub/Sub drops messages when no subscriber is connected at publish
-        /// time and provides no built-in retry or dead-letter support. Configure <see cref="RedisPubSubOptions.OnDispatchFailed"/>
+        /// time and provides no built-in retry or dead-letter support. Configure <see cref="RedisPubSubMessagingOptions.OnDispatchFailed"/>
         /// to handle or record failed dispatches.
         /// </remarks>
-        public MessagingSetupBuilder UseRedisPubSub(Action<RedisPubSubOptions> configure)
+        public MessagingSetupBuilder UseRedisPubSub(Action<RedisPubSubMessagingOptions> configure)
         {
             Argument.IsNotNull(configure);
 
-            setup.RegisterExtension(new RedisPubSubOptionsExtension(configure));
+            return _RegisterRedisPubSub(
+                setup,
+                services =>
+                    services.Configure<RedisPubSubMessagingOptions, RedisPubSubMessagingOptionsValidator>(configure)
+            );
+        }
 
-            return setup;
+        /// <summary>
+        /// Use Redis Pub/Sub as the bus (fan-out) transport, configuring
+        /// <see cref="RedisPubSubMessagingOptions"/> with access to the resolved service provider.
+        /// </summary>
+        /// <param name="configure">
+        /// A delegate that configures <see cref="RedisPubSubMessagingOptions"/> using the service provider
+        /// (for example to resolve secrets or connection settings from DI).
+        /// </param>
+        /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
+        /// <remarks>
+        /// <b>At-most-once delivery:</b> Redis Pub/Sub drops messages when no subscriber is connected at publish
+        /// time and provides no built-in retry or dead-letter support. Configure <see cref="RedisPubSubMessagingOptions.OnDispatchFailed"/>
+        /// to handle or record failed dispatches.
+        /// </remarks>
+        public MessagingSetupBuilder UseRedisPubSub(Action<RedisPubSubMessagingOptions, IServiceProvider> configure)
+        {
+            Argument.IsNotNull(configure);
+
+            return _RegisterRedisPubSub(
+                setup,
+                services =>
+                    services.Configure<RedisPubSubMessagingOptions, RedisPubSubMessagingOptionsValidator>(configure)
+            );
         }
     }
 
-    private sealed class RedisOptionsExtension(Action<MessagingRedisOptions> configure) : IMessagesOptionsExtension
+    private static MessagingSetupBuilder _RegisterRedis(
+        MessagingSetupBuilder setup,
+        Action<IServiceCollection> configureOptions
+    )
     {
-        private readonly Action<MessagingRedisOptions> _configure = Argument.IsNotNull(configure);
+        setup.RegisterExtension(new RedisMessagingOptionsExtension(configureOptions));
+
+        return setup;
+    }
+
+    private static MessagingSetupBuilder _RegisterRedisPubSub(
+        MessagingSetupBuilder setup,
+        Action<IServiceCollection> configureOptions
+    )
+    {
+        setup.RegisterExtension(new RedisPubSubMessagingOptionsExtension(configureOptions));
+
+        return setup;
+    }
+
+    private sealed class RedisMessagingOptionsExtension(Action<IServiceCollection> configureOptions)
+        : IMessagesOptionsExtension
+    {
+        private readonly Action<IServiceCollection> _configureOptions = Argument.IsNotNull(configureOptions);
 
         public void AddServices(IServiceCollection services)
         {
@@ -144,17 +253,17 @@ public static class SetupRedisMessaging
             services.AddSingleton<IRedisConnectionPool, RedisConnectionPool>();
             services.TryAddEnumerable(
                 ServiceDescriptor.Singleton<
-                    IPostConfigureOptions<MessagingRedisOptions>,
-                    MessagingRedisOptionsPostConfigure
+                    IPostConfigureOptions<RedisMessagingOptions>,
+                    RedisMessagingOptionsPostConfigure
                 >()
             );
-            services.Configure<MessagingRedisOptions, MessagingRedisOptionsValidator>(_configure);
+            _configureOptions(services);
         }
     }
 
-    private sealed class MessagingRedisOptionsPostConfigure : IPostConfigureOptions<MessagingRedisOptions>
+    private sealed class RedisMessagingOptionsPostConfigure : IPostConfigureOptions<RedisMessagingOptions>
     {
-        public void PostConfigure(string? name, MessagingRedisOptions options)
+        public void PostConfigure(string? name, RedisMessagingOptions options)
         {
             options.Configuration ??= new ConfigurationOptions();
 
@@ -176,9 +285,10 @@ public static class SetupRedisMessaging
         }
     }
 
-    private sealed class RedisPubSubOptionsExtension(Action<RedisPubSubOptions> configure) : IMessagesOptionsExtension
+    private sealed class RedisPubSubMessagingOptionsExtension(Action<IServiceCollection> configureOptions)
+        : IMessagesOptionsExtension
     {
-        private readonly Action<RedisPubSubOptions> _configure = Argument.IsNotNull(configure);
+        private readonly Action<IServiceCollection> _configureOptions = Argument.IsNotNull(configureOptions);
 
         public void AddServices(IServiceCollection services)
         {
@@ -193,17 +303,17 @@ public static class SetupRedisMessaging
             );
             services.TryAddEnumerable(
                 ServiceDescriptor.Singleton<
-                    IPostConfigureOptions<RedisPubSubOptions>,
-                    RedisPubSubOptionsPostConfigure
+                    IPostConfigureOptions<RedisPubSubMessagingOptions>,
+                    RedisPubSubMessagingOptionsPostConfigure
                 >()
             );
-            services.Configure<RedisPubSubOptions, RedisPubSubOptionsValidator>(_configure);
+            _configureOptions(services);
         }
     }
 
-    private sealed class RedisPubSubOptionsPostConfigure : IPostConfigureOptions<RedisPubSubOptions>
+    private sealed class RedisPubSubMessagingOptionsPostConfigure : IPostConfigureOptions<RedisPubSubMessagingOptions>
     {
-        public void PostConfigure(string? name, RedisPubSubOptions options)
+        public void PostConfigure(string? name, RedisPubSubMessagingOptions options)
         {
             options.Configuration ??= new ConfigurationOptions();
 

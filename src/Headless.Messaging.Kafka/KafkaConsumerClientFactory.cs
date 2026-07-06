@@ -15,7 +15,7 @@ namespace Headless.Messaging.Kafka;
 /// throws <see cref="NotSupportedException"/>.
 /// </remarks>
 public sealed class KafkaConsumerClientFactory(
-    IOptions<MessagingKafkaOptions> kafkaOptions,
+    IOptions<KafkaMessagingOptions> kafkaOptions,
     IServiceProvider serviceProvider,
     IConsumerRegistry? consumerRegistry = null
 ) : IIntentAwareConsumerClientFactory

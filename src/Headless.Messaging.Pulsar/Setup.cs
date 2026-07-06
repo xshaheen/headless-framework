@@ -5,6 +5,7 @@ using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Pulsar;
 using Headless.Messaging.Transport;
+using Microsoft.Extensions.Configuration;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
@@ -36,29 +37,77 @@ public static class SetupPulsarMessaging
         }
 
         /// <summary>
+        /// Registers Apache Pulsar as the message transport, binding and validating
+        /// <see cref="PulsarMessagingOptions"/> from configuration.
+        /// </summary>
+        /// <param name="config">Configuration section containing <see cref="PulsarMessagingOptions"/> values.</param>
+        /// <returns>The same <paramref name="setup"/> builder for chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="config"/> is <see langword="null"/>.</exception>
+        public MessagingSetupBuilder UsePulsar(IConfiguration config)
+        {
+            Argument.IsNotNull(config);
+
+            return _RegisterPulsar(
+                setup,
+                services => services.Configure<PulsarMessagingOptions, PulsarMessagingOptionsValidator>(config)
+            );
+        }
+
+        /// <summary>
         /// Registers Apache Pulsar as the message transport with full programmatic configuration.
         /// </summary>
-        /// <param name="configure">A delegate that configures <see cref="MessagingPulsarOptions"/>.</param>
+        /// <param name="configure">A delegate that configures <see cref="PulsarMessagingOptions"/>.</param>
         /// <returns>The same <paramref name="setup"/> builder for chaining.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
-        public MessagingSetupBuilder UsePulsar(Action<MessagingPulsarOptions> configure)
+        public MessagingSetupBuilder UsePulsar(Action<PulsarMessagingOptions> configure)
         {
             Argument.IsNotNull(configure);
 
-            setup.RegisterExtension(new PulsarMessagesOptionsExtension(configure));
+            return _RegisterPulsar(
+                setup,
+                services => services.Configure<PulsarMessagingOptions, PulsarMessagingOptionsValidator>(configure)
+            );
+        }
 
-            return setup;
+        /// <summary>
+        /// Registers Apache Pulsar as the message transport, configuring <see cref="PulsarMessagingOptions"/>
+        /// with access to the resolved service provider.
+        /// </summary>
+        /// <param name="configure">
+        /// A delegate that configures <see cref="PulsarMessagingOptions"/> using the service provider
+        /// (for example to resolve secrets or TLS material from DI).
+        /// </param>
+        /// <returns>The same <paramref name="setup"/> builder for chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
+        public MessagingSetupBuilder UsePulsar(Action<PulsarMessagingOptions, IServiceProvider> configure)
+        {
+            Argument.IsNotNull(configure);
+
+            return _RegisterPulsar(
+                setup,
+                services => services.Configure<PulsarMessagingOptions, PulsarMessagingOptionsValidator>(configure)
+            );
         }
     }
 
-    private sealed class PulsarMessagesOptionsExtension(Action<MessagingPulsarOptions> configure)
+    private static MessagingSetupBuilder _RegisterPulsar(
+        MessagingSetupBuilder setup,
+        Action<IServiceCollection> configureOptions
+    )
+    {
+        setup.RegisterExtension(new PulsarMessagingOptionsExtension(configureOptions));
+
+        return setup;
+    }
+
+    private sealed class PulsarMessagingOptionsExtension(Action<IServiceCollection> configureOptions)
         : IMessagesOptionsExtension
     {
         public void AddServices(IServiceCollection services)
         {
             services.AddSingleton(new MessageQueueMarkerService("Apache Pulsar"));
 
-            services.Configure<MessagingPulsarOptions, MessagingPulsarOptionsValidator>(configure);
+            configureOptions(services);
 
             services.AddSingleton<PulsarTransport>();
             services.AddSingleton<IBusTransport>(sp => sp.GetRequiredService<PulsarTransport>());

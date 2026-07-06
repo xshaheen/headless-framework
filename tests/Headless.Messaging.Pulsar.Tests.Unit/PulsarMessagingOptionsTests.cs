@@ -5,13 +5,13 @@ using Headless.Testing.Tests;
 
 namespace Tests;
 
-public sealed class MessagingPulsarOptionsTests : TestBase
+public sealed class PulsarMessagingOptionsTests : TestBase
 {
     [Fact]
     public void should_require_service_url()
     {
         // given
-        var options = new MessagingPulsarOptions { ServiceUrl = "pulsar://localhost:6650" };
+        var options = new PulsarMessagingOptions { ServiceUrl = "pulsar://localhost:6650" };
 
         // when, then
         options.ServiceUrl.Should().Be("pulsar://localhost:6650");
@@ -21,7 +21,7 @@ public sealed class MessagingPulsarOptionsTests : TestBase
     public void should_have_enable_client_log_property()
     {
         // given
-        var options = new MessagingPulsarOptions { ServiceUrl = "pulsar://localhost:6650", EnableClientLog = true };
+        var options = new PulsarMessagingOptions { ServiceUrl = "pulsar://localhost:6650", EnableClientLog = true };
 
         // when, then
         options.EnableClientLog.Should().BeTrue();
@@ -31,7 +31,7 @@ public sealed class MessagingPulsarOptionsTests : TestBase
     public void should_default_enable_client_log_to_false()
     {
         // given
-        var options = new MessagingPulsarOptions { ServiceUrl = "pulsar://localhost:6650" };
+        var options = new PulsarMessagingOptions { ServiceUrl = "pulsar://localhost:6650" };
 
         // when, then
         options.EnableClientLog.Should().BeFalse();
@@ -42,7 +42,7 @@ public sealed class MessagingPulsarOptionsTests : TestBase
     {
         // given
         var tlsOptions = new PulsarTlsOptions { TlsHostnameVerificationEnable = true };
-        var options = new MessagingPulsarOptions
+        var options = new PulsarMessagingOptions
         {
             ServiceUrl = "pulsar+ssl://localhost:6651",
             TlsOptions = tlsOptions,
@@ -57,7 +57,7 @@ public sealed class MessagingPulsarOptionsTests : TestBase
     public void should_have_null_tls_options_by_default()
     {
         // given
-        var options = new MessagingPulsarOptions { ServiceUrl = "pulsar://localhost:6650" };
+        var options = new PulsarMessagingOptions { ServiceUrl = "pulsar://localhost:6650" };
 
         // when, then
         options.TlsOptions.Should().BeNull();

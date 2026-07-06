@@ -20,7 +20,7 @@ public sealed class RedisConsumerClientFactoryTests : TestBase
         // given
         var mockStreamManager = Substitute.For<IRedisStreamManager>();
         var options = Options.Create(
-            new MessagingRedisOptions { Configuration = ConfigurationOptions.Parse("localhost:6379") }
+            new RedisMessagingOptions { Configuration = ConfigurationOptions.Parse("localhost:6379") }
         );
         var logger = LoggerFactory.CreateLogger<RedisConsumerClient>();
 
@@ -41,7 +41,7 @@ public sealed class RedisConsumerClientFactoryTests : TestBase
         // given
         var mockStreamManager = Substitute.For<IRedisStreamManager>();
         var options = Options.Create(
-            new MessagingRedisOptions { Configuration = ConfigurationOptions.Parse("localhost:6379") }
+            new RedisMessagingOptions { Configuration = ConfigurationOptions.Parse("localhost:6379") }
         );
         var logger = LoggerFactory.CreateLogger<RedisConsumerClient>();
 
@@ -60,7 +60,7 @@ public sealed class RedisConsumerClientFactoryTests : TestBase
         // given
         var mockStreamManager = Substitute.For<IRedisStreamManager>();
         var options = Options.Create(
-            new MessagingRedisOptions { Configuration = ConfigurationOptions.Parse("localhost:6379") }
+            new RedisMessagingOptions { Configuration = ConfigurationOptions.Parse("localhost:6379") }
         );
         var logger = LoggerFactory.CreateLogger<RedisConsumerClient>();
 
@@ -80,7 +80,7 @@ public sealed class RedisConsumerClientFactoryTests : TestBase
         // given
         var mockStreamManager = Substitute.For<IRedisStreamManager>();
         var options = Options.Create(
-            new MessagingRedisOptions { Configuration = ConfigurationOptions.Parse("localhost:6379") }
+            new RedisMessagingOptions { Configuration = ConfigurationOptions.Parse("localhost:6379") }
         );
         var logger = LoggerFactory.CreateLogger<RedisConsumerClient>();
 

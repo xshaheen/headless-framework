@@ -10,8 +10,8 @@ namespace Tests;
 
 public sealed class KafkaConsumerClientFactoryTests : TestBase
 {
-    private readonly IOptions<MessagingKafkaOptions> _options = Options.Create(
-        new MessagingKafkaOptions { Servers = "localhost:9092" }
+    private readonly IOptions<KafkaMessagingOptions> _options = Options.Create(
+        new KafkaMessagingOptions { Servers = "localhost:9092" }
     );
 
     [Fact]

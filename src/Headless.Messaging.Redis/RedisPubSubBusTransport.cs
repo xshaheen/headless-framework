@@ -8,7 +8,7 @@ namespace Headless.Messaging.Redis;
 
 internal sealed class RedisPubSubBusTransport(
     IRedisPubSubConnectionProvider connectionProvider,
-    IOptions<RedisPubSubOptions> options,
+    IOptions<RedisPubSubMessagingOptions> options,
     ILogger<RedisPubSubBusTransport> logger
 ) : IBusTransport
 {

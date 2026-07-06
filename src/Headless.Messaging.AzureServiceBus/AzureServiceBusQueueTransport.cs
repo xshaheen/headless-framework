@@ -10,7 +10,7 @@ namespace Headless.Messaging.AzureServiceBus;
 
 internal sealed class AzureServiceBusQueueTransport(
     ILogger<AzureServiceBusQueueTransport> logger,
-    IOptions<AzureServiceBusOptions> busOptions
+    IOptions<AzureServiceBusMessagingOptions> busOptions
 ) : IQueueTransport
 {
     private readonly ConcurrentDictionary<string, Lazy<ServiceBusSender>> _senders = new(StringComparer.Ordinal);

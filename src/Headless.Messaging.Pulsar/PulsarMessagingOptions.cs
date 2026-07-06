@@ -15,7 +15,7 @@ namespace Headless.Messaging.Pulsar;
 /// connections are used. The service URL scheme must match the chosen security mode
 /// (<c>pulsar://</c> for plain-text, <c>pulsar+ssl://</c> for TLS).
 /// </remarks>
-public sealed class MessagingPulsarOptions
+public sealed class PulsarMessagingOptions
 {
     /// <summary>
     /// The Pulsar service URL to connect to (for example <c>"pulsar://localhost:6650"</c> or
@@ -73,9 +73,9 @@ public sealed class PulsarTlsOptions
     public SslProtocols TlsProtocols { get; set; } = _Default.TlsProtocols;
 }
 
-internal sealed class MessagingPulsarOptionsValidator : AbstractValidator<MessagingPulsarOptions>
+internal sealed class PulsarMessagingOptionsValidator : AbstractValidator<PulsarMessagingOptions>
 {
-    public MessagingPulsarOptionsValidator()
+    public PulsarMessagingOptionsValidator()
     {
         RuleFor(x => x.ServiceUrl).NotEmpty();
     }

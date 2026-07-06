@@ -10,12 +10,12 @@ namespace Headless.Messaging.RabbitMq;
 /// Configuration options for the RabbitMQ messaging transport.
 /// </summary>
 /// <remarks>
-/// Credentials (<see cref="UserName"/> and <see cref="Password"/>) must be set explicitly.
-/// The validator rejects the RabbitMQ default credentials (<c>guest</c>/<c>guest</c>) to
-/// prevent accidental use in production environments.
+/// Credentials (<see cref="UserName"/> and <see cref="Password"/>) are <see langword="required"/> and
+/// must be set explicitly. The validator rejects the RabbitMQ default credentials
+/// (<c>guest</c>/<c>guest</c>) to prevent accidental use in production environments.
 /// </remarks>
 // ReSharper disable once InconsistentNaming
-public sealed class RabbitMqOptions
+public sealed class RabbitMqMessagingOptions
 {
     /// <summary>
     /// Default virtual host (value: "/").
@@ -38,16 +38,16 @@ public sealed class RabbitMqOptions
     public string HostName { get; set; } = "localhost";
 
     /// <summary>
-    /// Password used to authenticate to the broker. Must be configured explicitly — no default
-    /// value is provided. The validator rejects <c>"guest"</c> for production safety.
+    /// Password used to authenticate to the broker. Required — must be configured explicitly with no
+    /// default value. The validator rejects <c>"guest"</c> for production safety.
     /// </summary>
-    public string Password { get; set; } = string.Empty;
+    public required string Password { get; set; }
 
     /// <summary>
-    /// Username used to authenticate to the broker. Must be configured explicitly — no default
-    /// value is provided. The validator rejects <c>"guest"</c> for production safety.
+    /// Username used to authenticate to the broker. Required — must be configured explicitly with no
+    /// default value. The validator rejects <c>"guest"</c> for production safety.
     /// </summary>
-    public string UserName { get; set; } = string.Empty;
+    public required string UserName { get; set; }
 
     /// <summary>
     /// The RabbitMQ virtual host to access on this connection. Defaults to <see cref="DefaultVHost"/> (<c>"/"</c>).
@@ -99,7 +99,7 @@ public sealed class RabbitMqOptions
     /// <summary>
     /// Optional callback that customises the underlying RabbitMQ <c>ConnectionFactory</c> before
     /// the connection is opened. Use this to configure TLS, heartbeats, or any property not
-    /// directly exposed by <see cref="RabbitMqOptions"/>.
+    /// directly exposed by <see cref="RabbitMqMessagingOptions"/>.
     /// </summary>
     public Action<ConnectionFactory>? ConnectionFactoryOptions { get; set; }
 
@@ -111,13 +111,14 @@ public sealed class RabbitMqOptions
     public BasicQos? BasicQosOptions { get; set; }
 
     /// <summary>AMQP x-arguments applied when declaring queues.</summary>
-    public class QueueArgumentsOptions
+    public sealed class QueueArgumentsOptions
     {
         /// <summary>
         /// Sets the <c>x-queue-mode</c> declaration argument. Use <c>"lazy"</c> to keep
-        /// messages on disk and reduce memory pressure, or omit to use the broker default.
+        /// messages on disk and reduce memory pressure. Defaults to <see langword="null"/>
+        /// (the broker default is used).
         /// </summary>
-        public string QueueMode { get; set; } = null!;
+        public string? QueueMode { get; set; }
 
         /// <summary>
         /// Sets the <c>x-message-ttl</c> declaration argument — the time in milliseconds
@@ -129,9 +130,9 @@ public sealed class RabbitMqOptions
         /// <summary>
         /// Sets the <c>x-queue-type</c> declaration argument. Use <c>"quorum"</c> for
         /// replicated, durable queues or <c>"stream"</c> for append-only log semantics.
-        /// Omit to use the broker default (<c>"classic"</c>).
+        /// Defaults to <see langword="null"/> (the broker default <c>"classic"</c> is used).
         /// </summary>
-        public string QueueType { get; set; } = null!;
+        public string? QueueType { get; set; }
     }
 
     /// <summary>
@@ -148,7 +149,7 @@ public sealed class RabbitMqOptions
     /// When <see langword="false"/> (default), the limit is applied per consumer on the channel.
     /// When <see langword="true"/>, the limit is shared across all consumers on the channel.
     /// </param>
-    public class BasicQos(ushort prefetchCount, bool global = false)
+    public sealed class BasicQos(ushort prefetchCount, bool global = false)
     {
         /// <summary>
         /// The maximum number of unacknowledged messages the broker delivers before waiting for
@@ -165,7 +166,7 @@ public sealed class RabbitMqOptions
     }
 
     /// <summary>Queue declaration flags applied when RabbitMQ queues are created.</summary>
-    public class QueueRabbitOptions
+    public sealed class QueueRabbitOptions
     {
         /// <summary>
         /// When <see langword="true"/> (default), the queue survives broker restarts.
@@ -187,9 +188,9 @@ public sealed class RabbitMqOptions
     }
 }
 
-internal sealed class RabbitMqOptionsValidator : AbstractValidator<RabbitMqOptions>
+internal sealed class RabbitMqMessagingOptionsValidator : AbstractValidator<RabbitMqMessagingOptions>
 {
-    public RabbitMqOptionsValidator()
+    public RabbitMqMessagingOptionsValidator()
     {
         RuleFor(x => x.HostName).NotEmpty().WithMessage("HostName is required");
 

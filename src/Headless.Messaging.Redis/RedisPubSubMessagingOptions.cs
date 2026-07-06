@@ -14,7 +14,7 @@ namespace Headless.Messaging.Redis;
 /// is active are permanently lost. When <see cref="Configuration"/> is <see langword="null"/> and
 /// no endpoints are specified, the transport connects to <c>localhost</c> on the default Redis port.
 /// </remarks>
-public sealed class RedisPubSubOptions
+public sealed class RedisPubSubMessagingOptions
 {
     /// <summary>
     /// Gets or sets the native StackExchange.Redis connection options.
@@ -43,4 +43,4 @@ public sealed class RedisPubSubOptions
             : string.Empty;
 }
 
-internal sealed class RedisPubSubOptionsValidator : AbstractValidator<RedisPubSubOptions>;
+internal sealed class RedisPubSubMessagingOptionsValidator : AbstractValidator<RedisPubSubMessagingOptions>;

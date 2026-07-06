@@ -76,7 +76,7 @@ public sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable,
     public ConnectionChannelPool(
         ILogger<ConnectionChannelPool> logger,
         IOptions<MessagingOptions> messagingAccessorOptionsAccessor,
-        IOptions<RabbitMqOptions> optionsAccessor
+        IOptions<RabbitMqMessagingOptions> optionsAccessor
     )
     {
         _logger = logger;
@@ -200,7 +200,7 @@ public sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable,
         _connectionLock.Dispose();
     }
 
-    private static Func<Task<IConnection>> _CreateConnection(RabbitMqOptions options)
+    private static Func<Task<IConnection>> _CreateConnection(RabbitMqMessagingOptions options)
     {
         var factory = new ConnectionFactory
         {
@@ -255,7 +255,7 @@ public sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable,
             await model
                 .ExchangeDeclareAsync(
                     Exchange,
-                    RabbitMqOptions.ExchangeType,
+                    RabbitMqMessagingOptions.ExchangeType,
                     durable: true,
                     autoDelete: false,
                     arguments: null,

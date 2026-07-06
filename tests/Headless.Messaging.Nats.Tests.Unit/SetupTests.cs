@@ -49,7 +49,7 @@ public sealed class SetupTests : TestBase
         var setup = _CreateSetup();
 
         // when
-        var act = () => setup.UseNats((Action<MessagingNatsOptions>)null!);
+        var act = () => setup.UseNats((Action<NatsMessagingOptions>)null!);
 
         // then
         act.Should().Throw<ArgumentNullException>();
@@ -96,7 +96,7 @@ public sealed class SetupTests : TestBase
         provider.GetRequiredService<IConsumerClientFactory>().Should().BeOfType<NatsConsumerClientFactory>();
         provider.GetRequiredService<INatsConnectionPool>().Should().BeOfType<NatsConnectionPool>();
         provider
-            .GetRequiredService<IOptions<MessagingNatsOptions>>()
+            .GetRequiredService<IOptions<NatsMessagingOptions>>()
             .Value.Servers.Should()
             .Be("nats://localhost:4222");
     }

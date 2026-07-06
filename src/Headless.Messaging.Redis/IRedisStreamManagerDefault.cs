@@ -9,12 +9,12 @@ namespace Headless.Messaging.Redis;
 
 internal sealed class RedisStreamManager(
     IRedisConnectionPool connectionsPool,
-    IOptions<MessagingRedisOptions> options,
+    IOptions<RedisMessagingOptions> options,
     ILogger<RedisStreamManager> logger,
     TimeProvider? timeProvider = null
 ) : IRedisStreamManager
 {
-    private readonly MessagingRedisOptions _options = options.Value;
+    private readonly RedisMessagingOptions _options = options.Value;
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private IConnectionMultiplexer? _redis;
 

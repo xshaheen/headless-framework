@@ -7,7 +7,7 @@ public static class AzureServiceBusHeaders
 {
     /// <summary>
     /// Header carrying the Service Bus session identifier. Required on every message when
-    /// <see cref="AzureServiceBusOptions.EnableSessions"/> is <see langword="true"/>; ignored
+    /// <see cref="AzureServiceBusMessagingOptions.EnableSessions"/> is <see langword="true"/>; ignored
     /// otherwise. Messages that omit this header when sessions are enabled are rejected by the broker.
     /// </summary>
     public const string SessionId = "headless-session-id";

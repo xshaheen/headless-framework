@@ -14,7 +14,7 @@ namespace Headless.Messaging.Aws;
 /// the AWS SDK resolves credentials through its standard chain (environment variables,
 /// shared credentials file, IAM instance/task roles, etc.).
 /// </remarks>
-public sealed class AmazonSqsOptions
+public sealed class AmazonSqsMessagingOptions
 {
     /// <summary>The AWS region endpoint where SQS queues and SNS topics reside.</summary>
     public required RegionEndpoint Region { get; set; }
@@ -41,9 +41,9 @@ public sealed class AmazonSqsOptions
     public string? SqsServiceUrl { get; set; }
 }
 
-internal sealed class AmazonSqsOptionsValidator : AbstractValidator<AmazonSqsOptions>
+internal sealed class AmazonSqsMessagingOptionsValidator : AbstractValidator<AmazonSqsMessagingOptions>
 {
-    public AmazonSqsOptionsValidator()
+    public AmazonSqsMessagingOptionsValidator()
     {
         RuleFor(x => x.Region).NotNull();
     }

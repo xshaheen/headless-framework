@@ -4,7 +4,7 @@ namespace Headless.Messaging.AzureServiceBus.Producer;
 
 /// <summary>
 /// Describes a custom Azure Service Bus producer that publishes messages to a dedicated topic
-/// rather than the shared topic configured in <see cref="AzureServiceBusOptions.TopicPath"/>.
+/// rather than the shared topic configured in <see cref="AzureServiceBusMessagingOptions.TopicPath"/>.
 /// </summary>
 public interface IServiceBusProducerDescriptor
 {
@@ -19,7 +19,7 @@ public interface IServiceBusProducerDescriptor
 
     /// <summary>
     /// When <see langword="true"/>, the framework auto-creates a subscription for this producer's
-    /// topic on startup (subject to <see cref="AzureServiceBusOptions.AutoProvision"/>).
+    /// topic on startup (subject to <see cref="AzureServiceBusMessagingOptions.AutoProvision"/>).
     /// </summary>
     bool CreateSubscription { get; }
 

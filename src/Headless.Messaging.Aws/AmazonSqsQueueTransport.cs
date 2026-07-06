@@ -10,7 +10,7 @@ namespace Headless.Messaging.Aws;
 
 internal sealed class AmazonSqsQueueTransport(
     ILogger<AmazonSqsQueueTransport> logger,
-    IOptions<AmazonSqsOptions> sqsOptionsAccessor
+    IOptions<AmazonSqsMessagingOptions> sqsOptionsAccessor
 ) : IQueueTransport
 {
     private const int _MaxMessageAttributes = 10;

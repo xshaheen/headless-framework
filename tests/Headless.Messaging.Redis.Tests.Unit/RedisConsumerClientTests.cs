@@ -18,8 +18,8 @@ public sealed class RedisConsumerClientTests : TestBase
 {
     private readonly IRedisStreamManager _mockStreamManager = Substitute.For<IRedisStreamManager>();
 
-    private readonly IOptions<MessagingRedisOptions> _options = Options.Create(
-        new MessagingRedisOptions { Configuration = ConfigurationOptions.Parse("localhost:6379") }
+    private readonly IOptions<RedisMessagingOptions> _options = Options.Create(
+        new RedisMessagingOptions { Configuration = ConfigurationOptions.Parse("localhost:6379") }
     );
 
     [Fact]

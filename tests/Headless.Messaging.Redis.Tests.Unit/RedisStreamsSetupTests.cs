@@ -51,7 +51,7 @@ public sealed class RedisStreamsSetupTests : TestBase
 
         // when
         await using var provider = services.BuildServiceProvider();
-        var options = provider.GetRequiredService<IOptions<MessagingRedisOptions>>().Value;
+        var options = provider.GetRequiredService<IOptions<RedisMessagingOptions>>().Value;
 
         // then
         options.ConnectionPoolSize.Should().Be(15);
@@ -68,7 +68,7 @@ public sealed class RedisStreamsSetupTests : TestBase
 
         // when
         await using var provider = services.BuildServiceProvider();
-        var options = provider.GetRequiredService<IOptions<MessagingRedisOptions>>().Value;
+        var options = provider.GetRequiredService<IOptions<RedisMessagingOptions>>().Value;
 
         // then - defaults should be applied
         options.StreamEntriesCount.Should().Be(10);
@@ -124,7 +124,7 @@ public sealed class RedisStreamsSetupTests : TestBase
     {
         // given
         var services = new ServiceCollection();
-        Action<MessagingRedisOptions>? nullAction = null;
+        Action<RedisMessagingOptions>? nullAction = null;
 
         // when & then
         var action = () => services.AddHeadlessMessaging(opt => opt.UseRedis(nullAction!));
@@ -148,7 +148,7 @@ public sealed class RedisStreamsSetupTests : TestBase
 
         // when
         await using var provider = services.BuildServiceProvider();
-        var options = provider.GetRequiredService<IOptions<MessagingRedisOptions>>().Value;
+        var options = provider.GetRequiredService<IOptions<RedisMessagingOptions>>().Value;
 
         // then - explicit values should not be overwritten by defaults
         options.ConnectionPoolSize.Should().Be(25);

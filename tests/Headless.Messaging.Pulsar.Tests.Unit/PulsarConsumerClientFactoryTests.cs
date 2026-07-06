@@ -19,13 +19,13 @@ public sealed class PulsarConsumerClientFactoryTests : TestBase
 {
     private readonly IConnectionFactory _connectionFactory;
     private readonly ILoggerFactory _loggerFactory;
-    private readonly IOptions<MessagingPulsarOptions> _options;
+    private readonly IOptions<PulsarMessagingOptions> _options;
 
     public PulsarConsumerClientFactoryTests()
     {
         _connectionFactory = Substitute.For<IConnectionFactory>();
         _loggerFactory = NullLoggerFactory.Instance;
-        _options = Options.Create(new MessagingPulsarOptions { ServiceUrl = "pulsar://localhost:6650" });
+        _options = Options.Create(new PulsarMessagingOptions { ServiceUrl = "pulsar://localhost:6650" });
     }
 
     [Fact]
@@ -63,7 +63,7 @@ public sealed class PulsarConsumerClientFactoryTests : TestBase
     {
         // given
         var options = Options.Create(
-            new MessagingPulsarOptions { ServiceUrl = "pulsar://localhost:6650", EnableClientLog = true }
+            new PulsarMessagingOptions { ServiceUrl = "pulsar://localhost:6650", EnableClientLog = true }
         );
         var loggerFactory = Substitute.For<ILoggerFactory>();
         loggerFactory.CreateLogger(Arg.Any<string>()).Returns(NullLogger.Instance);
@@ -80,7 +80,7 @@ public sealed class PulsarConsumerClientFactoryTests : TestBase
     {
         // given
         var options = Options.Create(
-            new MessagingPulsarOptions { ServiceUrl = "pulsar://localhost:6650", EnableClientLog = false }
+            new PulsarMessagingOptions { ServiceUrl = "pulsar://localhost:6650", EnableClientLog = false }
         );
         var loggerFactory = Substitute.For<ILoggerFactory>();
 

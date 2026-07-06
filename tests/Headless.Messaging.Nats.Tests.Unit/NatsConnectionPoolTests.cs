@@ -12,13 +12,13 @@ namespace Tests;
 public sealed class NatsConnectionPoolTests : TestBase
 {
     private readonly ILogger<NatsConnectionPool> _logger;
-    private readonly MsOptions.IOptions<MessagingNatsOptions> _options;
+    private readonly MsOptions.IOptions<NatsMessagingOptions> _options;
 
     public NatsConnectionPoolTests()
     {
         _logger = NullLogger<NatsConnectionPool>.Instance;
         _options = MsOptions.Options.Create(
-            new MessagingNatsOptions { Servers = "nats://localhost:4222", ConnectionPoolSize = 3 }
+            new NatsMessagingOptions { Servers = "nats://localhost:4222", ConnectionPoolSize = 3 }
         );
     }
 
@@ -33,7 +33,7 @@ public sealed class NatsConnectionPoolTests : TestBase
     public async Task should_redact_credentials_from_server_address()
     {
         var options = MsOptions.Options.Create(
-            new MessagingNatsOptions { Servers = "nats://user:password@localhost:4222", ConnectionPoolSize = 1 }
+            new NatsMessagingOptions { Servers = "nats://user:password@localhost:4222", ConnectionPoolSize = 1 }
         );
 
         await using var pool = new NatsConnectionPool(_logger, options);
@@ -60,7 +60,7 @@ public sealed class NatsConnectionPoolTests : TestBase
     public async Task should_create_pool_size_connections()
     {
         var options = MsOptions.Options.Create(
-            new MessagingNatsOptions { Servers = "nats://localhost:4222", ConnectionPoolSize = 5 }
+            new NatsMessagingOptions { Servers = "nats://localhost:4222", ConnectionPoolSize = 5 }
         );
 
         await using var pool = new NatsConnectionPool(_logger, options);

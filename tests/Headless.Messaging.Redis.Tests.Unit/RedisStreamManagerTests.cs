@@ -29,7 +29,7 @@ public sealed class RedisStreamManagerTests : TestBase
         _mockMultiplexer.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(_mockDatabase);
 
         var options = Options.Create(
-            new MessagingRedisOptions
+            new RedisMessagingOptions
             {
                 Configuration = ConfigurationOptions.Parse("localhost:6379"),
                 StreamEntriesCount = 10,
@@ -162,7 +162,7 @@ public sealed class RedisStreamManagerTests : TestBase
     private RedisStreamManager _CreateSut(TimeProvider timeProvider)
     {
         var options = Options.Create(
-            new MessagingRedisOptions
+            new RedisMessagingOptions
             {
                 Configuration = ConfigurationOptions.Parse("localhost:6379"),
                 StreamEntriesCount = 10,

@@ -12,7 +12,7 @@ namespace Headless.Messaging.Redis;
 /// on first await. Up to five connection attempts are made with a two-second delay between retries.
 /// </summary>
 public class AsyncLazyRedisConnection(
-    MessagingRedisOptions redisOptions,
+    RedisMessagingOptions redisOptions,
     ILogger<AsyncLazyRedisConnection> logger,
     TimeProvider? timeProvider = null,
     CancellationToken cancellationToken = default
@@ -38,7 +38,7 @@ public class AsyncLazyRedisConnection(
     }
 
     private static async Task<RedisConnection> _ConnectAsync(
-        MessagingRedisOptions redisOptions,
+        RedisMessagingOptions redisOptions,
         ILogger<AsyncLazyRedisConnection> logger,
         TimeProvider timeProvider,
         CancellationToken cancellationToken

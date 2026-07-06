@@ -42,12 +42,12 @@ public interface IKafkaConnectionPool
 /// <summary>Default implementation of <see cref="IKafkaConnectionPool"/>.</summary>
 public sealed class KafkaConnectionPool : IKafkaConnectionPool, IDisposable
 {
-    private readonly MessagingKafkaOptions _options;
+    private readonly KafkaMessagingOptions _options;
     private readonly ConcurrentQueue<IProducer<string, byte[]>> _producerPool;
     private int _maxSize;
     private int _pCount;
 
-    public KafkaConnectionPool(ILogger<KafkaConnectionPool> logger, IOptions<MessagingKafkaOptions> options)
+    public KafkaConnectionPool(ILogger<KafkaConnectionPool> logger, IOptions<KafkaMessagingOptions> options)
     {
         _options = options.Value;
         _producerPool = new();

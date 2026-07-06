@@ -16,7 +16,7 @@ namespace Headless.Messaging.Nats;
 internal sealed class NatsConsumerClient(
     string name,
     byte groupConcurrent,
-    IOptions<MessagingNatsOptions> options,
+    IOptions<NatsMessagingOptions> options,
     IServiceProvider serviceProvider,
     Func<string, ConsumerConfig, CancellationToken, Task<INatsJSConsumer>>? consumerFactory = null,
     IntentType intentType = IntentType.Bus,
@@ -24,7 +24,7 @@ internal sealed class NatsConsumerClient(
 ) : IConsumerClient
 {
     private readonly Lock _receiveLock = new();
-    private readonly MessagingNatsOptions _natsOptions = Argument.IsNotNull(options.Value);
+    private readonly NatsMessagingOptions _natsOptions = Argument.IsNotNull(options.Value);
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
     private readonly SemaphoreSlim? _semaphore = groupConcurrent > 0 ? new SemaphoreSlim(groupConcurrent) : null;

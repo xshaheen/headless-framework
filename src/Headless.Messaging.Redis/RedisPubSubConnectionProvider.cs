@@ -10,7 +10,7 @@ internal interface IRedisPubSubConnectionProvider : IAsyncDisposable
     Task<IConnectionMultiplexer> ConnectAsync(CancellationToken cancellationToken = default);
 }
 
-internal sealed class RedisPubSubConnectionProvider(IOptions<RedisPubSubOptions> optionsAccessor)
+internal sealed class RedisPubSubConnectionProvider(IOptions<RedisPubSubMessagingOptions> optionsAccessor)
     : IRedisPubSubConnectionProvider
 {
     private readonly SemaphoreSlim _lock = new(1, 1);

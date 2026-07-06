@@ -40,13 +40,13 @@ public sealed class ConnectionFactory : IConnectionFactory, IAsyncDisposable
 {
     private readonly SemaphoreSlim _clientLock = new(1, 1);
     private PulsarClient? _client;
-    private readonly MessagingPulsarOptions _options;
+    private readonly PulsarMessagingOptions _options;
     private readonly Func<string, Task<IProducer<byte[]>>>? _producerFactoryOverride;
     private readonly ConcurrentDictionary<string, Task<IProducer<byte[]>>> _topicProducers;
 
     public ConnectionFactory(
         ILogger<ConnectionFactory> logger,
-        IOptions<MessagingPulsarOptions> options,
+        IOptions<PulsarMessagingOptions> options,
         Func<string, Task<IProducer<byte[]>>>? producerFactoryOverride = null
     )
     {

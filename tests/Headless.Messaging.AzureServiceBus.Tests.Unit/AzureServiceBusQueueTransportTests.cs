@@ -13,8 +13,8 @@ namespace Tests;
 
 public sealed class AzureServiceBusQueueTransportTests
 {
-    private static readonly IOptions<AzureServiceBusOptions> _Options = Options.Create(
-        new AzureServiceBusOptions
+    private static readonly IOptions<AzureServiceBusMessagingOptions> _Options = Options.Create(
+        new AzureServiceBusMessagingOptions
         {
             ConnectionString =
                 "Endpoint=sb://mynamespace.servicebus.windows.net/;SharedAccessKeyName=myPolicy;SharedAccessKey=myKey",

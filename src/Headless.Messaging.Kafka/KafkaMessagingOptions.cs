@@ -8,7 +8,7 @@ namespace Headless.Messaging.Kafka;
 /// <summary>
 /// Configuration options for the Apache Kafka messaging transport.
 /// </summary>
-public sealed class MessagingKafkaOptions
+public sealed class KafkaMessagingOptions
 {
     /// <summary>
     /// Raw librdkafka configuration key/value pairs that are merged into the producer and
@@ -42,11 +42,14 @@ public sealed class MessagingKafkaOptions
     >? CustomHeadersBuilder { get; set; }
 
     /// <summary>
-    /// The set of Kafka error codes that trigger a consume retry. The defaults include transient
-    /// errors such as leader elections, rebalances, and network timeouts.
-    /// See <see href="https://docs.confluent.io/platform/current/clients/librdkafka/html/rdkafkacpp_8h.html#a4c6b7af48c215724c323c60ea4080dbf"/>.
+    /// The set of Kafka error codes that trigger a consume retry, expressed as the integer values of
+    /// Confluent's <c>Confluent.Kafka.ErrorCode</c> enum. Exposing <c>int</c> instead of the native enum
+    /// keeps configuring retries free of a compile-time <c>Confluent.Kafka</c> dependency. The defaults
+    /// include transient errors such as leader elections, rebalances, and network timeouts.
+    /// See <see href="https://docs.confluent.io/platform/current/clients/librdkafka/html/rdkafkacpp_8h.html#a4c6b7af48c215724c323c60ea4080dbf"/>
+    /// for the enum members and their numeric codes.
     /// </summary>
-    public List<ErrorCode> RetriableErrorCodes { get; } = [.. DefaultRetriableErrorCodes];
+    public List<int> RetriableErrorCodes { get; } = [.. DefaultRetriableErrorCodes];
 
     /// <summary>
     /// Topic creation options applied when the framework auto-creates topics.
@@ -54,20 +57,21 @@ public sealed class MessagingKafkaOptions
     public KafkaTopicOptions TopicOptions { get; set; } = new();
 
     /// <summary>
-    /// Returns the default set of retriable Kafka error codes.
+    /// Returns the default set of retriable Kafka error codes as the integer values of the
+    /// <c>Confluent.Kafka.ErrorCode</c> enum members.
     /// </summary>
-    public static IReadOnlyList<ErrorCode> DefaultRetriableErrorCodes { get; } =
+    public static IReadOnlyList<int> DefaultRetriableErrorCodes { get; } =
     [
-        ErrorCode.GroupLoadInProgress,
-        ErrorCode.Local_Retry,
-        ErrorCode.Local_TimedOut,
-        ErrorCode.RequestTimedOut,
-        ErrorCode.LeaderNotAvailable,
-        ErrorCode.NotLeaderForPartition,
-        ErrorCode.RebalanceInProgress,
-        ErrorCode.NotCoordinatorForGroup,
-        ErrorCode.NetworkException,
-        ErrorCode.GroupCoordinatorNotAvailable,
+        (int)ErrorCode.GroupLoadInProgress,
+        (int)ErrorCode.Local_Retry,
+        (int)ErrorCode.Local_TimedOut,
+        (int)ErrorCode.RequestTimedOut,
+        (int)ErrorCode.LeaderNotAvailable,
+        (int)ErrorCode.NotLeaderForPartition,
+        (int)ErrorCode.RebalanceInProgress,
+        (int)ErrorCode.NotCoordinatorForGroup,
+        (int)ErrorCode.NetworkException,
+        (int)ErrorCode.GroupCoordinatorNotAvailable,
     ];
 }
 
@@ -87,9 +91,9 @@ public sealed class KafkaTopicOptions
     public short ReplicationFactor { get; set; } = -1;
 }
 
-internal sealed class MessagingKafkaOptionsValidator : AbstractValidator<MessagingKafkaOptions>
+internal sealed class KafkaMessagingOptionsValidator : AbstractValidator<KafkaMessagingOptions>
 {
-    public MessagingKafkaOptionsValidator()
+    public KafkaMessagingOptionsValidator()
     {
         RuleFor(x => x.Servers).NotEmpty();
         RuleFor(x => x.ConnectionPoolSize).GreaterThan(0);

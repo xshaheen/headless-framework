@@ -15,7 +15,7 @@ namespace Headless.Messaging.Redis;
 /// <see cref="StreamEntriesCount"/> and <see cref="ConnectionPoolSize"/> default to <c>10</c>
 /// when set to <c>0</c>.
 /// </remarks>
-public class MessagingRedisOptions
+public sealed class RedisMessagingOptions
 {
     /// <summary>
     /// The native StackExchange.Redis connection options. When <see langword="null"/>,
@@ -60,4 +60,4 @@ public class MessagingRedisOptions
     public record ConsumeErrorContext(Exception Exception, StreamEntry? Entry);
 }
 
-internal sealed class MessagingRedisOptionsValidator : AbstractValidator<MessagingRedisOptions>;
+internal sealed class RedisMessagingOptionsValidator : AbstractValidator<RedisMessagingOptions>;

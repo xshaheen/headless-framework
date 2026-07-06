@@ -13,7 +13,7 @@ internal sealed class RedisPubSubConsumerClient(
     string groupName,
     byte groupConcurrent,
     IRedisPubSubConnectionProvider connectionProvider,
-    IOptions<RedisPubSubOptions> options,
+    IOptions<RedisPubSubMessagingOptions> options,
     ILogger<RedisPubSubConsumerClient> logger,
     TimeProvider timeProvider
 ) : IConsumerClient

@@ -47,7 +47,7 @@ public sealed class SetupTests : TestBase
         var setup = _CreateSetup();
 
         // when
-        var act = () => setup.UsePulsar((Action<MessagingPulsarOptions>)null!);
+        var act = () => setup.UsePulsar((Action<PulsarMessagingOptions>)null!);
 
         // then
         act.Should().Throw<ArgumentNullException>();

@@ -190,7 +190,7 @@ public sealed class MalformedMessageTests(LocalStackTestFixture fixture) : TestB
 
     private IAmazonSQS _CreateSqsClient()
     {
-        var options = new AmazonSqsOptions
+        var options = new AmazonSqsMessagingOptions
         {
             Region = Amazon.RegionEndpoint.USEast1,
             SqsServiceUrl = fixture.Container.GetConnectionString(),
@@ -208,7 +208,7 @@ public sealed class MalformedMessageTests(LocalStackTestFixture fixture) : TestB
         services.AddLogging(builder => builder.AddXunit());
 
         var options = Options.Create(
-            new AmazonSqsOptions
+            new AmazonSqsMessagingOptions
             {
                 Region = Amazon.RegionEndpoint.USEast1,
                 SqsServiceUrl = fixture.Container.GetConnectionString(),

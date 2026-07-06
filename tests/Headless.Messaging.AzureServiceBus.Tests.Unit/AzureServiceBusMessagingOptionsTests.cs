@@ -5,16 +5,16 @@ using Headless.Messaging.AzureServiceBus;
 
 namespace Tests;
 
-public sealed class AzureServiceBusOptionsTests
+public sealed class AzureServiceBusMessagingOptionsTests
 {
     [Fact]
     public void should_have_default_topic_path()
     {
         // given, when
-        var options = new AzureServiceBusOptions();
+        var options = new AzureServiceBusMessagingOptions();
 
         // then
-        options.TopicPath.Should().Be(AzureServiceBusOptions.DefaultTopicPath);
+        options.TopicPath.Should().Be(AzureServiceBusMessagingOptions.DefaultTopicPath);
         options.TopicPath.Should().Be("messaging");
     }
 
@@ -22,7 +22,7 @@ public sealed class AzureServiceBusOptionsTests
     public void should_have_default_subscription_auto_delete_on_idle()
     {
         // given, when
-        var options = new AzureServiceBusOptions();
+        var options = new AzureServiceBusMessagingOptions();
 
         // then
         options.SubscriptionAutoDeleteOnIdle.Should().Be(TimeSpan.MaxValue);
@@ -32,7 +32,7 @@ public sealed class AzureServiceBusOptionsTests
     public void should_have_default_subscription_message_lock_duration()
     {
         // given, when
-        var options = new AzureServiceBusOptions();
+        var options = new AzureServiceBusMessagingOptions();
 
         // then
         options.SubscriptionMessageLockDuration.Should().Be(TimeSpan.FromSeconds(60));
@@ -42,7 +42,7 @@ public sealed class AzureServiceBusOptionsTests
     public void should_have_default_subscription_default_message_time_to_live()
     {
         // given, when
-        var options = new AzureServiceBusOptions();
+        var options = new AzureServiceBusMessagingOptions();
 
         // then
         options.SubscriptionDefaultMessageTimeToLive.Should().Be(TimeSpan.MaxValue);
@@ -52,7 +52,7 @@ public sealed class AzureServiceBusOptionsTests
     public void should_have_default_subscription_max_delivery_count()
     {
         // given, when
-        var options = new AzureServiceBusOptions();
+        var options = new AzureServiceBusMessagingOptions();
 
         // then
         options.SubscriptionMaxDeliveryCount.Should().Be(10);
@@ -62,7 +62,7 @@ public sealed class AzureServiceBusOptionsTests
     public void should_have_default_max_concurrent_calls()
     {
         // given, when
-        var options = new AzureServiceBusOptions();
+        var options = new AzureServiceBusMessagingOptions();
 
         // then
         options.MaxConcurrentCalls.Should().Be(1);
@@ -72,7 +72,7 @@ public sealed class AzureServiceBusOptionsTests
     public void should_have_default_max_concurrent_sessions()
     {
         // given, when
-        var options = new AzureServiceBusOptions();
+        var options = new AzureServiceBusMessagingOptions();
 
         // then
         options.MaxConcurrentSessions.Should().Be(8);
@@ -82,7 +82,7 @@ public sealed class AzureServiceBusOptionsTests
     public void should_have_default_max_auto_lock_renewal_duration()
     {
         // given, when
-        var options = new AzureServiceBusOptions();
+        var options = new AzureServiceBusMessagingOptions();
 
         // then
         options.MaxAutoLockRenewalDuration.Should().Be(TimeSpan.FromMinutes(5));
@@ -92,7 +92,7 @@ public sealed class AzureServiceBusOptionsTests
     public void should_have_sessions_disabled_by_default()
     {
         // given, when
-        var options = new AzureServiceBusOptions();
+        var options = new AzureServiceBusMessagingOptions();
 
         // then
         options.EnableSessions.Should().BeFalse();
@@ -102,7 +102,7 @@ public sealed class AzureServiceBusOptionsTests
     public void should_have_null_token_credential_by_default()
     {
         // given, when
-        var options = new AzureServiceBusOptions();
+        var options = new AzureServiceBusMessagingOptions();
 
         // then
         options.TokenCredential.Should().BeNull();
@@ -112,7 +112,7 @@ public sealed class AzureServiceBusOptionsTests
     public void should_have_empty_default_correlation_headers()
     {
         // given, when
-        var options = new AzureServiceBusOptions();
+        var options = new AzureServiceBusMessagingOptions();
 
         // then
         options.DefaultCorrelationHeaders.Should().BeEmpty();
@@ -122,7 +122,7 @@ public sealed class AzureServiceBusOptionsTests
     public void should_have_null_custom_headers_builder_by_default()
     {
         // given, when
-        var options = new AzureServiceBusOptions();
+        var options = new AzureServiceBusMessagingOptions();
 
         // then
         options.CustomHeadersBuilder.Should().BeNull();
@@ -132,7 +132,7 @@ public sealed class AzureServiceBusOptionsTests
     public void should_have_empty_sql_filters_by_default()
     {
         // given, when
-        var options = new AzureServiceBusOptions();
+        var options = new AzureServiceBusMessagingOptions();
 
         // then
         options.SqlFilters.Should().BeEmpty();
@@ -142,7 +142,7 @@ public sealed class AzureServiceBusOptionsTests
     public void should_configure_custom_producer()
     {
         // given
-        var options = new AzureServiceBusOptions();
+        var options = new AzureServiceBusMessagingOptions();
 
         // when
         options.ConfigureCustomProducer<EntityCreated>(cfg => cfg.UseTopic("entity-created"));
@@ -158,7 +158,7 @@ public sealed class AzureServiceBusOptionsTests
     public void should_configure_custom_producer_with_subscription()
     {
         // given
-        var options = new AzureServiceBusOptions();
+        var options = new AzureServiceBusMessagingOptions();
 
         // when
         options.ConfigureCustomProducer<EntityCreated>(cfg => cfg.UseTopic("entity-created").WithSubscription());
@@ -172,7 +172,7 @@ public sealed class AzureServiceBusOptionsTests
     public void should_configure_multiple_custom_producers()
     {
         // given
-        var options = new AzureServiceBusOptions();
+        var options = new AzureServiceBusMessagingOptions();
 
         // when
         options
@@ -189,7 +189,7 @@ public sealed class AzureServiceBusOptionsTests
     public void should_allow_setting_connection_string()
     {
         // given
-        var options = new AzureServiceBusOptions();
+        var options = new AzureServiceBusMessagingOptions();
         const string connectionString =
             "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=abc123";
 
@@ -204,7 +204,7 @@ public sealed class AzureServiceBusOptionsTests
     public void should_allow_setting_namespace()
     {
         // given
-        var options = new AzureServiceBusOptions();
+        var options = new AzureServiceBusMessagingOptions();
         const string @namespace = "test.servicebus.windows.net";
 
         // when
@@ -218,7 +218,7 @@ public sealed class AzureServiceBusOptionsTests
     public void should_allow_adding_correlation_headers()
     {
         // given
-        var options = new AzureServiceBusOptions();
+        var options = new AzureServiceBusMessagingOptions();
 
         // when
         options.DefaultCorrelationHeaders.Add("tenant-id", "123");
@@ -234,7 +234,7 @@ public sealed class AzureServiceBusOptionsTests
     public void should_allow_setting_sql_filters()
     {
         // given, when
-        var options = new AzureServiceBusOptions();
+        var options = new AzureServiceBusMessagingOptions();
         options.SqlFilters.AddRange([
             new KeyValuePair<string, string>("priority-filter", "priority > 5"),
             new KeyValuePair<string, string>("type-filter", "type = 'order'"),
@@ -249,7 +249,7 @@ public sealed class AzureServiceBusOptionsTests
     public void should_allow_setting_session_idle_timeout()
     {
         // given
-        var options = new AzureServiceBusOptions();
+        var options = new AzureServiceBusMessagingOptions();
         var timeout = TimeSpan.FromMinutes(10);
 
         // when

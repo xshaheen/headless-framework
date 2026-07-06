@@ -23,7 +23,15 @@ public sealed class RabbitMqConsumerClientFactoryTests : TestBase
         pool.GetConnectionAsync().Returns(connection);
         connection.CreateChannelAsync(Arg.Any<CreateChannelOptions?>(), Arg.Any<CancellationToken>()).Returns(channel);
 
-        var options = Options.Create(new RabbitMqOptions { HostName = "localhost", Port = 5672 });
+        var options = Options.Create(
+            new RabbitMqMessagingOptions
+            {
+                HostName = "localhost",
+                Port = 5672,
+                UserName = "test_user",
+                Password = "test_pass",
+            }
+        );
         var serviceProvider = Substitute.For<IServiceProvider>();
 
         var factory = new RabbitMqConsumerClientFactory(options, pool, serviceProvider);
@@ -44,7 +52,15 @@ public sealed class RabbitMqConsumerClientFactoryTests : TestBase
         pool.Exchange.Returns("test.exchange");
         pool.GetConnectionAsync().ThrowsAsync(new InvalidOperationException("Connection failed"));
 
-        var options = Options.Create(new RabbitMqOptions { HostName = "localhost", Port = 5672 });
+        var options = Options.Create(
+            new RabbitMqMessagingOptions
+            {
+                HostName = "localhost",
+                Port = 5672,
+                UserName = "test_user",
+                Password = "test_pass",
+            }
+        );
         var serviceProvider = Substitute.For<IServiceProvider>();
 
         var factory = new RabbitMqConsumerClientFactory(options, pool, serviceProvider);
@@ -65,7 +81,15 @@ public sealed class RabbitMqConsumerClientFactoryTests : TestBase
         pool.Exchange.Returns("test.exchange");
         pool.GetConnectionAsync().ThrowsAsync(innerException);
 
-        var options = Options.Create(new RabbitMqOptions { HostName = "localhost", Port = 5672 });
+        var options = Options.Create(
+            new RabbitMqMessagingOptions
+            {
+                HostName = "localhost",
+                Port = 5672,
+                UserName = "test_user",
+                Password = "test_pass",
+            }
+        );
         var serviceProvider = Substitute.For<IServiceProvider>();
 
         var factory = new RabbitMqConsumerClientFactory(options, pool, serviceProvider);
@@ -90,7 +114,15 @@ public sealed class RabbitMqConsumerClientFactoryTests : TestBase
         pool.GetConnectionAsync().Returns(connection);
         connection.CreateChannelAsync(Arg.Any<CreateChannelOptions?>(), Arg.Any<CancellationToken>()).Returns(channel);
 
-        var options = Options.Create(new RabbitMqOptions { HostName = "localhost", Port = 5672 });
+        var options = Options.Create(
+            new RabbitMqMessagingOptions
+            {
+                HostName = "localhost",
+                Port = 5672,
+                UserName = "test_user",
+                Password = "test_pass",
+            }
+        );
         var serviceProvider = Substitute.For<IServiceProvider>();
 
         var factory = new RabbitMqConsumerClientFactory(options, pool, serviceProvider);

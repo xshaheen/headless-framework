@@ -13,8 +13,8 @@ namespace Tests;
 
 public sealed class KafkaConsumerClientTests : TestBase
 {
-    private readonly IOptions<MessagingKafkaOptions> _options = Options.Create(
-        new MessagingKafkaOptions { Servers = "localhost:9092" }
+    private readonly IOptions<KafkaMessagingOptions> _options = Options.Create(
+        new KafkaMessagingOptions { Servers = "localhost:9092" }
     );
     private readonly IServiceProvider _serviceProvider = new ServiceCollection().BuildServiceProvider();
 
@@ -33,7 +33,7 @@ public sealed class KafkaConsumerClientTests : TestBase
     public async Task should_sanitize_broker_address_when_credentials_are_present()
     {
         // given
-        var credentialedOptions = Options.Create(new MessagingKafkaOptions { Servers = "user:secret@broker:9092" });
+        var credentialedOptions = Options.Create(new KafkaMessagingOptions { Servers = "user:secret@broker:9092" });
 
         // when
         await using var client = new KafkaConsumerClient("test-group", 1, credentialedOptions, _serviceProvider);
@@ -100,7 +100,7 @@ public sealed class KafkaConsumerClientTests : TestBase
     {
         // given
         var options = Options.Create(
-            new MessagingKafkaOptions
+            new KafkaMessagingOptions
             {
                 Servers = "localhost:9092",
                 MainConfig = { ["allow.auto.create.topics"] = "false" },
@@ -170,7 +170,7 @@ public sealed class KafkaConsumerClientTests : TestBase
     {
         // given
         var optionsWithAutoCreate = Options.Create(
-            new MessagingKafkaOptions
+            new KafkaMessagingOptions
             {
                 Servers = "localhost:9092",
                 MainConfig = { ["allow.auto.create.topics"] = "false" },
@@ -188,7 +188,7 @@ public sealed class KafkaConsumerClientTests : TestBase
         // given
         var customHeaders = new List<KeyValuePair<string, string>> { new("custom-key", "custom-value") };
         var optionsWithCustomHeaders = Options.Create(
-            new MessagingKafkaOptions { Servers = "localhost:9092", CustomHeadersBuilder = (_, _) => customHeaders }
+            new KafkaMessagingOptions { Servers = "localhost:9092", CustomHeadersBuilder = (_, _) => customHeaders }
         );
         await using var client = new KafkaConsumerClient("test-group", 1, optionsWithCustomHeaders, _serviceProvider);
 
@@ -200,9 +200,9 @@ public sealed class KafkaConsumerClientTests : TestBase
     public async Task should_handle_retriable_error_codes()
     {
         // given
-        var kafkaOptions = new MessagingKafkaOptions { Servers = "localhost:9092" };
+        var kafkaOptions = new KafkaMessagingOptions { Servers = "localhost:9092" };
         kafkaOptions.RetriableErrorCodes.Clear();
-        kafkaOptions.RetriableErrorCodes.Add(ErrorCode.Local_TimedOut);
+        kafkaOptions.RetriableErrorCodes.Add((int)ErrorCode.Local_TimedOut);
         var options = Options.Create(kafkaOptions);
         await using var client = new KafkaConsumerClient("test-group", 1, options, _serviceProvider);
 
@@ -215,7 +215,7 @@ public sealed class KafkaConsumerClientTests : TestBase
     {
         // given
         var options = Options.Create(
-            new MessagingKafkaOptions
+            new KafkaMessagingOptions
             {
                 Servers = "localhost:9092",
                 TopicOptions = new KafkaTopicOptions { NumPartitions = 3, ReplicationFactor = 1 },
@@ -466,7 +466,7 @@ public sealed class KafkaConsumerClientTests : TestBase
     {
         // given
         var throwingOptions = Options.Create(
-            new MessagingKafkaOptions
+            new KafkaMessagingOptions
             {
                 Servers = "localhost:9092",
                 CustomHeadersBuilder = (_, _) => throw new InvalidOperationException("bad header builder"),

@@ -15,9 +15,9 @@ namespace Tests;
 
 public sealed class AmazonSnsBusTransportTests : TestBase
 {
-    private static IOptions<AmazonSqsOptions> _CreateOptions() =>
+    private static IOptions<AmazonSqsMessagingOptions> _CreateOptions() =>
         Options.Create(
-            new AmazonSqsOptions
+            new AmazonSqsMessagingOptions
             {
                 Region = Amazon.RegionEndpoint.USEast1,
                 SqsServiceUrl = "http://localhost:4566",
@@ -45,7 +45,7 @@ public sealed class AmazonSnsBusTransportTests : TestBase
     {
         // given
         var logger = Substitute.For<ILogger<AmazonSnsBusTransport>>();
-        var options = Options.Create(new AmazonSqsOptions { Region = Amazon.RegionEndpoint.USEast1 });
+        var options = Options.Create(new AmazonSqsMessagingOptions { Region = Amazon.RegionEndpoint.USEast1 });
         await using var transport = new AmazonSnsBusTransport(logger, options);
 
         // when
@@ -61,7 +61,7 @@ public sealed class AmazonSnsBusTransportTests : TestBase
     {
         // given
         var logger = Substitute.For<ILogger<AmazonSnsBusTransport>>();
-        var options = Options.Create(new AmazonSqsOptions { Region = Amazon.RegionEndpoint.CNNorth1 });
+        var options = Options.Create(new AmazonSqsMessagingOptions { Region = Amazon.RegionEndpoint.CNNorth1 });
         await using var transport = new AmazonSnsBusTransport(logger, options);
 
         // when

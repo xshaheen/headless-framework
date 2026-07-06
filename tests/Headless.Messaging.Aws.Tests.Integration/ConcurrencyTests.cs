@@ -161,7 +161,7 @@ public sealed class ConcurrencyTests(LocalStackTestFixture fixture) : TestBase
         var container = fixture.Container;
 
         var options = Options.Create(
-            new AmazonSqsOptions
+            new AmazonSqsMessagingOptions
             {
                 Region = Amazon.RegionEndpoint.USEast1,
                 SnsServiceUrl = container.GetConnectionString(),

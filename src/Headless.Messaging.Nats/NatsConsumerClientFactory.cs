@@ -7,7 +7,7 @@ using Microsoft.Extensions.Options;
 namespace Headless.Messaging.Nats;
 
 internal sealed class NatsConsumerClientFactory(
-    IOptions<MessagingNatsOptions> natsOptions,
+    IOptions<NatsMessagingOptions> natsOptions,
     IServiceProvider serviceProvider
 ) : IIntentAwareConsumerClientFactory
 {

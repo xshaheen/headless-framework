@@ -10,7 +10,7 @@ namespace Headless.Messaging.Nats;
 /// <summary>
 /// Configuration options for the NATS JetStream messaging transport.
 /// </summary>
-public sealed class MessagingNatsOptions
+public sealed class NatsMessagingOptions
 {
     /// <summary>
     /// A NATS server URL or comma-separated list of server URLs used to establish the connection.
@@ -92,9 +92,9 @@ public sealed class MessagingNatsOptions
     }
 }
 
-internal sealed class MessagingNatsOptionsValidator : AbstractValidator<MessagingNatsOptions>
+internal sealed class NatsMessagingOptionsValidator : AbstractValidator<NatsMessagingOptions>
 {
-    public MessagingNatsOptionsValidator()
+    public NatsMessagingOptionsValidator()
     {
         RuleFor(x => x.Servers).NotEmpty();
         RuleFor(x => x.ConnectionPoolSize).GreaterThan(0);

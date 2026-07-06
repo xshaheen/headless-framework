@@ -11,10 +11,12 @@ namespace Headless.Messaging.AzureServiceBus;
 /// Configuration options for the Azure Service Bus messaging transport.
 /// </summary>
 /// <remarks>
-/// Authentication requires either a <see cref="ConnectionString"/> or both a <see cref="Namespace"/>
-/// and a <see cref="TokenCredential"/>. Mixing both authentication modes is not supported.
+/// Authentication is an either/or contract: supply either a <see cref="ConnectionString"/> or both a
+/// <see cref="Namespace"/> and a <see cref="TokenCredential"/>. Both are nullable because neither is
+/// universally required, and the validator enforces that exactly one authentication mode is configured.
+/// Mixing both authentication modes is not supported.
 /// </remarks>
-public class AzureServiceBusOptions
+public sealed class AzureServiceBusMessagingOptions
 {
     /// <summary>The default topic path used for messaging (<c>"messaging"</c>).</summary>
     public const string DefaultTopicPath = "messaging";
@@ -22,16 +24,17 @@ public class AzureServiceBusOptions
     /// <summary>
     /// The Service Bus namespace connection string. Must target the namespace, not a specific
     /// entity. Leave <see langword="null"/> when using <see cref="TokenCredential"/> with
-    /// <see cref="Namespace"/> instead.
+    /// <see cref="Namespace"/> instead. Defaults to <see langword="null"/>.
     /// </summary>
-    public string ConnectionString { get; set; } = null!;
+    public string? ConnectionString { get; set; }
 
     /// <summary>
     /// The fully-qualified Service Bus namespace hostname
     /// (for example <c>"mybus.servicebus.windows.net"</c>). Required when authenticating via
     /// <see cref="TokenCredential"/>; ignored when <see cref="ConnectionString"/> is set.
+    /// Defaults to <see langword="null"/>.
     /// </summary>
-    public string Namespace { get; set; } = null!;
+    public string? Namespace { get; set; }
 
     /// <summary>
     /// When set to <see langword="true"/> (default), topics, subscriptions, and rules are automatically created
@@ -162,7 +165,7 @@ public class AzureServiceBusOptions
     /// <typeparam name="T">The message type produced by the custom producer.</typeparam>
     /// <param name="configuration">A delegate that configures the producer descriptor.</param>
     /// <returns>The current options instance for chaining.</returns>
-    public AzureServiceBusOptions ConfigureCustomProducer<T>(
+    public AzureServiceBusMessagingOptions ConfigureCustomProducer<T>(
         Action<ServiceBusProducerDescriptorBuilder<T>> configuration
     )
     {
@@ -174,9 +177,9 @@ public class AzureServiceBusOptions
     }
 }
 
-internal sealed class AzureServiceBusOptionsValidator : AbstractValidator<AzureServiceBusOptions>
+internal sealed class AzureServiceBusMessagingOptionsValidator : AbstractValidator<AzureServiceBusMessagingOptions>
 {
-    public AzureServiceBusOptionsValidator()
+    public AzureServiceBusMessagingOptionsValidator()
     {
         RuleFor(x => x)
             .Must(x =>

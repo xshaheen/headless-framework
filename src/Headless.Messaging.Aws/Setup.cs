@@ -6,6 +6,7 @@ using Headless.Messaging;
 using Headless.Messaging.Aws;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Transport;
+using Microsoft.Extensions.Configuration;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
@@ -16,7 +17,7 @@ namespace Microsoft.Extensions.DependencyInjection;
 /// <remarks>
 /// Topics are modelled as SNS topics and queues as SQS queues. SNS fan-out to SQS subscriptions
 /// is wired automatically. AWS credentials are resolved through the standard AWS SDK credential
-/// chain unless <see cref="AmazonSqsOptions.Credentials"/> is provided explicitly.
+/// chain unless <see cref="AmazonSqsMessagingOptions.Credentials"/> is provided explicitly.
 /// </remarks>
 public static class SetupAwsMessaging
 {
@@ -34,28 +35,77 @@ public static class SetupAwsMessaging
         }
 
         /// <summary>
+        /// Registers Amazon SQS/SNS as the message transport, binding and validating
+        /// <see cref="AmazonSqsMessagingOptions"/> from configuration.
+        /// </summary>
+        /// <param name="config">Configuration section containing <see cref="AmazonSqsMessagingOptions"/> values.</param>
+        /// <returns>The same <paramref name="setup"/> builder for chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="config"/> is <see langword="null"/>.</exception>
+        public MessagingSetupBuilder UseAws(IConfiguration config)
+        {
+            Argument.IsNotNull(config);
+
+            return _RegisterAws(
+                setup,
+                services => services.Configure<AmazonSqsMessagingOptions, AmazonSqsMessagingOptionsValidator>(config)
+            );
+        }
+
+        /// <summary>
         /// Registers Amazon SQS/SNS as the message transport with full programmatic configuration.
         /// </summary>
-        /// <param name="configure">A delegate that configures <see cref="AmazonSqsOptions"/>.</param>
+        /// <param name="configure">A delegate that configures <see cref="AmazonSqsMessagingOptions"/>.</param>
         /// <returns>The same <paramref name="setup"/> builder for chaining.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
-        public MessagingSetupBuilder UseAws(Action<AmazonSqsOptions> configure)
+        public MessagingSetupBuilder UseAws(Action<AmazonSqsMessagingOptions> configure)
         {
             Argument.IsNotNull(configure);
 
-            setup.RegisterExtension(new AmazonSqsOptionsExtension(configure));
+            return _RegisterAws(
+                setup,
+                services => services.Configure<AmazonSqsMessagingOptions, AmazonSqsMessagingOptionsValidator>(configure)
+            );
+        }
 
-            return setup;
+        /// <summary>
+        /// Registers Amazon SQS/SNS as the message transport, configuring
+        /// <see cref="AmazonSqsMessagingOptions"/> with access to the resolved service provider.
+        /// </summary>
+        /// <param name="configure">
+        /// A delegate that configures <see cref="AmazonSqsMessagingOptions"/> using the service provider
+        /// (for example to resolve secrets or credentials from DI).
+        /// </param>
+        /// <returns>The same <paramref name="setup"/> builder for chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
+        public MessagingSetupBuilder UseAws(Action<AmazonSqsMessagingOptions, IServiceProvider> configure)
+        {
+            Argument.IsNotNull(configure);
+
+            return _RegisterAws(
+                setup,
+                services => services.Configure<AmazonSqsMessagingOptions, AmazonSqsMessagingOptionsValidator>(configure)
+            );
         }
     }
 
-    private sealed class AmazonSqsOptionsExtension(Action<AmazonSqsOptions> configure) : IMessagesOptionsExtension
+    private static MessagingSetupBuilder _RegisterAws(
+        MessagingSetupBuilder setup,
+        Action<IServiceCollection> configureOptions
+    )
+    {
+        setup.RegisterExtension(new AmazonSqsMessagingOptionsExtension(configureOptions));
+
+        return setup;
+    }
+
+    private sealed class AmazonSqsMessagingOptionsExtension(Action<IServiceCollection> configureOptions)
+        : IMessagesOptionsExtension
     {
         public void AddServices(IServiceCollection services)
         {
             services.AddSingleton(new MessageQueueMarkerService("Amazon SQS"));
 
-            services.Configure<AmazonSqsOptions, AmazonSqsOptionsValidator>(configure);
+            configureOptions(services);
             services.AddSingleton<IBusTransport, AmazonSnsBusTransport>();
             services.AddSingleton<IQueueTransport, AmazonSqsQueueTransport>();
             services.AddSingleton<IConsumerClientFactory, AmazonSqsConsumerClientFactory>();

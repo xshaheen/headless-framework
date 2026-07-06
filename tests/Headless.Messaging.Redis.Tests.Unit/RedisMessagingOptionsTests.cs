@@ -8,15 +8,15 @@ using StackExchange.Redis;
 namespace Tests;
 
 /// <summary>
-/// Unit tests for <see cref="MessagingRedisOptions"/>.
+/// Unit tests for <see cref="RedisMessagingOptions"/>.
 /// </summary>
-public sealed class MessagingRedisOptionsTests : TestBase
+public sealed class RedisMessagingOptionsTests : TestBase
 {
     [Fact]
     public void should_have_null_configuration_by_default()
     {
         // when
-        var options = new MessagingRedisOptions();
+        var options = new RedisMessagingOptions();
 
         // then
         options.Configuration.Should().BeNull();
@@ -26,7 +26,7 @@ public sealed class MessagingRedisOptionsTests : TestBase
     public void should_have_zero_stream_entries_count_by_default()
     {
         // when
-        var options = new MessagingRedisOptions();
+        var options = new RedisMessagingOptions();
 
         // then
         options.StreamEntriesCount.Should().Be(0);
@@ -36,7 +36,7 @@ public sealed class MessagingRedisOptionsTests : TestBase
     public void should_have_zero_connection_pool_size_by_default()
     {
         // when
-        var options = new MessagingRedisOptions();
+        var options = new RedisMessagingOptions();
 
         // then
         options.ConnectionPoolSize.Should().Be(0);
@@ -46,7 +46,7 @@ public sealed class MessagingRedisOptionsTests : TestBase
     public void should_have_null_on_consume_error_callback_by_default()
     {
         // when
-        var options = new MessagingRedisOptions();
+        var options = new RedisMessagingOptions();
 
         // then
         options.OnConsumeError.Should().BeNull();
@@ -56,7 +56,7 @@ public sealed class MessagingRedisOptionsTests : TestBase
     public void should_return_empty_string_when_configuration_is_null()
     {
         // given
-        var options = new MessagingRedisOptions { Configuration = null };
+        var options = new RedisMessagingOptions { Configuration = null };
 
         // when - using reflection to access internal property
         var endpoint = _GetEndpoint(options);
@@ -69,7 +69,7 @@ public sealed class MessagingRedisOptionsTests : TestBase
     public void should_return_endpoint_from_configuration()
     {
         // given
-        var options = new MessagingRedisOptions
+        var options = new RedisMessagingOptions
         {
             Configuration = ConfigurationOptions.Parse("redis.example.com:6380"),
         };
@@ -85,7 +85,7 @@ public sealed class MessagingRedisOptionsTests : TestBase
     public void should_expose_only_endpoints_when_configuration_contains_password()
     {
         // given
-        var options = new MessagingRedisOptions
+        var options = new RedisMessagingOptions
         {
             Configuration = ConfigurationOptions.Parse("redis.example.com:6380,password=secret"),
         };
@@ -101,7 +101,7 @@ public sealed class MessagingRedisOptionsTests : TestBase
     public void should_allow_setting_stream_entries_count()
     {
         // given
-        var options = new MessagingRedisOptions
+        var options = new RedisMessagingOptions
         {
             // when
             StreamEntriesCount = 100,
@@ -115,7 +115,7 @@ public sealed class MessagingRedisOptionsTests : TestBase
     public void should_allow_setting_connection_pool_size()
     {
         // given
-        var options = new MessagingRedisOptions
+        var options = new RedisMessagingOptions
         {
             // when
             ConnectionPoolSize = 20,
@@ -129,8 +129,8 @@ public sealed class MessagingRedisOptionsTests : TestBase
     public void should_allow_setting_on_consume_error_callback()
     {
         // given
-        var options = new MessagingRedisOptions();
-        Func<MessagingRedisOptions.ConsumeErrorContext, Task> callback = _ => Task.CompletedTask;
+        var options = new RedisMessagingOptions();
+        Func<RedisMessagingOptions.ConsumeErrorContext, Task> callback = _ => Task.CompletedTask;
 
         // when
         options.OnConsumeError = callback;
@@ -147,7 +147,7 @@ public sealed class MessagingRedisOptionsTests : TestBase
         var entry = new StreamEntry("1234567-0", []);
 
         // when
-        var context = new MessagingRedisOptions.ConsumeErrorContext(exception, entry);
+        var context = new RedisMessagingOptions.ConsumeErrorContext(exception, entry);
 
         // then
         context.Exception.Should().BeSameAs(exception);
@@ -161,18 +161,18 @@ public sealed class MessagingRedisOptionsTests : TestBase
         var exception = new InvalidOperationException("Test error");
 
         // when
-        var context = new MessagingRedisOptions.ConsumeErrorContext(exception, null);
+        var context = new RedisMessagingOptions.ConsumeErrorContext(exception, null);
 
         // then
         context.Exception.Should().BeSameAs(exception);
         context.Entry.Should().BeNull();
     }
 
-    private static string _GetEndpoint(MessagingRedisOptions options)
+    private static string _GetEndpoint(RedisMessagingOptions options)
     {
         // Access internal Endpoint property via reflection (can't use nameof for internal members)
-        var property = typeof(MessagingRedisOptions).GetProperty(
-            nameof(MessagingRedisOptions.DisplayEndpoint),
+        var property = typeof(RedisMessagingOptions).GetProperty(
+            nameof(RedisMessagingOptions.DisplayEndpoint),
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         );
         return (string)property!.GetValue(options)!;

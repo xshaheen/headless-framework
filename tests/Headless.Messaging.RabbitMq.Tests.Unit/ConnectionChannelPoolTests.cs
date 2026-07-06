@@ -13,11 +13,13 @@ namespace Tests;
 public sealed class ConnectionChannelPoolTests : TestBase
 {
     private readonly IOptions<MessagingOptions> _capOptions = Options.Create(new MessagingOptions { Version = "v1" });
-    private readonly IOptions<RabbitMqOptions> _rabbitOptions = Options.Create(
-        new RabbitMqOptions
+    private readonly IOptions<RabbitMqMessagingOptions> _rabbitOptions = Options.Create(
+        new RabbitMqMessagingOptions
         {
             HostName = "localhost",
             Port = 5672,
+            UserName = "test_user",
+            Password = "test_pass",
             ExchangeName = "test.exchange",
         }
     );
@@ -64,10 +66,12 @@ public sealed class ConnectionChannelPoolTests : TestBase
     {
         // given
         var options = Options.Create(
-            new RabbitMqOptions
+            new RabbitMqMessagingOptions
             {
                 HostName = "rabbit1.local,rabbit2.local",
                 Port = 5672,
+                UserName = "test_user",
+                Password = "test_pass",
                 ExchangeName = "test.exchange",
             }
         );
@@ -136,10 +140,12 @@ public sealed class ConnectionChannelPoolTests : TestBase
     {
         // given
         var options = Options.Create(
-            new RabbitMqOptions
+            new RabbitMqMessagingOptions
             {
                 HostName = "invalid-host-that-does-not-exist",
                 Port = 9999,
+                UserName = "test_user",
+                Password = "test_pass",
                 ExchangeName = "test.exchange",
             }
         );
@@ -160,10 +166,12 @@ public sealed class ConnectionChannelPoolTests : TestBase
     {
         // given
         var options = Options.Create(
-            new RabbitMqOptions
+            new RabbitMqMessagingOptions
             {
                 HostName = "localhost",
                 Port = 5672,
+                UserName = "test_user",
+                Password = "test_pass",
                 ExchangeName = "test.exchange",
                 ConnectionFactoryOptions = factory =>
                 {
@@ -192,10 +200,12 @@ public sealed class ConnectionChannelPoolTests : TestBase
         // which under load (search-domain timeouts) easily exceeded the 5s budget because
         // ConnectionChannelPool serializes the underlying connect via _connectionLock.
         var options = Options.Create(
-            new RabbitMqOptions
+            new RabbitMqMessagingOptions
             {
                 HostName = "127.0.0.1",
                 Port = 1,
+                UserName = "test_user",
+                Password = "test_pass",
                 ExchangeName = "test.exchange",
             }
         );
@@ -320,10 +330,12 @@ public sealed class ConnectionChannelPoolTests : TestBase
     {
         // given
         var options = Options.Create(
-            new RabbitMqOptions
+            new RabbitMqMessagingOptions
             {
                 HostName = "localhost",
                 Port = 5672,
+                UserName = "test_user",
+                Password = "test_pass",
                 ExchangeName = "custom.exchange",
             }
         );

@@ -14,8 +14,8 @@ namespace Tests;
 public sealed class AzureServiceBusConsumerClientTests : TestBase
 {
     private readonly ILogger _logger = Substitute.For<ILogger>();
-    private readonly IOptions<AzureServiceBusOptions> _options = Options.Create(
-        new AzureServiceBusOptions
+    private readonly IOptions<AzureServiceBusMessagingOptions> _options = Options.Create(
+        new AzureServiceBusMessagingOptions
         {
             ConnectionString =
                 "Endpoint=sb://mynamespace.servicebus.windows.net/;SharedAccessKeyName=myPolicy;SharedAccessKey=myKey",
@@ -27,7 +27,7 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
     public void should_throw_when_options_value_is_null()
     {
         // given
-        var nullOptions = Options.Create<AzureServiceBusOptions>(null!);
+        var nullOptions = Options.Create<AzureServiceBusMessagingOptions>(null!);
 
         // when
         var act = () => new AzureServiceBusConsumerClient(_logger, "test-sub", 1, nullOptions, _serviceProvider);
@@ -51,7 +51,9 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
     public async Task should_have_correct_broker_address_from_namespace()
     {
         // given
-        var options = Options.Create(new AzureServiceBusOptions { Namespace = "sb://custom.servicebus.windows.net/" });
+        var options = Options.Create(
+            new AzureServiceBusMessagingOptions { Namespace = "sb://custom.servicebus.windows.net/" }
+        );
 
         // when
         await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, options, _serviceProvider);
@@ -135,7 +137,7 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
     {
         // given
         var options = Options.Create(
-            new AzureServiceBusOptions
+            new AzureServiceBusMessagingOptions
             {
                 // Missing both connection string and namespace
                 ConnectionString = null!,

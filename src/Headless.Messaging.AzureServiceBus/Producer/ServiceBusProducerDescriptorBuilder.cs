@@ -4,10 +4,10 @@ namespace Headless.Messaging.AzureServiceBus.Producer;
 
 /// <summary>
 /// Fluent builder for a custom Azure Service Bus producer descriptor, used with
-/// <see cref="AzureServiceBusOptions.ConfigureCustomProducer{T}"/>.
+/// <see cref="AzureServiceBusMessagingOptions.ConfigureCustomProducer{T}"/>.
 /// </summary>
 /// <typeparam name="T">The message type this producer will publish.</typeparam>
-public class ServiceBusProducerDescriptorBuilder<T>
+public sealed class ServiceBusProducerDescriptorBuilder<T>
 {
     private string TopicPath { get; set; } = null!;
     private bool CreateSubscription { get; set; }
@@ -26,7 +26,7 @@ public class ServiceBusProducerDescriptorBuilder<T>
 
     /// <summary>
     /// Instructs the framework to auto-create a subscription for this topic on startup
-    /// (when <see cref="AzureServiceBusOptions.AutoProvision"/> is enabled).
+    /// (when <see cref="AzureServiceBusMessagingOptions.AutoProvision"/> is enabled).
     /// </summary>
     /// <returns>The same builder for chaining.</returns>
     public ServiceBusProducerDescriptorBuilder<T> WithSubscription()

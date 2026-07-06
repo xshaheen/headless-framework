@@ -9,7 +9,7 @@ namespace Headless.Messaging.AzureServiceBus;
 
 internal sealed class AzureServiceBusConsumerClientFactory(
     ILoggerFactory loggerFactory,
-    IOptions<AzureServiceBusOptions> asbOptions,
+    IOptions<AzureServiceBusMessagingOptions> asbOptions,
     IServiceProvider serviceProvider
 ) : IIntentAwareConsumerClientFactory
 {

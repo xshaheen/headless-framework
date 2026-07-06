@@ -15,7 +15,7 @@ internal static class AwsClientFactory
     /// </summary>
     /// <param name="options">AWS SQS options containing credentials and service URLs.</param>
     /// <returns>Configured SNS client.</returns>
-    public static IAmazonSimpleNotificationService CreateSnsClient(AmazonSqsOptions options)
+    public static IAmazonSimpleNotificationService CreateSnsClient(AmazonSqsMessagingOptions options)
     {
         if (string.IsNullOrWhiteSpace(options.SnsServiceUrl))
         {
@@ -35,7 +35,7 @@ internal static class AwsClientFactory
     /// </summary>
     /// <param name="options">AWS SQS options containing credentials and service URLs.</param>
     /// <returns>Configured SQS client.</returns>
-    public static IAmazonSQS CreateSqsClient(AmazonSqsOptions options)
+    public static IAmazonSQS CreateSqsClient(AmazonSqsMessagingOptions options)
     {
         if (string.IsNullOrWhiteSpace(options.SqsServiceUrl))
         {

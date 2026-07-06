@@ -62,7 +62,7 @@ public sealed class RabbitMqTransportTests(RabbitMqFixture fixture) : TransportT
     {
         var messagingOptions = Options.Create(new MessagingOptions { Version = "v1" });
         var rabbitOptions = Options.Create(
-            new RabbitMqOptions
+            new RabbitMqMessagingOptions
             {
                 HostName = fixture.HostName,
                 Port = fixture.Port,

@@ -11,12 +11,12 @@ namespace Tests;
 
 public sealed class NatsConsumerClientFactoryTests : TestBase
 {
-    private readonly IOptions<MessagingNatsOptions> _options;
+    private readonly IOptions<NatsMessagingOptions> _options;
     private readonly IServiceProvider _serviceProvider;
 
     public NatsConsumerClientFactoryTests()
     {
-        _options = Options.Create(new MessagingNatsOptions { Servers = "nats://localhost:4222" });
+        _options = Options.Create(new NatsMessagingOptions { Servers = "nats://localhost:4222" });
         _serviceProvider = new ServiceCollection().BuildServiceProvider();
     }
 
