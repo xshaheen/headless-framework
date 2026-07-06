@@ -1,18 +1,9 @@
 name: R2 Conformance
 
 # Runs the Cloudflare R2 blob conformance suite against a real R2 account. There is no R2 emulator, so this is
-# gated on credentials supplied as repository/environment secrets: when they are absent (forks, or before the
-# secrets are configured) the suite skips every scenario and the job still passes. Triggered on dependency bumps
-# to the shared package file (which carry AWSSDK.* updates) and on changes to the R2/S3 blob code.
+# gated on credentials supplied as repository/environment secrets. This workflow intentionally does not run on
+# pull_request events because it executes code with real R2 credentials; run it manually after reviewing the branch.
 on:
-  pull_request:
-    branches: [ "main" ]
-    paths:
-      - 'Directory.Packages.props'
-      - 'src/Headless.Blobs.CloudflareR2/**'
-      - 'src/Headless.Blobs.Aws/**'
-      - 'tests/Headless.Blobs.CloudflareR2.Tests.Integration/**'
-      - '.github/workflows/r2-conformance.yml'
   workflow_dispatch:
 
 concurrency:
