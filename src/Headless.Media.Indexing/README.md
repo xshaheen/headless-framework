@@ -11,6 +11,8 @@ Provides text extraction from common document formats for full-text search index
 - `PdfMediaFileTextProvider` — PDF text extraction via PdfPig; handles non-seekable streams transparently by buffering to `MemoryStream`
 - `WordDocumentMediaFileTextProvider` — DOCX body text extraction via Open XML (paragraphs from `MainDocumentPart`)
 - `PresentationDocumentMediaFileTextProvider` — PPTX slide text extraction via Open XML (all text frames across all slides)
+- `MediaFileTextProviderResolver` — `IMediaFileTextProviderResolver` that dispatches to the three providers by extension or MIME type
+- `SetupMediaIndexing.AddMediaIndexing()` — registers the three providers plus the resolver in one call
 - Stream-based API — providers do not dispose the caller's stream
 
 ## Design Notes
@@ -32,36 +34,30 @@ dotnet add package Headless.Media.Indexing
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-// Register each provider you need. No bulk helper exists.
-builder.Services.AddSingleton<IMediaFileTextProvider, PdfMediaFileTextProvider>();
-builder.Services.AddSingleton<IMediaFileTextProvider, WordDocumentMediaFileTextProvider>();
-builder.Services.AddSingleton<IMediaFileTextProvider, PresentationDocumentMediaFileTextProvider>();
+// Registers the three providers plus IMediaFileTextProviderResolver.
+builder.Services.AddMediaIndexing();
 ```
 
-Dispatch by format in a service that injects `IEnumerable<IMediaFileTextProvider>`:
+Dispatch by format with the resolver:
 
 ```csharp
-public sealed class SearchIndexer(IEnumerable<IMediaFileTextProvider> providers)
+public sealed class SearchIndexer(IMediaFileTextProviderResolver resolver)
 {
-    public async Task<string> IndexDocumentAsync(Stream fileStream, string mimeType)
+    public async Task<string> IndexDocumentAsync(
+        Stream fileStream,
+        string mimeTypeOrExtension,
+        CancellationToken cancellationToken
+    )
     {
-        // Caller owns format → provider mapping; no SupportsMimeType() method exists.
-        var provider = mimeType switch
-        {
-            "application/pdf" => providers.OfType<PdfMediaFileTextProvider>().FirstOrDefault(),
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => providers
-                .OfType<WordDocumentMediaFileTextProvider>()
-                .FirstOrDefault(),
-            "application/vnd.openxmlformats-officedocument.presentationml.presentation" => providers
-                .OfType<PresentationDocumentMediaFileTextProvider>()
-                .FirstOrDefault(),
-            _ => null,
-        };
+        // Accepts "application/pdf", "pdf", or ".pdf" — returns null for unsupported formats.
+        var provider = resolver.GetProvider(mimeTypeOrExtension);
 
         if (provider is null)
+        {
             return string.Empty;
+        }
 
-        return await provider.GetTextAsync(fileStream).ConfigureAwait(false);
+        return await provider.GetTextAsync(fileStream, cancellationToken).ConfigureAwait(false);
     }
 }
 ```
@@ -79,4 +75,4 @@ None. Providers have no configuration options; they are stateless singletons.
 
 ## Side Effects
 
-None. No DI registrations are performed automatically; all registrations are explicit `AddSingleton` calls.
+`AddMediaIndexing()` registers `PdfMediaFileTextProvider`, `WordDocumentMediaFileTextProvider`, and `PresentationDocumentMediaFileTextProvider` as singletons (each also as an `IMediaFileTextProvider` enumerable entry) plus `IMediaFileTextProviderResolver`, all via `TryAdd` / `TryAddEnumerable`.

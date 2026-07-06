@@ -26,11 +26,18 @@ public sealed class PdfMediaFileTextProvider : IMediaFileTextProvider
     /// A stream containing a valid PDF document. May be non-seekable; in that case the content is
     /// buffered into memory automatically before parsing.
     /// </param>
+    /// <param name="cancellationToken">
+    /// Token to cancel the extraction. Observed while buffering a non-seekable stream and between pages;
+    /// PdfPig parses each page synchronously, so cancellation cannot interrupt a single-page parse.
+    /// </param>
     /// <returns>
     /// The plain-text content of all pages concatenated in page order, or an empty string when the
     /// document contains no extractable text.
     /// </returns>
-    public async Task<string> GetTextAsync(Stream fileStream)
+    /// <exception cref="OperationCanceledException">
+    /// Thrown when <paramref name="cancellationToken"/> is cancelled before extraction completes.
+    /// </exception>
+    public async Task<string> GetTextAsync(Stream fileStream, CancellationToken cancellationToken = default)
     {
         // PdfPig requires the stream to be seekable, see:
         // https://github.com/UglyToad/PdfPig/blob/master/src/UglyToad.PdfPig.Core/StreamInputBytes.cs#L45.
@@ -46,7 +53,7 @@ public sealed class PdfMediaFileTextProvider : IMediaFileTextProvider
                 // MemoryStream.
                 seekableStream = new MemoryStream();
                 // While this involves loading the file into memory, we don't really have a choice.
-                await fileStream.CopyToAsync(seekableStream).ConfigureAwait(false);
+                await fileStream.CopyToAsync(seekableStream, cancellationToken).ConfigureAwait(false);
                 seekableStream.Position = 0;
             }
 
@@ -55,6 +62,7 @@ public sealed class PdfMediaFileTextProvider : IMediaFileTextProvider
 
             foreach (var page in document.GetPages())
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 stringBuilder.Append(page.Text);
             }
 
