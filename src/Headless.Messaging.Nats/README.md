@@ -2,9 +2,13 @@
 
 NATS JetStream transport provider for the Headless messaging system.
 
+## Problem Solved
+
+Provides a NATS JetStream transport for Headless messaging so applications can publish and consume durable messages with subject-based routing, JetStream acknowledgements, and provider-specific shard subjects while keeping the core messaging API provider-neutral.
+
 ## Key Features
 
-- **Lightweight**: Minimal resource footprint, cloud-native
+- **Small Runtime Footprint**: Minimal resource footprint, cloud-native
 - **JetStream**: Persistent streams with at-least-once delivery
 - **Subject Routing**: Hierarchical subject/message-name patterns (e.g., `orders.*.created`)
 - **Connection Pooling**: Round-robin pool for publish throughput
@@ -70,7 +74,7 @@ fine-grained control, disable this and manage streams externally:
 nats.EnableSubscriberClientStreamAndSubjectCreation = false;
 ```
 
-## Messaging Semantics
+### Messaging Semantics
 
 - Publish writes the serialized body and headers to JetStream.
 - Delay stays in the core pipeline. This provider does not add broker-native scheduling.

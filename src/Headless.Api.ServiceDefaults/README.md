@@ -1,8 +1,23 @@
 # Headless.Api.ServiceDefaults
 
-The one-line bootstrap for Headless APIs. Combines the [`Headless.Api.Core`](../Headless.Api.Core/README.md) primitives with Aspire-style host conventions: OpenTelemetry, OpenAPI document mapping, service discovery, HttpClient resilience, and startup validation.
+The one-line bootstrap for Headless APIs. Combines `Headless.Api.Core` primitives with Aspire-style host conventions: OpenTelemetry, OpenAPI document mapping, service discovery, HttpClient resilience, and startup validation.
 
 If you want the happy-path API bootstrap, install this package. It transitively pulls in `Headless.Api.Core`.
+
+## Problem Solved
+
+Consolidates the default Headless ASP.NET Core API setup into `AddHeadless()`, `UseHeadless()`, and `MapHeadlessEndpoints()` so hosts get the expected service registrations, middleware order, operational endpoints, and startup validation without repeating boilerplate in every API.
+
+## Key Features
+
+- One-call service registration via `AddHeadless()`.
+- One-call middleware defaults via `UseHeadless()`.
+- One-call endpoint mapping via `MapHeadlessEndpoints()`.
+- OpenTelemetry logging, metrics, and tracing with API-friendly defaults.
+- OpenAPI document registration and endpoint mapping.
+- Service discovery and standard HttpClient resilience.
+- Startup validation that catches missing middleware or endpoint wiring.
+- Transitive access to `Headless.Api.Core` primitives.
 
 ## Installation
 
@@ -68,21 +83,7 @@ builder.AddHeadless(configureServices: options =>
 
 Without those overloads, `AddHeadless()` binds `Headless:StringEncryption` and `Headless:StringHash` sections from `IConfiguration` by default.
 
-## What's Registered
-
-`AddHeadless()` performs the following:
-
-- Service-provider validation on startup (`ValidateOnBuild`, `ValidateScopes`)
-- All core primitives from [`Headless.Api.Core`](../Headless.Api.Core/README.md) (problem details, response compression, JWT, identity, status codes rewriter, default API conventions). Antiforgery service registration is opt-in via `options.Antiforgery.Enabled` (cookie-auth apps only).
-- MVC and Minimal API JSON serializer defaults
-- ASP.NET Core source-generated input validation (`services.AddValidation()`)
-- OpenTelemetry logging, metrics, and tracing (when `OpenTelemetry.Enabled`)
-- OpenAPI service registration (when `OpenApi.Enabled`)
-- Service discovery (when `HttpClient.UseServiceDiscovery`)
-- HttpClient defaults — standard resilience handler, service discovery, application User-Agent
-- Startup filter that validates `UseHeadless()` and `MapHeadlessEndpoints()` were called
-
-## Pipeline & Endpoints
+### Pipeline and Endpoints
 
 `UseHeadless()` applies the default middleware order:
 
@@ -119,7 +120,7 @@ app.UseAntiforgery();
 
 All operational endpoints are named, excluded from OpenAPI descriptions, and allow anonymous requests by default. Both `UseHeadless` and `MapHeadlessEndpoints` are idempotent.
 
-## Multi-Tenancy
+### Multi-Tenancy
 
 `AddHeadless()` does not enable HTTP tenant resolution by default. Add tenancy explicitly:
 
@@ -137,7 +138,7 @@ app.MapHeadlessEndpoints();
 // section above. Bearer-token APIs leave it out.
 ```
 
-## Startup Validation
+### Startup Validation
 
 By default, the runtime validates that `UseHeadless()`, `UseStatusCodesRewriter()`, and `MapHeadlessEndpoints()` were called before the host starts. This catches forgotten middleware/endpoint wiring in deployment. Disable per environment if you build a custom pipeline:
 
@@ -149,8 +150,6 @@ builder.AddHeadless(configureServices: options =>
     options.Validation.RequireStatusCodesRewriter = false;
 });
 ```
-
-## Configuration Sections
 
 ### String Encryption
 
@@ -185,7 +184,7 @@ Both sections are required.
 
 ## Dependencies
 
-- `Headless.Api.Core` (transitive: brings all core primitives)
+- `Headless.Api.Core`
 - `Microsoft.AspNetCore.OpenApi`
 - `Microsoft.Extensions.Http.Resilience`
 - `Microsoft.Extensions.ServiceDiscovery`
@@ -194,3 +193,18 @@ Both sections are required.
 - `OpenTelemetry.Instrumentation.AspNetCore`
 - `OpenTelemetry.Instrumentation.Http`
 - `OpenTelemetry.Instrumentation.Runtime`
+
+## Side Effects
+
+`AddHeadless()` performs the following:
+
+- Enables service-provider validation on startup (`ValidateOnBuild`, `ValidateScopes`).
+- Registers all core primitives from `Headless.Api.Core` including problem details, response compression, JWT, identity, status-code rewriting, and default API conventions.
+- Registers antiforgery services only when `options.Antiforgery.Enabled` is `true`.
+- Configures MVC and Minimal API JSON serializer defaults.
+- Registers ASP.NET Core source-generated input validation (`services.AddValidation()`).
+- Registers OpenTelemetry logging, metrics, and tracing when `OpenTelemetry.Enabled` is `true`.
+- Registers OpenAPI services when `OpenApi.Enabled` is `true`.
+- Configures service discovery when `HttpClient.UseServiceDiscovery` is `true`.
+- Configures HttpClient defaults for standard resilience, service discovery, and application User-Agent.
+- Adds a startup filter that validates `UseHeadless()`, `UseStatusCodesRewriter()`, and `MapHeadlessEndpoints()` usage.

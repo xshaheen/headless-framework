@@ -43,7 +43,7 @@ var msg = await harness.WaitForConsumed<OrderCreated>(TimeSpan.FromSeconds(5));
 msg.Message.Should().BeOfType<OrderCreated>();
 ```
 
-## Observable Collections
+### Observable Collections
 
 The harness records every message in four collections, available as snapshots at any time:
 
@@ -61,7 +61,7 @@ harness.Faulted.Should().BeEmpty();
 
 Each entry is a `RecordedMessage` with `MessageType`, `Message`, `MessageId`, `CorrelationId`, `Headers`, `MessageName`, `IntentType`, `Timestamp`, and (for faulted or exhausted observations) `Exception`.
 
-## WaitFor* Methods
+### WaitFor* Methods
 
 All `WaitFor*` methods return a `RecordedMessage` or throw `MessageObservationTimeoutException` with a diagnostic listing what was observed during the wait.
 
@@ -83,7 +83,7 @@ await harness.WaitForFaulted<BadMessage>(TimeSpan.FromSeconds(5));
 await harness.WaitForExhausted<BadMessage>(TimeSpan.FromSeconds(5));
 ```
 
-## TestConsumer\<T\>
+### TestConsumer\<T\>
 
 Use `TestConsumer<T>` as a lightweight consumer double when you only need to capture messages without custom handling logic.
 
@@ -114,11 +114,11 @@ consumer.ReceivedMessages.Should().ContainSingle(m => m.OrderId == "ORD-1");
 - `ReceivedMessages` — projected payloads from `ReceivedContexts`
 - `Clear()` — resets captured state (thread-safe)
 
-## xUnit Integration
+### xUnit Integration
 
 The harness is standalone — it creates its own `ServiceProvider` per instance — so it works with any test runner. Below are recommended patterns for xUnit v3.
 
-### Per-Test Harness (Recommended)
+#### Per-Test Harness (Recommended)
 
 Create a fresh harness in each test for full isolation. Extend `TestBase` to get `AbortToken` and logging:
 
@@ -148,7 +148,7 @@ public sealed class OrderMessagingTests : TestBase
 }
 ```
 
-### Shared Fixture (When Harness Setup Is Expensive)
+#### Shared Fixture (When Harness Setup Is Expensive)
 
 If many tests share the same consumer topology, use `IClassFixture` with `IAsyncLifetime` to create the harness once per class:
 
@@ -197,7 +197,7 @@ public sealed class OrderMessagingTests(OrderHarnessFixture fixture) : TestBase,
 
 > **Note:** When sharing a harness across tests, use `TestConsumer<T>.Clear()` and check `WaitFor*` with predicates to avoid cross-test interference.
 
-### Host Integration (WebApplicationFactory / IHost)
+#### Host Integration (WebApplicationFactory / IHost)
 
 Use `AddMessagingTestHarness()` to inject the recording infrastructure into the application's own DI container. The harness shares the same transport as the app — when an API endpoint publishes a message, the harness observes it end-to-end.
 
@@ -271,7 +271,7 @@ public sealed class OrderApiTests : TestBase
 
 > **Note:** `AddMessagingTestHarness()` must be called **after** `AddHeadlessMessaging()` so the transport and pipeline registrations exist to be decorated. The host manages bootstrapping and disposal — the harness does not dispose the container.
 
-## Isolation
+### Isolation
 
 Each `MessagingTestHarness` instance owns its own `MessageObservationStore`. Tests running in parallel with separate harness instances do not share state.
 
@@ -287,3 +287,9 @@ None. `MessagingTestHarness` has no configuration class or options object. The o
 - `Headless.Messaging.Core`
 - `Headless.Messaging.InMemory`
 - `Headless.Messaging.InMemoryStorage`
+
+## Side Effects
+
+- `CreateAsync(...)` builds and owns a test `ServiceProvider`; dispose the harness after each test.
+- `AddMessagingTestHarness()` decorates the host's existing messaging registrations with recording wrappers; call it after `AddHeadlessMessaging(...)`.
+- Transport parallelism is disabled inside the harness for deterministic test execution.

@@ -13,7 +13,40 @@ Provides a unified authentication system with 5 modes so both Jobs and Messaging
 - **Auth Middleware**: Protects API endpoints while allowing static file access
 - **Frontend Config**: Provides auth info to frontend for adaptive login UI
 
-## Auth Modes
+## Installation
+
+```bash
+dotnet add package Headless.Dashboard.Authentication
+```
+
+Most applications get this package transitively through `Headless.Jobs.Dashboard` or `Headless.Messaging.Dashboard`.
+
+## Quick Start
+
+Configure authentication through the owning dashboard package:
+
+```csharp
+builder.Services.AddDashboard(dashboard =>
+{
+    dashboard.WithBasicAuth("admin", "secret");
+});
+
+builder.Services.AddHeadlessMessaging(messaging =>
+{
+    messaging.UseDashboard(dashboard => dashboard.WithApiKey("dashboard-api-key"));
+});
+```
+
+Custom dashboard hosts can register the shared primitives directly:
+
+```csharp
+services.AddSingleton(new AuthConfig { Mode = AuthMode.None });
+services.AddSingleton<IAuthService, AuthService>();
+
+app.UseMiddleware<AuthMiddleware>();
+```
+
+## Configuration
 
 | Mode | Description |
 |------|-------------|
@@ -23,7 +56,7 @@ Provides a unified authentication system with 5 modes so both Jobs and Messaging
 | `Host` | Delegates to host app's authentication/authorization |
 | `Custom` | Custom validation function |
 
-## Types
+`AuthConfig` controls credentials, API key, custom validation, host authorization policy, and `SessionTimeoutMinutes`. `AuthConfig.Validate()` throws when the selected mode requires a credential or validator that has not been configured.
 
 - `AuthMode` — enum of supported modes
 - `AuthConfig` — configuration (credentials, API key, validator, session timeout)
@@ -36,7 +69,8 @@ Provides a unified authentication system with 5 modes so both Jobs and Messaging
 
 - `Microsoft.AspNetCore.App` (framework reference)
 
-## Used By
+## Side Effects
 
-- `Headless.Jobs.Dashboard`
-- `Headless.Messaging.Dashboard`
+- No services are registered by this package on its own.
+- Owning dashboard packages register `AuthConfig`, `IAuthService`, and `AuthMiddleware` when dashboard authentication is enabled.
+- `AuthMiddleware` protects `/api/*` dashboard endpoints while allowing static files, SignalR negotiate endpoints, and auth metadata endpoints through.

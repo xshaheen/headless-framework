@@ -47,6 +47,10 @@ services.AddHeadlessAuditLog(setup =>
 });
 ```
 
+## Configuration
+
+Use `ConfigureOptions(...)` for audit behavior such as `SensitiveDataStrategy`. Use `ConfigureStorage(...)` for provider-neutral storage settings such as schema and table name. Exactly one storage provider extension must be registered, for example `UseEntityFramework<TContext>()`, `UsePostgreSql(...)`, or `UseSqlServer(...)`.
+
 ## Dependencies
 
 - `Headless.AuditLog.Abstractions`
