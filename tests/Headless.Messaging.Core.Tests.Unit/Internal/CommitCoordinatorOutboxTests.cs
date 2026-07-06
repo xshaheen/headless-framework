@@ -285,6 +285,44 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
         dispatched.Should().Contain(ok.StorageId);
     }
 
+    [Fact]
+    public async Task flush_should_parse_offsetless_delayed_sent_time_as_utc()
+    {
+        var coordinator = new CommitCoordinator();
+        var expectedPublishTime = new DateTime(2026, 7, 6, 9, 30, 0, DateTimeKind.Utc);
+        var capturedPublishTimes = new List<DateTime>();
+
+        var dispatcher = Substitute.For<IDispatcher>();
+        dispatcher
+            .EnqueueToScheduler(
+                Arg.Any<MediumMessage>(),
+                Arg.Do<DateTime>(publishTime => capturedPublishTimes.Add(publishTime)),
+                Arg.Any<object?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(Task.CompletedTask);
+
+        var buffer = new MessageOutboxBuffer(
+            coordinator,
+            dispatcher,
+            TimeSpan.FromSeconds(30),
+            new FakeTimeProvider(),
+            NullLogger<MessageOutboxBuffer>.Instance
+        );
+        var delayed = _BuildMessage();
+        delayed.Origin.Headers[Headers.SentTime] = expectedPublishTime.ToString(CultureInfo.InvariantCulture);
+        delayed.Origin.Headers[Headers.DelayTime] = TimeSpan
+            .FromMinutes(30)
+            .ToString("c", CultureInfo.InvariantCulture);
+        buffer.Add(delayed);
+
+        await coordinator.SignalAsync(CommitOutcome.Committed, new EmptyServiceProvider());
+
+        capturedPublishTimes.Should().ContainSingle();
+        capturedPublishTimes[0].Should().Be(expectedPublishTime);
+        capturedPublishTimes[0].Kind.Should().Be(DateTimeKind.Utc);
+    }
+
     private static MediumMessage _BuildMessage() =>
         new()
         {

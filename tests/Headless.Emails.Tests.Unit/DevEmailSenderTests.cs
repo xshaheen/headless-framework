@@ -80,13 +80,210 @@ public sealed class DevEmailSenderTests
         act.Should().Throw<ArgumentException>();
     }
 
-    private static SendSingleEmailRequest _Request(string text = "hello dev") =>
+    [Fact]
+    public async Task should_render_cc_and_bcc_lines_when_present()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"emails-dev-{Guid.NewGuid():N}.txt");
+        using var sender = new DevEmailSender(path);
+
+        try
+        {
+            var request = _Request(
+                cc: [new EmailRequestAddress("cc@example.com")],
+                bcc: [new EmailRequestAddress("bcc@example.com")]
+            );
+
+            await sender.SendAsync(request, TestContext.Current.CancellationToken);
+
+            var contents = await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken);
+            contents.Should().Contain("Cc: cc@example.com").And.Contain("Bcc: bcc@example.com");
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task should_omit_cc_and_bcc_lines_when_absent()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"emails-dev-{Guid.NewGuid():N}.txt");
+        using var sender = new DevEmailSender(path);
+
+        try
+        {
+            await sender.SendAsync(_Request(), TestContext.Current.CancellationToken);
+
+            var contents = await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken);
+            contents.Should().NotContain("Cc:").And.NotContain("Bcc:");
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task should_render_attachment_names_without_content()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"emails-dev-{Guid.NewGuid():N}.txt");
+        using var sender = new DevEmailSender(path);
+
+        try
+        {
+            var request = _Request(
+                attachments:
+                [
+                    new EmailRequestAttachment
+                    {
+                        Name = "invoice.pdf",
+                        File = "RAW-ATTACHMENT-BYTES"u8.ToArray(),
+                        ContentType = "application/pdf",
+                    },
+                ]
+            );
+
+            await sender.SendAsync(request, TestContext.Current.CancellationToken);
+
+            // Only the attachment name is recorded — raw bytes would bloat the dev file.
+            var contents = await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken);
+            contents.Should().Contain("Attachments:").And.Contain("  Name: invoice.pdf");
+            contents.Should().NotContain("RAW-ATTACHMENT-BYTES");
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task should_write_html_body_when_text_is_missing()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"emails-dev-{Guid.NewGuid():N}.txt");
+        using var sender = new DevEmailSender(path);
+
+        try
+        {
+            await sender.SendAsync(
+                _Request(text: null, html: "<p>hello html</p>"),
+                TestContext.Current.CancellationToken
+            );
+
+            var contents = await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken);
+            contents.Should().Contain("<p>hello html</p>");
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task should_prefer_text_body_when_both_bodies_present()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"emails-dev-{Guid.NewGuid():N}.txt");
+        using var sender = new DevEmailSender(path);
+
+        try
+        {
+            await sender.SendAsync(
+                _Request(text: "plain body", html: "<p>html body</p>"),
+                TestContext.Current.CancellationToken
+            );
+
+            var contents = await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken);
+            contents.Should().Contain("plain body").And.NotContain("<p>html body</p>");
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task should_normalize_newlines_in_text_body()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"emails-dev-{Guid.NewGuid():N}.txt");
+        using var sender = new DevEmailSender(path);
+
+        try
+        {
+            await sender.SendAsync(_Request(text: "line1\r\nline2\nline3"), TestContext.Current.CancellationToken);
+
+            // Mixed CRLF/LF input is normalized to the platform newline before being appended.
+            var contents = await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken);
+            contents.Should().Contain($"line1{Environment.NewLine}line2{Environment.NewLine}line3");
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task should_render_display_name_in_from_header()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"emails-dev-{Guid.NewGuid():N}.txt");
+        using var sender = new DevEmailSender(path);
+
+        try
+        {
+            var request = _Request() with { From = new EmailRequestAddress("from@example.com", "Alice") };
+
+            await sender.SendAsync(request, TestContext.Current.CancellationToken);
+
+            var contents = await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken);
+            contents.Should().Contain("From: Alice <from@example.com>");
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task should_honor_already_cancelled_token()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"emails-dev-{Guid.NewGuid():N}.txt");
+        using var sender = new DevEmailSender(path);
+
+        try
+        {
+            using var cts = new CancellationTokenSource();
+            await cts.CancelAsync();
+
+            var act = async () => await sender.SendAsync(_Request(), cts.Token);
+
+            // Cancellation must surface before any file I/O happens.
+            await act.Should().ThrowAsync<OperationCanceledException>();
+            File.Exists(path).Should().BeFalse();
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    private static SendSingleEmailRequest _Request(
+        string? text = "hello dev",
+        string? html = null,
+        IReadOnlyList<EmailRequestAddress>? cc = null,
+        IReadOnlyList<EmailRequestAddress>? bcc = null,
+        IReadOnlyList<EmailRequestAttachment>? attachments = null
+    ) =>
         new()
         {
             From = "from@example.com",
-            Destination = new EmailRequestDestination { ToAddresses = [new EmailRequestAddress("to@example.com")] },
+            Destination = new EmailRequestDestination
+            {
+                ToAddresses = [new EmailRequestAddress("to@example.com")],
+                CcAddresses = cc ?? [],
+                BccAddresses = bcc ?? [],
+            },
             Subject = "subject",
             MessageText = text,
+            MessageHtml = html,
+            Attachments = attachments ?? [],
         };
 }
 

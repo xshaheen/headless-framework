@@ -2685,10 +2685,15 @@ public sealed class RedisCache(
     // stamp stays provably consistent. A shorter-than-header value (e.g. a legacy raw value) encodes in full.
     private static string _ToConcurrencyStamp(RedisValue value)
     {
-        var bytes = (byte[])value!;
-        var length = Math.Min(bytes.Length, RedisCacheEntryFrame.HeaderLength);
+        // Slice the ReadOnlySequence view instead of casting to byte[]: the cast re-materializes the whole
+        // payload for inline/sequence-backed values (see _DeserializeRedisValue) just to read the fixed prefix.
+        var sequence = (ReadOnlySequence<byte>)value!;
+        var length = (int)Math.Min(sequence.Length, RedisCacheEntryFrame.HeaderLength);
 
-        return $"b64:{bytes.AsSpan(0, length).ToBase64()}";
+        Span<byte> header = stackalloc byte[RedisCacheEntryFrame.HeaderLength];
+        sequence.Slice(0, length).CopyTo(header);
+
+        return $"b64:{header[..length].ToBase64()}";
     }
 
     private static bool _TryDecodeConcurrencyStamp(string stamp, out RedisValue value)

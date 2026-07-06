@@ -101,13 +101,13 @@ public sealed class PermissionManagerTests : TestBase
         // when
         var result = await _sut.GetAsync(permissionName, currentUser, cancellationToken: AbortToken);
 
-        // then
+        // then - each provider is evaluated exactly once per check; the denial and grant passes share the results
         result.IsGranted.Should().BeTrue();
         await provider1
-            .Received(2)
+            .Received(1)
             .CheckAsync(Arg.Any<IReadOnlyCollection<PermissionDefinition>>(), currentUser, AbortToken);
         await provider2
-            .Received(2)
+            .Received(1)
             .CheckAsync(Arg.Any<IReadOnlyCollection<PermissionDefinition>>(), currentUser, AbortToken);
     }
 

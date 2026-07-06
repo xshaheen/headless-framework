@@ -500,11 +500,15 @@ public sealed class FileSystemBlobStorage : IBlobStorage
         var windowLimit = (long)query.PageSize + 1;
         var pageWindow = new List<(string Key, FileInfo Info)>((int)Math.Min(windowLimit, 1024));
 
-        foreach (var file in Directory.EnumerateFiles(containerDirectory, "*", SearchOption.AllDirectories))
+        // DirectoryInfo enumeration yields FileInfo instances pre-populated from the directory scan, so the
+        // page entries below need no second stat per file (Directory.EnumerateFiles + new FileInfo did).
+        var containerInfo = new DirectoryInfo(containerDirectory);
+
+        foreach (var info in containerInfo.EnumerateFiles("*", SearchOption.AllDirectories))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var key = _ToBlobKey(file, containerDirectory);
+            var key = _ToBlobKey(info.FullName, containerDirectory);
 
             if (BlobStorageHelpers.IsSidecarKey(key))
             {
@@ -520,8 +524,6 @@ public sealed class FileSystemBlobStorage : IBlobStorage
             {
                 continue;
             }
-
-            var info = new FileInfo(file);
 
             if (!info.Exists)
             {
@@ -646,7 +648,13 @@ public sealed class FileSystemBlobStorage : IBlobStorage
     /// </summary>
     private static string _ToBlobKey(string fileFullName, string containerDirectory)
     {
-        return fileFullName.Replace(containerDirectory, string.Empty, StringComparison.Ordinal).Replace('\\', '/');
+        // Slice the container prefix instead of Replace: enumerated paths always start with the container
+        // directory, so this skips the full-string search and cannot strip pathological later occurrences.
+        var key = fileFullName.StartsWith(containerDirectory, StringComparison.Ordinal)
+            ? fileFullName[containerDirectory.Length..]
+            : fileFullName.Replace(containerDirectory, string.Empty, StringComparison.Ordinal);
+
+        return key.Replace('\\', '/');
     }
 
     #endregion

@@ -655,6 +655,99 @@ public sealed class DispatcherTests : TestBase
         await act.Should().NotThrowAsync();
     }
 
+    [Fact]
+    public async Task dispose_should_flush_queued_scheduler_ids_back_to_delayed()
+    {
+        // #610 regression — DisposeAsync must drain the scheduler loop, then hand every id still
+        // sitting in the in-process scheduler queue back to storage as Delayed. Losing this flush
+        // strands Queued rows: their in-memory schedule dies with the process while storage keeps
+        // reporting them as already picked up.
+        var sender = new TestThreadSafeMessageSender();
+        var options = Options.Create(new MessagingOptions { EnablePublishParallelSend = false });
+        _storage
+            .ChangePublishStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<object?>(),
+                Arg.Any<DateTime?>(),
+                cancellationToken: Arg.Any<CancellationToken>()
+            )
+            .Returns(new ValueTask<bool>(true));
+
+        var dispatcher = new Dispatcher(
+            _logger,
+            sender,
+            options,
+            _executor,
+            _storage,
+            TimeProvider.System,
+            _scopeFactory
+        );
+
+        using var cts = new CancellationTokenSource();
+        await dispatcher.StartAsync(cts.Token);
+
+        // Due in 50s → Queued status → enters the in-process scheduler queue and stays there
+        // (the scheduler loop only dequeues items within 50ms of their due time).
+        var message = _CreateTestMessage(_StorageGuid(1));
+        await dispatcher.EnqueueToScheduler(message, DateTime.UtcNow.AddSeconds(50), cancellationToken: AbortToken);
+
+        // when
+        await dispatcher.DisposeAsync();
+
+        // then — the queued id is durably handed back as Delayed and the message is never sent.
+        await _storage
+            .Received(1)
+            .ChangePublishStateToDelayedAsync(
+                Arg.Is<Guid[]>(ids => ids.Length == 1 && ids[0] == message.StorageId),
+                Arg.Any<CancellationToken>()
+            );
+        sender.Count.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task dispose_should_complete_when_scheduler_flush_fails()
+    {
+        // The shutdown flush writes through IDataStorage; a dead storage must not turn DisposeAsync
+        // into a throw — hosts dispose the dispatcher during shutdown, and a propagated storage
+        // fault would abort the remaining shutdown sequence. The failure is logged and absorbed.
+        var sender = new TestThreadSafeMessageSender();
+        var options = Options.Create(new MessagingOptions { EnablePublishParallelSend = false });
+        _storage
+            .ChangePublishStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<object?>(),
+                Arg.Any<DateTime?>(),
+                cancellationToken: Arg.Any<CancellationToken>()
+            )
+            .Returns(new ValueTask<bool>(true));
+        _storage
+            .ChangePublishStateToDelayedAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
+            .Returns<ValueTask>(_ => throw new InvalidOperationException("storage down"));
+
+        var dispatcher = new Dispatcher(
+            _logger,
+            sender,
+            options,
+            _executor,
+            _storage,
+            TimeProvider.System,
+            _scopeFactory
+        );
+
+        using var cts = new CancellationTokenSource();
+        await dispatcher.StartAsync(cts.Token);
+        var message = _CreateTestMessage(_StorageGuid(1));
+        await dispatcher.EnqueueToScheduler(message, DateTime.UtcNow.AddSeconds(50), cancellationToken: AbortToken);
+
+        // when
+        var act = async () => await dispatcher.DisposeAsync();
+
+        // then
+        await act.Should().NotThrowAsync("scheduler-flush failures during shutdown are logged, not propagated");
+    }
+
     private static MediumMessage _CreateTestMessage(int storageId) => _CreateTestMessage(_StorageGuid(storageId));
 
     private static MediumMessage _CreateTestMessage(Guid? storageId = null)

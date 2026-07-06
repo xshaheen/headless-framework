@@ -19,7 +19,15 @@ internal sealed class HeadlessEntityFrameworkNavigationModifiedTracker
     public void ChangeTrackerTracked(object? sender, EntityTrackedEventArgs e)
     {
         _EntityEntryTrackedOrStateChanged(e.Entry);
-        _DetectChanges(e.Entry);
+
+        // Query materialization tracks entities in their original state - there is nothing to detect, and
+        // detection costs a StateManager traversal per materialized row (O(tracked entries) when the entity
+        // has skip navigations), taxing every tracking query. Registration above still happens so navigation
+        // changes made to query-loaded entities later are detected via Tracked(Added)/StateChanged events.
+        if (!e.FromQuery)
+        {
+            _DetectChanges(e.Entry);
+        }
     }
 
     public void ChangeTrackerStateChanged(object? sender, EntityStateChangedEventArgs e)

@@ -60,8 +60,12 @@ public sealed class PaymobCashOutAuthenticator : IPaymobCashOutAuthenticator, ID
     private readonly IOptionsMonitor<PaymobCashOutOptions> _options;
     private readonly IDisposable? _optionsChangeSubscription;
     private readonly SemaphoreSlim _tokenLock = new(1, 1);
-    private string? _cachedToken;
-    private DateTimeOffset _tokenExpiration;
+
+    // A single immutable holder swapped atomically (reference assignment), so the lock-free fast path can
+    // never observe a torn token/expiration pair (DateTimeOffset writes are not atomic).
+    private CachedToken? _cachedToken;
+
+    private sealed record CachedToken(string Token, DateTimeOffset Expiration);
 
     public PaymobCashOutAuthenticator(
         IHttpClientFactory httpClientFactory,
@@ -73,11 +77,7 @@ public sealed class PaymobCashOutAuthenticator : IPaymobCashOutAuthenticator, ID
         _timeProvider = timeProvider;
         _options = options;
 
-        _optionsChangeSubscription = options.OnChange(_ =>
-        {
-            _cachedToken = null;
-            _tokenExpiration = DateTimeOffset.MinValue;
-        });
+        _optionsChangeSubscription = options.OnChange(_ => _cachedToken = null);
     }
 
     public void Dispose()
@@ -89,18 +89,22 @@ public sealed class PaymobCashOutAuthenticator : IPaymobCashOutAuthenticator, ID
     public async ValueTask<string> GetAccessTokenAsync(CancellationToken cancellationToken = default)
     {
         // Fast path - no lock needed for cached valid token
-        if (_cachedToken is not null && _tokenExpiration > _timeProvider.GetUtcNow())
+        var cached = _cachedToken;
+
+        if (cached is not null && cached.Expiration > _timeProvider.GetUtcNow())
         {
-            return _cachedToken;
+            return cached.Token;
         }
 
         await _tokenLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             // Double-check after acquiring lock
-            if (_cachedToken is not null && _tokenExpiration > _timeProvider.GetUtcNow())
+            cached = _cachedToken;
+
+            if (cached is not null && cached.Expiration > _timeProvider.GetUtcNow())
             {
-                return _cachedToken;
+                return cached.Token;
             }
 
             var response = await _GenerateTokenAsync(cancellationToken).ConfigureAwait(false);
@@ -128,7 +132,7 @@ public sealed class PaymobCashOutAuthenticator : IPaymobCashOutAuthenticator, ID
         ]);
         request.Headers.Authorization = AuthenticationHeaderFactory.CreateBasic(options.ClientId, options.ClientSecret);
 
-        var response = await httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        using var response = await httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
         if (!response.IsSuccessStatusCode)
         {
@@ -144,8 +148,7 @@ public sealed class PaymobCashOutAuthenticator : IPaymobCashOutAuthenticator, ID
                 .ConfigureAwait(false)
         )!;
 
-        _cachedToken = content.AccessToken;
-        _tokenExpiration = _timeProvider.GetUtcNow().Add(options.TokenRefreshBuffer);
+        _cachedToken = new CachedToken(content.AccessToken, _timeProvider.GetUtcNow().Add(options.TokenRefreshBuffer));
 
         return content;
     }
@@ -169,7 +172,7 @@ public sealed class PaymobCashOutAuthenticator : IPaymobCashOutAuthenticator, ID
             new("refresh_token", refreshToken),
         ]);
 
-        var response = await httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        using var response = await httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
         if (!response.IsSuccessStatusCode)
         {
@@ -186,8 +189,7 @@ public sealed class PaymobCashOutAuthenticator : IPaymobCashOutAuthenticator, ID
         )!;
 
         // Update cache with refreshed token
-        _cachedToken = content.AccessToken;
-        _tokenExpiration = _timeProvider.GetUtcNow().Add(options.TokenRefreshBuffer);
+        _cachedToken = new CachedToken(content.AccessToken, _timeProvider.GetUtcNow().Add(options.TokenRefreshBuffer));
 
         return content;
     }

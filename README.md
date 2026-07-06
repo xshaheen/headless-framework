@@ -9,7 +9,7 @@
 
 150+ NuGet packages &bull; Abstraction + Provider pattern &bull; Explicit infrastructure
 
-[Quick Start](#quick-start) &bull; [Install By Goal](#install-by-goal) &bull; [Messaging](#messaging) &bull; [Packages](#packages) &bull; [Production Guidance](#production-guidance) &bull; [Contributing](#contributing)
+[Quick Start](#quick-start) &bull; [Pick Packages By Job](#pick-packages-by-job) &bull; [Messaging](#messaging) &bull; [Packages](#packages) &bull; [Production Guidance](#production-guidance) &bull; [Contributing](#contributing)
 
 </div>
 
@@ -30,19 +30,18 @@ Headless separates those concerns:
 
 Use Headless when you want provider-swappable infrastructure with explicit setup and source-visible behavior. Production correctness still depends on choosing the right provider, storage, retry, transaction, and idempotency model for your service.
 
-## Install By Goal
+## Pick Packages By Job
 
-| Goal | Start With | Add Provider Packages |
-|------|------------|-----------------------|
-| API defaults, health checks, OpenTelemetry, common middleware | `Headless.Api.ServiceDefaults` | None unless your app needs other domains |
-| Local messaging without external infrastructure | `Headless.Messaging.Core` | `Headless.Messaging.InMemory`, `Headless.Messaging.InMemoryStorage` |
-| Durable messaging with RabbitMQ | `Headless.Messaging.Core` | `Headless.Messaging.RabbitMq` plus one durable storage provider |
-| Durable messaging with Kafka | `Headless.Messaging.Core` | `Headless.Messaging.Kafka` plus one durable storage provider |
-| Durable messaging with Azure Service Bus | `Headless.Messaging.Core` | `Headless.Messaging.AzureServiceBus` plus one durable storage provider |
-| Durable outbox storage with PostgreSQL | `Headless.Messaging.Core` | `Headless.Messaging.Storage.PostgreSql` |
-| Durable outbox storage with SQL Server | `Headless.Messaging.Core` | `Headless.Messaging.Storage.SqlServer` |
-| EF Core-backed transactional outbox | `Headless.Messaging.Core` | `Headless.Messaging.Storage.PostgreSql` or `Headless.Messaging.Storage.SqlServer`, then call `UseEntityFramework<TContext>()` |
-| Cache abstraction | `Headless.Caching.Core` | `Headless.Caching.InMemory`, `Headless.Caching.Redis`, or `Headless.Caching.Hybrid` |
+| Job | Start With | Add When You Need |
+|-----|------------|-------------------|
+| API defaults, health checks, OpenTelemetry, common middleware | `Headless.Api.ServiceDefaults` | Other domain packages only when the API uses them |
+| Local or test messaging | `Headless.Messaging.Core` | `Headless.Messaging.InMemory`, `Headless.Messaging.InMemoryStorage`, or `Headless.Messaging.Testing` |
+| Production messaging transport | `Headless.Messaging.Core` | One transport: AWS, Azure Service Bus, Kafka, NATS, Pulsar, RabbitMQ, or Redis |
+| Durable outbox, delayed dispatch, and persisted retry | `Headless.Messaging.Core` | One storage provider: PostgreSQL or SQL Server |
+| EF Core-backed transactional outbox | Messaging core plus PostgreSQL or SQL Server storage | Call `UseEntityFramework<TContext>()` |
+| Raw ADO outbox coordination | Messaging core plus PostgreSQL or SQL Server storage | Register the matching commit-coordination provider and use coordinated-transaction helpers |
+| Messaging dashboard | `Headless.Messaging.Dashboard` | `Headless.Messaging.Dashboard.K8s` for Kubernetes node discovery |
+| Cache abstraction | `Headless.Caching.Core` | In-memory, Redis, hybrid, BCL adapter, output cache, or distributed-lock-backed cache |
 | Blob storage abstraction | `Headless.Blobs.Core` | Azure, AWS, Cloudflare R2, filesystem, Redis, or SFTP provider |
 | Email abstraction | `Headless.Emails.Core` | AWS, Azure Communication Services, MailKit SMTP, or dev provider |
 | Test-only infrastructure | Domain core package | In-memory provider or testing package for that domain |
@@ -221,6 +220,7 @@ builder.Services.AddHeadlessMessaging(setup =>
     setup.Options.RetryPolicy.MaxPersistedRetries = 15;
     setup.Options.RetryPolicy.InitialDispatchGrace = TimeSpan.FromSeconds(30);
     setup.Options.RetryPolicy.DispatchTimeout = TimeSpan.FromMinutes(5);
+    setup.Options.RetryPolicy.OnExhaustedTimeout = TimeSpan.FromSeconds(30);
     setup.Options.RetryPolicy.BackoffStrategy = new ExponentialBackoffStrategy(
         initialDelay: TimeSpan.FromSeconds(2),
         maxDelay: TimeSpan.FromMinutes(5),
@@ -237,9 +237,12 @@ Defaults from `RetryPolicyOptions`:
 - `MaxPersistedRetries`: `15`
 - `InitialDispatchGrace`: `30 seconds`
 - `DispatchTimeout`: `5 minutes`
+- `OnExhaustedTimeout`: `30 seconds`
 - `BackoffStrategy`: exponential backoff with jitter
 
 Total observable attempts are `(MaxInlineRetries + 1) * (MaxPersistedRetries + 1)`. With defaults, that is 48 attempts. Delivery remains at-least-once, so consumers must be safe to run more than once.
+
+`RetryPolicy.OnExhausted` is invoked after the retry budget is consumed or a backoff strategy returns `RetryDecision.Exhausted`. Permanent failures and cancellations short-circuit the retry budget and do not invoke that callback. The callback is bounded by `OnExhaustedTimeout`, is caught and logged on failure, and must be idempotent because broker redelivery and crash recovery can still produce repeated terminal observations.
 
 ### Processor and Consumer
 
@@ -358,11 +361,19 @@ Before using messaging in production:
 
 ## Examples
 
+Messaging demos are intentionally small and local-first. Several use fixed local connection strings, unauthenticated dashboards, or demo-only credentials; treat them as runnable examples of wiring, not production templates.
+
 | Example | Shows |
 |---------|-------|
 | [`demo/Headless.Messaging.Console.Demo`](demo/Headless.Messaging.Console.Demo) | In-memory transport/storage, consumer registration, bootstrap, publish, callbacks |
-| [`demo/Headless.Messaging.RabbitMq.SqlServer.Demo`](demo/Headless.Messaging.RabbitMq.SqlServer.Demo) | RabbitMQ transport, SQL Server storage, EF coordination, raw ADO coordination, rollback, delayed publish |
+| [`demo/Headless.Messaging.Aws.InMemory.Demo`](demo/Headless.Messaging.Aws.InMemory.Demo) | AWS transport setup with in-memory storage and dashboard wiring |
+| [`demo/Headless.Messaging.AzureServiceBus.InMemory.Demo`](demo/Headless.Messaging.AzureServiceBus.InMemory.Demo) | Azure Service Bus setup, headers, SQL filters, custom producers, in-memory storage |
+| [`demo/Headless.Messaging.Dashboard.Auth.Demo`](demo/Headless.Messaging.Dashboard.Auth.Demo) | Dashboard host authentication with OpenID Connect, custom auth scheme, and anonymous variants |
+| [`demo/Headless.Messaging.Dashboard.Jwt.Demo`](demo/Headless.Messaging.Dashboard.Jwt.Demo) | Dashboard host authentication with JWT bearer auth and in-memory messaging |
 | [`demo/Headless.Messaging.Kafka.PostgreSql.Demo`](demo/Headless.Messaging.Kafka.PostgreSql.Demo) | Kafka transport, PostgreSQL storage, raw coordination, EF coordination |
+| [`demo/Headless.Messaging.Pulsar.InMemory.Demo`](demo/Headless.Messaging.Pulsar.InMemory.Demo) | Pulsar transport with in-memory storage and dashboard wiring |
+| [`demo/Headless.Messaging.RabbitMq.SqlServer.Demo`](demo/Headless.Messaging.RabbitMq.SqlServer.Demo) | RabbitMQ transport, SQL Server storage, EF coordination, raw ADO coordination, rollback, delayed publish |
+| [`demo/Headless.Messaging.Redis.SqlServer.Demo`](demo/Headless.Messaging.Redis.SqlServer.Demo) | Redis transport, SQL Server storage, dashboard wiring, Swagger in development |
 
 ## Versioning and Compatibility
 
@@ -414,6 +425,7 @@ Property-level audit logging for tracking entity mutations and explicit business
 | Package | Description |
 |---------|-------------|
 | [Headless.AuditLog.Abstractions](src/Headless.AuditLog.Abstractions/README.md) | Audit log contracts and interfaces |
+| [Headless.AuditLog.Core](src/Headless.AuditLog.Core/README.md) | Audit log DI setup, options validation, and provider setup pipeline |
 | [Headless.AuditLog.Storage.EntityFramework](src/Headless.AuditLog.Storage.EntityFramework/README.md) | EF Core audit log persistence |
 | [Headless.AuditLog.Storage.PostgreSql](src/Headless.AuditLog.Storage.PostgreSql/README.md) | PostgreSQL raw audit log storage |
 | [Headless.AuditLog.Storage.SqlServer](src/Headless.AuditLog.Storage.SqlServer/README.md) | SQL Server raw audit log storage |
@@ -455,6 +467,7 @@ Verify CAPTCHA tokens behind one pass/fail abstraction. Compose Google reCAPTCHA
 | Package | Description |
 |---------|-------------|
 | [Headless.Captcha.Abstractions](src/Headless.Captcha.Abstractions/README.md) | CAPTCHA verification interfaces and builder |
+| [Headless.Captcha.Core](src/Headless.Captcha.Core/README.md) | CAPTCHA setup and validation pipeline |
 | [Headless.Captcha.ReCaptcha](src/Headless.Captcha.ReCaptcha/README.md) | Google reCAPTCHA v2/v3 provider |
 | [Headless.Captcha.Turnstile](src/Headless.Captcha.Turnstile/README.md) | Cloudflare Turnstile provider |
 
@@ -690,6 +703,7 @@ Send SMS messages through a unified interface with providers for major regional 
 | Package | Description |
 |---------|-------------|
 | [Headless.Sms.Abstractions](src/Headless.Sms.Abstractions/README.md) | SMS sending interfaces |
+| [Headless.Sms.Core](src/Headless.Sms.Core/README.md) | SMS setup builder and provider selection |
 | [Headless.Sms.Aws](src/Headless.Sms.Aws/README.md) | AWS SNS SMS provider |
 | [Headless.Sms.Cequens](src/Headless.Sms.Cequens/README.md) | Cequens SMS provider |
 | [Headless.Sms.Connekio](src/Headless.Sms.Connekio/README.md) | Connekio SMS provider |
@@ -706,6 +720,7 @@ Lightweight connection factories for raw SQL access when you need to drop below 
 | Package | Description |
 |---------|-------------|
 | [Headless.Sql.Abstractions](src/Headless.Sql.Abstractions/README.md) | SQL connection interfaces |
+| [Headless.Sql.Core](src/Headless.Sql.Core/README.md) | Default scoped ambient current-connection implementation |
 | [Headless.Sql.PostgreSql](src/Headless.Sql.PostgreSql/README.md) | PostgreSQL connection factory |
 | [Headless.Sql.SqlServer](src/Headless.Sql.SqlServer/README.md) | SQL Server connection factory |
 | [Headless.Sql.Sqlite](src/Headless.Sql.Sqlite/README.md) | SQLite connection factory |

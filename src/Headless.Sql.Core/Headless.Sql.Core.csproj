@@ -1,6 +1,7 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <Description>Default scoped ambient current-connection implementation for provider-agnostic SQL unit-of-work patterns.</Description>
     <RootNamespace>Headless.Sql</RootNamespace>
   </PropertyGroup>
   <ItemGroup>

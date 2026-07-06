@@ -43,6 +43,54 @@ public sealed class ConsumerExecutorDescriptor
     /// Delivery intent used to subscribe this consumer.
     /// </summary>
     public required IntentType IntentType { get; init; }
+
+    /// <summary>
+    /// The message payload type used for deserialization: <c>T</c> when the first non-framework parameter is
+    /// <see cref="ConsumeContext{T}"/>, otherwise that parameter's type. Cached — descriptors are immutable
+    /// after registration, so recomputing this per received message is pure reflection overhead. The benign
+    /// publication race writes the same <see cref="Type"/> reference.
+    /// </summary>
+    public Type? MessageValueType => field ??= _ComputeMessageValueType();
+
+    /// <summary>
+    /// The <c>T</c> of the consumer's <see cref="ConsumeContext{T}"/> parameter, or <see langword="null"/> when
+    /// the method has no such parameter. Cached for the same reason as <see cref="MessageValueType"/>.
+    /// </summary>
+    public Type? ConsumeContextValueType => field ??= _ComputeConsumeContextValueType();
+
+    private Type? _ComputeMessageValueType()
+    {
+        foreach (var parameter in Parameters)
+        {
+            if (parameter.IsFromMessaging)
+            {
+                continue;
+            }
+
+            var parameterType = parameter.ParameterType;
+
+            return parameterType.IsGenericType && parameterType.GetGenericTypeDefinition() == typeof(ConsumeContext<>)
+                ? parameterType.GetGenericArguments()[0]
+                : parameterType;
+        }
+
+        return null;
+    }
+
+    private Type? _ComputeConsumeContextValueType()
+    {
+        foreach (var parameter in Parameters)
+        {
+            var parameterType = parameter.ParameterType;
+
+            if (parameterType.IsGenericType && parameterType.GetGenericTypeDefinition() == typeof(ConsumeContext<>))
+            {
+                return parameterType.GetGenericArguments()[0];
+            }
+        }
+
+        return null;
+    }
 }
 
 public sealed class ParameterDescriptor
