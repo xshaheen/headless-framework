@@ -1,8 +1,3 @@
 <Project>
-  <!-- Harness/shared projects: keep test analyzer defaults, but do not execute them as test hosts. -->
-  <PropertyGroup Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('$(MSBuildProjectName)', '\.Tests\.Harness$'))">
-    <IsTestProject>false</IsTestProject>
-    <IsTestingPlatformApplication>false</IsTestingPlatformApplication>
-    <GenerateRuntimeConfigurationFiles>true</GenerateRuntimeConfigurationFiles>
-  </PropertyGroup>
+  <!-- Harness classification lives in Directory.Build.props so SDK targets see it during evaluation. -->
 </Project>
