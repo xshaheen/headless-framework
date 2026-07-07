@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.EntityFrameworkCore.Metadata.Internal;
 
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.EntityFramework;
 
 public static class EntityTypeBuilderExtensions

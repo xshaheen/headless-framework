@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Api;
 
 /// <summary>

@@ -10,6 +10,7 @@ using Money = Headless.Primitives.Money;
 using Month = Headless.Primitives.Month;
 using UserId = Headless.Primitives.UserId;
 
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.EntityFramework;
 
 /// <summary>
