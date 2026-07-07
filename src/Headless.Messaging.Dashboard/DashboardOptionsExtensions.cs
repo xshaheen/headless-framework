@@ -20,8 +20,20 @@ internal sealed class DashboardOptionsExtension(Action<MessagingDashboardOptions
         Builder.Validate();
 
         services.AddSingleton(Builder);
-        services.AddSingleton(Builder.Auth);
-        services.AddScoped<IAuthService, AuthService>();
+
+        // Register dashboard authentication (AuthConfig value + scoped IAuthService) through the
+        // shared extension, copying the values already materialized on the fluent builder's AuthConfig.
+        var auth = Builder.Auth;
+        services.AddDashboardAuthentication(config =>
+        {
+            config.Mode = auth.Mode;
+            config.BasicCredentials = auth.BasicCredentials;
+            config.ApiKey = auth.ApiKey;
+            config.CustomValidator = auth.CustomValidator;
+            config.SessionTimeoutMinutes = auth.SessionTimeoutMinutes;
+            config.HostAuthorizationPolicy = auth.HostAuthorizationPolicy;
+        });
+
         services.AddSingleton<MessagingMetricsEventListener>();
         services.AddMemoryCache();
 
