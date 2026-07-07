@@ -25,6 +25,7 @@ UNIT_TEST_MODULES ?= tests/**/bin/$(CONFIGURATION)/**/*.Tests.Unit.dll
 INTEGRATION_TEST_MODULES ?= tests/**/bin/$(CONFIGURATION)/**/*.Tests.Integration.dll
 MSBUILD_ARGS ?=
 DEPENDENCY_AUDIT_IDLE_TIMEOUT ?= 120
+NUGET_ADVISORY_AUDIT_TIMEOUT ?= 90
 QUALITY_SEVERITY ?= info
 QUALITY_DIAGNOSTICS ?=
 QUALITY_FORMAT_ARGS = --no-restore --verify-no-changes --severity "$(QUALITY_SEVERITY)" -v minimal $(if $(QUALITY_DIAGNOSTICS),--diagnostics $(QUALITY_DIAGNOSTICS),)
@@ -32,6 +33,7 @@ QUALITY_BUILD_ARGS = --configuration "$(CONFIGURATION)" --no-restore --no-increm
 TEST_MAX_PARALLEL ?= 3
 TEST_TIMEOUT ?= 15m
 DOTNET_OUTDATED_AUDIT_ARGS ?= --no-restore --idle-timeout $(DEPENDENCY_AUDIT_IDLE_TIMEOUT) --output "$(DEPENDENCY_AUDIT_DIR)/outdated.json" --output-format json
+NUGET_ADVISORY_AUDIT_ARGS ?= --timeout-seconds "$(NUGET_ADVISORY_AUDIT_TIMEOUT)" --output-dir "$(DEPENDENCY_AUDIT_DIR)/nuget-advisories"
 
 COVERAGE_ARGS ?= -p:EnableCodeCoverage=true --coverage-output-format cobertura
 CI_TEST_ARGS ?= --report-trx --coverage --coverage-output-format cobertura
@@ -294,6 +296,10 @@ outdated: tools ## Check outdated NuGet dependencies.
 dependency-audit: ## Write NuGet outdated dependency JSON report without restore.
 	@mkdir -p "$(DEPENDENCY_AUDIT_DIR)"
 	$(DOTNET) outdated "$(SOLUTION)" $(DOTNET_OUTDATED_AUDIT_ARGS)
+
+.PHONY: nuget-advisory-audit
+nuget-advisory-audit: ## Scan source packages for NuGet vulnerabilities with bounded per-project logs.
+	./scripts/audit-nuget-advisories.sh $(NUGET_ADVISORY_AUDIT_ARGS)
 
 .PHONY: version
 version: tools ## Show MinVer-computed version.
