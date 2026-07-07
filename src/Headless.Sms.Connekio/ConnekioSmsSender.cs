@@ -127,7 +127,7 @@ internal sealed class ConnekioSmsSender(
         {
             logger.LogSmsSendException(e, destinationCount);
 
-            return SendSingleSmsResponse.FromException(e);
+            return SendSingleSmsResponse.FromException(e, SmsFailureKinds.FromException(e));
         }
     }
 

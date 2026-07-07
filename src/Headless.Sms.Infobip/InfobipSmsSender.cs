@@ -79,7 +79,7 @@ internal sealed class InfobipSmsSender(
         {
             logger.LogSmsSendException(e, destinationCount: 1);
 
-            return SendSingleSmsResponse.FromException(e);
+            return SendSingleSmsResponse.FromException(e, SmsFailureKinds.FromException(e));
         }
     }
 
@@ -130,7 +130,10 @@ internal sealed class InfobipSmsSender(
         {
             logger.LogSmsSendException(e, request.Destinations.Count);
 
-            return SendBulkSmsResponse.FromAggregate(request.Destinations, SendSingleSmsResponse.FromException(e));
+            return SendBulkSmsResponse.FromAggregate(
+                request.Destinations,
+                SendSingleSmsResponse.FromException(e, SmsFailureKinds.FromException(e))
+            );
         }
     }
 
