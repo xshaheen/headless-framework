@@ -90,10 +90,16 @@ public sealed class RetryBehaviorTests : TestBase
         services.AddSingleton(instrumentation);
         var serviceProvider = services.BuildServiceProvider();
 
-        // Renewal fires fast (100 ms cadence) and throws on the first attempt, simulating a DB outage mid-job.
+        // The first renewal proves ownership at start; the next renewal throws, simulating a DB outage mid-job.
+        var renewalCalls = 0;
         internalManager
             .RenewLeaseAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
-            .Returns(_ => Task.FromException<int>(new TimeoutException("simulated DB outage")));
+            .Returns(_ =>
+            {
+                return Interlocked.Increment(ref renewalCalls) == 1
+                    ? Task.FromResult(1)
+                    : Task.FromException<int>(new TimeoutException("simulated DB outage"));
+            });
 
         var handler = new JobsExecutionTaskHandler(
             serviceProvider,
@@ -128,6 +134,7 @@ public sealed class RetryBehaviorTests : TestBase
         // stalled-reclaim/OnNodeDeath sweep. So the job stops, LeaseLost is flagged, and no UpdateTicker write fires.
         context.LeaseLost.Should().BeTrue();
         context.Status.Should().NotBe(JobStatus.Cancelled);
+        renewalCalls.Should().BeGreaterThanOrEqualTo(2);
         await internalManager
             .DidNotReceive()
             .UpdateTickerAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>());
@@ -146,10 +153,21 @@ public sealed class RetryBehaviorTests : TestBase
         services.AddSingleton(instrumentation);
         var serviceProvider = services.BuildServiceProvider();
 
-        // Renewal hangs until its (linked timeout) token cancels — i.e. it never completes within the cadence.
+        // The first renewal proves ownership at start; the next renewal hangs until its linked timeout token cancels.
+        var renewalCalls = 0;
         internalManager
             .RenewLeaseAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
-            .Returns(async call => await Task.Delay(Timeout.Infinite, call.Arg<CancellationToken>()));
+            .Returns(async call =>
+            {
+                if (Interlocked.Increment(ref renewalCalls) == 1)
+                {
+                    return 1;
+                }
+
+                await Task.Delay(Timeout.Infinite, call.Arg<CancellationToken>());
+
+                return 1;
+            });
 
         var handler = new JobsExecutionTaskHandler(
             serviceProvider,
@@ -180,6 +198,61 @@ public sealed class RetryBehaviorTests : TestBase
         await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
 
         context.LeaseLost.Should().BeTrue();
+        renewalCalls.Should().BeGreaterThanOrEqualTo(2);
+        await internalManager
+            .DidNotReceive()
+            .UpdateTickerAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ExecuteTaskAsync_does_not_invoke_delegate_when_start_lease_check_loses_ownership()
+    {
+        var services = new ServiceCollection();
+        var internalManager = Substitute.For<IInternalJobManager>();
+        var instrumentation = Substitute.For<IJobsInstrumentation>();
+        services.AddSingleton(internalManager);
+        services.AddSingleton(instrumentation);
+        var serviceProvider = services.BuildServiceProvider();
+
+        internalManager
+            .RenewLeaseAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(0));
+
+        var logger = new CapturingLogger<JobsExecutionTaskHandler>();
+        var handler = new JobsExecutionTaskHandler(
+            serviceProvider,
+            TimeProvider.System,
+            instrumentation,
+            internalManager,
+            new SchedulerOptionsBuilder(),
+            logger
+        );
+
+        var invoked = false;
+        var context = new JobExecutionState
+        {
+            JobId = Guid.NewGuid(),
+            FunctionName = "LostBeforeStart",
+            Type = JobType.CronJobOccurrence,
+            ExecutionTime = DateTime.UtcNow,
+            RetryIntervals = [0],
+            Retries = 0,
+            RetryCount = 0,
+            Status = JobStatus.Idle,
+            CachedDelegate = (_, _, _) =>
+            {
+                invoked = true;
+
+                return Task.CompletedTask;
+            },
+        };
+
+        await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
+
+        invoked.Should().BeFalse();
+        context.LeaseLost.Should().BeTrue();
+        context.Status.Should().Be(JobStatus.InProgress);
+        logger.Entries.Should().Contain(e => e.EventId == 3105);
         await internalManager
             .DidNotReceive()
             .UpdateTickerAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>());

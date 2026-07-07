@@ -122,11 +122,11 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
         {
             if (_executionContext.Functions.Length != 0)
             {
-                await _internalJobsManager
+                var functionsToRun = await _internalJobsManager
                     .SetTickersInProgress(_executionContext.Functions, cancellationToken)
                     .ConfigureAwait(false);
 
-                foreach (var function in _executionContext.Functions.OrderBy(x => x.CachedPriority))
+                foreach (var function in functionsToRun.OrderBy(x => x.CachedPriority))
                 {
                     var semaphore = _concurrencyGate.GetSemaphoreOrNull(
                         function.FunctionName,

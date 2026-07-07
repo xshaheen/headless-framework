@@ -255,8 +255,9 @@ public sealed class SlidingLeaseProviderTests : TestBase
         await provider.AddTimeJobsAsync([job], AbortToken);
 
         var unified = new JobExecutionState { FunctionName = "fn" }.SetProperty(x => x.Status, JobStatus.InProgress);
-        await provider.UpdateTimeJobsWithUnifiedContextAsync([job.Id], unified, AbortToken);
+        var stampedIds = await provider.UpdateTimeJobsWithUnifiedContextAsync([job.Id], unified, AbortToken);
 
+        stampedIds.Should().BeEmpty();
         var row = await provider.GetTimeJobByIdAsync(job.Id, AbortToken);
         row!.Status.Should().Be(JobStatus.Queued); // untouched — still NodeB's
         row.OwnerId.Should().Be(_NodeB);
@@ -270,8 +271,9 @@ public sealed class SlidingLeaseProviderTests : TestBase
         await provider.AddTimeJobsAsync([job], AbortToken);
 
         var unified = new JobExecutionState { FunctionName = "fn" }.SetProperty(x => x.Status, JobStatus.InProgress);
-        await provider.UpdateTimeJobsWithUnifiedContextAsync([job.Id], unified, AbortToken);
+        var stampedIds = await provider.UpdateTimeJobsWithUnifiedContextAsync([job.Id], unified, AbortToken);
 
+        stampedIds.Should().Equal(job.Id);
         (await provider.GetTimeJobByIdAsync(job.Id, AbortToken))!.Status.Should().Be(JobStatus.InProgress);
     }
 

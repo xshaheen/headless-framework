@@ -11,7 +11,10 @@ internal interface IInternalJobManager
         CancellationToken cancellationToken = default
     );
     Task ReleaseAcquiredResources(JobExecutionState[] context, CancellationToken cancellationToken = default);
-    Task SetTickersInProgress(JobExecutionState[] context, CancellationToken cancellationToken = default);
+    Task<JobExecutionState[]> SetTickersInProgress(
+        JobExecutionState[] context,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// Writes the job's current status to the durable store, fenced on ownership + non-terminal status. Returns the
