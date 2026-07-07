@@ -1,9 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Microsoft.AspNetCore.Builder;
+namespace Headless.Api;
 
 [PublicAPI]
 public static class RouteBuilderExtensions

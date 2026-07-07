@@ -1,7 +1,9 @@
 using Dapper;
 using Demo;
 using Headless.CommitCoordination.SqlServer;
+using Headless.Messaging;
 using Headless.Messaging.Dashboard;
+using Headless.Messaging.RabbitMq;
 using Headless.Messaging.Storage.SqlServer;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;

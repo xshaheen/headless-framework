@@ -4,6 +4,7 @@ using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
+using Headless.Messaging.Nats;
 using Headless.Messaging.Storage.PostgreSql;
 using Microsoft.Extensions.DependencyInjection;
 using NATS.Client.JetStream.Models;

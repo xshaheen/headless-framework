@@ -2,10 +2,10 @@
 
 using System.Net;
 using Headless.Checks;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Net.Http.Headers;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Microsoft.AspNetCore.Http;
+namespace Headless.Api;
 
 /// <summary><see cref="HttpRequest"/> extension methods.</summary>
 [PublicAPI]

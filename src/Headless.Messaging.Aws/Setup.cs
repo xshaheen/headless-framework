@@ -3,13 +3,12 @@
 using Amazon;
 using Headless.Checks;
 using Headless.Messaging;
-using Headless.Messaging.Aws;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Microsoft.Extensions.DependencyInjection;
+namespace Headless.Messaging.Aws;
 
 /// <summary>
 /// Extension members that register Amazon SQS (queue) and SNS (bus/fan-out) as the message transport.

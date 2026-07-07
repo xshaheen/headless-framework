@@ -1,11 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.AuditLog;
 using Headless.Checks;
 using Headless.Hosting.Initialization;
+using Microsoft.Extensions.DependencyInjection;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Microsoft.Extensions.DependencyInjection;
+namespace Headless.AuditLog;
 
 /// <summary>Extension methods for registering the audit log.</summary>
 [PublicAPI]

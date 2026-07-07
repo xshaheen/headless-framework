@@ -6,11 +6,11 @@ using Headless.Domain;
 using Headless.EntityFramework.Configurations;
 using Headless.Linq;
 using Headless.Primitives;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.EntityFrameworkCore.Metadata.Internal;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Microsoft.EntityFrameworkCore;
+namespace Headless.EntityFramework;
 
 public static class EntityTypeBuilderExtensions
 {

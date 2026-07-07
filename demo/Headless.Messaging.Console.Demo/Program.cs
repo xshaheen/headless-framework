@@ -2,6 +2,8 @@
 
 using Demo;
 using Headless.Messaging;
+using Headless.Messaging.InMemory;
+using Headless.Messaging.InMemoryStorage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 

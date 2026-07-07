@@ -3,7 +3,6 @@
 using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Hosting.Initialization;
-using Headless.Settings;
 using Headless.Settings.Definitions;
 using Headless.Settings.Helpers;
 using Headless.Settings.Models;
@@ -11,10 +10,10 @@ using Headless.Settings.Resources;
 using Headless.Settings.Seeders;
 using Headless.Settings.ValueProviders;
 using Headless.Settings.Values;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Microsoft.Extensions.DependencyInjection;
+namespace Headless.Settings;
 
 /// <summary>DI registration entry points for the Headless Settings feature.</summary>
 [PublicAPI]

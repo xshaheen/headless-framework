@@ -4,10 +4,10 @@ using System.ComponentModel.DataAnnotations.Schema;
 using Headless.Domain;
 using Headless.EntityFramework.Contexts;
 using Headless.Reflection;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Microsoft.EntityFrameworkCore;
+namespace Headless.EntityFramework;
 
 [PublicAPI]
 public static class MutableEntityTypeExtensions

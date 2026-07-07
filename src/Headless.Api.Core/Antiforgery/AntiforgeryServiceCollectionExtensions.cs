@@ -6,10 +6,10 @@ using Headless.Constants;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Microsoft.Extensions.DependencyInjection;
+namespace Headless.Api;
 
 [PublicAPI]
 public static class AntiforgeryServiceCollectionExtensions
@@ -59,7 +59,7 @@ public static class AntiforgeryServiceCollectionExtensions
         {
             var fullHash = SHA256.HashData(Encoding.UTF8.GetBytes(applicationId));
 
-            return AspNetCore.WebUtilities.WebEncoders.Base64UrlEncode(fullHash, 0, 8);
+            return Microsoft.AspNetCore.WebUtilities.WebEncoders.Base64UrlEncode(fullHash, 0, 8);
         }
     }
 }

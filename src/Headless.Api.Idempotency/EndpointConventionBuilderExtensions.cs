@@ -1,9 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Api.Idempotency;
+using Microsoft.AspNetCore.Builder;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Microsoft.AspNetCore.Builder;
+namespace Headless.Api.Idempotency;
 
 [PublicAPI]
 public static class IdempotencyEndpointConventionBuilderExtensions

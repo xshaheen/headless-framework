@@ -1,11 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging.Configuration;
-using Headless.Messaging.InMemoryStorage;
 using Headless.Messaging.Persistence;
+using Microsoft.Extensions.DependencyInjection;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Microsoft.Extensions.DependencyInjection;
+namespace Headless.Messaging.InMemoryStorage;
 
 /// <summary>
 /// Registration extensions for the in-process, non-persistent messaging storage backend.

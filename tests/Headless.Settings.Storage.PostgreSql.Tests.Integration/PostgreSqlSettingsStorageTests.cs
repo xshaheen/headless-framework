@@ -4,6 +4,7 @@ using Headless;
 using Headless.Hosting.Initialization;
 using Headless.Settings;
 using Headless.Settings.Entities;
+using Headless.Settings.PostgreSql;
 using Headless.Settings.Repositories;
 using Headless.Settings.Seeders;
 using Microsoft.Extensions.Configuration;

@@ -3,11 +3,10 @@
 using System.Linq.Expressions;
 using System.Reflection;
 using Headless.Checks;
-using Headless.EntityFramework;
 using Headless.Linq;
+using Microsoft.EntityFrameworkCore;
 
-// ReSharper disable once CheckNamespace
-namespace Microsoft.EntityFrameworkCore;
+namespace Headless.EntityFramework;
 
 public static partial class QueryableExtensions
 {

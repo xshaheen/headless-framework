@@ -2,11 +2,10 @@
 
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
-using Headless.Messaging.InMemory;
 using Headless.Messaging.Transport;
+using Microsoft.Extensions.DependencyInjection;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Microsoft.Extensions.DependencyInjection;
+namespace Headless.Messaging.InMemory;
 
 /// <summary>
 /// Extension members that register the in-process, in-memory message transport.

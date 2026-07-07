@@ -1,12 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Messaging.OpenTelemetry;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using OpenTelemetry.Trace;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace OpenTelemetry.Trace;
+namespace Headless.Messaging.OpenTelemetry;
 
 [PublicAPI]
 public static class SetupMessagingOpenTelemetry

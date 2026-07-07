@@ -4,6 +4,7 @@ using Headless.CommitCoordination.EntityFramework;
 using Headless.Domain;
 using Headless.EntityFramework;
 using Headless.Messaging;
+using Headless.Messaging.InMemory;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Storage.PostgreSql;
 using Headless.Testing.Tests;

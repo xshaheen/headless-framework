@@ -4,7 +4,6 @@ using Headless.Abstractions;
 using Headless.Caching;
 using Headless.Checks;
 using Headless.Hosting.Initialization;
-using Headless.Permissions;
 using Headless.Permissions.Definitions;
 using Headless.Permissions.GrantProviders;
 using Headless.Permissions.Grants;
@@ -13,10 +12,10 @@ using Headless.Permissions.Requirements;
 using Headless.Permissions.Resources;
 using Headless.Permissions.Seeders;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Microsoft.Extensions.DependencyInjection;
+namespace Headless.Permissions;
 
 /// <summary>
 /// Extension methods for registering the Headless Permissions management core and its storage provider.

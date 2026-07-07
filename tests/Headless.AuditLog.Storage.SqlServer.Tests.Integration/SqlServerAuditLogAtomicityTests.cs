@@ -2,6 +2,7 @@
 
 using System.Data.Common;
 using Headless.AuditLog;
+using Headless.AuditLog.SqlServer;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;

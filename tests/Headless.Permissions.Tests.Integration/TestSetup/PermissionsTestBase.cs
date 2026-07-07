@@ -4,6 +4,8 @@ using Headless.DistributedLocks;
 using Headless.DistributedLocks.Redis;
 using Headless.Domain;
 using Headless.Messaging;
+using Headless.Messaging.InMemory;
+using Headless.Messaging.InMemoryStorage;
 using Headless.Permissions;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;

@@ -1,5 +1,8 @@
 using Amazon;
+using Headless.Messaging;
+using Headless.Messaging.Aws;
 using Headless.Messaging.Dashboard;
+using Headless.Messaging.InMemoryStorage;
 
 var builder = WebApplication.CreateBuilder(args);
 

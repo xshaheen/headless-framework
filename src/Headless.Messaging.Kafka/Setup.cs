@@ -3,12 +3,11 @@
 using Headless.Checks;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
-using Headless.Messaging.Kafka;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Microsoft.Extensions.DependencyInjection;
+namespace Headless.Messaging.Kafka;
 
 /// <summary>
 /// Extension members that register Apache Kafka as the message transport (queue lane only).

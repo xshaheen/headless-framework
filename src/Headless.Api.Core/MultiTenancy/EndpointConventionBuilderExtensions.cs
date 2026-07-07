@@ -1,9 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Api.MultiTenancy;
+using Microsoft.AspNetCore.Builder;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Microsoft.AspNetCore.Builder;
+namespace Headless.Api;
 
 /// <summary>
 /// Extension members on <see cref="IEndpointConventionBuilder"/> for applying Headless tenancy

@@ -1,10 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
-using Headless.CommitCoordination.EntityFramework;
+using Microsoft.EntityFrameworkCore;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Microsoft.EntityFrameworkCore;
+namespace Headless.CommitCoordination.EntityFramework;
 
 /// <summary>
 /// Single-call coordinated-transaction helpers for a plain <see cref="DbContext"/>: open a resilient

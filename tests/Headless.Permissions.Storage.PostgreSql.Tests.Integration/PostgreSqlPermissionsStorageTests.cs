@@ -4,6 +4,7 @@ using Headless.Abstractions;
 using Headless.Hosting.Initialization;
 using Headless.Permissions;
 using Headless.Permissions.Entities;
+using Headless.Permissions.PostgreSql;
 using Headless.Permissions.Repositories;
 using Headless.Permissions.Seeders;
 using Microsoft.Extensions.DependencyInjection;

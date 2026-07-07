@@ -3,9 +3,9 @@
 using Headless.Checks;
 using Headless.IO;
 using Headless.Primitives;
+using Microsoft.AspNetCore.Http;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Microsoft.AspNetCore.Http;
+namespace Headless.Api;
 
 [PublicAPI]
 public static class HeadlessFormFileExtensions

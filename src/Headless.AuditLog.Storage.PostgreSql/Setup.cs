@@ -3,14 +3,13 @@
 using FluentValidation;
 using Headless.Abstractions;
 using Headless.AuditLog;
-using Headless.AuditLog.PostgreSql;
 using Headless.Checks;
 using Headless.Serializer;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Microsoft.Extensions.DependencyInjection;
+namespace Headless.AuditLog.PostgreSql;
 
 [PublicAPI]
 public static class SetupAuditLogPostgreSql

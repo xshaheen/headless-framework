@@ -2,9 +2,9 @@
 
 using System.Collections;
 using Headless.Checks;
+using Microsoft.Extensions.Logging;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Microsoft.Extensions.Logging;
+namespace Headless.Core;
 
 // ReSharper disable once TemplateIsNotCompileTimeConstantProblem
 #pragma warning disable CA2254 // Template should be a string literal.

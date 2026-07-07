@@ -2,10 +2,9 @@
 
 using System.Data;
 using Headless.CommitCoordination.EntityFramework;
-using Headless.EntityFramework;
+using Microsoft.EntityFrameworkCore;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Microsoft.EntityFrameworkCore;
+namespace Headless.EntityFramework;
 
 /// <summary>
 /// Single-call coordinated-transaction helpers for any Headless-managed context (<see cref="HeadlessDbContext"/>

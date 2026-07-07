@@ -4,15 +4,14 @@ using System.Net;
 using Headless.Checks;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
-using Headless.Messaging.Redis;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Microsoft.Extensions.DependencyInjection;
+namespace Headless.Messaging.Redis;
 
 /// <summary>
 /// Extension members that register Redis as the message transport.

@@ -1,15 +1,14 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Api.DataProtection;
 using Headless.Blobs;
 using Headless.Checks;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.DataProtection.KeyManagement;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Microsoft.Extensions.DependencyInjection;
+namespace Headless.Api.DataProtection;
 
 [PublicAPI]
 public static class DataProtectionBuilderExtensions

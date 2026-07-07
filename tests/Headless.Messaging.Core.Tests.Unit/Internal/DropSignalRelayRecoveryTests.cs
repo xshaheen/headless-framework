@@ -6,6 +6,8 @@ using Headless.Abstractions;
 using Headless.CommitCoordination;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.InMemory;
+using Headless.Messaging.InMemoryStorage;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;

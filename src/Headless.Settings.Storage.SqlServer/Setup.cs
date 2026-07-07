@@ -5,12 +5,11 @@ using Headless.Checks;
 using Headless.Serializer;
 using Headless.Settings;
 using Headless.Settings.Repositories;
-using Headless.Settings.SqlServer;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Microsoft.Extensions.DependencyInjection;
+namespace Headless.Settings.SqlServer;
 
 /// <summary>Extension members that configure the SQL Server storage backend for the Headless settings feature.</summary>
 [PublicAPI]

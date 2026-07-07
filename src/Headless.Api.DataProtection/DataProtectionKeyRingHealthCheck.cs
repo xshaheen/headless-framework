@@ -14,7 +14,7 @@ namespace Headless.Api.DataProtection;
 /// <c>ValidateKeyRingAtStartup</c> boot gate: the gate validates once before the host starts, this check keeps
 /// validating on every probe, catching a container deleted or write permission revoked AFTER boot (which the
 /// one-shot gate cannot see). Registered by
-/// <see cref="Microsoft.Extensions.DependencyInjection.DataProtectionHealthChecksExtensions.AddDataProtectionKeyRing"/>.
+/// <see cref="DataProtectionHealthChecksExtensions.AddDataProtectionKeyRing"/>.
 /// </summary>
 /// <remarks>
 /// <para>

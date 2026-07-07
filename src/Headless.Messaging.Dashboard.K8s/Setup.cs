@@ -1,10 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging.Dashboard;
-using Headless.Messaging.Dashboard.K8s;
+using Microsoft.Extensions.DependencyInjection;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Microsoft.Extensions.DependencyInjection;
+namespace Headless.Messaging.Dashboard.K8s;
 
 /// <summary>Contains extension methods to <see cref="IServiceCollection" /> for configuring messaging dashboard services.</summary>
 // ReSharper disable once InconsistentNaming

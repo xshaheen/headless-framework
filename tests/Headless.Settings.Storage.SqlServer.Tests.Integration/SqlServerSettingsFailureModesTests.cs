@@ -4,6 +4,7 @@ using Headless;
 using Headless.Hosting.Initialization;
 using Headless.Settings;
 using Headless.Settings.Seeders;
+using Headless.Settings.SqlServer;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;

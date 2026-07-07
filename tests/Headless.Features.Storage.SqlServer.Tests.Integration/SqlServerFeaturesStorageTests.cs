@@ -5,6 +5,7 @@ using Headless.Features;
 using Headless.Features.Entities;
 using Headless.Features.Repositories;
 using Headless.Features.Seeders;
+using Headless.Features.SqlServer;
 using Headless.Hosting.Initialization;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;

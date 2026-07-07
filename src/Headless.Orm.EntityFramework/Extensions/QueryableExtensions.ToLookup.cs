@@ -1,7 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-// ReSharper disable once CheckNamespace
-namespace Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
+
+namespace Headless.EntityFramework;
 
 [PublicAPI]
 public static partial class QueryableExtensions
