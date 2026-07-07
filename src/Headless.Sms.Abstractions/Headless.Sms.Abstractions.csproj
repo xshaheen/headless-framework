@@ -6,10 +6,6 @@
     <RootNamespace>Headless.Sms</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Polly.Core" />
-    <PackageReference Include="Polly.RateLimiting" />
-  </ItemGroup>
-  <ItemGroup>
     <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
   </ItemGroup>
 </Project>

@@ -6,6 +6,9 @@
     <RootNamespace>Headless.AuditLog</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Headless.AuditLog.Storage.EntityFramework" />
+    <InternalsVisibleTo Include="Headless.AuditLog.Storage.PostgreSql" />
+    <InternalsVisibleTo Include="Headless.AuditLog.Storage.SqlServer" />
     <InternalsVisibleTo Include="Headless.AuditLog.Core.Tests.Unit" />
   </ItemGroup>
   <ItemGroup>

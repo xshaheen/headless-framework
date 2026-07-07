@@ -11,6 +11,7 @@ Owns the unified SMS setup builder (`AddHeadlessSms`) and the `ISmsSenderProvide
 - `AddHeadlessSms(Action<HeadlessSmsSetupBuilder>)` — the single provider-agnostic registration entry point, with an at-most-one-default-provider gate and a once-per-collection guard.
 - `HeadlessSmsSetupBuilder` — receives the optional default `Use*` selection plus `AddNamed(name, …)` named instances; `HeadlessSmsInstanceBuilder` — the per-named-instance builder that providers extend with their `Use*` members.
 - `ISmsSenderProvider` — registered automatically by the gate (keyed-service-backed via `KeyedServiceSmsSenderProvider`); resolves named senders by name and exposes `RegisteredNames` (the registered named instances, default excluded) for validating a name before resolving.
+- `SmsFailureKinds.FromException(Exception)` — shared transport classifier for provider packages; maps BCL transport failures and Polly resilience-pipeline rejections (timeout, open circuit, rate limiter) to `SmsFailureKind.Transient`.
 - Deferred registration: provider contributions are queued and run only after the gates pass — the default first, then each named instance — so a setup that fails a gate leaves the `IServiceCollection` unchanged.
 
 ## Design Notes
@@ -46,6 +47,8 @@ No configuration required.
 - `Headless.Sms.Abstractions`
 - `Headless.Checks`
 - `Microsoft.Extensions.DependencyInjection.Abstractions`
+- `Polly.Core`
+- `Polly.RateLimiting`
 
 ## Side Effects
 

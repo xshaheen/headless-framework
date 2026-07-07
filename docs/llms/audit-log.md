@@ -30,6 +30,7 @@ packages: AuditLog.Abstractions, AuditLog.Core, AuditLog.Storage.EntityFramework
     - [Key Features](#key-features-1)
     - [Installation](#installation-1)
     - [Quick Start](#quick-start-1)
+    - [Configuration](#configuration-1)
     - [Dependencies](#dependencies-1)
     - [Side Effects](#side-effects-1)
 - [Headless.AuditLog.Storage.EntityFramework](#headlessauditlogstorageentityframework)
@@ -38,7 +39,7 @@ packages: AuditLog.Abstractions, AuditLog.Core, AuditLog.Storage.EntityFramework
     - [Design Notes](#design-notes)
     - [Installation](#installation-2)
     - [Quick Start](#quick-start-2)
-    - [Configuration](#configuration-1)
+    - [Configuration](#configuration-2)
     - [Dependencies](#dependencies-2)
     - [Side Effects](#side-effects-2)
 - [Headless.AuditLog.Storage.PostgreSql](#headlessauditlogstoragepostgresql)
@@ -47,7 +48,7 @@ packages: AuditLog.Abstractions, AuditLog.Core, AuditLog.Storage.EntityFramework
     - [Design Notes](#design-notes-1)
     - [Installation](#installation-3)
     - [Quick Start](#quick-start-3)
-    - [Configuration](#configuration-2)
+    - [Configuration](#configuration-3)
     - [Dependencies](#dependencies-3)
     - [Side Effects](#side-effects-3)
 - [Headless.AuditLog.Storage.SqlServer](#headlessauditlogstoragesqlserver)
@@ -56,7 +57,7 @@ packages: AuditLog.Abstractions, AuditLog.Core, AuditLog.Storage.EntityFramework
     - [Design Notes](#design-notes-2)
     - [Installation](#installation-4)
     - [Quick Start](#quick-start-4)
-    - [Configuration](#configuration-3)
+    - [Configuration](#configuration-4)
     - [Dependencies](#dependencies-4)
     - [Side Effects](#side-effects-4)
 
@@ -69,7 +70,7 @@ Install `Headless.AuditLog.Core` plus exactly one storage provider:
 | Package | Use when |
 |---|---|
 | `Headless.AuditLog.Abstractions` | Contract package pulled by Core and providers; reference directly only when you need contracts without DI setup. |
-| `Headless.AuditLog.Core` | DI setup, options validation, setup builders, and the exactly-one-provider registration pipeline. |
+| `Headless.AuditLog.Core` | DI setup, options validation, storage options, setup builders, and the exactly-one-provider registration pipeline. |
 | `Headless.AuditLog.Storage.EntityFramework` | You already use EF Core and want audit rows to commit atomically in the same `SaveChanges` transaction. |
 | `Headless.AuditLog.Storage.PostgreSql` | You want zero EF dependency and are on PostgreSQL. |
 | `Headless.AuditLog.Storage.SqlServer` | You want zero EF dependency and are on SQL Server. |
@@ -169,8 +170,6 @@ Provides a provider-agnostic audit log API for capturing field-level entity chan
 - `SensitiveValueContext` — passed to `SensitiveValueTransformer`; provides `EntityType`, `PropertyName`, `PropertyClrType`, `Value`.
 - `AuditChangeType` — `Created`, `Updated`, `Deleted`.
 - `AuditLogOptions` — master enable/disable, `AuditByDefault` mode, per-entity/property filters, `CaptureErrorStrategy`, configurable default exclusions, sensitive-value transformer.
-- `AuditLogStorageOptions` — shared storage options: `Schema`, `TableName`, `JsonColumnType`, `CreatedAtColumnType`, `InitializeOnStartup`.
-- `AuditLogJsonColumnType` — `Jsonb`, `Json`, `NvarcharMax`.
 - `IAuditLog<TContext>` — explicit logging of non-mutation events; `TContext` binds the logger to a specific persistence context for multi-context applications.
 - `IReadAuditLog<TContext>` — query abstraction returning `IReadOnlyList<AuditLogEntryData>`; supports filtering by `action`, `entityType`, `entityId`, `userId`, `tenantId`, `from`, `to`, and `limit`.
 - `AuditLogEntryData` — immutable record capturing all fields; `OldValues`/`NewValues` are `Dictionary<string, object?>`.
@@ -241,16 +240,6 @@ var entries = await readAuditLog.QueryAsync(
 | `DefaultExcludedProperties` | Framework-managed set | Property names skipped during change capture; consumers can add/remove entries. Default set includes `ConcurrencyStamp`, `DateCreated`, `DateUpdated`, `DateDeleted`, `DateSuspended`, `CreatedById`, `UpdatedById`, `DeletedById`, `SuspendedById`. |
 | `CaptureErrorStrategy` | `Continue` | `Continue` logs an error and proceeds; `Throw` aborts the save. |
 
-Storage options (`AuditLogStorageOptions`):
-
-| Option | Default | Description |
-|---|---|---|
-| `Schema` | `"audit"` | Database schema name. |
-| `TableName` | `"audit_log"` | Table name. |
-| `JsonColumnType` | `null` (provider default) | Override JSON column type: `Jsonb`, `Json`, or `NvarcharMax`. |
-| `CreatedAtColumnType` | `null` (provider default) | Override the timestamp column DDL type string. |
-| `InitializeOnStartup` | `true` | Set `false` to skip DDL at startup (raw providers only). |
-
 ### Dependencies
 
 - `Headless.Extensions`
@@ -275,6 +264,8 @@ Keeps audit-log contracts provider-neutral while centralizing the public `AddHea
 - `HeadlessAuditLogSetupBuilder` — fluent builder passed to `AddHeadlessAuditLog(setup => ...)`; exposes `ConfigureOptions`, `ConfigureStorage`, and `RegisterExtension`.
 - `HeadlessAuditLogBuilder` — returned by `AddHeadlessAuditLog(setup => ...)`; provides access to `IServiceCollection` for chaining.
 - `IAuditLogStorageOptionsExtension` — setup-time hook implemented by storage provider packages.
+- `AuditLogStorageOptions` — shared storage options: `Schema`, `TableName`, `JsonColumnType`, `CreatedAtColumnType`, `InitializeOnStartup`.
+- `AuditLogJsonColumnType` — provider-validated JSON column type enum: `Jsonb`, `Json`, `NvarcharMax`.
 - `AuditLogOptionsValidator` — validates transform-sensitive-data configuration at startup.
 
 ### Installation
@@ -305,7 +296,17 @@ services.AddHeadlessAuditLog(setup =>
 
 ### Configuration
 
-Use `ConfigureOptions(...)` for audit behavior such as `SensitiveDataStrategy`. Use `ConfigureStorage(...)` for provider-neutral storage settings such as schema and table name. Exactly one storage provider extension must be registered, for example `UseEntityFramework<TContext>()`, `UsePostgreSql(...)`, or `UseSqlServer(...)`.
+Configure audit behavior through `setup.ConfigureOptions(...)` and storage shape through `setup.ConfigureStorage(...)`. Then select exactly one storage provider by calling the provider extension, such as `UseEntityFramework<TContext>()`, `UsePostgreSql(...)`, or `UseSqlServer(...)`, from the installed storage package.
+
+Storage options (`AuditLogStorageOptions`):
+
+| Option | Default | Description |
+|---|---|---|
+| `Schema` | `"audit"` | Database schema name. |
+| `TableName` | `"audit_log"` | Table name. |
+| `JsonColumnType` | `null` (provider default) | Override JSON column type: `Jsonb`, `Json`, or `NvarcharMax`. |
+| `CreatedAtColumnType` | `null` (provider default) | Override the timestamp column DDL type string. |
+| `InitializeOnStartup` | `true` | Set `false` to skip DDL at startup (raw providers only). |
 
 ### Dependencies
 

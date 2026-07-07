@@ -15,8 +15,6 @@ Provides a provider-agnostic audit log API for capturing field-level entity chan
 - `SensitiveValueContext` — passed to `SensitiveValueTransformer`; provides `EntityType`, `PropertyName`, `PropertyClrType`, `Value`.
 - `AuditChangeType` — `Created`, `Updated`, `Deleted`.
 - `AuditLogOptions` — master enable/disable, `AuditByDefault` mode, per-entity/property filters, `CaptureErrorStrategy`, configurable default exclusions, sensitive-value transformer.
-- `AuditLogStorageOptions` — shared storage options: `Schema`, `TableName`, `JsonColumnType`, `CreatedAtColumnType`, `InitializeOnStartup`.
-- `AuditLogJsonColumnType` — `Jsonb`, `Json`, `NvarcharMax`.
 - `IAuditLog<TContext>` — explicit logging of non-mutation events; `TContext` binds the logger to a specific persistence context for multi-context applications.
 - `IReadAuditLog<TContext>` — query abstraction returning `IReadOnlyList<AuditLogEntryData>`; supports filtering by `action`, `entityType`, `entityId`, `userId`, `tenantId`, `from`, `to`, and `limit`.
 - `AuditLogEntryData` — immutable record capturing all fields; `OldValues`/`NewValues` are `Dictionary<string, object?>`.
@@ -88,16 +86,6 @@ var entries = await readAuditLog.QueryAsync(
 | `PropertyFilter` | `null` | Predicate returning `true` to exclude a property; result cached per `(Type, propertyName)`. |
 | `DefaultExcludedProperties` | Framework-managed set | Property names skipped during change capture; consumers can add/remove entries. |
 | `CaptureErrorStrategy` | `Continue` | `Continue` logs an error and proceeds; `Throw` aborts the save. |
-
-Storage options (`AuditLogStorageOptions`):
-
-| Option | Default | Description |
-|---|---|---|
-| `Schema` | `"audit"` | Database schema name. |
-| `TableName` | `"audit_log"` | Table name. |
-| `JsonColumnType` | `null` (provider default) | Override JSON column type: `Jsonb`, `Json`, or `NvarcharMax`. |
-| `CreatedAtColumnType` | `null` (provider default) | Override the timestamp column DDL type string. |
-| `InitializeOnStartup` | `true` | Set `false` to skip DDL at startup (raw providers only). |
 
 ## Dependencies
 
