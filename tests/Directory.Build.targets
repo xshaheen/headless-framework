@@ -1,3 +1,0 @@
-<Project>
-  <!-- Harness classification lives in Directory.Build.props so SDK targets see it during evaluation. -->
-</Project>
