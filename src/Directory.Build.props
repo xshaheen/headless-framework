@@ -1,15 +1,7 @@
 <Project>
   <Import Project="../Directory.Build.props" />
-  <PropertyGroup Label="Packages Symbols">
-    <!-- Embed PDBs in the assemblies: symbols travel with the package on both nuget.org and
-         GitHub Packages (which has no symbol server) without shipping loose .pdb or .snupkg
-         artifacts. Source generator projects opt out of symbol packaging on their own. -->
-    <DebugType>embedded</DebugType>
-    <!-- Embed source files that are not tracked by the source control manager into the PDB -->
-    <EmbedUntrackedSources>true</EmbedUntrackedSources>
-    <!-- Symbols are embedded above; no separate .snupkg is produced -->
-    <IncludeSymbols>false</IncludeSymbols>
-  </PropertyGroup>
+  <!-- Symbols policy (embedded PDBs, no snupkg) comes from the SDK's HeadlessSymbolFormat
+       default (Headless.NET.Sdk >= 0.0.126); no repo-level override is needed. -->
   <PropertyGroup Label="Packages Information">
     <Product>Headless Framework</Product>
     <Authors>Mahmoud Shaheen</Authors>
