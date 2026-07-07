@@ -53,10 +53,7 @@ public static class TestData
             definition.IsEncrypted
         );
 
-        foreach (var provider in definition.Providers)
-        {
-            added.Providers.Add(provider);
-        }
+        added.Providers.AddRange(definition.Providers);
 
         foreach (var property in definition.ExtraProperties)
         {

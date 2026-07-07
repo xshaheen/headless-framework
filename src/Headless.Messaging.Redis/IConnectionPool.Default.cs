@@ -63,7 +63,8 @@ internal sealed class RedisConnectionPool : IRedisConnectionPool, IDisposable, I
         if (QuietConnection is not { } quietConnection)
         {
             _poolAlreadyConfigured =
-                _connections.Count(static c => c.IsValueCreated) == _redisOptions.ConnectionPoolSize;
+                _connections.Where(static c => c.IsValueCreated).Take(_redisOptions.ConnectionPoolSize + 1).Count()
+                == _redisOptions.ConnectionPoolSize;
             quietConnection = QuietConnection;
             if (quietConnection?.CreatedConnection is { } createdConnection)
             {

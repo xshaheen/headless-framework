@@ -54,10 +54,20 @@ public sealed class DistributedLockCoreHelpersTests
             new TaskCanceledException(),
             new ObjectDisposedException("storage"),
             new InvalidOperationException(),
-            new ArgumentException("bad resource"),
-            new ArgumentNullException(),
-            new ArgumentOutOfRangeException(),
+            _ArgumentException(),
+            _ArgumentNullException(),
+            _ArgumentOutOfRangeException(),
         ];
+
+    // MA0015 requires the paramName argument to resolve to a real parameter, so these factories
+    // exist purely so nameof binds to one instead of a bare string literal the analyzer rejects.
+    private static ArgumentException _ArgumentException(string resource = "resource") =>
+        new("bad resource", nameof(resource));
+
+    private static ArgumentNullException _ArgumentNullException(string resource = "resource") => new(nameof(resource));
+
+    private static ArgumentOutOfRangeException _ArgumentOutOfRangeException(string resource = "resource") =>
+        new(nameof(resource));
 
     [Theory]
     [MemberData(nameof(TransientExceptions))]

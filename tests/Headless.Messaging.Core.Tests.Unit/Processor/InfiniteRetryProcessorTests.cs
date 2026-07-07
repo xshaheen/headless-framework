@@ -179,7 +179,11 @@ public sealed class InfiniteRetryProcessorTests : TestBase
                 }
             }
 
-            timer.Fire();
+            // Dispose is idempotent and Fire() no-ops once disposed, so dispose only after firing.
+            using (timer)
+            {
+                timer.Fire();
+            }
         }
 
         public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)

@@ -34,7 +34,7 @@ public sealed partial class PaymobCashInAuthenticatorTests : TestBase
             timeProvider,
             fixture.OptionsAccessor
         );
-        var result = await authenticator.RequestAuthenticationTokenAsync();
+        var result = await authenticator.RequestAuthenticationTokenAsync(TestContext.Current.CancellationToken);
 
         // then
         result.Token.Should().Be(token);

@@ -727,7 +727,7 @@ public sealed class DispatcherTests : TestBase
             .ChangePublishStateToDelayedAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
             .Returns<ValueTask>(_ => throw new InvalidOperationException("storage down"));
 
-        var dispatcher = new Dispatcher(
+        await using var dispatcher = new Dispatcher(
             _logger,
             sender,
             options,

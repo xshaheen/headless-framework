@@ -35,7 +35,8 @@ public sealed class SqlServerConnectionStringCheckerTests
 
         // when
         var (connected, databaseExists) = await sut.CheckAsync(
-            "Server=invalid-host-that-does-not-exist;Database=test;Connect Timeout=1;TrustServerCertificate=True"
+            "Server=invalid-host-that-does-not-exist;Database=test;Connect Timeout=1;TrustServerCertificate=True",
+            TestContext.Current.CancellationToken
         );
 
         // then
@@ -87,7 +88,10 @@ public sealed class SqlServerConnectionStringCheckerTests
         var sut = new SqlServerConnectionStringChecker(logger);
 
         // when - use invalid connection that will fail
-        await sut.CheckAsync("Server=invalid-server-12345;Database=test;Connect Timeout=1;TrustServerCertificate=True");
+        await sut.CheckAsync(
+            "Server=invalid-server-12345;Database=test;Connect Timeout=1;TrustServerCertificate=True",
+            TestContext.Current.CancellationToken
+        );
 
         // then - verify a warning-level Log call was issued.
         // Source-generated LoggerMessage uses a private state struct, so we can't match Log<object>

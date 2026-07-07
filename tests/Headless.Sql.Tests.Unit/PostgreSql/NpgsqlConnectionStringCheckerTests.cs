@@ -35,7 +35,8 @@ public sealed class NpgsqlConnectionStringCheckerTests
 
         // when
         var (connected, databaseExists) = await sut.CheckAsync(
-            "Host=invalid-host-that-does-not-exist;Database=test;Timeout=1"
+            "Host=invalid-host-that-does-not-exist;Database=test;Timeout=1",
+            TestContext.Current.CancellationToken
         );
 
         // then
@@ -87,7 +88,7 @@ public sealed class NpgsqlConnectionStringCheckerTests
         var sut = new NpgsqlConnectionStringChecker(logger);
 
         // when - use invalid host to trigger exception
-        await sut.CheckAsync("Host=invalid-host-xyz;Database=test");
+        await sut.CheckAsync("Host=invalid-host-xyz;Database=test", TestContext.Current.CancellationToken);
 
         // then - verify a warning-level Log call was issued.
         // Source-generated LoggerMessage uses a private state struct, so we can't match Log<object>

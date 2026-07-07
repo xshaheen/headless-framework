@@ -33,7 +33,7 @@ public sealed partial class PaymobCashInAuthenticatorTests
             fixture.TimeProvider,
             fixture.OptionsAccessor
         );
-        var result = await authenticator.RequestAuthenticationTokenAsync();
+        var result = await authenticator.RequestAuthenticationTokenAsync(TestContext.Current.CancellationToken);
 
         // then
         JsonSerializer.Serialize(result).Should().BeEquivalentTo(expectedResponseJson);

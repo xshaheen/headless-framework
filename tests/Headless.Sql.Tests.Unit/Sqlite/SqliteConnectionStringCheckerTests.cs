@@ -33,7 +33,10 @@ public sealed class SqliteConnectionStringCheckerTests
         var sut = new SqliteConnectionStringChecker(logger);
 
         // when
-        var (connected, databaseExists) = await sut.CheckAsync("Data Source=:memory:");
+        var (connected, databaseExists) = await sut.CheckAsync(
+            "Data Source=:memory:",
+            TestContext.Current.CancellationToken
+        );
 
         // then
         connected.Should().BeTrue();
@@ -49,7 +52,8 @@ public sealed class SqliteConnectionStringCheckerTests
 
         // when
         var (connected, databaseExists) = await sut.CheckAsync(
-            "Data Source=/nonexistent/path/that/should/not/exist/db.sqlite;Mode=ReadOnly"
+            "Data Source=/nonexistent/path/that/should/not/exist/db.sqlite;Mode=ReadOnly",
+            TestContext.Current.CancellationToken
         );
 
         // then
@@ -67,7 +71,10 @@ public sealed class SqliteConnectionStringCheckerTests
         var sut = new SqliteConnectionStringChecker(logger);
 
         // when - use invalid path that will throw
-        await sut.CheckAsync("Data Source=/nonexistent/path/that/should/not/exist/db.sqlite;Mode=ReadOnly");
+        await sut.CheckAsync(
+            "Data Source=/nonexistent/path/that/should/not/exist/db.sqlite;Mode=ReadOnly",
+            TestContext.Current.CancellationToken
+        );
 
         // then - verify a warning-level Log call was issued.
         // Source-generated LoggerMessage uses a private state struct, so we can't match Log<object>
