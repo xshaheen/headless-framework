@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Net.Sockets;
 using Headless.Checks;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
@@ -59,16 +60,15 @@ public sealed class SendSingleSmsResponse
     }
 
     /// <summary>
-    /// Creates a failed response from a caught exception, classifying the failure via
-    /// <see cref="SmsFailureKinds.FromException"/>. Used by provider <c>SendAsync</c> implementations to honor
-    /// the "return <see cref="Failed(string, SmsFailureKind)"/> rather than throw" contract without risking a
-    /// secondary throw when the exception carries an empty <see cref="Exception.Message"/>.
+    /// Creates a failed response from a caught exception, classifying BCL transport exceptions as transient.
+    /// Provider packages can call the overload that takes an explicit <see cref="SmsFailureKind"/> when they
+    /// need provider-specific or resilience-pipeline classification.
     /// </summary>
     /// <param name="exception">The caught exception. Must not be <see langword="null"/>.</param>
     /// <exception cref="ArgumentNullException"><paramref name="exception"/> is <see langword="null"/>.</exception>
     public static SendSingleSmsResponse FromException(Exception exception)
     {
-        return FromException(exception, SmsFailureKinds.FromException(exception));
+        return FromException(exception, _ClassifyTransportException(exception));
     }
 
     /// <summary>
@@ -86,6 +86,15 @@ public sealed class SendSingleSmsResponse
         var message = string.IsNullOrWhiteSpace(exception.Message) ? exception.GetType().Name : exception.Message;
 
         return Failed(message, failureKind);
+    }
+
+    private static SmsFailureKind _ClassifyTransportException(Exception exception)
+    {
+        return exception switch
+        {
+            HttpRequestException or IOException or TimeoutException or SocketException => SmsFailureKind.Transient,
+            _ => SmsFailureKind.Unknown,
+        };
     }
 }
 

@@ -10,6 +10,7 @@
     <PackageReference Include="FileSignatures" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Headless.Api.Core\Headless.Api.Core.csproj" />
     <ProjectReference Include="..\Headless.FluentValidation\Headless.FluentValidation.csproj" />
   </ItemGroup>
   <ItemGroup Label="Resources">
