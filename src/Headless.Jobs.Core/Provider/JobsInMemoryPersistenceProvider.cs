@@ -44,14 +44,14 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         string.Equals(ownerId, _ownerId, StringComparison.Ordinal)
         && status is JobStatus.Idle or JobStatus.Queued or JobStatus.InProgress;
 
-    // Renewal slides a RUNNING lease only (mirror of the EF RenewTimeJobLease InProgress fence): extending an
+    // Renewal slides a RUNNING lease only (mirror of the EF RenewTimeJobLeaseAsync InProgress fence): extending an
     // Idle/Queued row would read as "lease held" and suppress cancel-on-loss. Extracted (#467) — inlined 2×.
     private bool _IsOwnedRunning(string? ownerId, JobStatus status) =>
         string.Equals(ownerId, _ownerId, StringComparison.Ordinal) && status is JobStatus.InProgress;
 
     #region Time Job Methods
 
-    public async IAsyncEnumerable<TimeJobEntity> QueueTimeJobs(
+    public async IAsyncEnumerable<TimeJobEntity> QueueTimeJobsAsync(
         TimeJobEntity[] timeJobs,
         [EnumeratorCancellation] CancellationToken cancellationToken = default
     )
@@ -88,7 +88,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         }
     }
 
-    public async IAsyncEnumerable<TimeJobEntity> QueueTimedOutTimeJobs(
+    public async IAsyncEnumerable<TimeJobEntity> QueueTimedOutTimeJobsAsync(
         [EnumeratorCancellation] CancellationToken cancellationToken = default
     )
     {
@@ -132,7 +132,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         }
     }
 
-    public Task ReleaseAcquiredTimeJobs(Guid[] timeJobIds, CancellationToken cancellationToken = default)
+    public Task ReleaseAcquiredTimeJobsAsync(Guid[] timeJobIds, CancellationToken cancellationToken = default)
     {
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         var idsToRelease = timeJobIds.Length == 0 ? [.. _timeJobs.Keys] : timeJobIds;
@@ -158,7 +158,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         return Task.CompletedTask;
     }
 
-    public Task<TimeJobEntity[]> GetEarliestTimeJobs(CancellationToken cancellationToken = default)
+    public Task<TimeJobEntity[]> GetEarliestTimeJobsAsync(CancellationToken cancellationToken = default)
     {
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         var oneSecondAgo = now.AddSeconds(-1);
@@ -199,7 +199,10 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         return Task.FromResult(result);
     }
 
-    public Task<int> UpdateTimeJob(JobExecutionState functionContext, CancellationToken cancellationToken = default)
+    public Task<int> UpdateTimeJobAsync(
+        JobExecutionState functionContext,
+        CancellationToken cancellationToken = default
+    )
     {
         if (_timeJobs.TryGetValue(functionContext.JobId, out var job))
         {
@@ -224,7 +227,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         return Task.FromResult(0);
     }
 
-    public Task<byte[]> GetTimeJobRequest(Guid id, CancellationToken cancellationToken)
+    public Task<byte[]> GetTimeJobRequestAsync(Guid id, CancellationToken cancellationToken = default)
     {
         if (_timeJobs.TryGetValue(id, out var job))
         {
@@ -234,7 +237,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         return Task.FromResult(Array.Empty<byte>());
     }
 
-    public Task UpdateTimeJobsWithUnifiedContext(
+    public Task UpdateTimeJobsWithUnifiedContextAsync(
         Guid[] timeJobIds,
         JobExecutionState functionContext,
         CancellationToken cancellationToken = default
@@ -304,9 +307,9 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         return Task.FromResult(acquired.ToArray());
     }
 
-    public Task<int> RenewTimeJobLease(Guid jobId, CancellationToken cancellationToken = default)
+    public Task<int> RenewTimeJobLeaseAsync(Guid jobId, CancellationToken cancellationToken = default)
     {
-        // #316 sliding lease (mirror EF RenewTimeJobLease): slide LockedUntil forward, fenced on the #5
+        // #316 sliding lease (mirror EF RenewTimeJobLeaseAsync): slide LockedUntil forward, fenced on the #5
         // completion-fence shape (still owned + non-terminal). A lost/reclaimed/terminalized row returns 0 ->
         // cancel-on-loss (U2/KTD3).
         var now = _timeProvider.GetUtcNow().UtcDateTime;
@@ -314,7 +317,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         if (_timeJobs.TryGetValue(jobId, out var job))
         {
             // Renewal slides a RUNNING lease only: extending an Idle/Queued row would return 1 ("lease held") and
-            // suppress cancel-on-loss. Mirror the EF RenewTimeJobLease InProgress fence.
+            // suppress cancel-on-loss. Mirror the EF RenewTimeJobLeaseAsync InProgress fence.
             var ownedRunning = _IsOwnedRunning(job.OwnerId, job.Status);
 
             if (!ownedRunning)
@@ -335,9 +338,9 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         return Task.FromResult(0);
     }
 
-    public Task<int> ReclaimStalledTimeJobs(CancellationToken cancellationToken = default)
+    public Task<int> ReclaimStalledTimeJobsAsync(CancellationToken cancellationToken = default)
     {
-        // #316/U3 (mirror EF ReclaimStalledTimeJobs): reclaim InProgress rows whose lease lapsed on ANY node, per
+        // #316/U3 (mirror EF ReclaimStalledTimeJobsAsync): reclaim InProgress rows whose lease lapsed on ANY node, per
         // OnNodeDeath. Not owner-scoped — the trigger is a stalled lease, not a declared node death. A healthy
         // renewing job keeps a future LockedUntil and never matches.
         var now = _timeProvider.GetUtcNow().UtcDateTime;
@@ -406,7 +409,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         return Task.FromResult(affected);
     }
 
-    public Task<TTimeJob?> GetTimeJobById(Guid id, CancellationToken cancellationToken = default)
+    public Task<TTimeJob?> GetTimeJobByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         if (_timeJobs.TryGetValue(id, out var job))
         {
@@ -417,7 +420,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         return Task.FromResult<TTimeJob?>(null);
     }
 
-    public Task<TTimeJob[]> GetTimeJobs(
+    public Task<TTimeJob[]> GetTimeJobsAsync(
         Expression<Func<TTimeJob, bool>>? predicate,
         CancellationToken cancellationToken = default
     )
@@ -440,7 +443,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         return Task.FromResult(results);
     }
 
-    public Task<PaginationResult<TTimeJob>> GetTimeJobsPaginated(
+    public Task<PaginationResult<TTimeJob>> GetTimeJobsPaginatedAsync(
         Expression<Func<TTimeJob, bool>>? predicate,
         int pageNumber,
         int pageSize,
@@ -481,7 +484,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         );
     }
 
-    public Task<int> AddTimeJobs(TTimeJob[] jobs, CancellationToken cancellationToken = default)
+    public Task<int> AddTimeJobsAsync(TTimeJob[] jobs, CancellationToken cancellationToken = default)
     {
         var count = 0;
         foreach (var job in jobs)
@@ -530,7 +533,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         return count;
     }
 
-    public Task<int> UpdateTimeJobs(TTimeJob[] jobs, CancellationToken cancellationToken = default)
+    public Task<int> UpdateTimeJobsAsync(TTimeJob[] jobs, CancellationToken cancellationToken = default)
     {
         var count = 0;
         foreach (var job in jobs)
@@ -595,7 +598,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         return count;
     }
 
-    public Task<int> RemoveTimeJobs(Guid[] jobIds, CancellationToken cancellationToken = default)
+    public Task<int> RemoveTimeJobsAsync(Guid[] jobIds, CancellationToken cancellationToken = default)
     {
         var count = 0;
         foreach (var id in jobIds)
@@ -631,7 +634,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         return Task.FromResult(count);
     }
 
-    public Task<int> ReleaseDeadNodeTimeJobResources(
+    public Task<int> ReleaseDeadNodeTimeJobResourcesAsync(
         string instanceIdentifier,
         CancellationToken cancellationToken = default
     )
@@ -652,7 +655,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             return _timeJobs.TryUpdate(id, updated, current);
         }
 
-        // Per-policy dead-node transition (#315, #316/U4) — mirrors EF ReleaseDeadNodeTimeJobResources. Idle/Queued
+        // Per-policy dead-node transition (#315, #316/U4) — mirrors EF ReleaseDeadNodeTimeJobResourcesAsync. Idle/Queued
         // reclaimed immediately; InProgress arms defer to the lease (LockedUntil <= now) so a still-leased running
         // job survives a membership blip and is recovered by U3 once its lease lapses.
         var owned = _timeJobs
@@ -729,7 +732,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
     #region Cron Job Methods
 
-    public Task MigrateDefinedCronJobs(
+    public Task MigrateDefinedCronJobsAsync(
         (string Function, string Expression)[] cronJobs,
         CancellationToken cancellationToken = default
     )
@@ -771,23 +774,23 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         return Task.CompletedTask;
     }
 
-    public Task<CronJobEntity[]> GetAllCronJobExpressions(CancellationToken cancellationToken)
+    public Task<CronJobEntity[]> GetAllCronJobExpressionsAsync(CancellationToken cancellationToken = default)
     {
         var result = _cronJobs.Values.Cast<CronJobEntity>().ToArray();
 
         return Task.FromResult(result);
     }
 
-    public Task<TCronJob?> GetCronJobById(Guid id, CancellationToken cancellationToken)
+    public Task<TCronJob?> GetCronJobByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         _cronJobs.TryGetValue(id, out var job);
 
         return Task.FromResult(job);
     }
 
-    public Task<TCronJob[]> GetCronJobs(
+    public Task<TCronJob[]> GetCronJobsAsync(
         Expression<Func<TCronJob, bool>>? predicate,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken = default
     )
     {
         var compiledPredicate = predicate?.Compile();
@@ -803,7 +806,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         return Task.FromResult(results);
     }
 
-    public Task<PaginationResult<TCronJob>> GetCronJobsPaginated(
+    public Task<PaginationResult<TCronJob>> GetCronJobsPaginatedAsync(
         Expression<Func<TCronJob, bool>>? predicate,
         int pageNumber,
         int pageSize,
@@ -839,7 +842,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         );
     }
 
-    public Task<int> InsertCronJobs(TCronJob[] jobs, CancellationToken cancellationToken)
+    public Task<int> InsertCronJobsAsync(TCronJob[] jobs, CancellationToken cancellationToken = default)
     {
         var count = 0;
         foreach (var job in jobs)
@@ -853,7 +856,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         return Task.FromResult(count);
     }
 
-    public Task<int> UpdateCronJobs(TCronJob[] cronJob, CancellationToken cancellationToken)
+    public Task<int> UpdateCronJobsAsync(TCronJob[] cronJob, CancellationToken cancellationToken = default)
     {
         var count = 0;
         foreach (var job in cronJob)
@@ -870,7 +873,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         return Task.FromResult(count);
     }
 
-    public Task<int> RemoveCronJobs(Guid[] cronJobIds, CancellationToken cancellationToken)
+    public Task<int> RemoveCronJobsAsync(Guid[] cronJobIds, CancellationToken cancellationToken = default)
     {
         var count = cronJobIds.Count(id => _cronJobs.TryRemove(id, out _));
 
@@ -881,7 +884,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
     #region Cron Occurrence Methods
 
-    public Task<CronJobOccurrenceEntity<TCronJob>> GetEarliestAvailableCronOccurrence(
+    public Task<CronJobOccurrenceEntity<TCronJob>> GetEarliestAvailableCronOccurrenceAsync(
         Guid[] ids,
         CancellationToken cancellationToken = default
     )
@@ -910,7 +913,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     // TryUpdate (the durable provider does the same with an id-keyed upsert), so concurrent creation converges on a
     // single row — storage-level dedup is the correctness boundary. A coarse lock would add no correctness and only
     // serialize independent ids. Revisit only if evidence shows storage dedup is insufficient (plan #267 follow-up).
-    public async IAsyncEnumerable<CronJobOccurrenceEntity<TCronJob>> QueueCronJobOccurrences(
+    public async IAsyncEnumerable<CronJobOccurrenceEntity<TCronJob>> QueueCronJobOccurrencesAsync(
         (DateTime Key, JobManagerDispatchContext[] Items) cronJobOccurrences,
         [EnumeratorCancellation] CancellationToken cancellationToken = default
     )
@@ -954,7 +957,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                     LockedUntil = now.Add(_leaseDuration),
                     // Death policy comes from the JobManagerDispatchContext (canonical, sourced from the cron def via
                     // _EarliestCronJobGroup) — set unconditionally so a MarkFailed/Skip cron never degrades to the
-                    // Retry enum default when the cron row is absent from _cronJobs. Mirrors the EF QueueCronJobOccurrences
+                    // Retry enum default when the cron row is absent from _cronJobs. Mirrors the EF QueueCronJobOccurrencesAsync
                     // projection, which always stamps item.OnNodeDeath.
                     OnNodeDeath = context.OnNodeDeath,
                     CreatedAt = context.NextCronOccurrence?.CreatedAt ?? now,
@@ -976,7 +979,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         }
     }
 
-    public async IAsyncEnumerable<CronJobOccurrenceEntity<TCronJob>> QueueTimedOutCronJobOccurrences(
+    public async IAsyncEnumerable<CronJobOccurrenceEntity<TCronJob>> QueueTimedOutCronJobOccurrencesAsync(
         [EnumeratorCancellation] CancellationToken cancellationToken = default
     )
     {
@@ -1010,7 +1013,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         }
     }
 
-    public Task<int> UpdateCronJobOccurrence(
+    public Task<int> UpdateCronJobOccurrenceAsync(
         JobExecutionState functionContext,
         CancellationToken cancellationToken = default
     )
@@ -1036,14 +1039,14 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         return Task.FromResult(0);
     }
 
-    public Task<int> RenewCronJobOccurrenceLease(Guid occurrenceId, CancellationToken cancellationToken = default)
+    public Task<int> RenewCronJobOccurrenceLeaseAsync(Guid occurrenceId, CancellationToken cancellationToken = default)
     {
-        // #316 sliding lease (mirror EF RenewCronJobOccurrenceLease). Lost/reclaimed/terminalized -> 0.
+        // #316 sliding lease (mirror EF RenewCronJobOccurrenceLeaseAsync). Lost/reclaimed/terminalized -> 0.
         var now = _timeProvider.GetUtcNow().UtcDateTime;
 
         if (_cronOccurrences.TryGetValue(occurrenceId, out var occurrence))
         {
-            // Renewal slides a RUNNING lease only (see RenewTimeJobLease InProgress fence).
+            // Renewal slides a RUNNING lease only (see RenewTimeJobLeaseAsync InProgress fence).
             var ownedRunning = _IsOwnedRunning(occurrence.OwnerId, occurrence.Status);
 
             if (!ownedRunning)
@@ -1064,9 +1067,9 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         return Task.FromResult(0);
     }
 
-    public Task<int> ReclaimStalledCronJobOccurrences(CancellationToken cancellationToken = default)
+    public Task<int> ReclaimStalledCronJobOccurrencesAsync(CancellationToken cancellationToken = default)
     {
-        // #316/U3 — cron mirror of ReclaimStalledTimeJobs.
+        // #316/U3 — cron mirror of ReclaimStalledTimeJobsAsync.
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         var affected = 0;
 
@@ -1135,7 +1138,10 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         return Task.FromResult(affected);
     }
 
-    public Task ReleaseAcquiredCronJobOccurrences(Guid[] occurrenceIds, CancellationToken cancellationToken = default)
+    public Task ReleaseAcquiredCronJobOccurrencesAsync(
+        Guid[] occurrenceIds,
+        CancellationToken cancellationToken = default
+    )
     {
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         var idsToRelease = occurrenceIds.Length == 0 ? [.. _cronOccurrences.Keys] : occurrenceIds;
@@ -1160,7 +1166,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         return Task.CompletedTask;
     }
 
-    public Task<byte[]> GetCronJobOccurrenceRequest(Guid jobId, CancellationToken cancellationToken = default)
+    public Task<byte[]> GetCronJobOccurrenceRequestAsync(Guid jobId, CancellationToken cancellationToken = default)
     {
         // Cron job occurrences don't have their own request, get it from the cron job
         if (_cronOccurrences.TryGetValue(jobId, out var occurrence))
@@ -1179,7 +1185,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         return Task.FromResult(Array.Empty<byte>());
     }
 
-    public Task UpdateCronJobOccurrencesWithUnifiedContext(
+    public Task UpdateCronJobOccurrencesWithUnifiedContextAsync(
         Guid[] timeJobIds,
         JobExecutionState functionContext,
         CancellationToken cancellationToken = default
@@ -1206,7 +1212,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         return Task.CompletedTask;
     }
 
-    public Task<int> ReleaseDeadNodeOccurrenceResources(
+    public Task<int> ReleaseDeadNodeOccurrenceResourcesAsync(
         string instanceIdentifier,
         CancellationToken cancellationToken = default
     )
@@ -1227,7 +1233,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             return _cronOccurrences.TryUpdate(id, updated, current);
         }
 
-        // Per-policy dead-node transition (#315, #316/U4) — mirrors EF ReleaseDeadNodeOccurrenceResources.
+        // Per-policy dead-node transition (#315, #316/U4) — mirrors EF ReleaseDeadNodeOccurrenceResourcesAsync.
         // Idle/Queued reclaimed immediately; InProgress arms defer to the lease (LockedUntil <= now) so a
         // still-leased running occurrence survives a membership blip and is recovered by U3 once its lease lapses.
         var owned = _cronOccurrences
@@ -1300,7 +1306,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         return Task.FromResult(affected);
     }
 
-    public Task<CronJobOccurrenceEntity<TCronJob>[]> GetAllCronJobOccurrences(
+    public Task<CronJobOccurrenceEntity<TCronJob>[]> GetAllCronJobOccurrencesAsync(
         Expression<Func<CronJobOccurrenceEntity<TCronJob>, bool>>? predicate,
         CancellationToken cancellationToken = default
     )
@@ -1318,7 +1324,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         return Task.FromResult(results);
     }
 
-    public Task<PaginationResult<CronJobOccurrenceEntity<TCronJob>>> GetAllCronJobOccurrencesPaginated(
+    public Task<PaginationResult<CronJobOccurrenceEntity<TCronJob>>> GetAllCronJobOccurrencesPaginatedAsync(
         Expression<Func<CronJobOccurrenceEntity<TCronJob>, bool>>? predicate,
         int pageNumber,
         int pageSize,
@@ -1354,9 +1360,9 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         );
     }
 
-    public Task<int> InsertCronJobOccurrences(
+    public Task<int> InsertCronJobOccurrencesAsync(
         CronJobOccurrenceEntity<TCronJob>[] cronJobOccurrences,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken = default
     )
     {
         var count = 0;
@@ -1377,7 +1383,10 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         return Task.FromResult(count);
     }
 
-    public Task<int> RemoveCronJobOccurrences(Guid[] cronJobOccurrences, CancellationToken cancellationToken)
+    public Task<int> RemoveCronJobOccurrencesAsync(
+        Guid[] cronJobOccurrences,
+        CancellationToken cancellationToken = default
+    )
     {
         var count = 0;
         foreach (var id in cronJobOccurrences)

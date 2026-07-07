@@ -22,7 +22,7 @@ public sealed class CronExpressionCacheTests
         await fixture.SeedCronJobsAsync(_Cron("daily", "0 0 * * *"));
         var sut = fixture.CreateProvider();
 
-        var result = await sut.GetAllCronJobExpressions(TestContext.Current.CancellationToken);
+        var result = await sut.GetAllCronJobExpressionsAsync(TestContext.Current.CancellationToken);
 
         result.Should().ContainSingle().Which.Expression.Should().Be("0 0 * * *");
     }
@@ -38,7 +38,7 @@ public sealed class CronExpressionCacheTests
         };
         var sut = fixture.CreateProvider(cache);
 
-        var result = await sut.GetAllCronJobExpressions(TestContext.Current.CancellationToken);
+        var result = await sut.GetAllCronJobExpressionsAsync(TestContext.Current.CancellationToken);
 
         result.Should().ContainSingle().Which.Function.Should().Be("cached");
         cache.GetOrAddCalls.Should().Be(1);
@@ -55,7 +55,7 @@ public sealed class CronExpressionCacheTests
         var cache = new RecordingCache { Behavior = CacheBehavior.InvokeFactory };
         var sut = fixture.CreateProvider(cache);
 
-        var result = await sut.GetAllCronJobExpressions(TestContext.Current.CancellationToken);
+        var result = await sut.GetAllCronJobExpressionsAsync(TestContext.Current.CancellationToken);
 
         result.Should().ContainSingle().Which.Function.Should().Be("db");
         cache.GetOrAddCalls.Should().Be(1);
@@ -70,7 +70,7 @@ public sealed class CronExpressionCacheTests
         var cache = new RecordingCache { Behavior = CacheBehavior.ThrowBeforeFactory };
         var sut = fixture.CreateProvider(cache);
 
-        var result = await sut.GetAllCronJobExpressions(TestContext.Current.CancellationToken);
+        var result = await sut.GetAllCronJobExpressionsAsync(TestContext.Current.CancellationToken);
 
         result.Should().ContainSingle().Which.Function.Should().Be("db");
         cache.FactoryCalls.Should().Be(0);
@@ -84,7 +84,7 @@ public sealed class CronExpressionCacheTests
         var cache = new RecordingCache { Behavior = CacheBehavior.ThrowAfterFactory };
         var sut = fixture.CreateProvider(cache);
 
-        var result = await sut.GetAllCronJobExpressions(TestContext.Current.CancellationToken);
+        var result = await sut.GetAllCronJobExpressionsAsync(TestContext.Current.CancellationToken);
 
         result.Should().ContainSingle().Which.Function.Should().Be("db");
         cache.FactoryCalls.Should().Be(1);
@@ -98,7 +98,7 @@ public sealed class CronExpressionCacheTests
         var cache = new RecordingCache { Behavior = CacheBehavior.ReturnNoValue };
         var sut = fixture.CreateProvider(cache);
 
-        var result = await sut.GetAllCronJobExpressions(TestContext.Current.CancellationToken);
+        var result = await sut.GetAllCronJobExpressionsAsync(TestContext.Current.CancellationToken);
 
         // Contract (#6): a cache hit is authoritative. A NoValue hit collapses to [] and never re-queries the DB,
         // even though the DB has rows — providers must never persist a no-value cron entry.
@@ -114,7 +114,7 @@ public sealed class CronExpressionCacheTests
         var cache = new RecordingCache { Behavior = CacheBehavior.ReturnNullValue };
         var sut = fixture.CreateProvider(cache);
 
-        var result = await sut.GetAllCronJobExpressions(TestContext.Current.CancellationToken);
+        var result = await sut.GetAllCronJobExpressionsAsync(TestContext.Current.CancellationToken);
 
         // Contract (#6): HasValue=true with Value=null also collapses to [] with no DB revalidation.
         result.Should().BeEmpty();
@@ -141,7 +141,7 @@ public sealed class CronExpressionCacheTests
             NullLogger.Instance
         );
 
-        var act = () => sut.GetAllCronJobExpressions(TestContext.Current.CancellationToken);
+        var act = () => sut.GetAllCronJobExpressionsAsync(TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
         cache.FactoryCalls.Should().Be(1);
@@ -161,7 +161,7 @@ public sealed class CronExpressionCacheTests
         };
         var sut = fixture.CreateProvider(cache);
 
-        var result = await sut.GetAllCronJobExpressions(TestContext.Current.CancellationToken);
+        var result = await sut.GetAllCronJobExpressionsAsync(TestContext.Current.CancellationToken);
 
         result.Should().ContainSingle().Which.Function.Should().Be("db");
         cache.FactoryCalls.Should().Be(0);
@@ -181,7 +181,7 @@ public sealed class CronExpressionCacheTests
         await cts.CancelAsync();
 
         // The caller's own token is cancelled, so the cancellation is genuine and must propagate (no DB fallback).
-        var act = () => sut.GetAllCronJobExpressions(cts.Token);
+        var act = () => sut.GetAllCronJobExpressionsAsync(cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
@@ -195,10 +195,10 @@ public sealed class CronExpressionCacheTests
         var cache = new RecordingCache();
         var sut = fixture.CreateProvider(cache);
 
-        await sut.InsertCronJobs([_Cron("new", "0 7 * * *")], TestContext.Current.CancellationToken);
+        await sut.InsertCronJobsAsync([_Cron("new", "0 7 * * *")], TestContext.Current.CancellationToken);
         cronJob.Expression = "0 8 * * *";
-        await sut.UpdateCronJobs([cronJob], TestContext.Current.CancellationToken);
-        await sut.RemoveCronJobs([cronJob.Id], TestContext.Current.CancellationToken);
+        await sut.UpdateCronJobsAsync([cronJob], TestContext.Current.CancellationToken);
+        await sut.RemoveCronJobsAsync([cronJob.Id], TestContext.Current.CancellationToken);
 
         cache.RemovedKeys.Should().Equal("jobs:cron:expressions", "jobs:cron:expressions", "jobs:cron:expressions");
     }
@@ -210,7 +210,7 @@ public sealed class CronExpressionCacheTests
         var cache = new RecordingCache { RemoveException = new InvalidOperationException("cache remove failed") };
         var sut = fixture.CreateProvider(cache);
 
-        var result = await sut.InsertCronJobs([_Cron("new", "0 7 * * *")], TestContext.Current.CancellationToken);
+        var result = await sut.InsertCronJobsAsync([_Cron("new", "0 7 * * *")], TestContext.Current.CancellationToken);
 
         result.Should().Be(1);
         cache.RemoveCalls.Should().Be(1);

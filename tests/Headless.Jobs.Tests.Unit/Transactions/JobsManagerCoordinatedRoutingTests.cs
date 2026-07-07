@@ -51,7 +51,7 @@ public sealed class JobsManagerCoordinatedRoutingTests
         var result = await sut.Time.AddAsync(_FutureTimeJob(), TestContext.Current.CancellationToken);
 
         result.Should().NotBeNull();
-        await sut.Persistence.Received(1).AddTimeJobs(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
+        await sut.Persistence.Received(1).AddTimeJobsAsync(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
         sut.Scheduler.Received(1).RestartIfNeeded(Arg.Any<DateTime>());
         await sut.Notification.Received(1).AddTimeJobNotifyAsync(Arg.Any<Guid>());
     }
@@ -65,7 +65,7 @@ public sealed class JobsManagerCoordinatedRoutingTests
         var result = await sut.Time.AddAsync(_FutureTimeJob(), TestContext.Current.CancellationToken);
 
         result.Should().NotBeNull();
-        await sut.Persistence.Received(1).AddTimeJobs(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
+        await sut.Persistence.Received(1).AddTimeJobsAsync(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
         sut.Coordinator!.OnCommitCount.Should().Be(0);
         await sut
             .Writer.DidNotReceive()
@@ -84,7 +84,9 @@ public sealed class JobsManagerCoordinatedRoutingTests
         var act = () => sut.Time.AddAsync(_FutureTimeJob(), TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
-        await sut.Persistence.DidNotReceive().AddTimeJobs(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
+        await sut
+            .Persistence.DidNotReceive()
+            .AddTimeJobsAsync(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
         await sut
             .Writer.DidNotReceive()
             .WriteTimeJobsAsync(
@@ -103,7 +105,9 @@ public sealed class JobsManagerCoordinatedRoutingTests
         var act = () => sut.Time.AddAsync(_FutureTimeJob(), TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
-        await sut.Persistence.DidNotReceive().AddTimeJobs(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
+        await sut
+            .Persistence.DidNotReceive()
+            .AddTimeJobsAsync(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -114,7 +118,9 @@ public sealed class JobsManagerCoordinatedRoutingTests
         var act = () => sut.Cron.AddAsync(_CronJob(), TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
-        await sut.Persistence.DidNotReceive().InsertCronJobs(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
+        await sut
+            .Persistence.DidNotReceive()
+            .InsertCronJobsAsync(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
         await sut
             .Writer.DidNotReceive()
             .WriteCronJobsAsync(
@@ -132,7 +138,9 @@ public sealed class JobsManagerCoordinatedRoutingTests
         var act = () => sut.Cron.AddAsync(_CronJob(), TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
-        await sut.Persistence.DidNotReceive().InsertCronJobs(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
+        await sut
+            .Persistence.DidNotReceive()
+            .InsertCronJobsAsync(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -144,7 +152,9 @@ public sealed class JobsManagerCoordinatedRoutingTests
         var act = () => sut.Time.AddBatchAsync(jobs, TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
-        await sut.Persistence.DidNotReceive().AddTimeJobs(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
+        await sut
+            .Persistence.DidNotReceive()
+            .AddTimeJobsAsync(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
         await sut
             .Writer.DidNotReceive()
             .WriteTimeJobsAsync(
@@ -163,7 +173,9 @@ public sealed class JobsManagerCoordinatedRoutingTests
         var act = () => sut.Time.AddBatchAsync(jobs, TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
-        await sut.Persistence.DidNotReceive().AddTimeJobs(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
+        await sut
+            .Persistence.DidNotReceive()
+            .AddTimeJobsAsync(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -175,7 +187,9 @@ public sealed class JobsManagerCoordinatedRoutingTests
         var act = () => sut.Cron.AddBatchAsync(crons, TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
-        await sut.Persistence.DidNotReceive().InsertCronJobs(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
+        await sut
+            .Persistence.DidNotReceive()
+            .InsertCronJobsAsync(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
         await sut
             .Writer.DidNotReceive()
             .WriteCronJobsAsync(
@@ -194,7 +208,9 @@ public sealed class JobsManagerCoordinatedRoutingTests
         var act = () => sut.Cron.AddBatchAsync(crons, TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
-        await sut.Persistence.DidNotReceive().InsertCronJobs(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
+        await sut
+            .Persistence.DidNotReceive()
+            .InsertCronJobsAsync(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -216,7 +232,9 @@ public sealed class JobsManagerCoordinatedRoutingTests
         sut.Coordinator!.OnCommitCount.Should().Be(1);
 
         // Side effects must NOT have fired synchronously and the row must NOT have gone through the direct insert.
-        await sut.Persistence.DidNotReceive().AddTimeJobs(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
+        await sut
+            .Persistence.DidNotReceive()
+            .AddTimeJobsAsync(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
         sut.Scheduler.DidNotReceive().RestartIfNeeded(Arg.Any<DateTime>());
         await sut.Notification.DidNotReceive().AddTimeJobNotifyAsync(Arg.Any<Guid>());
 
@@ -316,7 +334,7 @@ public sealed class JobsManagerCoordinatedRoutingTests
         var result = await sut.Cron.AddAsync(_CronJob(), TestContext.Current.CancellationToken);
 
         result.Should().NotBeNull();
-        await sut.Persistence.Received(1).InsertCronJobs(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
+        await sut.Persistence.Received(1).InsertCronJobsAsync(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -339,7 +357,9 @@ public sealed class JobsManagerCoordinatedRoutingTests
 
         // Cache invalidation + scheduler + notify must be deferred — never on a pre-commit snapshot.
         await sut.Writer.DidNotReceive().InvalidateCronExpressionsCacheAsync();
-        await sut.Persistence.DidNotReceive().InsertCronJobs(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
+        await sut
+            .Persistence.DidNotReceive()
+            .InsertCronJobsAsync(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
         sut.Scheduler.DidNotReceive().RestartIfNeeded(Arg.Any<DateTime>());
 
         await sut.Coordinator.DrainCommitAsync(TestContext.Current.CancellationToken);
@@ -370,7 +390,9 @@ public sealed class JobsManagerCoordinatedRoutingTests
 
         // Cache invalidation + scheduler + per-entity notify must be deferred to commit, never on a pre-commit snapshot.
         await sut.Writer.DidNotReceive().InvalidateCronExpressionsCacheAsync();
-        await sut.Persistence.DidNotReceive().InsertCronJobs(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
+        await sut
+            .Persistence.DidNotReceive()
+            .InsertCronJobsAsync(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
         sut.Scheduler.DidNotReceive().RestartIfNeeded(Arg.Any<DateTime>());
         await sut.Notification.DidNotReceive().AddCronJobNotifyAsync(Arg.Any<CronJobEntity>());
 

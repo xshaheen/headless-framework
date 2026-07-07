@@ -124,7 +124,7 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
     }
 
     // Coordinated single-cron side effects, deferred to commit. The coordinated write is a pure row write, so the
-    // cron-expressions cache invalidation (which the direct path's InsertCronJobs runs after SaveChanges) must fire
+    // cron-expressions cache invalidation (which the direct path's InsertCronJobsAsync runs after SaveChanges) must fire
     // here — post-commit — never on a pre-commit snapshot (KTD-4).
     private async Task _RunCoordinatedCronJobSideEffectsAsync(
         ICoordinatedJobWriter<TTimeJob, TCronJob> writer,
