@@ -2,10 +2,11 @@
 
 using Headless.Emails;
 using Headless.Emails.Dev;
+using Headless.Testing.Tests;
 
 namespace Tests;
 
-public sealed class DevEmailSenderTests
+public sealed class DevEmailSenderTests : TestBase
 {
     [Fact]
     public async Task should_append_the_message_to_the_file()
@@ -15,10 +16,10 @@ public sealed class DevEmailSenderTests
 
         try
         {
-            var result = await sender.SendAsync(_Request(), TestContext.Current.CancellationToken);
+            var result = await sender.SendAsync(_Request(), AbortToken);
 
             result.Success.Should().BeTrue();
-            var contents = await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken);
+            var contents = await File.ReadAllTextAsync(path, AbortToken);
             contents.Should().Contain("from@example.com").And.Contain("to@example.com").And.Contain("hello dev");
         }
         finally
@@ -37,12 +38,10 @@ public sealed class DevEmailSenderTests
         {
             var sends = Enumerable
                 .Range(0, 20)
-                .Select(i =>
-                    sender.SendAsync(_Request(text: $"body-{i}"), TestContext.Current.CancellationToken).AsTask()
-                );
+                .Select(i => sender.SendAsync(_Request(text: $"body-{i}"), AbortToken).AsTask());
             await Task.WhenAll(sends);
 
-            var contents = await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken);
+            var contents = await File.ReadAllTextAsync(path, AbortToken);
             // 20 sends -> 20 separators, and every message body present exactly once (no interleaving).
             (contents.Split("--------------------").Length - 1)
                 .Should()
@@ -66,7 +65,7 @@ public sealed class DevEmailSenderTests
 
         var request = _Request() with { MessageText = null, MessageHtml = null };
 
-        var act = async () => await sender.SendAsync(request, TestContext.Current.CancellationToken);
+        var act = async () => await sender.SendAsync(request, AbortToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
         File.Exists(path).Should().BeFalse();
@@ -93,9 +92,9 @@ public sealed class DevEmailSenderTests
                 bcc: [new EmailRequestAddress("bcc@example.com")]
             );
 
-            await sender.SendAsync(request, TestContext.Current.CancellationToken);
+            await sender.SendAsync(request, AbortToken);
 
-            var contents = await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken);
+            var contents = await File.ReadAllTextAsync(path, AbortToken);
             contents.Should().Contain("Cc: cc@example.com").And.Contain("Bcc: bcc@example.com");
         }
         finally
@@ -112,9 +111,9 @@ public sealed class DevEmailSenderTests
 
         try
         {
-            await sender.SendAsync(_Request(), TestContext.Current.CancellationToken);
+            await sender.SendAsync(_Request(), AbortToken);
 
-            var contents = await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken);
+            var contents = await File.ReadAllTextAsync(path, AbortToken);
             contents.Should().NotContain("Cc:").And.NotContain("Bcc:");
         }
         finally
@@ -143,10 +142,10 @@ public sealed class DevEmailSenderTests
                 ]
             );
 
-            await sender.SendAsync(request, TestContext.Current.CancellationToken);
+            await sender.SendAsync(request, AbortToken);
 
             // Only the attachment name is recorded — raw bytes would bloat the dev file.
-            var contents = await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken);
+            var contents = await File.ReadAllTextAsync(path, AbortToken);
             contents.Should().Contain("Attachments:").And.Contain("  Name: invoice.pdf");
             contents.Should().NotContain("RAW-ATTACHMENT-BYTES");
         }
@@ -164,12 +163,9 @@ public sealed class DevEmailSenderTests
 
         try
         {
-            await sender.SendAsync(
-                _Request(text: null, html: "<p>hello html</p>"),
-                TestContext.Current.CancellationToken
-            );
+            await sender.SendAsync(_Request(text: null, html: "<p>hello html</p>"), AbortToken);
 
-            var contents = await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken);
+            var contents = await File.ReadAllTextAsync(path, AbortToken);
             contents.Should().Contain("<p>hello html</p>");
         }
         finally
@@ -186,12 +182,9 @@ public sealed class DevEmailSenderTests
 
         try
         {
-            await sender.SendAsync(
-                _Request(text: "plain body", html: "<p>html body</p>"),
-                TestContext.Current.CancellationToken
-            );
+            await sender.SendAsync(_Request(text: "plain body", html: "<p>html body</p>"), AbortToken);
 
-            var contents = await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken);
+            var contents = await File.ReadAllTextAsync(path, AbortToken);
             contents.Should().Contain("plain body").And.NotContain("<p>html body</p>");
         }
         finally
@@ -208,10 +201,10 @@ public sealed class DevEmailSenderTests
 
         try
         {
-            await sender.SendAsync(_Request(text: "line1\r\nline2\nline3"), TestContext.Current.CancellationToken);
+            await sender.SendAsync(_Request(text: "line1\r\nline2\nline3"), AbortToken);
 
             // Mixed CRLF/LF input is normalized to the platform newline before being appended.
-            var contents = await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken);
+            var contents = await File.ReadAllTextAsync(path, AbortToken);
             contents.Should().Contain($"line1{Environment.NewLine}line2{Environment.NewLine}line3");
         }
         finally
@@ -230,9 +223,9 @@ public sealed class DevEmailSenderTests
         {
             var request = _Request() with { From = new EmailRequestAddress("from@example.com", "Alice") };
 
-            await sender.SendAsync(request, TestContext.Current.CancellationToken);
+            await sender.SendAsync(request, AbortToken);
 
-            var contents = await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken);
+            var contents = await File.ReadAllTextAsync(path, AbortToken);
             contents.Should().Contain("From: Alice <from@example.com>");
         }
         finally
@@ -287,7 +280,7 @@ public sealed class DevEmailSenderTests
         };
 }
 
-public sealed class NoopEmailSenderTests
+public sealed class NoopEmailSenderTests : TestBase
 {
     [Fact]
     public async Task should_report_success()
@@ -300,7 +293,7 @@ public sealed class NoopEmailSenderTests
             MessageText = "body",
         };
 
-        var result = await new NoopEmailSender().SendAsync(request, TestContext.Current.CancellationToken);
+        var result = await new NoopEmailSender().SendAsync(request, AbortToken);
 
         result.Success.Should().BeTrue();
     }

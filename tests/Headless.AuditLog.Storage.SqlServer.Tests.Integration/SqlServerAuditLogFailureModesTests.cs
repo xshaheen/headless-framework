@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.AuditLog;
 using Headless.Hosting.Initialization;
+using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -8,7 +10,7 @@ using Microsoft.Extensions.Hosting;
 namespace Tests;
 
 [Collection<SqlServerAuditLogFixture>]
-public sealed class SqlServerAuditLogFailureModesTests(SqlServerAuditLogFixture fixture)
+public sealed class SqlServerAuditLogFailureModesTests(SqlServerAuditLogFixture fixture) : TestBase
 {
     [Fact]
     public async Task should_throw_and_keep_initializer_unmarked_when_database_unreachable()
@@ -21,7 +23,7 @@ public sealed class SqlServerAuditLogFailureModesTests(SqlServerAuditLogFixture 
 
         // when / then — wrapped in HostFailedToStartException by the host pipeline; inner is SqlException
         await FluentActions
-            .Awaiting(() => host.StartAsync(TestContext.Current.CancellationToken))
+            .Awaiting(() => host.StartAsync(AbortToken))
             .Should()
             .ThrowAsync<Exception>()
             .Where(e => e is SqlException || e.InnerException is SqlException);
@@ -30,7 +32,7 @@ public sealed class SqlServerAuditLogFailureModesTests(SqlServerAuditLogFixture 
         initializer.IsInitialized.Should().BeFalse();
 
         await FluentActions
-            .Awaiting(() => initializer.WaitForInitializationAsync(TestContext.Current.CancellationToken))
+            .Awaiting(() => initializer.WaitForInitializationAsync(AbortToken))
             .Should()
             .ThrowAsync<SqlException>();
     }
@@ -47,7 +49,7 @@ public sealed class SqlServerAuditLogFailureModesTests(SqlServerAuditLogFixture 
 
         // when / then
         var startThrew = await FluentActions
-            .Awaiting(() => host.StartAsync(TestContext.Current.CancellationToken))
+            .Awaiting(() => host.StartAsync(AbortToken))
             .Should()
             .ThrowAsync<Exception>();
         startThrew.Which.Should().Match<Exception>(e => e is SqlException || e.InnerException is SqlException);
@@ -71,7 +73,7 @@ public sealed class SqlServerAuditLogFailureModesTests(SqlServerAuditLogFixture 
         try
         {
             // when — start all hosts in parallel
-            var startTasks = hosts.Select(h => h.StartAsync(TestContext.Current.CancellationToken)).ToArray();
+            var startTasks = hosts.Select(h => h.StartAsync(AbortToken)).ToArray();
             await Task.WhenAll(startTasks);
 
             // then — all initializers report ready, exactly one audit_log table exists, and the
@@ -108,7 +110,7 @@ public sealed class SqlServerAuditLogFailureModesTests(SqlServerAuditLogFixture 
     private async Task _DropSchemaAsync(string schema)
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         await using var command = new SqlCommand(
             $"""
             IF OBJECT_ID(N'{schema}.audit_log', N'U') IS NOT NULL DROP TABLE [{schema}].[audit_log];
@@ -116,13 +118,13 @@ public sealed class SqlServerAuditLogFailureModesTests(SqlServerAuditLogFixture 
             """,
             connection
         );
-        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        await command.ExecuteNonQueryAsync(AbortToken);
     }
 
     private async Task<int> _CountTablesAsync(string schema, string table)
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         await using var command = new SqlCommand(
             """
             SELECT COUNT(*)
@@ -134,16 +136,13 @@ public sealed class SqlServerAuditLogFailureModesTests(SqlServerAuditLogFixture 
         command.Parameters.AddWithValue("@schema", schema);
         command.Parameters.AddWithValue("@table", table);
 
-        return Convert.ToInt32(
-            await command.ExecuteScalarAsync(TestContext.Current.CancellationToken),
-            CultureInfo.InvariantCulture
-        );
+        return Convert.ToInt32(await command.ExecuteScalarAsync(AbortToken), CultureInfo.InvariantCulture);
     }
 
     private async Task<int> _CountIndexesAsync(string schema, string table)
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         // Nonclustered indexes only (type = 2) — excludes the clustered PK so the count matches
         // the 5 CREATE NONCLUSTERED INDEX statements in SqlServerAuditLogStorageInitializer.
         await using var command = new SqlCommand(
@@ -151,9 +150,6 @@ public sealed class SqlServerAuditLogFailureModesTests(SqlServerAuditLogFixture 
             connection
         );
 
-        return Convert.ToInt32(
-            await command.ExecuteScalarAsync(TestContext.Current.CancellationToken),
-            CultureInfo.InvariantCulture
-        );
+        return Convert.ToInt32(await command.ExecuteScalarAsync(AbortToken), CultureInfo.InvariantCulture);
     }
 }

@@ -29,7 +29,7 @@ public sealed class RedisStreamManagerTests : TestBase
         _mockMultiplexer.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(_mockDatabase);
 
         var options = Options.Create(
-            new MessagingRedisOptions
+            new RedisMessagingOptions
             {
                 Configuration = ConfigurationOptions.Parse("localhost:6379"),
                 StreamEntriesCount = 10,
@@ -58,10 +58,10 @@ public sealed class RedisStreamManagerTests : TestBase
             .Returns(new RedisValue("1234567-0"));
 
         // when
-        await _sut.PublishAsync("test-stream", entries, TestContext.Current.CancellationToken);
+        await _sut.PublishAsync("test-stream", entries, AbortToken);
 
         // then
-        await _mockConnectionPool.Received(1).ConnectAsync(TestContext.Current.CancellationToken);
+        await _mockConnectionPool.Received(1).ConnectAsync(AbortToken);
     }
 
     [Fact]
@@ -82,7 +82,7 @@ public sealed class RedisStreamManagerTests : TestBase
             .Returns(new RedisValue("1234567-0"));
 
         // when
-        await _sut.PublishAsync("orders-stream", entries, TestContext.Current.CancellationToken);
+        await _sut.PublishAsync("orders-stream", entries, AbortToken);
 
         // then - verify database was obtained from multiplexer
         _mockMultiplexer.Received().GetDatabase(Arg.Any<int>(), Arg.Any<object?>());
@@ -102,7 +102,7 @@ public sealed class RedisStreamManagerTests : TestBase
             .Returns(1L);
 
         // when
-        await _sut.Ack("test-stream", "my-group", "1234567-0", TestContext.Current.CancellationToken);
+        await _sut.Ack("test-stream", "my-group", "1234567-0", AbortToken);
 
         // then
         await _mockDatabase
@@ -124,10 +124,10 @@ public sealed class RedisStreamManagerTests : TestBase
             .Returns(1L);
 
         // when
-        await _sut.Ack("stream", "group", "id", TestContext.Current.CancellationToken);
+        await _sut.Ack("stream", "group", "id", AbortToken);
 
         // then
-        await _mockConnectionPool.Received(1).ConnectAsync(TestContext.Current.CancellationToken);
+        await _mockConnectionPool.Received(1).ConnectAsync(AbortToken);
     }
 
     [Fact]
@@ -138,13 +138,8 @@ public sealed class RedisStreamManagerTests : TestBase
         var sut = _CreateSut(timeProvider);
         var pollDelay = TimeSpan.FromMinutes(1);
 
-        await using var enumerator = sut.PollStreamsLatestMessagesAsync(
-                [],
-                "group",
-                pollDelay,
-                TestContext.Current.CancellationToken
-            )
-            .GetAsyncEnumerator(TestContext.Current.CancellationToken);
+        await using var enumerator = sut.PollStreamsLatestMessagesAsync([], "group", pollDelay, AbortToken)
+            .GetAsyncEnumerator(AbortToken);
 
         // when
         var firstMove = await enumerator.MoveNextAsync();
@@ -162,7 +157,7 @@ public sealed class RedisStreamManagerTests : TestBase
     private RedisStreamManager _CreateSut(TimeProvider timeProvider)
     {
         var options = Options.Create(
-            new MessagingRedisOptions
+            new RedisMessagingOptions
             {
                 Configuration = ConfigurationOptions.Parse("localhost:6379"),
                 StreamEntriesCount = 10,

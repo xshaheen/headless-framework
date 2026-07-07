@@ -228,7 +228,7 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
             new MessageQuery
             {
                 MessageType = MessageType.Publish,
-                StatusName = "Succeeded",
+                StatusName = StatusName.Succeeded,
                 CurrentPage = 0,
                 PageSize = 10,
             },
@@ -237,7 +237,7 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
 
         // then
         result.Items.Should().ContainSingle();
-        result.Items[0].StatusName.Should().Be("Succeeded");
+        result.Items[0].StatusName.Should().Be(StatusName.Succeeded);
     }
 
     [Fact]

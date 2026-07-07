@@ -5,16 +5,17 @@ using System.Reflection;
 using Azure.Messaging.ServiceBus;
 using Headless.Messaging;
 using Headless.Messaging.AzureServiceBus;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute.ExceptionExtensions;
 
 namespace Tests;
 
-public sealed class AzureServiceBusQueueTransportTests
+public sealed class AzureServiceBusQueueTransportTests : TestBase
 {
-    private static readonly IOptions<AzureServiceBusOptions> _Options = Options.Create(
-        new AzureServiceBusOptions
+    private static readonly IOptions<AzureServiceBusMessagingOptions> _Options = Options.Create(
+        new AzureServiceBusMessagingOptions
         {
             ConnectionString =
                 "Endpoint=sb://mynamespace.servicebus.windows.net/;SharedAccessKeyName=myPolicy;SharedAccessKey=myKey",
@@ -61,7 +62,7 @@ public sealed class AzureServiceBusQueueTransportTests
         );
 
         // when
-        var result = await transport.SendAsync(message, TestContext.Current.CancellationToken);
+        var result = await transport.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeTrue();
@@ -100,7 +101,7 @@ public sealed class AzureServiceBusQueueTransportTests
         );
 
         // when
-        var result = await transport.SendAsync(message, TestContext.Current.CancellationToken);
+        var result = await transport.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeFalse();
@@ -133,7 +134,7 @@ public sealed class AzureServiceBusQueueTransportTests
         );
 
         // when
-        var act = () => transport.SendAsync(message, TestContext.Current.CancellationToken);
+        var act = () => transport.SendAsync(message, AbortToken);
 
         // then
         await act.Should().ThrowAsync<OperationCanceledException>();

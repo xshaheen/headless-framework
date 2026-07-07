@@ -8,10 +8,10 @@ namespace Headless.Payments.Paymob.CashIn.Models.Callback;
 public sealed class CashInCallbackTransactionData
 {
     [JsonPropertyName("bill_reference")]
-    public int? BillReference { get; init; }
+    public long? BillReference { get; init; }
 
     [JsonPropertyName("gateway_integration_pk")]
-    public int? GatewayIntegrationPk { get; init; }
+    public long? GatewayIntegrationPk { get; init; }
 
     [JsonPropertyName("captured_amount")]
     public decimal? CapturedAmount { get; init; }

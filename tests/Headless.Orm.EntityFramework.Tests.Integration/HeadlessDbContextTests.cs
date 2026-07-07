@@ -235,7 +235,7 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
         await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
 
         var entity = new TestEntity { Name = "with-msgs", TenantId = "T1" };
-        entity.AddIntegrationEvent(new TestDistributedMessage("hello"));
+        entity.EmitIntegrationEvent(new TestDistributedMessage("hello"));
         db.Tests.Add(entity);
 
         await using var tx = await db.Database.BeginTransactionAsync(AbortToken);

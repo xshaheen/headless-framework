@@ -13,22 +13,22 @@ namespace Headless.Sms.Connekio;
 public sealed class ConnekioSmsOptions
 {
     /// <summary>The Connekio endpoint for sending a single SMS. Defaults to the Connekio production URL.</summary>
-    public string SingleSmsEndpoint { get; init; } = "https://api.connekio.com/sms/single";
+    public string SingleSmsEndpoint { get; set; } = "https://api.connekio.com/sms/single";
 
     /// <summary>The Connekio endpoint for sending a batch SMS to multiple recipients. Defaults to the Connekio production URL.</summary>
-    public string BatchSmsEndpoint { get; init; } = "https://api.connekio.com/sms/batch";
+    public string BatchSmsEndpoint { get; set; } = "https://api.connekio.com/sms/batch";
 
     /// <summary>The registered sender name or number displayed to recipients.</summary>
-    public required string Sender { get; init; }
+    public required string Sender { get; set; }
 
     /// <summary>The Connekio account identifier, included in the Basic auth credential string.</summary>
-    public required string AccountId { get; init; }
+    public required string AccountId { get; set; }
 
     /// <summary>The Connekio account username used for Basic authentication.</summary>
-    public required string UserName { get; init; }
+    public required string UserName { get; set; }
 
     /// <summary>The Connekio account password used for Basic authentication.</summary>
-    public required string Password { get; init; }
+    public required string Password { get; set; }
 }
 
 [UsedImplicitly]

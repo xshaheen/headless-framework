@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Api;
+namespace Headless.Api.DataProtection;
 
 /// <summary>
 /// Which probe the key-ring health check (<c>AddDataProtectionKeyRing</c>) runs on every health ping. A dedicated

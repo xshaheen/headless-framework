@@ -9,4 +9,9 @@
     <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
     <ProjectReference Include="..\Headless.Serializer.Json\Headless.Serializer.Json.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Settings.Core" />
+    <!-- Unit tests construct SettingDefinition (internal ctor) directly to exercise value/definition paths. -->
+    <InternalsVisibleTo Include="Headless.Settings.Tests.Unit" />
+  </ItemGroup>
 </Project>

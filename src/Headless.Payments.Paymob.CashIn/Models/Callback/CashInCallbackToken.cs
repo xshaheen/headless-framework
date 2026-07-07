@@ -18,7 +18,7 @@ namespace Headless.Payments.Paymob.CashIn.Models.Callback;
 public sealed class CashInCallbackToken
 {
     [JsonPropertyName("id")]
-    public required int Id { get; init; }
+    public required long Id { get; init; }
 
     [JsonPropertyName("token")]
     public required string Token { get; init; }
@@ -27,7 +27,7 @@ public sealed class CashInCallbackToken
     public required string MaskedPan { get; init; }
 
     [JsonPropertyName("merchant_id")]
-    public int MerchantId { get; init; }
+    public long MerchantId { get; init; }
 
     [JsonPropertyName("card_subtype")]
     public required string CardSubtype { get; init; }

@@ -9,7 +9,7 @@ namespace Headless.Messaging.Redis;
 
 internal sealed class RedisPubSubConsumerClientFactory(
     IRedisPubSubConnectionProvider connectionProvider,
-    IOptions<RedisPubSubOptions> options,
+    IOptions<RedisPubSubMessagingOptions> options,
     ILogger<RedisPubSubConsumerClient> logger,
     TimeProvider timeProvider
 ) : IConsumerClientFactory

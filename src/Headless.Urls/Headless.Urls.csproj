@@ -1,0 +1,14 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>Fluent URL builder and parser for Headless Framework applications and consumers. Derived from Flurl (MIT).</Description>
+    <PackageTags>headless;url;uri;query-string;dotnet</PackageTags>
+    <RootNamespace>Headless.Urls</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+</Project>

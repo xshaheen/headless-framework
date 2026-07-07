@@ -145,7 +145,7 @@ public sealed class MembershipHeartbeatBackgroundServiceTests : TestBase
         for (var i = 0; i < 20 && store.AllocateIncarnationCalls < expectedAttempts; i++)
         {
             timeProvider.Advance(TimeSpan.FromSeconds(10));
-            await Task.Delay(10, TestContext.Current.CancellationToken);
+            await Task.Delay(10, AbortToken);
         }
 
         sut.ExecuteTask.Should().NotBeNull();

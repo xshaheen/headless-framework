@@ -54,19 +54,19 @@ public static class ConfigurationValueSettingManagerExtensions
                 .ConfigureAwait(false);
         }
 
-        /// <summary>Finds the setting value from <c>IConfiguration</c> and deserializes it to <typeparamref name="T"/>.</summary>
+        /// <summary>Gets the setting value from <c>IConfiguration</c> and deserializes it to <typeparamref name="T"/>.</summary>
         /// <typeparam name="T">The target type to deserialize the stored JSON value into.</typeparam>
         /// <param name="name">The unique name of the setting.</param>
         /// <param name="fallback">When <see langword="true"/>, falls back to subsequent providers if no configuration value is found.</param>
         /// <param name="cancellationToken">The abort token.</param>
         /// <returns>The deserialized value, or <see langword="default"/> when no configuration value is present.</returns>
-        public Task<T?> FindInConfigurationAsync<T>(
+        public Task<T?> GetInConfigurationAsync<T>(
             string name,
             bool fallback = true,
             CancellationToken cancellationToken = default
         )
         {
-            return settingManager.FindAsync<T>(
+            return settingManager.GetAsync<T>(
                 name,
                 SettingValueProviderNames.Configuration,
                 providerKey: null,
@@ -80,26 +80,24 @@ public static class ConfigurationValueSettingManagerExtensions
         /// <param name="fallback">When <see langword="true"/>, falls back to subsequent providers if no configuration value is found.</param>
         /// <param name="cancellationToken">The abort token.</param>
         /// <returns>The configuration value string, or <see langword="null"/> if no value is configured.</returns>
-        public Task<string?> FindInConfigurationAsync(
+        public async Task<string?> GetInConfigurationAsync(
             string name,
             bool fallback = true,
             CancellationToken cancellationToken = default
         )
         {
-            return settingManager.FindAsync(
-                name,
-                SettingValueProviderNames.Configuration,
-                providerKey: null,
-                fallback,
-                cancellationToken
-            );
+            var settingValue = await settingManager
+                .GetAsync(name, SettingValueProviderNames.Configuration, providerKey: null, fallback, cancellationToken)
+                .ConfigureAwait(false);
+
+            return settingValue.Value;
         }
 
         /// <summary>Returns all setting values from the <see cref="SettingValueProviderNames.Configuration"/> provider.</summary>
         /// <param name="fallback">When <see langword="true"/>, falls back to subsequent providers for settings without a configuration value.</param>
         /// <param name="cancellationToken">The abort token.</param>
-        /// <returns>A list of <see cref="SettingValue"/> instances for all settings served by the configuration provider.</returns>
-        public Task<List<SettingValue>> GetAllInConfigurationAsync(
+        /// <returns>A read-only list of <see cref="SettingValue"/> instances for all settings served by the configuration provider.</returns>
+        public Task<IReadOnlyList<SettingValue>> GetAllInConfigurationAsync(
             bool fallback = true,
             CancellationToken cancellationToken = default
         )

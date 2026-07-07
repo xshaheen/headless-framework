@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Api.SchemaProcessors;
+using Headless.OpenApi.Nswag.SchemaProcessors;
 using Headless.Testing.Tests;
 using Namotion.Reflection;
 using NJsonSchema;

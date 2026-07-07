@@ -14,7 +14,7 @@ internal sealed class AzureServiceBusConsumerClient(
     ILogger logger,
     string subscriptionName,
     byte groupConcurrent,
-    IOptions<AzureServiceBusOptions> options,
+    IOptions<AzureServiceBusMessagingOptions> options,
     IServiceProvider serviceProvider,
     IntentType intentType = IntentType.Bus
 ) : IConsumerClient
@@ -22,7 +22,7 @@ internal sealed class AzureServiceBusConsumerClient(
     // Headless must settle only after durable receive storage and handler outcome are known.
     private const bool _AutoCompleteMessages = false;
 
-    private readonly AzureServiceBusOptions _asbOptions = Argument.IsNotNull(options.Value);
+    private readonly AzureServiceBusMessagingOptions _asbOptions = Argument.IsNotNull(options.Value);
     private readonly SemaphoreSlim _connectionLock = new(1, 1);
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
     private readonly ConsumerPauseGate _pauseGate = new();

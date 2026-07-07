@@ -9,7 +9,7 @@ namespace Headless.Payments.Paymob.CashIn.Models.Callback;
 public sealed class CashInCallbackTransactionOrder
 {
     [JsonPropertyName("id")]
-    public int Id { get; init; }
+    public long Id { get; init; }
 
     [JsonPropertyName("created_at")]
     [JsonConverter(typeof(AddEgyptZoneOffsetToUnspecifiedDateTimeJsonConverter))]
@@ -19,7 +19,7 @@ public sealed class CashInCallbackTransactionOrder
     public bool DeliveryNeeded { get; init; }
 
     [JsonPropertyName("amount_cents")]
-    public int AmountCents { get; init; }
+    public long AmountCents { get; init; }
 
     [JsonPropertyName("currency")]
     public string? Currency { get; init; }
@@ -40,7 +40,7 @@ public sealed class CashInCallbackTransactionOrder
     public bool IsCanceled { get; init; }
 
     [JsonPropertyName("paid_amount_cents")]
-    public int PaidAmountCents { get; init; }
+    public long PaidAmountCents { get; init; }
 
     [JsonPropertyName("notify_user_with_email")]
     public bool NotifyUserWithEmail { get; init; }
@@ -49,13 +49,13 @@ public sealed class CashInCallbackTransactionOrder
     public string? OrderUrl { get; init; }
 
     [JsonPropertyName("commission_fees")]
-    public int CommissionFees { get; init; }
+    public long CommissionFees { get; init; }
 
     [JsonPropertyName("delivery_fees_cents")]
-    public int DeliveryFeesCents { get; init; }
+    public long DeliveryFeesCents { get; init; }
 
     [JsonPropertyName("delivery_vat_cents")]
-    public int DeliveryVatCents { get; init; }
+    public long DeliveryVatCents { get; init; }
 
     [JsonPropertyName("payment_method")]
     public string? PaymentMethod { get; init; }

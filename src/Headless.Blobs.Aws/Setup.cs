@@ -2,6 +2,7 @@
 
 using Amazon.Extensions.NETCore.Setup;
 using Headless.Abstractions;
+using Headless.Blobs.Aws;
 using Headless.Checks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -9,7 +10,8 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Blobs.Aws;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Blobs;
 
 /// <summary>Extension methods to register the AWS S3 blob storage provider.</summary>
 [PublicAPI]

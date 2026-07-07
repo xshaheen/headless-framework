@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Api;
+namespace Headless.Api.Idempotency;
 
 /// <summary>How request bodies exceeding <c>IdempotencyOptions.MaxBodySizeForHashing</c> are handled.</summary>
 [PublicAPI]

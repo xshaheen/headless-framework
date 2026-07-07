@@ -1,11 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Api.Abstractions;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Extensions;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Microsoft.AspNetCore.Builder;
+namespace Headless.Api;
 
 /// <summary>
 /// Extension methods on <see cref="WebApplication"/> for mapping host-based permanent redirect routes.

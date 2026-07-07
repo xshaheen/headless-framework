@@ -6,7 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Api;
+namespace Headless.Api.DataProtection;
 
 /// <summary>Health-check registration extensions for the blob-backed data-protection key ring.</summary>
 [PublicAPI]

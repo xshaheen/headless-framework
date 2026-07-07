@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
 using Headless.Jobs.Enums;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -10,29 +11,19 @@ namespace Headless.Jobs.Base;
 /// base scheduling metadata.
 /// </summary>
 /// <typeparam name="TRequest">The deserialized request type stored in the job row.</typeparam>
-public class JobFunctionContext<TRequest> : JobFunctionContext
+/// <remarks>
+/// Initializes a typed context by copying every base member from <paramref name="jobFunctionContext"/>
+/// through the base copy constructor — so a member added to <see cref="JobFunctionContext"/> is never
+/// silently dropped here — and attaching the deserialized <paramref name="request"/>.
+/// </remarks>
+/// <param name="jobFunctionContext">The base context supplied by the scheduler.</param>
+/// <param name="request">The deserialized request payload for this execution.</param>
+[method: SetsRequiredMembers]
+public class JobFunctionContext<TRequest>(JobFunctionContext jobFunctionContext, TRequest request)
+    : JobFunctionContext(jobFunctionContext)
 {
-    /// <summary>
-    /// Initializes a typed context by copying all base fields from <paramref name="jobFunctionContext"/>
-    /// and attaching the deserialized <paramref name="request"/>.
-    /// </summary>
-    /// <param name="jobFunctionContext">The base context supplied by the scheduler.</param>
-    /// <param name="request">The deserialized request payload for this execution.</param>
-    public JobFunctionContext(JobFunctionContext jobFunctionContext, TRequest request)
-    {
-        Request = request;
-        Id = jobFunctionContext.Id;
-        Type = jobFunctionContext.Type;
-        RetryCount = jobFunctionContext.RetryCount;
-        IsDue = jobFunctionContext.IsDue;
-        ScheduledFor = jobFunctionContext.ScheduledFor;
-        RequestCancelOperationAction = jobFunctionContext.RequestCancelOperationAction;
-        CronOccurrenceOperations = jobFunctionContext.CronOccurrenceOperations;
-        FunctionName = jobFunctionContext.FunctionName;
-    }
-
     /// <summary>The deserialized request payload for this job execution.</summary>
-    public TRequest Request { get; set; }
+    public TRequest Request { get; set; } = request;
 }
 
 /// <summary>
@@ -41,6 +32,29 @@ public class JobFunctionContext<TRequest> : JobFunctionContext
 /// </summary>
 public class JobFunctionContext
 {
+    /// <summary>Initializes a new context; the scheduler populates its members via an object initializer.</summary>
+    public JobFunctionContext() { }
+
+    /// <summary>
+    /// Copy constructor used by the typed <see cref="JobFunctionContext{TRequest}"/> to clone an existing
+    /// context. Every base member is copied here in one place, so a member added to this base is never silently
+    /// dropped when a typed context wraps a base one.
+    /// </summary>
+    /// <param name="other">The context to copy from.</param>
+    [SetsRequiredMembers]
+    protected JobFunctionContext(JobFunctionContext other)
+    {
+        ServiceScope = other.ServiceScope;
+        RequestCancelOperationAction = other.RequestCancelOperationAction;
+        Id = other.Id;
+        Type = other.Type;
+        RetryCount = other.RetryCount;
+        IsDue = other.IsDue;
+        ScheduledFor = other.ScheduledFor;
+        FunctionName = other.FunctionName;
+        CronOccurrenceOperations = other.CronOccurrenceOperations;
+    }
+
     internal AsyncServiceScope ServiceScope { get; set; }
 
     /// <summary>

@@ -7,7 +7,7 @@ using Microsoft.Extensions.Options;
 namespace Headless.Messaging.Redis;
 
 internal sealed class RedisConsumerClientFactory(
-    IOptions<MessagingRedisOptions> redisOptions,
+    IOptions<RedisMessagingOptions> redisOptions,
     IRedisStreamManager redis,
     ILogger<RedisConsumerClient> logger
 ) : IIntentAwareConsumerClientFactory

@@ -2,10 +2,11 @@
 
 using System.ComponentModel;
 using Headless.MultiTenancy;
+using Headless.Testing.Tests;
 
 namespace Tests;
 
-public sealed class TenantPostureManifestTests
+public sealed class TenantPostureManifestTests : TestBase
 {
     [Fact]
     public void should_store_undefined_status_on_first_record_then_throw_on_next_record()
@@ -88,7 +89,7 @@ public sealed class TenantPostureManifestTests
         await Parallel.ForAsync(
             0,
             contributions,
-            TestContext.Current.CancellationToken,
+            AbortToken,
             (i, _) =>
             {
                 manifest.RecordSeam("Seam", (TenantPostureStatus)(i % 4), $"capability-{i}");

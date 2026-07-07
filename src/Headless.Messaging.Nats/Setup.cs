@@ -1,14 +1,15 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Nats;
 using Headless.Messaging.Registration;
 using Headless.Messaging.Transport;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Microsoft.Extensions.DependencyInjection;
+namespace Headless.Messaging;
 
 /// <summary>
 /// Extension members that register NATS JetStream as the message transport.
@@ -16,7 +17,7 @@ namespace Microsoft.Extensions.DependencyInjection;
 /// <remarks>
 /// Both a bus (subject fan-out) and a queue (point-to-point) transport are registered using the
 /// same underlying NATS JetStream infrastructure. A connection pool sized by
-/// <see cref="MessagingNatsOptions.ConnectionPoolSize"/> is registered as a singleton.
+/// <see cref="NatsMessagingOptions.ConnectionPoolSize"/> is registered as a singleton.
 /// <para/>
 /// On startup, shard symmetry is validated: every consumer that receives a message type configured
 /// with <c>SubjectShard(...)</c> must also declare <c>.UseNats(c => c.Sharded())</c>. An omission
@@ -31,7 +32,7 @@ public static class SetupNatsMessaging
         /// </summary>
         /// <param name="bootstrapServers">
         /// A NATS server URL or comma-separated list of URLs. When <see langword="null"/>, the
-        /// default from <see cref="MessagingNatsOptions.Servers"/> (<c>nats://127.0.0.1:4222</c>) is used.
+        /// default from <see cref="NatsMessagingOptions.Servers"/> (<c>nats://127.0.0.1:4222</c>) is used.
         /// </param>
         /// <returns>The same <paramref name="setup"/> builder for chaining.</returns>
         public MessagingSetupBuilder UseNats(string? bootstrapServers = null)
@@ -46,29 +47,77 @@ public static class SetupNatsMessaging
         }
 
         /// <summary>
+        /// Registers NATS JetStream as the message transport, binding and validating
+        /// <see cref="NatsMessagingOptions"/> from configuration.
+        /// </summary>
+        /// <param name="config">Configuration section containing <see cref="NatsMessagingOptions"/> values.</param>
+        /// <returns>The same <paramref name="setup"/> builder for chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="config"/> is <see langword="null"/>.</exception>
+        public MessagingSetupBuilder UseNats(IConfiguration config)
+        {
+            Argument.IsNotNull(config);
+
+            return _RegisterNats(
+                setup,
+                services => services.Configure<NatsMessagingOptions, NatsMessagingOptionsValidator>(config)
+            );
+        }
+
+        /// <summary>
         /// Registers NATS JetStream as the message transport with full programmatic configuration.
         /// </summary>
-        /// <param name="configure">A delegate that configures <see cref="MessagingNatsOptions"/>.</param>
+        /// <param name="configure">A delegate that configures <see cref="NatsMessagingOptions"/>.</param>
         /// <returns>The same <paramref name="setup"/> builder for chaining.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
-        public MessagingSetupBuilder UseNats(Action<MessagingNatsOptions> configure)
+        public MessagingSetupBuilder UseNats(Action<NatsMessagingOptions> configure)
         {
             Argument.IsNotNull(configure);
 
-            setup.RegisterExtension(new NatsMessagesOptionsExtension(configure));
+            return _RegisterNats(
+                setup,
+                services => services.Configure<NatsMessagingOptions, NatsMessagingOptionsValidator>(configure)
+            );
+        }
 
-            return setup;
+        /// <summary>
+        /// Registers NATS JetStream as the message transport, configuring <see cref="NatsMessagingOptions"/>
+        /// with access to the resolved service provider.
+        /// </summary>
+        /// <param name="configure">
+        /// A delegate that configures <see cref="NatsMessagingOptions"/> using the service provider
+        /// (for example to resolve secrets or connection settings from DI).
+        /// </param>
+        /// <returns>The same <paramref name="setup"/> builder for chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
+        public MessagingSetupBuilder UseNats(Action<NatsMessagingOptions, IServiceProvider> configure)
+        {
+            Argument.IsNotNull(configure);
+
+            return _RegisterNats(
+                setup,
+                services => services.Configure<NatsMessagingOptions, NatsMessagingOptionsValidator>(configure)
+            );
         }
     }
 
-    private sealed class NatsMessagesOptionsExtension(Action<MessagingNatsOptions> configure)
+    private static MessagingSetupBuilder _RegisterNats(
+        MessagingSetupBuilder setup,
+        Action<IServiceCollection> configureOptions
+    )
+    {
+        setup.RegisterExtension(new NatsMessagingOptionsExtension(configureOptions));
+
+        return setup;
+    }
+
+    private sealed class NatsMessagingOptionsExtension(Action<IServiceCollection> configureOptions)
         : IMessagesOptionsExtension
     {
         public void AddServices(IServiceCollection services)
         {
             services.AddSingleton(new MessageQueueMarkerService("NATS JetStream"));
 
-            services.Configure<MessagingNatsOptions, MessagingNatsOptionsValidator>(configure);
+            configureOptions(services);
 
             services.AddSingleton<NatsTransport>();
             services.AddSingleton<IBusTransport>(sp => sp.GetRequiredService<NatsTransport>());

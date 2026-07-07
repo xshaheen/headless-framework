@@ -3,10 +3,9 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Text.Json.Nodes;
-using Headless.Serializer;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace System;
+namespace Headless.Serializer;
 
 [PublicAPI]
 public static class ToObjectExtensions

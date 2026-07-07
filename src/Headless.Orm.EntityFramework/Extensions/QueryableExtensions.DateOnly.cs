@@ -3,9 +3,10 @@
 using System.Linq.Expressions;
 using System.Reflection;
 using Headless.Checks;
+using Headless.EntityFramework;
 using Headless.Linq;
 
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.EntityFrameworkCore;
 
 public static partial class QueryableExtensions
@@ -70,7 +71,3 @@ public static partial class QueryableExtensions
             select new EntityPerDateOnly(month, lookup[month].Count());
     }
 }
-
-/// <summary>A month bucket returned by <c>CountPerMonthAsync</c> with a <c>DateOnly</c> date selector.</summary>
-[PublicAPI]
-public sealed record EntityPerDateOnly(DateOnly Date, int Count);

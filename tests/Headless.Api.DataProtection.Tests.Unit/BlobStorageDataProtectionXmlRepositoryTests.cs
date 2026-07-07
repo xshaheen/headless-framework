@@ -1,13 +1,14 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Xml.Linq;
-using Headless.Api;
+using Headless.Api.DataProtection;
 using Headless.Blobs;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
-public sealed class BlobStorageDataProtectionXmlRepositoryTests
+public sealed class BlobStorageDataProtectionXmlRepositoryTests : TestBase
 {
     #region Constructor Tests
 
@@ -361,7 +362,7 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
         async ValueTask captureUploadAsync(Stream stream)
         {
             await using var ms = new MemoryStream();
-            await stream.CopyToAsync(ms, TestContext.Current.CancellationToken);
+            await stream.CopyToAsync(ms, AbortToken);
             capturedBytes = ms.ToArray();
         }
 
@@ -573,7 +574,7 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
 
         var sut = new BlobStorageDataProtectionXmlRepository(storage, manager);
 
-        await sut.ProbeWriteAccessAsync(TestContext.Current.CancellationToken);
+        await sut.ProbeWriteAccessAsync(AbortToken);
 
         calls.Should().Equal("ensure", "upload", "delete");
         await storage
@@ -637,7 +638,7 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
 
         var sut = new BlobStorageDataProtectionXmlRepository(storage);
 
-        var act = async () => await sut.ProbeWriteAccessAsync(TestContext.Current.CancellationToken);
+        var act = async () => await sut.ProbeWriteAccessAsync(AbortToken);
 
         await act.Should()
             .ThrowAsync<InvalidOperationException>()

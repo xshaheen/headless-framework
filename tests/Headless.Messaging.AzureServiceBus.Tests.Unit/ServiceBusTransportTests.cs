@@ -10,11 +10,11 @@ namespace Tests;
 
 public sealed class ServiceBusTransportTests
 {
-    private readonly IOptions<AzureServiceBusOptions> _options;
+    private readonly IOptions<AzureServiceBusMessagingOptions> _options;
 
     public ServiceBusTransportTests()
     {
-        var config = new AzureServiceBusOptions
+        var config = new AzureServiceBusMessagingOptions
         {
             ConnectionString =
                 "Endpoint=sb://mynamespace.servicebus.windows.net/;SharedAccessKeyName=myPolicy;SharedAccessKey=myKey",
@@ -43,7 +43,9 @@ public sealed class ServiceBusTransportTests
     public async Task should_have_correct_broker_address_when_using_namespace()
     {
         // given
-        var options = Options.Create(new AzureServiceBusOptions { Namespace = "sb://custom.servicebus.windows.net/" });
+        var options = Options.Create(
+            new AzureServiceBusMessagingOptions { Namespace = "sb://custom.servicebus.windows.net/" }
+        );
 
         // when
         await using var transport = new AzureServiceBusTransport(
@@ -158,7 +160,7 @@ public sealed class ServiceBusTransportTests
     {
         // given
         var options = Options.Create(
-            new AzureServiceBusOptions
+            new AzureServiceBusMessagingOptions
             {
                 ConnectionString =
                     "Endpoint=sb://mynamespace.servicebus.windows.net/;SharedAccessKeyName=myPolicy;SharedAccessKey=myKey",

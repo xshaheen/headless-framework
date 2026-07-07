@@ -16,7 +16,7 @@ public sealed class AsyncLazyRedisConnectionTests : TestBase
     public void should_not_create_connection_immediately()
     {
         // given
-        var options = new MessagingRedisOptions { Configuration = ConfigurationOptions.Parse("localhost:6379") };
+        var options = new RedisMessagingOptions { Configuration = ConfigurationOptions.Parse("localhost:6379") };
         var logger = LoggerFactory.CreateLogger<AsyncLazyRedisConnection>();
 
         // when
@@ -30,7 +30,7 @@ public sealed class AsyncLazyRedisConnectionTests : TestBase
     public void created_connection_should_be_null_when_not_created()
     {
         // given
-        var options = new MessagingRedisOptions { Configuration = ConfigurationOptions.Parse("localhost:6379") };
+        var options = new RedisMessagingOptions { Configuration = ConfigurationOptions.Parse("localhost:6379") };
         var logger = LoggerFactory.CreateLogger<AsyncLazyRedisConnection>();
         var lazy = new AsyncLazyRedisConnection(options, logger);
 
@@ -45,7 +45,7 @@ public sealed class AsyncLazyRedisConnectionTests : TestBase
     public void should_have_awaiter_for_async_access()
     {
         // given
-        var options = new MessagingRedisOptions { Configuration = ConfigurationOptions.Parse("localhost:6379") };
+        var options = new RedisMessagingOptions { Configuration = ConfigurationOptions.Parse("localhost:6379") };
         var logger = LoggerFactory.CreateLogger<AsyncLazyRedisConnection>();
         var lazy = new AsyncLazyRedisConnection(options, logger);
 

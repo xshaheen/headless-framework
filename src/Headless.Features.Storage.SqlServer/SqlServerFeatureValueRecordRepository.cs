@@ -15,9 +15,13 @@ namespace Headless.Features.SqlServer;
 /// </summary>
 internal sealed class SqlServerFeatureValueRecordRepository(
     IOptions<SqlServerFeaturesOptions> providerOptions,
-    IOptions<FeaturesStorageOptions> storageOptions
+    IOptions<FeaturesStorageOptions> storageOptions,
+    TimeProvider timeProvider
 ) : IFeatureValueRecordRepository
 {
+    /// <summary>Comma-separated column list used in SELECT queries for feature value records.</summary>
+    private const string _ValueColumns = "[Id],[Name],[Value],[ProviderName],[ProviderKey],[DateCreated],[DateUpdated]";
+
     /// <inheritdoc/>
     public async Task<FeatureValueRecord?> FindAsync(
         string name,
@@ -27,7 +31,7 @@ internal sealed class SqlServerFeatureValueRecordRepository(
     )
     {
         var sql =
-            $"SELECT TOP(1) [Id],[Name],[Value],[ProviderName],[ProviderKey] FROM {SqlServerFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} WHERE [Name]=@Name AND (([ProviderName] IS NULL AND @ProviderName IS NULL) OR [ProviderName]=@ProviderName) AND (([ProviderKey] IS NULL AND @ProviderKey IS NULL) OR [ProviderKey]=@ProviderKey) ORDER BY [Id];";
+            $"SELECT TOP(1) {_ValueColumns} FROM {SqlServerFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} WHERE [Name]=@Name AND (([ProviderName] IS NULL AND @ProviderName IS NULL) OR [ProviderName]=@ProviderName) AND (([ProviderKey] IS NULL AND @ProviderKey IS NULL) OR [ProviderKey]=@ProviderKey) ORDER BY [Id];";
 
         return
             await _ReadValuesAsync(
@@ -67,7 +71,7 @@ internal sealed class SqlServerFeatureValueRecordRepository(
         }
 
         var sql =
-            $"SELECT [Id],[Name],[Value],[ProviderName],[ProviderKey] FROM {SqlServerFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} WHERE {string.Join(" AND ", filters)};";
+            $"SELECT {_ValueColumns} FROM {SqlServerFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} WHERE {string.Join(" AND ", filters)};";
 
         return _ReadValuesAsync(sql, cancellationToken, [.. parameters]);
     }
@@ -80,7 +84,7 @@ internal sealed class SqlServerFeatureValueRecordRepository(
     )
     {
         var sql =
-            $"SELECT [Id],[Name],[Value],[ProviderName],[ProviderKey] FROM {SqlServerFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} WHERE [ProviderName]=@ProviderName AND (([ProviderKey] IS NULL AND @ProviderKey IS NULL) OR [ProviderKey]=@ProviderKey);";
+            $"SELECT {_ValueColumns} FROM {SqlServerFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} WHERE [ProviderName]=@ProviderName AND (([ProviderKey] IS NULL AND @ProviderKey IS NULL) OR [ProviderKey]=@ProviderKey);";
 
         return _ReadValuesAsync(
             sql,
@@ -94,7 +98,11 @@ internal sealed class SqlServerFeatureValueRecordRepository(
     public Task InsertAsync(FeatureValueRecord feature, CancellationToken cancellationToken = default)
     {
         var sql =
-            $"INSERT INTO {SqlServerFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} ([Id],[Name],[Value],[ProviderName],[ProviderKey]) VALUES (@Id,@Name,@Value,@ProviderName,@ProviderKey);";
+            $"INSERT INTO {SqlServerFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} ([Id],[Name],[Value],[ProviderName],[ProviderKey],[DateCreated]) VALUES (@Id,@Name,@Value,@ProviderName,@ProviderKey,@DateCreated);";
+
+        // Preserve caller-supplied DateCreated when present (mirrors the EF path); only stamp from
+        // the TimeProvider when the caller left it at default.
+        var dateCreated = feature.DateCreated == default ? timeProvider.GetUtcNow() : feature.DateCreated;
 
         return _ExecuteAsync(
             sql,
@@ -103,7 +111,8 @@ internal sealed class SqlServerFeatureValueRecordRepository(
             _Param("Name", feature.Name),
             _Param("Value", feature.Value),
             _Param("ProviderName", feature.ProviderName),
-            _Param("ProviderKey", feature.ProviderKey)
+            _Param("ProviderKey", feature.ProviderKey),
+            _Param("DateCreated", dateCreated)
         );
     }
 
@@ -111,9 +120,22 @@ internal sealed class SqlServerFeatureValueRecordRepository(
     public async Task UpdateAsync(FeatureValueRecord feature, CancellationToken cancellationToken = default)
     {
         var sql =
-            $"UPDATE {SqlServerFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} SET [Value]=@Value WHERE [Id]=@Id;";
+            $"UPDATE {SqlServerFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} SET [Value]=@Value,[DateUpdated]=@DateUpdated WHERE [Id]=@Id;";
 
-        await _ExecuteAsync(sql, cancellationToken, _Param("Id", feature.Id), _Param("Value", feature.Value))
+        // Preserve caller-supplied DateUpdated when present (mirrors the EF path); only stamp from
+        // the TimeProvider when the caller left it null/default.
+        var dateUpdated =
+            feature.DateUpdated is null || feature.DateUpdated == default(DateTimeOffset)
+                ? timeProvider.GetUtcNow()
+                : feature.DateUpdated.Value;
+
+        await _ExecuteAsync(
+                sql,
+                cancellationToken,
+                _Param("Id", feature.Id),
+                _Param("Value", feature.Value),
+                _Param("DateUpdated", dateUpdated)
+            )
             .ConfigureAwait(false);
     }
 
@@ -154,12 +176,16 @@ internal sealed class SqlServerFeatureValueRecordRepository(
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             result.Add(
-                new FeatureValueRecord(
+                FeatureValueRecord.FromStorage(
                     reader.GetGuid(0),
                     reader.GetString(1),
                     reader.GetString(2),
                     reader.GetString(3),
-                    await reader.IsDBNullAsync(4, cancellationToken).ConfigureAwait(false) ? null : reader.GetString(4)
+                    await reader.IsDBNullAsync(4, cancellationToken).ConfigureAwait(false) ? null : reader.GetString(4),
+                    await reader.GetFieldValueAsync<DateTimeOffset>(5, cancellationToken).ConfigureAwait(false),
+                    await reader.IsDBNullAsync(6, cancellationToken).ConfigureAwait(false)
+                        ? null
+                        : await reader.GetFieldValueAsync<DateTimeOffset>(6, cancellationToken).ConfigureAwait(false)
                 )
             );
         }

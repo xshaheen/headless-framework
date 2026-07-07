@@ -38,7 +38,7 @@ internal sealed class KafkaTransport(ILogger<KafkaTransport> logger, IKafkaConne
                     {
                         Headers = headers,
                         Key =
-                            message.Headers.TryGetValue(KafkaHeaders.KafkaKey, out var kafkaMessageKey)
+                            message.Headers.TryGetValue(KafkaMessagingHeaders.KafkaKey, out var kafkaMessageKey)
                             && !string.IsNullOrEmpty(kafkaMessageKey)
                                 ? kafkaMessageKey
                                 : message.Id,

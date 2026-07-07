@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Api;
+using Headless.Api.Idempotency;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 

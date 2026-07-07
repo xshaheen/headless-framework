@@ -12,6 +12,7 @@ namespace Headless.Imaging;
 /// <c>Result</c> is a readable, seekable <see cref="Stream"/> containing the compressed bytes.
 /// Callers are responsible for disposing that stream.
 /// </remarks>
+[PublicAPI]
 public sealed class ImageStreamCompressResult : ImageProcessResult<Stream>
 {
     private ImageStreamCompressResult() { }

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.ComponentModel;
 using Headless.Checks;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -12,10 +13,12 @@ namespace Headless.Captcha;
 /// pass; contributions are queued only, so a throwing setup leaves the collection unchanged.
 /// </summary>
 /// <remarks>
-/// <see cref="RegisterDefault"/> and <see cref="RegisterNamed"/> are the public extension points provider packages
-/// (in this repository and out-of-repo) build their <c>Use{Provider}</c> members on top of. They are part of the
-/// package's NuGet contract — call them from a provider's <c>Use*</c> extension; consumers configure providers
-/// through those <c>Use*</c> members rather than calling these directly.
+/// A default provider is selected by calling a provider's <c>Use{Provider}</c> member directly on this builder
+/// (for example <c>setup.UseTurnstile(...)</c>); a named instance is added with <see cref="AddNamed"/>, whose
+/// nested <see cref="HeadlessCaptchaInstanceBuilder"/> takes exactly one provider (for example
+/// <c>setup.AddNamed("otp", i =&gt; i.UseTurnstile(...))</c>). <see cref="RegisterDefault"/> is the low-level
+/// plumbing each default <c>Use*</c> member builds on; it is hidden from IntelliSense and not intended for
+/// application code.
 /// </remarks>
 [PublicAPI]
 public sealed class HeadlessCaptchaSetupBuilder
@@ -52,6 +55,7 @@ public sealed class HeadlessCaptchaSetupBuilder
     /// <param name="action">The provider's deferred service registration action.</param>
     /// <exception cref="ArgumentException">Thrown when <paramref name="providerKey"/> is not a reserved framework key.</exception>
     /// <exception cref="InvalidOperationException">Thrown when a default provider is already registered, or the key is taken.</exception>
+    [EditorBrowsable(EditorBrowsableState.Never)] // provider-package plumbing, not an application-code API
     public void RegisterDefault(string providerKey, Action<IServiceCollection> action)
     {
         Argument.IsNotNullOrWhiteSpace(providerKey);
@@ -71,8 +75,8 @@ public sealed class HeadlessCaptchaSetupBuilder
         {
             throw new InvalidOperationException(
                 "Headless.Captcha allows at most one default captcha provider. A default provider is already "
-                    + "configured; register additional providers with the name-taking overloads (for example "
-                    + "UseTurnstile(\"name\", …))."
+                    + "configured; add additional providers as named instances (for example "
+                    + "AddNamed(\"name\", i => i.UseTurnstile(…)))."
             );
         }
 
@@ -86,13 +90,27 @@ public sealed class HeadlessCaptchaSetupBuilder
         DefaultRegistrations.Add(action);
     }
 
-    /// <summary>Queues a named (keyed-only) verifier contribution, resolvable through <see cref="ICaptchaProvider"/>.</summary>
-    /// <param name="name">The provider instance name. Must be non-empty and not a reserved key.</param>
-    /// <param name="action">The provider's deferred service registration action.</param>
-    public void RegisterNamed(string name, Action<IServiceCollection> action)
+    /// <summary>
+    /// Adds an independently-configured named captcha verifier, resolvable through <see cref="ICaptchaProvider"/> by
+    /// <paramref name="name"/> or as a keyed <see cref="ICaptchaVerifier"/>. Named instances never touch the default
+    /// (unkeyed) verifier.
+    /// </summary>
+    /// <param name="name">The verifier instance name. Must be non-empty, unique, and not a reserved framework key.</param>
+    /// <param name="configure">Configuration action that selects exactly one provider for the instance.</param>
+    /// <returns>The builder for chaining.</returns>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="name"/> is <see langword="null"/> or whitespace, or is a reserved framework key
+    /// (under the <c>Headless.Captcha:</c> namespace, see <see cref="CaptchaConstants.IsReservedProviderKey"/>).
+    /// </exception>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="configure"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when <paramref name="name"/> is already configured, or when the instance selects zero or more than one
+    /// provider.
+    /// </exception>
+    public HeadlessCaptchaSetupBuilder AddNamed(string name, Action<HeadlessCaptchaInstanceBuilder> configure)
     {
         Argument.IsNotNullOrWhiteSpace(name);
-        Argument.IsNotNull(action);
+        Argument.IsNotNull(configure);
 
         if (CaptchaConstants.IsReservedProviderKey(name))
         {
@@ -105,9 +123,22 @@ public sealed class HeadlessCaptchaSetupBuilder
 
         if (!_names.Add(name))
         {
-            throw new InvalidOperationException($"A captcha provider named '{name}' is already configured.");
+            throw new InvalidOperationException($"A captcha verifier named '{name}' is already configured.");
         }
 
-        NamedRegistrations.Add(action);
+        var instance = new HeadlessCaptchaInstanceBuilder(name);
+        configure(instance);
+
+        if (instance.Action is null)
+        {
+            throw new InvalidOperationException(
+                $"Named captcha verifier '{name}' requires exactly one provider. "
+                    + "Call one of `UseReCaptchaV2`, `UseReCaptchaV3`, or `UseTurnstile`."
+            );
+        }
+
+        NamedRegistrations.Add(instance.Action);
+
+        return this;
     }
 }

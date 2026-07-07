@@ -7,7 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 
-namespace Headless.Api;
+namespace Headless.Api.DataProtection;
 
 /// <summary>Startup-validation extensions for <see cref="IDataProtectionBuilder"/>.</summary>
 [PublicAPI]

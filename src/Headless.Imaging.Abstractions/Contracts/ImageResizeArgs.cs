@@ -6,6 +6,7 @@ using Headless.Checks;
 namespace Headless.Imaging;
 
 /// <summary>Parameters that control an image resize operation.</summary>
+[PublicAPI]
 public sealed class ImageResizeArgs
 {
     /// <summary>Gets the target width in pixels, or <c>0</c> when only height is constrained.</summary>

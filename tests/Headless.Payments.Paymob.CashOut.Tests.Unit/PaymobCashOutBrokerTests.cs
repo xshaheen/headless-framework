@@ -50,7 +50,7 @@ public sealed class PaymobCashOutBrokerTests(PaymobCashOutFixture fixture)
 
         // then
         result.TransactionId.Should().Be(transactionId);
-        result.Amount.Should().Be(150.25);
+        result.Amount.Should().Be(150.25m);
         result.IsSuccess().Should().BeTrue();
         result.IsFailed().Should().BeFalse();
         result.IsPending().Should().BeFalse();
@@ -77,7 +77,7 @@ public sealed class PaymobCashOutBrokerTests(PaymobCashOutFixture fixture)
 
         // then
         result.TransactionId.Should().Be("tx-quirks");
-        result.Amount.Should().Be(75.5);
+        result.Amount.Should().Be(75.5m);
         result.IsRequestValidationError().Should().BeTrue();
         result.StatusDescription.Should().NotBeNull();
         result.ExtensionData.Should().ContainKey("unknown_field");
@@ -109,11 +109,11 @@ public sealed class PaymobCashOutBrokerTests(PaymobCashOutFixture fixture)
     }
 
     [Fact]
-    public async Task should_get_budget_with_bearer_token_and_return_raw_body()
+    public async Task should_get_budget_with_bearer_token_and_return_typed_budget()
     {
         // given
         var (authenticator, token) = _SetupAuthenticator();
-        const string budgetJson = """{"budget":1234.5}""";
+        const string budgetJson = """{"current_budget":"Your current budget is 888.25 LE"}""";
 
         fixture
             .Server.Given(
@@ -126,7 +126,27 @@ public sealed class PaymobCashOutBrokerTests(PaymobCashOutFixture fixture)
         var result = await broker.GetBudgetAsync(AbortToken);
 
         // then
-        result.Should().Be(budgetJson);
+        result.CurrentBudget.Should().Be("Your current budget is 888.25 LE");
+    }
+
+    [Fact]
+    public async Task should_throw_paymob_cash_out_exception_with_status_and_body_when_budget_fails()
+    {
+        // given
+        var (authenticator, _) = _SetupAuthenticator();
+
+        fixture
+            .Server.Given(Request.Create().WithPath("/budget/inquire/").UsingGet())
+            .RespondWith(Response.Create().WithStatusCode(HttpStatusCode.TooManyRequests).WithBody("throttled"));
+
+        // when
+        var broker = new PaymobCashOutBroker(fixture.HttpClient, authenticator);
+        var act = () => broker.GetBudgetAsync(AbortToken);
+
+        // then
+        var assertion = await act.Should().ThrowAsync<PaymobCashOutException>();
+        assertion.Which.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+        assertion.Which.Body.Should().Be("throttled");
     }
 
     [Fact]
@@ -139,7 +159,29 @@ public sealed class PaymobCashOutBrokerTests(PaymobCashOutFixture fixture)
             new CashOutGetTransactionsRequest { TransactionsIds = ids, IsBankTransactions = true },
             _WireOptions
         );
-        var responseBody = fixture.AutoFixture.Create<string>();
+        const string responseBody = """
+            {
+                "count": 2,
+                "next": null,
+                "previous": null,
+                "results": [
+                    {
+                        "transaction_id": "tx-1",
+                        "issuer": "vodafone",
+                        "amount": 100.0,
+                        "disbursement_status": "successful",
+                        "status_code": "200"
+                    },
+                    {
+                        "transaction_id": "tx-2",
+                        "issuer": "vodafone",
+                        "amount": 55.5,
+                        "disbursement_status": "failed",
+                        "status_code": "400"
+                    }
+                ]
+            }
+            """;
 
         fixture
             .Server.Given(
@@ -158,7 +200,11 @@ public sealed class PaymobCashOutBrokerTests(PaymobCashOutFixture fixture)
         var result = await broker.GetTransactionsAsync(ids, isBankTransactions: true, page: 3, AbortToken);
 
         // then
-        result.Should().Be(responseBody);
+        result.Count.Should().Be(2);
+        result.Results.Should().HaveCount(2);
+        result.Results[0].TransactionId.Should().Be("tx-1");
+        result.Results[0].IsSuccess().Should().BeTrue();
+        result.Results[1].TransactionId.Should().Be("tx-2");
     }
 
     [Fact]

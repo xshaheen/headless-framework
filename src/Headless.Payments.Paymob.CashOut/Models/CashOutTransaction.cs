@@ -23,8 +23,9 @@ public sealed record CashOutTransaction
     [JsonPropertyName("msisdn")]
     public string? Msisdn { get; init; }
 
+    /// <summary>The disbursed amount in Egyptian Pounds (EGP), mirroring the value sent in the disburse request.</summary>
     [JsonPropertyName("amount")]
-    public double Amount { get; init; }
+    public decimal Amount { get; init; }
 
     [JsonPropertyName("full_name")]
     public string? FullName { get; init; }

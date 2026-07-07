@@ -38,7 +38,7 @@ internal sealed class NatsConnectionPool : INatsConnectionPool
     private int _disposed;
     private int _index;
 
-    public NatsConnectionPool(ILogger<NatsConnectionPool> logger, IOptions<MessagingNatsOptions> options)
+    public NatsConnectionPool(ILogger<NatsConnectionPool> logger, IOptions<NatsMessagingOptions> options)
     {
         var opts = options.Value;
         ServersAddress = BrokerAddressDisplay.FormatMany(opts.Servers);

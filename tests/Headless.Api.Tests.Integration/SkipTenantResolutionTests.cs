@@ -6,6 +6,7 @@ using Headless.Abstractions;
 using Headless.Api;
 using Headless.Api.Middlewares;
 using Headless.Api.MultiTenancy;
+using Headless.Api.ServiceDefaults;
 using Headless.Constants;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;

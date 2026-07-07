@@ -131,7 +131,7 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
 
     #region Time_Ticker_Implementations
 
-    public async Task<TTimeJob?> GetTimeJobById(Guid id, CancellationToken cancellationToken = default)
+    public async Task<TTimeJob?> GetTimeJobByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
@@ -145,7 +145,7 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
             .ConfigureAwait(false);
     }
 
-    public async Task<TTimeJob[]> GetTimeJobs(
+    public async Task<TTimeJob[]> GetTimeJobsAsync(
         Expression<Func<TTimeJob, bool>>? predicate,
         CancellationToken cancellationToken = default
     )
@@ -168,7 +168,7 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
             .ConfigureAwait(false);
     }
 
-    public async Task<PaginationResult<TTimeJob>> GetTimeJobsPaginated(
+    public async Task<PaginationResult<TTimeJob>> GetTimeJobsPaginatedAsync(
         Expression<Func<TTimeJob, bool>>? predicate,
         int pageNumber,
         int pageSize,
@@ -191,7 +191,7 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
         return await baseQuery.ToPaginatedListAsync(pageNumber, pageSize, cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<int> AddTimeJobs(TTimeJob[] jobs, CancellationToken cancellationToken = default)
+    public async Task<int> AddTimeJobsAsync(TTimeJob[] jobs, CancellationToken cancellationToken = default)
     {
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
@@ -202,7 +202,7 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
         return await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<int> UpdateTimeJobs(TTimeJob[] timeJobs, CancellationToken cancellationToken = default)
+    public async Task<int> UpdateTimeJobsAsync(TTimeJob[] timeJobs, CancellationToken cancellationToken = default)
     {
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
@@ -213,7 +213,7 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
         return await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<int> RemoveTimeJobs(Guid[] timeJobIds, CancellationToken cancellationToken = default)
+    public async Task<int> RemoveTimeJobsAsync(Guid[] timeJobIds, CancellationToken cancellationToken = default)
     {
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
@@ -237,7 +237,7 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
 
     #region Cron_Ticker_Implementations
 
-    public async Task<TCronJob?> GetCronJobById(Guid id, CancellationToken cancellationToken)
+    public async Task<TCronJob?> GetCronJobByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
@@ -250,9 +250,9 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
             .ConfigureAwait(false);
     }
 
-    public async Task<TCronJob[]> GetCronJobs(
+    public async Task<TCronJob[]> GetCronJobsAsync(
         Expression<Func<TCronJob, bool>>? predicate,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken = default
     )
     {
         await using var dbContext = await DbContextFactory
@@ -272,7 +272,7 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
             .ConfigureAwait(false);
     }
 
-    public async Task<PaginationResult<TCronJob>> GetCronJobsPaginated(
+    public async Task<PaginationResult<TCronJob>> GetCronJobsPaginatedAsync(
         Expression<Func<TCronJob, bool>>? predicate,
         int pageNumber,
         int pageSize,
@@ -295,7 +295,7 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
         return await baseQuery.ToPaginatedListAsync(pageNumber, pageSize, cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<int> InsertCronJobs(TCronJob[] jobs, CancellationToken cancellationToken)
+    public async Task<int> InsertCronJobsAsync(TCronJob[] jobs, CancellationToken cancellationToken = default)
     {
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
@@ -313,7 +313,7 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
         return result;
     }
 
-    public async Task<int> UpdateCronJobs(TCronJob[] cronJobs, CancellationToken cancellationToken)
+    public async Task<int> UpdateCronJobsAsync(TCronJob[] cronJobs, CancellationToken cancellationToken = default)
     {
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
@@ -328,7 +328,7 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
         return result;
     }
 
-    public async Task<int> RemoveCronJobs(Guid[] cronJobIds, CancellationToken cancellationToken)
+    public async Task<int> RemoveCronJobsAsync(Guid[] cronJobIds, CancellationToken cancellationToken = default)
     {
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
@@ -347,7 +347,7 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
     #endregion
 
     #region Cron_TickerOccurrence_Implementations
-    public async Task<CronJobOccurrenceEntity<TCronJob>[]> GetAllCronJobOccurrences(
+    public async Task<CronJobOccurrenceEntity<TCronJob>[]> GetAllCronJobOccurrencesAsync(
         Expression<Func<CronJobOccurrenceEntity<TCronJob>, bool>>? predicate,
         CancellationToken cancellationToken = default
     )
@@ -368,7 +368,7 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
             .ConfigureAwait(false);
     }
 
-    public async Task<PaginationResult<CronJobOccurrenceEntity<TCronJob>>> GetAllCronJobOccurrencesPaginated(
+    public async Task<PaginationResult<CronJobOccurrenceEntity<TCronJob>>> GetAllCronJobOccurrencesPaginatedAsync(
         Expression<Func<CronJobOccurrenceEntity<TCronJob>, bool>>? predicate,
         int pageNumber,
         int pageSize,
@@ -391,9 +391,9 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
         return await baseQuery.ToPaginatedListAsync(pageNumber, pageSize, cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<int> InsertCronJobOccurrences(
+    public async Task<int> InsertCronJobOccurrencesAsync(
         CronJobOccurrenceEntity<TCronJob>[] cronJobOccurrences,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken = default
     )
     {
         await using var dbContext = await DbContextFactory
@@ -408,7 +408,10 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
         return await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<int> RemoveCronJobOccurrences(Guid[] cronJobOccurrences, CancellationToken cancellationToken)
+    public async Task<int> RemoveCronJobOccurrencesAsync(
+        Guid[] cronJobOccurrences,
+        CancellationToken cancellationToken = default
+    )
     {
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)

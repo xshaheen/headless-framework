@@ -11,7 +11,7 @@ namespace Headless.Messaging.AzureServiceBus;
 
 internal sealed class AzureServiceBusTransport(
     ILogger<AzureServiceBusTransport> logger,
-    IOptions<AzureServiceBusOptions> busOptions
+    IOptions<AzureServiceBusMessagingOptions> busOptions
 ) : IBusTransport, IServiceBusProducerDescriptorFactory
 {
     private readonly ILogger _logger = logger;
@@ -20,7 +20,7 @@ internal sealed class AzureServiceBusTransport(
 
     /// <summary>
     /// Creates a producer descriptor for the given message. If there's no custom producer configuration for the
-    /// message type, one will be created using defaults configured in the AzureServiceBusOptions (e.g. TopicPath).
+    /// message type, one will be created using defaults configured in the AzureServiceBusMessagingOptions (e.g. TopicPath).
     /// </summary>
     /// <param name="transportMessage"></param>
     /// <returns></returns>

@@ -28,7 +28,7 @@ public sealed class CashInCallbackQueryParameters
     public required bool Pending { get; init; }
 
     [JsonPropertyName("amount_cents")]
-    public required int AmountCents { get; init; }
+    public required long AmountCents { get; init; }
 
     [JsonPropertyName("success")]
     public required bool Success { get; init; }
@@ -67,7 +67,7 @@ public sealed class CashInCallbackQueryParameters
     public required string Currency { get; init; }
 
     [JsonPropertyName("error_occured")]
-    public required bool ErrorOccured { get; init; }
+    public required bool ErrorOccurred { get; init; }
 
     [JsonPropertyName("owner")]
     public required long Owner { get; init; }
@@ -85,10 +85,10 @@ public sealed class CashInCallbackQueryParameters
     public long ProfileId { get; init; }
 
     [JsonPropertyName("merchant_commission")]
-    public int MerchantCommission { get; init; }
+    public long MerchantCommission { get; init; }
 
     [JsonPropertyName("accept_fees")]
-    public int AcceptFees { get; init; }
+    public long AcceptFees { get; init; }
 
     [JsonPropertyName("is_void")]
     public bool IsVoid { get; init; }
@@ -97,10 +97,10 @@ public sealed class CashInCallbackQueryParameters
     public bool IsRefund { get; init; }
 
     [JsonPropertyName("refunded_amount_cents")]
-    public int RefundedAmountCents { get; init; }
+    public long RefundedAmountCents { get; init; }
 
     [JsonPropertyName("captured_amount")]
-    public int CapturedAmount { get; init; }
+    public long CapturedAmount { get; init; }
 
     [JsonPropertyName("updated_at")]
     public DateTime UpdatedAt { get; init; }
@@ -148,7 +148,7 @@ public sealed class CashInCallbackQueryParameters
         return AmountCents.ToString(CultureInfo.InvariantCulture)
             + CreatedAt
             + Currency
-            + toString(ErrorOccured)
+            + toString(ErrorOccurred)
             + toString(HasParentTransaction)
             + Id.ToString(CultureInfo.InvariantCulture)
             + IntegrationId.ToString(CultureInfo.InvariantCulture)

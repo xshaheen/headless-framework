@@ -75,8 +75,8 @@ Supports JPEG, PNG, WebP, and GIF formats for resize; JPEG, PNG, and WebP for co
 - Check `result.IsDone` before accessing `result.Result`. When `IsDone` is `false`, `result.Error` is non-null and `result.Result` is null. This is enforced by `[MemberNotNullWhen]` attributes.
 - For `ImageStreamResizeResult`: access the processed image via `result.Result.Content` (a `Stream`), not `.Stream`. The result also carries `result.Result.MimeType`, `result.Result.Width`, and `result.Result.Height`.
 - `ImageCompressArgs` accepts only an optional `mimeType`. It carries no quality setting — quality is governed by `ImageSharpOptions` encoders.
-- `ImageResizeMode.Default` is resolved at runtime to `ImagingOptions.DefaultResizeMode`. If `DefaultResizeMode` is also `None` (the default), the image is returned unchanged.
-- `ImageResizeMode.None` skips resizing entirely and returns the original stream. Use `Max`, `Crop`, `Pad`, `BoxPad`, `Min`, or `Stretch` for actual resizing.
+- `ImageResizeMode.Default` is the zero/unset value (`default(ImageResizeMode)`) and acts as the sentinel meaning "use the pipeline default". It is resolved at runtime to `ImagingOptions.DefaultResizeMode`. If `DefaultResizeMode` is also `None` (the default), the image is returned unchanged.
+- `ImageResizeMode.None` is an explicit, distinct value that skips resizing entirely and returns the original stream. Use `Max`, `Crop`, `Pad`, `BoxPad`, `Min`, or `Stretch` for actual resizing.
 - The compressor returns `ImageProcessState.Failed` when the compressed output is larger than the original — it never bloats a file. Check `result.IsDone` to detect this case.
 - Contributors are iterated in **reverse registration order**. The last-registered contributor is tried first. If you add a custom contributor after `AddImageSharpContributors()`, it takes priority over ImageSharp.
 - Non-seekable input streams are automatically buffered into a `MemoryStream` by both `ImageResizer` and `ImageCompressor`. Callers do not need to buffer first.
@@ -114,8 +114,8 @@ All results derive from `ImageProcessResult<T>` with three states:
 
 | Mode | Behavior |
 |---|---|
+| `Default` | Zero/unset sentinel. Resolved at runtime to `ImagingOptions.DefaultResizeMode`. |
 | `None` | No resize — original stream returned as-is. |
-| `Default` | Resolved at runtime to `ImagingOptions.DefaultResizeMode`. |
 | `Max` | Scale down to fit within width × height, preserving aspect ratio. Never upscales. |
 | `Crop` | Resize and crop to exact width × height. |
 | `Pad` | Resize to fit, pad remaining area. Accepts a single dimension. |
@@ -139,7 +139,7 @@ Decouples application code from any specific image-processing library. Services 
 - `IImageCompressor` — compression interface: `CompressAsync(Stream, ImageCompressArgs, CancellationToken)`
 - `ImageResizeArgs` — resize parameters: mode, width, height, optional MIME type override
 - `ImageCompressArgs` — compression parameters: optional MIME type override
-- `ImageResizeMode` — enum of resize strategies (`None`, `Default`, `Max`, `Crop`, `Pad`, `BoxPad`, `Min`, `Stretch`)
+- `ImageResizeMode` — enum of resize strategies (`Default` (zero/unset sentinel), `None`, `Max`, `Crop`, `Pad`, `BoxPad`, `Min`, `Stretch`)
 - `ImageStreamResizeResult` / `ImageStreamCompressResult` — typed result wrappers
 - `ImageProcessResult<T>` — base result with `IsDone`, `State`, `Result`, `Error`
 - `ImageProcessState` — `Done`, `Unsupported`, `Failed`

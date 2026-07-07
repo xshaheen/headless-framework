@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Api;
+namespace Headless.Api.ServiceDefaults;
 
 /// <summary>Mutable runtime call-order flags tracked during application startup.</summary>
 /// <remarks>

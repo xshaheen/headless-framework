@@ -1,12 +1,14 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Microsoft.EntityFrameworkCore;
+using Headless.CommitCoordination;
+using Headless.CommitCoordination.EntityFramework;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Headless.CommitCoordination.EntityFramework;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Microsoft.EntityFrameworkCore;
 
 /// <summary>
 /// Enlists an already-open EF transaction in commit coordination: pushes the ambient coordinated scope and
@@ -28,7 +30,7 @@ namespace Headless.CommitCoordination.EntityFramework;
 /// </code>
 /// </remarks>
 [PublicAPI]
-public static class EnlistCommitCoordinationExtensions
+public static class HeadlessEntityFrameworkEnlistCommitCoordinationExtensions
 {
     extension(DatabaseFacade database)
     {

@@ -106,7 +106,7 @@ internal sealed class JobsNotificationHubSender : IJobsNotificationHubSender, ID
             .ConfigureAwait(false);
     }
 
-    public Task UpdateTimeJobFromInternalFunctionContext<TTimeJob>(InternalFunctionContext internalFunctionContext)
+    public Task UpdateTimeJobFromExecutionState<TTimeJob>(JobExecutionState executionState)
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
     {
         // Debounce high-frequency updates into a single notification
@@ -128,24 +128,22 @@ internal sealed class JobsNotificationHubSender : IJobsNotificationHubSender, ID
         var __ = _hubContext.Clients.All.SendAsync("UpdateTimeJobNotification");
     }
 
-    public Task UpdateCronOccurrenceFromInternalFunctionContext<TCronJob>(
-        InternalFunctionContext internalFunctionContext
-    )
+    public Task UpdateCronOccurrenceFromExecutionState<TCronJob>(JobExecutionState executionState)
         where TCronJob : CronJobEntity, new()
     {
         var updatePayload = new
         {
-            id = internalFunctionContext.JobId,
-            status = internalFunctionContext.Status,
-            cronJobId = internalFunctionContext.ParentId,
-            executedAt = internalFunctionContext.ExecutedAt,
-            elapsedTime = internalFunctionContext.ElapsedTime,
-            retryCount = internalFunctionContext.RetryCount,
-            exceptionMessage = internalFunctionContext.ExceptionDetails,
+            id = executionState.JobId,
+            status = executionState.Status,
+            cronJobId = executionState.ParentId,
+            executedAt = executionState.ExecutedAt,
+            elapsedTime = executionState.ElapsedTime,
+            retryCount = executionState.RetryCount,
+            exceptionMessage = executionState.ExceptionDetails,
         };
 
         _ = _hubContext
-            .Clients.Group(internalFunctionContext.ParentId?.ToString() ?? string.Empty)
+            .Clients.Group(executionState.ParentId?.ToString() ?? string.Empty)
             .SendAsync("UpdateCronOccurrenceNotification", updatePayload);
 
         return Task.CompletedTask;

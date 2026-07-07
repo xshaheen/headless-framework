@@ -7,6 +7,7 @@ namespace Headless.PushNotifications.Firebase;
 /// <summary>
 /// Firebase configuration options.
 /// </summary>
+[PublicAPI]
 public sealed class FirebaseOptions
 {
     /// <summary>

@@ -17,7 +17,7 @@ public sealed class AuthServiceTests : TestBase
         var service = new AuthService(config, _logger);
         var context = new DefaultHttpContext();
 
-        var result = await service.AuthenticateAsync(context);
+        var result = await service.AuthenticateAsync(context, AbortToken);
 
         result.IsAuthenticated.Should().BeTrue();
         result.Username.Should().Be("anonymous");
@@ -32,7 +32,7 @@ public sealed class AuthServiceTests : TestBase
         var context = new DefaultHttpContext();
         context.Request.Headers.Authorization = $"Basic {credentials}";
 
-        var result = await service.AuthenticateAsync(context);
+        var result = await service.AuthenticateAsync(context, AbortToken);
 
         result.IsAuthenticated.Should().BeTrue();
         result.Username.Should().Be("admin");
@@ -51,7 +51,7 @@ public sealed class AuthServiceTests : TestBase
         context.Request.Headers.Authorization =
             "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes("admin:wrong"));
 
-        var result = await service.AuthenticateAsync(context);
+        var result = await service.AuthenticateAsync(context, AbortToken);
 
         result.IsAuthenticated.Should().BeFalse();
     }
@@ -64,7 +64,7 @@ public sealed class AuthServiceTests : TestBase
         var context = new DefaultHttpContext();
         context.Request.Headers.Authorization = "Bearer my-secret-key";
 
-        var result = await service.AuthenticateAsync(context);
+        var result = await service.AuthenticateAsync(context, AbortToken);
 
         result.IsAuthenticated.Should().BeTrue();
         result.Username.Should().Be("api-user");
@@ -78,7 +78,7 @@ public sealed class AuthServiceTests : TestBase
         var context = new DefaultHttpContext();
         context.Request.Headers.Authorization = "Bearer wrong-key";
 
-        var result = await service.AuthenticateAsync(context);
+        var result = await service.AuthenticateAsync(context, AbortToken);
 
         result.IsAuthenticated.Should().BeFalse();
     }
@@ -93,7 +93,7 @@ public sealed class AuthServiceTests : TestBase
             User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "test-user")], "test-scheme")),
         };
 
-        var result = await service.AuthenticateAsync(context);
+        var result = await service.AuthenticateAsync(context, AbortToken);
 
         result.IsAuthenticated.Should().BeTrue();
         result.Username.Should().Be("test-user");
@@ -106,7 +106,7 @@ public sealed class AuthServiceTests : TestBase
         var service = new AuthService(config, _logger);
         var context = new DefaultHttpContext();
 
-        var result = await service.AuthenticateAsync(context);
+        var result = await service.AuthenticateAsync(context, AbortToken);
 
         result.IsAuthenticated.Should().BeFalse();
     }
@@ -123,7 +123,7 @@ public sealed class AuthServiceTests : TestBase
         var context = new DefaultHttpContext();
         context.Request.Headers.Authorization = "valid-token";
 
-        var result = await service.AuthenticateAsync(context);
+        var result = await service.AuthenticateAsync(context, AbortToken);
 
         result.IsAuthenticated.Should().BeTrue();
         result.Username.Should().Be("custom-user");
@@ -141,7 +141,7 @@ public sealed class AuthServiceTests : TestBase
         var context = new DefaultHttpContext();
         context.Request.Headers.Authorization = "invalid-token";
 
-        var result = await service.AuthenticateAsync(context);
+        var result = await service.AuthenticateAsync(context, AbortToken);
 
         result.IsAuthenticated.Should().BeFalse();
     }
@@ -157,7 +157,7 @@ public sealed class AuthServiceTests : TestBase
         var service = new AuthService(config, _logger);
         var context = new DefaultHttpContext();
 
-        var result = await service.AuthenticateAsync(context);
+        var result = await service.AuthenticateAsync(context, AbortToken);
 
         result.IsAuthenticated.Should().BeFalse();
         result.ErrorMessage.Should().Be("No authorization provided");
@@ -174,7 +174,7 @@ public sealed class AuthServiceTests : TestBase
         context.Request.Path = "/dashboard/hub";
         context.Request.QueryString = new QueryString("?access_token=my-key");
 
-        var result = await service.AuthenticateAsync(context);
+        var result = await service.AuthenticateAsync(context, AbortToken);
 
         result.IsAuthenticated.Should().BeTrue();
     }
@@ -188,7 +188,7 @@ public sealed class AuthServiceTests : TestBase
         context.Request.Path = "/api/data";
         context.Request.QueryString = new QueryString("?access_token=my-key");
 
-        var result = await service.AuthenticateAsync(context);
+        var result = await service.AuthenticateAsync(context, AbortToken);
 
         result.IsAuthenticated.Should().BeFalse();
         result.ErrorMessage.Should().Be("No authorization provided");

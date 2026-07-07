@@ -12,6 +12,7 @@ internal sealed class PermissionGrantRecordConfiguration(PermissionsStorageOptio
     public void Configure(EntityTypeBuilder<PermissionGrantRecord> b)
     {
         b.ToTable(options.PermissionGrantsTableName, options.Schema);
+        b.ConfigureHeadlessConvention();
         b.Property(x => x.Name).HasMaxLength(PermissionGrantRecordConstants.NameMaxLength).IsRequired();
         b.Property(x => x.ProviderName).HasMaxLength(PermissionGrantRecordConstants.ProviderNameMaxLength).IsRequired();
         b.Property(x => x.ProviderKey).HasMaxLength(PermissionGrantRecordConstants.ProviderKeyMaxLength).IsRequired();

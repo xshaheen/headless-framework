@@ -32,7 +32,7 @@ namespace Headless.Messaging.Internal;
 /// </list>
 /// </para>
 /// </remarks>
-public interface IMessageDispatcher
+internal interface IMessageDispatcher
 {
     /// <summary>
     /// Dispatches a message to its registered consumer(s).

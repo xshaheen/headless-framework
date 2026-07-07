@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using FluentValidation;
+
 namespace Headless.Dashboard.Authentication;
 
 /// <summary>
@@ -64,5 +66,32 @@ public sealed class AuthConfig
             case AuthMode.Custom when CustomValidator == null:
                 throw new InvalidOperationException("CustomValidator is required for Custom authentication mode");
         }
+    }
+}
+
+/// <summary>
+/// FluentValidation validator for <see cref="AuthConfig"/>. Enforces that the credential required by
+/// the selected <see cref="AuthMode"/> is present. Wired into the options pipeline (with validation on
+/// start) by <see cref="SetupDashboardAuthentication"/>; the equivalent imperative check is also exposed
+/// via <see cref="AuthConfig.Validate"/> for callers that construct <see cref="AuthConfig"/> directly.
+/// </summary>
+internal sealed class AuthConfigValidator : AbstractValidator<AuthConfig>
+{
+    public AuthConfigValidator()
+    {
+        RuleFor(x => x.BasicCredentials)
+            .NotEmpty()
+            .When(x => x.Mode == AuthMode.Basic)
+            .WithMessage("BasicCredentials is required for Basic authentication mode");
+
+        RuleFor(x => x.ApiKey)
+            .NotEmpty()
+            .When(x => x.Mode == AuthMode.ApiKey)
+            .WithMessage("ApiKey is required for ApiKey authentication mode");
+
+        RuleFor(x => x.CustomValidator)
+            .NotNull()
+            .When(x => x.Mode == AuthMode.Custom)
+            .WithMessage("CustomValidator is required for Custom authentication mode");
     }
 }

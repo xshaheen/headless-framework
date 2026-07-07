@@ -4,9 +4,9 @@ namespace Headless.Payments.Paymob.CashIn.Models.Intentions;
 
 public sealed class CashInCreateIntentionRequest
 {
-    /// <summary>Pass the total amount in cents in this parameter.</summary>
+    /// <summary>The total amount in the smallest currency unit (integer cents), e.g. <c>10000</c> for 100.00 EGP.</summary>
     [JsonPropertyName("amount")]
-    public required decimal Amount { get; init; }
+    public required long Amount { get; init; }
 
     /// <summary>
     /// Specify the currency for the specific region in this parameter. It should be similar to
@@ -43,14 +43,14 @@ public sealed class CashInCreateIntentionRequest
     /// Provide the configured Integration ID here. Merchants can use the ID as an integer or the name
     /// </summary>
     [JsonPropertyName("payment_methods")]
-    public required List<int> PaymentMethods { get; init; } = [];
+    public required IReadOnlyList<long> PaymentMethods { get; init; } = [];
 
     [JsonPropertyName("billing_data")]
     public required CashInCreateIntentionRequestBillingData BillingData { get; init; }
 
     [JsonPropertyName("items")]
-    public required List<CashInCreateIntentionRequestItem> Items { get; init; } = [];
+    public required IReadOnlyList<CashInCreateIntentionRequestItem> Items { get; init; } = [];
 
     [JsonPropertyName("extras")]
-    public Dictionary<string, object>? Extras { get; init; }
+    public IReadOnlyDictionary<string, object>? Extras { get; init; }
 }

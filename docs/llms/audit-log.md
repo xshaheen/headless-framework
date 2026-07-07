@@ -260,7 +260,7 @@ Keeps audit-log contracts provider-neutral while centralizing the public `AddHea
 
 ### Key Features
 
-- `SetupAuditLog.AddHeadlessAuditLog(...)` — public DI extension methods in `Microsoft.Extensions.DependencyInjection`.
+- `SetupAuditLog.AddHeadlessAuditLog(setup => setup.Use...)` — the single public DI entry point in the `Headless.AuditLog` namespace (add `using Headless.AuditLog;`); requires exactly one storage provider. The options-only registration is `internal` (a funnel the builder overload uses to register `AuditLogOptions` once), so a store-less audit log cannot be registered by accident.
 - `HeadlessAuditLogSetupBuilder` — fluent builder passed to `AddHeadlessAuditLog(setup => ...)`; exposes `ConfigureOptions`, `ConfigureStorage`, and `RegisterExtension`.
 - `HeadlessAuditLogBuilder` — returned by `AddHeadlessAuditLog(setup => ...)`; provides access to `IServiceCollection` for chaining.
 - `IAuditLogStorageOptionsExtension` — setup-time hook implemented by storage provider packages.
@@ -479,6 +479,7 @@ Provides PostgreSQL-native audit log storage without pulling Entity Framework in
 - Batched INSERT: up to 500 rows per command (cached per row count to avoid repeated string building).
 - `jsonb` by default for `OldValues`, `NewValues`, and `ChangedFields`; override via `AuditLogStorageOptions.JsonColumnType` (`Jsonb` or `Json` accepted; `NvarcharMax` rejected at options validation time).
 - `PostgreSqlAuditLogOptions` — `ConnectionString` (required) and `CommandTimeout` (default 30 s).
+- `UsePostgreSql` ships the full provider overload trio: `(string connectionString)`, `(IConfiguration configuration)`, `(Action<PostgreSqlAuditLogOptions>)`, and `(Action<PostgreSqlAuditLogOptions, IServiceProvider>)`.
 - Same index set as the EF provider: tenant+time, tenant+action+time, tenant+entity+time, tenant+actor+time, correlation ID.
 
 ### Design Notes
@@ -525,6 +526,14 @@ setup.UsePostgreSql(options =>
     options.ConnectionString = connectionString;
     options.CommandTimeout = TimeSpan.FromSeconds(60);
 });
+```
+
+Bind provider options from configuration, or configure with service resolution:
+
+```csharp
+setup.UsePostgreSql(builder.Configuration.GetSection("Headless:AuditLog:PostgreSql"));
+setup.UsePostgreSql((options, sp) =>
+    options.ConnectionString = sp.GetRequiredService<IConfiguration>().GetConnectionString("AuditLog")!);
 ```
 
 ### Configuration
@@ -574,6 +583,7 @@ Provides SQL Server-native audit log storage without pulling Entity Framework in
 - Batched INSERT: up to 100 rows per command (SQL Server parameter limit is lower than PostgreSQL's).
 - `nvarchar(max)` by default for JSON columns; `NvarcharMax` is the only accepted `AuditLogJsonColumnType` (PostgreSQL-specific types are rejected at options validation time).
 - `SqlServerAuditLogOptions` — `ConnectionString` (required) and `CommandTimeout` (default 30 s).
+- `UseSqlServer` ships the full provider overload trio: `(string connectionString)`, `(IConfiguration configuration)`, `(Action<SqlServerAuditLogOptions>)`, and `(Action<SqlServerAuditLogOptions, IServiceProvider>)`.
 - Same index set as the EF provider: tenant+time, tenant+action+time, tenant+entity+time, tenant+actor+time, correlation ID.
 
 ### Design Notes
@@ -622,6 +632,14 @@ setup.UseSqlServer(options =>
     options.ConnectionString = connectionString;
     options.CommandTimeout = TimeSpan.FromSeconds(60);
 });
+```
+
+Bind provider options from configuration, or configure with service resolution:
+
+```csharp
+setup.UseSqlServer(builder.Configuration.GetSection("Headless:AuditLog:SqlServer"));
+setup.UseSqlServer((options, sp) =>
+    options.ConnectionString = sp.GetRequiredService<IConfiguration>().GetConnectionString("AuditLog")!);
 ```
 
 ### Configuration

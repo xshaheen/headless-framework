@@ -14,8 +14,8 @@ namespace Tests;
 
 public sealed class NatsConsumerClientTests : TestBase
 {
-    private readonly MsOptions.IOptions<MessagingNatsOptions> _options = MsOptions.Options.Create(
-        new MessagingNatsOptions { Servers = "nats://localhost:4222" }
+    private readonly MsOptions.IOptions<NatsMessagingOptions> _options = MsOptions.Options.Create(
+        new NatsMessagingOptions { Servers = "nats://localhost:4222" }
     );
     private readonly IServiceProvider _serviceProvider = new ServiceCollection().BuildServiceProvider();
 
@@ -31,7 +31,7 @@ public sealed class NatsConsumerClientTests : TestBase
     public async Task should_redact_credentials_from_broker_address()
     {
         var options = MsOptions.Options.Create(
-            new MessagingNatsOptions { Servers = "nats://user:password@localhost:4222" }
+            new NatsMessagingOptions { Servers = "nats://user:password@localhost:4222" }
         );
         await using var client = new NatsConsumerClient("test-group", 1, options, _serviceProvider);
 
@@ -41,8 +41,8 @@ public sealed class NatsConsumerClientTests : TestBase
     [Fact]
     public void should_throw_when_options_value_is_null()
     {
-        var nullOptions = Substitute.For<MsOptions.IOptions<MessagingNatsOptions>>();
-        nullOptions.Value.Returns((MessagingNatsOptions)null!);
+        var nullOptions = Substitute.For<MsOptions.IOptions<NatsMessagingOptions>>();
+        nullOptions.Value.Returns((NatsMessagingOptions)null!);
 
         var act = () => new NatsConsumerClient("test-group", 1, nullOptions, _serviceProvider);
         act.Should().Throw<ArgumentNullException>();
@@ -73,7 +73,7 @@ public sealed class NatsConsumerClientTests : TestBase
     public async Task should_return_topics_as_collection_from_fetch()
     {
         var options = MsOptions.Options.Create(
-            new MessagingNatsOptions
+            new NatsMessagingOptions
             {
                 Servers = "nats://localhost:4222",
                 EnableSubscriberClientStreamAndSubjectCreation = false,
@@ -408,7 +408,7 @@ public sealed class NatsConsumerClientTests : TestBase
     {
         // given
         var options = MsOptions.Options.Create(
-            new MessagingNatsOptions
+            new NatsMessagingOptions
             {
                 Servers = "nats://localhost:4222",
                 CustomHeadersBuilder = (_, _, _) => throw new InvalidOperationException("bad header builder"),

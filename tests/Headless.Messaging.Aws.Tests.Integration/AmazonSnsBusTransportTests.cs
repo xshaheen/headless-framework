@@ -36,7 +36,7 @@ public sealed class AmazonSnsBusTransportTests(LocalStackTestFixture fixture) : 
     {
         var logger = NullLogger<AmazonSnsBusTransport>.Instance;
         var options = Options.Create(
-            new AmazonSqsOptions
+            new AmazonSqsMessagingOptions
             {
                 Region = Amazon.RegionEndpoint.USEast1,
                 SnsServiceUrl = fixture.ConnectionString,

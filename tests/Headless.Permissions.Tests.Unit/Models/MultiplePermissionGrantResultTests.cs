@@ -17,7 +17,7 @@ public sealed class MultiplePermissionGrantResultTests : TestBase
         var result = new MultiplePermissionGrantResult(permissions, isGranted: true);
 
         // then
-        result.Should().HaveCount(3);
+        result.Grants.Should().HaveCount(3);
         result["Read"].Should().BeTrue();
         result["Write"].Should().BeTrue();
         result["Delete"].Should().BeTrue();
@@ -27,12 +27,7 @@ public sealed class MultiplePermissionGrantResultTests : TestBase
     public void should_return_all_granted_true_when_all_permissions_granted()
     {
         // given
-        var result = new MultiplePermissionGrantResult
-        {
-            ["Read"] = true,
-            ["Write"] = true,
-            ["Delete"] = true,
-        };
+        var result = new MultiplePermissionGrantResult(["Read", "Write", "Delete"], isGranted: true);
 
         // then
         result.AllGranted.Should().BeTrue();
@@ -43,12 +38,7 @@ public sealed class MultiplePermissionGrantResultTests : TestBase
     public void should_return_all_prohibited_true_when_all_permissions_denied()
     {
         // given
-        var result = new MultiplePermissionGrantResult
-        {
-            ["Read"] = false,
-            ["Write"] = false,
-            ["Delete"] = false,
-        };
+        var result = new MultiplePermissionGrantResult(["Read", "Write", "Delete"], isGranted: false);
 
         // then
         result.AllGranted.Should().BeFalse();

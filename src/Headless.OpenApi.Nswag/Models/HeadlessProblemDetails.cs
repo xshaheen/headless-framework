@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Api.Models;
+namespace Headless.OpenApi.Nswag.Models;
 
 /// <summary>
 /// Base problem details schema used for OpenAPI response documentation across all Headless error responses.

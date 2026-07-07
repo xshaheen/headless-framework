@@ -6,6 +6,7 @@ using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
+using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;

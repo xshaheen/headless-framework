@@ -6,7 +6,8 @@ using Headless.Primitives;
 namespace Headless.Features.Models;
 
 /// <summary>Describes a feature, its metadata, and its position in the feature hierarchy.</summary>
-public sealed class FeatureDefinition : ICanCreateChildFeature, IHasExtraProperties
+[PublicAPI]
+public sealed class FeatureDefinition : ICanAddChildFeature, IHasExtraProperties
 {
     private readonly List<FeatureDefinition> _children;
 

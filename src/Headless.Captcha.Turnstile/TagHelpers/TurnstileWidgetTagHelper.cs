@@ -9,14 +9,14 @@ namespace Headless.Captcha;
 /// <summary>
 /// Emits the Cloudflare Turnstile widget element — a <c>div.cf-turnstile</c> carrying <c>data-sitekey</c> (from the
 /// default Turnstile options) and the optional theme/size/callback/action/cdata/language attributes. The language
-/// defaults to <see cref="ITurnstileLanguageCodeProvider"/> and is rendered as <c>data-language</c> (Cloudflare's
+/// defaults to <see cref="ICaptchaLanguageCodeProvider"/> and is rendered as <c>data-language</c> (Cloudflare's
 /// widget language attribute).
 /// </summary>
 [PublicAPI]
 [HtmlTargetElement("turnstile-widget", TagStructure = TagStructure.WithoutEndTag)]
 public sealed class TurnstileWidgetTagHelper(
     IOptionsSnapshot<TurnstileOptions> optionsAccessor,
-    ITurnstileLanguageCodeProvider languageCodeProvider
+    ICaptchaLanguageCodeProvider languageCodeProvider
 ) : TagHelper
 {
     private readonly TurnstileOptions _options = optionsAccessor.Get(CaptchaConstants.TurnstileProvider);
@@ -35,7 +35,7 @@ public sealed class TurnstileWidgetTagHelper(
 
     public string? CData { get; set; }
 
-    /// <summary>Optional. Overrides the language code; defaults to <see cref="ITurnstileLanguageCodeProvider"/>.</summary>
+    /// <summary>Optional. Overrides the language code; defaults to <see cref="ICaptchaLanguageCodeProvider"/>.</summary>
     public string? Language { get; set; }
 
     public override void Process(TagHelperContext context, TagHelperOutput output)

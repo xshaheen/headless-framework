@@ -30,26 +30,35 @@ namespace Headless.Serializer;
 /// integer values disallowed) and <see cref="Converters.IpAddressJsonConverter"/> via the shared
 /// <see cref="ConfigureWebJsonOptions"/> / <see cref="ConfigureInternalJsonOptions"/> helpers.
 /// </para>
+/// <para>
+/// The three shared presets are frozen (<see cref="JsonSerializerOptions.IsReadOnly"/> is <see langword="true"/>)
+/// at initialization, so they can be shared process-wide without a caller silently mutating framework serialization.
+/// To customize, start from a fresh mutable instance via <see cref="CreateWebJsonOptions"/>,
+/// <see cref="CreateInternalJsonOptions"/>, or <see cref="CreatePrettyJsonOptions"/> instead of mutating a preset.
+/// </para>
 /// </remarks>
+[PublicAPI]
 public static class JsonConstants
 {
     /// <summary>
-    /// Shared options for public-facing HTTP API serialization. See the <see cref="JsonConstants"/> remarks for
-    /// the full configuration applied.
+    /// Shared, read-only options for public-facing HTTP API serialization. See the <see cref="JsonConstants"/>
+    /// remarks for the full configuration applied. Use <see cref="CreateWebJsonOptions"/> for a mutable copy.
     /// </summary>
-    public static readonly JsonSerializerOptions DefaultWebJsonOptions = CreateWebJsonOptions();
+    public static readonly JsonSerializerOptions DefaultWebJsonOptions = _Freeze(CreateWebJsonOptions());
 
     /// <summary>
-    /// Shared options for internal persistence or inter-service serialization. See the <see cref="JsonConstants"/>
-    /// remarks for the full configuration applied.
+    /// Shared, read-only options for internal persistence or inter-service serialization. See the
+    /// <see cref="JsonConstants"/> remarks for the full configuration applied. Use
+    /// <see cref="CreateInternalJsonOptions"/> for a mutable copy.
     /// </summary>
-    public static readonly JsonSerializerOptions DefaultInternalJsonOptions = CreateInternalJsonOptions();
+    public static readonly JsonSerializerOptions DefaultInternalJsonOptions = _Freeze(CreateInternalJsonOptions());
 
     /// <summary>
-    /// Shared options for human-readable (indented) output. Identical to <see cref="DefaultWebJsonOptions"/>
-    /// with <see cref="JsonSerializerOptions.WriteIndented"/> set to <see langword="true"/>.
+    /// Shared, read-only options for human-readable (indented) output. Identical to
+    /// <see cref="DefaultWebJsonOptions"/> with <see cref="JsonSerializerOptions.WriteIndented"/> set to
+    /// <see langword="true"/>. Use <see cref="CreatePrettyJsonOptions"/> for a mutable copy.
     /// </summary>
-    public static readonly JsonSerializerOptions DefaultPrettyJsonOptions = CreatePrettyJsonOptions();
+    public static readonly JsonSerializerOptions DefaultPrettyJsonOptions = _Freeze(CreatePrettyJsonOptions());
 
     /// <summary>Creates a new <see cref="JsonSerializerOptions"/> instance configured for public-facing HTTP APIs.</summary>
     /// <returns>A new, mutable options instance with the web preset applied.</returns>
@@ -133,6 +142,25 @@ public static class JsonConstants
         options.AllowTrailingCommas = false;
         options.ReferenceHandler = null;
         _AddDefaultConverters(options);
+
+        return options;
+    }
+
+    [UnconditionalSuppressMessage(
+        "Trimming",
+        "IL2026:RequiresUnreferencedCode",
+        Justification = "Presets use the reflection-based serializer by default; consumers should use source generation for AOT/trimmed scenarios."
+    )]
+    [UnconditionalSuppressMessage(
+        "AOT",
+        "IL3050:RequiresDynamicCode",
+        Justification = "Presets use the reflection-based serializer by default; consumers should use source generation for AOT scenarios."
+    )]
+    private static JsonSerializerOptions _Freeze(JsonSerializerOptions options)
+    {
+        // Populate the default reflection resolver eagerly (matching lazy first-use behavior) so the shared preset
+        // can be locked. Once read-only, any consumer mutation throws instead of silently altering framework state.
+        options.MakeReadOnly(populateMissingResolver: true);
 
         return options;
     }

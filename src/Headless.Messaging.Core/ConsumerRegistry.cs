@@ -2,7 +2,7 @@
 
 using Headless.Checks;
 using Headless.Messaging.Configuration;
-using Headless.Messaging.Internal;
+using Headless.Messaging.Runtime;
 
 namespace Headless.Messaging;
 

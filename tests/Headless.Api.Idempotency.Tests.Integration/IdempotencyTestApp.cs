@@ -2,8 +2,8 @@
 
 using System.Collections.Concurrent;
 using Headless.Abstractions;
-using Headless.Api;
 using Headless.Api.Abstractions;
+using Headless.Api.Idempotency;
 using Headless.Caching;
 using Headless.Core;
 using Headless.DistributedLocks;

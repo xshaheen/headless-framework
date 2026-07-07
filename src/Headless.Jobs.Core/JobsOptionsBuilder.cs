@@ -10,7 +10,7 @@ namespace Headless.Jobs;
 
 /// <summary>
 /// Fluent builder for configuring the Jobs subsystem, returned by the operational-store registration
-/// extension (e.g., <c>AddOperationalStore</c>) and passed to optional add-ons such as
+/// extension (e.g., <c>UseEntityFramework</c>) and passed to optional add-ons such as
 /// <c>AddDashboard</c>, <c>AddOpenTelemetryInstrumentation</c>, and <c>AddJobsDiscovery</c>.
 /// </summary>
 /// <typeparam name="TTimeJob">The application's concrete time job entity type.</typeparam>

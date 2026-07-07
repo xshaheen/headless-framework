@@ -19,6 +19,7 @@ namespace Headless.Media.Indexing;
 /// via <c>Task.FromResult</c>; no I/O is performed after the initial read of the input stream.
 /// </para>
 /// </remarks>
+[PublicAPI]
 public sealed class PresentationDocumentMediaFileTextProvider : IMediaFileTextProvider
 {
     /// <summary>
@@ -26,12 +27,21 @@ public sealed class PresentationDocumentMediaFileTextProvider : IMediaFileTextPr
     /// presentation.
     /// </summary>
     /// <param name="fileStream">A stream containing a valid .pptx (Open XML) PowerPoint presentation.</param>
+    /// <param name="cancellationToken">
+    /// Token to cancel the extraction. Observed before parsing and between slides; the Open XML SDK
+    /// parses the document synchronously, so cancellation cannot interrupt the initial read.
+    /// </param>
     /// <returns>
     /// The plain-text content of all slides joined by line breaks, or an empty string when the
     /// presentation contains no slides or no extractable text.
     /// </returns>
-    public Task<string> GetTextAsync(Stream fileStream)
+    /// <exception cref="OperationCanceledException">
+    /// Thrown when <paramref name="cancellationToken"/> is cancelled before extraction completes.
+    /// </exception>
+    public Task<string> GetTextAsync(Stream fileStream, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         using var document = PresentationDocument.Open(fileStream, isEditable: false);
         var ids = document.PresentationPart?.Presentation?.SlideIdList?.ChildElements;
 
@@ -44,6 +54,8 @@ public sealed class PresentationDocumentMediaFileTextProvider : IMediaFileTextPr
 
         foreach (var slideId in ids)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             var relationshipId = ((SlideId)slideId).RelationshipId?.Value;
 
             if (

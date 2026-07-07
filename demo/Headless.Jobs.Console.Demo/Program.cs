@@ -1,5 +1,4 @@
 using Headless.Coordination;
-using Headless.Coordination.PostgreSql;
 using Headless.Jobs.Console.Demo;
 using Headless.Jobs.DbContextFactory;
 using Headless.Jobs.DependencyInjection;
@@ -23,7 +22,7 @@ var host = Host.CreateDefaultBuilder(args)
             // Configure Jobs with a PostgreSQL operational store.
             services.AddHeadlessJobs(options =>
             {
-                options.AddOperationalStore(efOptions =>
+                options.UseEntityFramework(efOptions =>
                 {
                     efOptions.UseJobsDbContext<JobsDbContext>(dbOptions =>
                         dbOptions.UseNpgsql(

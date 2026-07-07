@@ -10,7 +10,7 @@ using Pulsar.Client.Common;
 namespace Headless.Messaging.Pulsar;
 
 internal sealed class PulsarConsumerClient(
-    IOptions<MessagingPulsarOptions> options,
+    IOptions<PulsarMessagingOptions> options,
     PulsarClient client,
     string groupName,
     byte groupConcurrent,
@@ -23,7 +23,7 @@ internal sealed class PulsarConsumerClient(
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private int _disposed;
-    private readonly MessagingPulsarOptions _pulsarOptions = options.Value;
+    private readonly PulsarMessagingOptions _pulsarOptions = options.Value;
     private IConsumer<byte[]>? _consumerClient;
 
     public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }

@@ -2,6 +2,7 @@
 
 using FluentValidation;
 using FluentValidation.Results;
+using Headless.Api;
 using Headless.Api.Abstractions;
 using Headless.Primitives;
 using Headless.Testing.Tests;
@@ -89,7 +90,7 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
 
         // then
         result.Should().BeAssignableTo<IResult>();
-        creator.Received(1).UnprocessableEntity(Arg.Any<Dictionary<string, List<ErrorDescriptor>>>());
+        creator.Received(1).UnprocessableEntity(Arg.Any<IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>>>());
     }
 
     #endregion
@@ -175,11 +176,11 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
         creator
             .Received(1)
             .UnprocessableEntity(
-                Arg.Is<Dictionary<string, List<ErrorDescriptor>>>(d =>
+                Arg.Is<IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>>>(d =>
                     d.ContainsKey("name")
                     && d.ContainsKey("email")
-                    && d["name"].Exists(e => e.Description == "Name error from validator 1")
-                    && d["email"].Exists(e => e.Description == "Email error from validator 2")
+                    && d["name"].Any(e => e.Description == "Name error from validator 1")
+                    && d["email"].Any(e => e.Description == "Email error from validator 2")
                 )
             );
     }
@@ -215,11 +216,11 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
         creator
             .Received(1)
             .UnprocessableEntity(
-                Arg.Is<Dictionary<string, List<ErrorDescriptor>>>(d =>
+                Arg.Is<IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>>>(d =>
                     d.ContainsKey("name")
                     && d["name"].Count == 2
-                    && d["name"].Exists(e => e.Description == "Name must not be empty")
-                    && d["name"].Exists(e => e.Description == "Name must be at least 3 characters")
+                    && d["name"].Any(e => e.Description == "Name must not be empty")
+                    && d["name"].Any(e => e.Description == "Name must be at least 3 characters")
                 )
             );
     }
@@ -308,7 +309,9 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
         creator
             .Received(1)
             .UnprocessableEntity(
-                Arg.Is<Dictionary<string, List<ErrorDescriptor>>>(d => d.ContainsKey("name") && d["name"].Count == 1)
+                Arg.Is<IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>>>(d =>
+                    d.ContainsKey("name") && d["name"].Count == 1
+                )
             );
     }
 
@@ -336,7 +339,7 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
         creator
             .Received(1)
             .UnprocessableEntity(
-                Arg.Is<Dictionary<string, List<ErrorDescriptor>>>(d =>
+                Arg.Is<IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>>>(d =>
                     d.ContainsKey("firstName") && d["firstName"].Count == 1
                 )
             );
@@ -429,7 +432,7 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
             .Returns(ci => new ProblemDetails { Status = StatusCodes.Status400BadRequest, Title = "Bad Request" });
 
         creator
-            .UnprocessableEntity(Arg.Any<Dictionary<string, List<ErrorDescriptor>>>())
+            .UnprocessableEntity(Arg.Any<IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>>>())
             .Returns(ci => new ProblemDetails
             {
                 Status = StatusCodes.Status422UnprocessableEntity,

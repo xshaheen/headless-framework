@@ -15,6 +15,7 @@ namespace Headless.PushNotifications;
 /// that for an unregistered token both <see cref="IsSucceeded"/> and <see cref="IsFailed"/> return
 /// <see langword="false"/>.
 /// </remarks>
+[PublicAPI]
 public sealed record PushNotificationResponse
 {
     private PushNotificationResponse() { }

@@ -58,11 +58,9 @@ public sealed class AppSettingDefinitionProvider : ISettingDefinitionProvider
 {
     public void Define(ISettingDefinitionContext context)
     {
-        context.Add(
-            new SettingDefinition(name: "App.MaxFileSize", displayName: "Maximum File Size", defaultValue: "10485760")
-        );
+        context.Add(name: "App.MaxFileSize", displayName: "Maximum File Size", defaultValue: "10485760");
 
-        context.Add(new SettingDefinition(name: "App.ApiKey", displayName: "API Key", isEncrypted: true));
+        context.Add(name: "App.ApiKey", displayName: "API Key", isEncrypted: true);
     }
 }
 ```
@@ -74,8 +72,9 @@ public sealed class ConfigService(ISettingManager settings)
 {
     public async Task<int> GetMaxFileSizeAsync(CancellationToken ct)
     {
-        var value = await settings.FindAsync("App.MaxFileSize", cancellationToken: ct);
-        return int.TryParse(value, out var size) ? size : 10485760;
+        // GetAsync returns a never-null SettingValue; Value is null on a miss.
+        var setting = await settings.GetAsync("App.MaxFileSize", cancellationToken: ct);
+        return int.TryParse(setting.Value, out var size) ? size : 10485760;
     }
 
     public async Task SetTenantApiKeyAsync(string tenantId, string apiKey, CancellationToken ct)

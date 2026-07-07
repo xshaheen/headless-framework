@@ -4,6 +4,7 @@
 namespace Headless.Imaging;
 
 /// <summary>Parameters that guide an image compression operation.</summary>
+[PublicAPI]
 public sealed class ImageCompressArgs(string? mimeType = null)
 {
     /// <summary>

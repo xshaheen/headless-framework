@@ -8,9 +8,10 @@ Provides Redis helper extensions plus definition-first Lua script loading/execut
 
 ## Key Features
 
-- `ConnectionMultiplexerExtensions` - Helper extensions for Redis connections
+- `ConnectionMultiplexerExtensions` - Helper extensions for Redis connections (e.g. `CountAllKeysAsync`)
 - `RedisScriptDefinition` - Base type for named Lua script definitions
 - `HeadlessRedisScriptsLoader` - Generic Lua script loader and evaluator
+- `Testing.RedisTestSupportExtensions` - Destructive integration-test helpers (`FlushAllAsync`) kept off the general surface in the `Headless.Redis.Testing` namespace
 
 ## Design Notes
 

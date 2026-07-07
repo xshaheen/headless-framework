@@ -12,7 +12,7 @@ public sealed class CashInOrderItem
     public required string Description { get; init; }
 
     [JsonPropertyName("amount_cents")]
-    public int AmountCents { get; init; }
+    public long AmountCents { get; init; }
 
     [JsonPropertyName("quantity")]
     public int Quantity { get; init; }

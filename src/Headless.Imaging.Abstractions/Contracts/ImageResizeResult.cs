@@ -13,6 +13,7 @@ namespace Headless.Imaging;
 /// whose <c>Content</c> is a readable, seekable <see cref="Stream"/> containing the resized bytes.
 /// Callers are responsible for disposing that stream.
 /// </remarks>
+[PublicAPI]
 public sealed class ImageStreamResizeResult : ImageProcessResult<ImageResizeContent<Stream>>
 {
     private ImageStreamResizeResult() { }

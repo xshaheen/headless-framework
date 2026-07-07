@@ -26,18 +26,33 @@ public sealed class ImageSharpOptions
     /// Gets or sets the ImageSharp encoder used when compressing WebP images.
     /// Defaults to <c>WebpEncoder</c> with quality set to <see cref="DefaultCompressQuality"/>.
     /// </summary>
+    /// <remarks>
+    /// This is a deliberate full-fidelity pass-through of the ImageSharp type <see cref="IImageEncoder"/>: the
+    /// entire encoder surface (every codec knob) is exposed verbatim so no ImageSharp option is lost behind a
+    /// lossy Headless wrapper. It intentionally couples this option to <c>SixLabors.ImageSharp</c>.
+    /// </remarks>
     public IImageEncoder WebpCompressEncoder { get; set; }
 
     /// <summary>
     /// Gets or sets the ImageSharp encoder used when compressing JPEG images.
     /// Defaults to <c>JpegEncoder</c> with quality set to <see cref="DefaultCompressQuality"/>.
     /// </summary>
+    /// <remarks>
+    /// This is a deliberate full-fidelity pass-through of the ImageSharp type <see cref="IImageEncoder"/>: the
+    /// entire encoder surface (every codec knob) is exposed verbatim so no ImageSharp option is lost behind a
+    /// lossy Headless wrapper. It intentionally couples this option to <c>SixLabors.ImageSharp</c>.
+    /// </remarks>
     public IImageEncoder JpegCompressEncoder { get; set; }
 
     /// <summary>
     /// Gets or sets the ImageSharp encoder used when compressing PNG images.
     /// Defaults to <c>PngEncoder</c> with <c>BestCompression</c> and metadata stripping enabled.
     /// </summary>
+    /// <remarks>
+    /// This is a deliberate full-fidelity pass-through of the ImageSharp type <see cref="IImageEncoder"/>: the
+    /// entire encoder surface (every codec knob) is exposed verbatim so no ImageSharp option is lost behind a
+    /// lossy Headless wrapper. It intentionally couples this option to <c>SixLabors.ImageSharp</c>.
+    /// </remarks>
     public IImageEncoder PngCompressEncoder { get; set; }
 
     /// <summary>Initializes a new instance with default encoder settings.</summary>

@@ -2,8 +2,8 @@
 
 using Asp.Versioning.ApiExplorer;
 using Headless.Api.ApiExplorer;
-using Headless.Api.OperationProcessors;
-using Headless.Api.SchemaProcessors;
+using Headless.OpenApi.Nswag.OperationProcessors;
+using Headless.OpenApi.Nswag.SchemaProcessors;
 using Headless.Reflection;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
@@ -19,7 +19,7 @@ using Money = Headless.Primitives.Money;
 using Month = Headless.Primitives.Month;
 using UserId = Headless.Primitives.UserId;
 
-namespace Headless.Api;
+namespace Headless.OpenApi.Nswag;
 
 /// <summary>
 /// Registration and middleware helpers for NSwag-based OpenAPI document generation and Swagger UI.

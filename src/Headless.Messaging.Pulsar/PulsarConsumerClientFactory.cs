@@ -11,12 +11,12 @@ namespace Headless.Messaging.Pulsar;
 internal sealed class PulsarConsumerClientFactory : IIntentAwareConsumerClientFactory
 {
     private readonly IConnectionFactory _connection;
-    private readonly IOptions<MessagingPulsarOptions> _pulsarOptions;
+    private readonly IOptions<PulsarMessagingOptions> _pulsarOptions;
 
     public PulsarConsumerClientFactory(
         IConnectionFactory connection,
         ILoggerFactory loggerFactory,
-        IOptions<MessagingPulsarOptions> pulsarOptions
+        IOptions<PulsarMessagingOptions> pulsarOptions
     )
     {
         _connection = connection;

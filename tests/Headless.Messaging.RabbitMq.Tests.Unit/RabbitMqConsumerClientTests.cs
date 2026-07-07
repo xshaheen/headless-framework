@@ -15,7 +15,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     private readonly IConnectionChannelPool _pool;
     private readonly IConnection _connection;
     private readonly IChannel _channel;
-    private readonly IOptions<RabbitMqOptions> _options;
+    private readonly IOptions<RabbitMqMessagingOptions> _options;
     private readonly IServiceProvider _serviceProvider;
 
     protected override async ValueTask DisposeAsyncCore()
@@ -30,7 +30,15 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         _pool = Substitute.For<IConnectionChannelPool>();
         _connection = Substitute.For<IConnection>();
         _channel = Substitute.For<IChannel>();
-        _options = Options.Create(new RabbitMqOptions { HostName = "localhost", Port = 5672 });
+        _options = Options.Create(
+            new RabbitMqMessagingOptions
+            {
+                HostName = "localhost",
+                Port = 5672,
+                UserName = "test_user",
+                Password = "test_pass",
+            }
+        );
         _serviceProvider = new ServiceCollection().BuildServiceProvider();
 
         _pool.Exchange.Returns("test.exchange");
@@ -67,7 +75,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
             .Received(1)
             .ExchangeDeclareAsync(
                 "test.exchange",
-                RabbitMqOptions.ExchangeType,
+                RabbitMqMessagingOptions.ExchangeType,
                 true,
                 false,
                 null,
@@ -125,11 +133,13 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     {
         // given
         var options = Options.Create(
-            new RabbitMqOptions
+            new RabbitMqMessagingOptions
             {
                 HostName = "localhost",
                 Port = 5672,
-                QueueArguments = new RabbitMqOptions.QueueArgumentsOptions { MessageTTL = 3600000 },
+                UserName = "test_user",
+                Password = "test_pass",
+                QueueArguments = new RabbitMqMessagingOptions.QueueArgumentsOptions { MessageTTL = 3600000 },
             }
         );
         await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, options, _serviceProvider);
@@ -312,11 +322,13 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     {
         // given
         var options = Options.Create(
-            new RabbitMqOptions
+            new RabbitMqMessagingOptions
             {
                 HostName = "localhost",
                 Port = 5672,
-                QueueArguments = new RabbitMqOptions.QueueArgumentsOptions { QueueMode = "lazy" },
+                UserName = "test_user",
+                Password = "test_pass",
+                QueueArguments = new RabbitMqMessagingOptions.QueueArgumentsOptions { QueueMode = "lazy" },
             }
         );
         await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, options, _serviceProvider);
@@ -346,11 +358,13 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     {
         // given
         var options = Options.Create(
-            new RabbitMqOptions
+            new RabbitMqMessagingOptions
             {
                 HostName = "localhost",
                 Port = 5672,
-                QueueArguments = new RabbitMqOptions.QueueArgumentsOptions { QueueType = "quorum" },
+                UserName = "test_user",
+                Password = "test_pass",
+                QueueArguments = new RabbitMqMessagingOptions.QueueArgumentsOptions { QueueType = "quorum" },
             }
         );
         await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, options, _serviceProvider);
@@ -380,11 +394,13 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     {
         // given
         var options = Options.Create(
-            new RabbitMqOptions
+            new RabbitMqMessagingOptions
             {
                 HostName = "localhost",
                 Port = 5672,
-                QueueOptions = new RabbitMqOptions.QueueRabbitOptions
+                UserName = "test_user",
+                Password = "test_pass",
+                QueueOptions = new RabbitMqMessagingOptions.QueueRabbitOptions
                 {
                     Durable = false,
                     Exclusive = true,

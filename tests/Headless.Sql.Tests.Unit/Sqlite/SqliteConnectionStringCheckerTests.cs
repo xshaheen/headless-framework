@@ -2,6 +2,7 @@
 
 using Headless.Sql;
 using Headless.Sql.Sqlite;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 
 namespace Tests.Sqlite;
@@ -10,7 +11,7 @@ namespace Tests.Sqlite;
 /// Unit tests for <see cref="SqliteConnectionStringChecker"/>.
 /// These are structural tests; integration tests require actual database.
 /// </summary>
-public sealed class SqliteConnectionStringCheckerTests
+public sealed class SqliteConnectionStringCheckerTests : TestBase
 {
     [Fact]
     public void should_implement_IConnectionStringChecker()
@@ -33,7 +34,7 @@ public sealed class SqliteConnectionStringCheckerTests
         var sut = new SqliteConnectionStringChecker(logger);
 
         // when
-        var (connected, databaseExists) = await sut.CheckAsync("Data Source=:memory:");
+        var (connected, databaseExists) = await sut.CheckAsync("Data Source=:memory:", AbortToken);
 
         // then
         connected.Should().BeTrue();
@@ -49,7 +50,8 @@ public sealed class SqliteConnectionStringCheckerTests
 
         // when
         var (connected, databaseExists) = await sut.CheckAsync(
-            "Data Source=/nonexistent/path/that/should/not/exist/db.sqlite;Mode=ReadOnly"
+            "Data Source=/nonexistent/path/that/should/not/exist/db.sqlite;Mode=ReadOnly",
+            AbortToken
         );
 
         // then
@@ -67,7 +69,7 @@ public sealed class SqliteConnectionStringCheckerTests
         var sut = new SqliteConnectionStringChecker(logger);
 
         // when - use invalid path that will throw
-        await sut.CheckAsync("Data Source=/nonexistent/path/that/should/not/exist/db.sqlite;Mode=ReadOnly");
+        await sut.CheckAsync("Data Source=/nonexistent/path/that/should/not/exist/db.sqlite;Mode=ReadOnly", AbortToken);
 
         // then - verify a warning-level Log call was issued.
         // Source-generated LoggerMessage uses a private state struct, so we can't match Log<object>

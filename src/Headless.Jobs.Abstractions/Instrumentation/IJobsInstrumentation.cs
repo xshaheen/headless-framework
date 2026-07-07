@@ -11,7 +11,7 @@ namespace Headless.Jobs.Instrumentation;
 /// </summary>
 internal interface IJobsInstrumentation
 {
-    Activity? StartJobActivity(string activityName, InternalFunctionContext context);
+    Activity? StartJobActivity(string activityName, JobExecutionState context);
     void LogJobEnqueued(string jobType, string functionName, Guid jobId, string? enqueuedFrom = null);
     void LogJobCompleted(Guid jobId, string functionName, long executionTimeMs, bool success);
     void LogJobFailed(Guid jobId, string functionName, Exception exception, int retryCount);

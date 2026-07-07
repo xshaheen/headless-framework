@@ -4,6 +4,7 @@ using System.Reflection;
 using Headless.Caching;
 using Headless.Messaging;
 using Headless.Redis;
+using Headless.Redis.Testing;
 using Headless.Serializer;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;

@@ -14,7 +14,7 @@ public sealed record CashOutDisburseResponseAmanCashingDetails
     /// <see langword="null"/> when not yet assigned.
     /// </summary>
     [JsonPropertyName("bill_reference")]
-    public int? BillingReference { get; init; }
+    public long? BillingReference { get; init; }
 
     /// <summary>
     /// Indicates whether the recipient has already collected the cash at the kiosk.

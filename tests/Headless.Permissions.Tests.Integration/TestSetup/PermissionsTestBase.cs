@@ -1,7 +1,6 @@
 using Headless.Abstractions;
 using Headless.Caching;
 using Headless.DistributedLocks;
-using Headless.DistributedLocks.Redis;
 using Headless.Domain;
 using Headless.Messaging;
 using Headless.Permissions;

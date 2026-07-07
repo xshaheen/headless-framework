@@ -8,7 +8,7 @@ namespace Headless.Payments.Paymob.CashIn.Models.Merchant;
 public sealed class CashInProfileUser
 {
     [JsonPropertyName("id")]
-    public int Id { get; init; }
+    public long Id { get; init; }
 
     [JsonPropertyName("username")]
     public required string Username { get; init; }

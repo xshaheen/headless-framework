@@ -6,7 +6,8 @@ using Headless.Primitives;
 namespace Headless.Features.Models;
 
 /// <summary>Describes a logical group that organizes one or more related <see cref="FeatureDefinition"/> instances.</summary>
-public sealed class FeatureGroupDefinition : ICanCreateChildFeature, IHasExtraProperties
+[PublicAPI]
+public sealed class FeatureGroupDefinition : ICanAddChildFeature, IHasExtraProperties
 {
     private readonly List<FeatureDefinition> _features;
 

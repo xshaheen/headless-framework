@@ -19,10 +19,13 @@ internal static class AzureServiceBusMessageBuilder
 
         if (enableSessions)
         {
-            transportMessage.Headers.TryGetValue(AzureServiceBusHeaders.SessionId, out var sessionId);
+            transportMessage.Headers.TryGetValue(AzureServiceBusMessagingHeaders.SessionId, out var sessionId);
             if (string.IsNullOrEmpty(sessionId))
             {
-                transportMessage.Headers.TryGetValue(AzureServiceBusHeaders.PartitionKey, out var fallbackPartitionKey);
+                transportMessage.Headers.TryGetValue(
+                    AzureServiceBusMessagingHeaders.PartitionKey,
+                    out var fallbackPartitionKey
+                );
                 message.SessionId = string.IsNullOrWhiteSpace(fallbackPartitionKey)
                     ? transportMessage.Id
                     : fallbackPartitionKey;
@@ -34,7 +37,7 @@ internal static class AzureServiceBusMessageBuilder
         }
 
         if (
-            transportMessage.Headers.TryGetValue(AzureServiceBusHeaders.PartitionKey, out var partitionKey)
+            transportMessage.Headers.TryGetValue(AzureServiceBusMessagingHeaders.PartitionKey, out var partitionKey)
             && !string.IsNullOrWhiteSpace(partitionKey)
         )
         {
@@ -54,7 +57,7 @@ internal static class AzureServiceBusMessageBuilder
 
         if (
             transportMessage.Headers.TryGetValue(
-                AzureServiceBusHeaders.ScheduledEnqueueTimeUtc,
+                AzureServiceBusMessagingHeaders.ScheduledEnqueueTimeUtc,
                 out var scheduledEnqueueTimeUtcString
             )
             && DateTimeOffset.TryParse(

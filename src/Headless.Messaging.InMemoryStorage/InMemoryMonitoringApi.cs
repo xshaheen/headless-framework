@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Primitives;
@@ -160,11 +159,9 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
         {
             var expression = storage.PublishedMessages.Values.Where(x => true);
 
-            if (!string.IsNullOrEmpty(query.StatusName))
+            if (query.StatusName is not null)
             {
-                expression = expression.Where(x =>
-                    x.StatusName.ToString().Equals(query.StatusName, StringComparison.OrdinalIgnoreCase)
-                );
+                expression = expression.Where(x => x.StatusName == query.StatusName);
             }
 
             if (!string.IsNullOrEmpty(query.Name))
@@ -202,7 +199,7 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
                     ExpiresAt = x.ExpiresAt,
                     Name = x.Name,
                     Retries = x.Retries,
-                    StatusName = x.StatusName.ToString(),
+                    StatusName = x.StatusName,
                     NextRetryAt = x.NextRetryAt,
                     LockedUntil = x.LockedUntil,
                 })
@@ -216,11 +213,9 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
         {
             var expression = storage.ReceivedMessages.Values.Where(x => true);
 
-            if (!string.IsNullOrEmpty(query.StatusName))
+            if (query.StatusName is not null)
             {
-                expression = expression.Where(x =>
-                    x.StatusName.ToString().Equals(query.StatusName, StringComparison.OrdinalIgnoreCase)
-                );
+                expression = expression.Where(x => x.StatusName == query.StatusName);
             }
 
             if (!string.IsNullOrEmpty(query.Name))
@@ -264,7 +259,7 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
                     ExpiresAt = x.ExpiresAt,
                     Name = x.Name,
                     Retries = x.Retries,
-                    StatusName = x.StatusName.ToString(),
+                    StatusName = x.StatusName,
                     NextRetryAt = x.NextRetryAt,
                     LockedUntil = x.LockedUntil,
                 })

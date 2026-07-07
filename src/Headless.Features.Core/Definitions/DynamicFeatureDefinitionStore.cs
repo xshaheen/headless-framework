@@ -272,7 +272,7 @@ public sealed class DynamicFeatureDefinitionStore(
     }
 
     private static void _UpdateInMemoryStoreCacheAddFeatureRecursively(
-        ICanCreateChildFeature featureContainer,
+        ICanAddChildFeature featureContainer,
         FeatureDefinitionRecord featureRecord,
         ILookup<string, FeatureDefinitionRecord> featuresByParent,
         ImmutableDictionary<string, FeatureDefinition>.Builder featureCacheBuilder

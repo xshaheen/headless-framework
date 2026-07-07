@@ -54,7 +54,7 @@ Install only the packages that match your job. `Services` depends on both `CashI
 Register via:
 - `services.AddPaymobCashIn(options => ...)` — for payment collection.
 - `services.AddPaymobCashOut(options => ...)` — for disbursements.
-- Wire `IPaymobCashInService` / `ICashOutService` / `IPaymobCashInFeesCalculator` from the Services package manually (no single DI extension — add each service as a singleton).
+- `services.AddPaymobServices()` — registers `IPaymobCashInService`, `ICashOutService`, and `IPaymobCashInFeesCalculator` from the Services package (call it after the two broker registrations above).
 
 ## Agent Instructions
 
@@ -63,7 +63,8 @@ Register via:
 - CashIn and CashOut have **separate** API credentials. `PaymobCashInOptions` requires `ApiKey`, `Hmac`, and `SecretKey`. `PaymobCashOutOptions` requires `ApiBaseUrl`, `UserName`, `Password`, `ClientId`, and `ClientSecret`.
 - Never store credentials in appsettings directly — always bind from secrets or environment variables.
 - Always validate HMAC on CashIn callbacks. The broker exposes four `Validate(...)` overloads: for `CashInCallbackTransaction`, `CashInCallbackToken`, `CashInCallbackQueryParameters`, or a raw concatenated string. Choose by what Paymob sends to your endpoint.
-- CashIn amounts in `CashInCreateIntentionRequest` are **decimal** (the cents conversion is per the property doc: "pass total amount in cents"). For the legacy payment-key flow (`CreateOrderAsync` / `RequestPaymentKeyAsync`), multiply by 100 yourself. The Services layer does this conversion internally.
+- Money amounts denominated in cents are typed as `long` throughout CashIn (`CashInCreateIntentionRequest.Amount`, `CreateOrderRequest.AmountCents`, `PaymentKeyRequest.AmountCents`, and the response DTOs). For the legacy payment-key flow (`CreateOrderAsync` / `RequestPaymentKeyAsync`), multiply your decimal EGP amount by 100 yourself; the Services layer does this conversion internally. `CashOutDisburseRequest.Amount` and `CashOutTransaction.Amount` are `decimal` EGP (whole-currency, not cents).
+- Paymob-assigned resource identifiers are typed as `long` (`long?` when nullable) across every request/response DTO — transaction, order, integration, profile, owner, merchant, and gateway-integration IDs, plus kiosk/Aman bill references (`payment_methods` is `IReadOnlyList<long>`). They grow unboundedly and can exceed `int` range, so treat them as 64-bit everywhere. Genuinely bounded domain numbers stay `int` (quantities, package counts, shipping dimensions, status codes, `exp`/`expiration` seconds).
 - CashOut `Disburse(...)` (not `DisburseAsync`) is the broker method. Use `CashOutDisburseRequest` static factory methods — `BankCard`, `Vodafone`, `Etisalat`, `Orange`, `BankWallet`, `Accept` — rather than constructing the record directly.
 - Both brokers (`IPaymobCashInBroker`, `IPaymobCashOutBroker`) are registered as **scoped** with an injected `HttpClient`. Do not treat them as singletons.
 - `IPaymobCashInAuthenticator` and `IPaymobCashOutAuthenticator` are singletons that cache tokens in memory. They handle token refresh automatically (CashIn refreshes 5 minutes before the 60-minute Paymob token expiry; CashOut caches tokens for `TokenRefreshBuffer`, default 10 minutes).
@@ -116,6 +117,8 @@ Provides a typed client for the Paymob Accept payment gateway, supporting multip
 
 The package adds `AddStandardResilienceHandler()` to the named HTTP client automatically. Pass `configureResilience` to `AddPaymobCashIn(...)` to override the resilience policy (e.g., adjust timeouts for wallet redirects).
 
+`PaymobCashInOptions.ToString()` is overridden to redact `ApiKey`, `Hmac`, and `SecretKey` (printed as `***`), so logging or diagnostics that stringify the options never leak the secrets.
+
 ### Installation
 
 ```bash
@@ -144,7 +147,7 @@ Create a payment intention (v2 API — preferred):
 ```csharp
 public sealed class PaymentService(IPaymobCashInBroker broker)
 {
-    public async Task<string> CreatePaymentAsync(decimal amountCents, int integrationId, CancellationToken ct)
+    public async Task<string> CreatePaymentAsync(decimal amountCents, long integrationId, CancellationToken ct)
     {
         var response = await broker.CreateIntentionAsync(
             new CashInCreateIntentionRequest
@@ -243,8 +246,8 @@ Provides a typed client for the Paymob disbursement API, enabling payouts to ban
 
 - `IPaymobCashOutBroker` — disbursement operations interface:
   - `Disburse(request)` — execute disbursement, returns `CashOutTransaction`
-  - `GetBudgetAsync()` — query available balance (rate-limited to 5 req/min)
-  - `GetTransactionsAsync(ids, isBankTransactions, page)` — paginated transaction lookup
+  - `GetBudgetAsync()` — query available balance, returns `CashOutBudgetResponse` (rate-limited to 5 req/min)
+  - `GetTransactionsAsync(ids, isBankTransactions, page)` — paginated transaction lookup, returns `CashOutGetTransactionsResponse`
 - `IPaymobCashOutAuthenticator` — OAuth2 password-grant token management with in-memory caching
 - `CashOutDisburseRequest` — factory methods per channel:
   - `CashOutDisburseRequest.BankCard(amount, cardNumber, bankCode, transactionType, fullName)`
@@ -257,6 +260,8 @@ Provides a typed client for the Paymob disbursement API, enabling payouts to ban
 - `CashOutTransaction` — result with status helper methods:
   - `IsSuccess()`, `IsFailed()`, `IsPending()`, `IsProviderDownError()`, `IsAuthenticationError()`
   - `IsNotHaveVodafoneCashError()`, `IsNotHaveEtisalatCashError()`, `IsRequestValidationError()`
+- `CashOutBudgetResponse` — budget inquiry result; Paymob reports the balance as a human-readable sentence in `CurrentBudget` (e.g. `"Your current budget is 888.25 LE"`)
+- `CashOutGetTransactionsResponse` — paginated transaction inquiry result (`Count`, `Next`, `Previous`, `Results`)
 - `PaymobCashOutException` — thrown on non-success HTTP responses
 
 ### Design Notes
@@ -408,7 +413,7 @@ dotnet add package Headless.Payments.Paymob.Services
 
 ### Quick Start
 
-Register the underlying brokers first, then register the service classes:
+Register the underlying brokers first, then register the service layer with `AddPaymobServices`:
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -430,9 +435,13 @@ builder.Services.AddPaymobCashOut(options =>
     options.ClientSecret = builder.Configuration["Paymob:CashOut:ClientSecret"]!;
 });
 
-// Register service layer
-builder.Services.AddScoped<IPaymobCashInService, PaymobCashInService>();
-builder.Services.AddScoped<ICashOutService, PaymobCashOutService>();
+// Register the service layer (IPaymobCashInService, ICashOutService, IPaymobCashInFeesCalculator)
+builder.Services.AddPaymobServices();
+```
+
+`AddPaymobServices` registers the fees calculator with Paymob's default fee structure (6 EGP fixed fee, 2.5% rate, 14% VAT on the fee). To use merchant-specific rates, register your own `IPaymobCashInFeesCalculator` before the call — the registrations use `TryAdd`, so an existing one is preserved:
+
+```csharp
 builder.Services.AddSingleton<IPaymobCashInFeesCalculator>(
     new PaymobCashInFeesCalculator(
         fixedFeesPerTransaction: 6m,
@@ -440,6 +449,7 @@ builder.Services.AddSingleton<IPaymobCashInFeesCalculator>(
         vatPercentOnFees: 0.14m
     )
 );
+builder.Services.AddPaymobServices();
 ```
 
 Start a card payment (legacy iframe flow):
@@ -450,7 +460,7 @@ public sealed class CheckoutService(IPaymobCashInService cashIn)
     public async Task<string> GetIframeUrlAsync(
         decimal amount,
         PaymobCashInCustomerData customer,
-        int cardIntegrationId,
+        long cardIntegrationId,
         string iframeId,
         CancellationToken ct
     )
@@ -461,7 +471,8 @@ public sealed class CheckoutService(IPaymobCashInService cashIn)
                 Customer: customer,
                 CardIntegrationId: cardIntegrationId,
                 IframeSrc: iframeId
-            )
+            ),
+            ct
         );
         return response.IframeSrc;
     }
@@ -482,7 +493,8 @@ public sealed class PayoutService(ICashOutService cashOut)
                 BankCode: bankCode,
                 Type: BankTransactionType.CashTransfer,
                 FullName: "Ahmed Ali"
-            )
+            ),
+            ct
         );
 
         if (!result.Succeeded)
@@ -505,4 +517,4 @@ No additional configuration beyond `Headless.Payments.Paymob.CashIn` and `Headle
 
 ### Side Effects
 
-None. The Services package does not call `AddSingleton`/`AddScoped` internally — register `IPaymobCashInService`, `ICashOutService`, and `IPaymobCashInFeesCalculator` manually as shown above.
+`AddPaymobServices()` registers `IPaymobCashInService` and `ICashOutService` as **scoped** (they depend on the scoped brokers) and `IPaymobCashInFeesCalculator` as a **singleton** with Paymob's default fee structure. All three use `TryAdd`, so pre-existing registrations are preserved. It does not register the brokers — call `AddPaymobCashIn` and `AddPaymobCashOut` first.

@@ -1,11 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Api;
+using Headless.Api.Idempotency;
 using Headless.DistributedLocks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using IdempotencyMiddleware = Headless.Api.IdempotencyMiddleware;
+using IdempotencyMiddleware = Headless.Api.Idempotency.IdempotencyMiddleware;
 
 namespace Tests;
 

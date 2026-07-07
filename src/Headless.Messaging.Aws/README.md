@@ -64,6 +64,8 @@ options.ForMessage<OrderEvent>(message =>
 
 `MessageGroupId(...)` stamps `AwsMessagingHeaders.MessageGroupId` (`headless-aws-message-group-id`) during publish and is limited to 128 characters. The selector output is broker-visible metadata, so do not put secrets or raw PII in it.
 
+**Registration overloads:** `UseAws(...)` accepts the standard trio — an `IConfiguration` section, an `Action<AmazonSqsMessagingOptions>` delegate, or an `Action<AmazonSqsMessagingOptions, IServiceProvider>` delegate — plus the `RegionEndpoint` convenience form. Options are validated on start.
+
 ## Dependencies
 
 - `Headless.Messaging.Core`

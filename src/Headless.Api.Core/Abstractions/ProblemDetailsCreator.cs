@@ -65,7 +65,7 @@ internal sealed class ProblemDetailsCreator(
         return problemDetails;
     }
 
-    public ProblemDetails UnprocessableEntity(Dictionary<string, List<ErrorDescriptor>> errors)
+    public ProblemDetails UnprocessableEntity(IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>> errors)
     {
         var problemDetails = new ProblemDetails
         {

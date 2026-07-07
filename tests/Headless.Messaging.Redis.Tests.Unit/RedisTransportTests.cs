@@ -22,7 +22,7 @@ public sealed class RedisTransportTests : TestBase
     {
         _mockStreamManager = Substitute.For<IRedisStreamManager>();
         var options = Options.Create(
-            new MessagingRedisOptions { Configuration = ConfigurationOptions.Parse("localhost:6379") }
+            new RedisMessagingOptions { Configuration = ConfigurationOptions.Parse("localhost:6379") }
         );
         var logger = LoggerFactory.CreateLogger<RedisTransport>();
         _sut = new RedisTransport(_mockStreamManager, options, logger);

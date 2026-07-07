@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
-using Headless.CommitCoordination.EntityFramework;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.EntityFrameworkCore;
@@ -20,7 +19,7 @@ namespace Microsoft.EntityFrameworkCore;
 /// retried attempt discards its buffer and the next attempt opens a fresh transaction and coordinator.
 /// </remarks>
 [PublicAPI]
-public static class CoordinatedTransactionExtensions
+public static class HeadlessEntityFrameworkCoordinatedTransactionExtensions
 {
     /// <summary>
     /// Executes <paramref name="operation"/> inside a resilient, commit-coordinated transaction.

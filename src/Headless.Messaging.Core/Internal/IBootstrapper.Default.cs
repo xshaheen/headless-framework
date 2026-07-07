@@ -4,6 +4,7 @@ using Headless.Coordination;
 using Headless.DistributedLocks;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
+using Headless.Messaging.Runtime;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;

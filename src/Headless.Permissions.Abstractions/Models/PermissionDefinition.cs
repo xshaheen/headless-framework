@@ -10,6 +10,7 @@ namespace Headless.Permissions.Models;
 /// only effectively grantable when its <see cref="Parent"/> chain is also granted. Instances are created through
 /// <see cref="AddChild"/> or <see cref="IPermissionDefinitionContext"/> rather than constructed directly.
 /// </summary>
+[PublicAPI]
 public sealed class PermissionDefinition : ICanAddChildPermission, IHasExtraProperties
 {
     private readonly List<PermissionDefinition> _children;
@@ -84,6 +85,21 @@ public sealed class PermissionDefinition : ICanAddChildPermission, IHasExtraProp
         _children.Add(child);
 
         return child;
+    }
+
+    /// <summary>Removes a child permission by name.</summary>
+    /// <param name="name">The name of the child permission to remove.</param>
+    /// <exception cref="InvalidOperationException">No child with the given <paramref name="name"/> exists under this permission.</exception>
+    public void RemoveChild(string name)
+    {
+        var childToRemove =
+            _children.Find(c => string.Equals(c.Name, name, StringComparison.Ordinal))
+            ?? throw new InvalidOperationException(
+                $"Could not find a permission named '{name}' in the Children of this permission '{Name}'."
+            );
+
+        childToRemove.Parent = null;
+        _children.Remove(childToRemove);
     }
 
     public override string ToString()

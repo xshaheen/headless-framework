@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using Headless.Checks;
 using Headless.Messaging.Internal;
+using Headless.Messaging.Runtime;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -15,7 +16,7 @@ namespace Headless.Messaging.Nats;
 internal sealed class NatsConsumerClient(
     string name,
     byte groupConcurrent,
-    IOptions<MessagingNatsOptions> options,
+    IOptions<NatsMessagingOptions> options,
     IServiceProvider serviceProvider,
     Func<string, ConsumerConfig, CancellationToken, Task<INatsJSConsumer>>? consumerFactory = null,
     IntentType intentType = IntentType.Bus,
@@ -23,7 +24,7 @@ internal sealed class NatsConsumerClient(
 ) : IConsumerClient
 {
     private readonly Lock _receiveLock = new();
-    private readonly MessagingNatsOptions _natsOptions = Argument.IsNotNull(options.Value);
+    private readonly NatsMessagingOptions _natsOptions = Argument.IsNotNull(options.Value);
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
     private readonly SemaphoreSlim? _semaphore = groupConcurrent > 0 ? new SemaphoreSlim(groupConcurrent) : null;
@@ -137,8 +138,8 @@ internal sealed class NatsConsumerClient(
     internal static string BuildDurableName(string groupName, string subject, IntentType intentType)
     {
         return intentType == IntentType.Queue
-            ? Helper.Normalized("queue-" + subject)
-            : Helper.Normalized(groupName + "-" + subject);
+            ? TransportNaming.Normalize("queue-" + subject)
+            : TransportNaming.Normalize(groupName + "-" + subject);
     }
 
     internal static IReadOnlyList<string> BuildConsumerSubjects(
@@ -225,7 +226,7 @@ internal sealed class NatsConsumerClient(
 
         foreach (var streamGroup in streamGroups)
         {
-            var groupName = Helper.Normalized(name);
+            var groupName = TransportNaming.Normalize(name);
             var shardedMessageNames = _ResolveShardedMessageNames(streamGroup);
 
             foreach (var subject in BuildConsumerSubjects(streamGroup, shardedMessageNames))

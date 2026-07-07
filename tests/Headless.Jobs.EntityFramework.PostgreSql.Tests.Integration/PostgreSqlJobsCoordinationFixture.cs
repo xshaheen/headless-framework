@@ -2,9 +2,7 @@
 
 using System.Data.Common;
 using Headless.CommitCoordination;
-using Headless.CommitCoordination.PostgreSql;
 using Headless.Coordination;
-using Headless.Coordination.PostgreSql;
 using Headless.Testing.Testcontainers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;

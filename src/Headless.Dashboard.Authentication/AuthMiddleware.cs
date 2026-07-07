@@ -58,7 +58,7 @@ public sealed class AuthMiddleware(RequestDelegate next, ILogger<AuthMiddleware>
         var authService = context.RequestServices.GetRequiredService<IAuthService>();
 
         // Authenticate the request
-        var authResult = await authService.AuthenticateAsync(context);
+        var authResult = await authService.AuthenticateAsync(context, context.RequestAborted);
 
         if (!authResult.IsAuthenticated)
         {

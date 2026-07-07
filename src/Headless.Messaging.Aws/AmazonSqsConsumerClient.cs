@@ -16,7 +16,7 @@ namespace Headless.Messaging.Aws;
 internal sealed class AmazonSqsConsumerClient(
     string groupId,
     byte groupConcurrent,
-    IOptions<AmazonSqsOptions> options,
+    IOptions<AmazonSqsMessagingOptions> options,
     ILogger<AmazonSqsConsumerClient> logger,
     IntentType intentType = IntentType.Bus,
     TimeProvider? timeProvider = null
@@ -24,7 +24,7 @@ internal sealed class AmazonSqsConsumerClient(
 {
     private readonly Lock _connectionLock = new();
     private readonly Lock _queueUrlsLock = new();
-    private readonly AmazonSqsOptions _amazonSqsOptions = options.Value;
+    private readonly AmazonSqsMessagingOptions _amazonSqsOptions = options.Value;
     private readonly ILogger _logger = logger;
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
     private readonly ConsumerPauseGate _pauseGate = new();

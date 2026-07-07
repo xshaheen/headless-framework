@@ -42,7 +42,7 @@ public sealed class DevSmsSenderTests : TestBase
 
             response.AllSucceeded.Should().BeTrue();
             response.Results.Should().HaveCount(2);
-            var contents = await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken);
+            var contents = await File.ReadAllTextAsync(path, AbortToken);
             contents.Should().Contain("bulk dev").And.Contain("201001").And.Contain("201002");
         }
         finally

@@ -11,9 +11,11 @@ Provides a provider-agnostic feature management API, enabling dynamic feature to
 - `IFeatureManager` — reads and writes feature values across the registered provider chain; supports single-feature and bulk queries with optional provider targeting and fallback
 - `IFeatureDefinitionProvider` — contributes feature groups and feature definitions at startup via `IFeatureDefinitionContext`
 - `IFeatureDefinitionManager` — looks up and enumerates all registered feature definitions
-- `FeatureDefinition` — describes a feature's name, default value, display metadata, allowed providers, and child features (tree structure)
-- `FeatureGroupDefinition` — organizes related `FeatureDefinition` instances; supports `GetFlatFeatures()` for depth-first enumeration
-- `FeatureValue` — record returned by `GetAsync`/`GetAllAsync` carrying the resolved string value and the `FeatureValueProvider` that supplied it
+- `FeatureDefinition` — describes a feature's name, default value, display metadata, allowed providers, and child features (tree structure); implements `ICanAddChildFeature` for fluent `AddChild(...)`
+- `FeatureGroupDefinition` — organizes related `FeatureDefinition` instances; supports `GetFlatFeatures()` for depth-first enumeration; also implements `ICanAddChildFeature`
+- `ICanAddChildFeature` — shared fluent contract (`AddChild(...)`) implemented by both `FeatureGroupDefinition` and `FeatureDefinition` (renamed from `ICanCreateChildFeature`)
+- `IFeatureDefinitionContext` — passed to each provider's `Define`; exposes `AddGroup(name, displayName)`, `GetGroupOrDefault(name)`, and `RemoveGroup(name)`. Groups are created by name — there is no instance-taking `AddGroup(FeatureGroupDefinition)` overload
+- `FeatureValue` — record returned by `GetAsync`/`GetAllAsync` carrying the resolved string value and the `FeatureValueProvider` that supplied it; bulk reads (`GetAllAsync`, `GetAllForTenantAsync`, `GetAllForEditionAsync`, `GetAllDefaultAsync`) return `IReadOnlyList<FeatureValue>`
 - `FeatureValueProviderNames` — constants `Tenant`, `Edition`, `DefaultValue` for targeting built-in providers
 - Extension methods on `IFeatureManager`: `IsEnabledAsync`, `GetAsync<T>`, `EnsureEnabledAsync`, `GrantAsync`, `RevokeAsync`
 - Scoped extension methods: `GetForTenantAsync`, `SetForTenantAsync`, `GrantToTenantAsync`, `RevokeFromTenantAsync`, `DeleteForTenantAsync` (tenant); equivalent `*ForEditionAsync` / `*ToEditionAsync` set (edition); `GetDefaultAsync`, `GetAllDefaultAsync` (default provider)

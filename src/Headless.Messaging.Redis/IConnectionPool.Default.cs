@@ -13,11 +13,11 @@ internal sealed class RedisConnectionPool : IRedisConnectionPool, IDisposable, I
 
     private readonly ILoggerFactory _loggerFactory;
     private readonly SemaphoreSlim _poolLock = new(1);
-    private readonly MessagingRedisOptions _redisOptions;
+    private readonly RedisMessagingOptions _redisOptions;
     private int _isDisposed;
     private bool _poolAlreadyConfigured;
 
-    public RedisConnectionPool(IOptions<MessagingRedisOptions> options, ILoggerFactory loggerFactory)
+    public RedisConnectionPool(IOptions<RedisMessagingOptions> options, ILoggerFactory loggerFactory)
     {
         _redisOptions = options.Value;
         _loggerFactory = loggerFactory;
@@ -63,7 +63,8 @@ internal sealed class RedisConnectionPool : IRedisConnectionPool, IDisposable, I
         if (QuietConnection is not { } quietConnection)
         {
             _poolAlreadyConfigured =
-                _connections.Count(static c => c.IsValueCreated) == _redisOptions.ConnectionPoolSize;
+                _connections.Where(static c => c.IsValueCreated).Take(_redisOptions.ConnectionPoolSize + 1).Count()
+                == _redisOptions.ConnectionPoolSize;
             quietConnection = QuietConnection;
             if (quietConnection?.CreatedConnection is { } createdConnection)
             {

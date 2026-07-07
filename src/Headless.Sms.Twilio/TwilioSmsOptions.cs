@@ -18,32 +18,32 @@ namespace Headless.Sms.Twilio;
 public sealed class TwilioSmsOptions
 {
     /// <summary>The Twilio Account SID, used as the API username. Found in the Twilio Console dashboard.</summary>
-    public required string Sid { get; init; }
+    public required string Sid { get; set; }
 
     /// <summary>The Twilio Auth Token, used as the API password. Found in the Twilio Console dashboard.</summary>
-    public required string AuthToken { get; init; }
+    public required string AuthToken { get; set; }
 
     /// <summary>The Twilio phone number to send from, in E.164 format (for example <c>+12025551234</c>).</summary>
-    public required string PhoneNumber { get; init; }
+    public required string PhoneNumber { get; set; }
 
     /// <summary>
     /// Optional maximum price (in USD) Twilio will charge per message. When specified, Twilio will not
     /// send the message if the carrier cost exceeds this threshold. <see langword="null"/> applies no limit.
     /// </summary>
-    public decimal? MaxPrice { get; init; }
+    public decimal? MaxPrice { get; set; }
 
     /// <summary>
     /// Optional Twilio region (for example <c>us1</c>, <c>ie1</c>). Controls which Twilio infrastructure
     /// region handles the request. <see langword="null"/> uses the default region.
     /// </summary>
-    public string? Region { get; init; }
+    public string? Region { get; set; }
 
     /// <summary>
     /// Optional Twilio Edge location (for example <c>ashburn</c>, <c>dublin</c>). Combined with
     /// <see cref="Region"/> to select a specific point of presence. <see langword="null"/> uses the
     /// default edge.
     /// </summary>
-    public string? Edge { get; init; }
+    public string? Edge { get; set; }
 }
 
 [UsedImplicitly]

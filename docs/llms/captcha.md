@@ -62,16 +62,16 @@ Install `Headless.Captcha.Abstractions` plus one or more provider packages. All 
 - Invisible, score-based risk signal (reCAPTCHA-only): `Headless.Captcha.ReCaptcha` with `setup.UseReCaptchaV3(...)` and inject `IReCaptchaV3Verifier` to read `Score`.
 - Privacy-friendly pass/fail with native token re-verification: `Headless.Captcha.Turnstile` with `setup.UseTurnstile(...)`.
 
-`ICaptchaVerifier.VerifyAsync(CaptchaVerifyRequest, CancellationToken)` posts the client token to the provider's siteverify endpoint and returns a normalized `CaptchaVerifyResult` (`Success`, `HostName`, `ChallengeTimestamp`, `Action`, `ErrorCodes`). At most one provider may be the *default* (registered with the no-name `Use*` overload): it resolves both unkeyed (`ICaptchaVerifier`) and under its canonical `CaptchaConstants` key. Additional providers are *named* (`Use*("name", ...)`), keyed-only, and resolved through `ICaptchaProvider.GetVerifier(name)`. Both reCAPTCHA and Turnstile providers ship Razor tag helpers for rendering the client-side widget/script.
+`ICaptchaVerifier.VerifyAsync(CaptchaVerifyRequest, CancellationToken)` posts the client token to the provider's siteverify endpoint and returns a normalized `CaptchaVerifyResult` (`Success`, `HostName`, `ChallengeTimestamp`, `Action`, `ErrorCodes`). At most one provider may be the *default* (registered by calling a `Use*` member directly on the setup builder): it resolves both unkeyed (`ICaptchaVerifier`) and under its canonical `CaptchaConstants` key. Additional providers are *named* (added with `setup.AddNamed("name", i => i.Use*(...))`), keyed-only, and resolved through `ICaptchaProvider.GetVerifier(name)`. Both reCAPTCHA and Turnstile providers ship Razor tag helpers for rendering the client-side widget/script.
 
 ## Agent Instructions
 
 - Use `ICaptchaVerifier` from `Headless.Captcha.Abstractions` for pass/fail verification at application boundaries. Inject `IReCaptchaV3Verifier` (reCAPTCHA v3 `Score`) or `ITurnstileVerifier` (Turnstile `CData` / `Metadata`, `idempotency_key`) only where you actually read provider-only data — that code is provider-specific by definition.
 - Configure every provider in one `services.AddHeadlessCaptcha(setup => ...)` call. At least one provider is required; calling `AddHeadlessCaptcha` twice on the same service collection throws `InvalidOperationException`, and a throwing setup leaves the service collection unchanged (contributions are deferred until the gates pass).
-- Register at most one *default* provider — the no-name `UseReCaptchaV2(...)` / `UseReCaptchaV3(...)` / `UseTurnstile(...)` overload. A second default throws `InvalidOperationException`. Every additional provider must use the name-taking overload (`Use…("name", ...)`).
+- Register at most one *default* provider — call `UseReCaptchaV2(...)` / `UseReCaptchaV3(...)` / `UseTurnstile(...)` directly on the setup builder. A second default throws `InvalidOperationException`. Add every additional provider as a named instance with `setup.AddNamed("name", i => i.Use…(...))` (the nested `HeadlessCaptchaInstanceBuilder` takes exactly one provider).
 - A default provider resolves unkeyed (`ICaptchaVerifier` / its concrete interface) and under its canonical `CaptchaConstants` key. Named providers are keyed-only: resolve them with `ICaptchaProvider.GetVerifier(name)` / `GetVerifierOrNull(name)`, or inject the keyed concrete verifier.
 - Do not name a provider with a value under the `Headless.Captcha:` namespace — those are the framework's reserved `CaptchaConstants` keys. `CaptchaConstants.IsReservedProviderKey(name)` is the check; the builder throws `ArgumentException` for a reserved name and `InvalidOperationException` for a duplicate name.
-- `ICaptchaVerifier.VerifyAsync` throws `HttpRequestException` when the siteverify HTTP call is unsuccessful and `InvalidOperationException` when the response body cannot be deserialized. Always check `CaptchaVerifyResult.Success` before trusting the request; on failure read `ErrorCodes`.
+- `ICaptchaVerifier.VerifyAsync` throws `HttpRequestException` when the siteverify HTTP call is unsuccessful and `InvalidOperationException` when the response body cannot be deserialized. Always check `CaptchaVerifyResult.Success` before trusting the request; on failure read `ErrorCodes`. This is the deliberate opposite of `ISmsSender.SendAsync`, which *returns* a failed result (never throws) for the same class of transport failure: an unverifiable captcha challenge is treated as exceptional (a bug or outage the caller must not silently pass), whereas a rejected SMS send is ordinary data.
 - reCAPTCHA v3's `Score` (0.0–1.0) is exposed only on `ReCaptchaV3VerifyResult` via `IReCaptchaV3Verifier.VerifyAsync`. It has no Turnstile equivalent, so it lives off the base contract. Do not expect a score from `ICaptchaVerifier` or from Turnstile.
 - Turnstile-only data — `CData` and the Enterprise `Metadata` (`JsonElement?`) — is on `TurnstileVerifyResult` via `ITurnstileVerifier.VerifyAsync(TurnstileVerifyRequest, ...)`. Set `TurnstileVerifyRequest.IdempotencyKey` to re-verify the same token without a duplicate-token error.
 - The reCAPTCHA and Turnstile tag helpers read the **default** provider's options (the canonical `CaptchaConstants` key). They do not render a named provider's widget — if a provider must be both rendered via tag helpers and a default is needed, make it the default.
@@ -88,7 +88,7 @@ CAPTCHA verification is the same shape across every provider — post a client-i
 
 ### Default vs. named providers
 
-The setup builder has two slots. A *default* provider is registered with the no-name `Use*` overload: it contributes an **unkeyed** `ICaptchaVerifier` (so `ICaptchaVerifier` can be injected directly) **plus** a keyed alias under its canonical `CaptchaConstants` key. At most one default is allowed. A *named* provider is registered with the name-taking overload and is **keyed-only** — it has no unkeyed registration and must be resolved by name. This lets an app inject a single primary verifier directly while still composing additional providers (for example, a per-form provider choice) behind `ICaptchaProvider`.
+The setup builder has two slots. A *default* provider is selected by calling a provider's `Use*` member directly on the setup builder: it contributes an **unkeyed** `ICaptchaVerifier` (so `ICaptchaVerifier` can be injected directly) **plus** a keyed alias under its canonical `CaptchaConstants` key. At most one default is allowed. A *named* provider is added with `setup.AddNamed("name", i => i.Use*(...))` — its nested `HeadlessCaptchaInstanceBuilder` selects exactly one provider — and is **keyed-only**: it has no unkeyed registration and must be resolved by name. This lets an app inject a single primary verifier directly while still composing additional providers (for example, a per-form provider choice) behind `ICaptchaProvider`.
 
 ### Keyed resolution
 
@@ -126,8 +126,8 @@ Provides a single pass/fail verification API (`ICaptchaVerifier`) and one compos
 
 - `ICaptchaVerifier` - the shared contract: `Task<CaptchaVerifyResult> VerifyAsync(CaptchaVerifyRequest request, CancellationToken cancellationToken = default)`. Throws `HttpRequestException` on an unsuccessful siteverify HTTP response and `InvalidOperationException` when the body cannot be deserialized.
 - `CaptchaVerifyRequest` - the request inputs: `required string Response` (the client widget token) and optional `string? RemoteIp`. Providers with extra inputs extend it (Turnstile's `TurnstileVerifyRequest`).
-- `CaptchaVerifyResult` - the normalized outcome: `bool Success`, `DateTimeOffset? ChallengeTimestamp`, `string? HostName`, `string? Action`, `string[]? ErrorCodes`. Strictly pass/fail; provider-only fields live on derived result types.
-- `HeadlessCaptchaSetupBuilder` - the root builder for `AddHeadlessCaptcha`, with two slots (one optional default, unlimited named). `RegisterDefault(providerKey, action)` and `RegisterNamed(name, action)` are the hooks provider packages call from their `Use*` extensions. Ships in `Headless.Captcha.Core`.
+- `CaptchaVerifyResult` - the normalized outcome: `bool Success`, `DateTimeOffset? ChallengeTimestamp`, `string? HostName`, `string? Action`, `IReadOnlyList<string>? ErrorCodes`. Strictly pass/fail; provider-only fields live on derived result types.
+- `HeadlessCaptchaSetupBuilder` - the root builder for `AddHeadlessCaptcha`, with two slots (one optional default, unlimited named). A default is selected by a provider's `Use*` member; `AddNamed(name, configure)` adds a named instance through a nested `HeadlessCaptchaInstanceBuilder`. The low-level `RegisterDefault(providerKey, action)` (on the setup builder) and `RegisterProvider(action)` (on the instance builder) hooks are what provider `Use*` extensions build on; both are `[EditorBrowsable(Never)]` plumbing. Ships in `Headless.Captcha.Core`.
 - `ICaptchaProvider` - keyed resolver: `ICaptchaVerifier GetVerifier(string name)` (throws when missing, listing the registered names), `ICaptchaVerifier? GetVerifierOrNull(string name)` (returns `null`), and `IReadOnlySet<string> RegisteredNames` (every named instance plus a default provider's canonical key — use it to validate an externally supplied name before resolving). Resolves both named instances and a default provider's canonical key. The concrete keyed resolver (`KeyedServiceCaptchaProvider`) ships in `Headless.Captcha.Core`.
 - `CaptchaConstants` - the canonical keyed-DI keys: `ReCaptchaV2Provider = "Headless.Captcha:ReCaptchaV2"`, `ReCaptchaV3Provider = "Headless.Captcha:ReCaptchaV3"`, `TurnstileProvider = "Headless.Captcha:Turnstile"`, plus `bool IsReservedProviderKey(string name)` (true for any name under the `Headless.Captcha:` namespace).
 - `IServiceCollection.AddHeadlessCaptcha(Action<HeadlessCaptchaSetupBuilder> configure)` - the single registration entry point (ships in `Headless.Captcha.Core`). Requires at least one provider and rejects a second call on the same service collection.
@@ -135,8 +135,8 @@ Provides a single pass/fail verification API (`ICaptchaVerifier`) and one compos
 ### Design Notes
 
 - The base contract stays pass/fail. `CaptchaVerifyResult` carries only fields every provider returns; reCAPTCHA v3's `Score` and Turnstile's `CData` / `Metadata` live on derived result types. A consumer reading provider-only data is writing provider-specific code, so it resolves the provider's concrete verifier/result — keeping `ICaptchaVerifier` consumers vendor-portable.
-- At most one default provider. `RegisterDefault` requires a framework-reserved `providerKey` (under the `Headless.Captcha:` namespace) so the default's canonical alias cannot collide with a consumer-owned keyed service; it throws `ArgumentException` for a non-reserved key and `InvalidOperationException` on a second default (or a duplicate canonical key). A default registers both an unkeyed verifier and a keyed alias under its canonical key, so it is reachable directly and through `ICaptchaProvider`. Register every additional provider with the name-taking overload.
-- Names under `Headless.Captcha:` are reserved. `RegisterNamed` rejects a reserved name with `ArgumentException` and a duplicate name with `InvalidOperationException`, so consumer-chosen names cannot collide with the framework's canonical keys.
+- At most one default provider. `RegisterDefault` requires a framework-reserved `providerKey` (under the `Headless.Captcha:` namespace) so the default's canonical alias cannot collide with a consumer-owned keyed service; it throws `ArgumentException` for a non-reserved key and `InvalidOperationException` on a second default (or a duplicate canonical key). A default registers both an unkeyed verifier and a keyed alias under its canonical key, so it is reachable directly and through `ICaptchaProvider`. Add every additional provider as a named instance with `AddNamed`.
+- Names under `Headless.Captcha:` are reserved. `AddNamed` rejects a reserved name with `ArgumentException` and a duplicate name with `InvalidOperationException`, so consumer-chosen names cannot collide with the framework's canonical keys, and requires the instance to select exactly one provider (zero or multiple providers throws `InvalidOperationException`).
 - Registration is deferred and all-or-nothing. Provider `Use*` extensions queue their contributions on the builder; `AddHeadlessCaptcha` runs them only after the at-least-one-provider gate passes, so a throwing setup leaves the service collection unchanged. A second `AddHeadlessCaptcha` call on the same collection throws.
 
 ### Installation
@@ -207,7 +207,7 @@ Owns the unified captcha setup builder (`AddHeadlessCaptcha`) and the `ICaptchaP
 ### Key Features
 
 - `AddHeadlessCaptcha(Action<HeadlessCaptchaSetupBuilder>)` - the single provider-agnostic registration entry point, with an at-least-one-provider gate and a once-per-collection guard.
-- `HeadlessCaptchaSetupBuilder` - the root builder with two slots (at most one default, unlimited named); `RegisterDefault(providerKey, action)` and `RegisterNamed(name, action)` are the hooks providers extend with their `Use*` members.
+- `HeadlessCaptchaSetupBuilder` - the root builder with two slots (at most one default, unlimited named); a default is selected by a provider's `Use*` member, and `AddNamed(name, configure)` adds a named instance through a nested `HeadlessCaptchaInstanceBuilder`. The `RegisterDefault(providerKey, action)` / `RegisterProvider(action)` plumbing that provider `Use*` members build on is `[EditorBrowsable(Never)]`.
 - `ICaptchaProvider` - registered automatically by the gate (keyed-service-backed via `KeyedServiceCaptchaProvider`); resolves named instances and a default provider's canonical key, and exposes `RegisteredNames`.
 - Deferred registration: provider contributions are queued and run only after the gates pass - the default first, then each named instance - so a setup that fails a gate leaves the `IServiceCollection` unchanged.
 
@@ -230,16 +230,11 @@ using Headless.Captcha;
 // Provider-agnostic registration entry point (a provider package supplies the Use* member):
 builder.Services.AddHeadlessCaptcha(captcha =>
 {
-    captcha.UseTurnstile(o =>                // default (optional, at most one)
-    {
-        o.SiteKey = "…";
-        o.SiteSecret = "…";
-    });
-    captcha.UseReCaptchaV3("recaptcha", o => // named instance, keyed "recaptcha"
-    {
-        o.SiteKey = "…";
-        o.SiteSecret = "…";
-    });
+    // default (optional, at most one) — call the Use* member on the setup builder
+    captcha.UseTurnstile(builder.Configuration.GetSection("Headless:Captcha:Turnstile"));
+
+    // named instance, keyed "recaptcha" — one provider per AddNamed call
+    captcha.AddNamed("recaptcha", i => i.UseReCaptchaV3(builder.Configuration.GetSection("Headless:Captcha:ReCaptchaV3")));
 });
 
 // Resolve a named verifier:
@@ -272,12 +267,12 @@ Provides server-side verification for both Google reCAPTCHA v2 and v3 against Go
 
 ### Key Features
 
-- `setup.UseReCaptchaV2(...)` / `setup.UseReCaptchaV3(...)` - builder entry points (default and name-taking variants), each with the overload trio: `Action<ReCaptchaOptions>`, `Action<ReCaptchaOptions, IServiceProvider>`, and `IConfiguration`. Bind config section `Headless:Captcha:ReCaptchaV2` / `Headless:Captcha:ReCaptchaV3`.
+- `setup.UseReCaptchaV2(...)` / `setup.UseReCaptchaV3(...)` - builder entry points, available as default variants on `HeadlessCaptchaSetupBuilder` and named variants on `HeadlessCaptchaInstanceBuilder` (added through `setup.AddNamed("name", i => i.UseReCaptchaV3(...))`). Each carries the overload trio in order: `IConfiguration`, `Action<ReCaptchaOptions>`, `Action<ReCaptchaOptions, IServiceProvider>`. `ReCaptchaOptions` is settable, so any overload works — bind the config section `Headless:Captcha:ReCaptchaV2` / `Headless:Captcha:ReCaptchaV3`, or set its properties inside the delegate.
 - `IReCaptchaV3Verifier : ICaptchaVerifier` - adds `new Task<ReCaptchaV3VerifyResult> VerifyAsync(CaptchaVerifyRequest, CancellationToken)`. Inject it to read the score; the base `ICaptchaVerifier` view returns pass/fail only.
 - reCAPTCHA v2 implements the plain `ICaptchaVerifier` (no provider-only data) — resolve it as `ICaptchaVerifier` (default unkeyed, or keyed by name / `CaptchaConstants.ReCaptchaV2Provider`).
 - `ReCaptchaV3VerifyResult : CaptchaVerifyResult` - adds `float Score` (0.0–1.0 on a successful verify; defaults to `0f` on failure — `Success` is authoritative for pass/fail).
 - `ReCaptchaError` enum and `ReCaptchaResultExtensions.ToReCaptchaErrors(this IReCaptchaVerifyResult)` - parse the raw `ErrorCodes` into the typed reCAPTCHA error enum.
-- `IReCaptchaLanguageCodeProvider` (+ `CultureInfoReCaptchaLanguageCodeProvider`) - supplies the `?hl=` language code appended to the script URL; defaults to the current UI culture.
+- `ICaptchaLanguageCodeProvider` (shared with Turnstile; default `CultureInfoCaptchaLanguageCodeProvider`) - supplies the `?hl=` language code appended to the script URL; defaults to the current UI culture.
 - Tag helpers: `<recaptcha-script-v2>`, `<recaptcha-div-v2>`, the `recaptcha-v2-*` attribute element helper, `<recaptcha-script-v3>`, and `<recaptcha-script-v3-js>`. They read the default provider's options under the matching canonical key.
 
 ### Design Notes
@@ -300,11 +295,7 @@ using Headless.Captcha;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddHeadlessCaptcha(captcha =>
-    captcha.UseReCaptchaV3(options =>
-    {
-        options.SiteKey = builder.Configuration["Headless:Captcha:ReCaptchaV3:SiteKey"]!;
-        options.SiteSecret = builder.Configuration["Headless:Captcha:ReCaptchaV3:SiteSecret"]!;
-    })
+    captcha.UseReCaptchaV3(builder.Configuration.GetSection("Headless:Captcha:ReCaptchaV3"))
 );
 
 // Read the v3 score by injecting the concrete interface.
@@ -352,7 +343,7 @@ Bound from `Headless:Captcha:ReCaptchaV2` / `Headless:Captcha:ReCaptchaV3` when 
 ### Side Effects
 
 - Each `UseReCaptchaV2` / `UseReCaptchaV3` registration adds a named `HttpClient` (with the standard resilience handler) pointed at `VerifyBaseUrl`, configures `ReCaptchaOptions` (with FluentValidation, validated on start), and registers a keyed `ICaptchaVerifier` (v2) / keyed `IReCaptchaV3Verifier` + `ICaptchaVerifier` (v3) under the registration name. A default registration also adds the unkeyed verifier(s).
-- Registers `IReCaptchaLanguageCodeProvider` (transient, `TryAdd`) the first time a reCAPTCHA provider is added.
+- Registers `ICaptchaLanguageCodeProvider` (`CultureInfoCaptchaLanguageCodeProvider`, transient, `TryAdd`) the first time a reCAPTCHA provider is added.
 - Tag helpers emit HTML/script output during Razor rendering. No background services.
 
 ---
@@ -367,11 +358,11 @@ Provides server-side verification for Cloudflare Turnstile against the `turnstil
 
 ### Key Features
 
-- `setup.UseTurnstile(...)` - builder entry point (default and name-taking variants), each with the overload trio: `Action<TurnstileOptions>`, `Action<TurnstileOptions, IServiceProvider>`, and `IConfiguration`. Binds config section `Headless:Captcha:Turnstile`.
+- `setup.UseTurnstile(...)` - builder entry point, available as a default variant on `HeadlessCaptchaSetupBuilder` and a named variant on `HeadlessCaptchaInstanceBuilder` (added through `setup.AddNamed("name", i => i.UseTurnstile(...))`). Carries the overload trio in order: `IConfiguration`, `Action<TurnstileOptions>`, `Action<TurnstileOptions, IServiceProvider>`. `TurnstileOptions` is settable, so any overload works — bind config section `Headless:Captcha:Turnstile`, or set its properties inside the delegate.
 - `ITurnstileVerifier : ICaptchaVerifier` - adds `new Task<TurnstileVerifyResult> VerifyAsync(TurnstileVerifyRequest, CancellationToken)`. Inject it to read Turnstile-only data; the base `ICaptchaVerifier` view returns pass/fail only.
 - `TurnstileVerifyRequest : CaptchaVerifyRequest` - adds `string? IdempotencyKey`, so the same token can be safely re-verified without a duplicate-token error.
 - `TurnstileVerifyResult : CaptchaVerifyResult` - adds `string? CData` (the `cdata` echoed back from the widget) and `JsonElement? Metadata` (the Enterprise `metadata` object when present). Turnstile returns no score.
-- `ITurnstileLanguageCodeProvider` (+ `CultureInfoTurnstileLanguageCodeProvider`) - supplies the `data-language` value on the widget; defaults to the current UI culture.
+- `ICaptchaLanguageCodeProvider` (shared with reCAPTCHA; default `CultureInfoCaptchaLanguageCodeProvider`) - supplies the `data-language` value on the widget; defaults to the current UI culture.
 - Tag helpers: `<turnstile-script>` (props `ScriptAsync`, `ScriptDefer`, `ExplicitRender` → `?render=explicit`, `Onload`) rendering `turnstile/v0/api.js`; `<turnstile-widget>` (props `Theme`, `Size`, `Callback`, `ErrorCallback`, `ExpiredCallback`, `Action`, `CData`, `Language`) rendering `<div class="cf-turnstile" data-sitekey="…" …>`. They read the default Turnstile provider's options.
 
 ### Design Notes
@@ -394,11 +385,7 @@ using Headless.Captcha;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddHeadlessCaptcha(captcha =>
-    captcha.UseTurnstile(options =>
-    {
-        options.SiteKey = builder.Configuration["Headless:Captcha:Turnstile:SiteKey"]!;
-        options.SiteSecret = builder.Configuration["Headless:Captcha:Turnstile:SiteSecret"]!;
-    })
+    captcha.UseTurnstile(builder.Configuration.GetSection("Headless:Captcha:Turnstile"))
 );
 
 // Verify and read Turnstile-only data by injecting the concrete interface.
@@ -426,18 +413,10 @@ Compose with a second provider (only one default allowed — the rest are named)
 ```csharp
 builder.Services.AddHeadlessCaptcha(captcha =>
     captcha
-        .UseTurnstile(o =>
-        {
-            o.SiteKey = builder.Configuration["Headless:Captcha:Turnstile:SiteKey"]!;
-            o.SiteSecret = builder.Configuration["Headless:Captcha:Turnstile:SiteSecret"]!;
-        })
-        .UseReCaptchaV3(
+        .UseTurnstile(builder.Configuration.GetSection("Headless:Captcha:Turnstile")) // default
+        .AddNamed(
             "recaptcha",
-            o =>
-            {
-                o.SiteKey = builder.Configuration["Headless:Captcha:ReCaptchaV3:SiteKey"]!;
-                o.SiteSecret = builder.Configuration["Headless:Captcha:ReCaptchaV3:SiteSecret"]!;
-            }
+            i => i.UseReCaptchaV3(builder.Configuration.GetSection("Headless:Captcha:ReCaptchaV3"))
         )
 );
 
@@ -472,5 +451,5 @@ Bound from `Headless:Captcha:Turnstile` when using the `IConfiguration` overload
 ### Side Effects
 
 - Each `UseTurnstile` registration adds a named `HttpClient` (with the standard resilience handler) pointed at `VerifyBaseUrl`, configures `TurnstileOptions` (with FluentValidation, validated on start), and registers a keyed `ITurnstileVerifier` + `ICaptchaVerifier` under the registration name. A default registration also adds the unkeyed `ITurnstileVerifier` / `ICaptchaVerifier`.
-- Registers `ITurnstileLanguageCodeProvider` (transient, `TryAdd`) the first time a Turnstile provider is added.
+- Registers `ICaptchaLanguageCodeProvider` (`CultureInfoCaptchaLanguageCodeProvider`, transient, `TryAdd`) the first time a Turnstile provider is added.
 - Tag helpers emit HTML/script output during Razor rendering. No background services.

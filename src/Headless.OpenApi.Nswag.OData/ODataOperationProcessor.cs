@@ -5,7 +5,7 @@ using NSwag;
 using NSwag.Generation.Processors;
 using NSwag.Generation.Processors.Contexts;
 
-namespace Headless.Api;
+namespace Headless.OpenApi.Nswag.OData;
 
 /// <summary>
 /// NSwag operation processor that injects standard OData query-parameter documentation

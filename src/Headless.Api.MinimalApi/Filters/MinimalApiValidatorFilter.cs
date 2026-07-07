@@ -4,11 +4,12 @@ using FluentValidation;
 using FluentValidation.Results;
 using Headless.Api.Abstractions;
 using Headless.Primitives;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Microsoft.AspNetCore.Builder;
+namespace Headless.Api;
 
 /// <summary>
 /// Endpoint filter that runs all registered <see cref="IValidator{T}"/> implementations for

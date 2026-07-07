@@ -12,8 +12,8 @@ namespace Tests;
 public sealed class ConnectionFactoryTests : TestBase
 {
     private readonly ILogger<ConnectionFactory> _logger = NullLogger<ConnectionFactory>.Instance;
-    private readonly IOptions<MessagingPulsarOptions> _options = Options.Create(
-        new MessagingPulsarOptions { ServiceUrl = "pulsar://localhost:6650" }
+    private readonly IOptions<PulsarMessagingOptions> _options = Options.Create(
+        new PulsarMessagingOptions { ServiceUrl = "pulsar://localhost:6650" }
     );
 
     [Fact]
@@ -34,7 +34,7 @@ public sealed class ConnectionFactoryTests : TestBase
     {
         // given
         var credentialedOptions = Options.Create(
-            new MessagingPulsarOptions { ServiceUrl = "pulsar://user:secret@localhost:6650" }
+            new PulsarMessagingOptions { ServiceUrl = "pulsar://user:secret@localhost:6650" }
         );
 
         // when

@@ -120,6 +120,8 @@ internal sealed class SqlServerFeaturesStorageInitializer(
                         [Value] nvarchar({FeatureValueRecordConstants.ValueMaxLength}) NOT NULL,
                         [ProviderName] nvarchar({FeatureValueRecordConstants.ProviderNameMaxLength}) NOT NULL,
                         [ProviderKey] nvarchar({FeatureValueRecordConstants.ProviderKeyMaxLength}) NULL,
+                        [DateCreated] datetimeoffset NOT NULL,
+                        [DateUpdated] datetimeoffset NULL,
                         CONSTRAINT [PK_{options.FeatureValuesTableName}] PRIMARY KEY CLUSTERED ([Id] ASC)
                     );
                 END;

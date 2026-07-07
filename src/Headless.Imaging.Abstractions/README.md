@@ -12,7 +12,7 @@ Decouples application code from any specific image-processing library. Services 
 - `IImageCompressor` — compression interface: `CompressAsync(Stream, ImageCompressArgs, CancellationToken)`
 - `ImageResizeArgs` — resize parameters: mode, width, height, optional MIME type override
 - `ImageCompressArgs` — compression parameters: optional MIME type override
-- `ImageResizeMode` — enum of resize strategies (`None`, `Default`, `Max`, `Crop`, `Pad`, `BoxPad`, `Min`, `Stretch`)
+- `ImageResizeMode` — enum of resize strategies (`Default` (zero/unset sentinel resolved to `ImagingOptions.DefaultResizeMode`), `None`, `Max`, `Crop`, `Pad`, `BoxPad`, `Min`, `Stretch`)
 - `ImageStreamResizeResult` / `ImageStreamCompressResult` — typed result wrappers
 - `ImageProcessResult<T>` — base result with `IsDone`, `State`, `Result`, `Error`
 - `ImageProcessState` — `Done`, `Unsupported`, `Failed`

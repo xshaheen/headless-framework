@@ -32,7 +32,7 @@ public sealed class NatsConsumerClientHarnessTests(NatsFixture fixture) : Consum
             "test-group",
             1,
             Options.Create(
-                new MessagingNatsOptions
+                new NatsMessagingOptions
                 {
                     Servers = fixture.ConnectionString,
                     EnableSubscriberClientStreamAndSubjectCreation = true,

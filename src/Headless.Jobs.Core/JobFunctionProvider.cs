@@ -2,7 +2,6 @@
 
 using Headless.Checks;
 using Headless.Jobs.Base;
-using Headless.Jobs.Enums;
 using Headless.Jobs.Instrumentation;
 using Headless.Jobs.Interfaces.Managers;
 using Microsoft.Extensions.Configuration;
@@ -25,23 +24,16 @@ public static class JobFunctionProvider
 {
     // Callback actions to collect registrations
     private static Action<Dictionary<string, (string, Type)>>? _requestTypeRegistrations;
-    private static Action<
-        Dictionary<
-            string,
-            (string cronExpression, JobPriority Priority, JobFunctionDelegate Delegate, int MaxConcurrency)
-        >
-    >? _functionRegistrations;
+    private static Action<Dictionary<string, JobFunctionRegistration>>? _functionRegistrations;
 
     /// <summary>
-    /// Frozen lookup of all registered job functions, keyed by function name. Each entry carries the
-    /// cron expression (empty string for time jobs), scheduling priority, execution delegate, and maximum
-    /// concurrency limit. Available after <see cref="Build"/> is called.
+    /// Frozen lookup of all registered job functions, keyed by function name. Each entry is a
+    /// <see cref="JobFunctionRegistration"/> carrying the cron expression (empty string for time jobs),
+    /// scheduling priority, execution delegate, and maximum concurrency limit. Available after
+    /// <see cref="Build"/> is called.
     /// </summary>
-    public static FrozenDictionary<
-        string,
-        (string cronExpression, JobPriority Priority, JobFunctionDelegate Delegate, int MaxConcurrency)
-    > JobFunctions { get; private set; } =
-        FrozenDictionary<string, (string, JobPriority, JobFunctionDelegate, int)>.Empty;
+    public static FrozenDictionary<string, JobFunctionRegistration> JobFunctions { get; private set; } =
+        FrozenDictionary<string, JobFunctionRegistration>.Empty;
 
     /// <summary>
     /// Frozen lookup of request type metadata, keyed by function name. Each entry carries the full type
@@ -57,7 +49,7 @@ public static class JobFunctionProvider
     /// </summary>
     /// <param name="functions">The functions to register. Cannot be null.</param>
     /// <exception cref="ArgumentNullException">Thrown when functions parameter is null.</exception>
-    public static void RegisterFunctions(IDictionary<string, (string, JobPriority, JobFunctionDelegate, int)> functions)
+    public static void RegisterFunctions(IDictionary<string, JobFunctionRegistration> functions)
     {
         Argument.IsNotNull(functions);
 
@@ -82,10 +74,7 @@ public static class JobFunctionProvider
     /// <param name="functions">The functions to register. Cannot be null.</param>
     /// <param name="_">The total expected capacity (ignored - capacity calculated automatically).</param>
     /// <exception cref="ArgumentNullException">Thrown when functions parameter is null.</exception>
-    public static void RegisterFunctions(
-        IDictionary<string, (string, JobPriority, JobFunctionDelegate, int)> functions,
-        int _
-    )
+    public static void RegisterFunctions(IDictionary<string, JobFunctionRegistration> functions, int _)
     {
         // For callback approach, capacity is calculated automatically in Build()
         RegisterFunctions(functions);
@@ -140,14 +129,14 @@ public static class JobFunctionProvider
         {
             foreach (var (key, value) in dict)
             {
-                if (value.cronExpression.StartsWith('%'))
+                if (value.CronExpression.StartsWith('%'))
                 {
-                    var configKey = value.cronExpression.Trim('%');
+                    var configKey = value.CronExpression.Trim('%');
                     var mappedCronExpression = configuration[configKey];
 
                     if (!string.IsNullOrEmpty(mappedCronExpression))
                     {
-                        dict[key] = (mappedCronExpression, value.Priority, value.Delegate, value.MaxConcurrency);
+                        dict[key] = value with { CronExpression = mappedCronExpression };
                     }
                 }
             }
@@ -167,20 +156,14 @@ public static class JobFunctionProvider
         if (_functionRegistrations != null)
         {
             // Single pass: execute callbacks directly on final dictionary
-            var functionsDict = new Dictionary<
-                string,
-                (string cronExpression, JobPriority Priority, JobFunctionDelegate Delegate, int MaxConcurrency)
-            >(StringComparer.Ordinal);
+            var functionsDict = new Dictionary<string, JobFunctionRegistration>(StringComparer.Ordinal);
             _functionRegistrations(functionsDict);
             JobFunctions = functionsDict.ToFrozenDictionary();
             _functionRegistrations = null; // Release callback chain
         }
         else
         {
-            JobFunctions = new Dictionary<
-                string,
-                (string cronExpression, JobPriority Priority, JobFunctionDelegate Delegate, int MaxConcurrency)
-            >(StringComparer.Ordinal).ToFrozenDictionary();
+            JobFunctions = new Dictionary<string, JobFunctionRegistration>(StringComparer.Ordinal).ToFrozenDictionary();
         }
 
         // Build request types dictionary

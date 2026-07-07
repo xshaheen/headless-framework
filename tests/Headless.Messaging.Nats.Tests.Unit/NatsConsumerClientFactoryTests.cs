@@ -11,13 +11,13 @@ namespace Tests;
 
 public sealed class NatsConsumerClientFactoryTests : TestBase
 {
-    private readonly IOptions<MessagingNatsOptions> _options;
+    private readonly IOptions<NatsMessagingOptions> _options;
     private readonly IServiceProvider _serviceProvider;
 
     public NatsConsumerClientFactoryTests()
     {
         _options = Options.Create(
-            new MessagingNatsOptions
+            new NatsMessagingOptions
             {
                 Servers = "nats://headless-framework-nats-test.invalid:4222",
                 ConfigureConnection = opts =>

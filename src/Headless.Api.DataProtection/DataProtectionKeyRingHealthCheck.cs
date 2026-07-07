@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.DataProtection.Repositories;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Api;
+namespace Headless.Api.DataProtection;
 
 /// <summary>
 /// Readiness health check for the blob-backed data-protection key ring — the continuous complement to the

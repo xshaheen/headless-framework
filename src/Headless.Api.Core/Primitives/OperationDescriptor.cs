@@ -5,7 +5,7 @@ namespace Headless.Primitives;
 
 /// <summary>
 /// Describes a single hypermedia operation (HATEOAS link) that a client may invoke on a resource.
-/// Included in <see cref="OperationsDataEnvelop{T}"/> and <see cref="OperationsCollectionEnvelop{T}"/>
+/// Included in <see cref="OperationsDataEnvelope{T}"/> and <see cref="OperationsCollectionEnvelope{T}"/>
 /// to advertise available transitions alongside the resource data.
 /// </summary>
 /// <param name="Code">

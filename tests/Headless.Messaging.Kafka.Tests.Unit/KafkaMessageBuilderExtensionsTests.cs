@@ -20,7 +20,7 @@ public sealed class KafkaMessageBuilderExtensionsTests
             (IProviderHeaderContributions)builder.Build().ProviderConfigs.Values.Single()
         ).HeaderContributions.Single();
 
-        contribution.HeaderName.Should().Be(KafkaHeaders.KafkaKey);
+        contribution.HeaderName.Should().Be(KafkaMessagingHeaders.KafkaKey);
         contribution.Selector(new TestMessage("tenant-a")).Should().Be("tenant-a");
     }
 

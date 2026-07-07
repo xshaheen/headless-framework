@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Blobs.SshNet;
 using Headless.Checks;
 using Headless.Serializer;
 using Microsoft.Extensions.Configuration;
@@ -9,7 +10,8 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Blobs.SshNet;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Blobs;
 
 /// <summary>Extension methods to register the SFTP/SSH blob storage provider.</summary>
 [PublicAPI]

@@ -22,7 +22,7 @@ public sealed class RedisConnectionPoolTests : TestBase
     {
         // given
         var options = Options.Create(
-            new MessagingRedisOptions
+            new RedisMessagingOptions
             {
                 Configuration = ConfigurationOptions.Parse("localhost:6379"),
                 ConnectionPoolSize = 5,
@@ -48,9 +48,9 @@ public sealed class RedisConnectionPoolTests : TestBase
     public void should_create_pool_with_configured_size()
     {
         // given
-        const uint poolSize = 5;
+        const int poolSize = 5;
         var options = Options.Create(
-            new MessagingRedisOptions
+            new RedisMessagingOptions
             {
                 Configuration = ConfigurationOptions.Parse("localhost:6379"),
                 ConnectionPoolSize = poolSize,
@@ -70,7 +70,7 @@ public sealed class RedisConnectionPoolTests : TestBase
     {
         // given
         var options = Options.Create(
-            new MessagingRedisOptions
+            new RedisMessagingOptions
             {
                 Configuration = ConfigurationOptions.Parse("localhost:6379"),
                 ConnectionPoolSize = 3,
@@ -91,7 +91,7 @@ public sealed class RedisConnectionPoolTests : TestBase
     {
         // given
         var options = Options.Create(
-            new MessagingRedisOptions
+            new RedisMessagingOptions
             {
                 Configuration = ConfigurationOptions.Parse("localhost:6379"),
                 ConnectionPoolSize = 2,
@@ -117,7 +117,7 @@ public sealed class RedisConnectionPoolTests : TestBase
     {
         // given
         var options = Options.Create(
-            new MessagingRedisOptions
+            new RedisMessagingOptions
             {
                 Configuration = ConfigurationOptions.Parse("localhost:6379"),
                 ConnectionPoolSize = 3,
@@ -136,7 +136,7 @@ public sealed class RedisConnectionPoolTests : TestBase
     {
         // given
         var options = Options.Create(
-            new MessagingRedisOptions
+            new RedisMessagingOptions
             {
                 Configuration = ConfigurationOptions.Parse("localhost:6379"),
                 ConnectionPoolSize = 2,
@@ -162,7 +162,7 @@ public sealed class RedisConnectionPoolTests : TestBase
     {
         // given
         var options = Options.Create(
-            new MessagingRedisOptions
+            new RedisMessagingOptions
             {
                 Configuration = ConfigurationOptions.Parse("localhost:6379"),
                 ConnectionPoolSize = 2,
@@ -185,7 +185,7 @@ public sealed class RedisConnectionPoolTests : TestBase
     {
         // given
         var options = Options.Create(
-            new MessagingRedisOptions
+            new RedisMessagingOptions
             {
                 Configuration = ConfigurationOptions.Parse("localhost:6379"),
                 ConnectionPoolSize = 2,

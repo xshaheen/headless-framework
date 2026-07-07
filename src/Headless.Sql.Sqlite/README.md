@@ -10,10 +10,11 @@ Provides the `ISqlConnectionFactory` and `IConnectionStringChecker` implementati
 
 - `SqliteConnectionFactory` — `ISqlConnectionFactory` implementation; `CreateNewConnectionAsync()` returns a strongly-typed `SqliteConnection` (already open); `GetConnectionString()` retrieves the configured string
 - `SqliteConnectionStringChecker` — `IConnectionStringChecker` that opens the SQLite database and reports both `Connected` and `DatabaseExists` as `true` on success (SQLite creates the file on open, so the two flags are always identical)
+- `SetupSqliteSql.AddSqliteSql(string connectionString)` / `AddSqliteSql(Func<IServiceProvider, string>)` — one-call registration of the factory, checker, and scoped ambient connection
 
 ## Design Notes
 
-`SqliteConnectionStringChecker` differs from the PostgreSQL and SQL Server implementations: because SQLite creates the database file when the connection opens, there is no meaningful distinction between "server reachable" and "database exists". Both tuple fields are set to `true` together on a successful open, or both remain `false` on failure.
+`SqliteConnectionStringChecker` differs from the PostgreSQL and SQL Server implementations: because SQLite creates the database file when the connection opens, there is no meaningful distinction between "server reachable" and "database exists". Both `ConnectionCheckResult` fields are set to `true` together on a successful open, or both remain `false` on failure.
 
 For in-process testing, prefer `"Data Source=:memory:"` — the database is private to the connection and disappears when the connection closes.
 
@@ -27,13 +28,10 @@ dotnet add package Headless.Sql.Sqlite
 
 ```csharp
 // In-process tests (no server required):
-services.AddSingleton<ISqlConnectionFactory>(new SqliteConnectionFactory("Data Source=:memory:"));
+services.AddSqliteSql("Data Source=:memory:");
 
 // File-based embedded database:
-services.AddSingleton<ISqlConnectionFactory>(new SqliteConnectionFactory("Data Source=app.db"));
-
-// Optional: register the health-check helper
-services.AddSingleton<IConnectionStringChecker, SqliteConnectionStringChecker>();
+services.AddSqliteSql("Data Source=app.db");
 ```
 
 Use in a repository:
@@ -55,14 +53,17 @@ public sealed class CacheRepository(ISqlConnectionFactory connectionFactory)
 
 ## Configuration
 
-Pass the connection string directly to the constructor. SQLite connection strings use `Data Source=<path>` or `Data Source=:memory:`.
+Pass the connection string to `AddSqliteSql`. SQLite connection strings use `Data Source=<path>` or `Data Source=:memory:`.
 
 ## Dependencies
 
+- `Headless.Checks`
 - `Headless.Sql.Abstractions`
+- `Headless.Sql.Core`
 - `Microsoft.Data.Sqlite`
+- `Microsoft.Extensions.DependencyInjection.Abstractions`
 - `Microsoft.Extensions.Logging.Abstractions`
 
 ## Side Effects
 
-None (manual registration required). For file-based databases, SQLite creates the `.db` file on the first connection open if it does not exist.
+`AddSqliteSql` registers `ISqlConnectionFactory` and `IConnectionStringChecker` as singletons and `ISqlCurrentConnection` (`DefaultSqlCurrentConnection`) as scoped. For file-based databases, SQLite creates the `.db` file on the first connection open if it does not exist.

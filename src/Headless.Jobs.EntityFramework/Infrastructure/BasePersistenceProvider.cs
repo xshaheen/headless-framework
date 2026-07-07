@@ -84,7 +84,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     }
 
     #region Core_Time_Ticker_Methods
-    public async IAsyncEnumerable<TimeJobEntity> QueueTimeJobs(
+    public async IAsyncEnumerable<TimeJobEntity> QueueTimeJobsAsync(
         TimeJobEntity[] timeJobs,
         [EnumeratorCancellation] CancellationToken cancellationToken
     )
@@ -132,7 +132,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         }
     }
 
-    public async IAsyncEnumerable<TimeJobEntity> QueueTimedOutTimeJobs(
+    public async IAsyncEnumerable<TimeJobEntity> QueueTimedOutTimeJobsAsync(
         [EnumeratorCancellation] CancellationToken cancellationToken
     )
     {
@@ -185,7 +185,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         }
     }
 
-    public async Task ReleaseAcquiredTimeJobs(Guid[] timeJobIds, CancellationToken cancellationToken)
+    public async Task ReleaseAcquiredTimeJobsAsync(Guid[] timeJobIds, CancellationToken cancellationToken)
     {
         if (!OwnerIdentity.TryGetStampOwner(out var owner))
         {
@@ -217,7 +217,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ConfigureAwait(false);
     }
 
-    public async Task<int> UpdateTimeJob(InternalFunctionContext functionContexts, CancellationToken cancellationToken)
+    public async Task<int> UpdateTimeJobAsync(JobExecutionState functionContexts, CancellationToken cancellationToken)
     {
         // #5 completion fence: only the still-owning node may write a completion onto a non-terminal row.
         // A node the dead-node sweep already transitioned (MarkFailed/Skip -> terminal, or released -> owner
@@ -242,9 +242,9 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ConfigureAwait(false);
     }
 
-    public async Task UpdateTimeJobsWithUnifiedContext(
+    public async Task UpdateTimeJobsWithUnifiedContextAsync(
         Guid[] timeJobIds,
-        InternalFunctionContext functionContext,
+        JobExecutionState functionContext,
         CancellationToken cancellationToken = default
     )
     {
@@ -272,7 +272,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ConfigureAwait(false);
     }
 
-    public async Task<TimeJobEntity[]> GetEarliestTimeJobs(CancellationToken cancellationToken)
+    public async Task<TimeJobEntity[]> GetEarliestTimeJobsAsync(CancellationToken cancellationToken)
     {
         if (!OwnerIdentity.TryGetStampOwner(out var owner))
         {
@@ -329,7 +329,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ConfigureAwait(false);
     }
 
-    public async Task<byte[]> GetTimeJobRequest(Guid jobId, CancellationToken cancellationToken = default)
+    public async Task<byte[]> GetTimeJobRequestAsync(Guid jobId, CancellationToken cancellationToken = default)
     {
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
@@ -346,7 +346,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         return request ?? [];
     }
 
-    public async Task<int> ReleaseDeadNodeTimeJobResources(
+    public async Task<int> ReleaseDeadNodeTimeJobResourcesAsync(
         string instanceIdentifier,
         CancellationToken cancellationToken = default
     )
@@ -489,7 +489,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ConfigureAwait(false);
     }
 
-    public async Task<int> RenewTimeJobLease(Guid jobId, CancellationToken cancellationToken = default)
+    public async Task<int> RenewTimeJobLeaseAsync(Guid jobId, CancellationToken cancellationToken = default)
     {
         // #316 sliding lease: slide LockedUntil forward while the job runs. Fenced on WhereOwnedBy (the #5
         // completion-fence shape: still owned + non-terminal), so a row the dead-node/stalled sweep already
@@ -527,12 +527,12 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ConfigureAwait(false);
     }
 
-    public async Task<int> ReclaimStalledTimeJobs(CancellationToken cancellationToken = default)
+    public async Task<int> ReclaimStalledTimeJobsAsync(CancellationToken cancellationToken = default)
     {
         // #316/U3 gap-closer: reclaim InProgress rows whose lease lapsed (LockedUntil <= now) on ANY node — not
         // owner-scoped, unlike the dead-node sweep, because the trigger is a stalled lease, not a declared node
         // death. A healthy renewing job keeps a future LockedUntil and never matches. Same per-policy transitions
-        // and PR#456 terminal-row hygiene as ReleaseDeadNodeTimeJobResources, wrapped in one transaction so a crash
+        // and PR#456 terminal-row hygiene as ReleaseDeadNodeTimeJobResourcesAsync, wrapped in one transaction so a crash
         // between phases can't leave a half-reclaimed view (re-run is idempotent regardless).
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
@@ -599,7 +599,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     }
 
     #region Core_Cron_Ticker_Methods
-    public async Task MigrateDefinedCronJobs(
+    public async Task MigrateDefinedCronJobsAsync(
         (string Function, string Expression)[] cronJobs,
         CancellationToken cancellationToken = default
     )
@@ -695,7 +695,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         }
     }
 
-    public async Task<CronJobEntity[]> GetAllCronJobExpressions(CancellationToken cancellationToken = default)
+    public async Task<CronJobEntity[]> GetAllCronJobExpressionsAsync(CancellationToken cancellationToken = default)
     {
         if (Cache is null)
         {
@@ -805,13 +805,13 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     #endregion
 
     #region Core_Cron_TickerOccurrence_Methods
-    public async Task<int> UpdateCronJobOccurrence(
-        InternalFunctionContext functionContext,
+    public async Task<int> UpdateCronJobOccurrenceAsync(
+        JobExecutionState functionContext,
         CancellationToken cancellationToken
     )
     {
-        // #5 completion fence (see UpdateTimeJob): only the still-owning node may complete a non-terminal occurrence.
-        // Returns 0 when fenced out (foreign owner / terminal row), 1 when applied — mirroring UpdateTimeJob.
+        // #5 completion fence (see UpdateTimeJobAsync): only the still-owning node may complete a non-terminal occurrence.
+        // Returns 0 when fenced out (foreign owner / terminal row), 1 when applied — mirroring UpdateTimeJobAsync.
         if (!OwnerIdentity.TryGetStampOwner(out var owner))
         {
             return 0;
@@ -829,7 +829,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ConfigureAwait(false);
     }
 
-    public async IAsyncEnumerable<CronJobOccurrenceEntity<TCronJob>> QueueTimedOutCronJobOccurrences(
+    public async IAsyncEnumerable<CronJobOccurrenceEntity<TCronJob>> QueueTimedOutCronJobOccurrencesAsync(
         [EnumeratorCancellation] CancellationToken cancellationToken = default
     )
     {
@@ -882,7 +882,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         }
     }
 
-    public async Task<int> ReleaseDeadNodeOccurrenceResources(
+    public async Task<int> ReleaseDeadNodeOccurrenceResourcesAsync(
         string instanceIdentifier,
         CancellationToken cancellationToken = default
     )
@@ -892,16 +892,16 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ConfigureAwait(false);
 
         // #316 clock-skew: InProgress lease-deferral arms compare LockedUntil <= now against the DB clock (see
-        // ReleaseDeadNodeTimeJobResources).
+        // ReleaseDeadNodeTimeJobResourcesAsync).
         var now = await GetDatabaseUtcNowAsync(dbContext, cancellationToken).ConfigureAwait(false);
 
-        // See ReleaseDeadNodeTimeJobResources: strict WhereOwnedBy (KTD5/R4), one transaction (finding 3.1),
+        // See ReleaseDeadNodeTimeJobResourcesAsync: strict WhereOwnedBy (KTD5/R4), one transaction (finding 3.1),
         // CancellationToken.None for the reclaim writes (KTD6).
         await using var transaction = await dbContext
             .Database.BeginTransactionAsync(CancellationToken.None)
             .ConfigureAwait(false);
 
-        // Per-policy dead-node transition (#315, #316/U4) — mirrors ReleaseDeadNodeTimeJobResources. Idle/Queued
+        // Per-policy dead-node transition (#315, #316/U4) — mirrors ReleaseDeadNodeTimeJobResourcesAsync. Idle/Queued
         // reclaimed immediately; InProgress arms defer to the lease (LockedUntil <= now) so a still-leased running
         // occurrence survives a membership blip and is recovered by U3 once its lease lapses.
         var released = await dbContext
@@ -964,11 +964,14 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         return released + failed + skipped;
     }
 
-    public async Task<int> RenewCronJobOccurrenceLease(Guid occurrenceId, CancellationToken cancellationToken = default)
+    public async Task<int> RenewCronJobOccurrenceLeaseAsync(
+        Guid occurrenceId,
+        CancellationToken cancellationToken = default
+    )
     {
-        // #316 sliding lease — mirror of RenewTimeJobLease for cron occurrences. WhereOwnedBy fence makes a
+        // #316 sliding lease — mirror of RenewTimeJobLeaseAsync for cron occurrences. WhereOwnedBy fence makes a
         // lost/reclaimed/terminalized occurrence match 0 rows -> cancel-on-loss (U2/KTD3).
-        // #461: a NEGATIVE return means coordination membership is not established (see RenewTimeJobLease) — the
+        // #461: a NEGATIVE return means coordination membership is not established (see RenewTimeJobLeaseAsync) — the
         // caller skips the renewal tick rather than cancelling.
         if (!OwnerIdentity.TryGetStampOwner(out var owner))
         {
@@ -978,13 +981,13 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
-        // #316 clock-skew: stamp the slid lease from the DB clock (see RenewTimeJobLease).
+        // #316 clock-skew: stamp the slid lease from the DB clock (see RenewTimeJobLeaseAsync).
         var now = await GetDatabaseUtcNowAsync(dbContext, cancellationToken).ConfigureAwait(false);
 
         return await dbContext
             .Set<CronJobOccurrenceEntity<TCronJob>>()
             .Where(x => x.Id == occurrenceId)
-            // Renewal slides a RUNNING lease only (see RenewTimeJobLease) — InProgress filter required.
+            // Renewal slides a RUNNING lease only (see RenewTimeJobLeaseAsync) — InProgress filter required.
             .Where(x => x.Status == JobStatus.InProgress)
             .WhereOwnedBy(owner)
             .ExecuteUpdateAsync(
@@ -995,9 +998,9 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ConfigureAwait(false);
     }
 
-    public async Task<int> ReclaimStalledCronJobOccurrences(CancellationToken cancellationToken = default)
+    public async Task<int> ReclaimStalledCronJobOccurrencesAsync(CancellationToken cancellationToken = default)
     {
-        // #316/U3 — cron mirror of ReclaimStalledTimeJobs. Reclaim lapsed-lease InProgress occurrences on any node.
+        // #316/U3 — cron mirror of ReclaimStalledTimeJobsAsync. Reclaim lapsed-lease InProgress occurrences on any node.
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -1011,7 +1014,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         var set = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>();
 
-        // Reclaim writes under CancellationToken.None (see ReclaimStalledTimeJobs / KTD6).
+        // Reclaim writes under CancellationToken.None (see ReclaimStalledTimeJobsAsync / KTD6).
         var released = await set.Where(x =>
                 x.Status == JobStatus.InProgress && x.LockedUntil <= now && x.OnNodeDeath == NodeDeathPolicy.Retry
             )
@@ -1061,7 +1064,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         return released + failed + skipped;
     }
 
-    public async Task ReleaseAcquiredCronJobOccurrences(
+    public async Task ReleaseAcquiredCronJobOccurrencesAsync(
         Guid[] occurrenceIds,
         CancellationToken cancellationToken = default
     )
@@ -1102,8 +1105,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     // upsert keyed on that id, so concurrent creation across nodes converges on a single row — storage-level dedup
     // is the correctness boundary here. A coarse lock would only serialize independent occurrence ids for no benefit.
     // Revisit only if evidence shows storage dedup is insufficient (see plan #267 deferred follow-up).
-    public async IAsyncEnumerable<CronJobOccurrenceEntity<TCronJob>> QueueCronJobOccurrences(
-        (DateTime Key, InternalManagerContext[] Items) cronJobOccurrences,
+    public async IAsyncEnumerable<CronJobOccurrenceEntity<TCronJob>> QueueCronJobOccurrencesAsync(
+        (DateTime Key, JobManagerDispatchContext[] Items) cronJobOccurrences,
         [EnumeratorCancellation] CancellationToken cancellationToken = default
     )
     {
@@ -1213,7 +1216,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         }
     }
 
-    public async Task<CronJobOccurrenceEntity<TCronJob>> GetEarliestAvailableCronOccurrence(
+    public async Task<CronJobOccurrenceEntity<TCronJob>> GetEarliestAvailableCronOccurrenceAsync(
         Guid[] ids,
         CancellationToken cancellationToken = default
     )
@@ -1244,7 +1247,10 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         return occurrence!;
     }
 
-    public async Task<byte[]> GetCronJobOccurrenceRequest(Guid jobId, CancellationToken cancellationToken = default)
+    public async Task<byte[]> GetCronJobOccurrenceRequestAsync(
+        Guid jobId,
+        CancellationToken cancellationToken = default
+    )
     {
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
@@ -1262,13 +1268,13 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         return request ?? [];
     }
 
-    public async Task UpdateCronJobOccurrencesWithUnifiedContext(
+    public async Task UpdateCronJobOccurrencesWithUnifiedContextAsync(
         Guid[] cronOccurrenceIds,
-        InternalFunctionContext functionContext,
+        JobExecutionState functionContext,
         CancellationToken cancellationToken = default
     )
     {
-        // #316/U5 — cron mirror of UpdateTimeJobsWithUnifiedContext: fence the claim→start stamp on WhereOwnedBy.
+        // #316/U5 — cron mirror of UpdateTimeJobsWithUnifiedContextAsync: fence the claim→start stamp on WhereOwnedBy.
         if (!OwnerIdentity.TryGetStampOwner(out var owner))
         {
             return;

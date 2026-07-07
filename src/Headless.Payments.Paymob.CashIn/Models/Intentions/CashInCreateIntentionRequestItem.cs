@@ -7,8 +7,9 @@ public sealed class CashInCreateIntentionRequestItem
     [JsonPropertyName("name")]
     public required string Name { get; set; }
 
+    /// <summary>The line-item amount in the smallest currency unit (integer cents).</summary>
     [JsonPropertyName("amount")]
-    public int Amount { get; set; }
+    public long Amount { get; set; }
 
     [JsonPropertyName("description")]
     public string? Description { get; set; }

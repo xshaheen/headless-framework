@@ -78,21 +78,21 @@ public static class TenantSettingManagerExtensions
                 .ConfigureAwait(false);
         }
 
-        /// <summary>Finds the setting value for the specified tenant and deserializes it to <typeparamref name="T"/>.</summary>
+        /// <summary>Gets the setting value for the specified tenant and deserializes it to <typeparamref name="T"/>.</summary>
         /// <typeparam name="T">The target type to deserialize the stored JSON value into.</typeparam>
         /// <param name="tenantId">The identifier of the tenant whose setting is queried.</param>
         /// <param name="name">The unique name of the setting.</param>
         /// <param name="fallback">When <see langword="true"/>, falls back to subsequent providers if no tenant value is found.</param>
         /// <param name="cancellationToken">The abort token.</param>
         /// <returns>The deserialized value, or <see langword="default"/> when no value is found for the tenant.</returns>
-        public Task<T?> FindForTenantAsync<T>(
+        public Task<T?> GetForTenantAsync<T>(
             string tenantId,
             string name,
             bool fallback = true,
             CancellationToken cancellationToken = default
         )
         {
-            return settingManager.FindAsync<T>(
+            return settingManager.GetAsync<T>(
                 name,
                 SettingValueProviderNames.Tenant,
                 tenantId,
@@ -101,19 +101,19 @@ public static class TenantSettingManagerExtensions
             );
         }
 
-        /// <summary>Finds the setting value for the ambient current tenant and deserializes it to <typeparamref name="T"/>.</summary>
+        /// <summary>Gets the setting value for the ambient current tenant and deserializes it to <typeparamref name="T"/>.</summary>
         /// <typeparam name="T">The target type to deserialize the stored JSON value into.</typeparam>
         /// <param name="name">The unique name of the setting.</param>
         /// <param name="fallback">When <see langword="true"/>, falls back to subsequent providers if no value is found for the current tenant.</param>
         /// <param name="cancellationToken">The abort token.</param>
         /// <returns>The deserialized value, or <see langword="default"/> when no value is found for the current tenant.</returns>
-        public Task<T?> FindForCurrentTenantAsync<T>(
+        public Task<T?> GetForCurrentTenantAsync<T>(
             string name,
             bool fallback = true,
             CancellationToken cancellationToken = default
         )
         {
-            return settingManager.FindAsync<T>(
+            return settingManager.GetAsync<T>(
                 name,
                 SettingValueProviderNames.Tenant,
                 providerKey: null,
@@ -128,20 +128,18 @@ public static class TenantSettingManagerExtensions
         /// <param name="fallback">When <see langword="true"/>, falls back to subsequent providers if no tenant value is found.</param>
         /// <param name="cancellationToken">The abort token.</param>
         /// <returns>The setting value string, or <see langword="null"/> if no value is set for the tenant.</returns>
-        public Task<string?> FindForTenantAsync(
+        public async Task<string?> GetForTenantAsync(
             string tenantId,
             string name,
             bool fallback = true,
             CancellationToken cancellationToken = default
         )
         {
-            return settingManager.FindAsync(
-                name,
-                SettingValueProviderNames.Tenant,
-                tenantId,
-                fallback,
-                cancellationToken
-            );
+            var settingValue = await settingManager
+                .GetAsync(name, SettingValueProviderNames.Tenant, tenantId, fallback, cancellationToken)
+                .ConfigureAwait(false);
+
+            return settingValue.Value;
         }
 
         /// <summary>Returns the raw string setting value for the ambient current tenant.</summary>
@@ -149,27 +147,25 @@ public static class TenantSettingManagerExtensions
         /// <param name="fallback">When <see langword="true"/>, falls back to subsequent providers if no value is found for the current tenant.</param>
         /// <param name="cancellationToken">The abort token.</param>
         /// <returns>The setting value string, or <see langword="null"/> if no value is set for the current tenant.</returns>
-        public Task<string?> FindForCurrentTenantAsync(
+        public async Task<string?> GetForCurrentTenantAsync(
             string name,
             bool fallback = true,
             CancellationToken cancellationToken = default
         )
         {
-            return settingManager.FindAsync(
-                name,
-                SettingValueProviderNames.Tenant,
-                providerKey: null,
-                fallback,
-                cancellationToken
-            );
+            var settingValue = await settingManager
+                .GetAsync(name, SettingValueProviderNames.Tenant, providerKey: null, fallback, cancellationToken)
+                .ConfigureAwait(false);
+
+            return settingValue.Value;
         }
 
         /// <summary>Returns all setting values from the <see cref="SettingValueProviderNames.Tenant"/> provider scoped to the specified tenant.</summary>
         /// <param name="tenantId">The identifier of the tenant whose settings are retrieved.</param>
         /// <param name="fallback">When <see langword="true"/>, falls back to subsequent providers for settings without a tenant value.</param>
         /// <param name="cancellationToken">The abort token.</param>
-        /// <returns>A list of <see cref="SettingValue"/> instances for the specified tenant.</returns>
-        public Task<List<SettingValue>> GetAllForTenantAsync(
+        /// <returns>A read-only list of <see cref="SettingValue"/> instances for the specified tenant.</returns>
+        public Task<IReadOnlyList<SettingValue>> GetAllForTenantAsync(
             string tenantId,
             bool fallback = true,
             CancellationToken cancellationToken = default
@@ -181,8 +177,8 @@ public static class TenantSettingManagerExtensions
         /// <summary>Returns all setting values from the <see cref="SettingValueProviderNames.Tenant"/> provider scoped to the ambient current tenant.</summary>
         /// <param name="fallback">When <see langword="true"/>, falls back to subsequent providers for settings without a value for the current tenant.</param>
         /// <param name="cancellationToken">The abort token.</param>
-        /// <returns>A list of <see cref="SettingValue"/> instances for the current tenant.</returns>
-        public Task<List<SettingValue>> GetAllForCurrentTenantAsync(
+        /// <returns>A read-only list of <see cref="SettingValue"/> instances for the current tenant.</returns>
+        public Task<IReadOnlyList<SettingValue>> GetAllForCurrentTenantAsync(
             bool fallback = true,
             CancellationToken cancellationToken = default
         )

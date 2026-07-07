@@ -6,10 +6,10 @@ namespace Headless.Payments.Paymob.CashIn.Models.Callback;
 public sealed class CashInCallbackTransactionOrderShippingDetails
 {
     [JsonPropertyName("id")]
-    public int Id { get; init; }
+    public long Id { get; init; }
 
     [JsonPropertyName("cash_on_delivery_amount")]
-    public int CashOnDeliveryAmount { get; init; }
+    public long CashOnDeliveryAmount { get; init; }
 
     [JsonPropertyName("cash_on_delivery_type")]
     public string? CashOnDeliveryType { get; init; }
@@ -39,10 +39,10 @@ public sealed class CashInCallbackTransactionOrderShippingDetails
     public string? DeliveryType { get; init; }
 
     [JsonPropertyName("order_id")]
-    public int OrderId { get; init; }
+    public long OrderId { get; init; }
 
     [JsonPropertyName("order")]
-    public int Order { get; init; }
+    public long Order { get; init; }
 
     [JsonPropertyName("notes")]
     public string? Notes { get; init; }

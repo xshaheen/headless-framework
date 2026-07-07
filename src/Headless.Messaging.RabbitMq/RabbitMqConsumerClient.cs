@@ -18,7 +18,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
     private readonly IServiceProvider _serviceProvider;
     private readonly TimeProvider _timeProvider;
     private readonly string _exchangeName;
-    private readonly RabbitMqOptions _rabbitMqOptions;
+    private readonly RabbitMqMessagingOptions _rabbitMqOptions;
     private readonly RabbitMqConsumerConfig? _consumerConfig;
     private readonly IntentType _intentType;
     private readonly List<string> _queueNames = [];
@@ -33,7 +33,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         string groupName,
         byte groupConcurrent,
         IConnectionChannelPool connectionChannelPool,
-        IOptions<RabbitMqOptions> options,
+        IOptions<RabbitMqMessagingOptions> options,
         IServiceProvider serviceProvider,
         RabbitMqConsumerConfig? consumerConfig = null,
         IntentType intentType = IntentType.Bus
@@ -257,7 +257,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
             try
             {
                 await channel
-                    .ExchangeDeclareAsync(_exchangeName, RabbitMqOptions.ExchangeType, durable: true)
+                    .ExchangeDeclareAsync(_exchangeName, RabbitMqMessagingOptions.ExchangeType, durable: true)
                     .ConfigureAwait(false);
 
                 _channel = channel;

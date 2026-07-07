@@ -19,7 +19,7 @@ public sealed class AzureServiceBusConsumerClientFactoryTests
         loggerFactory.CreateLogger(Arg.Any<string>()).Returns(Substitute.For<ILogger>());
 
         var options = Options.Create(
-            new AzureServiceBusOptions
+            new AzureServiceBusMessagingOptions
             {
                 // Invalid/missing connection info will cause connection failure
                 ConnectionString = null!,
@@ -45,7 +45,7 @@ public sealed class AzureServiceBusConsumerClientFactoryTests
         loggerFactory.CreateLogger(Arg.Any<string>()).Returns(Substitute.For<ILogger>());
 
         var options = Options.Create(
-            new AzureServiceBusOptions
+            new AzureServiceBusMessagingOptions
             {
                 // Malformed connection string
                 ConnectionString = "InvalidConnectionString",
@@ -69,7 +69,9 @@ public sealed class AzureServiceBusConsumerClientFactoryTests
         var loggerFactory = Substitute.For<ILoggerFactory>();
         loggerFactory.CreateLogger(Arg.Any<string>()).Returns(Substitute.For<ILogger>());
 
-        var options = Options.Create(new AzureServiceBusOptions { ConnectionString = "InvalidConnectionString" });
+        var options = Options.Create(
+            new AzureServiceBusMessagingOptions { ConnectionString = "InvalidConnectionString" }
+        );
         var serviceProvider = new ServiceCollection().BuildServiceProvider();
         var factory = new AzureServiceBusConsumerClientFactory(loggerFactory, options, serviceProvider);
         var groupName = new string('a', 80);

@@ -489,7 +489,9 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
     {
         sb.AppendLine($"namespace {assemblyName}");
         sb.AppendLine("{");
-        sb.AppendLine("    public static class JobsInstanceFactoryExtensions");
+        // Internal: this registration class is invoked only by its own [ModuleInitializer], so it never needs to
+        // appear on the consuming assembly's public surface.
+        sb.AppendLine("    internal static class JobsInstanceFactoryExtensions");
         sb.AppendLine("    {");
     }
 
@@ -497,7 +499,9 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
     {
         sb.AppendLine($"namespace {assemblyName}");
         sb.AppendLine("{");
-        sb.AppendLine("  public static class JobsInstanceFactoryExtensions");
+        // Internal: this registration class is invoked only by its own [ModuleInitializer], so it never needs to
+        // appear on the consuming assembly's public surface.
+        sb.AppendLine("  internal static class JobsInstanceFactoryExtensions");
         sb.AppendLine("  {");
     }
 
@@ -519,7 +523,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
         if (delegateCount > 0)
         {
             sb.AppendLine(
-                $"            var jobFunctionDelegateDict = new Dictionary<string, (string, JobPriority, JobFunctionDelegate, int)>({delegateCount});"
+                $"            var jobFunctionDelegateDict = new Dictionary<string, JobFunctionRegistration>({delegateCount});"
             );
 
             foreach (var delegateCode in delegateList)
@@ -548,7 +552,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
         if (delegateCount > 0)
         {
             sb.AppendLine(
-                $"      var jobFunctionDelegateDict = new Dictionary<string, (string, JobPriority, JobFunctionDelegate, int)>({delegateCount});"
+                $"      var jobFunctionDelegateDict = new Dictionary<string, JobFunctionRegistration>({delegateCount});"
             );
 
             foreach (var delegateCode in delegateList)

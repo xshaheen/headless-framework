@@ -2,7 +2,7 @@
 
 using Headless.Primitives;
 
-namespace Headless.Api.Resources;
+namespace Headless.Api.Idempotency.Resources;
 
 internal static class IdempotencyMessageDescriber
 {

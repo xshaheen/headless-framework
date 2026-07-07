@@ -25,6 +25,8 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+    <ProjectReference Include="..\Headless.Urls\Headless.Urls.csproj" />
+    <ProjectReference Include="..\Headless.Primitives\Headless.Primitives.csproj" />
     <ProjectReference Include="..\Headless.Generator.Primitives.Abstractions\Headless.Generator.Primitives.Abstractions.csproj" />
     <ProjectReference
       Include="..\Headless.Generator.Primitives\Headless.Generator.Primitives.csproj"

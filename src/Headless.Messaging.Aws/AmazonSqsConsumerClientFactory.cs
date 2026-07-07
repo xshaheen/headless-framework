@@ -8,7 +8,7 @@ using Microsoft.Extensions.Options;
 namespace Headless.Messaging.Aws;
 
 internal sealed class AmazonSqsConsumerClientFactory(
-    IOptions<AmazonSqsOptions> amazonSqsOptions,
+    IOptions<AmazonSqsMessagingOptions> amazonSqsOptions,
     ILogger<AmazonSqsConsumerClient> logger
 ) : IIntentAwareConsumerClientFactory
 {

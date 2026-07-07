@@ -239,6 +239,20 @@
       },
       "headless.generator.primitives.abstractions": {
         "type": "Project"
+      },
+      "headless.primitives": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Generator.Primitives.Abstractions": "[1.0.0, )",
+          "libphonenumber-csharp": "[9.0.34, )"
+        }
+      },
+      "headless.urls": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )"
+        }
       }
     }
   }

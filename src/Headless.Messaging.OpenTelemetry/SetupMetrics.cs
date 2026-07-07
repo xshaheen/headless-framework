@@ -1,10 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Messaging.OpenTelemetry;
+using OpenTelemetry.Metrics;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace OpenTelemetry.Metrics;
+namespace Headless.Messaging.OpenTelemetry;
 
 [PublicAPI]
 public static class SetupMetrics

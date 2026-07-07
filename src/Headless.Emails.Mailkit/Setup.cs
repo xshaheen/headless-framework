@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Emails.Mailkit;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -8,7 +9,8 @@ using Microsoft.Extensions.ObjectPool;
 using Microsoft.Extensions.Options;
 using SmtpClient = MailKit.Net.Smtp.SmtpClient;
 
-namespace Headless.Emails.Mailkit;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Emails;
 
 /// <summary>
 /// Extension members for selecting MailKit/SMTP as the default (unkeyed) Headless email sender on

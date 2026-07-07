@@ -4,11 +4,12 @@ using Headless.CommitCoordination;
 using Headless.Domain;
 using Headless.EntityFramework;
 using Headless.Messaging;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
-public sealed class OutboxIntegrationEventDispatcherTests
+public sealed class OutboxIntegrationEventDispatcherTests : TestBase
 {
     #region Test Infrastructure
 
@@ -66,7 +67,7 @@ public sealed class OutboxIntegrationEventDispatcherTests
 
         // when
         var invoke = cache.GetPublishInvoker(integrationEvent.GetType());
-        await invoke(bus, integrationEvent, TestContext.Current.CancellationToken);
+        await invoke(bus, integrationEvent, AbortToken);
 
         // then
         bus.Published.Should().ContainSingle();
@@ -98,8 +99,8 @@ public sealed class OutboxIntegrationEventDispatcherTests
         IIntegrationEvent second = new PaymentCaptured("payment");
 
         // when
-        await cache.GetPublishInvoker(first.GetType())(bus, first, TestContext.Current.CancellationToken);
-        await cache.GetPublishInvoker(second.GetType())(bus, second, TestContext.Current.CancellationToken);
+        await cache.GetPublishInvoker(first.GetType())(bus, first, AbortToken);
+        await cache.GetPublishInvoker(second.GetType())(bus, second, AbortToken);
 
         // then
         bus.Published.Select(x => x.GenericType).Should().Equal(typeof(OrderPlaced), typeof(PaymentCaptured));
@@ -120,7 +121,7 @@ public sealed class OutboxIntegrationEventDispatcherTests
             new IntegrationEventPublishInvokerCache()
         );
         // when
-        await dispatcher.DispatchAsync([], TestContext.Current.CancellationToken);
+        await dispatcher.DispatchAsync([], AbortToken);
 
         // then
         bus.Published.Should().BeEmpty();
@@ -140,7 +141,7 @@ public sealed class OutboxIntegrationEventDispatcherTests
         IReadOnlyList<IIntegrationEvent> events = [new OrderPlaced("order-1"), new PaymentCaptured("payment-1")];
 
         // when
-        await dispatcher.DispatchAsync(events, TestContext.Current.CancellationToken);
+        await dispatcher.DispatchAsync(events, AbortToken);
 
         // then
         bus.Published.Should().HaveCount(2);
@@ -161,7 +162,7 @@ public sealed class OutboxIntegrationEventDispatcherTests
         IReadOnlyList<IIntegrationEvent> events = [new OrderPlaced("order-1")];
 
         // when
-        var act = async () => await dispatcher.DispatchAsync(events, TestContext.Current.CancellationToken);
+        var act = async () => await dispatcher.DispatchAsync(events, AbortToken);
 
         // then
         (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("Publish failed");
@@ -227,7 +228,7 @@ public sealed class OutboxIntegrationEventDispatcherTests
         IReadOnlyList<IIntegrationEvent> events = [new OrderPlaced("order-1")];
 
         // when
-        var act = async () => await dispatcher.DispatchAsync(events, TestContext.Current.CancellationToken);
+        var act = async () => await dispatcher.DispatchAsync(events, AbortToken);
 
         // then — fails loud and publishes nothing
         (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage(

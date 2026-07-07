@@ -26,8 +26,8 @@ public sealed class UserSettingManagerExtensionsTests : TestBase
         const string settingName = "TestSetting";
 
         _settingManager
-            .FindAsync(settingName, SettingValueProviderNames.User, userId, true, AbortToken)
-            .Returns("true");
+            .GetAsync(settingName, SettingValueProviderNames.User, userId, true, AbortToken)
+            .Returns(new SettingValue(settingName, "true"));
 
         // when
         var result = await _settingManager.IsTrueForUserAsync(userId, settingName, cancellationToken: AbortToken);
@@ -36,7 +36,7 @@ public sealed class UserSettingManagerExtensionsTests : TestBase
         result.Should().BeTrue();
         await _settingManager
             .Received(1)
-            .FindAsync(settingName, SettingValueProviderNames.User, userId, true, AbortToken);
+            .GetAsync(settingName, SettingValueProviderNames.User, userId, true, AbortToken);
     }
 
     [Fact]
@@ -47,8 +47,8 @@ public sealed class UserSettingManagerExtensionsTests : TestBase
         const string settingName = "TestSetting";
 
         _settingManager
-            .FindAsync(settingName, SettingValueProviderNames.User, userId, false, AbortToken)
-            .Returns("true");
+            .GetAsync(settingName, SettingValueProviderNames.User, userId, false, AbortToken)
+            .Returns(new SettingValue(settingName, "true"));
 
         // when
         var result = await _settingManager.IsTrueForUserAsync(
@@ -72,16 +72,16 @@ public sealed class UserSettingManagerExtensionsTests : TestBase
         // given
         const string settingName = "TestSetting";
 
-        _settingManager.FindAsync(settingName, SettingValueProviderNames.User, null, true, AbortToken).Returns("true");
+        _settingManager
+            .GetAsync(settingName, SettingValueProviderNames.User, null, true, AbortToken)
+            .Returns(new SettingValue(settingName, "true"));
 
         // when
         var result = await _settingManager.IsTrueForCurrentUserAsync(settingName, cancellationToken: AbortToken);
 
         // then
         result.Should().BeTrue();
-        await _settingManager
-            .Received(1)
-            .FindAsync(settingName, SettingValueProviderNames.User, null, true, AbortToken);
+        await _settingManager.Received(1).GetAsync(settingName, SettingValueProviderNames.User, null, true, AbortToken);
     }
 
     #endregion
@@ -96,8 +96,8 @@ public sealed class UserSettingManagerExtensionsTests : TestBase
         const string settingName = "TestSetting";
 
         _settingManager
-            .FindAsync(settingName, SettingValueProviderNames.User, userId, true, AbortToken)
-            .Returns("false");
+            .GetAsync(settingName, SettingValueProviderNames.User, userId, true, AbortToken)
+            .Returns(new SettingValue(settingName, "false"));
 
         // when
         var result = await _settingManager.IsFalseForUserAsync(userId, settingName, cancellationToken: AbortToken);
@@ -116,7 +116,9 @@ public sealed class UserSettingManagerExtensionsTests : TestBase
         // given
         const string settingName = "TestSetting";
 
-        _settingManager.FindAsync(settingName, SettingValueProviderNames.User, null, true, AbortToken).Returns("false");
+        _settingManager
+            .GetAsync(settingName, SettingValueProviderNames.User, null, true, AbortToken)
+            .Returns(new SettingValue(settingName, "false"));
 
         // when
         var result = await _settingManager.IsFalseForCurrentUserAsync(settingName, cancellationToken: AbortToken);
@@ -127,7 +129,7 @@ public sealed class UserSettingManagerExtensionsTests : TestBase
 
     #endregion
 
-    #region FindForUserAsync<T>
+    #region GetForUserAsync<T>
 
     [Fact]
     public async Task should_find_typed_from_user_provider()
@@ -138,10 +140,12 @@ public sealed class UserSettingManagerExtensionsTests : TestBase
         var testObj = new TestSettings { Value = "user-test" };
         var json = JsonSerializer.Serialize(testObj, JsonConstants.DefaultInternalJsonOptions);
 
-        _settingManager.FindAsync(settingName, SettingValueProviderNames.User, userId, true, AbortToken).Returns(json);
+        _settingManager
+            .GetAsync(settingName, SettingValueProviderNames.User, userId, true, AbortToken)
+            .Returns(new SettingValue(settingName, json));
 
         // when
-        var result = await _settingManager.FindForUserAsync<TestSettings>(
+        var result = await _settingManager.GetForUserAsync<TestSettings>(
             userId,
             settingName,
             cancellationToken: AbortToken
@@ -154,7 +158,7 @@ public sealed class UserSettingManagerExtensionsTests : TestBase
 
     #endregion
 
-    #region FindForCurrentUserAsync<T>
+    #region GetForCurrentUserAsync<T>
 
     [Fact]
     public async Task should_find_typed_from_current_user()
@@ -164,10 +168,12 @@ public sealed class UserSettingManagerExtensionsTests : TestBase
         var testObj = new TestSettings { Value = "current-user-test" };
         var json = JsonSerializer.Serialize(testObj, JsonConstants.DefaultInternalJsonOptions);
 
-        _settingManager.FindAsync(settingName, SettingValueProviderNames.User, null, true, AbortToken).Returns(json);
+        _settingManager
+            .GetAsync(settingName, SettingValueProviderNames.User, null, true, AbortToken)
+            .Returns(new SettingValue(settingName, json));
 
         // when
-        var result = await _settingManager.FindForCurrentUserAsync<TestSettings>(
+        var result = await _settingManager.GetForCurrentUserAsync<TestSettings>(
             settingName,
             cancellationToken: AbortToken
         );
@@ -179,7 +185,7 @@ public sealed class UserSettingManagerExtensionsTests : TestBase
 
     #endregion
 
-    #region FindForUserAsync (string)
+    #region GetForUserAsync (string)
 
     [Fact]
     public async Task should_find_string_from_user_provider()
@@ -190,11 +196,11 @@ public sealed class UserSettingManagerExtensionsTests : TestBase
         const string expectedValue = "user-value";
 
         _settingManager
-            .FindAsync(settingName, SettingValueProviderNames.User, userId, true, AbortToken)
-            .Returns(expectedValue);
+            .GetAsync(settingName, SettingValueProviderNames.User, userId, true, AbortToken)
+            .Returns(new SettingValue(settingName, expectedValue));
 
         // when
-        var result = await _settingManager.FindForUserAsync(userId, settingName, cancellationToken: AbortToken);
+        var result = await _settingManager.GetForUserAsync(userId, settingName, cancellationToken: AbortToken);
 
         // then
         result.Should().Be(expectedValue);
@@ -202,7 +208,7 @@ public sealed class UserSettingManagerExtensionsTests : TestBase
 
     #endregion
 
-    #region FindForCurrentUserAsync (string)
+    #region GetForCurrentUserAsync (string)
 
     [Fact]
     public async Task should_find_string_from_current_user()
@@ -212,11 +218,11 @@ public sealed class UserSettingManagerExtensionsTests : TestBase
         const string expectedValue = "current-user-value";
 
         _settingManager
-            .FindAsync(settingName, SettingValueProviderNames.User, null, true, AbortToken)
-            .Returns(expectedValue);
+            .GetAsync(settingName, SettingValueProviderNames.User, null, true, AbortToken)
+            .Returns(new SettingValue(settingName, expectedValue));
 
         // when
-        var result = await _settingManager.FindForCurrentUserAsync(settingName, cancellationToken: AbortToken);
+        var result = await _settingManager.GetForCurrentUserAsync(settingName, cancellationToken: AbortToken);
 
         // then
         result.Should().Be(expectedValue);

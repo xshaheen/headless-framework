@@ -57,7 +57,7 @@ public sealed class RolePermissionGrantProvider(IPermissionGrantStore grantStore
 
             var foundedStatuses = roleGrantStatusResults.Where(newStatus =>
                 newStatus.Value is not PermissionGrantStatus.Undefined
-                && result.TryGetValue(newStatus.Key, out var existStatus)
+                && result.Statuses.TryGetValue(newStatus.Key, out var existStatus)
                 && existStatus.Status is PermissionGrantStatus.Undefined
             );
 

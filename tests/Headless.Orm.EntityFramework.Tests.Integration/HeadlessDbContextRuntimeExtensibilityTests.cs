@@ -5,6 +5,7 @@ using Headless.Domain;
 using Headless.EntityFramework;
 using Headless.EntityFramework.Contexts.Processors;
 using Headless.EntityFramework.Contexts.Runtime;
+using Headless.Testing.Tests;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -15,7 +16,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Tests;
 
 // ReSharper disable EntityFramework.ModelValidation.UnlimitedStringLength
-public sealed class HeadlessDbContextRuntimeExtensibilityTests
+public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
 {
     [Fact]
     public async Task headless_db_context_runtime_initialize_should_be_idempotent()
@@ -92,7 +93,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
         db.BasicEntities.Add(entity);
 
         // when
-        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        await db.SaveChangesAsync(AbortToken);
 
         // then
         recorder.Entries.Should().Equal("early", "late");
@@ -116,7 +117,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
         db.BasicEntities.Add(entity);
 
         // when
-        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        await db.SaveChangesAsync(AbortToken);
 
         // then
         recorder.Entries.Should().Contain("tenant:custom");
@@ -138,10 +139,10 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
         entity.Id.Should().NotBe(Guid.Empty);
 
         // when - no custom processors and no message dispatcher are registered
-        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        await db.SaveChangesAsync(AbortToken);
 
         // then - the default pipeline completes and the row round-trips
-        var persisted = await db.BasicEntities.CountAsync(TestContext.Current.CancellationToken);
+        var persisted = await db.BasicEntities.CountAsync(AbortToken);
         persisted.Should().Be(1);
     }
 
@@ -159,7 +160,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
         db.Entities.Add(entity);
 
         // when
-        var act = async () => await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var act = async () => await db.SaveChangesAsync(AbortToken);
 
         // then
         (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*ILocalEventBus*");
@@ -181,12 +182,12 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
         var entity = new RuntimeEntity { Name = "integration-emits" };
 
         db.Entities.Add(entity);
-        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        await db.SaveChangesAsync(AbortToken);
 
-        entity.AddIntegrationEvent(new RuntimeDistributedMessage("needs-outbox"));
+        entity.EmitIntegrationEvent(new RuntimeDistributedMessage("needs-outbox"));
 
         // when
-        var act = async () => await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var act = async () => await db.SaveChangesAsync(AbortToken);
 
         // then
         (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*IHeadlessOutboxDispatcher*");
@@ -208,7 +209,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
         db.Entities.Add(entity);
 
         // when
-        var act = async () => await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var act = async () => await db.SaveChangesAsync(AbortToken);
 
         // then
         (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*AddDomainEvents*");
@@ -230,12 +231,12 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
         var entity = new RuntimeEntity { Name = "names-add-integration-outbox" };
 
         db.Entities.Add(entity);
-        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        await db.SaveChangesAsync(AbortToken);
 
-        entity.AddIntegrationEvent(new RuntimeDistributedMessage("needs-outbox"));
+        entity.EmitIntegrationEvent(new RuntimeDistributedMessage("needs-outbox"));
 
         // when
-        var act = async () => await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var act = async () => await db.SaveChangesAsync(AbortToken);
 
         // then
         (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*AddIntegrationEventOutbox*");
@@ -260,11 +261,11 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
         db.Entities.Add(entity);
 
         // when
-        var act = async () => await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var act = async () => await db.SaveChangesAsync(AbortToken);
 
         // then
         await act.Should().NotThrowAsync();
-        (await db.Entities.CountAsync(TestContext.Current.CancellationToken)).Should().Be(1);
+        (await db.Entities.CountAsync(AbortToken)).Should().Be(1);
     }
 
     [Fact]
@@ -282,7 +283,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
         db.Entities.Add(entity);
 
         // when
-        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        await db.SaveChangesAsync(AbortToken);
 
         // then
         // Flat domain events: AggregateRoot emits EntityCreated + EntityChanged on add.
@@ -303,16 +304,16 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
         var entity = new RuntimeEntity { Name = "emits-later" };
 
         db.Entities.Add(entity);
-        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        await db.SaveChangesAsync(AbortToken);
         db.Entry(entity).State.Should().Be(EntityState.Unchanged);
         dispatcher.LocalEmitters.Clear();
         dispatcher.DistributedEmitters.Clear();
 
-        entity.AddDomainEvent(new RuntimeLocalMessage("local-later"));
-        entity.AddIntegrationEvent(new RuntimeDistributedMessage("distributed-later"));
+        entity.EmitDomainEvent(new RuntimeLocalMessage("local-later"));
+        entity.EmitIntegrationEvent(new RuntimeDistributedMessage("distributed-later"));
 
         // when
-        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        await db.SaveChangesAsync(AbortToken);
 
         // then
         dispatcher.LocalEmitters.Should().ContainSingle(x => x.UniqueId == "local-later");
@@ -337,7 +338,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
         db.Entities.Add(entity);
 
         // when
-        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        await db.SaveChangesAsync(AbortToken);
 
         // then
         dispatcher.LocalEmitters.Should().ContainSingle(message => message.UniqueId == "custom-local");
@@ -372,7 +373,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
         db.Entities.Add(entity);
 
         // when
-        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        await db.SaveChangesAsync(AbortToken);
 
         // then — the interceptor actually fired and the strategy replayed (guards against a silently-green
         // test where no retry happened at all).
@@ -383,7 +384,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
         bus.PublishCount.Should().Be(2, "each domain event must be published exactly once despite the retry");
 
         // and the row is persisted (the save ultimately succeeded on the replayed attempt).
-        (await db.Entities.CountAsync(TestContext.Current.CancellationToken))
+        (await db.Entities.CountAsync(AbortToken))
             .Should()
             .Be(1);
     }
@@ -395,7 +396,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
     )
     {
         var connection = new SqliteConnection("Data Source=:memory:");
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
 
         var services = new ServiceCollection();
         services.AddLogging();
@@ -419,9 +420,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
         var provider = services.BuildServiceProvider();
 
         await using var scope = provider.CreateAsyncScope();
-        await scope
-            .ServiceProvider.GetRequiredService<RuntimeTestDbContext>()
-            .Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+        await scope.ServiceProvider.GetRequiredService<RuntimeTestDbContext>().Database.EnsureCreatedAsync(AbortToken);
 
         return (provider, connection);
     }
@@ -603,8 +602,8 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
                 return;
             }
 
-            entity.AddDomainEvent(new RuntimeLocalMessage("custom-local"));
-            entity.AddIntegrationEvent(new RuntimeDistributedMessage("custom-distributed"));
+            entity.EmitDomainEvent(new RuntimeLocalMessage("custom-local"));
+            entity.EmitIntegrationEvent(new RuntimeDistributedMessage("custom-distributed"));
         }
     }
 
@@ -648,6 +647,11 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
         public Guid Id { get; private init; }
 
         public required string Name { get; init; }
+
+        // Domain behavior that raises events through the encapsulated (protected) aggregate mutators.
+        public void EmitDomainEvent(IDomainEvent domainEvent) => AddDomainEvent(domainEvent);
+
+        public void EmitIntegrationEvent(IIntegrationEvent integrationEvent) => AddIntegrationEvent(integrationEvent);
 
         public override IReadOnlyList<object> GetKeys() => [Id];
     }

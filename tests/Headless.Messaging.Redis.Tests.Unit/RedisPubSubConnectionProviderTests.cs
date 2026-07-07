@@ -9,8 +9,8 @@ namespace Tests;
 
 public sealed class RedisPubSubConnectionProviderTests : TestBase
 {
-    private static readonly IOptions<RedisPubSubOptions> _Options = Options.Create(
-        new RedisPubSubOptions { Configuration = ConfigurationOptions.Parse("localhost:6379") }
+    private static readonly IOptions<RedisPubSubMessagingOptions> _Options = Options.Create(
+        new RedisPubSubMessagingOptions { Configuration = ConfigurationOptions.Parse("localhost:6379") }
     );
 
     [Fact]

@@ -12,7 +12,7 @@ Enables Headless bus and queue delivery over RabbitMQ using a topic exchange, qu
 - **Reliability**: Optional publisher confirms plus consumer acknowledgments and rejects
 - **Auto-Provisioning**: Automatic exchange and queue creation
 - **Clustering**: Comma-separated broker host names for RabbitMQ cluster connectivity
-- **Queue Arguments**: Queue TTL, queue mode, and queue type are exposed through `RabbitMqOptions.QueueArguments`
+- **Queue Arguments**: Queue TTL, queue mode, and queue type are exposed through `RabbitMqMessagingOptions.QueueArguments`
 - **Consumer QoS**: Global and per-consumer prefetch configuration
 
 ## Installation
@@ -123,6 +123,8 @@ options.EnableSubscriberParallelExecute = false; // No parallel execution
 - Consumer startup declares the exchange and queue. `SubscribeAsync(...)` binds routing keys to that queue.
 - Higher `ConsumerThreadCount` increases concurrency but weakens observable ordering guarantees.
 - Exchange names, routing keys, headers, and payload sizes follow RabbitMQ and AMQP limits.
+
+**Registration overloads:** `UseRabbitMq(...)` accepts the standard trio — an `IConfiguration` section, an `Action<RabbitMqMessagingOptions>` delegate, or an `Action<RabbitMqMessagingOptions, IServiceProvider>` delegate — plus the host-name convenience form. `UserName` and `Password` are `required` and must be set explicitly; the validator rejects the default `guest`/`guest` credentials.
 
 ## Dependencies
 

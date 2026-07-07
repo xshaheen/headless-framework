@@ -10,4 +10,5 @@ namespace Headless.DistributedLocks;
 /// </summary>
 /// <param name="Resource">The resource name for which the lock/slot was released.</param>
 /// <param name="LeaseId">The lease identifier of the just-released holder.</param>
+[PublicAPI]
 public sealed record DistributedLockReleased(string Resource, string LeaseId);

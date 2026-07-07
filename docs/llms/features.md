@@ -145,9 +145,11 @@ Provides a provider-agnostic feature management API, enabling dynamic feature to
 - `IFeatureManager` — reads and writes feature values across the registered provider chain; supports single-feature and bulk queries with optional provider targeting and fallback
 - `IFeatureDefinitionProvider` — contributes feature groups and feature definitions at startup via `IFeatureDefinitionContext`
 - `IFeatureDefinitionManager` — looks up and enumerates all registered feature definitions
-- `FeatureDefinition` — describes a feature's name, default value, display metadata, allowed providers, and child features (tree structure)
-- `FeatureGroupDefinition` — organizes related `FeatureDefinition` instances; supports `GetFlatFeatures()` for depth-first enumeration
-- `FeatureValue` — record returned by `GetAsync`/`GetAllAsync` carrying the resolved string value and the `FeatureValueProvider` that supplied it
+- `FeatureDefinition` — describes a feature's name, default value, display metadata, allowed providers, and child features (tree structure); implements `ICanAddChildFeature` for fluent `AddChild(...)`
+- `FeatureGroupDefinition` — organizes related `FeatureDefinition` instances; supports `GetFlatFeatures()` for depth-first enumeration; also implements `ICanAddChildFeature`
+- `ICanAddChildFeature` — shared fluent contract (`AddChild(...)`) implemented by both `FeatureGroupDefinition` and `FeatureDefinition` so top-level and nested features build the same way (renamed from `ICanCreateChildFeature`)
+- `IFeatureDefinitionContext` — passed to each provider's `Define`; exposes `AddGroup(name, displayName)`, `GetGroupOrDefault(name)`, and `RemoveGroup(name)`. Groups are created by name — there is no instance-taking `AddGroup(FeatureGroupDefinition)` overload (the group ctor is internal, so consumers cannot construct one)
+- `FeatureValue` — record returned by `GetAsync`/`GetAllAsync` carrying the resolved string value and the `FeatureValueProvider` that supplied it; bulk reads (`GetAllAsync`, `GetAllForTenantAsync`, `GetAllForEditionAsync`, `GetAllDefaultAsync`) return `IReadOnlyList<FeatureValue>`
 - `FeatureValueProviderNames` — constants `Tenant`, `Edition`, `DefaultValue` for targeting built-in providers
 - Extension methods on `IFeatureManager`: `IsEnabledAsync`, `GetAsync<T>`, `EnsureEnabledAsync`, `GrantAsync`, `RevokeAsync`
 - Scoped extension methods: `GetForTenantAsync`, `SetForTenantAsync`, `GrantToTenantAsync`, `RevokeFromTenantAsync`, `DeleteForTenantAsync` (tenant); equivalent `*ForEditionAsync` / `*ToEditionAsync` set (edition); `GetDefaultAsync`, `GetAllDefaultAsync` (default provider)
@@ -253,6 +255,7 @@ Provides the full feature management implementation including hierarchical value
 - Value providers are registered with the last-added provider having the highest resolution priority. The built-in order is `DefaultValue` → `Edition` → `Tenant` (Tenant wins). Custom providers added via `AddFeatureValueProvider<T>()` are appended after `Tenant` and therefore have the highest priority. This matters when writing custom providers that must override built-in resolution.
 - `AddHeadlessFeatures` is guarded on `IFeatureManager` so it is safe to call more than once (only the first call registers the core; the storage extension always applies). However, only one storage provider extension may be registered — a second call with a different provider throws at startup.
 - `FeaturesInitializationBackgroundService` implements `IInitializer` so anything that awaits `WaitForInitializationAsync()` blocks until the seed and pre-cache steps complete. If the host is stopped before initialization finishes, the background task is cancelled and the `TaskCompletionSource` is faulted with `OperationCanceledException`.
+- `FeatureValueRecord` implements `ICreateAudit` / `IUpdateAudit`, carrying `DateCreated` (stamped on insert) and `DateUpdated` (stamped on update). On the EF path these are populated by the Headless audit save-processor; the raw-SQL PostgreSQL / SQL Server providers stamp them from the registered `TimeProvider`. Features scope tenancy through `ProviderName`/`ProviderKey` (e.g. `ProviderName == "Tenant"` with the tenant id in `ProviderKey`) — there is deliberately no first-class `TenantId` column nor `IMultiTenant`; a scoping value provider expresses tenant, edition, and other scopes uniformly. This is an intentional divergence from `PermissionGrantRecord`, not drift.
 
 ### Installation
 
@@ -363,6 +366,7 @@ Provides EF Core repository implementations for feature values, feature definiti
 - `modelBuilder.AddHeadlessFeatures(DbContext context)` — applies entity configurations by resolving `FeaturesStorageOptions` from the context's service provider (no constructor injection required)
 - `modelBuilder.AddHeadlessFeatures(FeaturesStorageOptions options)` — overload for when you already hold the options
 - EF repositories for `IFeatureValueRecordRepository` and `IFeatureDefinitionRecordRepository`
+- `FeatureValueRecord` maps `DateCreated` / `DateUpdated` audit columns (via `ConfigureHeadlessConvention`); the Headless audit save-processor stamps them on `SaveChanges`
 - `FeaturesStorageOptions` for schema and table-name configuration (shared with raw-DDL providers)
 - Startup validation gate that inspects the EF model before hosted services start and fails with an actionable message if any feature entity is missing from the model
 
@@ -438,7 +442,9 @@ Provides feature repositories and startup schema initialization without requirin
 ### Key Features
 
 - `setup.UsePostgreSql(string connectionString)` — registers the PostgreSQL storage provider from a connection string
+- `setup.UsePostgreSql(IConfiguration configuration)` — binds `PostgreSqlFeaturesOptions` from a configuration section
 - `setup.UsePostgreSql(Action<PostgreSqlFeaturesOptions> configure)` — overload for full option control
+- `setup.UsePostgreSql(Action<PostgreSqlFeaturesOptions, IServiceProvider> configure)` — overload with service-provider access for late-bound configuration
 - Idempotent schema, table, and index creation at host startup via `PostgreSqlFeaturesStorageInitializer`
 - Raw ADO.NET repositories for feature values, feature definitions, and feature group definitions
 - `PostgreSqlFeaturesOptions` — connection string and command timeout (`CommandTimeout`, default 30 seconds)
@@ -510,7 +516,9 @@ Provides feature repositories and startup schema initialization without requirin
 ### Key Features
 
 - `setup.UseSqlServer(string connectionString)` — registers the SQL Server storage provider from a connection string
+- `setup.UseSqlServer(IConfiguration configuration)` — binds `SqlServerFeaturesOptions` from a configuration section
 - `setup.UseSqlServer(Action<SqlServerFeaturesOptions> configure)` — overload for full option control
+- `setup.UseSqlServer(Action<SqlServerFeaturesOptions, IServiceProvider> configure)` — overload with service-provider access for late-bound configuration
 - Idempotent schema, table, and index creation at host startup via `SqlServerFeaturesStorageInitializer`
 - Raw ADO.NET repositories for feature values, feature definitions, and feature group definitions
 - `SqlServerFeaturesOptions` — connection string and command timeout (`CommandTimeout`, default 30 seconds)

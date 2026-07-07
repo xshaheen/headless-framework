@@ -557,6 +557,8 @@
           "CommunityToolkit.HighPerformance": "[8.4.2, )",
           "Headless.Checks": "[1.0.0, )",
           "Headless.Generator.Primitives.Abstractions": "[1.0.0, )",
+          "Headless.Primitives": "[1.0.0, )",
+          "Headless.Urls": "[1.0.0, )",
           "Humanizer.Core": "[3.0.10, )",
           "Microsoft.Bcl.TimeProvider": "[10.0.9, )",
           "Nito.AsyncEx": "[5.1.2, )",
@@ -706,6 +708,14 @@
           "Headless.Permissions.Core": "[1.0.0, )"
         }
       },
+      "headless.primitives": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Generator.Primitives.Abstractions": "[1.0.0, )",
+          "libphonenumber-csharp": "[9.0.34, )"
+        }
+      },
       "headless.redis": {
         "type": "Project",
         "dependencies": {
@@ -758,6 +768,12 @@
         "dependencies": {
           "Headless.Orm.EntityFramework": "[1.0.0, )",
           "Headless.Settings.Core": "[1.0.0, )"
+        }
+      },
+      "headless.urls": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )"
         }
       },
       "Asp.Versioning.Abstractions": {

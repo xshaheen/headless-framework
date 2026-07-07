@@ -1,10 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Microsoft.Data.SqlClient;
+using Headless.CommitCoordination;
+using Headless.CommitCoordination.SqlServer;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Headless.CommitCoordination.SqlServer;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Microsoft.Data.SqlClient;
 
 /// <summary>
 /// Enlists an already-open raw-ADO SqlClient transaction in commit coordination: pushes the ambient coordinated
@@ -31,7 +33,7 @@ namespace Headless.CommitCoordination.SqlServer;
 /// (e.g. the connection is abandoned before commit), disposing without a signal discards the enlisted work.
 /// </remarks>
 [PublicAPI]
-public static class EnlistCommitCoordinationExtensions
+public static class HeadlessSqlServerEnlistCommitCoordinationExtensions
 {
     extension(SqlConnection connection)
     {

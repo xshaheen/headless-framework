@@ -20,7 +20,7 @@ namespace Headless.Features;
 
 /// <summary>DI entry point for the Headless Features Core module.</summary>
 [PublicAPI]
-public static class SetupCore
+public static class SetupFeatures
 {
     extension(IServiceCollection services)
     {

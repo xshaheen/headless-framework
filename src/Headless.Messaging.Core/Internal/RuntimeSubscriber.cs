@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging.Runtime;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.Internal;

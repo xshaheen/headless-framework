@@ -238,7 +238,7 @@ Fetch only what's relevant to the task. Each file documents the domain's package
 - [api.md](api.md) — ASP.NET Core API infrastructure (JWT, middleware, Minimal API, MVC, FluentValidation, Data Protection).
 - [audit-log.md](audit-log.md) — Property-level audit logging for entity mutations and explicit business events with EF Core persistence.
 - [core.md](core.md) — DDD building blocks, guard clauses, cross-cutting abstractions, string encryption/hashing, domain events.
-- [extensions.md](extensions.md) — Base utility library: result pattern, domain primitives, value objects, collections, IO, threading, reflection helpers.
+- [extensions.md](extensions.md) — Base utility library (`Headless.Extensions`) plus the `Headless.Primitives` (result pattern, domain primitives, value objects, paging) and `Headless.Urls` (URL builder) packages it re-exports.
 - [multi-tenancy.md](multi-tenancy.md) — Tenant context across HTTP, EF Core filters, permission caching, background processing.
 - [blobs.md](blobs.md) — Unified blob storage (AWS S3, Azure, file system, Redis, SFTP).
 - [caching.md](caching.md) — Memory, Redis, and Hybrid (L1+L2) caching with fail-safe, refresh, tagging, and distributed factory locks.
@@ -284,7 +284,9 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Api.Mvc` — MVC/Web API integration (controllers, filters, URL canonicalization).
 
 ### Core
-- `Headless.Extensions` — Foundational extension methods, primitives, helpers.
+- `Headless.Extensions` — Foundational extension methods, collections, IO, threading, and reflection helpers.
+- `Headless.Primitives` — Value objects, the result pattern, paging models, and domain primitives (re-exported by `Headless.Extensions`).
+- `Headless.Urls` — Fluent URL builder and parser, derived from Flurl (re-exported by `Headless.Extensions`).
 - `Headless.Core` — Multi-tenancy, user context, cross-cutting abstractions.
 - `Headless.Security.Abstractions` — String encryption and hashing contracts.
 - `Headless.Security` — String encryption and hashing services.
@@ -420,6 +422,7 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Permissions.Storage.EntityFramework` — EF Core storage.
 - `Headless.Permissions.Storage.PostgreSql` — PostgreSQL raw storage.
 - `Headless.Permissions.Storage.SqlServer` — SQL Server raw storage.
+- `Headless.Permissions.Testing` — test-only always-allow authorization bypass (kept out of production `Core`).
 
 ### Push Notifications
 - `Headless.PushNotifications.Abstractions` — Push notification interface and `IPushNotificationServiceProvider`.

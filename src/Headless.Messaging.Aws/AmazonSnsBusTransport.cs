@@ -10,7 +10,7 @@ namespace Headless.Messaging.Aws;
 
 internal sealed class AmazonSnsBusTransport(
     ILogger<AmazonSnsBusTransport> logger,
-    IOptions<AmazonSqsOptions> sqsOptionsAccessor
+    IOptions<AmazonSqsMessagingOptions> sqsOptionsAccessor
 ) : IBusTransport
 {
     private readonly ILogger _logger = logger;

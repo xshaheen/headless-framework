@@ -1,9 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Microsoft.Extensions.DependencyInjection;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Microsoft.Extensions.DependencyInjection;
+namespace Headless.Api;
 
 /// <summary><see cref="IHealthChecksBuilder"/> extension methods.</summary>
 [PublicAPI]

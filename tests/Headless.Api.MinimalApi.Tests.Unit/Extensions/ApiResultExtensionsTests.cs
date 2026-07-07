@@ -252,7 +252,7 @@ public sealed class ApiResultExtensionsTests : TestBase
         creator
             .Received(1)
             .UnprocessableEntity(
-                Arg.Is<Dictionary<string, List<ErrorDescriptor>>>(d =>
+                Arg.Is<IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>>>(d =>
                     d.ContainsKey("Email") && d["Email"].Count == 2 && d.ContainsKey("Name") && d["Name"].Count == 1
                 )
             );
@@ -302,7 +302,7 @@ public sealed class ApiResultExtensionsTests : TestBase
             .Returns(new ProblemDetails { Status = StatusCodes.Status404NotFound, Title = "Entity Not Found" });
 
         creator
-            .UnprocessableEntity(Arg.Any<Dictionary<string, List<ErrorDescriptor>>>())
+            .UnprocessableEntity(Arg.Any<IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>>>())
             .Returns(ci => new ProblemDetails
             {
                 Status = StatusCodes.Status422UnprocessableEntity,

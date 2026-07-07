@@ -22,26 +22,25 @@ public sealed class SqliteConnectionStringChecker(ILogger<SqliteConnectionString
     : IConnectionStringChecker
 {
     /// <inheritdoc />
-    public async Task<(bool Connected, bool DatabaseExists)> CheckAsync(string connectionString)
+    public async Task<ConnectionCheckResult> CheckAsync(
+        string connectionString,
+        CancellationToken cancellationToken = default
+    )
     {
-        var result = (Connected: false, DatabaseExists: false);
-
         try
         {
             await using var connection = new SqliteConnection(connectionString);
 
-            await connection.OpenAsync().ConfigureAwait(false);
-            result.Connected = true;
-            result.DatabaseExists = true;
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
             await connection.CloseAsync().ConfigureAwait(false);
 
-            return result;
+            return new ConnectionCheckResult(Connected: true, DatabaseExists: true);
         }
-        catch (Exception e)
+        catch (Exception e) when (e is not OperationCanceledException)
         {
             logger.LogErrorCheckingConnectionString(e);
 
-            return result;
+            return new ConnectionCheckResult(Connected: false, DatabaseExists: false);
         }
     }
 }

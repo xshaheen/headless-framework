@@ -21,11 +21,9 @@ internal interface IJobsNotificationHubSender
     Task UpdateNodesAsync(object nodes);
     Task AddCronOccurrenceAsync(Guid groupId, object occurrence);
     Task UpdateCronOccurrenceAsync(Guid groupId, object occurrence);
-    Task UpdateTimeJobFromInternalFunctionContext<TTimeJobEntity>(InternalFunctionContext internalFunctionContext)
+    Task UpdateTimeJobFromExecutionState<TTimeJobEntity>(JobExecutionState executionState)
         where TTimeJobEntity : TimeJobEntity<TTimeJobEntity>, new();
-    Task UpdateCronOccurrenceFromInternalFunctionContext<TCronJobEntity>(
-        InternalFunctionContext internalFunctionContext
-    )
+    Task UpdateCronOccurrenceFromExecutionState<TCronJobEntity>(JobExecutionState executionState)
         where TCronJobEntity : CronJobEntity, new();
     Task CanceledJobNotifyAsync(Guid id);
 }

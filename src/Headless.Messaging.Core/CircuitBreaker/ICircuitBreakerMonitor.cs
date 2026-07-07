@@ -13,6 +13,7 @@ namespace Headless.Messaging.CircuitBreaker;
 /// The split is intentional: application code injects <see cref="ICircuitBreakerMonitor"/>
 /// to observe state and trigger manual recovery without access to the internal write surface.
 /// </remarks>
+[PublicAPI]
 public interface ICircuitBreakerMonitor
 {
     /// <summary>

@@ -200,7 +200,7 @@ public sealed class KafkaTransportTests : TestBase
             {
                 { MessagingHeaders.MessageId, "msg-123" },
                 { MessagingHeaders.MessageName, "TestTopic" },
-                { KafkaHeaders.KafkaKey, "custom-partition-key" },
+                { KafkaMessagingHeaders.KafkaKey, "custom-partition-key" },
             },
             body: "test-body"u8.ToArray()
         );
@@ -237,7 +237,7 @@ public sealed class KafkaTransportTests : TestBase
             {
                 { MessagingHeaders.MessageId, "msg-123" },
                 { MessagingHeaders.MessageName, "TestTopic" },
-                { KafkaHeaders.KafkaKey, "" },
+                { KafkaMessagingHeaders.KafkaKey, "" },
             },
             body: "test-body"u8.ToArray()
         );

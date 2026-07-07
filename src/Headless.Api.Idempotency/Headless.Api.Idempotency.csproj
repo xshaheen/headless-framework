@@ -3,7 +3,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <Description>Idempotency integration for Headless API.</Description>
     <PackageTags>headless;api;idempotency;dotnet</PackageTags>
-    <RootNamespace>Headless.Api</RootNamespace>
+    <RootNamespace>Headless.Api.Idempotency</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Api.Idempotency.Tests.Unit" />

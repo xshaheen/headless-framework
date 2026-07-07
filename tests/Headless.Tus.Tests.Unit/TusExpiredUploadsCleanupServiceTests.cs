@@ -24,10 +24,10 @@ public sealed class TusExpiredUploadsCleanupServiceTests : TestBase
         for (var i = 0; i < 50 && !signal.IsCompleted; i++)
         {
             timeProvider.Advance(_Interval);
-            await Task.Delay(10, TestContext.Current.CancellationToken);
+            await Task.Delay(10, AbortToken);
         }
 
-        await signal.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        await signal.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
     }
 
     private static TusExpiredUploadsCleanupService _CreateService(

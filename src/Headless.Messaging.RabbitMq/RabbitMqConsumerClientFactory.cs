@@ -8,7 +8,7 @@ using Microsoft.Extensions.Options;
 namespace Headless.Messaging.RabbitMq;
 
 internal sealed class RabbitMqConsumerClientFactory(
-    IOptions<RabbitMqOptions> rabbitMqOptions,
+    IOptions<RabbitMqMessagingOptions> rabbitMqOptions,
     IConnectionChannelPool channelPool,
     IServiceProvider serviceProvider,
     IConsumerRegistry? consumerRegistry = null

@@ -8,7 +8,7 @@ using NSwag.Generation.AspNetCore;
 using NSwag.Generation.Processors;
 using NSwag.Generation.Processors.Contexts;
 
-namespace Headless.Api.OperationProcessors;
+namespace Headless.OpenApi.Nswag.OperationProcessors;
 
 /// <summary>
 /// NSwag operation processor that adds a 403 Forbidden response entry to operations whose authorization

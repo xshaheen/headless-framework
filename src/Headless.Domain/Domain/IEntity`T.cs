@@ -16,7 +16,7 @@ public interface IEntity<out TId> : IEntity
 /// <summary>Base class for entities with a single primary key.</summary>
 [PublicAPI]
 public abstract class Entity<TId> : Entity, IEntity<TId>
-    where TId : IEquatable<TId>
+    where TId : notnull, IEquatable<TId>
 {
     /// <summary>Unique identifier for this entity.</summary>
     public required TId Id { get; init; }

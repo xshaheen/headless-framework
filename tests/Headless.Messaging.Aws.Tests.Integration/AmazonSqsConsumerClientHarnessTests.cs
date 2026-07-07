@@ -18,7 +18,7 @@ public sealed class AmazonSqsConsumerClientHarnessTests(LocalStackTestFixture fi
                 $"consumer-tests-{Guid.NewGuid():N}",
                 1,
                 Options.Create(
-                    new AmazonSqsOptions
+                    new AmazonSqsMessagingOptions
                     {
                         Region = Amazon.RegionEndpoint.USEast1,
                         SnsServiceUrl = fixture.ConnectionString,

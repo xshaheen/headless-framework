@@ -121,6 +121,8 @@ internal sealed class SqlServerPermissionsStorageInitializer(
                         [ProviderKey] nvarchar({PermissionGrantRecordConstants.ProviderKeyMaxLength}) NOT NULL,
                         [TenantId] nvarchar({PermissionGrantRecordConstants.TenantIdMaxLength}) NULL,
                         [IsGranted] bit NOT NULL DEFAULT CAST(1 AS bit),
+                        [DateCreated] datetimeoffset NOT NULL,
+                        [DateUpdated] datetimeoffset NULL,
                         CONSTRAINT [PK_{options.PermissionGrantsTableName}] PRIMARY KEY CLUSTERED ([Id] ASC)
                     );
                 END;

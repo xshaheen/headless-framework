@@ -5,21 +5,21 @@ using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Coordination;
 using Headless.DistributedLocks;
-using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Coordination;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Processor;
 using Headless.Messaging.Registration;
+using Headless.Messaging.Runtime;
 using Headless.Messaging.Serialization;
 using Headless.Messaging.Transactions;
 using Headless.Messaging.Transport;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Microsoft.Extensions.DependencyInjection;
+namespace Headless.Messaging;
 
 /// <summary>
 /// Provides extension methods for registering and configuring messaging services

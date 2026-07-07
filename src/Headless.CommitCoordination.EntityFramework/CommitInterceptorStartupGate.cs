@@ -43,7 +43,7 @@ internal sealed partial class CommitInterceptorStartupGate<TContext>(
 
         var mode = options.Value.Mode;
 
-        if (mode == CommitInterceptorProbeMode.Disabled)
+        if (mode == CommitProbeMode.Disabled)
         {
             return;
         }
@@ -118,7 +118,7 @@ internal sealed partial class CommitInterceptorStartupGate<TContext>(
             return;
         }
 
-        if (mode == CommitInterceptorProbeMode.Strict)
+        if (mode == CommitProbeMode.Strict)
         {
             throw new InvalidOperationException(
                 $"Commit coordination is enabled for `{typeof(TContext).FullName}` but the commit interceptor did not "

@@ -8,7 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Api;
+namespace Headless.Api.DataProtection;
 
 [PublicAPI]
 public static class DataProtectionBuilderExtensions

@@ -5,13 +5,14 @@ using Headless.Checks;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Captcha;
 
+/// <summary>Extensions for reading reCAPTCHA-specific data from an <see cref="IReCaptchaVerifyResult"/>.</summary>
 [PublicAPI]
 public static class ReCaptchaResultExtensions
 {
     /// <summary>Parses the result's raw <see cref="CaptchaVerifyResult.ErrorCodes"/> into the reCAPTCHA error enum.</summary>
     /// <param name="result">The verification result.</param>
-    /// <returns>The parsed errors, or an empty array when the verification succeeded.</returns>
-    public static ReCaptchaError[] ToReCaptchaErrors(this IReCaptchaVerifyResult result)
+    /// <returns>The parsed errors, or an empty list when the verification succeeded.</returns>
+    public static IReadOnlyList<ReCaptchaError> ToReCaptchaErrors(this IReCaptchaVerifyResult result)
     {
         Argument.IsNotNull(result);
 

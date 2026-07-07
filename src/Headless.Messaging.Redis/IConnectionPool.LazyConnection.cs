@@ -12,7 +12,7 @@ namespace Headless.Messaging.Redis;
 /// on first await. Up to five connection attempts are made with a two-second delay between retries.
 /// </summary>
 public class AsyncLazyRedisConnection(
-    MessagingRedisOptions redisOptions,
+    RedisMessagingOptions redisOptions,
     ILogger<AsyncLazyRedisConnection> logger,
     TimeProvider? timeProvider = null,
     CancellationToken cancellationToken = default
@@ -25,7 +25,9 @@ public class AsyncLazyRedisConnection(
     /// Returns the established <see cref="RedisConnection"/> when the lazy value has already been
     /// resolved; otherwise <see langword="null"/>.
     /// </summary>
+#pragma warning disable VSTHRD104 // Offer async methods
     public RedisConnection? CreatedConnection => IsValueCreated && Value.IsCompletedSuccessfully ? Value.Result : null;
+#pragma warning restore VSTHRD104
 
     /// <summary>Returns the connection task, cancelling only this caller's wait when requested.</summary>
     public async Task<RedisConnection> GetValueAsync(CancellationToken cancellationToken = default) =>
@@ -38,7 +40,7 @@ public class AsyncLazyRedisConnection(
     }
 
     private static async Task<RedisConnection> _ConnectAsync(
-        MessagingRedisOptions redisOptions,
+        RedisMessagingOptions redisOptions,
         ILogger<AsyncLazyRedisConnection> logger,
         TimeProvider timeProvider,
         CancellationToken cancellationToken

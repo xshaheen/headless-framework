@@ -1,10 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.DistributedLocks;
+using Headless.Testing.Tests;
 
 namespace Tests.RegularLocks;
 
-public sealed class NullDistributedSemaphoreProviderTests
+public sealed class NullDistributedSemaphoreProviderTests : TestBase
 {
     [Fact]
     public async Task should_reject_infinite_time_until_expires()
@@ -45,8 +46,8 @@ public sealed class NullDistributedSemaphoreProviderTests
         var semaphore = provider.CreateSemaphore("test.resource", maxCount: 2);
 
         // when
-        await using var slot = await semaphore.AcquireAsync(cancellationToken: TestContext.Current.CancellationToken);
-        var trySlot = await semaphore.TryAcquireAsync(cancellationToken: TestContext.Current.CancellationToken);
+        await using var slot = await semaphore.AcquireAsync(cancellationToken: AbortToken);
+        var trySlot = await semaphore.TryAcquireAsync(cancellationToken: AbortToken);
 
         // then — never contends, exposes the semaphore identity, cannot observe loss
         semaphore.Resource.Should().Be("test.resource");
@@ -66,11 +67,11 @@ public sealed class NullDistributedSemaphoreProviderTests
         // given
         var provider = new NullDistributedSemaphoreProvider(TimeProvider.System);
         var semaphore = provider.CreateSemaphore("test.resource", maxCount: 1);
-        await using var slot = await semaphore.AcquireAsync(cancellationToken: TestContext.Current.CancellationToken);
+        await using var slot = await semaphore.AcquireAsync(cancellationToken: AbortToken);
         slot.RenewalCount.Should().Be(0);
 
         // when
-        var renewed = await slot.RenewAsync(cancellationToken: TestContext.Current.CancellationToken);
+        var renewed = await slot.RenewAsync(cancellationToken: AbortToken);
 
         // then
         renewed.Should().BeTrue();
@@ -83,10 +84,10 @@ public sealed class NullDistributedSemaphoreProviderTests
         // given — the sentinel stores nothing, so observability reads are empty even while held
         var provider = new NullDistributedSemaphoreProvider(TimeProvider.System);
         var semaphore = provider.CreateSemaphore("test.resource", maxCount: 1);
-        await using var slot = await semaphore.AcquireAsync(cancellationToken: TestContext.Current.CancellationToken);
+        await using var slot = await semaphore.AcquireAsync(cancellationToken: AbortToken);
 
         // when
-        var count = await provider.GetHolderCountAsync("test.resource", TestContext.Current.CancellationToken);
+        var count = await provider.GetHolderCountAsync("test.resource", AbortToken);
 
         // then
         count.Should().Be(0);

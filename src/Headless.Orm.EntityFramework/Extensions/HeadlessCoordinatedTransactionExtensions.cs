@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
-using Headless.CommitCoordination.EntityFramework;
 using Headless.EntityFramework;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace

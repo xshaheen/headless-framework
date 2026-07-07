@@ -36,7 +36,7 @@ using OpenTelemetry.Trace;
 using HttpJsonOptions = Microsoft.AspNetCore.Http.Json.JsonOptions;
 using MvcJsonOptions = Microsoft.AspNetCore.Mvc.JsonOptions;
 
-namespace Headless.Api;
+namespace Headless.Api.ServiceDefaults;
 
 [PublicAPI]
 public static class SetupApi

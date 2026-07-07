@@ -6,6 +6,7 @@ using Headless.Permissions;
 using Headless.Permissions.Entities;
 using Headless.Permissions.Repositories;
 using Headless.Permissions.Seeders;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Npgsql;
@@ -13,7 +14,7 @@ using Npgsql;
 namespace Tests;
 
 [Collection<PostgreSqlPermissionsFixture>]
-public sealed class PostgreSqlPermissionsStorageTests(PostgreSqlPermissionsFixture fixture)
+public sealed class PostgreSqlPermissionsStorageTests(PostgreSqlPermissionsFixture fixture) : TestBase
 {
     private const string _Schema = "permissions_pg_raw";
 
@@ -25,7 +26,7 @@ public sealed class PostgreSqlPermissionsStorageTests(PostgreSqlPermissionsFixtu
         using var host = _CreateHost();
 
         // when
-        await host.StartAsync(TestContext.Current.CancellationToken);
+        await host.StartAsync(AbortToken);
         var initializer = host
             .Services.GetRequiredService<IEnumerable<IInitializer>>()
             .Single(x => x is not PermissionsInitializationBackgroundService);
@@ -35,26 +36,11 @@ public sealed class PostgreSqlPermissionsStorageTests(PostgreSqlPermissionsFixtu
         var group = new PermissionGroupDefinitionRecord(Guid.NewGuid(), "Users", "Users");
         var permission = new PermissionDefinitionRecord(Guid.NewGuid(), "Users", "Users.Create", null, "Create users");
 
-        await grantRepository.InsertAsync(record, TestContext.Current.CancellationToken);
-        await definitionRepository.SaveAsync(
-            [group],
-            [],
-            [],
-            [permission],
-            [],
-            [],
-            TestContext.Current.CancellationToken
-        );
-        var stored = await grantRepository.FindAsync(
-            "Users.Create",
-            "Role",
-            "admin",
-            TestContext.Current.CancellationToken
-        );
-        var storedGroups = await definitionRepository.GetGroupsListAsync(TestContext.Current.CancellationToken);
-        var storedPermissions = await definitionRepository.GetPermissionsListAsync(
-            TestContext.Current.CancellationToken
-        );
+        await grantRepository.InsertAsync(record, AbortToken);
+        await definitionRepository.SaveAsync([group], [], [], [permission], [], [], AbortToken);
+        var stored = await grantRepository.FindAsync("Users.Create", "Role", "admin", AbortToken);
+        var storedGroups = await definitionRepository.GetGroupsListAsync(AbortToken);
+        var storedPermissions = await definitionRepository.GetPermissionsListAsync(AbortToken);
 
         // then
         initializer.IsInitialized.Should().BeTrue();
@@ -73,14 +59,14 @@ public sealed class PostgreSqlPermissionsStorageTests(PostgreSqlPermissionsFixtu
         // given
         await _DropSchemaAsync();
         using var host = _CreateHost();
-        await host.StartAsync(TestContext.Current.CancellationToken);
+        await host.StartAsync(AbortToken);
         var grantRepository = host.Services.GetRequiredService<IPermissionGrantRepository>();
         var first = new PermissionGrantRecord(Guid.NewGuid(), "Users.Delete", "Role", "admin", isGranted: true);
         var duplicate = new PermissionGrantRecord(Guid.NewGuid(), "Users.Delete", "Role", "admin", isGranted: false);
 
         // when
-        await grantRepository.InsertAsync(first, TestContext.Current.CancellationToken);
-        var act = () => grantRepository.InsertAsync(duplicate, TestContext.Current.CancellationToken);
+        await grantRepository.InsertAsync(first, AbortToken);
+        var act = () => grantRepository.InsertAsync(duplicate, AbortToken);
 
         // then
         await act.Should().ThrowAsync<PostgresException>().Where(x => x.SqlState == PostgresErrorCodes.UniqueViolation);
@@ -93,7 +79,7 @@ public sealed class PostgreSqlPermissionsStorageTests(PostgreSqlPermissionsFixtu
         await _DropSchemaAsync();
         var currentTenant = new TestCurrentTenant("tenant-a");
         using var host = _CreateHost(currentTenant);
-        await host.StartAsync(TestContext.Current.CancellationToken);
+        await host.StartAsync(AbortToken);
         var grantRepository = host.Services.GetRequiredService<IPermissionGrantRepository>();
         var tenantA = new PermissionGrantRecord(
             Guid.NewGuid(),
@@ -113,14 +99,9 @@ public sealed class PostgreSqlPermissionsStorageTests(PostgreSqlPermissionsFixtu
         );
 
         // when
-        await grantRepository.InsertManyAsync([tenantA, tenantB], TestContext.Current.CancellationToken);
-        var found = await grantRepository.FindAsync(
-            "Users.Approve",
-            "Role",
-            "admin",
-            TestContext.Current.CancellationToken
-        );
-        var list = await grantRepository.GetListAsync("Role", "admin", TestContext.Current.CancellationToken);
+        await grantRepository.InsertManyAsync([tenantA, tenantB], AbortToken);
+        var found = await grantRepository.FindAsync("Users.Approve", "Role", "admin", AbortToken);
+        var list = await grantRepository.GetListAsync("Role", "admin", AbortToken);
 
         // then
         found.Should().NotBeNull();
@@ -138,7 +119,7 @@ public sealed class PostgreSqlPermissionsStorageTests(PostgreSqlPermissionsFixtu
         using var host = _CreateHost();
 
         // when
-        await host.StartAsync(TestContext.Current.CancellationToken);
+        await host.StartAsync(AbortToken);
 
         // then
         (await _IndexExistsAsync("IX_PermissionGroupDefinitions_Name"))
@@ -172,15 +153,15 @@ public sealed class PostgreSqlPermissionsStorageTests(PostgreSqlPermissionsFixtu
     private async Task _DropSchemaAsync()
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         await using var command = new NpgsqlCommand($"""DROP SCHEMA IF EXISTS "{_Schema}" CASCADE;""", connection);
-        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        await command.ExecuteNonQueryAsync(AbortToken);
     }
 
     private async Task<bool> _TableExistsAsync(string tableName)
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         await using var command = new NpgsqlCommand(
             """
             SELECT EXISTS (
@@ -194,13 +175,13 @@ public sealed class PostgreSqlPermissionsStorageTests(PostgreSqlPermissionsFixtu
         command.Parameters.AddWithValue("schema", _Schema);
         command.Parameters.AddWithValue("table", tableName);
 
-        return (bool)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken))!;
+        return (bool)(await command.ExecuteScalarAsync(AbortToken))!;
     }
 
     private async Task<bool> _IndexExistsAsync(string indexName)
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         await using var command = new NpgsqlCommand(
             """
             SELECT EXISTS (
@@ -214,13 +195,13 @@ public sealed class PostgreSqlPermissionsStorageTests(PostgreSqlPermissionsFixtu
         command.Parameters.AddWithValue("schema", _Schema);
         command.Parameters.AddWithValue("index", indexName);
 
-        return (bool)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken))!;
+        return (bool)(await command.ExecuteScalarAsync(AbortToken))!;
     }
 
     private async Task _CreateTablesWithoutIndexesAsync()
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         await using var command = new NpgsqlCommand(
             $"""
             CREATE SCHEMA IF NOT EXISTS "{_Schema}";
@@ -257,7 +238,7 @@ public sealed class PostgreSqlPermissionsStorageTests(PostgreSqlPermissionsFixtu
             """,
             connection
         );
-        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        await command.ExecuteNonQueryAsync(AbortToken);
     }
 
     private sealed class TestCurrentTenant(string? tenantId) : ICurrentTenant

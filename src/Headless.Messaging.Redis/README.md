@@ -44,7 +44,7 @@ builder.Services.AddHeadlessMessaging(options =>
 
 ## Configuration
 
-`UseRedis(string)` configures Redis Streams queue delivery. For richer options use `UseRedis(Action<MessagingRedisOptions>)`; `MessagingRedisOptions.Configuration` is a StackExchange.Redis `ConfigurationOptions` instance:
+`UseRedis(string)` configures Redis Streams queue delivery. For richer options use `UseRedis(Action<RedisMessagingOptions>)`; `RedisMessagingOptions.Configuration` is a StackExchange.Redis `ConfigurationOptions` instance:
 
 ```csharp
 options.UseRedis(redis =>
@@ -55,7 +55,7 @@ options.UseRedis(redis =>
 });
 ```
 
-`UseRedisPubSub(string)` configures Redis Pub/Sub bus delivery. For richer options use `UseRedisPubSub(Action<RedisPubSubOptions>)`:
+`UseRedisPubSub(string)` configures Redis Pub/Sub bus delivery. For richer options use `UseRedisPubSub(Action<RedisPubSubMessagingOptions>)`:
 
 ```csharp
 options.UseRedisPubSub(redis =>
@@ -63,6 +63,8 @@ options.UseRedisPubSub(redis =>
     redis.Configuration = ConfigurationOptions.Parse("localhost:6379,ssl=true,password=secret");
 });
 ```
+
+**Registration overloads:** `UseRedis(...)` and `UseRedisPubSub(...)` each accept the standard trio — an `IConfiguration` section, an `Action<TOptions>` delegate, or an `Action<TOptions, IServiceProvider>` delegate — plus the parameterless and connection-string convenience forms (`RedisMessagingOptions` / `RedisPubSubMessagingOptions`).
 
 ## Dependencies
 

@@ -5,6 +5,7 @@ using System.Net.Mime;
 using FluentValidation.Results;
 using Headless.Abstractions;
 using Headless.Api;
+using Headless.Api.ServiceDefaults;
 using Headless.Constants;
 using Headless.Exceptions;
 using Headless.Primitives;

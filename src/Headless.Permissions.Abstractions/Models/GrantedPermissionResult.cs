@@ -7,6 +7,8 @@ namespace Headless.Permissions.Models;
 /// <summary>The outcome of resolving a single permission for a principal.</summary>
 public sealed class GrantedPermissionResult(string name, bool isGranted)
 {
+    private readonly List<GrantPermissionProvider> _providers = [];
+
     /// <summary>The permission name this result is for.</summary>
     public string Name { get; } = Argument.IsNotNull(name);
 
@@ -17,7 +19,10 @@ public sealed class GrantedPermissionResult(string name, bool isGranted)
     /// The providers that contributed a grant to this result. Empty when the permission is not granted; an
     /// explicit denial does not appear here because it suppresses the grant entirely.
     /// </summary>
-    public List<GrantPermissionProvider> Providers { get; } = [];
+    public IReadOnlyList<GrantPermissionProvider> Providers => _providers;
+
+    /// <summary>Records that <paramref name="provider"/> contributed a grant. Internal population path used by the framework.</summary>
+    internal void AddProvider(GrantPermissionProvider provider) => _providers.Add(provider);
 }
 
 /// <summary>Identifies a grant provider and the specific keys under which it granted the permission.</summary>

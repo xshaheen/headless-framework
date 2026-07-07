@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Coordination;
-using Headless.Coordination.PostgreSql;
 using Headless.Jobs.DbContextFactory;
 using Headless.Jobs.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
@@ -25,7 +24,7 @@ public sealed class StartupOrderingTests
 
         var act = () =>
             services.AddHeadlessJobs(options =>
-                options.AddOperationalStore(ef =>
+                options.UseEntityFramework(ef =>
                     ef.UseJobsDbContext<JobsDbContext>(db => db.UseNpgsql(_DummyConnectionString), schema: "jobs")
                 )
             );
@@ -42,7 +41,7 @@ public sealed class StartupOrderingTests
 
         var act = () =>
             services.AddHeadlessJobs(options =>
-                options.AddOperationalStore(ef =>
+                options.UseEntityFramework(ef =>
                     ef.UseJobsDbContext<JobsDbContext>(db => db.UseNpgsql(_DummyConnectionString), schema: "jobs")
                 )
             );

@@ -56,7 +56,7 @@ public sealed class TurnstileTagHelperTests
     [Fact]
     public void widget_helper_emits_cf_turnstile_div_with_attributes()
     {
-        var languageProvider = Substitute.For<ITurnstileLanguageCodeProvider>();
+        var languageProvider = Substitute.For<ICaptchaLanguageCodeProvider>();
         languageProvider.GetLanguageCode().Returns("en-US");
 
         var helper = new TurnstileWidgetTagHelper(

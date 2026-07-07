@@ -20,7 +20,7 @@ internal sealed class PulsarTransport(ILogger<PulsarTransport> logger, IConnecti
 
             var producer = await connectionFactory.CreateProducerAsync(message.Name).ConfigureAwait(false);
             var headerDic = new Dictionary<string, string?>(message.Headers, StringComparer.Ordinal);
-            headerDic.TryGetValue(PulsarHeaders.PulsarKey, out var key);
+            headerDic.TryGetValue(PulsarMessagingHeaders.PulsarKey, out var key);
             var pulsarMessage = producer.NewMessage(message.Body.ToArray(), key, headerDic);
             var messageId = await producer.SendAsync(pulsarMessage).ConfigureAwait(false);
 

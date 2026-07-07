@@ -13,6 +13,18 @@ public sealed class FcmPushNotificationServiceTests : TestBase
 
     private FcmPushNotificationService _CreateService() => new(_sender);
 
+    private static PushNotificationRequest _Request(
+        string title = "title",
+        string body = "body",
+        IReadOnlyDictionary<string, string>? data = null
+    ) =>
+        new()
+        {
+            Title = title,
+            Body = body,
+            Data = data,
+        };
+
     [Fact]
     public async Task should_return_sender_outcome_for_single_send()
     {
@@ -22,7 +34,7 @@ public sealed class FcmPushNotificationServiceTests : TestBase
             .Returns(Task.FromResult(PushNotificationResponse.Succeeded("token", "msg-1")));
 
         // when
-        var result = await _CreateService().SendToDeviceAsync("token", "title", "body", cancellationToken: AbortToken);
+        var result = await _CreateService().SendToDeviceAsync("token", _Request(), AbortToken);
         // then
         result.IsSucceeded().Should().BeTrue();
         result.MessageId.Should().Be("msg-1");
@@ -34,8 +46,7 @@ public sealed class FcmPushNotificationServiceTests : TestBase
     public async Task should_throw_when_token_is_blank(string token)
     {
         // when
-        var action = async () =>
-            await _CreateService().SendToDeviceAsync(token, "title", "body", cancellationToken: AbortToken);
+        var action = async () => await _CreateService().SendToDeviceAsync(token, _Request(), AbortToken);
         // then
         await action.Should().ThrowAsync<ArgumentException>();
     }
@@ -52,7 +63,7 @@ public sealed class FcmPushNotificationServiceTests : TestBase
         var data = new Dictionary<string, string>(StringComparer.Ordinal) { [reservedKey] = "value" };
 
         // when
-        var action = async () => await _CreateService().SendToDeviceAsync("token", "title", "body", data, AbortToken);
+        var action = async () => await _CreateService().SendToDeviceAsync("token", _Request(data: data), AbortToken);
         // then
         await action.Should().ThrowAsync<ArgumentException>();
     }
@@ -62,8 +73,7 @@ public sealed class FcmPushNotificationServiceTests : TestBase
     {
         // when
         var action = async () =>
-            await _CreateService()
-                .SendToDeviceAsync("token", new string('a', 101), "body", cancellationToken: AbortToken);
+            await _CreateService().SendToDeviceAsync("token", _Request(title: new string('a', 101)), AbortToken);
         // then
         await action.Should().ThrowAsync<ArgumentException>();
     }
@@ -77,8 +87,7 @@ public sealed class FcmPushNotificationServiceTests : TestBase
             .Returns(Task.FromException<PushNotificationResponse>(new OperationCanceledException()));
 
         // when
-        var action = async () =>
-            await _CreateService().SendToDeviceAsync("token", "title", "body", cancellationToken: AbortToken);
+        var action = async () => await _CreateService().SendToDeviceAsync("token", _Request(), AbortToken);
         // then
         await action.Should().ThrowAsync<OperationCanceledException>();
     }
@@ -105,7 +114,7 @@ public sealed class FcmPushNotificationServiceTests : TestBase
         var tokens = Enumerable.Range(0, 501).Select(i => $"t{i}").ToList();
 
         // when
-        var result = await _CreateService().SendMulticastAsync(tokens, "title", "body", cancellationToken: AbortToken);
+        var result = await _CreateService().SendMulticastAsync(tokens, _Request(), AbortToken);
         // then
         result.SuccessCount.Should().Be(501);
         result.FailureCount.Should().Be(0);
@@ -147,7 +156,7 @@ public sealed class FcmPushNotificationServiceTests : TestBase
         var tokens = Enumerable.Range(0, 501).Select(i => $"t{i}").ToList();
 
         // when
-        var result = await _CreateService().SendMulticastAsync(tokens, "title", "body", cancellationToken: AbortToken);
+        var result = await _CreateService().SendMulticastAsync(tokens, _Request(), AbortToken);
         // then
         result.Responses.Should().HaveCount(501);
         result.SuccessCount.Should().Be(500);
@@ -158,8 +167,7 @@ public sealed class FcmPushNotificationServiceTests : TestBase
     public async Task should_throw_when_multicast_tokens_empty()
     {
         // when
-        var action = async () =>
-            await _CreateService().SendMulticastAsync([], "title", "body", cancellationToken: AbortToken);
+        var action = async () => await _CreateService().SendMulticastAsync([], _Request(), AbortToken);
         // then
         await action.Should().ThrowAsync<ArgumentException>();
     }

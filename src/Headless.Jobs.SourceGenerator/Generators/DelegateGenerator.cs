@@ -80,9 +80,11 @@ internal static class DelegateGenerator
         var asyncFlag = needsAsync ? "async " : "";
         var cronExprFlag = string.IsNullOrEmpty(cronExpression) ? "string.Empty" : $"\"{cronExpression}\"";
 
-        // Generate delegate registration with proper multiline format
+        // Generate delegate registration with proper multiline format. Bind to the named
+        // JobFunctionRegistration record (object initializer) rather than a positional value-tuple so new
+        // per-function knobs stay additive without breaking this baked-in [ModuleInitializer] ABI.
         sb.AppendLine(
-            $"            jobFunctionDelegateDict.TryAdd(\"{functionName}\", ({cronExprFlag}, (JobPriority){functionPriority}, new JobFunctionDelegate({asyncFlag}(cancellationToken, serviceProvider, context) =>"
+            $"            jobFunctionDelegateDict.TryAdd(\"{functionName}\", new JobFunctionRegistration {{ CronExpression = {cronExprFlag}, Priority = (JobPriority){functionPriority}, Delegate = new JobFunctionDelegate({asyncFlag}(cancellationToken, serviceProvider, context) =>"
         );
         sb.AppendLine("            {");
 
@@ -98,7 +100,7 @@ internal static class DelegateGenerator
             typeNameConflicts
         );
 
-        sb.AppendLine($"            }}), {maxConcurrency}));");
+        sb.AppendLine($"            }}), MaxConcurrency = {maxConcurrency} }});");
 
         return sb.ToString();
     }

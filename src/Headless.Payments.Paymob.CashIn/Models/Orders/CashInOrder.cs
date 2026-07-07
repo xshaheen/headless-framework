@@ -8,7 +8,7 @@ namespace Headless.Payments.Paymob.CashIn.Models.Orders;
 public sealed class CashInOrder
 {
     [JsonPropertyName("id")]
-    public int Id { get; init; }
+    public long Id { get; init; }
 
     [JsonPropertyName("merchant_order_id")]
     public string? MerchantOrderId { get; init; }
@@ -21,10 +21,10 @@ public sealed class CashInOrder
     public bool DeliveryNeeded { get; init; }
 
     [JsonPropertyName("amount_cents")]
-    public int AmountCents { get; init; }
+    public long AmountCents { get; init; }
 
     [JsonPropertyName("paid_amount_cents")]
-    public int PaidAmountCents { get; init; }
+    public long PaidAmountCents { get; init; }
 
     [JsonPropertyName("currency")]
     public required string Currency { get; init; }
@@ -48,13 +48,13 @@ public sealed class CashInOrder
     public string? OrderUrl { get; init; }
 
     [JsonPropertyName("commission_fees")]
-    public int CommissionFees { get; init; }
+    public long CommissionFees { get; init; }
 
     [JsonPropertyName("delivery_fees_cents")]
-    public int DeliveryFeesCents { get; init; }
+    public long DeliveryFeesCents { get; init; }
 
     [JsonPropertyName("delivery_vat_cents")]
-    public int DeliveryVatCents { get; init; }
+    public long DeliveryVatCents { get; init; }
 
     [JsonPropertyName("payment_method")]
     public required string PaymentMethod { get; init; }

@@ -10,7 +10,7 @@ internal interface IRedisPubSubConnectionProvider : IAsyncDisposable
     Task<IConnectionMultiplexer> ConnectAsync(CancellationToken cancellationToken = default);
 }
 
-internal sealed class RedisPubSubConnectionProvider(IOptions<RedisPubSubOptions> optionsAccessor)
+internal sealed class RedisPubSubConnectionProvider(IOptions<RedisPubSubMessagingOptions> optionsAccessor)
     : IRedisPubSubConnectionProvider
 {
     private readonly SemaphoreSlim _lock = new(1, 1);
@@ -41,7 +41,7 @@ internal sealed class RedisPubSubConnectionProvider(IOptions<RedisPubSubOptions>
                 return _connection;
             }
 
-            if (_connectionTask is null || _connectionTask.IsFaulted || _connectionTask.IsCanceled)
+            if (_connectionTask?.IsFaulted != false || _connectionTask.IsCanceled)
             {
                 _connectionTask = ConnectionMultiplexer.ConnectAsync(optionsAccessor.Value.Configuration!);
             }

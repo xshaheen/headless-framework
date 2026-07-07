@@ -2,6 +2,7 @@
 
 using Headless.Emails;
 using Headless.Emails.Mailkit;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.ObjectPool;
 using Microsoft.Extensions.Options;
@@ -84,7 +85,7 @@ public sealed class SmtpClientPooledObjectPolicyTests
     }
 }
 
-public sealed class MailkitEmailSenderTests
+public sealed class MailkitEmailSenderTests : TestBase
 {
     [Fact]
     public async Task missing_body_should_throw_before_touching_the_pool()
@@ -100,7 +101,7 @@ public sealed class MailkitEmailSenderTests
             Subject = "no body",
         };
 
-        var act = async () => await sender.SendAsync(request, TestContext.Current.CancellationToken);
+        var act = async () => await sender.SendAsync(request, AbortToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
         pool.DidNotReceive().Get();

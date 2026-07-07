@@ -2,10 +2,11 @@
 
 using Headless.Jobs.Enums;
 using Headless.Jobs.JobsThreadPool;
+using Headless.Testing.Tests;
 
 namespace Tests;
 
-public sealed class JobsTaskSchedulerTests
+public sealed class JobsTaskSchedulerTests : TestBase
 {
     [Fact]
     public async Task Dispose_while_worker_idles_in_backoff_completes_cleanly()
@@ -25,19 +26,16 @@ public sealed class JobsTaskSchedulerTests
                 return Task.CompletedTask;
             },
             JobPriority.Normal,
-            TestContext.Current.CancellationToken
+            AbortToken
         );
 
-        await executed.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        await executed.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
 
         // Give the now-idle worker time to enter the backoff delay await.
-        await Task.Delay(100, TestContext.Current.CancellationToken);
+        await Task.Delay(100, AbortToken);
 
         var dispose = scheduler.DisposeAsync().AsTask();
-        var finished = await Task.WhenAny(
-            dispose,
-            Task.Delay(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken)
-        );
+        var finished = await Task.WhenAny(dispose, Task.Delay(TimeSpan.FromSeconds(10), AbortToken));
 
         finished.Should().Be(dispose);
         await dispose;

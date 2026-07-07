@@ -10,6 +10,7 @@ Provides the `ISqlConnectionFactory` and `IConnectionStringChecker` implementati
 
 - `NpgsqlConnectionFactory` — `ISqlConnectionFactory` implementation; `CreateNewConnectionAsync()` returns a strongly-typed `NpgsqlConnection` (already open); `GetConnectionString()` retrieves the configured string
 - `NpgsqlConnectionStringChecker` — `IConnectionStringChecker` that verifies server reachability and database existence by connecting to `postgres` first, then calling `ChangeDatabaseAsync` to the target
+- `SetupPostgreSqlSql.AddPostgreSqlSql(string connectionString)` / `AddPostgreSqlSql(Func<IServiceProvider, string>)` — one-call registration of the factory, checker, and scoped ambient connection
 
 ## Design Notes
 
@@ -29,10 +30,9 @@ dotnet add package Headless.Sql.PostgreSql
 var builder = WebApplication.CreateBuilder(args);
 
 var connectionString = builder.Configuration.GetConnectionString("Default")!;
-builder.Services.AddSingleton<ISqlConnectionFactory>(new NpgsqlConnectionFactory(connectionString));
 
-// Optional: register the health-check helper
-builder.Services.AddSingleton<IConnectionStringChecker, NpgsqlConnectionStringChecker>();
+// Registers ISqlConnectionFactory, IConnectionStringChecker, and a scoped ISqlCurrentConnection.
+builder.Services.AddPostgreSqlSql(connectionString);
 ```
 
 Use in a repository (always inject `ISqlConnectionFactory`, not the concrete type):
@@ -54,13 +54,13 @@ public sealed class ReportRepository(ISqlConnectionFactory connectionFactory)
 
 ## Configuration
 
-Pass the connection string directly to the constructor:
+Resolve the connection string from the service provider with the factory overload:
 
 ```csharp
-services.AddSingleton<ISqlConnectionFactory>(sp =>
+services.AddPostgreSqlSql(sp =>
 {
     var config = sp.GetRequiredService<IConfiguration>();
-    return new NpgsqlConnectionFactory(config.GetConnectionString("Postgres")!);
+    return config.GetConnectionString("Postgres")!;
 });
 ```
 
@@ -68,9 +68,11 @@ services.AddSingleton<ISqlConnectionFactory>(sp =>
 
 - `Headless.Checks`
 - `Headless.Sql.Abstractions`
+- `Headless.Sql.Core`
+- `Microsoft.Extensions.DependencyInjection.Abstractions`
 - `Microsoft.Extensions.Logging.Abstractions`
 - `Npgsql`
 
 ## Side Effects
 
-None (manual registration required).
+`AddPostgreSqlSql` registers `ISqlConnectionFactory` and `IConnectionStringChecker` as singletons and `ISqlCurrentConnection` (`DefaultSqlCurrentConnection`) as scoped.

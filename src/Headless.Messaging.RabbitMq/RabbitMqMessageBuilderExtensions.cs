@@ -3,7 +3,8 @@
 using Headless.Checks;
 using Headless.Messaging.Registration;
 
-namespace Headless.Messaging.RabbitMq;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Messaging;
 
 /// <summary>Extension methods that attach RabbitMQ provider-specific options to a consumer registration.</summary>
 [PublicAPI]
@@ -66,7 +67,7 @@ public sealed class RabbitMqConsumerConfigBuilder
     /// <summary>
     /// Overrides the RabbitMQ <c>basicQos</c> prefetch count for this consumer.
     /// Controls how many unacknowledged messages the broker delivers to the consumer at once.
-    /// When not set, the global channel prefetch configured in <c>RabbitMqOptions</c> is used.
+    /// When not set, the global channel prefetch configured in <c>RabbitMqMessagingOptions</c> is used.
     /// </summary>
     /// <param name="prefetchCount">The maximum number of unacknowledged messages to prefetch.</param>
     /// <returns>The same builder for chaining.</returns>

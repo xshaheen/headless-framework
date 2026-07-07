@@ -12,11 +12,12 @@ Provides a storage-independent API for managing application settings with suppor
 - `ISettingDefinitionManager` — looks up and enumerates all registered setting definitions
 - `ISettingDefinitionProvider` — contributes setting definitions at startup via `ISettingDefinitionContext`
 - `SettingDefinition` — describes a setting's name, default value, display metadata, encryption flag, inheritance flag, client-visibility flag, allowed providers, and custom properties
-- `SettingValue` — record returned by `GetAllAsync` carrying the resolved string value
-- `ISettingDefinitionContext` — context passed to `ISettingDefinitionProvider.Define()`; exposes `Add(params ReadOnlySpan<SettingDefinition>)`, `GetOrDefault(name)`, and `GetAll()`
+- `SettingValue` — immutable record `SettingValue(string Name, string? Value, SettingValueProvider? Provider = null)` returned by `GetAsync` and `GetAllAsync`; `Provider` attributes the resolving value provider (or `null` on a miss)
+- `SettingValueProvider` — immutable record `SettingValueProvider(string Name, string? Key)` identifying the provider name and its per-provider key
+- `ISettingDefinitionContext` — context passed to `ISettingDefinitionProvider.Define()`; exposes the factory `Add(name, defaultValue?, displayName?, description?, isVisibleToClients?, isInherited?, isEncrypted?)` (creates, registers, and returns the definition), plus `GetOrDefault(name)` and `GetAll()`
 - `SettingValueProviderNames` — constants `DefaultValue`, `Configuration`, `Global`, `Tenant`, `User` for targeting built-in providers
-- General extension members on `ISettingManager`: `IsTrueAsync`, `IsFalseAsync`, `FindAsync<T>` (deserializes JSON), `SetAsync<T>` (serializes to JSON)
-- Scoped extension members: `FindForTenantAsync` / `SetForTenantAsync` / `GetAllForTenantAsync` (and `*ForCurrentTenant*` variants), equivalent `*ForUser*` / `*ForCurrentUser*` set, `FindGlobalAsync` / `SetGlobalAsync` / `GetAllGlobalAsync`, `FindDefaultAsync` / `GetAllDefaultAsync`, `FindInConfigurationAsync` / `GetAllInConfigurationAsync`
+- General extension members on `ISettingManager`: `IsTrueAsync`, `IsFalseAsync`, `GetAsync<T>` (deserializes JSON), `SetAsync<T>` (serializes to JSON)
+- Scoped extension members: `GetForTenantAsync` / `SetForTenantAsync` / `GetAllForTenantAsync` (and `*ForCurrentTenant*` variants), equivalent `*ForUser*` / `*ForCurrentUser*` set, `GetGlobalAsync` / `SetGlobalAsync` / `GetAllGlobalAsync`, `GetDefaultAsync` / `GetAllDefaultAsync`, `GetInConfigurationAsync` / `GetAllInConfigurationAsync`. The `GetAll*` helpers return `IReadOnlyList<SettingValue>`
 
 ## Installation
 
@@ -61,14 +62,13 @@ public sealed class AppSettingDefinitionProvider : ISettingDefinitionProvider
 {
     public void Define(ISettingDefinitionContext context)
     {
+        context.Add(name: "App.MaxFileSize", defaultValue: "10485760", displayName: "Maximum File Size");
+
         context.Add(
-            new SettingDefinition(name: "App.MaxFileSize", defaultValue: "10485760", displayName: "Maximum File Size"),
-            new SettingDefinition(
-                name: "App.ApiKey",
-                displayName: "API Key",
-                isEncrypted: true,
-                isVisibleToClients: false
-            )
+            name: "App.ApiKey",
+            displayName: "API Key",
+            isEncrypted: true,
+            isVisibleToClients: false
         );
     }
 }

@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
-namespace Headless.Api;
+namespace Headless.Api.ServiceDefaults;
 
 /// <summary>Options for <see cref="SetupApi.MapHeadlessEndpoints(WebApplication, Action{HeadlessApiDefaultEndpointOptions}?)"/>.</summary>
 [PublicAPI]

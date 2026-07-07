@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Api;
+namespace Headless.OpenApi.Nswag;
 
 /// <summary>
 /// Options that control which Headless-specific features are applied during NSwag document generation.

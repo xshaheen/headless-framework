@@ -4,13 +4,13 @@ Defines the interface for extracting text from media files for indexing.
 
 ## Problem Solved
 
-Provides a single, format-agnostic contract (`IMediaFileTextProvider`) for extracting textual content from document streams. Application code depends on this interface only; concrete format implementations are provided by `Headless.Media.Indexing` or custom implementations.
+Provides a format-agnostic contract (`IMediaFileTextProvider`) for extracting textual content from document streams, plus a resolver (`IMediaFileTextProviderResolver`) that selects the right provider by format. Application code depends on these interfaces only; concrete format implementations are provided by `Headless.Media.Indexing` or custom implementations.
 
 ## Key Features
 
-- `IMediaFileTextProvider` — single-method interface: `Task<string> GetTextAsync(Stream fileStream)`
+- `IMediaFileTextProvider` — single-method interface: `Task<string> GetTextAsync(Stream fileStream, CancellationToken cancellationToken = default)`
+- `IMediaFileTextProviderResolver` — `GetProvider(string fileExtensionOrMimeType)` returns the provider for a format, or `null` when unsupported
 - Stream-based API keeps format-parsing details out of application code
-- No MIME-type coupling in the interface — format selection is the caller's responsibility
 
 ## Installation
 
@@ -22,29 +22,22 @@ dotnet add package Headless.Media.Indexing.Abstractions
 
 ```csharp
 // Application service depending only on the abstraction
-public sealed class DocumentIndexer(IEnumerable<IMediaFileTextProvider> providers)
+public sealed class DocumentIndexer(IMediaFileTextProviderResolver resolver)
 {
-    private static readonly Dictionary<string, Type> _mimeMap = new(StringComparer.OrdinalIgnoreCase)
+    public async Task<string?> ExtractTextAsync(
+        Stream fileStream,
+        string mimeTypeOrExtension,
+        CancellationToken ct = default
+    )
     {
-        ["application/pdf"] = typeof(PdfMediaFileTextProvider),
-        ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"] =
-            typeof(WordDocumentMediaFileTextProvider),
-        ["application/vnd.openxmlformats-officedocument.presentationml.presentation"] =
-            typeof(PresentationDocumentMediaFileTextProvider),
-    };
+        var provider = resolver.GetProvider(mimeTypeOrExtension);
 
-    public async Task<string?> ExtractTextAsync(Stream fileStream, string mimeType, CancellationToken ct = default)
-    {
-        if (!_mimeMap.TryGetValue(mimeType, out var providerType))
+        if (provider is null)
         {
             return null;
         }
 
-        var provider = providers.FirstOrDefault(p => p.GetType() == providerType);
-        if (provider is null)
-            return null;
-
-        return await provider.GetTextAsync(fileStream).ConfigureAwait(false);
+        return await provider.GetTextAsync(fileStream, ct).ConfigureAwait(false);
     }
 }
 ```

@@ -14,7 +14,7 @@ public sealed class AmazonSqsConsumerClientFactoryTests : TestBase
     {
         // given
         var options = Options.Create(
-            new AmazonSqsOptions
+            new AmazonSqsMessagingOptions
             {
                 Region = Amazon.RegionEndpoint.USEast1,
                 SqsServiceUrl = "http://localhost:4566",
@@ -40,7 +40,7 @@ public sealed class AmazonSqsConsumerClientFactoryTests : TestBase
     {
         // given
         var options = Options.Create(
-            new AmazonSqsOptions
+            new AmazonSqsMessagingOptions
             {
                 Region = Amazon.RegionEndpoint.USEast1,
                 SqsServiceUrl = "http://localhost:4566",
@@ -66,7 +66,7 @@ public sealed class AmazonSqsConsumerClientFactoryTests : TestBase
     {
         // given
         var options = Options.Create(
-            new AmazonSqsOptions
+            new AmazonSqsMessagingOptions
             {
                 Region = Amazon.RegionEndpoint.USEast1,
                 SqsServiceUrl = "http://localhost:4566",
@@ -93,7 +93,7 @@ public sealed class AmazonSqsConsumerClientFactoryTests : TestBase
     {
         // given
         var options = Options.Create(
-            new AmazonSqsOptions
+            new AmazonSqsMessagingOptions
             {
                 Region = Amazon.RegionEndpoint.USEast1,
                 SqsServiceUrl = "http://localhost:4566",
@@ -119,7 +119,7 @@ public sealed class AmazonSqsConsumerClientFactoryTests : TestBase
     {
         // given
         var options = Options.Create(
-            new AmazonSqsOptions
+            new AmazonSqsMessagingOptions
             {
                 Region = Amazon.RegionEndpoint.USEast1,
                 SqsServiceUrl = "http://localhost:4566",

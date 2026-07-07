@@ -19,7 +19,7 @@ public sealed class AzureServiceBusMessageBuilderExtensionsTests
             (IProviderHeaderContributions)builder.Build().ProviderConfigs.Values.Single()
         ).HeaderContributions.Single();
 
-        contribution.HeaderName.Should().Be(AzureServiceBusHeaders.PartitionKey);
+        contribution.HeaderName.Should().Be(AzureServiceBusMessagingHeaders.PartitionKey);
         contribution.Selector(new TestMessage("tenant-a")).Should().Be("tenant-a");
     }
 
@@ -44,7 +44,7 @@ public sealed class AzureServiceBusMessageBuilderExtensionsTests
         var message = _TransportMessage(
             new Dictionary<string, string?>(StringComparer.Ordinal)
             {
-                [AzureServiceBusHeaders.PartitionKey] = "tenant-a",
+                [AzureServiceBusMessagingHeaders.PartitionKey] = "tenant-a",
             }
         );
 
@@ -59,8 +59,8 @@ public sealed class AzureServiceBusMessageBuilderExtensionsTests
         var message = _TransportMessage(
             new Dictionary<string, string?>(StringComparer.Ordinal)
             {
-                [AzureServiceBusHeaders.SessionId] = "session-a",
-                [AzureServiceBusHeaders.PartitionKey] = "partition-b",
+                [AzureServiceBusMessagingHeaders.SessionId] = "session-a",
+                [AzureServiceBusMessagingHeaders.PartitionKey] = "partition-b",
             }
         );
 
@@ -75,7 +75,7 @@ public sealed class AzureServiceBusMessageBuilderExtensionsTests
         var message = _TransportMessage(
             new Dictionary<string, string?>(StringComparer.Ordinal)
             {
-                [AzureServiceBusHeaders.PartitionKey] = "tenant-a",
+                [AzureServiceBusMessagingHeaders.PartitionKey] = "tenant-a",
             }
         );
 

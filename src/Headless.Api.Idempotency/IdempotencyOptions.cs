@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Api;
+namespace Headless.Api.Idempotency;
 
 /// <summary>
 /// Configures the behavior of the idempotency middleware: key derivation, TTL, in-flight

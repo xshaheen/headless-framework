@@ -184,9 +184,9 @@ public sealed class ReCaptchaTagHelperTests
         return snapshot;
     }
 
-    private static IReCaptchaLanguageCodeProvider _Language(string code)
+    private static ICaptchaLanguageCodeProvider _Language(string code)
     {
-        var provider = Substitute.For<IReCaptchaLanguageCodeProvider>();
+        var provider = Substitute.For<ICaptchaLanguageCodeProvider>();
         provider.GetLanguageCode().Returns(code);
 
         return provider;

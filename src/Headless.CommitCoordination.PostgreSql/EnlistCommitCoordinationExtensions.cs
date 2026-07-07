@@ -1,10 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.CommitCoordination;
+using Headless.CommitCoordination.PostgreSql;
 using Microsoft.Extensions.DependencyInjection;
-using Npgsql;
 
-namespace Headless.CommitCoordination.PostgreSql;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Npgsql;
 
 /// <summary>
 /// Enlists an already-open Npgsql transaction in commit coordination: pushes the ambient coordinated scope and
@@ -29,7 +31,7 @@ namespace Headless.CommitCoordination.PostgreSql;
 /// If the caller never signals, disposing the scope discards the enlisted work (un-signalled dispose rolls back).
 /// </remarks>
 [PublicAPI]
-public static class EnlistCommitCoordinationExtensions
+public static class HeadlessNpgsqlEnlistCommitCoordinationExtensions
 {
     extension(NpgsqlConnection connection)
     {

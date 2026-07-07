@@ -84,7 +84,7 @@ public sealed class SettingsCustomSchemaTests(SettingsTestFixture fixture) : Set
 
         // when
         await settingManager.SetForUserAsync(providerKey, _SettingName, value, cancellationToken: AbortToken);
-        var storedValue = await settingManager.FindForUserAsync(
+        var storedValue = await settingManager.GetForUserAsync(
             providerKey,
             _SettingName,
             cancellationToken: AbortToken
@@ -227,10 +227,8 @@ public sealed class SettingsCustomSchemaTests(SettingsTestFixture fixture) : Set
     {
         public void Define(ISettingDefinitionContext context)
         {
-            var definition = new SettingDefinition(_SettingName, "Disabled");
+            var definition = context.Add(_SettingName, "Disabled");
             definition.Providers.Add(UserSettingValueProvider.ProviderName);
-
-            context.Add(definition);
         }
     }
 }

@@ -7,7 +7,7 @@ using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 
-namespace Headless.Api;
+namespace Headless.Api.ServiceDefaults;
 
 /// <summary>Options for configuring Headless API service defaults.</summary>
 [PublicAPI]

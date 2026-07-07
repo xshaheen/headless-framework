@@ -2,10 +2,10 @@
 
 using FluentValidation;
 using FluentValidation.Validators;
-using Headless.Api.SchemaProcessors.FluentValidation.Models;
+using Headless.OpenApi.Nswag.SchemaProcessors.FluentValidation.Models;
 using Headless.Text;
 
-namespace Headless.Api.SchemaProcessors.FluentValidation;
+namespace Headless.OpenApi.Nswag.SchemaProcessors.FluentValidation;
 
 /// <summary>Extensions for some swagger-specific work.</summary>
 internal static class ValidationExtensions

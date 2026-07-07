@@ -2,6 +2,7 @@
 
 using Headless.Sql;
 using Headless.Sql.PostgreSql;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
@@ -11,7 +12,7 @@ namespace Tests.PostgreSql;
 /// Unit tests for <see cref="NpgsqlConnectionStringChecker"/>.
 /// These are structural tests; integration tests require actual database.
 /// </summary>
-public sealed class NpgsqlConnectionStringCheckerTests
+public sealed class NpgsqlConnectionStringCheckerTests : TestBase
 {
     [Fact]
     public void should_implement_IConnectionStringChecker()
@@ -35,7 +36,8 @@ public sealed class NpgsqlConnectionStringCheckerTests
 
         // when
         var (connected, databaseExists) = await sut.CheckAsync(
-            "Host=invalid-host-that-does-not-exist;Database=test;Timeout=1"
+            "Host=invalid-host-that-does-not-exist;Database=test;Timeout=1",
+            AbortToken
         );
 
         // then
@@ -87,7 +89,7 @@ public sealed class NpgsqlConnectionStringCheckerTests
         var sut = new NpgsqlConnectionStringChecker(logger);
 
         // when - use invalid host to trigger exception
-        await sut.CheckAsync("Host=invalid-host-xyz;Database=test");
+        await sut.CheckAsync("Host=invalid-host-xyz;Database=test", AbortToken);
 
         // then - verify a warning-level Log call was issued.
         // Source-generated LoggerMessage uses a private state struct, so we can't match Log<object>

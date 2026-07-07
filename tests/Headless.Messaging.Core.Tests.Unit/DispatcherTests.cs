@@ -3,6 +3,7 @@ using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
+using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Processor;
 using Headless.Testing.Tests;
@@ -726,8 +727,7 @@ public sealed class DispatcherTests : TestBase
             .ChangePublishStateToDelayedAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
             .Returns<ValueTask>(_ => throw new InvalidOperationException("storage down"));
 
-#pragma warning disable CA2000 // The test verifies DisposeAsync via the assertion below.
-        var dispatcher = new Dispatcher(
+        await using var dispatcher = new Dispatcher(
             _logger,
             sender,
             options,
@@ -736,7 +736,6 @@ public sealed class DispatcherTests : TestBase
             TimeProvider.System,
             _scopeFactory
         );
-#pragma warning restore CA2000
 
         using var cts = new CancellationTokenSource();
         await dispatcher.StartAsync(cts.Token);

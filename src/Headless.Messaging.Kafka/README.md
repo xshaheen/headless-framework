@@ -66,7 +66,7 @@ options.ForMessage<OrderEvent>(message =>
 );
 ```
 
-`PartitionBy(...)` stamps `KafkaHeaders.KafkaKey` (`headless-kafka-key`) during publish. The selector output is broker-visible metadata, so do not put secrets or raw PII in it.
+`PartitionBy(...)` stamps `KafkaMessagingHeaders.KafkaKey` (`headless-kafka-key`) during publish. The selector output is broker-visible metadata, so do not put secrets or raw PII in it.
 
 Consumer-side Kafka knobs attach to the consumer registration:
 
@@ -126,6 +126,8 @@ options.EnableSubscriberParallelExecute = false; // Disable parallel execution
 - `SubscribeAsync(...)` joins the configured consumer group to those topics.
 - Partition keys control ordering. Parallel handlers or multiple partitions can reorder observed processing.
 - Topic names, header sizes, and record sizes follow Kafka broker limits.
+
+**Registration overloads:** `UseKafka(...)` accepts the standard trio — an `IConfiguration` section, an `Action<KafkaMessagingOptions>` delegate, or an `Action<KafkaMessagingOptions, IServiceProvider>` delegate — plus the bootstrap-servers convenience form. `RetriableErrorCodes` / `DefaultRetriableErrorCodes` are `int` values of Confluent's `ErrorCode` enum, so configuring retries needs no compile-time `Confluent.Kafka` reference.
 
 ## Dependencies
 

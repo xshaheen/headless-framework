@@ -1,12 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Coordination;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
-public sealed class DeadOwnerRecoveryBridgeTests
+public sealed class DeadOwnerRecoveryBridgeTests : TestBase
 {
     private static NodeIdentity _Identity(string node, long incarnation) =>
         new(new NodeId(node), new NodeIncarnation(incarnation));
@@ -103,7 +104,7 @@ public sealed class DeadOwnerRecoveryBridgeTests
             ),
         ];
 
-        await bridge.ReconcileOnceAsync(TestContext.Current.CancellationToken);
+        await bridge.ReconcileOnceAsync(AbortToken);
 
         await reclaimer.Received(1).ReclaimAsync(_Batch("node-dead@5"), Arg.Any<CancellationToken>());
         await reclaimer.Received(1).ReclaimAsync(_BatchWithout("node-alive@7"), Arg.Any<CancellationToken>());
@@ -117,7 +118,7 @@ public sealed class DeadOwnerRecoveryBridgeTests
         membership.Snapshot = [_Dead("node-a", 5)];
 
         await bridge.HandleEventAsync(new NodeLeft(_Identity("node-a", 5)));
-        await bridge.ReconcileOnceAsync(TestContext.Current.CancellationToken);
+        await bridge.ReconcileOnceAsync(AbortToken);
 
         await reclaimer.Received(1).ReclaimAsync(_Batch("node-a@5"), Arg.Any<CancellationToken>());
     }
@@ -128,9 +129,9 @@ public sealed class DeadOwnerRecoveryBridgeTests
         var (bridge, membership, reclaimer) = _Create();
         membership.Snapshot = [_Dead("node-a", 5)];
 
-        await bridge.ReconcileOnceAsync(TestContext.Current.CancellationToken);
-        await bridge.ReconcileOnceAsync(TestContext.Current.CancellationToken);
-        await bridge.ReconcileOnceAsync(TestContext.Current.CancellationToken);
+        await bridge.ReconcileOnceAsync(AbortToken);
+        await bridge.ReconcileOnceAsync(AbortToken);
+        await bridge.ReconcileOnceAsync(AbortToken);
 
         await reclaimer.Received(1).ReclaimAsync(_Batch("node-a@5"), Arg.Any<CancellationToken>());
     }
@@ -141,11 +142,11 @@ public sealed class DeadOwnerRecoveryBridgeTests
         var (bridge, membership, reclaimer) = _Create();
 
         membership.Snapshot = [_Dead("node-a", 5)];
-        await bridge.ReconcileOnceAsync(TestContext.Current.CancellationToken);
+        await bridge.ReconcileOnceAsync(AbortToken);
 
         // node-a@5 ages out of the snapshot, a fresh node-a@6 starts and dies.
         membership.Snapshot = [_Dead("node-a", 6)];
-        await bridge.ReconcileOnceAsync(TestContext.Current.CancellationToken);
+        await bridge.ReconcileOnceAsync(AbortToken);
 
         await reclaimer.Received(1).ReclaimAsync(_Batch("node-a@5"), Arg.Any<CancellationToken>());
         await reclaimer.Received(1).ReclaimAsync(_Batch("node-a@6"), Arg.Any<CancellationToken>());
@@ -166,7 +167,7 @@ public sealed class DeadOwnerRecoveryBridgeTests
         await bridge.HandleEventAsync(new NodeLeft(_Identity("node-a", 5)));
 
         // The next reconcile retries because the failed owner was removed from the reclaimed-set.
-        await bridge.ReconcileOnceAsync(TestContext.Current.CancellationToken);
+        await bridge.ReconcileOnceAsync(AbortToken);
 
         await reclaimer.Received(2).ReclaimAsync(_Batch("node-a@5"), Arg.Any<CancellationToken>());
     }

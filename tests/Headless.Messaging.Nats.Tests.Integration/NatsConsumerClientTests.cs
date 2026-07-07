@@ -143,7 +143,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
         var subject = $"{streamName}.events";
 
         var opts = Options.Create(
-            new MessagingNatsOptions
+            new NatsMessagingOptions
             {
                 Servers = fixture.ConnectionString,
                 EnableSubscriberClientStreamAndSubjectCreation = true,
@@ -222,7 +222,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
     {
         // given
         var badOptions = Options.Create(
-            new MessagingNatsOptions
+            new NatsMessagingOptions
             {
                 Servers = "nats://localhost:19999", // no server here
                 ConfigureConnection = o => o with { ConnectTimeout = TimeSpan.FromSeconds(2) },
@@ -291,10 +291,10 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
         }
     }
 
-    private IOptions<MessagingNatsOptions> _CreateOptions(bool enableStreamCreation)
+    private IOptions<NatsMessagingOptions> _CreateOptions(bool enableStreamCreation)
     {
         return Options.Create(
-            new MessagingNatsOptions
+            new NatsMessagingOptions
             {
                 Servers = fixture.ConnectionString,
                 EnableSubscriberClientStreamAndSubjectCreation = enableStreamCreation,

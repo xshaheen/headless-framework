@@ -1,14 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
-using Headless.AuditLog;
 using Headless.AuditLog.Internal;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Microsoft.Extensions.DependencyInjection;
+namespace Headless.AuditLog;
 
 [PublicAPI]
 public static class SetupAuditLogEntityFramework

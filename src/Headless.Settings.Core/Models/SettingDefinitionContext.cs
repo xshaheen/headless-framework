@@ -18,16 +18,28 @@ public sealed class SettingDefinitionContext(Dictionary<string, SettingDefinitio
     }
 
     /// <inheritdoc/>
-    public void Add(params ReadOnlySpan<SettingDefinition> definitions)
+    public SettingDefinition Add(
+        string name,
+        string? defaultValue = null,
+        string? displayName = null,
+        string? description = null,
+        bool isVisibleToClients = false,
+        bool isInherited = true,
+        bool isEncrypted = false
+    )
     {
-        if (definitions.IsEmpty)
-        {
-            return;
-        }
+        var definition = new SettingDefinition(
+            name,
+            defaultValue,
+            displayName,
+            description,
+            isVisibleToClients,
+            isInherited,
+            isEncrypted
+        );
 
-        foreach (var definition in definitions)
-        {
-            settings[definition.Name] = definition;
-        }
+        settings[definition.Name] = definition;
+
+        return definition;
     }
 }

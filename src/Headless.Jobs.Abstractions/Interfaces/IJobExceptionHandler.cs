@@ -21,7 +21,13 @@ public interface IJobExceptionHandler
     /// <param name="exception">The exception thrown by the job function.</param>
     /// <param name="jobId">The identifier of the failing job row.</param>
     /// <param name="jobType">Whether the failing row is a time job or a cron occurrence.</param>
-    Task HandleExceptionAsync(Exception exception, Guid jobId, JobType jobType);
+    /// <param name="cancellationToken">Token signalled on host shutdown; honor it in any async I/O.</param>
+    Task HandleExceptionAsync(
+        Exception exception,
+        Guid jobId,
+        JobType jobType,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// Called when a job is cancelled — either cooperatively via <c>JobFunctionContext.RequestCancellation</c>
@@ -30,5 +36,11 @@ public interface IJobExceptionHandler
     /// <param name="exception">The <c>OperationCanceledException</c> or derived exception.</param>
     /// <param name="jobId">The identifier of the cancelled job row.</param>
     /// <param name="jobType">Whether the cancelled row is a time job or a cron occurrence.</param>
-    Task HandleCanceledExceptionAsync(Exception exception, Guid jobId, JobType jobType);
+    /// <param name="cancellationToken">Token signalled on host shutdown; honor it in any async I/O.</param>
+    Task HandleCanceledExceptionAsync(
+        Exception exception,
+        Guid jobId,
+        JobType jobType,
+        CancellationToken cancellationToken = default
+    );
 }

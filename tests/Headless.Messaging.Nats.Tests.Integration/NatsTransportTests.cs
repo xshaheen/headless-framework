@@ -38,7 +38,7 @@ public sealed class NatsTransportTests(NatsFixture fixture) : TransportTestsBase
     protected override IBusTransport GetBusTransport()
     {
         var natsOptions = Options.Create(
-            new MessagingNatsOptions
+            new NatsMessagingOptions
             {
                 Servers = fixture.ConnectionString,
                 ConnectionPoolSize = 2,

@@ -3,9 +3,9 @@
 using Headless.Abstractions;
 using Headless.Caching;
 using Headless.DistributedLocks;
-using Headless.DistributedLocks.Redis;
 using Headless.Domain;
 using Headless.Features;
+using Headless.Messaging;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;

@@ -34,7 +34,7 @@ public sealed class SqlServerCoordinatedTransactionConformanceTests
     public override async ValueTask InitializeAsync()
     {
         await base.InitializeAsync();
-        await _fixture.StartAsync(TestContext.Current.CancellationToken);
+        await _fixture.StartAsync(AbortToken);
     }
 
     protected override async ValueTask DisposeAsyncCore()

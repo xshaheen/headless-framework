@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.CommitCoordination;
-using Headless.CommitCoordination.PostgreSql;
 using Headless.Testing.Testcontainers;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;

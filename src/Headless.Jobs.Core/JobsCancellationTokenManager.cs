@@ -22,7 +22,7 @@ public static class JobsCancellationTokenManager
 
     internal static void AddTickerCancellationToken(
         CancellationTokenSource cancellationSource,
-        InternalFunctionContext context,
+        JobExecutionState context,
         bool isDue
     )
     {

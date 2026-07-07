@@ -15,6 +15,7 @@ internal sealed class FeatureValueRecordConfiguration(FeaturesStorageOptions opt
     public void Configure(EntityTypeBuilder<FeatureValueRecord> b)
     {
         b.ToTable(options.FeatureValuesTableName, options.Schema);
+        b.ConfigureHeadlessConvention();
         b.Property(x => x.Name).HasMaxLength(FeatureValueRecordConstants.NameMaxLength).IsRequired();
         b.Property(x => x.Value).HasMaxLength(FeatureValueRecordConstants.ValueMaxLength).IsRequired();
         b.Property(x => x.ProviderName).HasMaxLength(FeatureValueRecordConstants.ProviderNameMaxLength).IsRequired();

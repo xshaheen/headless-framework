@@ -2,9 +2,11 @@
 
 using Confluent.Kafka;
 using Headless.Checks;
+using Headless.Messaging.Kafka;
 using Headless.Messaging.Registration;
 
-namespace Headless.Messaging.Kafka;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Messaging;
 
 /// <summary>Extension methods that attach Kafka provider-specific options to a message or consumer registration.</summary>
 [PublicAPI]
@@ -145,5 +147,11 @@ internal sealed class KafkaMessageConfig<TMessage>(Func<TMessage, string?>? part
     public IReadOnlyList<ProviderHeaderContribution> HeaderContributions { get; } =
         partitionSelector is null
             ? []
-            : [new ProviderHeaderContribution(KafkaHeaders.KafkaKey, message => partitionSelector((TMessage)message))];
+            :
+            [
+                new ProviderHeaderContribution(
+                    KafkaMessagingHeaders.KafkaKey,
+                    message => partitionSelector((TMessage)message)
+                ),
+            ];
 }

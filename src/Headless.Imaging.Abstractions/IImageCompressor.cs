@@ -8,6 +8,7 @@ namespace Headless.Imaging;
 /// instances registered in the DI container. Contributors are tried in reverse registration order;
 /// the first one that does not return <see cref="ImageProcessState.Unsupported"/> wins.
 /// </remarks>
+[PublicAPI]
 public interface IImageCompressor
 {
     /// <summary>Compresses the image in <paramref name="stream"/> according to <paramref name="args"/>.</summary>

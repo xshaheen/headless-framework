@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
-using Headless.Api;
+using Headless.Api.Idempotency;
 using Headless.Caching;
 using Headless.Constants;
 using Headless.Testing.Tests;

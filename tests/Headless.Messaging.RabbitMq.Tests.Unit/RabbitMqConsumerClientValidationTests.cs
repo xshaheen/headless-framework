@@ -10,7 +10,7 @@ namespace Tests;
 public sealed class RabbitMqConsumerClientValidationTests : TestBase
 {
     private readonly IConnectionChannelPool _pool;
-    private readonly IOptions<RabbitMqOptions> _options;
+    private readonly IOptions<RabbitMqMessagingOptions> _options;
     private readonly IServiceProvider _serviceProvider;
 
     public RabbitMqConsumerClientValidationTests()
@@ -18,7 +18,15 @@ public sealed class RabbitMqConsumerClientValidationTests : TestBase
         _pool = Substitute.For<IConnectionChannelPool>();
         _pool.Exchange.Returns("test-exchange");
 
-        _options = Options.Create(new RabbitMqOptions { HostName = "localhost", Port = 5672 });
+        _options = Options.Create(
+            new RabbitMqMessagingOptions
+            {
+                HostName = "localhost",
+                Port = 5672,
+                UserName = "test_user",
+                Password = "test_pass",
+            }
+        );
 
         _serviceProvider = Substitute.For<IServiceProvider>();
     }

@@ -20,14 +20,14 @@ namespace Headless.Payments.Paymob.CashIn.Models.Callback;
 public sealed class CashInCallbackTransaction
 {
     [JsonPropertyName("id")]
-    public int Id { get; init; }
+    public long Id { get; init; }
 
     /// <summary>
     /// It's indicating the amount paid to this transaction, it might be different from
     /// the original order price, and it is in cents.
     /// </summary>
     [JsonPropertyName("amount_cents")]
-    public int AmountCents { get; init; }
+    public long AmountCents { get; init; }
 
     /// <summary>
     /// True in one of these cases:
@@ -87,10 +87,10 @@ public sealed class CashInCallbackTransaction
     public bool IsStandalonePayment { get; init; }
 
     [JsonPropertyName("integration_id")]
-    public int IntegrationId { get; init; }
+    public long IntegrationId { get; init; }
 
     [JsonPropertyName("profile_id")]
-    public int ProfileId { get; init; }
+    public long ProfileId { get; init; }
 
     [JsonPropertyName("has_parent_transaction")]
     public bool HasParentTransaction { get; init; }
@@ -105,7 +105,7 @@ public sealed class CashInCallbackTransaction
     public string? ApiSource { get; init; }
 
     [JsonPropertyName("merchant_commission")]
-    public int MerchantCommission { get; init; }
+    public long MerchantCommission { get; init; }
 
     [JsonPropertyName("is_void")]
     public bool IsVoid { get; init; }
@@ -117,25 +117,25 @@ public sealed class CashInCallbackTransaction
     public bool IsHidden { get; init; }
 
     [JsonPropertyName("error_occured")]
-    public bool ErrorOccured { get; init; }
+    public bool ErrorOccurred { get; init; }
 
     [JsonPropertyName("is_live")]
     public bool IsLive { get; init; }
 
     [JsonPropertyName("refunded_amount_cents")]
-    public int RefundedAmountCents { get; init; }
+    public long RefundedAmountCents { get; init; }
 
     [JsonPropertyName("source_id")]
-    public int SourceId { get; init; }
+    public long SourceId { get; init; }
 
     [JsonPropertyName("is_captured")]
     public bool IsCaptured { get; init; }
 
     [JsonPropertyName("captured_amount")]
-    public int CapturedAmount { get; init; }
+    public long CapturedAmount { get; init; }
 
     [JsonPropertyName("owner")]
-    public int Owner { get; init; }
+    public long Owner { get; init; }
 
     [JsonPropertyName("terminal_id")]
     public string? TerminalId { get; init; }
@@ -166,7 +166,7 @@ public sealed class CashInCallbackTransaction
     public object? MerchantStaffTag { get; init; }
 
     [JsonPropertyName("parent_transaction")]
-    public int? ParentTransaction { get; init; }
+    public long? ParentTransaction { get; init; }
 
     [JsonExtensionData]
     public IDictionary<string, object?>? ExtensionData { get; set; }
@@ -186,7 +186,7 @@ public sealed class CashInCallbackTransaction
         return AmountCents.ToString(CultureInfo.InvariantCulture)
             + CreatedAt
             + Currency
-            + toString(ErrorOccured)
+            + toString(ErrorOccurred)
             + toString(HasParentTransaction)
             + Id.ToString(CultureInfo.InvariantCulture)
             + IntegrationId.ToString(CultureInfo.InvariantCulture)

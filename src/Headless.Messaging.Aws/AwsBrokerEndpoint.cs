@@ -4,7 +4,7 @@ namespace Headless.Messaging.Aws;
 
 internal static class AwsBrokerEndpoint
 {
-    public static string Resolve(string? serviceUrl, string serviceName, AmazonSqsOptions options)
+    public static string Resolve(string? serviceUrl, string serviceName, AmazonSqsMessagingOptions options)
     {
         if (
             Uri.TryCreate(serviceUrl, UriKind.Absolute, out var serviceUri)

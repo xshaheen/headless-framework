@@ -1,11 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
-using Headless.Api;
+using Headless.Api.ServiceDefaults;
 using Headless.DistributedLocks;
-using Headless.DistributedLocks.Redis;
 using Headless.EntityFramework.Migrations.Startup;
 using Headless.Features;
+using Headless.Messaging;
 using Headless.Permissions;
 using Headless.Settings;
 using Microsoft.EntityFrameworkCore;

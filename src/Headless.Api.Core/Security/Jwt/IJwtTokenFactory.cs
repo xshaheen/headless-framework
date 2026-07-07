@@ -3,6 +3,7 @@
 using System.Security.Claims;
 using Headless.Abstractions;
 using Headless.Api.Security.Claims;
+using Headless.Checks;
 using Headless.Constants;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
@@ -15,55 +16,17 @@ public interface IJwtTokenFactory
 {
     /// <summary>Creates a signed JWT token from a flat collection of claims.</summary>
     /// <param name="claims">Claims to embed in the token.</param>
-    /// <param name="ttl">Token lifetime measured from the current UTC time.</param>
-    /// <param name="signingKey">HMAC-SHA256 signing key (UTF-8 encoded); must be at least 32 bytes.</param>
-    /// <param name="encryptingKey">
-    /// Optional AES-256-CBC/HMAC-SHA512 encryption key (UTF-8 encoded).
-    /// When <see langword="null"/> the token is signed but not encrypted.
-    /// </param>
-    /// <param name="issuer">Optional <c>iss</c> claim value.</param>
-    /// <param name="audience">Optional <c>aud</c> claim value.</param>
-    /// <param name="notBefore">
-    /// Optional offset from <c>iat</c> at which the token becomes valid.
-    /// When <see langword="null"/> no <c>nbf</c> claim is added.
-    /// </param>
+    /// <param name="request">Token lifetime, signing/encryption keys, and registered-claim values.</param>
     /// <returns>A compact-serialized JWT string.</returns>
-    /// <exception cref="ArgumentException"><paramref name="signingKey"/> encodes to fewer than 32 bytes.</exception>
-    string CreateJwtToken(
-        IEnumerable<Claim> claims,
-        TimeSpan ttl,
-        string signingKey,
-        string? encryptingKey,
-        string? issuer,
-        string? audience,
-        TimeSpan? notBefore = null
-    );
+    /// <exception cref="ArgumentException"><see cref="JwtTokenRequest.SigningKey"/> encodes to fewer than 32 bytes.</exception>
+    string CreateJwtToken(IEnumerable<Claim> claims, JwtTokenRequest request);
 
     /// <summary>Creates a signed JWT token from a pre-built <see cref="ClaimsIdentity"/>.</summary>
     /// <param name="identity">Identity whose claims are embedded in the token.</param>
-    /// <param name="ttl">Token lifetime measured from the current UTC time.</param>
-    /// <param name="signingKey">HMAC-SHA256 signing key (UTF-8 encoded); must be at least 32 bytes.</param>
-    /// <param name="encryptingKey">
-    /// Optional AES-256-CBC/HMAC-SHA512 encryption key (UTF-8 encoded).
-    /// When <see langword="null"/> the token is signed but not encrypted.
-    /// </param>
-    /// <param name="issuer">Optional <c>iss</c> claim value.</param>
-    /// <param name="audience">Optional <c>aud</c> claim value.</param>
-    /// <param name="notBefore">
-    /// Optional offset from <c>iat</c> at which the token becomes valid.
-    /// When <see langword="null"/> no <c>nbf</c> claim is added.
-    /// </param>
+    /// <param name="request">Token lifetime, signing/encryption keys, and registered-claim values.</param>
     /// <returns>A compact-serialized JWT string.</returns>
-    /// <exception cref="ArgumentException"><paramref name="signingKey"/> encodes to fewer than 32 bytes.</exception>
-    string CreateJwtToken(
-        ClaimsIdentity identity,
-        TimeSpan ttl,
-        string signingKey,
-        string? encryptingKey,
-        string? issuer,
-        string? audience,
-        TimeSpan? notBefore = null
-    );
+    /// <exception cref="ArgumentException"><see cref="JwtTokenRequest.SigningKey"/> encodes to fewer than 32 bytes.</exception>
+    string CreateJwtToken(ClaimsIdentity identity, JwtTokenRequest request);
 
     /// <summary>Validates a JWT token and returns the resulting <see cref="ClaimsPrincipal"/>.</summary>
     /// <param name="token">The compact-serialized JWT string to validate.</param>
@@ -101,46 +64,34 @@ public interface IJwtTokenFactory
 public sealed class JwtTokenFactory(IClaimsPrincipalFactory claimsPrincipalFactory, IClock clock) : IJwtTokenFactory
 {
     /// <inheritdoc/>
-    /// <exception cref="ArgumentException"><paramref name="signingKey"/> encodes to fewer than 32 bytes.</exception>
-    public string CreateJwtToken(
-        IEnumerable<Claim> claims,
-        TimeSpan ttl,
-        string signingKey,
-        string? encryptingKey,
-        string? issuer,
-        string? audience,
-        TimeSpan? notBefore = null
-    )
+    /// <exception cref="ArgumentException"><see cref="JwtTokenRequest.SigningKey"/> encodes to fewer than 32 bytes.</exception>
+    public string CreateJwtToken(IEnumerable<Claim> claims, JwtTokenRequest request)
     {
         var identity = claimsPrincipalFactory.CreateClaimsIdentity(claims);
 
-        return CreateJwtToken(identity, ttl, signingKey, encryptingKey, issuer, audience, notBefore);
+        return CreateJwtToken(identity, request);
     }
 
     /// <inheritdoc/>
-    /// <exception cref="ArgumentException"><paramref name="signingKey"/> encodes to fewer than 32 bytes.</exception>
-    public string CreateJwtToken(
-        ClaimsIdentity identity,
-        TimeSpan ttl,
-        string signingKey,
-        string? encryptingKey,
-        string? issuer,
-        string? audience,
-        TimeSpan? notBefore = null
-    )
+    /// <exception cref="ArgumentException"><see cref="JwtTokenRequest.SigningKey"/> encodes to fewer than 32 bytes.</exception>
+    public string CreateJwtToken(ClaimsIdentity identity, JwtTokenRequest request)
     {
+        Argument.IsNotNull(request);
+
         var issuedAt = clock.UtcNow.UtcDateTime;
 
         var tokenDescriptor = new SecurityTokenDescriptor
         {
             Subject = identity,
             IssuedAt = issuedAt,
-            Expires = issuedAt.Add(ttl),
-            NotBefore = notBefore.HasValue ? issuedAt.Add(notBefore.Value) : null,
-            Issuer = issuer,
-            Audience = audience,
-            SigningCredentials = _GetSigningCredentials(signingKey),
-            EncryptingCredentials = encryptingKey is null ? null : _GetEncryptingCredentials(encryptingKey),
+            Expires = issuedAt.Add(request.Ttl),
+            NotBefore = request.NotBefore.HasValue ? issuedAt.Add(request.NotBefore.Value) : null,
+            Issuer = request.Issuer,
+            Audience = request.Audience,
+            SigningCredentials = _GetSigningCredentials(request.SigningKey),
+            EncryptingCredentials = request.EncryptingKey is null
+                ? null
+                : _GetEncryptingCredentials(request.EncryptingKey),
         };
 
         var token = JwtTokenHelper.TokenHandler.CreateToken(tokenDescriptor);

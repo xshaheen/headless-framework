@@ -2,6 +2,7 @@
 
 using Headless.Jobs.Entities;
 using Headless.Jobs.Interfaces.Managers;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -33,12 +34,12 @@ namespace Tests;
 /// <c>TimeJob_relational_coordinator_but_non_coordinated_provider_throws_mis_wire</c>).
 /// </para>
 /// </summary>
-public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fixture)
+public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fixture) : TestBase
     where TFixture : class, IJobsCoordinationFixture
 {
     public virtual async Task domain_write_and_enqueue_commit_atomically()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         using var host = await _StartHostAsync(ct);
 
         try
@@ -67,7 +68,7 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
 
     public virtual async Task rollback_discards_enqueue_and_domain_write()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         using var host = await _StartHostAsync(ct);
 
         try
@@ -108,7 +109,7 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
     // an R3 guarantee; R3 (insertion order within one write) is asserted at the unit level on the seam array.
     public virtual async Task two_enqueues_in_one_scope_both_commit()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         using var host = await _StartHostAsync(ct);
 
         try
@@ -136,7 +137,7 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
     // R5: a batched AddBatchAsync writes every row inside the caller's transaction and commits with it.
     public virtual async Task batch_enqueue_commits_atomically()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         using var host = await _StartHostAsync(ct);
 
         try
@@ -164,7 +165,7 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
     // R5 (rollback): the whole batch discards with the caller's transaction — no partial commit, no stranded rows.
     public virtual async Task batch_enqueue_rolls_back()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         using var host = await _StartHostAsync(ct);
 
         try
@@ -196,7 +197,7 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
 
     public virtual async Task enqueue_without_coordinator_inserts_directly()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         using var host = await _StartHostAsync(ct);
 
         try
@@ -217,7 +218,7 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
 
     public virtual async Task cron_enqueue_commits_atomically()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         using var host = await _StartHostAsync(ct);
 
         try
@@ -241,7 +242,7 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
 
     public virtual async Task cron_enqueue_rolls_back()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         using var host = await _StartHostAsync(ct);
 
         try
@@ -274,7 +275,7 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
     // R6 (batch rollback): the whole cron batch discards with the caller's transaction — no partial commit, no stranded rows.
     public virtual async Task cron_batch_enqueue_rolls_back()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         using var host = await _StartHostAsync(ct);
 
         try

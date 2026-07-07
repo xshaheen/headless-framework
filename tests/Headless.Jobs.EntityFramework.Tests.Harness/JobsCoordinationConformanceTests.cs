@@ -6,6 +6,7 @@ using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
@@ -24,12 +25,12 @@ namespace Tests;
 /// Each leaf derives a sealed class with <c>[Collection&lt;TFixture&gt;]</c> and re-declares the methods with
 /// <c>[Fact]</c> so the runner discovers them per provider.
 /// </summary>
-public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixture)
+public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixture) : TestBase
     where TFixture : class, IJobsCoordinationFixture
 {
     public virtual async Task queued_job_is_stamped_with_the_node_incarnation_owner()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
 
         using var host = fixture.BuildHost("node-a");
@@ -49,11 +50,11 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
 
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
-            // Fetch the row with its current UpdatedAt (QueueTimeJobs uses optimistic concurrency on it), then stamp.
-            var idle = await persistence.GetTimeJobs(x => x.Id == jobId, ct);
+            // Fetch the row with its current UpdatedAt (QueueTimeJobsAsync uses optimistic concurrency on it), then stamp.
+            var idle = await persistence.GetTimeJobsAsync(x => x.Id == jobId, ct);
             idle.Should().ContainSingle();
 
-            var stamped = await persistence.QueueTimeJobs(idle, ct).ToListAsync(ct);
+            var stamped = await persistence.QueueTimeJobsAsync(idle, ct).ToListAsync(ct);
             stamped.Should().ContainSingle();
 
             var (status, ownerId) = await fixture.ReadTimeJobAsync(jobId, ct);
@@ -68,7 +69,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
 
     public virtual async Task reclaim_touches_only_the_dead_incarnations_non_terminal_rows()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
 
         using var host = fixture.BuildHost("node-a");
@@ -101,7 +102,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
 
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
-            var affected = await persistence.ReleaseDeadNodeTimeJobResources(dead, ct);
+            var affected = await persistence.ReleaseDeadNodeTimeJobResourcesAsync(dead, ct);
 
             // One Queued row + one InProgress-Retry row, both released back to Idle (default policy is Retry).
             affected.Should().Be(2);
@@ -120,7 +121,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
 
     public virtual async Task dead_node_with_mark_failed_policy_transitions_in_flight_row_to_failed()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
 
         using var host = fixture.BuildHost("node-a");
@@ -142,7 +143,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
             );
 
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
-            var affected = await persistence.ReleaseDeadNodeTimeJobResources(dead, ct);
+            var affected = await persistence.ReleaseDeadNodeTimeJobResourcesAsync(dead, ct);
 
             // MarkFailed in-flight row becomes terminal Failed (never retried), owner retained for audit,
             // lease cleared (#4) and a node-death ExceptionMessage set so it's distinguishable from a run failure (#8).
@@ -161,7 +162,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
 
     public virtual async Task dead_node_with_skip_policy_transitions_in_flight_row_to_skipped()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
 
         using var host = fixture.BuildHost("node-a");
@@ -183,7 +184,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
             );
 
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
-            var affected = await persistence.ReleaseDeadNodeTimeJobResources(dead, ct);
+            var affected = await persistence.ReleaseDeadNodeTimeJobResourcesAsync(dead, ct);
 
             // Skip in-flight row becomes terminal Skipped (idempotency-critical: never re-run), owner retained,
             // lease cleared (#4) and SkippedReason set.
@@ -207,7 +208,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
     /// </summary>
     public virtual async Task completion_is_fenced_on_ownership_and_non_terminal_status()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
 
         using var host = fixture.BuildHost("node-a");
@@ -226,19 +227,18 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
             var terminalId = Guid.NewGuid();
             await fixture.SeedTimeJobAsync(terminalId, "terminal", (int)JobStatus.Failed, "node-a@5", ct);
 
-            var foreignCompletion = new InternalFunctionContext
-            {
-                FunctionName = "foreign",
-                JobId = foreignId,
-            }.SetProperty(x => x.Status, JobStatus.Succeeded);
-            var terminalCompletion = new InternalFunctionContext
+            var foreignCompletion = new JobExecutionState { FunctionName = "foreign", JobId = foreignId }.SetProperty(
+                x => x.Status,
+                JobStatus.Succeeded
+            );
+            var terminalCompletion = new JobExecutionState
             {
                 FunctionName = "terminal",
                 JobId = terminalId,
             }.SetProperty(x => x.Status, JobStatus.Succeeded);
 
-            (await persistence.UpdateTimeJob(foreignCompletion, ct)).Should().Be(0);
-            (await persistence.UpdateTimeJob(terminalCompletion, ct)).Should().Be(0);
+            (await persistence.UpdateTimeJobAsync(foreignCompletion, ct)).Should().Be(0);
+            (await persistence.UpdateTimeJobAsync(terminalCompletion, ct)).Should().Be(0);
 
             // Neither row was mutated by the fenced completion.
             (await fixture.ReadTimeJobAsync(foreignId, ct))
@@ -258,7 +258,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
     /// </summary>
     public virtual async Task cron_occurrence_is_stamped_with_the_node_death_policy()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
 
         using var host = fixture.BuildHost("node-a");
@@ -273,7 +273,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
             // The context mirrors what the manager builds from the cron entity (OnNodeDeath copied off the cron).
-            var context = new InternalManagerContext(cronId)
+            var context = new JobManagerDispatchContext(cronId)
             {
                 FunctionName = "cron-skip",
                 Expression = "* * * * *",
@@ -281,7 +281,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
             };
 
             var occurrences = await persistence
-                .QueueCronJobOccurrences((DateTime.UtcNow.AddMinutes(1), [context]), ct)
+                .QueueCronJobOccurrencesAsync((DateTime.UtcNow.AddMinutes(1), [context]), ct)
                 .ToListAsync(ct);
 
             occurrences.Should().ContainSingle().Which.OnNodeDeath.Should().Be(NodeDeathPolicy.Skip);
@@ -294,7 +294,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
 
     public virtual async Task reclaim_is_idempotent_a_second_pass_affects_zero_rows()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
 
         using var host = fixture.BuildHost("node-a");
@@ -317,8 +317,8 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
 
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
-            (await persistence.ReleaseDeadNodeTimeJobResources(dead, ct)).Should().Be(2);
-            (await persistence.ReleaseDeadNodeTimeJobResources(dead, ct)).Should().Be(0);
+            (await persistence.ReleaseDeadNodeTimeJobResourcesAsync(dead, ct)).Should().Be(2);
+            (await persistence.ReleaseDeadNodeTimeJobResourcesAsync(dead, ct)).Should().Be(0);
         }
         finally
         {
@@ -328,7 +328,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
 
     public virtual async Task surviving_node_recovers_a_crashed_nodes_work_via_node_left_event()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
 
         // Two nodes in one cluster. No Redis anywhere in the wiring — recovery flows purely through the
@@ -390,7 +390,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
     /// </summary>
     public virtual async Task running_job_renews_its_own_lease_but_a_lost_lease_renews_zero_rows()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
 
         using var host = fixture.BuildHost("node-a");
@@ -424,8 +424,8 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
 
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
-            (await persistence.RenewTimeJobLease(ownedId, ct)).Should().Be(1);
-            (await persistence.RenewTimeJobLease(foreignId, ct)).Should().Be(0); // lease lost -> cancel-on-loss
+            (await persistence.RenewTimeJobLeaseAsync(ownedId, ct)).Should().Be(1);
+            (await persistence.RenewTimeJobLeaseAsync(foreignId, ct)).Should().Be(0); // lease lost -> cancel-on-loss
 
             var (ownedStatus, _, ownedLockedUntil, _, _) = await fixture.ReadTimeJobDetailAsync(ownedId, ct);
             ownedStatus.Should().Be((int)JobStatus.InProgress);
@@ -450,7 +450,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
     /// </summary>
     public virtual async Task renewal_returns_the_membership_sentinel_when_membership_is_not_established()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
 
         // No StartAsync: coordination membership is not established, so TryGetStampOwner returns false.
@@ -464,7 +464,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
         var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
         // Negative sentinel (skip-the-tick), NOT 0 (lost) and NOT a renewal.
-        (await persistence.RenewTimeJobLease(id, ct))
+        (await persistence.RenewTimeJobLeaseAsync(id, ct))
             .Should()
             .BeNegative();
 
@@ -481,7 +481,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
     /// </summary>
     public virtual async Task stalled_lapsed_lease_inprogress_rows_are_reclaimed_per_policy()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
 
         using var host = fixture.BuildHost("node-a");
@@ -538,7 +538,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
 
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
-            (await persistence.ReclaimStalledTimeJobs(ct)).Should().Be(3);
+            (await persistence.ReclaimStalledTimeJobsAsync(ct)).Should().Be(3);
 
             (await fixture.ReadTimeJobAsync(retryId, ct)).Should().Be(((int)JobStatus.Idle, null));
 
@@ -563,7 +563,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
                 .Be(((int)JobStatus.InProgress, owner));
 
             // Idempotency: a second pass over already-reclaimed rows affects zero.
-            (await persistence.ReclaimStalledTimeJobs(ct))
+            (await persistence.ReclaimStalledTimeJobsAsync(ct))
                 .Should()
                 .Be(0);
         }
@@ -587,7 +587,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
     /// </summary>
     public virtual async Task stalled_reclaim_uses_the_db_clock_not_a_skewed_reclaimer_clock()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
 
         // Reclaiming node's wall clock is 1 hour ahead of the DB. With the pre-fix TimeProvider-based comparison this
@@ -626,7 +626,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
 
         // Only the genuinely-lapsed row is reclaimed; the skewed local clock must not terminalize the still-valid
         // MarkFailed lease (pre-fix this would have returned 2 and recorded the valid row Failed mid-flight).
-        (await persistence.ReclaimStalledTimeJobs(ct))
+        (await persistence.ReclaimStalledTimeJobsAsync(ct))
             .Should()
             .Be(1);
 
@@ -635,14 +635,14 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
     }
 
     /// <summary>
-    /// #316 clock-skew (cron mirror): ReclaimStalledCronJobOccurrences decides expiry from the DB clock, not the
+    /// #316 clock-skew (cron mirror): ReclaimStalledCronJobOccurrencesAsync decides expiry from the DB clock, not the
     /// reclaiming node's TimeProvider, AND terminalizes per the occurrence's OnNodeDeath. A +1h-skewed reclaimer must
     /// not touch a still-valid lease, yet must reclaim genuinely-lapsed occurrences (Retry->Idle, MarkFailed->Failed,
     /// Skip->Skipped).
     /// </summary>
     public virtual async Task cron_stalled_reclaim_uses_the_db_clock_and_terminalizes_per_policy()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
 
         var skewedClock = new SkewedTimeProvider(TimeSpan.FromHours(1));
@@ -704,7 +704,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
 
         var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
-        (await persistence.ReclaimStalledCronJobOccurrences(ct)).Should().Be(3);
+        (await persistence.ReclaimStalledCronJobOccurrencesAsync(ct)).Should().Be(3);
 
         (await fixture.ReadCronOccurrenceAsync(validId, ct)).Should().Be(((int)JobStatus.InProgress, "n@1"));
         (await fixture.ReadCronOccurrenceAsync(retryId, ct)).Should().Be(((int)JobStatus.Idle, null));
@@ -718,7 +718,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
     /// </summary>
     public virtual async Task cron_running_occurrence_renews_but_queued_or_foreign_renews_zero()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
 
         using var host = fixture.BuildHost("node-a");
@@ -771,9 +771,9 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
 
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
-            (await persistence.RenewCronJobOccurrenceLease(runningId, ct)).Should().Be(1);
-            (await persistence.RenewCronJobOccurrenceLease(queuedId, ct)).Should().Be(0); // not running -> InProgress fence
-            (await persistence.RenewCronJobOccurrenceLease(foreignId, ct)).Should().Be(0); // not ours -> cancel-on-loss
+            (await persistence.RenewCronJobOccurrenceLeaseAsync(runningId, ct)).Should().Be(1);
+            (await persistence.RenewCronJobOccurrenceLeaseAsync(queuedId, ct)).Should().Be(0); // not running -> InProgress fence
+            (await persistence.RenewCronJobOccurrenceLeaseAsync(foreignId, ct)).Should().Be(0); // not ours -> cancel-on-loss
         }
         finally
         {
@@ -782,12 +782,12 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
     }
 
     /// <summary>
-    /// #5/#466 (cron mirror): UpdateCronJobOccurrence is fenced on ownership + non-terminal status and now returns the
+    /// #5/#466 (cron mirror): UpdateCronJobOccurrenceAsync is fenced on ownership + non-terminal status and now returns the
     /// affected-row count — 1 when applied, 0 when a foreign or already-terminal occurrence is excluded.
     /// </summary>
     public virtual async Task cron_completion_is_fenced_on_ownership_and_non_terminal_status()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
 
         using var host = fixture.BuildHost("node-a");
@@ -837,22 +837,22 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
                 ct
             );
 
-            var owned = new InternalFunctionContext { FunctionName = "Cron", JobId = ownedId }.SetProperty(
+            var owned = new JobExecutionState { FunctionName = "Cron", JobId = ownedId }.SetProperty(
                 x => x.Status,
                 JobStatus.Succeeded
             );
-            var foreign = new InternalFunctionContext { FunctionName = "Cron", JobId = foreignId }.SetProperty(
+            var foreign = new JobExecutionState { FunctionName = "Cron", JobId = foreignId }.SetProperty(
                 x => x.Status,
                 JobStatus.Succeeded
             );
-            var terminal = new InternalFunctionContext { FunctionName = "Cron", JobId = terminalId }.SetProperty(
+            var terminal = new JobExecutionState { FunctionName = "Cron", JobId = terminalId }.SetProperty(
                 x => x.Status,
                 JobStatus.Succeeded
             );
 
-            (await persistence.UpdateCronJobOccurrence(owned, ct)).Should().Be(1);
-            (await persistence.UpdateCronJobOccurrence(foreign, ct)).Should().Be(0);
-            (await persistence.UpdateCronJobOccurrence(terminal, ct)).Should().Be(0);
+            (await persistence.UpdateCronJobOccurrenceAsync(owned, ct)).Should().Be(1);
+            (await persistence.UpdateCronJobOccurrenceAsync(foreign, ct)).Should().Be(0);
+            (await persistence.UpdateCronJobOccurrenceAsync(terminal, ct)).Should().Be(0);
 
             (await fixture.ReadCronOccurrenceAsync(ownedId, ct)).Status.Should().Be((int)JobStatus.Succeeded);
             (await fixture.ReadCronOccurrenceAsync(foreignId, ct))
@@ -872,7 +872,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
     /// </summary>
     public virtual async Task node_death_sweep_leaves_a_valid_lease_inprogress_row_to_the_lease()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
 
         using var host = fixture.BuildHost("node-a");
@@ -892,7 +892,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
             // Only the Idle row is reclaimed now; the valid-lease InProgress row is left to the lease (U3).
-            (await persistence.ReleaseDeadNodeTimeJobResources(dead, ct))
+            (await persistence.ReleaseDeadNodeTimeJobResourcesAsync(dead, ct))
                 .Should()
                 .Be(1);
 

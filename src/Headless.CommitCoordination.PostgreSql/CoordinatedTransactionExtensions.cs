@@ -1,11 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
+using Headless.CommitCoordination;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Npgsql;
 
-namespace Headless.CommitCoordination.PostgreSql;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Npgsql;
 
 /// <summary>
 /// Single-call coordinated-transaction helpers for a raw-ADO <see cref="NpgsqlConnection"/>: open a
@@ -22,7 +23,7 @@ namespace Headless.CommitCoordination.PostgreSql;
 /// afterward; an already-open connection is left open.
 /// </remarks>
 [PublicAPI]
-public static partial class CoordinatedTransactionExtensions
+public static partial class HeadlessNpgsqlCoordinatedTransactionExtensions
 {
     extension(NpgsqlConnection connection)
     {

@@ -3,7 +3,7 @@
 using Confluent.Kafka;
 using Confluent.Kafka.Admin;
 using Headless.Checks;
-using Headless.Messaging.Internal;
+using Headless.Messaging.Runtime;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Options;
 
@@ -13,7 +13,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
 {
     private readonly string _groupId;
     private readonly Lock _lock = new();
-    private readonly MessagingKafkaOptions _kafkaOptions;
+    private readonly KafkaMessagingOptions _kafkaOptions;
     private readonly ConsumerPauseGate _pauseGate = new();
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly SemaphoreSlim? _semaphore;
@@ -32,7 +32,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
     public KafkaConsumerClient(
         string groupId,
         byte groupConcurrent,
-        IOptions<MessagingKafkaOptions> options,
+        IOptions<KafkaMessagingOptions> options,
         IServiceProvider serviceProvider,
         KafkaConsumerConfig? consumerConfig = null,
         Func<ConsumerConfig, IConsumer<string, byte[]>>? consumerFactory = null,
@@ -70,7 +70,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
         {
             if (topicName.Contains('*', StringComparison.Ordinal) || topicName.Contains('#', StringComparison.Ordinal))
             {
-                normalizedTopics.Add(Helper.WildcardToRegex(topicName));
+                normalizedTopics.Add(TransportNaming.WildcardToRegex(topicName));
                 continue;
             }
 
@@ -200,7 +200,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
 
                 await _ConsumeAsync(delivery).ConfigureAwait(false);
             }
-            catch (ConsumeException e) when (_kafkaOptions.RetriableErrorCodes.Contains(e.Error.Code))
+            catch (ConsumeException e) when (_kafkaOptions.RetriableErrorCodes.Contains((int)e.Error.Code))
             {
                 var logArgs = new LogMessageEventArgs
                 {

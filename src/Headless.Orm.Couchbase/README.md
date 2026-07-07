@@ -16,6 +16,7 @@ Provides a typed context model over Couchbase buckets with helper APIs for docum
 - `ICouchbaseClusterOptionsProvider` — consumer-supplied cluster connection options per cluster key
 - `ICouchbaseTransactionConfigProvider` — consumer-supplied transaction configuration per cluster key
 - `CouchbaseEventingFunctionsSeeder` — seeds eventing functions from embedded resources
+- `SetupCouchbase.AddHeadlessCouchbase()` — registers the framework-owned providers (`ICouchbaseClustersProvider`, `IBucketContextProvider`, `ICouchbaseManager`, `ICouchbaseAssemblyCollectionsReader`) in one call
 
 ## Installation
 
@@ -36,12 +37,12 @@ public sealed class AppBucketContext(
     public DocumentSet<Product> Products => GetDocumentSet<Product>("products");
 }
 
-// Register providers
+// Register the two application-specific providers (or use the shipped defaults):
 services.AddSingleton<ICouchbaseClusterOptionsProvider, MyClusterOptionsProvider>();
 services.AddSingleton<ICouchbaseTransactionConfigProvider, MyTransactionConfigProvider>();
-services.AddSingleton<ICouchbaseClustersProvider, CouchbaseClustersProvider>();
-services.AddSingleton<IBucketContextProvider, BucketContextProvider>();
-services.AddSingleton<ICouchbaseManager, CouchbaseManager>();
+
+// Register the framework-owned providers in one call:
+services.AddHeadlessCouchbase();
 
 // Resolve context
 var context = await bucketContextProvider.GetAsync<AppBucketContext>(
@@ -69,8 +70,9 @@ await context.ExecuteTransactionAsync(async attempt =>
 
 ## Configuration
 
-- Implement `ICouchbaseClusterOptionsProvider` to supply cluster options (connection string, credentials) per cluster key.
-- Implement `ICouchbaseTransactionConfigProvider` to supply transaction configuration per cluster key.
+- Implement and register `ICouchbaseClusterOptionsProvider` to supply cluster options (connection string, credentials) per cluster key.
+- Implement and register `ICouchbaseTransactionConfigProvider` to supply transaction configuration per cluster key.
+- Call `services.AddHeadlessCouchbase()` to register the framework-owned providers.
 - Use `ICouchbaseManager` during application startup or in an `IInitializer` to bootstrap scopes, collections, and indexes idempotently.
 
 ## Dependencies
@@ -85,6 +87,7 @@ await context.ExecuteTransactionAsync(async attempt =>
 
 ## Side Effects
 
+- `AddHeadlessCouchbase()` registers `ICouchbaseClustersProvider`, `IBucketContextProvider`, `ICouchbaseManager`, and `ICouchbaseAssemblyCollectionsReader` as singletons via `TryAdd` (a consumer's own registration wins). It does not register `ICouchbaseClusterOptionsProvider` or `ICouchbaseTransactionConfigProvider`.
 - Cluster connections are lazily initialized and statically cached by `clusterKey` in `CouchbaseClustersProvider`. Each cluster waits up to 1 minute for readiness on first access; a readiness failure is logged but does not throw (operations fail at call time).
 - `CouchbaseManager` caches scope/collection specs per `clusterKey + bucketName` in-memory to reduce repeated `GetAllScopesAsync` calls; cache is invalidated on scope creation.
 - `CouchbaseBucketContext.ExecuteTransactionAsync` emits `Information` logs on success and `Error` logs on failure via structured logging.

@@ -1,9 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Sms.Dev;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Headless.Sms.Dev;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Sms;
 
 /// <summary>
 /// Extension members for selecting the development (file-writing) or no-op SMS providers as the default

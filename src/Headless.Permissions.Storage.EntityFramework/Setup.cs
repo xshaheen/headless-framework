@@ -1,21 +1,20 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
-using Headless.Permissions;
 using Headless.Permissions.Internal;
 using Headless.Permissions.Repositories;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Microsoft.Extensions.DependencyInjection;
+namespace Headless.Permissions;
 
 /// <summary>
 /// Registers the Entity Framework Core storage provider for Headless Permissions.
 /// </summary>
 [PublicAPI]
-public static class SetupPermissions
+public static class SetupPermissionsEntityFramework
 {
     extension(HeadlessPermissionsSetupBuilder setup)
     {

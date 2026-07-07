@@ -4,7 +4,7 @@ using FluentValidation.Validators;
 using Headless.Reflection;
 using NJsonSchema;
 
-namespace Headless.Api.SchemaProcessors.FluentValidation.Models;
+namespace Headless.OpenApi.Nswag.SchemaProcessors.FluentValidation.Models;
 
 /// <summary>
 /// Describes a single mapping from a FluentValidation property-validator type to an OpenAPI schema mutation.

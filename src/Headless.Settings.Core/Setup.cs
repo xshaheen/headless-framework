@@ -17,7 +17,7 @@ namespace Headless.Settings;
 
 /// <summary>DI registration entry points for the Headless Settings feature.</summary>
 [PublicAPI]
-public static class SetupCoreSettings
+public static class SetupSettings
 {
     extension(IServiceCollection services)
     {

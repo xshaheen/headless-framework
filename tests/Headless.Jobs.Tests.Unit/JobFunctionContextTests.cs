@@ -19,19 +19,14 @@ public sealed class JobFunctionContextTests
             IsDue = true,
             ScheduledFor = scheduledFor,
             FunctionName = "TestFunction",
-            CronOccurrenceOperations = null!,
+            CronOccurrenceOperations = new CronOccurrenceOperations { SkipIfAlreadyRunningAction = () => { } },
             RequestCancelOperationAction = () => { },
         };
 
         var request = new TestRequest { Value = 42 };
 
-        // when
-        var genericContext = new JobFunctionContext<TestRequest>(baseContext, request)
-        {
-            FunctionName = baseContext.FunctionName,
-            CronOccurrenceOperations = baseContext.CronOccurrenceOperations,
-            RequestCancelOperationAction = baseContext.RequestCancelOperationAction,
-        };
+        // when — no object initializer: the [SetsRequiredMembers] copy constructor must clone every base member.
+        var genericContext = new JobFunctionContext<TestRequest>(baseContext, request);
 
         // then
         genericContext.Id.Should().Be(baseContext.Id);
@@ -40,6 +35,8 @@ public sealed class JobFunctionContextTests
         genericContext.IsDue.Should().Be(baseContext.IsDue);
         genericContext.ScheduledFor.Should().Be(baseContext.ScheduledFor);
         genericContext.FunctionName.Should().Be(baseContext.FunctionName);
+        genericContext.CronOccurrenceOperations.Should().BeSameAs(baseContext.CronOccurrenceOperations);
+        genericContext.RequestCancelOperationAction.Should().BeSameAs(baseContext.RequestCancelOperationAction);
         genericContext.Request.Should().Be(request);
     }
 

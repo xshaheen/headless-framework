@@ -224,7 +224,7 @@ services.AddHeadlessMessaging(setup =>
 - **Consumer lifecycle semantics**: `IConsumerLifecycle` runs per delivery on the scoped consumer instance. Do not treat it as application startup or shutdown.
 - **Core handles outbox automatically** when paired with EF Core -- messages are stored in database before being dispatched to transport.
 - **Atomic outbox is on by default on the EF storage path** (`setup.UseEntityFramework<TContext>()`): a publish inside a coordinated transaction is atomic with the DB write, zero consumer wiring — do not hand-wire commit coordination for it. Opt out with `setup.UseEntityFramework<TContext>(o => o.EnableTransactionalOutbox = false)` (the opt-out travels with the EF storage choice). Raw-ADO paths (`UsePostgreSql`/`UseSqlServer` by connection string) stay explicit opt-in: wire `AddPostgreSqlCommitCoordination()`/`AddSqlServerCommitCoordination()` plus the coordinated-transaction helpers.
-- **Mis-wire fails loud at startup**: if the outbox is enabled but the commit interceptor is not firing, `CommitInterceptorStartupGate<TContext>` logs a warning by default; set `CommitInterceptorProbeMode.Strict` (via `services.Configure<CommitInterceptorProbeOptions>(o => o.Mode = CommitInterceptorProbeMode.Strict)`) to fail startup instead of shipping a silently non-transactional outbox.
+- **Mis-wire fails loud at startup**: if the outbox is enabled but the commit interceptor is not firing, `CommitInterceptorStartupGate<TContext>` logs a warning by default; set `CommitProbeMode.Strict` (via `services.Configure<CommitInterceptorProbeOptions>(o => o.Mode = CommitProbeMode.Strict)`) to fail startup instead of shipping a silently non-transactional outbox.
 - **Dashboard.K8s requires RBAC** permissions to read pods/endpoints in the Kubernetes API.
 - **Callbacks enable async response routing**: Set `CallbackName` on `PublishOptions` (bus) **or** `EnqueueOptions` (queue) to a response message name. When the consumer completes, a correlated response message is automatically published to that name through the durable bus path — regardless of which intent delivered the request. The consumer calls `context.SetResponse<TResponse>(value)` to publish a typed response body; if it does not, the callback still goes out as a headers-only message when response headers are present. This is **not** request/reply — the caller does not `await` the response. A separate consumer must handle the response message. Use `context.Headers.RemoveCallback()` to suppress, `RewriteCallback()` to redirect, or `AddResponseHeader()` to attach extra headers to the response. Callback delivery is **at-least-once** — a crash, or a transient failure of the success-mark write after the response outbox row is written, redelivers the request and republishes the response, so make response consumers idempotent (dedupe on `(CorrelationId, CorrelationSequence)`; `CorrelationId` alone is ambiguous across hops because it is set to the immediate parent message id per hop, not the chain root). **Footgun on the bus path:** a published (pub/sub) request is delivered to *every* matching subscriber, so each one fires its own callback — N subscribers produce N response messages. Point-to-point (`IQueue` / `IOutboxQueue`) delivers to one consumer and produces exactly one response; prefer it for command→result chaining unless you intend scatter-gather (correlate the fan-in via `CorrelationId` / `CorrelationSequence`).
 - **Strict publish tenancy is opt-in**: Use `builder.AddHeadlessTenancy(tenancy => tenancy.Messaging(m => m.PropagateTenant().RequireTenantOnPublish()))`. The previous `MessagingBuilder.AddTenantPropagation()` extension has been removed; the root tenancy seam is the single composition point. When neither `PublishOptions.TenantId` nor ambient `ICurrentTenant` is set, the publish wrapper throws `Headless.Abstractions.MissingTenantContextException`. See [Strict Publish Tenancy](#strict-publish-tenancy) and the multi-tenancy doc's [Message Consumers](multi-tenancy.md#message-consumers) section.
@@ -237,7 +237,7 @@ services.AddHeadlessMessaging(setup =>
 
 ## Core Concepts
 
-- **Transactional outbox (atomic publish) — on by default on the EF storage path**: when the host chooses the EF-context storage path (`setup.UseEntityFramework<TContext>()`), the atomic outbox is ON BY DEFAULT with zero consumer wiring. A `producer.PublishAsync(...)` issued inside a coordinated transaction writes its outbox row in the SAME DB transaction and is discarded on rollback, so the message is durable if and only if the business data committed. The EF storage setup auto-registers commit coordination and a DI-registered `IDbContextOptionsConfiguration<TContext>` that attaches the commit-coordination interceptor to the consumer's `DbContext` — including a plain `AddDbContext<TContext>` with no `AddInterceptors(...)`. Opt out with `setup.UseEntityFramework<TContext>(o => o.EnableTransactionalOutbox = false)` to restore non-transactional immediate dispatch (the opt-out travels with the EF storage choice). A startup self-probe (`CommitInterceptorStartupGate<TContext>`) commits an empty transaction and asserts the interceptor fired; on a mis-wire it logs a loud warning (default) or fails startup (`CommitInterceptorProbeMode.Strict`). This applies **only** to the EF-context path: the raw-ADO storage paths (`UsePostgreSql(connString)` / `UseSqlServer(connString)`, no `DbContext`) are unchanged and stay explicit opt-in — there is no `DbContext` to attach an interceptor to, so they register `AddPostgreSqlCommitCoordination()` / `AddSqlServerCommitCoordination()` and use the `EnlistCommitCoordination` / `ExecuteCoordinatedTransactionAsync` helpers. See [commit-coordination.md](commit-coordination.md) for the interceptor attachment and probe modes. This is an atomicity guarantee for the *write*, not exactly-once delivery — dispatch is still at-least-once (next bullet).
+- **Transactional outbox (atomic publish) — on by default on the EF storage path**: when the host chooses the EF-context storage path (`setup.UseEntityFramework<TContext>()`), the atomic outbox is ON BY DEFAULT with zero consumer wiring. A `producer.PublishAsync(...)` issued inside a coordinated transaction writes its outbox row in the SAME DB transaction and is discarded on rollback, so the message is durable if and only if the business data committed. The EF storage setup auto-registers commit coordination and a DI-registered `IDbContextOptionsConfiguration<TContext>` that attaches the commit-coordination interceptor to the consumer's `DbContext` — including a plain `AddDbContext<TContext>` with no `AddInterceptors(...)`. Opt out with `setup.UseEntityFramework<TContext>(o => o.EnableTransactionalOutbox = false)` to restore non-transactional immediate dispatch (the opt-out travels with the EF storage choice). A startup self-probe (`CommitInterceptorStartupGate<TContext>`) commits an empty transaction and asserts the interceptor fired; on a mis-wire it logs a loud warning (default) or fails startup (`CommitProbeMode.Strict`). This applies **only** to the EF-context path: the raw-ADO storage paths (`UsePostgreSql(connString)` / `UseSqlServer(connString)`, no `DbContext`) are unchanged and stay explicit opt-in — there is no `DbContext` to attach an interceptor to, so they register `AddPostgreSqlCommitCoordination()` / `AddSqlServerCommitCoordination()` and use the `EnlistCommitCoordination` / `ExecuteCoordinatedTransactionAsync` helpers. See [commit-coordination.md](commit-coordination.md) for the interceptor attachment and probe modes. This is an atomicity guarantee for the *write*, not exactly-once delivery — dispatch is still at-least-once (next bullet).
 - **Delivery semantics — at-least-once, consumer idempotency required**: the framework never promises exactly-once. The commit-edge drain and the relay sweep can both deliver the same message in a narrow window (the `LockedUntil` lease and the Succeeded/Failed terminal-row guard minimize but do not eliminate duplicates), and a crash between broker accept and the success-mark write redelivers. Consumers must be idempotent — dedupe by business key or message id.
 - **Intent**: Bus is broadcast/pub-sub. Queue is point-to-point. Received-message identity includes intent so bus and queue deliveries do not collapse into one storage row.
 - **Envelope**: All transport messages carry framework headers such as message id, correlation id, message name, type, sent time, intent, and optional tenant id.
@@ -278,6 +278,16 @@ services.AddHeadlessMessaging(setup =>
 | Pulsar | Yes | Yes | None | None |
 | RabbitMQ | Exchange | Queue | None | `PrefetchCount(...)` |
 | Redis | Pub/Sub | Queue-like Redis transport | None | None |
+
+### Registration Overloads
+
+Every transport `Use{Provider}(...)` (except `UseInMemory()`, which has no options) exposes the standard overload trio alongside any scalar-convenience form:
+
+- `Use{Provider}(IConfiguration config)` — binds and validates the options from a configuration section.
+- `Use{Provider}(Action<TOptions> configure)` — imperative configuration.
+- `Use{Provider}(Action<TOptions, IServiceProvider> configure)` — imperative configuration with access to the resolved service provider (for example to pull a secret, connection string, or credential from DI while configuring).
+
+Options are validated on start through their FluentValidation validators. Each provider keeps the `{ProviderToken}MessagingOptions` naming shape (`AmazonSqsMessagingOptions`, `AzureServiceBusMessagingOptions`, `KafkaMessagingOptions`, `NatsMessagingOptions`, `PulsarMessagingOptions`, `RabbitMqMessagingOptions`, `RedisMessagingOptions`, `RedisPubSubMessagingOptions`).
 
 ### Storage Providers
 
@@ -435,6 +445,8 @@ Wires messaging into dependency injection: registration, publishing, dispatch, m
 ### Design Notes
 
 Core owns logical metadata and provider-independent correctness. Provider packages own broker-specific values and limits. `CorrelationFrom(...)` is a universal logical knob; partition keys, routing keys, subject shards, and message group ids are provider hatches because their semantics differ.
+
+The blessed cross-package SPI (the contracts that storage providers, transports, and dashboards resolve or implement) lives in the public `Headless.Messaging.Runtime` namespace: `IProcessingServer` (implement to attach a long-running unit to the bootstrap sequence) and `IConsumerServiceSelector` / `MethodMatcherCache` (inspect the resolved consumer topology). The `TransportNaming` (`WildcardToRegex`, `Normalize`) and `RuntimeTypeInspection` (`IsComplexType`, `DeclaresFieldOfType`) helpers in the same namespace are `internal` and shared with the first-party transports via `InternalsVisibleTo` — they are not part of the NuGet contract. These types were previously exposed under `Headless.Messaging.Internal`; that namespace now holds only genuine implementation detail. The monitoring status is a typed enum — `StatusName` (in `Headless.Messaging.Monitoring`, next to `MessageView`/`MessageQuery`) — so `MessageView.StatusName` and the `MessageQuery.StatusName` filter are compile-time safe. Storage providers persist and compare the enum member names verbatim as strings, so the SQL column contract is unchanged, and the dashboard serializes the status by name to keep the SPA wire shape stable.
 
 ### Installation
 
@@ -1103,7 +1115,7 @@ setup.ForMessage<OrderPlaced>(message =>
 
 ### Configuration
 
-Configure AWS region, service URLs, and credentials through `AmazonSqsOptions`.
+Configure AWS region, service URLs, and credentials through `AmazonSqsMessagingOptions`.
 
 ### Dependencies
 
@@ -1150,7 +1162,7 @@ setup.ForMessage<OrderPlaced>(message =>
 
 ### Configuration
 
-Configure connection string or namespace, retry/client settings, queue/topic behavior, session support, and SQL filters through provider options. Processor settlement is not configurable; Headless disables Azure SDK auto-complete and completes or abandons messages explicitly.
+Configure connection string or namespace, retry/client settings, queue/topic behavior, session support, and SQL filters through `AzureServiceBusMessagingOptions`. Authentication is an either/or contract: supply either `ConnectionString` or both `Namespace` and `TokenCredential` — both are nullable (`string?`) and the validator enforces that exactly one mode is configured at start. Processor settlement is not configurable; Headless disables Azure SDK auto-complete and completes or abandons messages explicitly.
 
 ### Dependencies
 
@@ -1271,7 +1283,7 @@ setup.ForMessage<OrderPlaced>(message =>
 
 ### Configuration
 
-Configure bootstrap servers, main Kafka config, topic options, custom headers, and retriable error codes through `MessagingKafkaOptions`.
+Configure bootstrap servers, main Kafka config, topic options, custom headers, and retriable error codes through `KafkaMessagingOptions`. `RetriableErrorCodes` / `DefaultRetriableErrorCodes` are `int` values of Confluent's `ErrorCode` enum (not the native enum type), so configuring retries needs no compile-time `Confluent.Kafka` reference; the framework casts back to `ErrorCode` internally.
 
 ### Dependencies
 
@@ -1320,7 +1332,7 @@ setup.ForMessage<OrderPlaced>(message =>
 
 ### Configuration
 
-Configure NATS servers, credentials, stream behavior, durable names, and connection settings through `MessagingNatsOptions`.
+Configure NATS servers, credentials, stream behavior, durable names, and connection settings through `NatsMessagingOptions`.
 
 ### Dependencies
 
@@ -1356,7 +1368,7 @@ setup.UsePulsar(options => options.ServiceUrl = "pulsar://localhost:6650");
 
 ### Configuration
 
-Configure service URL, authentication, and TLS through `MessagingPulsarOptions`.
+Configure service URL, authentication, and TLS through `PulsarMessagingOptions`.
 
 ### Dependencies
 
@@ -1395,6 +1407,8 @@ setup.UseRabbitMq(options =>
 {
     options.HostName = "localhost";
     options.Port = 5672;
+    options.UserName = "app_user"; // required
+    options.Password = "app_secret"; // required
 });
 
 setup.ForMessage<OrderPlaced>(message =>
@@ -1404,7 +1418,7 @@ setup.ForMessage<OrderPlaced>(message =>
 
 ### Configuration
 
-Configure host, credentials, exchange, queue arguments, QoS defaults, and custom headers through `RabbitMqOptions`.
+Configure host, credentials, exchange, queue arguments, QoS defaults, and custom headers through `RabbitMqMessagingOptions`. `UserName` and `Password` are `required` and must be set explicitly; the validator rejects the RabbitMQ default `guest`/`guest` credentials for production safety.
 
 ### Dependencies
 

@@ -2,10 +2,11 @@
 
 using System.Reflection;
 using Headless.IO;
+using Headless.Testing.Tests;
 
 namespace Tests.IO;
 
-public sealed class ActionableStreamTests
+public sealed class ActionableStreamTests : TestBase
 {
     [Fact]
     public void should_throw_when_stream_null()
@@ -130,7 +131,7 @@ public sealed class ActionableStreamTests
         var buffer = new byte[3];
 
         // when
-        var bytesRead = await sut.ReadAsync(buffer.AsMemory(), TestContext.Current.CancellationToken);
+        var bytesRead = await sut.ReadAsync(buffer.AsMemory(), AbortToken);
 
         // then
         bytesRead.Should().Be(3);
@@ -161,7 +162,7 @@ public sealed class ActionableStreamTests
         byte[] data = [1, 2, 3];
 
         // when
-        await sut.WriteAsync(data.AsMemory(), TestContext.Current.CancellationToken);
+        await sut.WriteAsync(data.AsMemory(), AbortToken);
 
         // then
         inner.ToArray().Should().BeEquivalentTo(data);

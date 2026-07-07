@@ -323,13 +323,6 @@
           "Headless.Core": "[1.0.0, )"
         }
       },
-      "headless.api.fluentvalidation": {
-        "type": "Project",
-        "dependencies": {
-          "FileSignatures": "[7.2.1, )",
-          "Headless.FluentValidation": "[1.0.0, )"
-        }
-      },
       "headless.caching.abstractions": {
         "type": "Project",
         "dependencies": {
@@ -354,6 +347,8 @@
           "CommunityToolkit.HighPerformance": "[8.4.2, )",
           "Headless.Checks": "[1.0.0, )",
           "Headless.Generator.Primitives.Abstractions": "[1.0.0, )",
+          "Headless.Primitives": "[1.0.0, )",
+          "Headless.Urls": "[1.0.0, )",
           "Humanizer.Core": "[3.0.10, )",
           "Microsoft.Bcl.TimeProvider": "[10.0.9, )",
           "Nito.AsyncEx": "[5.1.2, )",
@@ -388,6 +383,14 @@
           "Headless.Checks": "[1.0.0, )"
         }
       },
+      "headless.primitives": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Generator.Primitives.Abstractions": "[1.0.0, )",
+          "libphonenumber-csharp": "[9.0.34, )"
+        }
+      },
       "headless.security": {
         "type": "Project",
         "dependencies": {
@@ -409,20 +412,17 @@
           "Headless.Serializer.Abstractions": "[1.0.0, )"
         }
       },
+      "headless.urls": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )"
+        }
+      },
       "CommunityToolkit.HighPerformance": {
         "type": "CentralTransitive",
         "requested": "[8.4.2, )",
         "resolved": "8.4.2",
         "contentHash": "2hmtrrU18x6NL3mbuAqwy0KpnoEEJOuK6sH5RKQfD/jHijn2pqvqBUC7WGy9dgNBL9BDA7eOC0kirsNPMp2f4Q=="
-      },
-      "FileSignatures": {
-        "type": "CentralTransitive",
-        "requested": "[7.2.1, )",
-        "resolved": "7.2.1",
-        "contentHash": "ULT/TuNUbusDpp5BnpsiSMkGEHPtPva7lbaQbnm32xa/lgZDPGOkpd9xY0b+Z6rLZUJuxBCBjV0egeqR5awARg==",
-        "dependencies": {
-          "OpenMcdf": "3.1.4"
-        }
       },
       "FluentValidation": {
         "type": "CentralTransitive",
@@ -482,12 +482,6 @@
         "requested": "[2.5.0, )",
         "resolved": "2.5.0",
         "contentHash": "l0OuzZ2T/botMbOvPGY6yp3v+69aMrt+wzST/tFdGnHEFVXbbdOFxu3bfo9XH1N1H0LCQlA3RmFvlPO8zA+faw=="
-      },
-      "OpenMcdf": {
-        "type": "CentralTransitive",
-        "requested": "[3.1.4, )",
-        "resolved": "3.1.4",
-        "contentHash": "ncchtCh9YKqutHTlUCrr1llXA65ijGOCjXBM0mL1+WaGouApWDEACWbBHGzuYcAvB+rgW6IgO4AKgmZ2v1moNA=="
       },
       "Polly.Core": {
         "type": "CentralTransitive",

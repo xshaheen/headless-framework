@@ -13,7 +13,7 @@ namespace Headless.Payments.Paymob.Services.CashIn.Requests;
 public sealed record PaymobKioskCashInRequest(
     decimal Amount,
     PaymobCashInCustomerData Customer,
-    int KioskIntegrationId,
+    long KioskIntegrationId,
     string? MerchantOrderId = null,
     int ExpirationSeconds = 60 * 60
 );

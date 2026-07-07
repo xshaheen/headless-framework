@@ -75,6 +75,17 @@ public sealed record PaymobCashInOptions
     /// This is separate from <c>ApiKey</c> and is issued alongside the intention-flow integration.
     /// </summary>
     public required string SecretKey { get; set; }
+
+    // Override ToString() (instead of the record's synthesized one) so ApiKey, Hmac, and SecretKey
+    // never leak into logs or diagnostics; non-secret configuration stays visible.
+    public override string ToString()
+    {
+        return $"{nameof(PaymobCashInOptions)} {{ ApiBaseUrl = {ApiBaseUrl}, "
+            + $"CreateIntentionUrl = {CreateIntentionUrl}, RefundUrl = {RefundUrl}, "
+            + $"VoidRefundUrl = {VoidRefundUrl}, IframeBaseUrl = {IframeBaseUrl}, "
+            + $"ApiKey = ***, Hmac = ***, ExpirationPeriod = {ExpirationPeriod.ToString(CultureInfo.InvariantCulture)}, "
+            + $"TokenRefreshBuffer = {TokenRefreshBuffer}, SecretKey = *** }}";
+    }
 }
 
 internal sealed class PaymobCashInOptionsValidator : AbstractValidator<PaymobCashInOptions>

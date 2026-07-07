@@ -1,6 +1,6 @@
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
-using Headless.Messaging.Internal;
+using Headless.Messaging.Runtime;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;

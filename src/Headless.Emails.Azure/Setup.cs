@@ -4,12 +4,14 @@ using System.Diagnostics;
 using Azure;
 using Azure.Communication.Email;
 using Headless.Checks;
+using Headless.Emails.Azure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Emails.Azure;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Emails;
 
 /// <summary>
 /// Extension members for selecting Azure Communication Services (ACS) Email as the default (unkeyed) Headless

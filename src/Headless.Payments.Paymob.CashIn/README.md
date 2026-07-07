@@ -28,6 +28,8 @@ Provides a typed client for the Paymob Accept payment gateway, supporting multip
 
 The package adds `AddStandardResilienceHandler()` to the named HTTP client automatically. Pass `configureResilience` to `AddPaymobCashIn(...)` to override the resilience policy.
 
+`PaymobCashInOptions.ToString()` is overridden to redact `ApiKey`, `Hmac`, and `SecretKey` (printed as `***`), so logging or diagnostics that stringify the options never leak the secrets.
+
 ## Installation
 
 ```bash
@@ -56,7 +58,7 @@ Create a payment intention (v2 API — preferred):
 ```csharp
 public sealed class PaymentService(IPaymobCashInBroker broker)
 {
-    public async Task<string> CreatePaymentAsync(decimal amountCents, int integrationId, CancellationToken ct)
+    public async Task<string> CreatePaymentAsync(decimal amountCents, long integrationId, CancellationToken ct)
     {
         var response = await broker.CreateIntentionAsync(
             new CashInCreateIntentionRequest

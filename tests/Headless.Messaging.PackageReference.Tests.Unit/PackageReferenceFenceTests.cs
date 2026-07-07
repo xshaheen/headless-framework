@@ -23,7 +23,7 @@ public sealed class PackageReferenceFenceTests : TestBase
         );
 
         // when
-        var result = await _RunDotnetBuildAsync(projectPath, TestContext.Current.CancellationToken);
+        var result = await _RunDotnetBuildAsync(projectPath, AbortToken);
 
         // then
         result.ExitCode.Should().NotBe(0);

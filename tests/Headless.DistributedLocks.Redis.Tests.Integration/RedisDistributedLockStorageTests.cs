@@ -2,6 +2,7 @@
 
 using Headless.DistributedLocks.Redis;
 using Headless.Redis;
+using Headless.Redis.Testing;
 using Headless.Testing.Tests;
 using StackExchange.Redis;
 

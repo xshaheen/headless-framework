@@ -2,7 +2,7 @@
 
 using FluentValidation;
 
-namespace Headless.Api.SchemaProcessors.FluentValidation.Models;
+namespace Headless.OpenApi.Nswag.SchemaProcessors.FluentValidation.Models;
 
 /// <summary>
 /// Lightweight wrapper that pairs an <c>IValidationRule</c> with its enumeration position when iterating

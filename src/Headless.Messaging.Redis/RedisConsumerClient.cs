@@ -12,7 +12,7 @@ internal sealed class RedisConsumerClient(
     string groupId,
     byte groupConcurrent,
     IRedisStreamManager redis,
-    IOptions<MessagingRedisOptions> options,
+    IOptions<RedisMessagingOptions> options,
     ILogger<RedisConsumerClient> logger,
     TimeProvider? timeProvider = null
 ) : IConsumerClient
@@ -191,14 +191,14 @@ internal sealed class RedisConsumerClient(
                     try
                     {
                         var onError = options.Value.OnConsumeError?.Invoke(
-                            new MessagingRedisOptions.ConsumeErrorContext(ex, entry)
+                            new RedisMessagingOptions.ConsumeErrorContext(ex, entry)
                         );
 
                         await (onError ?? Task.CompletedTask).ConfigureAwait(false);
                     }
                     catch (Exception onError)
                     {
-                        logger.RedisConsumeErrorCallbackFailed(onError, nameof(MessagingRedisOptions.OnConsumeError));
+                        logger.RedisConsumeErrorCallbackFailed(onError, nameof(RedisMessagingOptions.OnConsumeError));
                     }
                     finally
                     {

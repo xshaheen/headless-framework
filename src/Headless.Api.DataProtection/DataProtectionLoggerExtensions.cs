@@ -2,7 +2,7 @@
 
 using Microsoft.Extensions.Logging;
 
-namespace Headless.Api;
+namespace Headless.Api.DataProtection;
 
 internal static partial class DataProtectionLoggerExtensions
 {

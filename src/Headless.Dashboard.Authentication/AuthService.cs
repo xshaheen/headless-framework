@@ -32,10 +32,12 @@ public sealed class AuthService : IAuthService
     }
 
     /// <inheritdoc/>
-    public async Task<AuthResult> AuthenticateAsync(HttpContext context)
+    public async Task<AuthResult> AuthenticateAsync(HttpContext context, CancellationToken cancellationToken = default)
     {
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             // No authentication required
             if (!_config.IsEnabled)
             {
@@ -64,7 +66,7 @@ public sealed class AuthService : IAuthService
                 _ => AuthResult.Failure("Invalid authentication mode"),
             };
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogAuthenticationError(ex);
             return AuthResult.Failure("Authentication error");

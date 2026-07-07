@@ -3,7 +3,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <Description>NSwag OData integration for Headless OpenAPI documentation.</Description>
     <PackageTags>headless;openapi;nswag;odata;dotnet</PackageTags>
-    <RootNamespace>Headless.Api</RootNamespace>
+    <RootNamespace>Headless.OpenApi.Nswag.OData</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OData" />

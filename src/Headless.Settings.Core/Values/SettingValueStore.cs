@@ -242,8 +242,8 @@ public sealed class SettingValueStore(
         if (existCacheItems.TrueForAll(x => x.Value.HasValue))
         {
             return existCacheItems.ConvertAll(item => new SettingValue(
-                name: _GetSettingNameFromCacheKey(item.Key),
-                value: item.Value.Value?.Value
+                _GetSettingNameFromCacheKey(item.Key),
+                item.Value.Value?.Value
             ));
         }
 
@@ -276,7 +276,7 @@ public sealed class SettingValueStore(
                 continue;
             }
 
-            result.Add(new SettingValue(settingName, value: null));
+            result.Add(new SettingValue(settingName, Value: null));
         }
 
         return result;

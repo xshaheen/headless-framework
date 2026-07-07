@@ -5,7 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Api;
+namespace Headless.Api.Idempotency;
 
 /// <summary>
 /// Service-collection extensions that register the Stripe-style HTTP idempotency middleware and

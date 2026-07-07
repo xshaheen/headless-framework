@@ -9,7 +9,9 @@ Provides feature repositories and startup schema initialization without requirin
 ## Key Features
 
 - `setup.UsePostgreSql(string connectionString)` — registers the PostgreSQL storage provider from a connection string
+- `setup.UsePostgreSql(IConfiguration configuration)` — binds `PostgreSqlFeaturesOptions` from a configuration section
 - `setup.UsePostgreSql(Action<PostgreSqlFeaturesOptions> configure)` — overload for full option control
+- `setup.UsePostgreSql(Action<PostgreSqlFeaturesOptions, IServiceProvider> configure)` — overload with service-provider access for late-bound configuration
 - Idempotent schema, table, and index creation at host startup via `PostgreSqlFeaturesStorageInitializer`
 - Raw ADO.NET repositories for feature values, feature definitions, and feature group definitions
 - `PostgreSqlFeaturesOptions` — connection string and command timeout (`CommandTimeout`, default 30 seconds)

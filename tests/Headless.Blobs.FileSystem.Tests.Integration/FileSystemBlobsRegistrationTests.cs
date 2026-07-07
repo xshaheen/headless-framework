@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Blobs;
-using Headless.Blobs.FileSystem;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 

@@ -30,7 +30,7 @@ internal sealed class JobsExecutionTaskHandler(
     private readonly TimeSpan _leaseDuration = schedulerOptions.LeaseDuration;
 
     public async Task ExecuteTaskAsync(
-        InternalFunctionContext context,
+        JobExecutionState context,
         bool isDue,
         CancellationToken cancellationToken = default
     )
@@ -41,7 +41,7 @@ internal sealed class JobsExecutionTaskHandler(
             return;
         }
 
-        var childrenToRunAfter = new InternalFunctionContext[5];
+        var childrenToRunAfter = new JobExecutionState[5];
         var tasksToRunNow = new Task[6];
 
         var childrenToRunAfterCount = 0;
@@ -77,7 +77,7 @@ internal sealed class JobsExecutionTaskHandler(
         // Process deferred children after parent completion
         if (childrenToRunAfterCount > 0)
         {
-            var childrenToSkip = new List<InternalFunctionContext>(30); // Pre-sized for performance
+            var childrenToSkip = new List<JobExecutionState>(30); // Pre-sized for performance
             var childrenToRunAfterTask = new Task[childrenToRunAfterCount];
 
             var taskCount = 0;
@@ -125,7 +125,7 @@ internal sealed class JobsExecutionTaskHandler(
     }
 
     private async Task _RunContextFunctionAsync(
-        InternalFunctionContext context,
+        JobExecutionState context,
         bool isDue,
         CancellationToken cancellationToken,
         bool isChild = false
@@ -293,7 +293,9 @@ internal sealed class JobsExecutionTaskHandler(
 
                 if (serviceProvider.GetService(typeof(IJobExceptionHandler)) is IJobExceptionHandler handler)
                 {
-                    await handler.HandleCanceledExceptionAsync(ex, context.JobId, context.Type).ConfigureAwait(false);
+                    await handler
+                        .HandleCanceledExceptionAsync(ex, context.JobId, context.Type, cancellationToken)
+                        .ConfigureAwait(false);
                 }
 
                 // Terminal-status write must persist even on graceful host-stop (cancellationToken already cancelled)
@@ -404,7 +406,9 @@ internal sealed class JobsExecutionTaskHandler(
 
             if (serviceProvider.GetService(typeof(IJobExceptionHandler)) is IJobExceptionHandler handler)
             {
-                await handler.HandleExceptionAsync(lastException, context.JobId, context.Type).ConfigureAwait(false);
+                await handler
+                    .HandleExceptionAsync(lastException, context.JobId, context.Type, cancellationToken)
+                    .ConfigureAwait(false);
             }
 
             // Terminal-status write must persist regardless of host-stop/lease-loss (completion fence guards it).
@@ -420,7 +424,7 @@ internal sealed class JobsExecutionTaskHandler(
     }
 
     private async Task _RenewLeaseLoopAsync(
-        InternalFunctionContext context,
+        JobExecutionState context,
         CancellationTokenSource jobCts,
         CancellationToken renewalLoopToken
     )
@@ -492,7 +496,7 @@ internal sealed class JobsExecutionTaskHandler(
     /// coordination membership is not currently established (#461), which the caller skips rather than cancels.
     /// </summary>
     private async Task<RenewalOutcome> _TryRenewLeaseAsync(
-        InternalFunctionContext context,
+        JobExecutionState context,
         CancellationToken renewalLoopToken
     )
     {
@@ -533,7 +537,7 @@ internal sealed class JobsExecutionTaskHandler(
     }
 
     private async Task<bool> _WaitForRetry(
-        InternalFunctionContext context,
+        JobExecutionState context,
         int attempt,
         CancellationTokenSource cancellationTokenSource,
         CancellationToken cancellationToken
@@ -594,7 +598,7 @@ internal sealed class JobsExecutionTaskHandler(
         );
     }
 
-    private static bool _ShouldRunChild(InternalFunctionContext childContext, JobStatus parentStatus)
+    private static bool _ShouldRunChild(JobExecutionState childContext, JobStatus parentStatus)
     {
         return childContext.RunCondition switch
         {
@@ -612,7 +616,7 @@ internal sealed class JobsExecutionTaskHandler(
         };
     }
 
-    private static void _GatherDescendantsToSkip(InternalFunctionContext parent, List<InternalFunctionContext> skipList)
+    private static void _GatherDescendantsToSkip(JobExecutionState parent, List<JobExecutionState> skipList)
     {
         if (parent.TimeJobChildren.Count == 0)
         {
@@ -629,7 +633,7 @@ internal sealed class JobsExecutionTaskHandler(
     }
 
     private async Task _SafeRecursiveExecution(
-        InternalFunctionContext context,
+        JobExecutionState context,
         bool isDue,
         CancellationToken cancellationToken = default
     )

@@ -3,7 +3,7 @@
 using Headless.Checks;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Dashboard.GatewayProxy;
-using Headless.Messaging.Internal;
+using Headless.Messaging.Runtime;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 

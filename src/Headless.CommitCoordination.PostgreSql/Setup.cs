@@ -1,9 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.CommitCoordination.PostgreSql;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace Headless.CommitCoordination.PostgreSql;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.CommitCoordination;
 
 /// <summary>
 /// Registers PostgreSQL commit coordination services.

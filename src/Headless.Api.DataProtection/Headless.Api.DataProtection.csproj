@@ -3,7 +3,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <Description>ASP.NET Core Data Protection integration for Headless API.</Description>
     <PackageTags>headless;api;data-protection;dotnet</PackageTags>
-    <RootNamespace>Headless.Api</RootNamespace>
+    <RootNamespace>Headless.Api.DataProtection</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" />

@@ -16,6 +16,7 @@ Provides SQL Server-native audit log storage without pulling Entity Framework in
 - Batched INSERT: up to 100 rows per command (SQL Server parameter limit is lower than PostgreSQL's).
 - `nvarchar(max)` by default for JSON columns; `NvarcharMax` is the only accepted `AuditLogJsonColumnType` (`Jsonb` and `Json` are rejected at options validation).
 - `SqlServerAuditLogOptions` — `ConnectionString` (required) and `CommandTimeout` (default 30 s).
+- `UseSqlServer` ships the full provider overload trio: `(string connectionString)`, `(IConfiguration configuration)`, `(Action<SqlServerAuditLogOptions>)`, and `(Action<SqlServerAuditLogOptions, IServiceProvider>)`.
 - Same index set as `Headless.AuditLog.Storage.EntityFramework`: tenant+time, tenant+action+time, tenant+entity+time, tenant+actor+time, correlation ID.
 
 ## Design Notes
@@ -62,6 +63,14 @@ setup.UseSqlServer(options =>
     options.ConnectionString = connectionString;
     options.CommandTimeout = TimeSpan.FromSeconds(60);
 });
+```
+
+Bind provider options from configuration, or configure with service resolution:
+
+```csharp
+setup.UseSqlServer(builder.Configuration.GetSection("Headless:AuditLog:SqlServer"));
+setup.UseSqlServer((options, sp) =>
+    options.ConnectionString = sp.GetRequiredService<IConfiguration>().GetConnectionString("AuditLog")!);
 ```
 
 ## Configuration

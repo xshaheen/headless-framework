@@ -44,18 +44,19 @@ public interface IPaymobCashOutBroker
     /// <c>IsPending</c>, and <c>IsFailed</c> to determine the disbursement outcome.
     /// </returns>
     /// <exception cref="PaymobCashOutException">The HTTP request to Paymob failed.</exception>
-    [Pure]
     Task<CashOutTransaction> Disburse(CashOutDisburseRequest request, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Retrieves the current available balance (budget) of the Paymob CashOut account.
     /// </summary>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
-    /// <returns>The raw JSON string returned by the Paymob budget inquiry endpoint.</returns>
+    /// <returns>
+    /// The parsed budget response. Paymob reports the balance as a human-readable sentence in
+    /// <c>CashOutBudgetResponse.CurrentBudget</c> (for example, <c>"Your current budget is 888.25 LE"</c>).
+    /// </returns>
     /// <remarks>Paymob rate-limits this endpoint to 5 requests per minute.</remarks>
     /// <exception cref="PaymobCashOutException">The HTTP request to Paymob failed.</exception>
-    [Pure]
-    Task<string> GetBudgetAsync(CancellationToken cancellationToken = default);
+    Task<CashOutBudgetResponse> GetBudgetAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Retrieves the status of one or more disbursement transactions by their Paymob transaction IDs.
@@ -67,13 +68,15 @@ public interface IPaymobCashOutBroker
     /// </param>
     /// <param name="page">The 1-based page number for paginated results. Must be positive.</param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
-    /// <returns>The raw JSON string returned by the Paymob transaction inquiry endpoint.</returns>
+    /// <returns>
+    /// A paginated page of matching transactions, including the total <c>Count</c> and next/previous
+    /// cursor URLs.
+    /// </returns>
     /// <remarks>Paymob rate-limits this endpoint to 5 requests per minute.</remarks>
     /// <exception cref="PaymobCashOutException">The HTTP request to Paymob failed.</exception>
     /// <exception cref="ArgumentNullException"><paramref name="transactionsIds"/> is <see langword="null"/> or empty.</exception>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="page"/> is not positive.</exception>
-    [Pure]
-    Task<string> GetTransactionsAsync(
+    Task<CashOutGetTransactionsResponse> GetTransactionsAsync(
         IReadOnlyList<string> transactionsIds,
         bool isBankTransactions,
         int page = 1,
@@ -115,7 +118,7 @@ public sealed class PaymobCashOutBroker(HttpClient httpClient, IPaymobCashOutAut
 
     /// <summary>Get the budget of the Paymob CashOut account.</summary>
     /// <remarks>API limit is 5 requests per minute.</remarks>
-    public async Task<string> GetBudgetAsync(CancellationToken cancellationToken = default)
+    public async Task<CashOutBudgetResponse> GetBudgetAsync(CancellationToken cancellationToken = default)
     {
         var accessToken = await authenticator.GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
 
@@ -132,12 +135,16 @@ public sealed class PaymobCashOutBroker(HttpClient httpClient, IPaymobCashOutAut
             await PaymobCashOutException.ThrowAsync(response, cancellationToken).ConfigureAwait(false);
         }
 
-        return await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        return (
+            await response
+                .Content.ReadFromJsonAsync<CashOutBudgetResponse>(CashOutJsonOptions.JsonOptions, cancellationToken)
+                .ConfigureAwait(false)
+        )!;
     }
 
     /// <summary>Get transactions by their Ids.</summary>
     /// <remarks>API limit is 5 requests per minute.</remarks>
-    public async Task<string> GetTransactionsAsync(
+    public async Task<CashOutGetTransactionsResponse> GetTransactionsAsync(
         IReadOnlyList<string> transactionsIds,
         bool isBankTransactions,
         int page = 1,
@@ -173,6 +180,13 @@ public sealed class PaymobCashOutBroker(HttpClient httpClient, IPaymobCashOutAut
             await PaymobCashOutException.ThrowAsync(response, cancellationToken).ConfigureAwait(false);
         }
 
-        return await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        return (
+            await response
+                .Content.ReadFromJsonAsync<CashOutGetTransactionsResponse>(
+                    CashOutJsonOptions.JsonOptions,
+                    cancellationToken
+                )
+                .ConfigureAwait(false)
+        )!;
     }
 }

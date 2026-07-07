@@ -1,13 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
-using Headless.Api;
+using Headless.Api.Idempotency;
 using Headless.Caching;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using IdempotencyMiddleware = Headless.Api.IdempotencyMiddleware;
+using IdempotencyMiddleware = Headless.Api.Idempotency.IdempotencyMiddleware;
 
 namespace Tests;
 

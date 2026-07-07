@@ -86,6 +86,8 @@ nats.EnableSubscriberClientStreamAndSubjectCreation = false;
 - Sequential handling preserves per-subject delivery order best. Parallel handlers and redeliveries can reorder work.
 - Subject naming, header sizes, and payload limits follow NATS and JetStream limits.
 
+**Registration overloads:** `UseNats(...)` accepts the standard trio — an `IConfiguration` section, an `Action<NatsMessagingOptions>` delegate, or an `Action<NatsMessagingOptions, IServiceProvider>` delegate — plus the optional server-URL convenience form.
+
 ## Dependencies
 
 - `Headless.Messaging.Core`
