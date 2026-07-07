@@ -50,7 +50,7 @@ public sealed class PaymobCashOutBrokerTests(PaymobCashOutFixture fixture)
 
         // then
         result.TransactionId.Should().Be(transactionId);
-        result.Amount.Should().Be(150.25);
+        result.Amount.Should().Be(150.25m);
         result.IsSuccess().Should().BeTrue();
         result.IsFailed().Should().BeFalse();
         result.IsPending().Should().BeFalse();
@@ -77,7 +77,7 @@ public sealed class PaymobCashOutBrokerTests(PaymobCashOutFixture fixture)
 
         // then
         result.TransactionId.Should().Be("tx-quirks");
-        result.Amount.Should().Be(75.5);
+        result.Amount.Should().Be(75.5m);
         result.IsRequestValidationError().Should().BeTrue();
         result.StatusDescription.Should().NotBeNull();
         result.ExtensionData.Should().ContainKey("unknown_field");
@@ -244,3 +244,5 @@ public sealed class PaymobCashOutBrokerTests(PaymobCashOutFixture fixture)
         authenticator.GetAccessTokenAsync(Arg.Any<CancellationToken>()).Returns(token);
 
         return (authenticator, token);
+    }
+}
