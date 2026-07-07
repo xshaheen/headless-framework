@@ -11,5 +11,7 @@ namespace Headless.Payments.Paymob.CashOut.Internals;
 [JsonSerializable(typeof(CashOutDisburseRequest))]
 [JsonSerializable(typeof(CashOutTransaction))]
 [JsonSerializable(typeof(CashOutGetTransactionsRequest))]
+[JsonSerializable(typeof(CashOutGetTransactionsResponse))]
+[JsonSerializable(typeof(CashOutBudgetResponse))]
 [JsonSerializable(typeof(CashOutAuthenticationResponse))]
 internal sealed partial class PaymobCashOutJsonSerializerContext : JsonSerializerContext;

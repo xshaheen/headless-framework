@@ -246,8 +246,8 @@ Provides a typed client for the Paymob disbursement API, enabling payouts to ban
 
 - `IPaymobCashOutBroker` — disbursement operations interface:
   - `Disburse(request)` — execute disbursement, returns `CashOutTransaction`
-  - `GetBudgetAsync()` — query available balance (rate-limited to 5 req/min)
-  - `GetTransactionsAsync(ids, isBankTransactions, page)` — paginated transaction lookup
+  - `GetBudgetAsync()` — query available balance, returns `CashOutBudgetResponse` (rate-limited to 5 req/min)
+  - `GetTransactionsAsync(ids, isBankTransactions, page)` — paginated transaction lookup, returns `CashOutGetTransactionsResponse`
 - `IPaymobCashOutAuthenticator` — OAuth2 password-grant token management with in-memory caching
 - `CashOutDisburseRequest` — factory methods per channel:
   - `CashOutDisburseRequest.BankCard(amount, cardNumber, bankCode, transactionType, fullName)`
@@ -260,6 +260,8 @@ Provides a typed client for the Paymob disbursement API, enabling payouts to ban
 - `CashOutTransaction` — result with status helper methods:
   - `IsSuccess()`, `IsFailed()`, `IsPending()`, `IsProviderDownError()`, `IsAuthenticationError()`
   - `IsNotHaveVodafoneCashError()`, `IsNotHaveEtisalatCashError()`, `IsRequestValidationError()`
+- `CashOutBudgetResponse` — budget inquiry result; Paymob reports the balance as a human-readable sentence in `CurrentBudget` (e.g. `"Your current budget is 888.25 LE"`)
+- `CashOutGetTransactionsResponse` — paginated transaction inquiry result (`Count`, `Next`, `Previous`, `Results`)
 - `PaymobCashOutException` — thrown on non-success HTTP responses
 
 ### Design Notes

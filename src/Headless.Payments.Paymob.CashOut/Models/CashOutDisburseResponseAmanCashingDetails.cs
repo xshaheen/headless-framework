@@ -23,5 +23,5 @@ public sealed record CashOutDisburseResponseAmanCashingDetails
     public bool IsPaid { get; init; }
 
     [JsonExtensionData]
-    public IDictionary<string, object?>? ExtensionData { get; init; }
+    public IDictionary<string, object?>? ExtensionData { get; set; }
 }

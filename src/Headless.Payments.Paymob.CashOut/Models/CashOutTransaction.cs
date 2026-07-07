@@ -50,7 +50,7 @@ public sealed record CashOutTransaction
     public string? UpdatedAt { get; init; }
 
     [JsonExtensionData]
-    public IDictionary<string, object?>? ExtensionData { get; init; }
+    public IDictionary<string, object?>? ExtensionData { get; set; }
 
     /// <summary>Returns <see langword="true"/> when the disbursement completed successfully.</summary>
     public bool IsSuccess()
