@@ -48,4 +48,71 @@ public sealed class AuditLogSetupTests
         // then
         options.Value.SensitiveValueTransformer.Should().NotBeNull();
     }
+
+    [Fact]
+    public void add_headless_audit_log_with_setup_throws_when_no_storage_provider_is_registered()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        var act = () => services.AddHeadlessAuditLog((HeadlessAuditLogSetupBuilder _) => { });
+
+        // then
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*requires exactly one storage provider*UseEntityFramework*");
+    }
+
+    [Fact]
+    public void add_headless_audit_log_with_setup_throws_when_multiple_storage_providers_are_registered()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        var act = () =>
+            services.AddHeadlessAuditLog(setup =>
+            {
+                setup.RegisterExtension(new NoopStorageExtension());
+                setup.RegisterExtension(new NoopStorageExtension());
+            });
+
+        // then
+        act.Should().Throw<InvalidOperationException>().WithMessage("*Multiple storage providers were configured*");
+    }
+
+    [Fact]
+    public void configure_options_composes_delegates_in_registration_order()
+    {
+        // given
+        var services = new ServiceCollection();
+        bool? auditByDefaultSeenBySecondDelegate = null;
+
+        services.AddHeadlessAuditLog(setup =>
+        {
+            setup.RegisterExtension(new NoopStorageExtension());
+            setup.ConfigureOptions(options => options.AuditByDefault = true);
+            setup.ConfigureOptions(options =>
+            {
+                auditByDefaultSeenBySecondDelegate = options.AuditByDefault;
+                options.IsEnabled = false;
+            });
+        });
+
+        var provider = services.BuildServiceProvider();
+
+        // when
+        var options = provider.GetRequiredService<IOptions<AuditLogOptions>>().Value;
+
+        // then - both delegates ran in registration order against the same options instance
+        auditByDefaultSeenBySecondDelegate.Should().BeTrue();
+        options.AuditByDefault.Should().BeTrue();
+        options.IsEnabled.Should().BeFalse();
+    }
+
+    private sealed class NoopStorageExtension : IAuditLogStorageOptionsExtension
+    {
+        public void AddServices(IServiceCollection services) { }
+    }
 }

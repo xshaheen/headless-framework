@@ -22,6 +22,7 @@ public sealed record CashOutDisburseResponseAmanCashingDetails
     [JsonPropertyName("is_paid")]
     public bool IsPaid { get; init; }
 
+    // set (not init): [JsonExtensionData] cannot bind through init-only metadata and fails deserialization
     [JsonExtensionData]
-    public IDictionary<string, object?>? ExtensionData { get; init; }
+    public IDictionary<string, object?>? ExtensionData { get; set; }
 }

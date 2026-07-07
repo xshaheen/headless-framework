@@ -1597,6 +1597,17 @@
       "headless.checks": {
         "type": "Project"
       },
+      "headless.core": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Serializer.Json": "[1.0.0, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.9, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.9, )",
+          "Snappier": "[1.3.1, )"
+        }
+      },
       "headless.extensions": {
         "type": "Project",
         "dependencies": {
@@ -1641,6 +1652,29 @@
         "dependencies": {
           "Headless.Hosting": "[1.0.0, )",
           "Microsoft.Extensions.Http.Resilience": "[10.7.0, )"
+        }
+      },
+      "headless.serializer.abstractions": {
+        "type": "Project"
+      },
+      "headless.serializer.json": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Serializer.Abstractions": "[1.0.0, )"
+        }
+      },
+      "headless.testing": {
+        "type": "Project",
+        "dependencies": {
+          "AwesomeAssertions": "[9.4.0, )",
+          "Bogus": "[35.6.5, )",
+          "Headless.Core": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Meziantou.Extensions.Logging.Xunit.v3": "[2.0.3, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.9, )",
+          "Microsoft.Extensions.Logging": "[10.0.9, )",
+          "Microsoft.Extensions.TimeProvider.Testing": "[10.7.0, )",
+          "xunit.v3.extensibility.core": "[3.2.2, )"
         }
       },
       "CommunityToolkit.HighPerformance": {
@@ -1725,6 +1759,16 @@
         "requested": "[9.0.34, )",
         "resolved": "9.0.34",
         "contentHash": "QmwQQk2ca/E3qyTTwmTnIoNj2sQ8daRWBQt4+6bkNkDyHgCjgggNGgvFqS6Gm9HQ1EbYkyKn58RjUC2jVM+RQw=="
+      },
+      "Meziantou.Extensions.Logging.Xunit.v3": {
+        "type": "CentralTransitive",
+        "requested": "[2.0.3, )",
+        "resolved": "2.0.3",
+        "contentHash": "bX85l/ptbh1z+Q2t/I5bXK0JuClpWUxBlIh9Kx0bAqOw0FmRbYvKoCfNdBrmojecqFSTdx3xTEG6xsHUj4jLLQ==",
+        "dependencies": {
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.9",
+          "xunit.v3.extensibility.core": "3.2.2"
+        }
       },
       "Microsoft.Bcl.TimeProvider": {
         "type": "CentralTransitive",
@@ -2048,6 +2092,12 @@
         "requested": "[7.2.5, )",
         "resolved": "7.2.5",
         "contentHash": "Fu1AjcAyrZIAW9LIhxVgVyo5EMVdwLhXagKKI2A1UZoI0Wvz2CiRT+VXp1tuiMq2JhlkjVyebj/JQcF4koZacg=="
+      },
+      "Snappier": {
+        "type": "CentralTransitive",
+        "requested": "[1.3.1, )",
+        "resolved": "1.3.1",
+        "contentHash": "DOdDQiO8YZ5rBtVLY+6CmR1yp9WYoJRgEEktPBrR0tEj9QO2djA/zv0O3DX0OZpEAfosbY8pytQ9tQUogwQsEA=="
       },
       "System.Reactive": {
         "type": "CentralTransitive",

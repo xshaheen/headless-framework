@@ -1155,6 +1155,104 @@ public sealed class EfAuditChangeCaptureTests : TestBase
         }
     }
 
+    [Fact]
+    public async Task updated_entity_with_only_ignored_property_change_produces_no_entry()
+    {
+        // given - LastComputedAt is [AuditIgnore] and is the only modified property
+        var (db, conn) = _CreateDb();
+        await using (conn)
+        await using (db)
+        {
+            var order = new Order
+            {
+                Id = Guid.NewGuid(),
+                CustomerName = "Alice",
+                Email = "a@b.com",
+                Phone = "555",
+                LastComputedAt = DateTime.UtcNow,
+            };
+            db.Orders.Add(order);
+            await db.SaveChangesAsync(AbortToken);
+
+            order.LastComputedAt = DateTime.UtcNow.AddMinutes(5);
+            db.ChangeTracker.DetectChanges();
+
+            var sut = _CreateSut();
+
+            // when
+            var result = _Capture(sut, db);
+
+            // then - an update whose only changes are non-audited yields no audit entry at all
+            result.Should().BeEmpty();
+        }
+    }
+
+    [Fact]
+    public async Task updated_entity_with_only_excluded_sensitive_property_change_produces_no_entry()
+    {
+        // given - Phone is [AuditSensitive(Exclude)] and is the only modified property
+        var (db, conn) = _CreateDb();
+        await using (conn)
+        await using (db)
+        {
+            var order = new Order
+            {
+                Id = Guid.NewGuid(),
+                CustomerName = "Alice",
+                Email = "a@b.com",
+                Phone = "555",
+            };
+            db.Orders.Add(order);
+            await db.SaveChangesAsync(AbortToken);
+
+            order.Phone = "555-new";
+            db.ChangeTracker.DetectChanges();
+
+            var sut = _CreateSut();
+
+            // when
+            var result = _Capture(sut, db);
+
+            // then - the excluded property produces no changed field, so the update is suppressed
+            result.Should().BeEmpty();
+        }
+    }
+
+    [Fact]
+    public async Task audit_sensitive_redact_on_update_masks_old_and_new_values_but_keeps_changed_field()
+    {
+        // given - Email has [AuditSensitive] with the default Redact strategy
+        var (db, conn) = _CreateDb();
+        await using (conn)
+        await using (db)
+        {
+            var order = new Order
+            {
+                Id = Guid.NewGuid(),
+                CustomerName = "Alice",
+                Email = "alice@secret.com",
+                Phone = "555",
+            };
+            db.Orders.Add(order);
+            await db.SaveChangesAsync(AbortToken);
+
+            order.Email = "bob@secret.com";
+            db.ChangeTracker.DetectChanges();
+
+            var sut = _CreateSut();
+
+            // when
+            var result = _Capture(sut, db);
+
+            // then - the change is recorded but both values are masked
+            result.Should().ContainSingle();
+            var entry = result[0];
+            entry.ChangedFields.Should().Contain("Email");
+            entry.OldValues.Should().ContainKey("Email").WhoseValue.Should().Be("***");
+            entry.NewValues.Should().ContainKey("Email").WhoseValue.Should().Be("***");
+        }
+    }
+
     private static bool _IsDisabledAuditWarningLog(ICall call)
     {
         var arguments = call.GetArguments();
