@@ -92,4 +92,8 @@ namespace Headless.Payments.Paymob.CashIn.Internals;
 [JsonSerializable(typeof(CashInTransactionSourceData))]
 [JsonSerializable(typeof(CashInTransactionsPage))]
 [JsonSerializable(typeof(CashInTransactionsPageRequest))]
+// object/JsonElement metadata is required for [JsonExtensionData] values; without it
+// any unknown field in a Paymob response throws NotSupportedException.
+[JsonSerializable(typeof(object))]
+[JsonSerializable(typeof(JsonElement))]
 internal sealed partial class PaymobCashInJsonSerializerContext : JsonSerializerContext;
