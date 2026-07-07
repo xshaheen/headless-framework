@@ -276,7 +276,7 @@ public sealed class SettingValueStore(
                 continue;
             }
 
-            result.Add(new SettingValue(settingName, null));
+            result.Add(new SettingValue(settingName, Value: null));
         }
 
         return result;

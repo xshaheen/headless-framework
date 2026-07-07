@@ -41,7 +41,7 @@ internal sealed class RedisPubSubConnectionProvider(IOptions<RedisPubSubMessagin
                 return _connection;
             }
 
-            if (_connectionTask is null || _connectionTask.IsFaulted || _connectionTask.IsCanceled)
+            if (_connectionTask?.IsFaulted != false || _connectionTask.IsCanceled)
             {
                 _connectionTask = ConnectionMultiplexer.ConnectAsync(optionsAccessor.Value.Configuration!);
             }

@@ -6,7 +6,7 @@ namespace Headless.Captcha;
 /// <summary>Error codes returned by the Google reCAPTCHA siteverify API.</summary>
 /// <remarks>
 /// New members may be added in minor versions as Google introduces additional error codes. Consumers that
-/// <c>switch</c> on this enum must always handle <see cref="Unknown"/> / the <c>default</c> case so a newly added
+/// <see langword="switch"/> on this enum must always handle <see cref="Unknown"/> / the <see langword="default"/> case so a newly added
 /// member degrades to "treat as unknown" rather than falling through unhandled.
 /// </remarks>
 [PublicAPI]

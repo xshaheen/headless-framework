@@ -104,7 +104,7 @@ public sealed class ScopedDistributedLockStorageTests : TestBase
         var result = await storage.GetAllWithExpirationByPrefixAsync("res", AbortToken);
 
         // then
-        result.Should().HaveCount(1);
+        result.Should().ContainSingle();
         result.Should().ContainKey("res-1");
         result["res-1"].LeaseId.Should().Be("lease-1");
         result["res-1"].Ttl.Should().Be(ttl);

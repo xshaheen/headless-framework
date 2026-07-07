@@ -43,7 +43,7 @@ public sealed class KafkaMessagingOptions
 
     /// <summary>
     /// The set of Kafka error codes that trigger a consume retry, expressed as the integer values of
-    /// Confluent's <c>Confluent.Kafka.ErrorCode</c> enum. Exposing <c>int</c> instead of the native enum
+    /// Confluent's <c>Confluent.Kafka.ErrorCode</c> enum. Exposing <see langword="int"/> instead of the native enum
     /// keeps configuring retries free of a compile-time <c>Confluent.Kafka</c> dependency. The defaults
     /// include transient errors such as leader elections, rebalances, and network timeouts.
     /// See <see href="https://docs.confluent.io/platform/current/clients/librdkafka/html/rdkafkacpp_8h.html#a4c6b7af48c215724c323c60ea4080dbf"/>

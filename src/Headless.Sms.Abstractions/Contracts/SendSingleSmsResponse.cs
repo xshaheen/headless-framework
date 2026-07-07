@@ -101,7 +101,7 @@ public sealed class SendSingleSmsResponse
 /// <summary>Classifies why an SMS send failed, to inform retry and provider-routing decisions.</summary>
 /// <remarks>
 /// New members may be added in minor versions as providers surface finer-grained failure signals. Consumers that
-/// <c>switch</c> on this enum must always handle <see cref="Unknown"/> / the <c>default</c> case so a newly added
+/// <see langword="switch"/> on this enum must always handle <see cref="Unknown"/> / the <see langword="default"/> case so a newly added
 /// member degrades to "treat as unknown" rather than falling through unhandled.
 /// </remarks>
 [PublicAPI]

@@ -11,24 +11,19 @@ namespace Headless.Jobs.Base;
 /// base scheduling metadata.
 /// </summary>
 /// <typeparam name="TRequest">The deserialized request type stored in the job row.</typeparam>
-public class JobFunctionContext<TRequest> : JobFunctionContext
+/// <remarks>
+/// Initializes a typed context by copying every base member from <paramref name="jobFunctionContext"/>
+/// through the base copy constructor — so a member added to <see cref="JobFunctionContext"/> is never
+/// silently dropped here — and attaching the deserialized <paramref name="request"/>.
+/// </remarks>
+/// <param name="jobFunctionContext">The base context supplied by the scheduler.</param>
+/// <param name="request">The deserialized request payload for this execution.</param>
+[method: SetsRequiredMembers]
+public class JobFunctionContext<TRequest>(JobFunctionContext jobFunctionContext, TRequest request)
+    : JobFunctionContext(jobFunctionContext)
 {
-    /// <summary>
-    /// Initializes a typed context by copying every base member from <paramref name="jobFunctionContext"/>
-    /// through the base copy constructor — so a member added to <see cref="JobFunctionContext"/> is never
-    /// silently dropped here — and attaching the deserialized <paramref name="request"/>.
-    /// </summary>
-    /// <param name="jobFunctionContext">The base context supplied by the scheduler.</param>
-    /// <param name="request">The deserialized request payload for this execution.</param>
-    [SetsRequiredMembers]
-    public JobFunctionContext(JobFunctionContext jobFunctionContext, TRequest request)
-        : base(jobFunctionContext)
-    {
-        Request = request;
-    }
-
     /// <summary>The deserialized request payload for this job execution.</summary>
-    public TRequest Request { get; set; }
+    public TRequest Request { get; set; } = request;
 }
 
 /// <summary>
