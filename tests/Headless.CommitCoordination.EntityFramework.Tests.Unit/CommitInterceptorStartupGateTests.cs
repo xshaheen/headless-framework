@@ -37,11 +37,7 @@ public sealed class CommitInterceptorStartupGateTests
         await using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync(TestContext.Current.CancellationToken);
 
-        await using var provider = _BuildProvider(
-            connection,
-            wireInterceptor: false,
-            mode: CommitProbeMode.Strict
-        );
+        await using var provider = _BuildProvider(connection, wireInterceptor: false, mode: CommitProbeMode.Strict);
 
         // when — the interceptor never fires, so the commit edge is not observed.
         InvalidOperationException? captured = null;
@@ -65,11 +61,7 @@ public sealed class CommitInterceptorStartupGateTests
         await using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync(TestContext.Current.CancellationToken);
 
-        await using var provider = _BuildProvider(
-            connection,
-            wireInterceptor: false,
-            mode: CommitProbeMode.Warn
-        );
+        await using var provider = _BuildProvider(connection, wireInterceptor: false, mode: CommitProbeMode.Warn);
 
         // when — Warn is the default posture: surface the mis-wire but let the host start (relay recovers).
         // then — no throw. A throw here fails the test.
