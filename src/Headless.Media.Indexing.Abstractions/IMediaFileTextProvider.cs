@@ -14,6 +14,7 @@ namespace Headless.Media.Indexing;
 /// performed. Images, charts, and other non-text content are silently ignored.
 /// </para>
 /// </remarks>
+[PublicAPI]
 public interface IMediaFileTextProvider
 {
     /// <summary>

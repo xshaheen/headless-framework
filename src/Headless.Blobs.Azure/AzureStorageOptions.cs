@@ -6,6 +6,7 @@ using FluentValidation;
 namespace Headless.Blobs.Azure;
 
 /// <summary>Configuration for the Azure Blob Storage provider.</summary>
+[PublicAPI]
 public sealed class AzureStorageOptions
 {
     /// <summary>

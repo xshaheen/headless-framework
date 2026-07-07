@@ -330,6 +330,7 @@ public static class HeadlessLoggerExtensions
 /// ambient scope via <see cref="ILogger.BeginScope{TState}" />. Each property becomes a
 /// structured key/value pair visible to sink implementations (e.g. Serilog, OpenTelemetry).
 /// </summary>
+[PublicAPI]
 public sealed class LogState : IEnumerable<KeyValuePair<string, object?>>
 {
     private readonly Dictionary<string, object?> _state = new(StringComparer.Ordinal);

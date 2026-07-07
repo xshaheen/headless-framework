@@ -6,6 +6,7 @@ using FluentValidation;
 namespace Headless.Blobs.Aws;
 
 /// <summary>Configuration for the AWS S3 blob storage provider.</summary>
+[PublicAPI]
 public sealed class AwsBlobStorageOptions
 {
     /// <summary>

@@ -37,6 +37,7 @@ namespace Headless.Serializer;
 /// <see cref="CreateInternalJsonOptions"/>, or <see cref="CreatePrettyJsonOptions"/> instead of mutating a preset.
 /// </para>
 /// </remarks>
+[PublicAPI]
 public static class JsonConstants
 {
     /// <summary>

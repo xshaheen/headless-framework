@@ -33,6 +33,7 @@ namespace Headless.EntityFramework.Contexts.Runtime;
 /// replay-safe. Integration events remain exactly-once via the transactional outbox regardless of path.
 /// </para>
 /// </remarks>
+[PublicAPI]
 public interface IHeadlessSaveChangesPipeline
 {
     /// <summary>

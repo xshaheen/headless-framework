@@ -6,6 +6,7 @@ using Renci.SshNet;
 namespace Headless.Blobs.SshNet;
 
 /// <summary>Configuration for the SFTP blob storage provider.</summary>
+[PublicAPI]
 public sealed class SshBlobStorageOptions
 {
     /// <summary>

@@ -17,6 +17,7 @@ namespace Headless.Media.Indexing;
 /// memory; callers that already hold seekable streams should prefer to pass them directly.
 /// </para>
 /// </remarks>
+[PublicAPI]
 public sealed class PdfMediaFileTextProvider : IMediaFileTextProvider
 {
     /// <summary>

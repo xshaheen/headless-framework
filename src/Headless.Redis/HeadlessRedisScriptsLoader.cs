@@ -26,6 +26,7 @@ namespace Headless.Redis;
 /// </remarks>
 // ReSharper disable InconsistentNaming
 #pragma warning disable IDE1006
+[PublicAPI]
 public sealed class HeadlessRedisScriptsLoader(
     IConnectionMultiplexer multiplexer,
     TimeProvider? timeProvider = null,

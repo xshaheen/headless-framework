@@ -4,6 +4,7 @@
 namespace Headless.Imaging;
 
 /// <summary>Describes the outcome of an image processing operation.</summary>
+[PublicAPI]
 public enum ImageProcessState
 {
     /// <summary>The image format or MIME type is not supported by any registered contributor.</summary>

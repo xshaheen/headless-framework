@@ -12,6 +12,7 @@ namespace Headless.PushNotifications;
 /// <see cref="PushNotificationResponse.Status"/> to react to failures and, in particular, to detect tokens
 /// that are no longer registered and should be removed from their store.
 /// </remarks>
+[PublicAPI]
 public interface IPushNotificationService
 {
     /// <summary>

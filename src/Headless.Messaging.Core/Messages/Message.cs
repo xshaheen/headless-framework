@@ -16,6 +16,7 @@ namespace Headless.Messaging.Messages;
 /// </list>
 /// The class requires a parameterless constructor and public property setters for System.Text.Json serialization support.
 /// </remarks>
+[PublicAPI]
 public sealed class Message
 {
     /// <summary>

@@ -4,6 +4,7 @@
 namespace Headless.Imaging;
 
 /// <summary>Specifies the algorithm used to fit an image into a target bounding box.</summary>
+[PublicAPI]
 public enum ImageResizeMode
 {
     /// <summary>

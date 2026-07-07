@@ -17,6 +17,7 @@ namespace Headless.Media.Indexing;
 /// via <c>Task.FromResult</c>; no I/O is performed after the initial read of the input stream.
 /// </para>
 /// </remarks>
+[PublicAPI]
 public sealed class WordDocumentMediaFileTextProvider : IMediaFileTextProvider
 {
     /// <summary>

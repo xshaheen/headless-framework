@@ -5,6 +5,7 @@ using FluentValidation;
 namespace Headless.Blobs.FileSystem;
 
 /// <summary>Configuration for the file-system blob storage provider.</summary>
+[PublicAPI]
 public sealed class FileSystemBlobStorageOptions
 {
     /// <summary>
