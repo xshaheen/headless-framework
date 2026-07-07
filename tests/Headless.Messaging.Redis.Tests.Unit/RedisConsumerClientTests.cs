@@ -101,6 +101,24 @@ public sealed class RedisConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task should_requeue_and_ack_message_on_reject()
+    {
+        // given
+        var logger = LoggerFactory.CreateLogger<RedisConsumerClient>();
+        await using var client = new RedisConsumerClient("test-group", 1, _mockStreamManager, _options, logger);
+        var entries = new NameValueEntry[] { new("headers", "{}"), new("body", "[]") };
+        var sender = new RedisConsumerDelivery("test-stream", "test-group", "1234567-0", entries);
+
+        // when
+        await client.RejectAsync(sender);
+
+        // then
+        await _mockStreamManager
+            .Received(1)
+            .RequeueAndAck("test-stream", "test-group", "1234567-0", entries, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task should_dispose_without_error()
     {
         // given
