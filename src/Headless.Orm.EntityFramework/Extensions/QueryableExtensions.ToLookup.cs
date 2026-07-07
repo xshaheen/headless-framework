@@ -1,8 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Microsoft.EntityFrameworkCore;
-
-namespace Headless.EntityFramework;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Microsoft.EntityFrameworkCore;
 
 [PublicAPI]
 public static partial class QueryableExtensions

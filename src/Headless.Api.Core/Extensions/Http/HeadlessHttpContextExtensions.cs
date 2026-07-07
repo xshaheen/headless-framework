@@ -3,14 +3,13 @@
 using System.Diagnostics;
 using Headless.Checks;
 using Headless.Constants;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Abstractions;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Net.Http.Headers;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Headless.Api;
+namespace Microsoft.AspNetCore.Http;
 
 [PublicAPI]
 public static class HeadlessHttpContextExtensions

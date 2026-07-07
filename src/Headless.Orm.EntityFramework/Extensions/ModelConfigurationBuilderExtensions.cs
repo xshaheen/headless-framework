@@ -3,7 +3,6 @@
 using Headless.Domain;
 using Headless.EntityFramework.Configurations;
 using Headless.Primitives;
-using Microsoft.EntityFrameworkCore;
 using AccountId = Headless.Primitives.AccountId;
 using File = Headless.Primitives.File;
 using Money = Headless.Primitives.Money;
@@ -11,7 +10,7 @@ using Month = Headless.Primitives.Month;
 using UserId = Headless.Primitives.UserId;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Headless.EntityFramework;
+namespace Microsoft.EntityFrameworkCore;
 
 /// <summary>
 /// Extension methods for registering Headless building-block primitive type converter mappings on a

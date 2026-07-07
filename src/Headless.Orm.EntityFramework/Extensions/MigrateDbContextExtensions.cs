@@ -1,10 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Headless.EntityFramework;
+namespace Microsoft.EntityFrameworkCore;
 
 /// <summary>
 /// Extension members on <see cref="IServiceProvider"/> for managing the database lifecycle

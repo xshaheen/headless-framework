@@ -2,7 +2,6 @@
 
 using Headless.Abstractions;
 using Headless.Checks;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
@@ -10,7 +9,7 @@ using Microsoft.EntityFrameworkCore.ValueGeneration;
 using Microsoft.Extensions.DependencyInjection;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Headless.EntityFramework;
+namespace Microsoft.EntityFrameworkCore;
 
 [PublicAPI]
 public static class DbContextOptionsBuilderExtensions

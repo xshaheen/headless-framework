@@ -2,9 +2,9 @@
 
 using Headless.Domain;
 using Headless.Exceptions;
-using Microsoft.EntityFrameworkCore;
 
-namespace Headless.EntityFramework;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Microsoft.EntityFrameworkCore;
 
 public static partial class QueryableExtensions
 {

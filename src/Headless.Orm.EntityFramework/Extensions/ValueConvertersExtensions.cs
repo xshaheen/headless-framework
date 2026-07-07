@@ -3,10 +3,9 @@
 using System.Reflection;
 using Headless.Generator.Primitives;
 using Headless.Reflection;
-using Microsoft.EntityFrameworkCore;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Headless.EntityFramework;
+namespace Microsoft.EntityFrameworkCore;
 
 /// <summary>A static class providing methods to configure EF value converts for Primitive types.</summary>
 [PublicAPI]

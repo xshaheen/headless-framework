@@ -1,10 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Headless.EntityFramework;
+namespace Microsoft.EntityFrameworkCore;
 
 /// <summary>Extension methods for <see cref="DbContext"/>.</summary>
 [PublicAPI]

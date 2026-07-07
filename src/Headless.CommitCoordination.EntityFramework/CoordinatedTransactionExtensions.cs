@@ -1,9 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
-using Microsoft.EntityFrameworkCore;
 
-namespace Headless.CommitCoordination.EntityFramework;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Microsoft.EntityFrameworkCore;
 
 /// <summary>
 /// Single-call coordinated-transaction helpers for a plain <see cref="DbContext"/>: open a resilient
@@ -19,7 +19,7 @@ namespace Headless.CommitCoordination.EntityFramework;
 /// retried attempt discards its buffer and the next attempt opens a fresh transaction and coordinator.
 /// </remarks>
 [PublicAPI]
-public static class CoordinatedTransactionExtensions
+public static class HeadlessEntityFrameworkCoordinatedTransactionExtensions
 {
     /// <summary>
     /// Executes <paramref name="operation"/> inside a resilient, commit-coordinated transaction.

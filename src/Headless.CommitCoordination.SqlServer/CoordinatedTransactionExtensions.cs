@@ -1,11 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
-using Microsoft.Data.SqlClient;
+using Headless.CommitCoordination;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-namespace Headless.CommitCoordination.SqlServer;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Microsoft.Data.SqlClient;
 
 /// <summary>
 /// Single-call coordinated-transaction helpers for a raw-ADO <see cref="SqlConnection"/>: open a
@@ -21,7 +22,7 @@ namespace Headless.CommitCoordination.SqlServer;
 /// duration and closed again afterward; an already-open connection is left open.
 /// </remarks>
 [PublicAPI]
-public static class CoordinatedTransactionExtensions
+public static class HeadlessSqlServerCoordinatedTransactionExtensions
 {
     extension(SqlConnection connection)
     {

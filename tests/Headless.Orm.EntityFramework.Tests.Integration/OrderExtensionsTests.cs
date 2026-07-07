@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.EntityFramework;
 using Headless.Primitives;
+using Microsoft.EntityFrameworkCore;
 
 namespace Tests;
 

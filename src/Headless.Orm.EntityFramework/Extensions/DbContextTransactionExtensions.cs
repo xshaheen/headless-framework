@@ -1,10 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
-using Microsoft.EntityFrameworkCore;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Headless.EntityFramework;
+namespace Microsoft.EntityFrameworkCore;
 
 /// <summary>
 /// Extension methods for executing operations within a resilient transaction that is
