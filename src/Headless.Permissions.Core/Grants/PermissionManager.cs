@@ -253,7 +253,7 @@ public sealed class PermissionManager(
 
         foreach (var (_, providerGrants) in providerGrantsList)
         {
-            foreach (var (permissionName, providerResult) in providerGrants)
+            foreach (var (permissionName, providerResult) in providerGrants.Statuses)
             {
                 if (providerResult.Status is PermissionGrantStatus.Prohibited)
                 {
@@ -268,7 +268,7 @@ public sealed class PermissionManager(
 
         foreach (var (grantProviderName, providerGrants) in providerGrantsList)
         {
-            foreach (var (permissionName, providerResult) in providerGrants)
+            foreach (var (permissionName, providerResult) in providerGrants.Statuses)
             {
                 if (providerResult.Status is not PermissionGrantStatus.Granted)
                 {

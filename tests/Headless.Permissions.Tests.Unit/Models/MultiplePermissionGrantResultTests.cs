@@ -17,7 +17,7 @@ public sealed class MultiplePermissionGrantResultTests : TestBase
         var result = new MultiplePermissionGrantResult(permissions, isGranted: true);
 
         // then
-        result.Should().HaveCount(3);
+        result.Grants.Should().HaveCount(3);
         result["Read"].Should().BeTrue();
         result["Write"].Should().BeTrue();
         result["Delete"].Should().BeTrue();

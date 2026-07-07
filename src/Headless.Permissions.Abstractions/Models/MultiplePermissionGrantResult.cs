@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections;
-using System.Diagnostics.CodeAnalysis;
 using Headless.Checks;
 
 namespace Headless.Permissions.Models;
@@ -10,12 +8,7 @@ namespace Headless.Permissions.Models;
 /// Maps each requested permission name to whether it is granted. Keys are compared ordinally. Used by the batch
 /// <c>IsGrantedAsync</c> checks. The result is read-only to consumers; the framework populates it internally.
 /// </summary>
-[SuppressMessage(
-    "Naming",
-    "CA1710:IdentifiersShouldHaveCorrectSuffix",
-    Justification = "Public API contract name; a domain-specific read-only grant map, not a general-purpose dictionary."
-)]
-public sealed class MultiplePermissionGrantResult : IReadOnlyDictionary<string, bool>
+public sealed class MultiplePermissionGrantResult
 {
     private readonly Dictionary<string, bool> _grants = new(StringComparer.Ordinal);
 
@@ -35,34 +28,21 @@ public sealed class MultiplePermissionGrantResult : IReadOnlyDictionary<string, 
         }
     }
 
+    /// <summary>
+    /// The requested permission names mapped to whether each is granted. Keys are compared ordinally. Enumerate
+    /// this to inspect every decision, or use the <see cref="this[string]"/> indexer for a single lookup.
+    /// </summary>
+    public IReadOnlyDictionary<string, bool> Grants => _grants;
+
     /// <summary>Whether every entry is granted. An empty result is considered all-granted (vacuously true).</summary>
     public bool AllGranted => _grants.Values.All(isGranted => isGranted);
 
     /// <summary>Whether every entry is not granted. An empty result is considered all-prohibited (vacuously true).</summary>
     public bool AllProhibited => _grants.Values.All(isGranted => !isGranted);
 
-    /// <inheritdoc/>
-    public bool this[string key] => _grants[key];
-
-    /// <inheritdoc/>
-    public IEnumerable<string> Keys => _grants.Keys;
-
-    /// <inheritdoc/>
-    public IEnumerable<bool> Values => _grants.Values;
-
-    /// <inheritdoc/>
-    public int Count => _grants.Count;
-
-    /// <inheritdoc/>
-    public bool ContainsKey(string key) => _grants.ContainsKey(key);
-
-    /// <inheritdoc/>
-    public bool TryGetValue(string key, out bool value) => _grants.TryGetValue(key, out value);
-
-    /// <inheritdoc/>
-    public IEnumerator<KeyValuePair<string, bool>> GetEnumerator() => _grants.GetEnumerator();
-
-    IEnumerator IEnumerable.GetEnumerator() => _grants.GetEnumerator();
+    /// <summary>Gets whether the permission named <paramref name="permissionName"/> is granted.</summary>
+    /// <param name="permissionName">The permission name to look up. Must be present in the result.</param>
+    public bool this[string permissionName] => _grants[permissionName];
 
     /// <summary>Adds a single name-to-decision entry. Internal population path used by the framework.</summary>
     internal void Add(string name, bool isGranted) => _grants.Add(name, isGranted);

@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections;
-using System.Diagnostics.CodeAnalysis;
 using Headless.Checks;
 
 namespace Headless.Permissions.Models;
@@ -11,12 +9,7 @@ namespace Headless.Permissions.Models;
 /// Used by the batch permission evaluation paths. The result is read-only to consumers; grant providers populate
 /// it internally.
 /// </summary>
-[SuppressMessage(
-    "Naming",
-    "CA1710:IdentifiersShouldHaveCorrectSuffix",
-    Justification = "Public API contract name; a domain-specific read-only grant-status map, not a general-purpose dictionary."
-)]
-public sealed class MultiplePermissionGrantStatusResult : IReadOnlyDictionary<string, PermissionGrantResult>
+public sealed class MultiplePermissionGrantStatusResult
 {
     private readonly Dictionary<string, PermissionGrantResult> _statuses = new(StringComparer.Ordinal);
 
@@ -53,6 +46,12 @@ public sealed class MultiplePermissionGrantStatusResult : IReadOnlyDictionary<st
     }
 
     /// <summary>
+    /// The requested permission names mapped to their resolved grant results. Keys are compared ordinally.
+    /// Enumerate this to inspect every result, or use the <see cref="this[string]"/> indexer for a single lookup.
+    /// </summary>
+    public IReadOnlyDictionary<string, PermissionGrantResult> Statuses => _statuses;
+
+    /// <summary>
     /// Whether every entry has <see cref="PermissionGrantStatus.Granted"/> status.
     /// An empty result is considered all-granted (vacuously true).
     /// </summary>
@@ -64,32 +63,13 @@ public sealed class MultiplePermissionGrantStatusResult : IReadOnlyDictionary<st
     /// </summary>
     public bool AllProhibited => _statuses.Values.All(x => x.Status is PermissionGrantStatus.Prohibited);
 
-    /// <inheritdoc cref="IReadOnlyDictionary{TKey,TValue}.this"/>
-    public PermissionGrantResult this[string key]
+    /// <summary>Gets the resolved grant result for the permission named <paramref name="permissionName"/>.</summary>
+    /// <param name="permissionName">The permission name to look up. Must be present in the result.</param>
+    public PermissionGrantResult this[string permissionName]
     {
-        get => _statuses[key];
-        internal set => _statuses[key] = value;
+        get => _statuses[permissionName];
+        internal set => _statuses[permissionName] = value;
     }
-
-    /// <inheritdoc/>
-    public IEnumerable<string> Keys => _statuses.Keys;
-
-    /// <inheritdoc/>
-    public IEnumerable<PermissionGrantResult> Values => _statuses.Values;
-
-    /// <inheritdoc/>
-    public int Count => _statuses.Count;
-
-    /// <inheritdoc/>
-    public bool ContainsKey(string key) => _statuses.ContainsKey(key);
-
-    /// <inheritdoc/>
-    public bool TryGetValue(string key, out PermissionGrantResult value) => _statuses.TryGetValue(key, out value!);
-
-    /// <inheritdoc/>
-    public IEnumerator<KeyValuePair<string, PermissionGrantResult>> GetEnumerator() => _statuses.GetEnumerator();
-
-    IEnumerator IEnumerable.GetEnumerator() => _statuses.GetEnumerator();
 
     /// <summary>Adds a single name-to-result entry. Internal population path used by grant providers.</summary>
     internal void Add(string name, PermissionGrantResult result) => _statuses.Add(name, result);

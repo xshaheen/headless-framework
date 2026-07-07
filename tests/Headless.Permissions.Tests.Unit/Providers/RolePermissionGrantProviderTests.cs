@@ -31,7 +31,7 @@ public sealed class RolePermissionGrantProviderTests : TestBase
         var result = await _sut.CheckAsync([permission], currentUser, AbortToken);
 
         // then
-        result.Should().ContainKey("Users.Create");
+        result.Statuses.Should().ContainKey("Users.Create");
         result["Users.Create"].Status.Should().Be(PermissionGrantStatus.Undefined);
     }
 

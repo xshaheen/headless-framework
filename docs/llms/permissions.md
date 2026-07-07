@@ -205,7 +205,7 @@ Provides a provider-agnostic permission management API, enabling dynamic permiss
 - `ICanAddChildPermission` — shared interface on both group and definition, enabling uniform `AddChild` calls in tree-building code
 - `GrantedPermissionResult` — result of `GetAsync`; `Name`, `IsGranted`, and `Providers` (`IReadOnlyList<GrantPermissionProvider>` — the contributing grant providers with their keys; the framework populates it)
 - `GrantPermissionProvider` — identifies a contributing provider by `Name` and the `Keys` (user id or role names) that granted the permission
-- `MultiplePermissionGrantResult` — read-only name-to-granted map (`IReadOnlyDictionary<string, bool>`) with `AllGranted` and `AllProhibited` shorthand properties; returned by batch `IsGrantedAsync`
+- `MultiplePermissionGrantResult` — exposes the name-to-granted map as a read-only `Grants` (`IReadOnlyDictionary<string, bool>`) property, a `this[permissionName]` lookup indexer, and `AllGranted`/`AllProhibited` shorthand properties; returned by batch `IsGrantedAsync`
 - `PermissionGrantProviderNames` — constants `User` and `Role` for the built-in providers
 
 ### Installation
