@@ -156,6 +156,11 @@ internal sealed class JobsExecutionTaskHandler(
             await internalJobsManager.UpdateTickerAsync(context, cancellationToken).ConfigureAwait(false);
         }
 
+        if (!await _VerifyLeaseBeforeExecutionAsync(context, cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
         var stopWatch = new Stopwatch();
         // CA2000: ownership is registered into JobsCancellationTokenManager and the CTS is disposed on every exit
         // path below (after StopRenewalAsync stops the renewal loop that references it).
@@ -536,6 +541,31 @@ internal sealed class JobsExecutionTaskHandler(
         }
     }
 
+    private async Task<bool> _VerifyLeaseBeforeExecutionAsync(
+        JobExecutionState context,
+        CancellationToken cancellationToken
+    )
+    {
+        var outcome = await _TryRenewLeaseAsync(context, cancellationToken).ConfigureAwait(false);
+
+        if (outcome is RenewalOutcome.Held)
+        {
+            return true;
+        }
+
+        if (outcome is RenewalOutcome.MembershipUnknown)
+        {
+            logger.LogJobStartLeaseVerificationSkippedMembershipUnknown(context.JobId, context.FunctionName);
+
+            return true;
+        }
+
+        context.LeaseLost = true;
+        logger.LogJobLeaseLostBeforeExecution(context.JobId, context.FunctionName);
+
+        return false;
+    }
+
     private async Task<bool> _WaitForRetry(
         JobExecutionState context,
         int attempt,
@@ -710,4 +740,24 @@ internal static partial class JobsExecutionTaskHandlerLog
             + "show a terminal failure that did not actually occur; reconcile before re-triggering (#462)."
     )]
     public static partial void LogJobCompletionFencedAfterSuccess(this ILogger logger, Guid jobId, string function);
+
+    [LoggerMessage(
+        EventId = 3105,
+        Level = LogLevel.Warning,
+        Message = "Job {JobId} ({Function}) lost ownership before execution started; user code was not invoked and "
+            + "the row is left InProgress for the stalled-reclaim sweep to recover per OnNodeDeath."
+    )]
+    public static partial void LogJobLeaseLostBeforeExecution(this ILogger logger, Guid jobId, string function);
+
+    [LoggerMessage(
+        EventId = 3106,
+        Level = LogLevel.Debug,
+        Message = "Start lease verification for job {JobId} ({Function}) skipped: coordination membership is not "
+            + "currently established. The job will start and the renewal loop will keep checking membership."
+    )]
+    public static partial void LogJobStartLeaseVerificationSkippedMembershipUnknown(
+        this ILogger logger,
+        Guid jobId,
+        string function
+    );
 }

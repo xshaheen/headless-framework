@@ -4,6 +4,7 @@ using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.JobsThreadPool;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Jobs.BackgroundServices;
@@ -14,7 +15,8 @@ internal sealed class JobsFallbackBackgroundService(
     JobsExecutionTaskHandler tickerExecutionTaskHandler,
     JobsTaskScheduler jobsTaskScheduler,
     IJobFunctionConcurrencyGate concurrencyGate,
-    TimeProvider timeProvider
+    TimeProvider timeProvider,
+    ILogger<JobsFallbackBackgroundService> logger
 ) : BackgroundService
 {
     private int _started;
@@ -136,10 +138,11 @@ internal sealed class JobsFallbackBackgroundService(
                 break;
             }
 #pragma warning disable ERP022 // Background service must continue running even if individual operations fail.
-            catch (Exception)
+            catch (Exception exception)
             {
                 // Swallow unexpected exceptions so they don't bubble up
                 // and stop the host; wait a bit before retrying.
+                logger.LogJobsFallbackTickFailed(exception, _fallbackJobPeriod);
                 await timeProvider.Delay(_fallbackJobPeriod, stoppingToken).ConfigureAwait(false);
             }
 #pragma warning restore ERP022
@@ -151,4 +154,18 @@ internal sealed class JobsFallbackBackgroundService(
         Interlocked.Exchange(ref _started, 0);
         await base.StopAsync(cancellationToken).ConfigureAwait(false);
     }
+}
+
+internal static partial class JobsFallbackBackgroundServiceLog
+{
+    [LoggerMessage(
+        EventId = 3200,
+        Level = LogLevel.Warning,
+        Message = "Jobs fallback tick failed; the service will retry after {FallbackPeriod}."
+    )]
+    public static partial void LogJobsFallbackTickFailed(
+        this ILogger logger,
+        Exception exception,
+        TimeSpan fallbackPeriod
+    );
 }

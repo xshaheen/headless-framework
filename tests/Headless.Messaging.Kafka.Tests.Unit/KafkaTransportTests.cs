@@ -302,6 +302,82 @@ public sealed class KafkaTransportTests : TestBase
     }
 
     [Fact]
+    public async Task should_reuse_whole_array_body_when_publishing()
+    {
+        // given
+        await using var transport = new KafkaTransport(_logger, _pool);
+        var body = "test-body"u8.ToArray();
+        var message = new TransportMessage(
+            headers: new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                { MessagingHeaders.MessageId, "msg-123" },
+                { MessagingHeaders.MessageName, "TestTopic" },
+            },
+            body: body
+        );
+
+        Message<string, byte[]>? producedMessage = null;
+        var deliveryResult = new DeliveryResult<string, byte[]>
+        {
+            Status = PersistenceStatus.Persisted,
+            Topic = "TestTopic",
+        };
+        _producer
+            .ProduceAsync(
+                Arg.Any<string>(),
+                Arg.Do<Message<string, byte[]>>(m => producedMessage = m),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(deliveryResult);
+
+        // when
+        await transport.SendAsync(message, AbortToken);
+
+        // then
+        producedMessage.Should().NotBeNull();
+        producedMessage!.Value.Should().BeSameAs(body);
+    }
+
+    [Fact]
+    public async Task should_copy_sliced_body_when_publishing()
+    {
+        // given
+        await using var transport = new KafkaTransport(_logger, _pool);
+        var source = "xxbodyyy"u8.ToArray();
+        var body = new ReadOnlyMemory<byte>(source, 2, 4);
+        var message = new TransportMessage(
+            headers: new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                { MessagingHeaders.MessageId, "msg-123" },
+                { MessagingHeaders.MessageName, "TestTopic" },
+            },
+            body: body
+        );
+
+        Message<string, byte[]>? producedMessage = null;
+        var deliveryResult = new DeliveryResult<string, byte[]>
+        {
+            Status = PersistenceStatus.Persisted,
+            Topic = "TestTopic",
+        };
+        _producer
+            .ProduceAsync(
+                Arg.Any<string>(),
+                Arg.Do<Message<string, byte[]>>(m => producedMessage = m),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(deliveryResult);
+
+        // when
+        await transport.SendAsync(message, AbortToken);
+
+        // then
+        producedMessage.Should().NotBeNull();
+        producedMessage!.Value.Should().Equal("body"u8.ToArray());
+        producedMessage.Value.Should().NotBeSameAs(source);
+    }
+
+    [Fact]
     public async Task should_handle_null_header_values()
     {
         // given

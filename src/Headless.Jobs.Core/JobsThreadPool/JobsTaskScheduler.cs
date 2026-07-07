@@ -23,6 +23,7 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
 
     // Global state
     private volatile int _totalQueuedTasks;
+    private volatile int _activeTasks;
     private volatile int _activeWorkers;
     private volatile bool _disposed;
     private volatile bool _isFrozen;
@@ -92,26 +93,25 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
         if (priority == JobPriority.LongRunning)
         {
             // Bypass pool for long-running tasks
-            _ = Task
-                .Factory.StartNew(
-                    async () =>
-                    {
-                        try
-                        {
-                            await work(cancellationToken).ConfigureAwait(false);
-                        }
-#pragma warning disable ERP022 // Scheduler must continue running even if task execution throws.
-                        catch
-                        {
-                            /* swallow */
-                        }
-#pragma warning restore ERP022
-                    },
-                    CancellationToken.None,
-                    TaskCreationOptions.LongRunning,
-                    TaskScheduler.Default
-                )
-                .Unwrap();
+            Interlocked.Increment(ref _activeTasks);
+
+            try
+            {
+                _ = Task
+                    .Factory.StartNew(
+                        () => _ExecuteLongRunningWorkAsync(work, cancellationToken),
+                        CancellationToken.None,
+                        TaskCreationOptions.LongRunning,
+                        TaskScheduler.Default
+                    )
+                    .Unwrap();
+            }
+            catch
+            {
+                Interlocked.Decrement(ref _activeTasks);
+                throw;
+            }
+
             return;
         }
 
@@ -358,7 +358,8 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
 
     private async Task _ExecuteWorkAsync(WorkItem workItem)
     {
-        // Decrement immediately after dequeue to keep counter in sync
+        // Move the item from queued to active without exposing a false-idle gap to drains.
+        Interlocked.Increment(ref _activeTasks);
         Interlocked.Decrement(ref _totalQueuedTasks);
 
         try
@@ -366,8 +367,6 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
             // Check cancellation before executing
             if (!workItem.UserToken.IsCancellationRequested && !_shutdownCts.Token.IsCancellationRequested)
             {
-                // Start the work without awaiting it so this worker
-                // can continue processing other items while the task awaits.
                 var task = workItem.Work(workItem.UserToken);
 
                 if (task == null)
@@ -375,47 +374,7 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
                     return;
                 }
 
-                if (!task.IsCompleted)
-                {
-                    // Observe completion and exceptions without blocking the worker loop
-                    _ = task.ContinueWith(
-                        t =>
-                        {
-                            try
-                            {
-                                if (t.IsFaulted)
-                                {
-                                    _ = t.Exception;
-                                }
-                            }
-                            // ERP022: Worker thread must continue running.
-#pragma warning disable ERP022
-                            catch
-                            {
-                                // Swallow continuation exceptions
-                            }
-#pragma warning restore ERP022
-                        },
-                        CancellationToken.None,
-                        TaskContinuationOptions.ExecuteSynchronously,
-                        TaskScheduler.Default
-                    );
-                }
-                else
-                {
-                    // Task already completed synchronously – observe any exception
-                    try
-                    {
-                        await task.ConfigureAwait(false);
-                    }
-                    // ERP022: Worker thread must continue running.
-#pragma warning disable ERP022
-                    catch
-                    {
-                        // Swallow exceptions to keep worker alive
-                    }
-#pragma warning restore ERP022
-                }
+                await task.ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
@@ -430,6 +389,39 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
             // Errors are swallowed to prevent worker thread crashes
         }
 #pragma warning restore ERP022, RCS1075
+        finally
+        {
+            Interlocked.Decrement(ref _activeTasks);
+        }
+    }
+
+    private async Task _ExecuteLongRunningWorkAsync(
+        Func<CancellationToken, Task> work,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            if (!cancellationToken.IsCancellationRequested && !_shutdownCts.Token.IsCancellationRequested)
+            {
+                await work(cancellationToken).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected - task was cancelled
+        }
+        // ERP022/RCS1075: Scheduler must continue running even if task execution throws.
+#pragma warning disable ERP022, RCS1075
+        catch (Exception)
+        {
+            // Errors are swallowed to prevent worker thread crashes.
+        }
+#pragma warning restore ERP022, RCS1075
+        finally
+        {
+            Interlocked.Decrement(ref _activeTasks);
+        }
     }
 
     /// <summary>
@@ -500,6 +492,11 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
     public int TotalQueuedTasks => _totalQueuedTasks;
 
     /// <summary>
+    /// Gets the current number of active task executions.
+    /// </summary>
+    public int ActiveTasks => _activeTasks;
+
+    /// <summary>
     /// Gets whether the scheduler has been disposed.
     /// </summary>
     public bool IsDisposed => _disposed;
@@ -516,6 +513,7 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
             $"Status: {(_isFrozen ? "FROZEN" : (_disposed ? "DISPOSED" : "ACTIVE"))}\n"
         );
         builder.Append(CultureInfo.InvariantCulture, $"Workers: {_activeWorkers}/{_maxConcurrency}\n");
+        builder.Append(CultureInfo.InvariantCulture, $"Active Tasks: {_activeTasks}\n");
         builder.Append(CultureInfo.InvariantCulture, $"Total Queued (counter): {_totalQueuedTasks}\n\n");
         builder.Append("Queue Distribution:\n");
 
@@ -558,7 +556,7 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
     {
         var deadline = timeout.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.Add(timeout.Value) : DateTime.MaxValue;
 
-        while (_totalQueuedTasks > 0 || _activeWorkers > 0)
+        while (_totalQueuedTasks > 0 || _activeTasks > 0)
         {
             if (_timeProvider.GetUtcNow().UtcDateTime > deadline)
             {
@@ -582,9 +580,9 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
         _isFrozen = true; // Prevent new tasks
         await _shutdownCts.CancelAsync().ConfigureAwait(false);
 
-        // Wait for workers to exit gracefully
+        // Wait for workers and in-flight work to exit gracefully
         var timeout = _timeProvider.GetUtcNow().UtcDateTime.AddSeconds(5);
-        while (_activeWorkers > 0 && _timeProvider.GetUtcNow().UtcDateTime < timeout)
+        while ((_activeWorkers > 0 || _activeTasks > 0) && _timeProvider.GetUtcNow().UtcDateTime < timeout)
         {
             await _timeProvider.Delay(TimeSpan.FromMilliseconds(100), CancellationToken.None).ConfigureAwait(false);
         }

@@ -976,6 +976,13 @@ internal sealed class ConsumerRegister(
                 catch (Exception ex)
                 {
                     Logger.LogPauseNewlyAddedClientFailed(ex, GroupName);
+                    lock (_clientsLock)
+                    {
+                        _clients.Remove(client);
+                    }
+
+                    await client.DisposeAsync().ConfigureAwait(false);
+                    throw;
                 }
             }
         }

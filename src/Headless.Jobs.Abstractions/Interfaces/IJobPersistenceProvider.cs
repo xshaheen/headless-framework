@@ -20,7 +20,12 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     Task<TimeJobEntity[]> GetEarliestTimeJobsAsync(CancellationToken cancellationToken = default);
     Task<int> UpdateTimeJobAsync(JobExecutionState functionContext, CancellationToken cancellationToken = default);
     Task<byte[]> GetTimeJobRequestAsync(Guid id, CancellationToken cancellationToken = default);
-    Task UpdateTimeJobsWithUnifiedContextAsync(
+
+    /// <summary>
+    /// Applies <paramref name="functionContext"/> to still-owned time jobs and returns the IDs that were actually
+    /// stamped. Callers must execute only the returned IDs.
+    /// </summary>
+    Task<Guid[]> UpdateTimeJobsWithUnifiedContextAsync(
         Guid[] timeJobIds,
         JobExecutionState functionContext,
         CancellationToken cancellationToken = default
@@ -78,7 +83,12 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     );
     Task ReleaseAcquiredCronJobOccurrencesAsync(Guid[] occurrenceIds, CancellationToken cancellationToken = default);
     Task<byte[]> GetCronJobOccurrenceRequestAsync(Guid jobId, CancellationToken cancellationToken = default);
-    Task UpdateCronJobOccurrencesWithUnifiedContextAsync(
+
+    /// <summary>
+    /// Applies <paramref name="functionContext"/> to still-owned cron occurrences and returns the IDs that were
+    /// actually stamped. Callers must execute only the returned IDs.
+    /// </summary>
+    Task<Guid[]> UpdateCronJobOccurrencesWithUnifiedContextAsync(
         Guid[] timeJobIds,
         JobExecutionState functionContext,
         CancellationToken cancellationToken = default
