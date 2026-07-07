@@ -19,10 +19,12 @@ on:
     inputs:
       max-age-days:
         description: "Delete prerelease versions older than this many days"
-        default: "60"
+        type: number
+        default: 60
       keep-latest:
         description: "Always keep this many most-recent prereleases per package"
-        default: "3"
+        type: number
+        default: 3
       dry-run:
         description: "List candidates without deleting"
         type: boolean
@@ -53,6 +55,31 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          require_non_negative_integer() {
+            local name="$1" value="$2"
+
+            if [[ ! "$value" =~ ^[0-9]+$ ]]; then
+              echo "$name must be a non-negative integer: $value" >&2
+              exit 2
+            fi
+          }
+
+          require_non_negative_integer "max-age-days" "$MAX_AGE_DAYS"
+          require_non_negative_integer "keep-latest" "$KEEP_LATEST"
+
+          if [ "$MAX_AGE_DAYS" -lt 1 ]; then
+            echo "max-age-days must be greater than zero: $MAX_AGE_DAYS" >&2
+            exit 2
+          fi
+
+          case "$DRY_RUN" in
+            true | false) ;;
+            *)
+              echo "dry-run must be true or false: $DRY_RUN" >&2
+              exit 2
+              ;;
+          esac
 
           cutoff=$(date -u -d "${MAX_AGE_DAYS} days ago" +%s)
           echo "Owner=$OWNER  max-age-days=$MAX_AGE_DAYS  keep-latest=$KEEP_LATEST  dry-run=$DRY_RUN"
