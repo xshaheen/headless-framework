@@ -8,19 +8,20 @@ namespace Headless.Payments.Paymob.Services.CashIn.Requests;
 /// <param name="Amount">The charge amount in Egyptian Pounds (EGP).</param>
 /// <param name="Customer">Customer contact and identity data included in the payment-key request.</param>
 /// <param name="CardIntegrationId">The Paymob card integration ID configured in the merchant dashboard.</param>
+/// <param name="IframeSrc">
+/// The Paymob iframe integration ID appended to the base iframe URL. This value is account-specific;
+/// obtain it from the iframe configured in your Paymob merchant dashboard.
+/// </param>
 /// <param name="MerchantOrderId">Optional merchant-side order reference correlated with the Paymob order.</param>
 /// <param name="ExpirationSeconds">
 /// Lifetime of the payment key in seconds. Defaults to 3600 (60 minutes).
 /// The customer must complete payment before this period elapses.
 /// </param>
-/// <param name="IframeSrc">
-/// The Paymob iframe integration ID appended to the base iframe URL. Defaults to <c>75432</c>.
-/// </param>
 public sealed record PaymobCardCashInRequest(
     decimal Amount,
     PaymobCashInCustomerData Customer,
     long CardIntegrationId,
+    string IframeSrc,
     string? MerchantOrderId = null,
-    int ExpirationSeconds = 60 * 60,
-    string IframeSrc = "75432"
+    int ExpirationSeconds = 60 * 60
 );
