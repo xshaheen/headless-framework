@@ -186,19 +186,6 @@ public sealed class EfAuditLogStoreTests : TestBase
     // ---------------------------------------------------------------------------
 
     [Fact]
-    public async Task should_throw_argument_exception_when_save_saving_context_is_not_a_db_context()
-    {
-        // given
-        var store = new EfAuditLogStore();
-
-        // when
-        var act = () => store.SaveAsync([_CreateEntryData()], new object(), AbortToken);
-
-        // then
-        await act.Should().ThrowAsync<ArgumentException>();
-    }
-
-    [Fact]
     public async Task should_throw_argument_exception_when_save_async_saving_context_is_not_a_db_context()
     {
         // given
