@@ -23,6 +23,28 @@ public sealed class ReCaptchaSetupTests
     }
 
     [Fact]
+    public void v3_action_overload_configures_options()
+    {
+        var services = new ServiceCollection();
+        services.AddHeadlessCaptcha(builder =>
+            builder.UseReCaptchaV3(options =>
+            {
+                options.SiteKey = "act-key";
+                options.SiteSecret = "act-secret";
+            })
+        );
+
+        using var serviceProvider = services.BuildServiceProvider();
+
+        var options = serviceProvider
+            .GetRequiredService<IOptionsMonitor<ReCaptchaOptions>>()
+            .Get(CaptchaConstants.ReCaptchaV3Provider);
+
+        options.SiteKey.Should().Be("act-key");
+        options.SiteSecret.Should().Be("act-secret");
+    }
+
+    [Fact]
     public void v3_configuration_overload_binds_the_section()
     {
         var configuration = new ConfigurationBuilder()

@@ -4,11 +4,36 @@ using Headless.Sms;
 using Headless.Sms.Vodafone;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Tests;
 
 public sealed class VodafoneSetupTests
 {
+    [Fact]
+    public void action_overload_configures_options()
+    {
+        var services = new ServiceCollection();
+        services.AddHeadlessSms(setup =>
+            setup.UseVodafone(options =>
+            {
+                options.Sender = "SENDER";
+                options.AccountId = "account";
+                options.Password = "password";
+                options.SecureHash = "secure-hash";
+            })
+        );
+
+        using var provider = services.BuildServiceProvider();
+
+        var options = provider.GetRequiredService<IOptionsMonitor<VodafoneSmsOptions>>().CurrentValue;
+
+        options.Sender.Should().Be("SENDER");
+        options.AccountId.Should().Be("account");
+        options.Password.Should().Be("password");
+        options.SecureHash.Should().Be("secure-hash");
+    }
+
     [Fact]
     public void should_register_bulk_sender_through_setup()
     {

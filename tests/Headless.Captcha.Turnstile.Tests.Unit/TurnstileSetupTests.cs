@@ -89,6 +89,28 @@ public sealed class TurnstileSetupTests
     }
 
     [Fact]
+    public void default_action_overload_configures_options()
+    {
+        var services = new ServiceCollection();
+        services.AddHeadlessCaptcha(builder =>
+            builder.UseTurnstile(options =>
+            {
+                options.SiteKey = "act-key";
+                options.SiteSecret = "act-secret";
+            })
+        );
+
+        using var serviceProvider = services.BuildServiceProvider();
+
+        var options = serviceProvider
+            .GetRequiredService<IOptionsMonitor<TurnstileOptions>>()
+            .Get(CaptchaConstants.TurnstileProvider);
+
+        options.SiteKey.Should().Be("act-key");
+        options.SiteSecret.Should().Be("act-secret");
+    }
+
+    [Fact]
     public void default_configuration_overload_binds_the_section()
     {
         var configuration = new ConfigurationBuilder()
