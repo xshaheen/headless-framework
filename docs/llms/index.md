@@ -277,7 +277,7 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Api.Core` — ASP.NET Core API primitives: problem details, response compression, antiforgery, JSON/time services, status-code rewriter, tenancy resolution.
 - `Headless.Api.ServiceDefaults` — one-line bootstrap (`AddHeadless()`/`UseHeadless()`/`MapHeadlessEndpoints()`) combining the Core primitives with Aspire-style host conventions (OpenTelemetry, OpenAPI, service discovery, HttpClient resilience).
 - `Headless.Api.DataProtection` — Persist ASP.NET Data Protection keys to any `IBlobStorage`.
-- `Headless.Api.FluentValidation` — Validators for `IFormFile` uploads (size, content type, magic bytes).
+- `Headless.Api.FluentValidation` — Validators for `IFormFile` uploads and API request contracts (`PhoneNumberRequest`, `GeoCoordinateRequest`, `PageMetadataRequest`).
 - `Headless.Api.Idempotency` — Stripe-style idempotency middleware: cache full HTTP responses on first execution and replay them on identical retries.
 - `Headless.Api.Logging.Serilog` — Serilog enrichers for per-request context.
 - `Headless.Api.MinimalApi` — Minimal API integration (JSON config, validation filters, exception handling).

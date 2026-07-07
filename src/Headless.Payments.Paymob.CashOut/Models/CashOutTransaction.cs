@@ -49,6 +49,7 @@ public sealed record CashOutTransaction
     [JsonPropertyName("updated_at")]
     public string? UpdatedAt { get; init; }
 
+    // set (not init): [JsonExtensionData] cannot bind through init-only metadata and fails deserialization
     [JsonExtensionData]
     public IDictionary<string, object?>? ExtensionData { get; set; }
 

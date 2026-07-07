@@ -335,6 +335,47 @@ public sealed class SetupHeadlessTenancyTests
             .BeSameAs(manifest);
     }
 
+    [Fact]
+    public void should_return_pre_registered_manifest_instance_without_adding_a_second_descriptor()
+    {
+        // given — a consumer pre-registers a manifest instance before AddHeadlessTenancy runs
+        var services = new ServiceCollection();
+        var custom = new TenantPostureManifest();
+        services.AddSingleton(custom);
+
+        // when
+        var manifest = services.GetOrAddTenantPostureManifest();
+
+        // then — the consumer's instance is reused, not shadowed by a second registration
+        manifest.Should().BeSameAs(custom);
+        services.Where(descriptor => descriptor.ServiceType == typeof(TenantPostureManifest)).Should().ContainSingle();
+    }
+
+    [Fact]
+    public void should_discard_pre_registered_instance_when_a_later_factory_registration_exists()
+    {
+        // given — pins the documented footgun: reconciliation inspects the LAST registration, so an
+        // instance followed by a factory loses both the instance and any posture recorded on it
+        var services = new ServiceCollection();
+        var custom = new TenantPostureManifest();
+        custom.RecordSeam("Http", TenantPostureStatus.Enforcing);
+        services.AddSingleton(custom);
+        services.AddSingleton<TenantPostureManifest>(_ => new TenantPostureManifest());
+
+        // when
+        var manifest = services.GetOrAddTenantPostureManifest();
+
+        // then — a fresh manifest replaces all prior registrations; the recorded posture is gone
+        manifest.Should().NotBeSameAs(custom);
+        manifest.GetSeam("Http").Should().BeNull();
+        services
+            .Where(descriptor => descriptor.ServiceType == typeof(TenantPostureManifest))
+            .Should()
+            .ContainSingle()
+            .Which.ImplementationInstance.Should()
+            .BeSameAs(manifest);
+    }
+
     [Theory]
     [InlineData(TenantPostureStatus.Guarded, TenantPostureStatus.Enforcing, TenantPostureStatus.Enforcing)]
     [InlineData(TenantPostureStatus.Enforcing, TenantPostureStatus.Guarded, TenantPostureStatus.Enforcing)]

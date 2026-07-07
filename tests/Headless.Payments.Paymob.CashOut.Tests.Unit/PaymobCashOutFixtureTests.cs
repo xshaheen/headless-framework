@@ -2,10 +2,8 @@
 
 namespace Tests;
 
-// Smoke test placeholder. The project ships only a fixture today; this verifies the
-// fixture wires up cleanly so the test runner has at least one discoverable test
-// (Microsoft Testing Platform reports exit code 8 for empty test assemblies). Replace
-// or supplement with broker/authenticator coverage mirroring the CashIn sibling.
+// Smoke test verifying the shared fixture wires up cleanly. Broker/authenticator
+// coverage lives in PaymobCashOutBrokerTests and PaymobCashOutAuthenticatorTests.
 public sealed class PaymobCashOutFixtureTests(PaymobCashOutFixture fixture) : IClassFixture<PaymobCashOutFixture>
 {
     [Fact]

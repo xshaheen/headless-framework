@@ -12,6 +12,8 @@ Keeps audit-log contracts provider-neutral while centralizing the public `AddHea
 - `HeadlessAuditLogSetupBuilder` — fluent builder passed to `AddHeadlessAuditLog(setup => ...)`; exposes `ConfigureOptions`, `ConfigureStorage`, and `RegisterExtension`.
 - `HeadlessAuditLogBuilder` — returned by `AddHeadlessAuditLog(setup => ...)`; exposes the underlying `IServiceCollection`.
 - `IAuditLogStorageOptionsExtension` — setup-time hook implemented by storage provider packages.
+- `AuditLogStorageOptions` — shared storage options: `Schema`, `TableName`, `JsonColumnType`, `CreatedAtColumnType`, `InitializeOnStartup`.
+- `AuditLogJsonColumnType` — provider-validated JSON column type enum: `Jsonb`, `Json`, `NvarcharMax`.
 - `AuditLogOptionsValidator` — validates transform-sensitive-data configuration at startup.
 
 ## Installation
@@ -49,6 +51,16 @@ services.AddHeadlessAuditLog(setup =>
 ## Configuration
 
 Configure audit behavior through `setup.ConfigureOptions(...)` and storage shape through `setup.ConfigureStorage(...)`. Then select exactly one storage provider by calling the provider extension, such as `UseEntityFramework<TContext>()`, from the installed storage package.
+
+Storage options (`AuditLogStorageOptions`):
+
+| Option | Default | Description |
+|---|---|---|
+| `Schema` | `"audit"` | Database schema name. |
+| `TableName` | `"audit_log"` | Table name. |
+| `JsonColumnType` | `null` (provider default) | Override JSON column type: `Jsonb`, `Json`, or `NvarcharMax`. |
+| `CreatedAtColumnType` | `null` (provider default) | Override the timestamp column DDL type string. |
+| `InitializeOnStartup` | `true` | Set `false` to skip DDL at startup (raw providers only). |
 
 ## Dependencies
 

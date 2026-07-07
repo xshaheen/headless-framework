@@ -110,7 +110,7 @@ Install `Headless.Sms.Abstractions` plus one provider package. Register with `Ad
 - **International**: `Headless.Sms.Twilio` (most popular), `Headless.Sms.Aws` (AWS SNS), `Headless.Sms.Infobip` (global platform).
 - **MENA regional**: `Headless.Sms.Cequens`, `Headless.Sms.Connekio`, `Headless.Sms.VictoryLink`, `Headless.Sms.Vodafone`.
 
-`Headless.Sms.Core` owns registration (`AddHeadlessSms`, `HeadlessSmsSetupBuilder`, `HeadlessSmsInstanceBuilder`) and the `ISmsSenderProvider` implementation over keyed DI. Providers pull it transitively — you rarely install it directly. `Headless.Sms.Abstractions` holds contracts only (`ISmsSender`, `IBulkSmsSender`, `ISmsSenderProvider`, request/response types, `SmsFailureKinds`).
+`Headless.Sms.Core` owns registration (`AddHeadlessSms`, `HeadlessSmsSetupBuilder`, `HeadlessSmsInstanceBuilder`), the `ISmsSenderProvider` implementation over keyed DI, and the Polly-aware `SmsFailureKinds` classifier used by provider packages. Providers pull it transitively — you rarely install it directly. `Headless.Sms.Abstractions` holds contracts only (`ISmsSender`, `IBulkSmsSender`, `ISmsSenderProvider`, request/response types, `SmsFailureKind`).
 
 Register additional **named** senders alongside an optional default: `setup.AddNamed("otp", i => i.UseTwilio(…))`. Resolve them with `ISmsSenderProvider.GetSender("otp")` or `[FromKeyedServices("otp")] ISmsSender`. The default sender is optional; when configured it resolves as the unkeyed `ISmsSender` (with no default, the unkeyed `ISmsSender` is simply not registered). Each named sender is keyed under its name and isolates its own provider, options, HttpClient (and resilience pipeline), and backend state.
 
@@ -182,10 +182,10 @@ SendSingleSmsResponse.Succeeded()                                 // Success = t
 SendSingleSmsResponse.Succeeded("provider-message-id")            // carries the backend's message id
 SendSingleSmsResponse.Failed("reason")                            // Success = false, FailureKind = Unknown
 SendSingleSmsResponse.Failed("reason", SmsFailureKind.Transient)  // classified failure
-SendSingleSmsResponse.FromException(exception)                    // failure with a non-empty message, classified via SmsFailureKinds.FromException
+SendSingleSmsResponse.FromException(exception)                    // failure with a non-empty message; BCL transport faults become Transient
 ```
 
-Check `response.Success` after every send. `FailureError` is guaranteed non-null when `Success` is false (enforced by `[MemberNotNullWhen(false, nameof(FailureError))]`); `Failed` throws on a null/empty reason. `ProviderMessageId` carries the backend's message id on success when the provider returns one (Twilio SID, AWS SNS message id, Infobip bulk id), and is `null` otherwise. `FailureKind` (`SmsFailureKind`: `None`, `Unknown`, `Transient`, `RateLimited`, `InvalidRecipient`, `AuthFailure`, `OutOfCredit`) classifies failures so callers can decide whether to retry or switch providers — transport/network faults — including the standard resilience pipeline's timeout, open-circuit, and rate-limiter rejections — are reported as `Transient` via the shared `SmsFailureKinds.FromException` helper, and `SendSingleSmsResponse.FromException` pairs that classification with a guaranteed non-empty message (an overload takes an explicit kind). Provider-specific failures are classified from each provider's own contract — AWS SNS from its typed SDK exceptions, Infobip from its delivery status group — and stay `Unknown` when the backend documents no machine-readable signal (kinds are never inferred from generic HTTP status semantics).
+Check `response.Success` after every send. `FailureError` is guaranteed non-null when `Success` is false (enforced by `[MemberNotNullWhen(false, nameof(FailureError))]`); `Failed` throws on a null/empty reason. `ProviderMessageId` carries the backend's message id on success when the provider returns one (Twilio SID, AWS SNS message id, Infobip bulk id), and is `null` otherwise. `FailureKind` (`SmsFailureKind`: `None`, `Unknown`, `Transient`, `RateLimited`, `InvalidRecipient`, `AuthFailure`, `OutOfCredit`) classifies failures so callers can decide whether to retry or switch providers. `SendSingleSmsResponse.FromException` lives in Abstractions and classifies BCL transport/network faults as `Transient`; HTTP-backed provider packages use the Core-owned `SmsFailureKinds.FromException` helper to also classify the standard resilience pipeline's timeout, open-circuit, and rate-limiter rejections as `Transient`, then pass that kind to `SendSingleSmsResponse.FromException(exception, kind)`. Provider-specific failures are classified from each provider's own contract — AWS SNS from its typed SDK exceptions, Infobip from its delivery status group — and stay `Unknown` when the backend documents no machine-readable signal (kinds are never inferred from generic HTTP status semantics).
 
 `IBulkSmsSender.SendBulkAsync` returns a `SendBulkSmsResponse` with one `SmsRecipientResult` (`Destination` + a per-recipient `SendSingleSmsResponse`) per recipient, plus `AllSucceeded`/`AnySucceeded` and an optional `ProviderBatchId`. Providers that return per-recipient detail (Infobip) populate each result individually; providers whose API reports a single batch status (Cequens, Connekio, VictoryLink, Vodafone) apply that one outcome to every recipient.
 
@@ -228,7 +228,6 @@ Provides a provider-agnostic SMS sending API so application code stays decoupled
 - `SmsRequestDestination(int Code, string Number)` — phone number with separate country calling code and subscriber number.
 - `SendSingleSmsResponse` — closed result type; `Success` (bool), optional `ProviderMessageId`, `FailureError` (string? non-null on failure), and `FailureKind` (`SmsFailureKind`). Built via `Succeeded`, `Failed`, or `FromException` (which guarantees a non-empty message and classifies the failure).
 - `SendBulkSmsResponse` — per-recipient bulk result; `Results` (one `SmsRecipientResult` each), `AllSucceeded`/`AnySucceeded`, optional `ProviderBatchId`. Built via `FromResults` or `FromAggregate`.
-- `SmsFailureKinds` — shared transport classifier (`FromException`) so every provider maps network faults to the same `SmsFailureKind`; provider-specific signals are classified per provider from its own contract.
 - Never throws for provider errors — only `OperationCanceledException` and argument-validation exceptions (malformed request) propagate.
 
 ### Installation
@@ -267,10 +266,6 @@ No configuration required. This is an abstractions-only package.
 ### Dependencies
 
 - `Headless.Checks`
-- `Polly.Core`
-- `Polly.RateLimiting`
-
-`SmsFailureKinds.FromException` classifies the standard resilience pipeline's timeout, open-circuit, and rate-limiter rejections, so the abstraction references the Polly exception types directly.
 
 ### Side Effects
 
@@ -291,6 +286,7 @@ Owns the unified SMS setup builder (`AddHeadlessSms`) and the `ISmsSenderProvide
 - `AddHeadlessSms(Action<HeadlessSmsSetupBuilder>)` — the single provider-agnostic registration entry point, with an at-most-one-default-provider gate and a once-per-collection guard.
 - `HeadlessSmsSetupBuilder` — receives the default `Use*` selection plus `AddNamed(name, …)` named instances; `HeadlessSmsInstanceBuilder` — the per-named-instance builder that providers extend with their `Use*` members.
 - `ISmsSenderProvider` — registered automatically by the gate (keyed-service-backed via `KeyedServiceSmsSenderProvider`); resolves named senders by name.
+- `SmsFailureKinds.FromException(Exception)` — shared transport classifier for provider packages; maps BCL transport failures and Polly resilience-pipeline rejections (timeout, open circuit, rate limiter) to `SmsFailureKind.Transient`.
 - Deferred registration: provider contributions are queued and run only after the gates pass — the default first, then each named instance — so a setup that fails a gate leaves the `IServiceCollection` unchanged.
 
 ### Design Notes
@@ -326,6 +322,8 @@ No configuration required.
 - `Headless.Sms.Abstractions`
 - `Headless.Checks`
 - `Microsoft.Extensions.DependencyInjection.Abstractions`
+- `Polly.Core`
+- `Polly.RateLimiting`
 
 ### Side Effects
 

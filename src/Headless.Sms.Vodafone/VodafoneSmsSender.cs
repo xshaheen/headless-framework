@@ -69,7 +69,7 @@ internal sealed class VodafoneSmsSender(
         {
             logger.LogSmsSendException(e, destinations.Count);
 
-            return SendSingleSmsResponse.FromException(e);
+            return SendSingleSmsResponse.FromException(e, SmsFailureKinds.FromException(e));
         }
     }
 

@@ -205,5 +205,6 @@ After creating the project, attach it to [headless-framework.slnx](headless-fram
 
 ## Learnings
 
+- `[JsonExtensionData]` properties must be `{ get; set; }` (never `init`) and every source-gen `JsonSerializerContext` whose models carry extension data needs `[JsonSerializable(typeof(object))]` + `[JsonSerializable(typeof(JsonElement))]`. `init` binding throws on EVERY deserialization; missing object metadata throws on any unknown response field — both at runtime only, build stays green. Found via Paymob CashOut/CashIn unit tests. (2026-07-07)
 - `Range<T>` uses `null` bounds as infinities; range-to-range operations must compare lower and upper bounds with side-specific semantics instead of reusing value containment. (2026-07-04)
 - Kafka concurrent consumers must commit offsets by per-partition contiguous completed watermark; committing a high completed offset directly can acknowledge lower in-flight messages and lose them after a crash. (2026-07-06)

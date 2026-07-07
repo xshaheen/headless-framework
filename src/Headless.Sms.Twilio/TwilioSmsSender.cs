@@ -72,7 +72,7 @@ internal sealed class TwilioSmsSender(
         {
             logger.LogSmsSendException(e, destinationCount: 1);
 
-            return SendSingleSmsResponse.FromException(e);
+            return SendSingleSmsResponse.FromException(e, SmsFailureKinds.FromException(e));
         }
     }
 }
