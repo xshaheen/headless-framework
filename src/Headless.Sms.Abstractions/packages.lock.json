@@ -72,22 +72,6 @@
         "resolved": "6.0.0",
         "contentHash": "+/SsmiySsXJlvQLCGBqaZKNVt3s/Y/HbAdwtop7Km2CnuZbaScoqkWJEBQ5Cy9ebkn6kCYKrHsXgwrFdTgcb3g=="
       },
-      "Polly.Core": {
-        "type": "Direct",
-        "requested": "[8.7.0, )",
-        "resolved": "8.7.0",
-        "contentHash": "BS2t+nsBer16PIebCEPNBK5fgMisADQyRCd7K+BgkMWpFmSaiYE+rVVNpFhGRqUkJmNSLmw0uCNzHHWfgml28Q=="
-      },
-      "Polly.RateLimiting": {
-        "type": "Direct",
-        "requested": "[8.7.0, )",
-        "resolved": "8.7.0",
-        "contentHash": "PjbRSHNc0nCKYW26tXRuvj6gNny4HJOa2MHm5cZocyULYaNoGXnl5Q8Q1qKZB25d82E95B5pFvL2Kz6Yjh27GA==",
-        "dependencies": {
-          "Polly.Core": "8.7.0",
-          "System.Threading.RateLimiting": "8.0.0"
-        }
-      },
       "ReflectionAnalyzers": {
         "type": "Direct",
         "requested": "[0.3.1, )",
@@ -121,11 +105,6 @@
         "type": "Transitive",
         "resolved": "8.0.0",
         "contentHash": "dk9JPxTCIevS75HyEQ0E4OVAFhB2N+V9ShCXf8Q6FkUQZDkgLI12y679Nym1YqsiSysuQskT7Z+6nUf3yab6Vw=="
-      },
-      "System.Threading.RateLimiting": {
-        "type": "Transitive",
-        "resolved": "8.0.0",
-        "contentHash": "7mu9v0QDv66ar3DpGSZHg9NuNcxDaaAcnMULuZlaTpP9+hwXhrxNGsF5GmLkSHxFdb5bBc1TzeujsRgTrPWi+Q=="
       },
       "headless.checks": {
         "type": "Project"

@@ -113,7 +113,6 @@ All other exceptions return `false`; the host default or a downstream handler re
 - `Headless.Security`
 - `Headless.Caching.Abstractions`
 - `Headless.FluentValidation`
-- `Headless.Api.FluentValidation`
 - `Headless.Hosting`
 - `Asp.Versioning.Http`
 - `DeviceDetector.NET`

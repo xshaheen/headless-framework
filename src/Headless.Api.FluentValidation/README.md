@@ -1,10 +1,10 @@
 # Headless.Api.FluentValidation
 
-FluentValidation extensions for validating ASP.NET Core `IFormFile` uploads including size, content type, and file signature verification.
+FluentValidation extensions for ASP.NET Core file uploads and reusable Headless API request contracts.
 
 ## Problem Solved
 
-Provides reusable, type-safe validators for file uploads with proper error messages, eliminating boilerplate validation code for common file upload scenarios and preventing extension spoofing attacks.
+Provides reusable, type-safe validators for file uploads and common API request contracts, keeping validation rules out of `Headless.Api.Core` while eliminating repeated boundary-validation boilerplate.
 
 ## Key Features
 
@@ -13,6 +13,9 @@ Provides reusable, type-safe validators for file uploads with proper error messa
 - `LessThanOrEqualTo(bytes)` - Maximum file size validation
 - `ContentTypes(list)` - MIME type whitelist validation
 - `HaveSignatures(inspector, predicate)` - Magic bytes/file signature validation
+- `PhoneNumber()` - Validates `PhoneNumberRequest` country code and local subscriber number
+- `GeoCoordinate()` - Validates `GeoCoordinateRequest` latitude/longitude ranges
+- `PageMetadata()` - Validates `PageMetadataRequest` SEO field length and element-count limits
 - Localized error messages (English, Arabic)
 
 ## Installation
@@ -27,17 +30,30 @@ dotnet add package Headless.Api.FluentValidation
 using FileSignatures;
 using FileSignatures.Formats;
 using FluentValidation;
+using Headless.Api.Contracts;
 using Headless.FluentValidation;
+using Microsoft.AspNetCore.Http;
 
-public sealed class UploadRequestValidator : AbstractValidator<UploadRequest>
+public sealed record ProfileRequest(
+    IFormFile? Avatar,
+    PhoneNumberRequest? PhoneNumber,
+    GeoCoordinateRequest? Location,
+    PageMetadataRequest? Metadata
+);
+
+public sealed class ProfileRequestValidator : AbstractValidator<ProfileRequest>
 {
-    public UploadRequestValidator(IFileFormatInspector inspector)
+    public ProfileRequestValidator(IFileFormatInspector inspector)
     {
         RuleFor(x => x.Avatar)
             .FileNotEmpty()
             .LessThanOrEqualTo(5 * 1024 * 1024) // 5MB
             .ContentTypes(["image/jpeg", "image/png"])
             .HaveSignatures(inspector, format => format is Jpeg or Png);
+
+        RuleFor(x => x.PhoneNumber).PhoneNumber();
+        RuleFor(x => x.Location).GeoCoordinate();
+        RuleFor(x => x.Metadata).PageMetadata();
     }
 }
 ```
@@ -49,6 +65,7 @@ No configuration required.
 ## Dependencies
 
 - `Headless.FluentValidation`
+- `Headless.Api.Core`
 - `FileSignatures`
 - `Microsoft.AspNetCore.App` (framework reference)
 
