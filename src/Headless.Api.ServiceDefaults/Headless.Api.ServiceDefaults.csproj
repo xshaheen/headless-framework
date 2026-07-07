@@ -1,7 +1,7 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <Description>service defaults integration for Headless API.</Description>
+    <Description>Service defaults (OpenTelemetry, OpenAPI, service discovery, HTTP resilience) for Headless API hosts.</Description>
     <PackageTags>headless;api;service-defaults;dotnet</PackageTags>
     <RootNamespace>Headless.Api.ServiceDefaults</RootNamespace>
   </PropertyGroup>

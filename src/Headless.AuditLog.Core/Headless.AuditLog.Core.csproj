@@ -2,6 +2,7 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <Description>Audit log DI setup package with options validation, setup builders, and exactly-one-storage-provider registration.</Description>
+    <PackageTags>headless;audit;log;dotnet</PackageTags>
     <RootNamespace>Headless.AuditLog</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
