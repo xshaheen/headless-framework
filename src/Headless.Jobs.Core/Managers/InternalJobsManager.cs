@@ -364,7 +364,10 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
         return (min.Value, finalWinners);
     }
 
-    public async Task SetTickersInProgress(JobExecutionState[] resources, CancellationToken cancellationToken = default)
+    public async Task<JobExecutionState[]> SetTickersInProgress(
+        JobExecutionState[] resources,
+        CancellationToken cancellationToken = default
+    )
     {
         var unifiedFunctionContext = new JobExecutionState { FunctionName = string.Empty }.SetProperty(
             x => x.Status,
@@ -373,6 +376,9 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
 
         var cronJobIds = resources.Where(x => x.Type == JobType.CronJobOccurrence).Select(x => x.JobId).ToArray();
         var timeJobIds = resources.Where(x => x.Type == JobType.TimeJob).Select(x => x.JobId).ToArray();
+
+        Guid[] stampedCronJobIds = [];
+        Guid[] stampedTimeJobIds = [];
 
         if (cronJobIds.Length != 0 && timeJobIds.Length != 0)
         {
@@ -387,12 +393,14 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
                 cancellationToken
             );
             await Task.WhenAll(updateCronJobOccurrencesTask, updateTimeJobsTask).ConfigureAwait(false);
+            stampedCronJobIds = await updateCronJobOccurrencesTask.ConfigureAwait(false);
+            stampedTimeJobIds = await updateTimeJobsTask.ConfigureAwait(false);
         }
         else
         {
             if (cronJobIds.Length != 0)
             {
-                await persistenceProvider
+                stampedCronJobIds = await persistenceProvider
                     .UpdateCronJobOccurrencesWithUnifiedContextAsync(
                         cronJobIds,
                         unifiedFunctionContext,
@@ -403,13 +411,23 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
 
             if (timeJobIds.Length != 0)
             {
-                await persistenceProvider
+                stampedTimeJobIds = await persistenceProvider
                     .UpdateTimeJobsWithUnifiedContextAsync(timeJobIds, unifiedFunctionContext, cancellationToken)
                     .ConfigureAwait(false);
             }
         }
 
-        foreach (var resource in resources)
+        var stampedCronJobIdSet = new HashSet<Guid>(stampedCronJobIds);
+        var stampedTimeJobIdSet = new HashSet<Guid>(stampedTimeJobIds);
+        var stampedResources = resources
+            .Where(resource =>
+                resource.Type == JobType.TimeJob
+                    ? stampedTimeJobIdSet.Contains(resource.JobId)
+                    : stampedCronJobIdSet.Contains(resource.JobId)
+            )
+            .ToArray();
+
+        foreach (var resource in stampedResources)
         {
             resource.Status = JobStatus.InProgress;
 
@@ -424,6 +442,8 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
                     .ConfigureAwait(false);
             }
         }
+
+        return stampedResources;
     }
 
     public async Task ReleaseAcquiredResources(
@@ -511,25 +531,68 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
+        var now = timeProvider.GetUtcNow().UtcDateTime;
         var unifiedFunctionContext = new JobExecutionState { FunctionName = string.Empty }
             .SetProperty(x => x.Status, JobStatus.Skipped)
-            .SetProperty(x => x.ExecutedAt, timeProvider.GetUtcNow().UtcDateTime)
+            .SetProperty(x => x.ExecutedAt, now)
             .SetProperty(x => x.ExceptionDetails, "Rule RunCondition did not match!");
 
-        if (resources.Length != 0)
+        var cronJobIds = resources.Where(x => x.Type == JobType.CronJobOccurrence).Select(x => x.JobId).ToArray();
+        var timeJobIds = resources.Where(x => x.Type == JobType.TimeJob).Select(x => x.JobId).ToArray();
+
+        Guid[] skippedCronJobIds = [];
+        Guid[] skippedTimeJobIds = [];
+
+        if (cronJobIds.Length != 0 && timeJobIds.Length != 0)
         {
-            await persistenceProvider
-                .UpdateTimeJobsWithUnifiedContextAsync(
-                    [.. resources.Select(x => x.JobId)],
-                    unifiedFunctionContext,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
+            var updateCronJobOccurrencesTask = persistenceProvider.UpdateCronJobOccurrencesWithUnifiedContextAsync(
+                cronJobIds,
+                unifiedFunctionContext,
+                cancellationToken
+            );
+            var updateTimeJobsTask = persistenceProvider.UpdateTimeJobsWithUnifiedContextAsync(
+                timeJobIds,
+                unifiedFunctionContext,
+                cancellationToken
+            );
+            await Task.WhenAll(updateCronJobOccurrencesTask, updateTimeJobsTask).ConfigureAwait(false);
+            skippedCronJobIds = await updateCronJobOccurrencesTask.ConfigureAwait(false);
+            skippedTimeJobIds = await updateTimeJobsTask.ConfigureAwait(false);
+        }
+        else
+        {
+            if (cronJobIds.Length != 0)
+            {
+                skippedCronJobIds = await persistenceProvider
+                    .UpdateCronJobOccurrencesWithUnifiedContextAsync(
+                        cronJobIds,
+                        unifiedFunctionContext,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+
+            if (timeJobIds.Length != 0)
+            {
+                skippedTimeJobIds = await persistenceProvider
+                    .UpdateTimeJobsWithUnifiedContextAsync(timeJobIds, unifiedFunctionContext, cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
 
-        foreach (var resource in resources)
+        var skippedCronJobIdSet = new HashSet<Guid>(skippedCronJobIds);
+        var skippedTimeJobIdSet = new HashSet<Guid>(skippedTimeJobIds);
+        var skippedResources = resources
+            .Where(resource =>
+                resource.Type == JobType.TimeJob
+                    ? skippedTimeJobIdSet.Contains(resource.JobId)
+                    : skippedCronJobIdSet.Contains(resource.JobId)
+            )
+            .ToArray();
+
+        foreach (var resource in skippedResources)
         {
-            resource.ExecutedAt = timeProvider.GetUtcNow().UtcDateTime;
+            resource.ExecutedAt = now;
             resource.Status = JobStatus.Skipped;
             resource.ExceptionDetails = "Rule RunCondition did not match!";
             if (resource.Type == JobType.TimeJob)

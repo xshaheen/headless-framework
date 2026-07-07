@@ -161,7 +161,7 @@ The first positional argument is the `functionName` string that must match the `
 
 Every claim of a job or cron-occurrence row stamps a pickup lease: `LockedUntil = now + SchedulerOptionsBuilder.LeaseDuration` (default 5 minutes). The deadline uses the injected `TimeProvider` (application clock), not the database server clock — this matches `Headless.Messaging` so the in-memory and EF providers share identical pickup semantics and fake clocks work in tests.
 
-**Sliding lease for running jobs (#316):** a running job renews its lease on the `LeaseRenewalInterval` cadence (defaults to `LeaseDuration / 3`; an explicit value must be positive and strictly less than `LeaseDuration`). On the EF storage path, renewals compare against the **database clock** (`now()`/`GETUTCDATE()`), not a node's local clock, so cross-node clock skew cannot reclaim a healthy renewing job. If a renewal affects zero rows (the row was reclaimed or its owner changed), or if the renewal cannot complete within the cadence (a hung store), the worker cancels that job's `CancellationToken` (cancel-on-loss).
+**Sliding lease for running jobs (#316):** before invoking user code, a job verifies that the current node still owns the row. A running job then renews its lease on the `LeaseRenewalInterval` cadence (defaults to `LeaseDuration / 3`; an explicit value must be positive and strictly less than `LeaseDuration`). On the EF storage path, renewals compare against the **database clock** (`now()`/`GETUTCDATE()`), not a node's local clock, so cross-node clock skew cannot reclaim a healthy renewing job. If a renewal affects zero rows (the row was reclaimed or its owner changed), or if the renewal cannot complete within the cadence (a hung store), the worker cancels that job's `CancellationToken` (cancel-on-loss). If the start-time check loses ownership, user code is not invoked and the row is left `InProgress` for stalled reclaim.
 
 Consequences:
 - `LeaseDuration` no longer needs to exceed the longest job runtime; a healthy long job keeps renewing.
@@ -305,8 +305,8 @@ Provides reliable background job scheduling with cron expressions, delayed execu
 
 - **`AddHeadlessJobs()`**: single DI entry point; registers managers, background services, and the in-memory persistence provider.
 - **Scheduler background service**: polls for due time jobs and cron occurrences on `FallbackIntervalChecker` cadence (default 30s); also driven by soft-notification signals for near-zero latency.
-- **Custom thread pool** (`JobsTaskScheduler`): bounded by `MaxConcurrency` (default `Environment.ProcessorCount`), with idle-worker timeout.
-- **Sliding lease renewal** (#316): running jobs extend `LockedUntil` on `LeaseRenewalInterval` cadence; cancel-on-loss if the renewal affects zero rows or errors.
+- **Custom thread pool** (`JobsTaskScheduler`): bounds active async executions by `MaxConcurrency` (default `Environment.ProcessorCount`), with idle-worker timeout.
+- **Sliding lease renewal** (#316): jobs verify ownership immediately before user code starts, then extend `LockedUntil` on `LeaseRenewalInterval` cadence; cancel-on-loss if renewal affects zero rows or errors.
 - **`DisableBackgroundServices()`**: suppresses background execution; only the managers are registered (useful for worker-side-only nodes and test projects).
 - **Seeder API**: `UseJobsSeeder(Func<ITimeJobManager<TTimeJob>, Task>)` and `UseJobsSeeder(Func<ICronJobManager<TCronJob>, Task>)` for startup data seeding; `IgnoreSeedDefinedCronJobs()` to skip auto-seeding of attribute-defined cron jobs.
 - **GZip request payloads**: `UseGZipCompression()` on `JobsOptionsBuilder` compresses serialized request bytes.
@@ -319,6 +319,8 @@ Provides reliable background job scheduling with cron expressions, delayed execu
 The pickup lease (`LockedUntil`) uses the injected `TimeProvider` (application clock) for the claim predicate, matching `Headless.Messaging`'s in-memory/SQL parity so fake clocks in tests stay honest. The EF operational store separately anchors lease comparison to the **database clock** for renewals — this is an intentional divergence: in-memory stays under the application clock (no DB), EF renewals use the DB clock to defeat cross-node skew on real clusters.
 
 `SchedulerOptionsBuilder.NodeId` is used as the row owner only on the in-memory single-process path (defaults to `Environment.MachineName`). On the durable path this value is overridden by `JobsOwnerIdentityAdapter` which reads the `node@incarnation` string from `Headless.Coordination`; `NodeId` becomes a pre-registration display fallback only.
+
+The scheduler only invokes handlers for rows whose `Queued` → `InProgress` write is still owned by the current node. The execution handler performs one more lease check before invoking user code; if ownership was lost, it leaves the row `InProgress` for stalled reclaim and skips the delegate.
 
 ### Installation
 
@@ -411,7 +413,7 @@ builder.Services.AddHeadlessJobs(options =>
 
 - Registers `ITimeJobManager<TimeJobEntity>` and `ICronJobManager<CronJobEntity>` as singletons.
 - Registers background hosted services: `JobsInitializationHostedService` (always), `JobsSchedulerBackgroundService`, `JobsFallbackBackgroundService`, and `JobsExecutionTaskHandler` (unless `DisableBackgroundServices()` is called).
-- Registers `JobsTaskScheduler` (custom thread pool bounded by `MaxConcurrency`).
+- Registers `JobsTaskScheduler` (custom thread pool bounded by active async `MaxConcurrency`).
 - Sets global `CronScheduleCache.TimeZoneInfo` and `JobsHelper` JSON/compression settings.
 
 ---
