@@ -47,9 +47,16 @@ public sealed class SettingManager(
         var settingDefinitions = allSettingDefinitions.Where(x => settingNames.Contains(x.Name)).ToList();
         var definitionMap = settingDefinitions.ToDictionary(x => x.Name, StringComparer.Ordinal);
 
-        // Accumulate the resolved value per setting first, then build the immutable SettingValue
-        // records at the end (Value is init-only on the record, so it cannot be patched in place).
+        // Accumulate the resolved value and its attributing provider per setting first, then build the
+        // immutable SettingValue records at the end (Value is init-only on the record, so it cannot be
+        // patched in place). The batch read carries no explicit provider key, so the attribution records
+        // only the resolving provider name (Key stays null), matching GetAsync when called without a key.
         var resolvedValues = settingDefinitions.ToDictionary(x => x.Name, _ => (string?)null, StringComparer.Ordinal);
+        var resolvedProviders = settingDefinitions.ToDictionary(
+            x => x.Name,
+            _ => (SettingValueProvider?)null,
+            StringComparer.Ordinal
+        );
 
         var processedNames = new HashSet<string>(StringComparer.Ordinal);
 
@@ -78,6 +85,7 @@ public sealed class SettingManager(
                 if (resolvedValues.TryGetValue(settingValue.Name, out var existing) && existing is null)
                 {
                     resolvedValues[settingValue.Name] = value;
+                    resolvedProviders[settingValue.Name] = new SettingValueProvider(provider.Name, Key: null);
                 }
             }
 
@@ -94,7 +102,7 @@ public sealed class SettingManager(
 
         return settingDefinitions.ToDictionary(
             x => x.Name,
-            x => new SettingValue(x.Name, resolvedValues[x.Name]),
+            x => new SettingValue(x.Name, resolvedValues[x.Name], resolvedProviders[x.Name]),
             StringComparer.Ordinal
         );
     }
@@ -133,6 +141,8 @@ public sealed class SettingManager(
         foreach (var setting in settingDefinitions)
         {
             string? value = null;
+            ISettingValueReadProvider? resolvedProvider = null;
+            string? resolvedProviderKey = null;
 
             if (setting.IsInherited)
             {
@@ -146,15 +156,18 @@ public sealed class SettingManager(
                     if (providerValue is not null)
                     {
                         value = providerValue;
+                        resolvedProvider = provider;
+                        resolvedProviderKey = pk;
                         break;
                     }
                 }
             }
             else
             {
-                value = await providerList[0]
-                    .GetOrDefaultAsync(setting, providerKey, cancellationToken)
-                    .ConfigureAwait(false);
+                var provider = providerList[0];
+                value = await provider.GetOrDefaultAsync(setting, providerKey, cancellationToken).ConfigureAwait(false);
+                resolvedProvider = provider;
+                resolvedProviderKey = providerKey;
             }
 
             if (
@@ -167,7 +180,11 @@ public sealed class SettingManager(
 
             if (value is not null)
             {
-                settingValues[setting.Name] = new SettingValue(setting.Name, value);
+                settingValues[setting.Name] = new SettingValue(
+                    setting.Name,
+                    value,
+                    new SettingValueProvider(resolvedProvider!.Name, resolvedProviderKey)
+                );
             }
         }
 

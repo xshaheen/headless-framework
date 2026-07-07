@@ -236,6 +236,10 @@ public sealed class SettingManagerTests : TestBase
         result.Should().HaveCount(2);
         result["Setting1"].Value.Should().Be("value1");
         result["Setting2"].Value.Should().Be("value2");
+        // the resolving provider is attributed; the batch read carries no explicit key so Key stays null
+        result["Setting1"].Provider!.Name.Should().Be("Provider1");
+        result["Setting1"].Provider!.Key.Should().BeNull();
+        result["Setting2"].Provider!.Name.Should().Be("Provider1");
     }
 
     #endregion
@@ -263,6 +267,8 @@ public sealed class SettingManagerTests : TestBase
         result.Should().HaveCount(2);
         result.Should().Contain(sv => sv.Name == "Setting1" && sv.Value == "value1");
         result.Should().Contain(sv => sv.Name == "Setting2" && sv.Value == "value2");
+        // each value is attributed to the provider that resolved it
+        result.Should().OnlyContain(sv => sv.Provider != null && sv.Provider.Name == providerName);
     }
 
     [Fact]
@@ -285,8 +291,11 @@ public sealed class SettingManagerTests : TestBase
         // when
         var result = await _sut.GetAllAsync(providerName, providerKey, fallback: true, cancellationToken: AbortToken);
 
-        // then — provider-specific value wins over fallback
-        result.Should().ContainSingle().Which.Value.Should().Be("en-US");
+        // then — provider-specific value wins over fallback, attributed to the resolving provider and key
+        var resolved = result.Should().ContainSingle().Which;
+        resolved.Value.Should().Be("en-US");
+        resolved.Provider!.Name.Should().Be("Account");
+        resolved.Provider!.Key.Should().Be(providerKey);
     }
 
     [Fact]
