@@ -11,8 +11,7 @@ namespace Headless.Messaging.Runtime;
 /// Reflection helpers used by the messaging runtime, storage providers, and dashboards to reason about
 /// consumer and options types.
 /// </summary>
-[PublicAPI]
-public static class RuntimeTypeInspection
+internal static class RuntimeTypeInspection
 {
     private static readonly ConditionalWeakTable<Type, TypeConverter> _ConverterCache = [];
 

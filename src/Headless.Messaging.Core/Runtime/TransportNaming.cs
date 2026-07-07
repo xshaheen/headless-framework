@@ -9,8 +9,7 @@ namespace Headless.Messaging.Runtime;
 /// Helpers that translate framework message names into broker-native identifiers. Transports use these
 /// so wildcard subscriptions and subject/queue names behave consistently across providers.
 /// </summary>
-[PublicAPI]
-public static partial class TransportNaming
+internal static partial class TransportNaming
 {
     private const int _MaxWildcardLength = 200;
     private const int _MaxWildcardCount = 10;
