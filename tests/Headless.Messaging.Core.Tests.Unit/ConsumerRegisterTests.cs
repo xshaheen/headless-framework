@@ -299,6 +299,41 @@ public sealed class ConsumerRegisterTests : TestBase
     }
 
     [Fact]
+    public async Task should_mark_register_unhealthy_when_consumer_loop_fails_after_startup()
+    {
+        var failingClient = new PostStartupFailingConsumerClient();
+        var factory = new SequencedConsumerClientFactory(new MetadataConsumerClient(), failingClient);
+
+        await using var provider = _CreateProvider(
+            configureMessaging: setup =>
+            {
+                setup.ForMessage<BootstrapReadyMessage>(message =>
+                    message
+                        .MessageName("ready-messageName")
+                        .OnBus<BootstrapReadyConsumer>(consumer => consumer.Group("ready-group").Concurrency(1))
+                );
+            },
+            configureServices: services =>
+            {
+                services.AddSingleton<IConsumerClientFactory>(factory);
+                services.AddSingleton<BootstrapReadyConsumer>();
+            }
+        );
+
+        var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
+        using var hostCts = new CancellationTokenSource();
+
+        await register.StartAsync(hostCts.Token);
+        register.IsHealthy().Should().BeTrue();
+
+        failingClient.Fail(new InvalidOperationException("listener failed"));
+
+        await _WaitUntilAsync(() => !register.IsHealthy(), AbortToken);
+
+        await register.DisposeAsync();
+    }
+
+    [Fact]
     public async Task start_fails_when_queue_consumer_uses_legacy_consumer_factory()
     {
         await using var provider = _CreateProvider(
@@ -525,5 +560,61 @@ public sealed class ConsumerRegisterTests : TestBase
         public ValueTask ResumeAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class PostStartupFailingConsumerClient : IConsumerClient
+    {
+        private readonly TaskCompletionSource _failure = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public BrokerAddress BrokerAddress => new("test", "failing");
+
+        public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
+
+        public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
+
+        public ValueTask<ICollection<string>> FetchMessageNamesAsync(IEnumerable<string> messageNames)
+        {
+            return ValueTask.FromResult<ICollection<string>>(messageNames.ToArray());
+        }
+
+        public ValueTask SubscribeAsync(IEnumerable<string> messageNames) => ValueTask.CompletedTask;
+
+        public ValueTask WaitUntilReadyAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+
+        public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
+        {
+            await _failure.Task.WaitAsync(cancellationToken);
+        }
+
+        public void Fail(Exception exception)
+        {
+            _failure.TrySetException(exception);
+        }
+
+        public ValueTask CommitAsync(object? sender) => ValueTask.CompletedTask;
+
+        public ValueTask RejectAsync(object? sender) => ValueTask.CompletedTask;
+
+        public ValueTask PauseAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+
+        public ValueTask ResumeAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+
+        public ValueTask DisposeAsync()
+        {
+            _failure.TrySetCanceled();
+
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private static async Task _WaitUntilAsync(Func<bool> predicate, CancellationToken cancellationToken)
+    {
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(TimeSpan.FromSeconds(2));
+
+        while (!predicate())
+        {
+            await Task.Delay(10, timeoutCts.Token).ConfigureAwait(false);
+        }
     }
 }

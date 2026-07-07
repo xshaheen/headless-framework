@@ -38,10 +38,10 @@ public static class ApiResultMvcExtensions
         IProblemDetailsCreator creator
     )
     {
-        return result.Match<ActionResult<T>>(
-            value => controller.Ok(value),
-            error => error.ToActionResult(controller, creator)
-        );
+        // Branch instead of Match: both lambdas would capture `controller`/`creator` and allocate on every response.
+        return result.TryGetValue(out var value)
+            ? controller.Ok(value)
+            : result.Error.ToActionResult(controller, creator);
     }
 
     /// <summary>
@@ -58,7 +58,8 @@ public static class ApiResultMvcExtensions
         IProblemDetailsCreator creator
     )
     {
-        return result.Match(controller.NoContent, error => error.ToActionResult(controller, creator));
+        // Branch instead of Match: the delegates would capture `controller`/`creator` and allocate on every response.
+        return result.TryGetError(out var error) ? error.ToActionResult(controller, creator) : controller.NoContent();
     }
 
     /// <summary>

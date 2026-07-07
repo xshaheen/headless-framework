@@ -67,13 +67,8 @@ public sealed partial class TusAzureStore
     {
         await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
 
-        var blobInfo = await _GetTusFileInfoAsync(fileId, cancellationToken).ConfigureAwait(false);
-
-        if (blobInfo == null)
-        {
-            return 0;
-        }
-
+        // No GetProperties pre-check: _GetCommittedBlocksAsync maps a missing blob (404) to an empty list,
+        // so the offset is 0 either way and this method costs one round-trip instead of two per HEAD/PATCH.
         var blockBlobClient = _containerClient.GetBlockBlobClient(_GetBlobName(fileId));
         var blockList = await _GetCommittedBlocksAsync(blockBlobClient, cancellationToken).ConfigureAwait(false);
 

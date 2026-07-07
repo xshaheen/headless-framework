@@ -267,21 +267,21 @@ coverage-open: coverage-html ## Generate report and open in browser.
 	else echo "Report generated. Open manually: $(COVERAGE_REPORT_DIR)/index.html"; fi
 
 .PHONY: pack
-pack: restore ## Pack NuGet packages with symbols.
+pack: restore ## Pack NuGet packages (symbols are embedded in the assemblies).
 	@mkdir -p "$(PACKAGES_DIR)"
-	$(DOTNET) pack "$(SOLUTION)" --configuration "$(CONFIGURATION)" --include-symbols --output "$(PACKAGES_DIR)" $(MSBUILD_ARGS)
+	$(DOTNET) pack "$(SOLUTION)" --configuration "$(CONFIGURATION)" --output "$(PACKAGES_DIR)" $(MSBUILD_ARGS)
 
 .PHONY: pack-built
 pack-built: ## Pack already-built source projects without restore/build; used by CI.
 	@mkdir -p "$(PACKAGES_DIR)"
 	@for csproj in src/*/*.csproj; do \
-		$(DOTNET) pack "$$csproj" --configuration "$(CONFIGURATION)" --no-restore --no-build --include-symbols --output "$(PACKAGES_DIR)" /p:GenerateSBOM=true $(MSBUILD_ARGS); \
+		$(DOTNET) pack "$$csproj" --configuration "$(CONFIGURATION)" --no-restore --no-build --output "$(PACKAGES_DIR)" /p:GenerateSBOM=true $(MSBUILD_ARGS); \
 	done
 
 .PHONY: pack-sbom
-pack-sbom: restore ## Pack NuGet packages with symbols and GenerateSBOM=true.
+pack-sbom: restore ## Pack NuGet packages with GenerateSBOM=true.
 	@mkdir -p "$(PACKAGES_DIR)"
-	$(DOTNET) pack "$(SOLUTION)" --configuration "$(CONFIGURATION)" --include-symbols --output "$(PACKAGES_DIR)" /p:GenerateSBOM=true $(MSBUILD_ARGS)
+	$(DOTNET) pack "$(SOLUTION)" --configuration "$(CONFIGURATION)" --output "$(PACKAGES_DIR)" /p:GenerateSBOM=true $(MSBUILD_ARGS)
 
 .PHONY: outdated
 outdated: tools ## Check outdated NuGet dependencies.

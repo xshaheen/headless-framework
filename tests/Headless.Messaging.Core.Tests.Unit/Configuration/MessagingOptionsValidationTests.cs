@@ -300,6 +300,15 @@ public sealed class MessagingOptionsValidationTests : TestBase
     }
 
     [Fact]
+    public void should_reject_messaging_options_with_non_positive_scheduler_batch_size()
+    {
+        var result = new MessagingOptionsValidator().Validate(new MessagingOptions { SchedulerBatchSize = 0 });
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(x => x.PropertyName == nameof(MessagingOptions.SchedulerBatchSize));
+    }
+
+    [Fact]
     public void should_reject_retry_policy_with_non_positive_on_exhausted_timeout()
     {
         // given

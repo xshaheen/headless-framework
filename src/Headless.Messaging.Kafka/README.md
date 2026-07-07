@@ -15,6 +15,10 @@ Enables high-throughput, distributed event streaming using Apache Kafka with con
 - **At-Least-Once Delivery**: Broker delivery plus Headless retry/outbox recovery; consumers must remain idempotent
 - **Kafka Configuration Access**: Exposes raw Kafka producer and consumer settings through `MainConfig` and consumer-specific options
 
+## Design Notes
+
+Kafka is queue-intent only in this package. `PartitionBy(...)` maps to the Kafka key. The framework does not impose a Kafka key length cap; broker/client configuration owns practical limits. Delivery remains at-least-once; consumers must dedupe by business key or message id. When consumer concurrency is greater than one, successful handlers can finish out of order, but Kafka commits advance only through the contiguous completed offset watermark per partition; a completed high offset does not commit past lower in-flight offsets.
+
 ## Installation
 
 ```bash
@@ -116,7 +120,7 @@ options.EnableSubscriberParallelExecute = false; // Disable parallel execution
 - Publish writes the serialized body as record bytes and forwards framework headers.
 - Delivery remains at-least-once. A broker accept followed by a failed success-mark write can redeliver; configure Kafka idempotence or read-committed isolation for broker-level features, and keep consumers idempotent.
 - Delay stays in the core pipeline. This provider does not add broker-native scheduling.
-- Commit commits the consumed partition offset.
+- Commit commits the consumed partition offset. Under concurrent consumption, commits advance only through the contiguous completed offset watermark per partition.
 - Reject seeks back to the failed offset so Kafka can redeliver on the next poll.
 - `FetchTopicsAsync(...)` creates concrete topics when auto-create is enabled and normalizes wildcard subscriptions.
 - `SubscribeAsync(...)` joins the configured consumer group to those topics.

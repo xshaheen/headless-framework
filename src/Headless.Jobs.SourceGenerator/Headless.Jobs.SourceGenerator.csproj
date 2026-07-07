@@ -30,8 +30,8 @@
     />
   </ItemGroup>
   <ItemGroup Label="This ensures the library will be packaged as a source generator when we use `dotnet pack`">
+    <!-- No separate .pdb is packed: symbols are embedded in the assembly (DebugType=embedded). -->
     <None Include="$(OutputPath)\$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
-    <None Include="$(OutputPath)\$(AssemblyName).pdb" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
     <None
       Include="$(PkgSystem_Buffers)\lib\netstandard2.0\System.Buffers.dll"
       Pack="true"

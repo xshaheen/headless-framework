@@ -350,7 +350,7 @@ internal sealed class Dispatcher : IDispatcher
             {
                 AllowSynchronousContinuations = true,
                 SingleReader = isSingleReader,
-                SingleWriter = true,
+                SingleWriter = false,
                 FullMode = BoundedChannelFullMode.Wait,
             }
         );

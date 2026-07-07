@@ -24,6 +24,10 @@ dotnet add package Headless.Sql.Core
 builder.Services.AddScoped<ISqlCurrentConnection, DefaultSqlCurrentConnection>();
 ```
 
+## Configuration
+
+There is no options object. Choose the scoped lifetime explicitly when registering `DefaultSqlCurrentConnection`; it is intended to represent one ambient SQL connection per request or unit-of-work scope.
+
 ## Dependencies
 
 - `Headless.Sql.Abstractions`

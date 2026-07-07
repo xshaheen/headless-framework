@@ -25,7 +25,10 @@ public sealed class CriticalRequestLoggingBehavior<TMessage, TResponse>(
 
     /// <summary>
     /// Executes the next handler in the pipeline and emits a warning-level log entry when the
-    /// elapsed time exceeds the critical threshold (1 second).
+    /// elapsed time exceeds the critical threshold (1 second). The warning carries only the
+    /// message/response type names; the full payloads are logged separately at Debug level
+    /// because requests and responses may carry credentials or other sensitive data that must
+    /// not reach production logs.
     /// </summary>
     /// <param name="message">The Mediator message being processed.</param>
     /// <param name="next">The delegate that invokes the next pipeline stage or the final handler.</param>
@@ -48,6 +51,12 @@ public sealed class CriticalRequestLoggingBehavior<TMessage, TResponse>(
                 userId: _currentUser.UserId?.ToString(),
                 elapsed: elapsed,
                 messageName: typeof(TMessage).Name,
+                responseName: typeof(TResponse).Name
+            );
+
+            _LogMediatorSlowResponsePayload(
+                _logger,
+                messageName: typeof(TMessage).Name,
                 message: message,
                 responseName: typeof(TResponse).Name,
                 response: response
@@ -59,11 +68,22 @@ public sealed class CriticalRequestLoggingBehavior<TMessage, TResponse>(
 
     #region Logger
 
-    private static readonly Action<ILogger, string?, TimeSpan, string, object, string, object?, Exception?> _Log =
-        LoggerMessage.Define<string?, TimeSpan, string, object, string, object?>(
-            LogLevel.Warning,
-            new EventId(3, "Mediator:SlowMessage"),
-            "[Mediator:SlowMessage] {UserId} {Elapsed}ms {MessageName} {@Message} {ResponseName} {@Response}"
+    private static readonly Action<ILogger, string?, TimeSpan, string, string, Exception?> _Log = LoggerMessage.Define<
+        string?,
+        TimeSpan,
+        string,
+        string
+    >(
+        LogLevel.Warning,
+        new EventId(3, "Mediator:SlowMessage"),
+        "[Mediator:SlowMessage] {UserId} {Elapsed}ms {MessageName} {ResponseName}"
+    );
+
+    private static readonly Action<ILogger, string, object, string, object?, Exception?> _LogPayload =
+        LoggerMessage.Define<string, object, string, object?>(
+            LogLevel.Debug,
+            new EventId(5, "Mediator:SlowMessagePayload"),
+            "[Mediator:SlowMessagePayload] {MessageName} {@Message} {ResponseName} {@Response}"
         );
 
     private static void _LogMediatorSlowResponse(
@@ -71,12 +91,21 @@ public sealed class CriticalRequestLoggingBehavior<TMessage, TResponse>(
         string? userId,
         TimeSpan elapsed,
         string messageName,
+        string responseName
+    )
+    {
+        _Log(logger, userId, elapsed, messageName, responseName, arg6: null);
+    }
+
+    private static void _LogMediatorSlowResponsePayload(
+        ILogger logger,
+        string messageName,
         object message,
         string responseName,
         object? response
     )
     {
-        _Log(logger, userId, elapsed, messageName, message, responseName, response, arg8: null);
+        _LogPayload(logger, messageName, message, responseName, response, arg6: null);
     }
 
     #endregion

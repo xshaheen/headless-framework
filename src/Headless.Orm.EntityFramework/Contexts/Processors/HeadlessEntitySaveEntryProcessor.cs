@@ -140,7 +140,7 @@ public sealed class HeadlessEntitySaveEntryProcessor(
             return;
         }
 
-        ObjectPropertiesHelper.TrySetProperty(entity, x => x.TenantId, () => tenantId);
+        ObjectPropertiesHelper.TrySetProperty(entity, nameof(IMultiTenant.TenantId), () => tenantId);
     }
 
     private static void _TrySetConcurrencyStamp(EntityEntry entry)
@@ -151,7 +151,7 @@ public sealed class HeadlessEntitySaveEntryProcessor(
             {
                 ObjectPropertiesHelper.TrySetProperty(
                     added,
-                    x => x.ConcurrencyStamp,
+                    nameof(IHasConcurrencyStamp.ConcurrencyStamp),
                     () => Guid.NewGuid().ToString("N")
                 );
             }
@@ -163,7 +163,7 @@ public sealed class HeadlessEntitySaveEntryProcessor(
         {
             ObjectPropertiesHelper.TrySetProperty(
                 modified,
-                x => x.ConcurrencyStamp,
+                nameof(IHasConcurrencyStamp.ConcurrencyStamp),
                 () => Guid.NewGuid().ToString("N")
             );
         }

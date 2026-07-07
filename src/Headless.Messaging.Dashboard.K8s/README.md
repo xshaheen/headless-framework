@@ -59,6 +59,20 @@ builder.Services.AddMessagingDashboardStandalone(
 );
 ```
 
+## Configuration
+
+`UseK8sDiscovery(...)` registers a singleton `K8sDiscoveryOptions` instance.
+
+```csharp
+setup.UseK8sDiscovery(k8s =>
+{
+    k8s.K8sClientConfig = KubernetesClientConfiguration.BuildDefaultConfig();
+    k8s.ShowOnlyExplicitVisibleNodes = true;
+});
+```
+
+`ShowOnlyExplicitVisibleNodes` defaults to `true`. With that default, only Kubernetes Services labeled `headless.messaging.visibility:show` appear in the dashboard node list. Set it to `false` to list all services returned from the configured namespace.
+
 ## Dependencies
 
 - `Headless.Messaging.Dashboard`

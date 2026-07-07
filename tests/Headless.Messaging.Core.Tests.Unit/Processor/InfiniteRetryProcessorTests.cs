@@ -43,9 +43,11 @@ public sealed class InfiniteRetryProcessorTests : TestBase
         await _WaitUntilAsync(() => inner.Calls == 3, AbortToken);
         await run.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
 
-        // then
-        firstDelay.Should().Be(TimeSpan.FromSeconds(1));
-        secondDelay.Should().Be(TimeSpan.FromSeconds(2));
+        // then: each wait is the doubled base delay plus 0-25% jitter
+        firstDelay.Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(1));
+        firstDelay.Should().BeLessThan(TimeSpan.FromSeconds(1.25));
+        secondDelay.Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(2));
+        secondDelay.Should().BeLessThan(TimeSpan.FromSeconds(2.5));
         inner.Calls.Should().Be(3);
     }
 
@@ -83,8 +85,9 @@ public sealed class InfiniteRetryProcessorTests : TestBase
         await _WaitUntilAsync(() => inner.Calls == 4, AbortToken);
         await run.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
 
-        // then
-        secondFailureDelay.Should().Be(TimeSpan.FromSeconds(1));
+        // then: the post-recovery wait restarts from the initial 1s (plus 0-25% jitter)
+        secondFailureDelay.Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(1));
+        secondFailureDelay.Should().BeLessThan(TimeSpan.FromSeconds(1.25));
         inner.Calls.Should().Be(4);
     }
 

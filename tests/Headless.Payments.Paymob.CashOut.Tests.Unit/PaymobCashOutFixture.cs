@@ -4,6 +4,7 @@ using AutoFixture;
 using Headless.Payments.Paymob.CashOut.Models;
 using Microsoft.Extensions.Options;
 using WireMock.Server;
+using WireMock.Settings;
 
 namespace Tests;
 
@@ -11,8 +12,10 @@ public sealed class PaymobCashOutFixture : IDisposable
 {
     public PaymobCashOutFixture()
     {
-        Server = WireMockServer.Start();
-        HttpClient = new HttpClient();
+        // Paymob's transaction inquiry is a GET with a JSON body; WireMock only parses
+        // bodies for non-GET methods unless this setting is enabled.
+        Server = WireMockServer.Start(new WireMockServerSettings { AllowBodyForAllHttpMethods = true });
+        HttpClient = new HttpClient { BaseAddress = new Uri(Server.Urls[0]) };
         AutoFixture.Register(() => JsonSerializer.Deserialize<object?>("null"));
         CashOutOptions = new PaymobCashOutOptions
         {
@@ -25,6 +28,8 @@ public sealed class PaymobCashOutFixture : IDisposable
         OptionsAccessor = Substitute.For<IOptionsMonitor<PaymobCashOutOptions>>();
         OptionsAccessor.CurrentValue.Returns(CashOutOptions);
         TimeProvider = TimeProvider.System;
+        HttpClientFactory = Substitute.For<IHttpClientFactory>();
+        HttpClientFactory.CreateClient(Arg.Any<string>()).Returns(HttpClient);
     }
 
     public Fixture AutoFixture { get; } = new();
@@ -32,6 +37,8 @@ public sealed class PaymobCashOutFixture : IDisposable
     public WireMockServer Server { get; }
 
     public HttpClient HttpClient { get; }
+
+    public IHttpClientFactory HttpClientFactory { get; }
 
     public PaymobCashOutOptions CashOutOptions { get; }
 
