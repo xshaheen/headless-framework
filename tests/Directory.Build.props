@@ -4,7 +4,7 @@
     <!--
     xUnit1044: Avoid using TheoryData type arguments that are not serializable
     -->
-    <NoWarn>$(NoWarn);xUnit1044;CA1707;IDE1006;IDE0022;CS8604;S4144;CA5394;CA1848;MA0076;MA0003;RCS1046;CA2254;IDE0039;CA1849;MA0042;MA0166;CA1861;CA1859;CA1720</NoWarn>
+    <NoWarn>$(NoWarn);xUnit1044</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <Content Include="../xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
