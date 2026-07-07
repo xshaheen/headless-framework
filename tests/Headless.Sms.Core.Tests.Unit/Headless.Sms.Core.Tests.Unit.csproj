@@ -6,7 +6,7 @@
   </PropertyGroup>
   <ItemGroup>
     <!-- Legacy Polly v7 flows in via Infobip.Api.Client; alias it so Polly.Timeout resolves to Polly.Core. -->
-    <PackageReference Include="Polly" Aliases="pollyV7" />
+    <PackageReference Include="Polly" Aliases="pollyV7" ExcludeAssets="compile" />
     <PackageReference Include="xunit.v3.mtp-v2" />
   </ItemGroup>
   <ItemGroup>

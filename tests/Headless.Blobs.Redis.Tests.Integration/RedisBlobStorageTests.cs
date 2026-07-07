@@ -205,8 +205,26 @@ public sealed class RedisBlobStorageTests(RedisBlobStorageFixture fixture) : Blo
     #region Container management capability
 
     [Fact]
-    public override Task container_management_capability_matches_support_flag() =>
-        base.container_management_capability_matches_support_flag();
+    public override async Task container_management_capability_matches_support_flag()
+    {
+        await using var storage = GetStorage();
+        var manager = GetContainerManager();
+
+        manager.Should().NotBeNull("Redis exposes a manager for deleting backing hashes");
+
+        await ResetAsync(storage);
+
+        (await manager.ContainerExistsAsync(ContainerName, AbortToken))
+            .Should()
+            .BeFalse("Redis EnsureContainerAsync is an honest no-op until a write materializes the backing hashes");
+
+        await storage.UploadContentAsync(new BlobLocation(ContainerName, "ensure.txt"), "ok", AbortToken);
+
+        (await manager.ContainerExistsAsync(ContainerName, AbortToken)).Should().BeTrue();
+        (await storage.GetBlobContentAsync(new BlobLocation(ContainerName, "ensure.txt"), AbortToken))
+            .Should()
+            .Be("ok");
+    }
 
     [Fact]
     public override Task container_manager_rejects_traversal_container() =>

@@ -1,5 +1,8 @@
 <Project>
   <Import Project="../Directory.Build.props" />
+  <PropertyGroup Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('$(MSBuildProjectName)', '\.Tests\.Harness$'))">
+    <IsTestHarnessProject>true</IsTestHarnessProject>
+  </PropertyGroup>
   <PropertyGroup>
     <!--
     xUnit1044: Avoid using TheoryData type arguments that are not serializable
