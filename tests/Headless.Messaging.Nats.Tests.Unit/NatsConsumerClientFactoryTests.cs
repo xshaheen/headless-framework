@@ -16,7 +16,9 @@ public sealed class NatsConsumerClientFactoryTests : TestBase
 
     public NatsConsumerClientFactoryTests()
     {
-        _options = Options.Create(new NatsMessagingOptions { Servers = "nats://localhost:4222" });
+        // Port 9 (discard) never hosts NATS; the default 4222 can be occupied by an unrelated
+        // local NATS container, which makes the wrap-connection-failure test non-deterministic.
+        _options = Options.Create(new NatsMessagingOptions { Servers = "nats://127.0.0.1:9" });
         _serviceProvider = new ServiceCollection().BuildServiceProvider();
     }
 
