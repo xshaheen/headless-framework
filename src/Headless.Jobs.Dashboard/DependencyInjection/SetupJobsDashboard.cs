@@ -65,9 +65,19 @@ public static class SetupJobsDashboard
             // Validate configuration
             dashboardConfig.Validate();
 
-            // Register authentication system
-            services.AddSingleton(dashboardConfig.Auth);
-            services.AddScoped<IAuthService, AuthService>();
+            // Register authentication (AuthConfig + IAuthService) through the shared
+            // Headless.Dashboard.Authentication extension. The builder has already materialized the AuthConfig
+            // from WithBasicAuth / WithApiKey / WithHostAuthentication / WithCustomAuth, so mirror its fields
+            // into the options-bound instance instead of hand-registering the singleton and the auth service.
+            services.AddDashboardAuthentication(auth =>
+            {
+                auth.Mode = dashboardConfig.Auth.Mode;
+                auth.BasicCredentials = dashboardConfig.Auth.BasicCredentials;
+                auth.ApiKey = dashboardConfig.Auth.ApiKey;
+                auth.CustomValidator = dashboardConfig.Auth.CustomValidator;
+                auth.SessionTimeoutMinutes = dashboardConfig.Auth.SessionTimeoutMinutes;
+                auth.HostAuthorizationPolicy = dashboardConfig.Auth.HostAuthorizationPolicy;
+            });
 
             // Add authentication services if using host authentication
             if (dashboardConfig.Auth.Mode == AuthMode.Host)
