@@ -834,7 +834,6 @@
           "DeviceDetector.NET": "[6.5.0, )",
           "FluentValidation.DependencyInjectionExtensions": "[12.1.1, )",
           "Headless.Api.Abstractions": "[1.0.0, )",
-          "Headless.Api.FluentValidation": "[1.0.0, )",
           "Headless.Caching.Abstractions": "[1.0.0, )",
           "Headless.Core": "[1.0.0, )",
           "Headless.FluentValidation": "[1.0.0, )",
@@ -857,13 +856,6 @@
           "Headless.OpenApi.Nswag": "[1.0.0, )"
         }
       },
-      "headless.api.fluentvalidation": {
-        "type": "Project",
-        "dependencies": {
-          "FileSignatures": "[7.2.1, )",
-          "Headless.FluentValidation": "[1.0.0, )"
-        }
-      },
       "headless.api.minimalapi": {
         "type": "Project",
         "dependencies": {
@@ -883,6 +875,7 @@
       "headless.api.servicedefaults": {
         "type": "Project",
         "dependencies": {
+          "FileSignatures": "[7.2.1, )",
           "Headless.Api.Core": "[1.0.0, )",
           "Microsoft.AspNetCore.OpenApi": "[10.0.9, )",
           "Microsoft.Extensions.Http.Resilience": "[10.7.0, )",

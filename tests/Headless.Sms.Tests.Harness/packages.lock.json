@@ -1400,9 +1400,7 @@
       "headless.sms.abstractions": {
         "type": "Project",
         "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Polly.Core": "[8.7.0, )",
-          "Polly.RateLimiting": "[8.7.0, )"
+          "Headless.Checks": "[1.0.0, )"
         }
       },
       "headless.testing": {
