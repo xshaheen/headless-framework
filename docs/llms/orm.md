@@ -159,7 +159,7 @@ Change Data Capture (e.g. Debezium) is an advanced alternative that bypasses thi
 | **Auditing** | Automatic via `ICreateAudit`, `IUpdateAudit`, `IDeleteAudit`, `ISuspendAudit` | None |
 | **Events** | Domain events (in-process) + integration events (outbox) | None |
 | **Transactions** | EF Core execution strategy + `ExecuteTransactionAsync` / `ExecuteCoordinatedTransactionAsync` | Couchbase Transactions via `ExecuteTransactionAsync(Func<AttemptContext, Task<bool>>)` |
-| **DI** | `AddHeadlessDbContext<TDbContext>(...)` | `AddCouchbase()` for the framework providers; the consumer supplies `ICouchbaseClusterOptionsProvider` + `ICouchbaseTransactionConfigProvider` |
+| **DI** | `AddHeadlessDbContext<TDbContext>(...)` | `AddHeadlessCouchbase()` for the framework providers; the consumer supplies `ICouchbaseClusterOptionsProvider` + `ICouchbaseTransactionConfigProvider` |
 
 `Headless.Orm.EntityFramework.Messaging` is an add-on to `Headless.Orm.EntityFramework`, not a competing provider. It does not appear in the table above.
 
@@ -473,7 +473,7 @@ Provides a typed context model over Couchbase buckets with helper APIs for docum
 - `ICouchbaseClusterOptionsProvider` — consumer-supplied cluster connection options per cluster key
 - `ICouchbaseTransactionConfigProvider` — consumer-supplied transaction configuration per cluster key
 - `CouchbaseEventingFunctionsSeeder` — seeds eventing functions from embedded resources
-- `SetupCouchbase.AddCouchbase()` — registers the framework-owned providers (`ICouchbaseClustersProvider`, `IBucketContextProvider`, `ICouchbaseManager`, `ICouchbaseAssemblyCollectionsReader`) in one call
+- `SetupCouchbase.AddHeadlessCouchbase()` — registers the framework-owned providers (`ICouchbaseClustersProvider`, `IBucketContextProvider`, `ICouchbaseManager`, `ICouchbaseAssemblyCollectionsReader`) in one call
 
 ### Installation
 
@@ -531,7 +531,7 @@ services.AddSingleton<ICouchbaseClusterOptionsProvider, MyClusterOptionsProvider
 services.AddSingleton<ICouchbaseTransactionConfigProvider, MyTransactionConfigProvider>();
 
 // Register the framework-owned providers in one call:
-services.AddCouchbase();
+services.AddHeadlessCouchbase();
 ```
 
 ### Dependencies
@@ -546,7 +546,7 @@ services.AddCouchbase();
 
 ### Side Effects
 
-- `AddCouchbase()` registers `ICouchbaseClustersProvider`, `IBucketContextProvider`, `ICouchbaseManager`, and `ICouchbaseAssemblyCollectionsReader` as singletons via `TryAdd` (a consumer's own registration wins). It does not register `ICouchbaseClusterOptionsProvider` or `ICouchbaseTransactionConfigProvider` — those remain the consumer's responsibility.
+- `AddHeadlessCouchbase()` registers `ICouchbaseClustersProvider`, `IBucketContextProvider`, `ICouchbaseManager`, and `ICouchbaseAssemblyCollectionsReader` as singletons via `TryAdd` (a consumer's own registration wins). It does not register `ICouchbaseClusterOptionsProvider` or `ICouchbaseTransactionConfigProvider` — those remain the consumer's responsibility.
 - Cluster connections are lazily initialized and statically cached by `clusterKey` in `CouchbaseClustersProvider`. Each cluster waits up to 1 minute for readiness on first access; a readiness failure is logged but does not throw (operations fail at call time).
 - `CouchbaseManager` caches scope/collection specs per `clusterKey + bucketName` in-memory to reduce repeated `GetAllScopesAsync` calls; cache is invalidated on scope creation.
 - `CouchbaseBucketContext.ExecuteTransactionAsync` emits `Information` logs on success and `Error` logs on failure via structured logging.

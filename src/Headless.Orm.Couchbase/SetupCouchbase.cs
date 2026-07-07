@@ -33,7 +33,7 @@ public static class SetupCouchbase
         /// </para>
         /// </remarks>
         /// <returns>The same <paramref name="services"/> collection for chaining.</returns>
-        public IServiceCollection AddCouchbase()
+        public IServiceCollection AddHeadlessCouchbase()
         {
             services.TryAddSingleton<ICouchbaseClustersProvider, CouchbaseClustersProvider>();
             services.TryAddSingleton<IBucketContextProvider, BucketContextProvider>();
