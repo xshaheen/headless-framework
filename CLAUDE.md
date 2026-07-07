@@ -126,7 +126,7 @@ Single-backend packages with no provider choice keep plain `Add{Feature}` extens
 **Public API Discipline:**
 
 - Each package's `public` surface IS its NuGet contract — keep types `internal sealed` and promote to `public` only when consumers must reference them — "DI resolves it" is not a reason to be public.
-- New namespace matches the owning package; no types (only extension methods, per documented policy) in System.*/Microsoft.*/third-party namespaces; holder class names are prefixed (HeadlessXxxExtensions), never bare BCL-collision names.
+- Every public type AND every registration/extension holder (`Add*`/`Use*`/`Map*`) lives in the owning package's own namespace — feature packages never place anything in System.*/Microsoft.*/third-party namespaces; only the augmentation packages listed under Namespace Policy may, and their holder class names must be prefixed (HeadlessXxxExtensions), never bare BCL-collision names.
 - Async public methods take a trailing CancellationToken cancellationToken = default — including "callback" and "handler" interfaces.
 - Public contracts return IReadOnlyList<>/IReadOnlyDictionary<,>, never mutable List<>/Dictionary<,>.
 - New enums get explicit values; enums consumers may switch on ship a catch-all member and a "members may be added" doc note; sentinel value = 0.
@@ -134,9 +134,9 @@ Single-backend packages with no provider choice keep plain `Add{Feature}` extens
 
 **Namespace Policy:**
 
-- A package's public types live in a namespace matching (or prefixed by) the package identity. No package may declare a namespace that IS another package's identity (e.g. only the `Headless.Api.Abstractions` package may own the `Headless.Api.Abstractions` namespace).
-- Injecting into foreign namespaces (`System.*`, `Microsoft.*`, third-party) is allowed ONLY for static extension-method holder classes — never data types, records, interfaces, or enums. Registration extensions (`Add*`/`Use*`) conventionally live in `Microsoft.Extensions.DependencyInjection`; app/endpoint-builder extensions (`Map*`/`Use*` on `IApplicationBuilder`/`IEndpointRouteBuilder`) in `Microsoft.AspNetCore.Builder`.
-- Holder class names in foreign namespaces must be collision-proof: prefix with `Headless` or the feature (`AntiforgeryServiceCollectionExtensions`, `HeadlessHttpContextExtensions`) — never bare BCL-adjacent names (`ServiceCollectionExtensions`, `CollectionExtensions`, `TupleExtensions`), which collide with same-name BCL/ASP.NET types and produce CS0433 for consumers.
+- A feature package's ENTIRE public surface — types, interfaces, enums, AND registration/extension holder classes (`Add*`/`Use*`/`Map*`) — lives in the package's own namespace (matching or prefixed by the package identity). Feature packages never declare `Microsoft.*`, `System.*`, `OpenTelemetry.*`, or any other foreign namespace, even for extension-method holders. Consumers add an explicit `using Headless.<Feature>;` to reach the registration and helper extensions (this is by design — the registration surface is part of the package's owned namespace, not a foreign one).
+- **Sole exception — augmentation packages** whose reason for existing is to augment a foreign namespace keep extending it: `Headless.Extensions`, `Headless.Primitives`, `Headless.Urls`, `Headless.Hosting`, `Headless.Testing` (plus `Testing.AspNetCore` / `Testing.Testcontainers` where they extend test-library namespaces), and `Headless.NetTopologySuite`. Compiler polyfills (e.g. `IsExternalInit` in `System.Runtime.CompilerServices`) are also exempt. In these packages the foreign-namespace holder class names must stay collision-proof — prefix with `Headless` or the augmented type (`HeadlessHttpContextExtensions`, `TaskExtensions`) — never bare BCL-adjacent names (`ServiceCollectionExtensions`, `CollectionExtensions`), which collide with same-name BCL/ASP.NET types and produce CS0433 for consumers.
+- No package may declare a namespace that IS another package's identity (e.g. only the `Headless.Api.Abstractions` package may own the `Headless.Api.Abstractions` namespace).
 
 **Source File Header:**
 
