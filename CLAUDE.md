@@ -30,6 +30,8 @@ Example: `Headless.Caching.Abstractions` + `Headless.Caching.Redis`
 
 **Stack**: xUnit v3 (Microsoft Testing Platform), AwesomeAssertions (fork of FluentAssertions), NSubstitute, Bogus
 
+**Cancellation token**: test classes derive from `TestBase` (`Headless.Testing.Tests`) and pass its `protected static CancellationToken AbortToken` to async calls — never reference `TestContext.Current.CancellationToken` directly.
+
 ### When to create a `*.Tests.Harness` package
 
 This repo's abstraction-plus-provider pattern (`Headless.<Feature>.Abstractions` + `Headless.<Feature>.<Provider>`) implies that every feature has 2+ providers (EF + PostgreSQL + SqlServer for storage domains; Redis + Memory for caching; etc.). The same observable behavior must hold for each provider. Test that with a `Headless.<Feature>.Tests.Harness` package — do **not** copy-paste fixtures across `<Provider>.Tests.Integration` projects.
