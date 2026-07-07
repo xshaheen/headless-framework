@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers;
+using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Data;
 using System.Runtime.InteropServices;
@@ -56,10 +58,12 @@ public readonly struct PostgresAdvisoryLockKey : IEquatable<PostgresAdvisoryLock
     private const int _HashPartLength = 8;
     private const int _HashStringLength = 16;
     private const int _SeparatedHashStringLength = _HashStringLength + 1;
+    private const int _MaxHashedKeyCacheEntries = 4096;
+    private const int _MaxStackallocUtf8Bytes = 512;
 
     // Memoizes the SHA256-hashed keys for long names so the provider's retry loop (one FromString per
-    // poll) does not re-hash the same resource string every attempt. Unbounded: the distinct-resource
-    // count is bounded in practice by the application's lock-key cardinality, which is small.
+    // poll) does not re-hash the same resource string every attempt. The soft cap avoids retaining
+    // unbounded high-cardinality resource names for the process lifetime.
     private static readonly ConcurrentDictionary<string, PostgresAdvisoryLockKey> _HashedKeyCache = new(
         StringComparer.Ordinal
     );
@@ -116,7 +120,7 @@ public readonly struct PostgresAdvisoryLockKey : IEquatable<PostgresAdvisoryLock
 
         if (allowHashing)
         {
-            return _HashedKeyCache.GetOrAdd(name, static n => new PostgresAdvisoryLockKey(_HashString(n)));
+            return _GetOrHashString(name);
         }
 
         throw new FormatException($"Name '{name}' could not be encoded as a {nameof(PostgresAdvisoryLockKey)}.");
@@ -358,15 +362,45 @@ public readonly struct PostgresAdvisoryLockKey : IEquatable<PostgresAdvisoryLock
 
     private static long _HashString(string name)
     {
-        var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(name));
-        var result = 0L;
+        var byteCount = Encoding.UTF8.GetByteCount(name);
+        byte[]? rentedBytes = null;
+        Span<byte> utf8Bytes =
+            byteCount <= _MaxStackallocUtf8Bytes
+                ? stackalloc byte[byteCount]
+                : rentedBytes = ArrayPool<byte>.Shared.Rent(byteCount);
 
-        for (var i = sizeof(long) - 1; i >= 0; i--)
+        try
         {
-            result = (result << 8) | hashBytes[i];
+            var written = Encoding.UTF8.GetBytes(name, utf8Bytes);
+            Span<byte> hashBytes = stackalloc byte[SHA256.HashSizeInBytes];
+            SHA256.HashData(utf8Bytes[..written], hashBytes);
+
+            return BinaryPrimitives.ReadInt64LittleEndian(hashBytes);
+        }
+        finally
+        {
+            if (rentedBytes is not null)
+            {
+                ArrayPool<byte>.Shared.Return(rentedBytes);
+            }
+        }
+    }
+
+    private static PostgresAdvisoryLockKey _GetOrHashString(string name)
+    {
+        if (_HashedKeyCache.TryGetValue(name, out var cached))
+        {
+            return cached;
         }
 
-        return result;
+        var hashed = new PostgresAdvisoryLockKey(_HashString(name));
+
+        if (_HashedKeyCache.Count >= _MaxHashedKeyCacheEntries)
+        {
+            return hashed;
+        }
+
+        return _HashedKeyCache.GetOrAdd(name, hashed);
     }
 
     private static string _ToHashString(long key)
