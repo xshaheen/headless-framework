@@ -122,6 +122,7 @@ Single-backend packages with no provider choice keep plain `Add{Feature}` extens
 
 - Name the shared private helper `_Add{Feature}Core`.
 - The overload trio applies to **provider** `Use{Provider}` / `Add{Feature}` members that bind that backend's options. **Cross-cutting consumer extensions** that adapt an already-composed feature (for example `UseOutputCache` / `UseBclCache`, which consume a named `ICache` rather than supply a provider) intentionally expose a single `Action<TOptions>` overload plus the consumed feature's builder — they do not bind a provider's option section, so the `IConfiguration` / `Action<TOptions, IServiceProvider>` overloads do not apply.
+- **Provider `Setup*`/fluent-extension holders live in the family root namespace** (the `Setup*` and `Setup*Named` classes, plus the messaging `*MessageBuilderExtensions` holders), so a single `using Headless.<Feature>;` exposes the entire registration surface — the `AddHeadless{Feature}` entry, the builder, AND every installed provider's `Use{Provider}` members. Every other provider type (options, storage/client implementations, headers, exceptions) stays in the provider's own namespace; lambda type inference means an options callback needs no extra `using`. Because the `Setup*.cs` file usually sits at the provider package root while declaring the family namespace, prefix its `namespace` with `#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace`.
 
 **Public API Discipline:**
 
