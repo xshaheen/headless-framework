@@ -6,6 +6,7 @@ using Headless.Settings;
 using Headless.Settings.Entities;
 using Headless.Settings.Repositories;
 using Headless.Settings.Seeders;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -14,7 +15,7 @@ using Npgsql;
 namespace Tests;
 
 [Collection<PostgreSqlSettingsFixture>]
-public sealed class PostgreSqlSettingsStorageTests(PostgreSqlSettingsFixture fixture)
+public sealed class PostgreSqlSettingsStorageTests(PostgreSqlSettingsFixture fixture) : TestBase
 {
     private const string _Schema = "settings_pg_raw";
 
@@ -26,17 +27,17 @@ public sealed class PostgreSqlSettingsStorageTests(PostgreSqlSettingsFixture fix
         using var host = _CreateHost();
 
         // when
-        await host.StartAsync(TestContext.Current.CancellationToken);
+        await host.StartAsync(AbortToken);
         var initializer = host
             .Services.GetRequiredService<IEnumerable<IInitializer>>()
             .Single(x => x is not SettingsInitializationBackgroundService);
         var repository = host.Services.GetRequiredService<ISettingValueRecordRepository>();
         var record = new SettingValueRecord(Guid.NewGuid(), "Theme", "Dark", "Global");
-        await repository.InsertAsync(record, TestContext.Current.CancellationToken);
-        var stored = await repository.FindAsync("Theme", "Global", null, TestContext.Current.CancellationToken);
+        await repository.InsertAsync(record, AbortToken);
+        var stored = await repository.FindAsync("Theme", "Global", null, AbortToken);
         var changed = new SettingValueRecord(record.Id, "Theme", "Light", "Global");
-        await repository.UpdateAsync(changed, TestContext.Current.CancellationToken);
-        var updated = await repository.FindAsync("Theme", "Global", null, TestContext.Current.CancellationToken);
+        await repository.UpdateAsync(changed, AbortToken);
+        var updated = await repository.FindAsync("Theme", "Global", null, AbortToken);
 
         // then
         initializer.IsInitialized.Should().BeTrue();
@@ -58,14 +59,14 @@ public sealed class PostgreSqlSettingsStorageTests(PostgreSqlSettingsFixture fix
         // given
         await _DropSchemaAsync();
         using var host = _CreateHost();
-        await host.StartAsync(TestContext.Current.CancellationToken);
+        await host.StartAsync(AbortToken);
         var repository = host.Services.GetRequiredService<ISettingValueRecordRepository>();
         var first = new SettingValueRecord(Guid.NewGuid(), "Theme", "Dark", "Global", null);
         var duplicate = new SettingValueRecord(Guid.NewGuid(), "Theme", "Light", "Global", null);
-        await repository.InsertAsync(first, TestContext.Current.CancellationToken);
+        await repository.InsertAsync(first, AbortToken);
 
         // when
-        var action = async () => await repository.InsertAsync(duplicate, TestContext.Current.CancellationToken);
+        var action = async () => await repository.InsertAsync(duplicate, AbortToken);
 
         // then
         await action
@@ -83,7 +84,7 @@ public sealed class PostgreSqlSettingsStorageTests(PostgreSqlSettingsFixture fix
         using var host = _CreateHost();
 
         // when
-        await host.StartAsync(TestContext.Current.CancellationToken);
+        await host.StartAsync(AbortToken);
 
         // then
         (await _IndexExistsAsync("IX_SettingDefinitions_Name"))
@@ -119,15 +120,15 @@ public sealed class PostgreSqlSettingsStorageTests(PostgreSqlSettingsFixture fix
     private async Task _DropSchemaAsync()
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         await using var command = new NpgsqlCommand($"""DROP SCHEMA IF EXISTS "{_Schema}" CASCADE;""", connection);
-        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        await command.ExecuteNonQueryAsync(AbortToken);
     }
 
     private async Task<bool> _TableExistsAsync(string tableName)
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         await using var command = new NpgsqlCommand(
             """
             SELECT EXISTS (
@@ -141,13 +142,13 @@ public sealed class PostgreSqlSettingsStorageTests(PostgreSqlSettingsFixture fix
         command.Parameters.AddWithValue("schema", _Schema);
         command.Parameters.AddWithValue("table", tableName);
 
-        return (bool)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken))!;
+        return (bool)(await command.ExecuteScalarAsync(AbortToken))!;
     }
 
     private async Task<bool> _IndexExistsAsync(string indexName)
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         await using var command = new NpgsqlCommand(
             """
             SELECT EXISTS (
@@ -161,13 +162,13 @@ public sealed class PostgreSqlSettingsStorageTests(PostgreSqlSettingsFixture fix
         command.Parameters.AddWithValue("schema", _Schema);
         command.Parameters.AddWithValue("index", indexName);
 
-        return (bool)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken))!;
+        return (bool)(await command.ExecuteScalarAsync(AbortToken))!;
     }
 
     private async Task _CreateTablesWithoutIndexesAsync()
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         await using var command = new NpgsqlCommand(
             $"""
             CREATE SCHEMA IF NOT EXISTS "{_Schema}";
@@ -199,6 +200,6 @@ public sealed class PostgreSqlSettingsStorageTests(PostgreSqlSettingsFixture fix
             """,
             connection
         );
-        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        await command.ExecuteNonQueryAsync(AbortToken);
     }
 }

@@ -3,19 +3,20 @@
 using System.Data;
 using System.Data.Common;
 using Headless.Sql;
+using Headless.Testing.Tests;
 
 namespace Tests;
 
 /// <summary>
 /// Unit tests for <see cref="DefaultSqlCurrentConnection"/>.
 /// </summary>
-public sealed class DefaultSqlCurrentConnectionTests
+public sealed class DefaultSqlCurrentConnectionTests : TestBase
 {
     [Fact]
     public async Task should_create_connection_on_first_call()
     {
         // given
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         var factory = Substitute.For<ISqlConnectionFactory>();
         var connection = Substitute.For<DbConnection>();
         connection.State.Returns(ConnectionState.Open);
@@ -35,7 +36,7 @@ public sealed class DefaultSqlCurrentConnectionTests
     public async Task should_reuse_existing_open_connection()
     {
         // given
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         var factory = Substitute.For<ISqlConnectionFactory>();
         var connection = Substitute.For<DbConnection>();
         connection.State.Returns(ConnectionState.Open);
@@ -56,7 +57,7 @@ public sealed class DefaultSqlCurrentConnectionTests
     public async Task should_create_new_connection_when_existing_is_closed()
     {
         // given
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         var factory = Substitute.For<ISqlConnectionFactory>();
         var closedConnection = Substitute.For<DbConnection>();
         closedConnection.State.Returns(ConnectionState.Closed);
@@ -81,7 +82,7 @@ public sealed class DefaultSqlCurrentConnectionTests
     public async Task should_dispose_connection_on_dispose_async()
     {
         // given
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         var factory = Substitute.For<ISqlConnectionFactory>();
         var connection = Substitute.For<DbConnection>();
         connection.State.Returns(ConnectionState.Open);
@@ -134,7 +135,7 @@ public sealed class DefaultSqlCurrentConnectionTests
     public async Task should_dispose_existing_before_creating_new()
     {
         // given
-        var cancellationToken = TestContext.Current.CancellationToken;
+        var cancellationToken = AbortToken;
         var factory = Substitute.For<ISqlConnectionFactory>();
         await using var closedConnection = new FakeDbConnection { StateValue = ConnectionState.Closed };
 
@@ -157,7 +158,7 @@ public sealed class DefaultSqlCurrentConnectionTests
     public async Task should_handle_concurrent_access_with_async_lock()
     {
         // given
-        var cancellationToken = TestContext.Current.CancellationToken;
+        var cancellationToken = AbortToken;
         var factory = Substitute.For<ISqlConnectionFactory>();
         var connection = Substitute.For<DbConnection>();
         connection.State.Returns(ConnectionState.Open);
@@ -182,7 +183,7 @@ public sealed class DefaultSqlCurrentConnectionTests
     public async Task should_set_connection_to_null_on_dispose()
     {
         // given
-        var cancellationToken = TestContext.Current.CancellationToken;
+        var cancellationToken = AbortToken;
         var factory = Substitute.For<ISqlConnectionFactory>();
         var connection = Substitute.For<DbConnection>();
         connection.State.Returns(ConnectionState.Open);
@@ -207,7 +208,7 @@ public sealed class DefaultSqlCurrentConnectionTests
     public async Task should_handle_dispose_when_already_closed()
     {
         // given
-        var cancellationToken = TestContext.Current.CancellationToken;
+        var cancellationToken = AbortToken;
         var factory = Substitute.For<ISqlConnectionFactory>();
         var connection = Substitute.For<DbConnection>();
         connection.State.Returns(ConnectionState.Open);
@@ -229,7 +230,7 @@ public sealed class DefaultSqlCurrentConnectionTests
     public async Task should_not_throw_on_multiple_disposes()
     {
         // given
-        var cancellationToken = TestContext.Current.CancellationToken;
+        var cancellationToken = AbortToken;
         var factory = Substitute.For<ISqlConnectionFactory>();
         var connection = Substitute.For<DbConnection>();
         connection.State.Returns(ConnectionState.Open);

@@ -1,11 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Emails;
+using Headless.Testing.Tests;
 using MimeKit;
 
 namespace Tests;
 
-public sealed class EmailToMimeMessageConverterTests
+public sealed class EmailToMimeMessageConverterTests : TestBase
 {
     [Fact]
     public async Task should_map_headers_and_both_bodies()
@@ -24,7 +25,7 @@ public sealed class EmailToMimeMessageConverterTests
             MessageHtml = "<p>rich</p>",
         };
 
-        using var message = await request.ConvertToMimeMessageAsync(TestContext.Current.CancellationToken);
+        using var message = await request.ConvertToMimeMessageAsync(AbortToken);
 
         message.Subject.Should().Be("Hello");
         message.From.Mailboxes.Single().Address.Should().Be("from@example.com");
@@ -66,7 +67,7 @@ public sealed class EmailToMimeMessageConverterTests
             ],
         };
 
-        using var message = await request.ConvertToMimeMessageAsync(TestContext.Current.CancellationToken);
+        using var message = await request.ConvertToMimeMessageAsync(AbortToken);
 
         var attachment = message.Attachments.OfType<MimePart>().Single();
         attachment.FileName.Should().Be("invoice.pdf");

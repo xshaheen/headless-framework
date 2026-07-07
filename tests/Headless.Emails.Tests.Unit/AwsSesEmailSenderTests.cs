@@ -5,11 +5,12 @@ using Amazon.SimpleEmailV2;
 using Amazon.SimpleEmailV2.Model;
 using Headless.Emails;
 using Headless.Emails.Aws;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests;
 
-public sealed class AwsSesEmailSenderTests
+public sealed class AwsSesEmailSenderTests : TestBase
 {
     private readonly IAmazonSimpleEmailServiceV2 _ses = Substitute.For<IAmazonSimpleEmailServiceV2>();
     private readonly AwsSesEmailSender _sender;
@@ -24,7 +25,7 @@ public sealed class AwsSesEmailSenderTests
     {
         var captured = _CaptureRequest(HttpStatusCode.OK);
 
-        var result = await _sender.SendAsync(_Request(), TestContext.Current.CancellationToken);
+        var result = await _sender.SendAsync(_Request(), AbortToken);
 
         result.Success.Should().BeTrue();
         captured().Content.Simple.Should().NotBeNull();
@@ -41,7 +42,7 @@ public sealed class AwsSesEmailSenderTests
             Attachments = [new EmailRequestAttachment { Name = "a.txt", File = new byte[] { 1, 2, 3 } }],
         };
 
-        var result = await _sender.SendAsync(request, TestContext.Current.CancellationToken);
+        var result = await _sender.SendAsync(request, AbortToken);
 
         result.Success.Should().BeTrue();
         captured().Content.Raw.Should().NotBeNull();
@@ -76,7 +77,7 @@ public sealed class AwsSesEmailSenderTests
             Attachments = [new EmailRequestAttachment { Name = "a.txt", File = new byte[] { 1, 2, 3 } }],
         };
 
-        var result = await _sender.SendAsync(request, TestContext.Current.CancellationToken);
+        var result = await _sender.SendAsync(request, AbortToken);
 
         result.Success.Should().BeTrue();
         captured!.Destination.BccAddresses.Should().ContainSingle(a => a.Contains("secret@example.com"));
@@ -88,7 +89,7 @@ public sealed class AwsSesEmailSenderTests
     {
         _CaptureRequest(HttpStatusCode.ServiceUnavailable);
 
-        var result = await _sender.SendAsync(_Request(), TestContext.Current.CancellationToken);
+        var result = await _sender.SendAsync(_Request(), AbortToken);
 
         result.Success.Should().BeFalse();
         result.FailureError.Should().NotBeNull();
@@ -99,7 +100,7 @@ public sealed class AwsSesEmailSenderTests
     {
         var request = _Request() with { MessageText = null, MessageHtml = null };
 
-        var act = async () => await _sender.SendAsync(request, TestContext.Current.CancellationToken);
+        var act = async () => await _sender.SendAsync(request, AbortToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
         await _ses.DidNotReceive().SendEmailAsync(Arg.Any<SendEmailRequest>(), Arg.Any<CancellationToken>());

@@ -2,6 +2,7 @@
 
 using Headless.DistributedLocks;
 using Headless.Hosting.Initialization;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using StackExchange.Redis;
@@ -9,7 +10,7 @@ using StackExchange.Redis;
 namespace Tests;
 
 [Collection<RedisTestFixture>]
-public sealed class RedisDistributedLockSetupTests(RedisTestFixture fixture)
+public sealed class RedisDistributedLockSetupTests(RedisTestFixture fixture) : TestBase
 {
     [Fact]
     public async Task AddHeadlessDistributedLocks_should_register_and_run_redis_initializers_on_host_start()
@@ -22,19 +23,19 @@ public sealed class RedisDistributedLockSetupTests(RedisTestFixture fixture)
         using var host = builder.Build();
 
         // when
-        await host.StartAsync(TestContext.Current.CancellationToken);
+        await host.StartAsync(AbortToken);
         var initializers = host.Services.GetRequiredService<IEnumerable<IInitializer>>().ToList();
 
         foreach (var initializer in initializers)
         {
-            await initializer.WaitForInitializationAsync(TestContext.Current.CancellationToken);
+            await initializer.WaitForInitializationAsync(AbortToken);
         }
 
         // then
         initializers.Should().HaveCount(3);
         initializers.Should().AllSatisfy(initializer => initializer.IsInitialized.Should().BeTrue());
 
-        await host.StopAsync(TestContext.Current.CancellationToken);
+        await host.StopAsync(AbortToken);
     }
 
     [Fact]

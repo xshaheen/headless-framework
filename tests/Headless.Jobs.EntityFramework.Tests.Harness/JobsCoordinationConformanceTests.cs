@@ -6,6 +6,7 @@ using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
@@ -24,12 +25,12 @@ namespace Tests;
 /// Each leaf derives a sealed class with <c>[Collection&lt;TFixture&gt;]</c> and re-declares the methods with
 /// <c>[Fact]</c> so the runner discovers them per provider.
 /// </summary>
-public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixture)
+public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixture) : TestBase
     where TFixture : class, IJobsCoordinationFixture
 {
     public virtual async Task queued_job_is_stamped_with_the_node_incarnation_owner()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
 
         using var host = fixture.BuildHost("node-a");
@@ -68,7 +69,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
 
     public virtual async Task reclaim_touches_only_the_dead_incarnations_non_terminal_rows()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
 
         using var host = fixture.BuildHost("node-a");
@@ -120,7 +121,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
 
     public virtual async Task dead_node_with_mark_failed_policy_transitions_in_flight_row_to_failed()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
 
         using var host = fixture.BuildHost("node-a");
@@ -161,7 +162,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
 
     public virtual async Task dead_node_with_skip_policy_transitions_in_flight_row_to_skipped()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
 
         using var host = fixture.BuildHost("node-a");
@@ -207,7 +208,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
     /// </summary>
     public virtual async Task completion_is_fenced_on_ownership_and_non_terminal_status()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
 
         using var host = fixture.BuildHost("node-a");
@@ -257,7 +258,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
     /// </summary>
     public virtual async Task cron_occurrence_is_stamped_with_the_node_death_policy()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
 
         using var host = fixture.BuildHost("node-a");
@@ -293,7 +294,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
 
     public virtual async Task reclaim_is_idempotent_a_second_pass_affects_zero_rows()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
 
         using var host = fixture.BuildHost("node-a");
@@ -327,7 +328,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
 
     public virtual async Task surviving_node_recovers_a_crashed_nodes_work_via_node_left_event()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
 
         // Two nodes in one cluster. No Redis anywhere in the wiring — recovery flows purely through the
@@ -389,7 +390,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
     /// </summary>
     public virtual async Task running_job_renews_its_own_lease_but_a_lost_lease_renews_zero_rows()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
 
         using var host = fixture.BuildHost("node-a");
@@ -449,7 +450,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
     /// </summary>
     public virtual async Task renewal_returns_the_membership_sentinel_when_membership_is_not_established()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
 
         // No StartAsync: coordination membership is not established, so TryGetStampOwner returns false.
@@ -480,7 +481,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
     /// </summary>
     public virtual async Task stalled_lapsed_lease_inprogress_rows_are_reclaimed_per_policy()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
 
         using var host = fixture.BuildHost("node-a");
@@ -586,7 +587,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
     /// </summary>
     public virtual async Task stalled_reclaim_uses_the_db_clock_not_a_skewed_reclaimer_clock()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
 
         // Reclaiming node's wall clock is 1 hour ahead of the DB. With the pre-fix TimeProvider-based comparison this
@@ -641,7 +642,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
     /// </summary>
     public virtual async Task cron_stalled_reclaim_uses_the_db_clock_and_terminalizes_per_policy()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
 
         var skewedClock = new SkewedTimeProvider(TimeSpan.FromHours(1));
@@ -717,7 +718,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
     /// </summary>
     public virtual async Task cron_running_occurrence_renews_but_queued_or_foreign_renews_zero()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
 
         using var host = fixture.BuildHost("node-a");
@@ -786,7 +787,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
     /// </summary>
     public virtual async Task cron_completion_is_fenced_on_ownership_and_non_terminal_status()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
 
         using var host = fixture.BuildHost("node-a");
@@ -871,7 +872,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
     /// </summary>
     public virtual async Task node_death_sweep_leaves_a_valid_lease_inprogress_row_to_the_lease()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
 
         using var host = fixture.BuildHost("node-a");

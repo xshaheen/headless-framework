@@ -134,7 +134,7 @@ public sealed class InMemoryCacheTests : TestBase
 
         var task = (Task)method!.Invoke(cache, [true])!;
         await task;
-        await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(50), TestContext.Current.CancellationToken);
+        await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(50), AbortToken);
     }
 
     private static T? _GetEntryProperty<T>(object entry, string propertyName)
@@ -2052,13 +2052,13 @@ public sealed class InMemoryCacheTests : TestBase
         var key = Faker.Random.AlphaNumeric(10);
         var duration = TimeSpan.FromMinutes(5);
 
-        await cache.UpsertAsync(key, "value", duration, TestContext.Current.CancellationToken);
+        await cache.UpsertAsync(key, "value", duration, AbortToken);
 
         // when — advance by exactly the duration so GetUtcNow() == PhysicalExpiresAt
         _timeProvider.Advance(duration);
 
         // then — entry is expired AT the exact tick (inclusive boundary)
-        var result = await cache.GetAsync<string>(key, TestContext.Current.CancellationToken);
+        var result = await cache.GetAsync<string>(key, AbortToken);
         result.HasValue.Should().BeFalse("entry must be expired when now == expiresAt (inclusive boundary)");
     }
 
@@ -2075,13 +2075,13 @@ public sealed class InMemoryCacheTests : TestBase
         var key = Faker.Random.AlphaNumeric(10);
         var duration = TimeSpan.FromMinutes(5);
 
-        await cache.UpsertAsync(key, "value", duration, TestContext.Current.CancellationToken);
+        await cache.UpsertAsync(key, "value", duration, AbortToken);
 
         // when — advance to one tick before expiration
         _timeProvider.Advance(duration - TimeSpan.FromTicks(1));
 
         // then — entry is still alive one tick before expiry
-        var result = await cache.GetAsync<string>(key, TestContext.Current.CancellationToken);
+        var result = await cache.GetAsync<string>(key, AbortToken);
         result.HasValue.Should().BeTrue("entry must be alive one tick before expiration");
         result.Value.Should().Be("value");
     }

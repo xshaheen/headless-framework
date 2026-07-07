@@ -6,6 +6,7 @@ using Headless.Messaging.Configuration;
 using Headless.Messaging.InMemoryStorage;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Serialization;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
@@ -25,7 +26,7 @@ namespace Tests;
 /// integration test once <see cref="DataStorageTestsBase"/> exposes a <see cref="TimeProvider"/>
 /// seam (tracked separately).
 /// </remarks>
-public sealed class InitialDispatchGraceTests
+public sealed class InitialDispatchGraceTests : TestBase
 {
     private static readonly DateTimeOffset _FixedNow = new(2026, 6, 1, 12, 0, 0, TimeSpan.Zero);
     private static readonly TimeSpan _InitialDispatchGrace = TimeSpan.FromSeconds(30);
@@ -34,19 +35,17 @@ public sealed class InitialDispatchGraceTests
     public async Task should_exclude_freshly_stored_published_message_during_initial_dispatch_grace()
     {
         var (storage, fakeClock) = _BuildStorageWithFakeClock();
-        await new InMemoryStorageInitializer().InitializeAsync(TestContext.Current.CancellationToken);
+        await new InMemoryStorageInitializer().InitializeAsync(AbortToken);
 
         // given — store a fresh published message; NextRetryAt is now + 30s.
         var stored = await storage.StoreMessageAsync(
             "grace-published",
             _CreateMessage(),
-            cancellationToken: TestContext.Current.CancellationToken
+            cancellationToken: AbortToken
         );
 
         // when — immediately poll (still inside the grace window).
-        var beforeGrace = (
-            await storage.GetPublishedMessagesOfNeedRetryAsync(TestContext.Current.CancellationToken)
-        ).ToList();
+        var beforeGrace = (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken)).ToList();
 
         // then — pickup query excludes the row.
         beforeGrace.Should().NotContain(m => m.StorageId == stored.StorageId);
@@ -55,9 +54,7 @@ public sealed class InitialDispatchGraceTests
         fakeClock.Advance(_InitialDispatchGrace + TimeSpan.FromSeconds(1));
 
         // then — the same row is now eligible for pickup.
-        var afterGrace = (
-            await storage.GetPublishedMessagesOfNeedRetryAsync(TestContext.Current.CancellationToken)
-        ).ToList();
+        var afterGrace = (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken)).ToList();
         afterGrace.Should().Contain(m => m.StorageId == stored.StorageId);
     }
 
@@ -65,20 +62,18 @@ public sealed class InitialDispatchGraceTests
     public async Task should_exclude_freshly_stored_received_message_during_initial_dispatch_grace()
     {
         var (storage, fakeClock) = _BuildStorageWithFakeClock();
-        await new InMemoryStorageInitializer().InitializeAsync(TestContext.Current.CancellationToken);
+        await new InMemoryStorageInitializer().InitializeAsync(AbortToken);
 
         // given — store a fresh received message; NextRetryAt is now + 30s.
         var stored = await storage.StoreReceivedMessageAsync(
             "grace-received",
             "test-group",
             _CreateMessage(),
-            TestContext.Current.CancellationToken
+            AbortToken
         );
 
         // when — immediately poll (still inside the grace window).
-        var beforeGrace = (
-            await storage.GetReceivedMessagesOfNeedRetryAsync(TestContext.Current.CancellationToken)
-        ).ToList();
+        var beforeGrace = (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken)).ToList();
 
         // then — pickup query excludes the row.
         beforeGrace.Should().NotContain(m => m.StorageId == stored.StorageId);
@@ -87,9 +82,7 @@ public sealed class InitialDispatchGraceTests
         fakeClock.Advance(_InitialDispatchGrace + TimeSpan.FromSeconds(1));
 
         // then — the same row is now eligible for pickup.
-        var afterGrace = (
-            await storage.GetReceivedMessagesOfNeedRetryAsync(TestContext.Current.CancellationToken)
-        ).ToList();
+        var afterGrace = (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken)).ToList();
         afterGrace.Should().Contain(m => m.StorageId == stored.StorageId);
     }
 

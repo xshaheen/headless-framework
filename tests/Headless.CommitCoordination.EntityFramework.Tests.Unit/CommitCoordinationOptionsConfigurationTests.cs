@@ -2,6 +2,7 @@
 
 using Headless.CommitCoordination;
 using Headless.CommitCoordination.EntityFramework;
+using Headless.Testing.Tests;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -17,7 +18,7 @@ namespace Tests;
 /// while EF Core builds the options. EF Core does NOT auto-discover <c>IInterceptor</c> registrations,
 /// so these tests pass only when the configuration wires the interceptor itself.
 /// </summary>
-public sealed class CommitCoordinationOptionsConfigurationTests
+public sealed class CommitCoordinationOptionsConfigurationTests : TestBase
 {
     [Fact]
     public async Task should_attach_commit_interceptor_to_plain_add_db_context_without_explicit_add_interceptors()
@@ -48,7 +49,7 @@ public sealed class CommitCoordinationOptionsConfigurationTests
                 return ctx.SaveChangesAsync(ct);
             },
             scope.ServiceProvider,
-            cancellationToken: TestContext.Current.CancellationToken
+            cancellationToken: AbortToken
         );
 
         drained

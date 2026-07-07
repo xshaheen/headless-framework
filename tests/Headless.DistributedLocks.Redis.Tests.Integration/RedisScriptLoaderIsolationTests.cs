@@ -3,6 +3,7 @@
 using Headless.Caching;
 using Headless.DistributedLocks;
 using Headless.Testing.Testcontainers;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using StackExchange.Redis;
 using Testcontainers.Redis;
@@ -14,7 +15,7 @@ namespace Tests;
 /// so <c>Headless.Caching.Redis</c> and <c>Headless.DistributedLocks.Redis</c> can run against
 /// DIFFERENT Redis instances without cross-contamination.
 /// </summary>
-public sealed class RedisScriptLoaderIsolationTests : IAsyncLifetime
+public sealed class RedisScriptLoaderIsolationTests : TestBase
 {
     private readonly RedisContainer _cacheContainer = new RedisBuilder(TestImages.Redis).Build();
     private readonly RedisContainer _lockContainer = new RedisBuilder(TestImages.Redis).Build();
@@ -22,8 +23,9 @@ public sealed class RedisScriptLoaderIsolationTests : IAsyncLifetime
     private ConnectionMultiplexer _cacheMultiplexer = null!;
     private ConnectionMultiplexer _lockMultiplexer = null!;
 
-    public async ValueTask InitializeAsync()
+    public override async ValueTask InitializeAsync()
     {
+        await base.InitializeAsync();
         await Task.WhenAll(_cacheContainer.StartAsync(), _lockContainer.StartAsync());
 
         var cacheConnStr = _cacheContainer.GetConnectionString() + ",allowAdmin=true";
@@ -36,7 +38,7 @@ public sealed class RedisScriptLoaderIsolationTests : IAsyncLifetime
         await _lockMultiplexer.GetDatabase().ExecuteAsync("FLUSHALL");
     }
 
-    public async ValueTask DisposeAsync()
+    protected override async ValueTask DisposeAsyncCore()
     {
         if (_cacheMultiplexer is not null)
         {
@@ -50,13 +52,14 @@ public sealed class RedisScriptLoaderIsolationTests : IAsyncLifetime
 
         await _cacheContainer.DisposeAsync();
         await _lockContainer.DisposeAsync();
+        await base.DisposeAsyncCore();
     }
 
     [Fact]
     public async Task should_isolate_scripts_per_package_when_registered_against_different_multiplexers()
     {
         // --- arrange ---
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         var faker = new Faker();
 
         var cacheKey = $"isolation-test:{faker.Random.AlphaNumeric(12)}";

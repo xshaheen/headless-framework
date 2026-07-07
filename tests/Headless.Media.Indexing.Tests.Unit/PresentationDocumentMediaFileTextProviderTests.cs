@@ -3,6 +3,7 @@ using DocumentFormat.OpenXml.Drawing;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Presentation;
 using Headless.Media.Indexing;
+using Headless.Testing.Tests;
 using Path = System.IO.Path;
 using Shape = DocumentFormat.OpenXml.Presentation.Shape;
 using Text = DocumentFormat.OpenXml.Drawing.Text;
@@ -10,7 +11,7 @@ using TextBody = DocumentFormat.OpenXml.Presentation.TextBody;
 
 namespace Tests;
 
-public sealed class PresentationDocumentMediaFileTextProviderTests
+public sealed class PresentationDocumentMediaFileTextProviderTests : TestBase
 {
     private readonly PresentationDocumentMediaFileTextProvider _sut = new();
 
@@ -25,7 +26,7 @@ public sealed class PresentationDocumentMediaFileTextProviderTests
 
         // when
         await using var fileStream = File.OpenRead(powerPintFilePath);
-        var result = await _sut.GetTextAsync(fileStream, TestContext.Current.CancellationToken);
+        var result = await _sut.GetTextAsync(fileStream, AbortToken);
 
         // then
         result.Should().Contain("Second"); // Replace with actual expected content
@@ -35,7 +36,7 @@ public sealed class PresentationDocumentMediaFileTextProviderTests
     public async Task get_text_async_should_return_empty_string_when_presentation_has_no_slides()
     {
         await using var stream = _CreateEmptyPresentation();
-        var result = await _sut.GetTextAsync(stream, TestContext.Current.CancellationToken);
+        var result = await _sut.GetTextAsync(stream, AbortToken);
         result.Should().BeEmpty();
     }
 
@@ -44,7 +45,7 @@ public sealed class PresentationDocumentMediaFileTextProviderTests
     {
         const string expectedText = "Test slide content";
         await using var stream = _CreatePresentationWithSlide(expectedText);
-        var result = await _sut.GetTextAsync(stream, TestContext.Current.CancellationToken);
+        var result = await _sut.GetTextAsync(stream, AbortToken);
         result.Should().Be($"{expectedText}{Environment.NewLine}");
     }
 
@@ -53,7 +54,7 @@ public sealed class PresentationDocumentMediaFileTextProviderTests
     {
         var slideTexts = new[] { "Slide 1", "Slide 2", "Slide 3" };
         await using var stream = _CreatePresentationWithSlides(slideTexts);
-        var result = await _sut.GetTextAsync(stream, TestContext.Current.CancellationToken);
+        var result = await _sut.GetTextAsync(stream, AbortToken);
         result.Should().Be(string.Join(Environment.NewLine, slideTexts) + Environment.NewLine);
     }
 

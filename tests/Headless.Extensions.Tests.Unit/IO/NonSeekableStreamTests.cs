@@ -1,10 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.IO;
+using Headless.Testing.Tests;
 
 namespace Tests.IO;
 
-public sealed class NonSeekableStreamTests
+public sealed class NonSeekableStreamTests : TestBase
 {
     [Fact]
     public void CanSeek_should_return_false()
@@ -269,7 +270,7 @@ public sealed class NonSeekableStreamTests
         var buffer = new byte[3];
 
         // when
-        var bytesRead = await sut.ReadAsync(buffer.AsMemory(0, 3), TestContext.Current.CancellationToken);
+        var bytesRead = await sut.ReadAsync(buffer.AsMemory(0, 3), AbortToken);
 
         // then
         bytesRead.Should().Be(3);
@@ -286,7 +287,7 @@ public sealed class NonSeekableStreamTests
         var buffer = new byte[3];
 
         // when
-        var bytesRead = await sut.ReadAsync(buffer.AsMemory(), TestContext.Current.CancellationToken);
+        var bytesRead = await sut.ReadAsync(buffer.AsMemory(), AbortToken);
 
         // then
         bytesRead.Should().Be(3);
@@ -334,7 +335,7 @@ public sealed class NonSeekableStreamTests
         byte[] data = [1, 2, 3];
 
         // when
-        await sut.WriteAsync(data.AsMemory(0, 3), TestContext.Current.CancellationToken);
+        await sut.WriteAsync(data.AsMemory(0, 3), AbortToken);
 
         // then
         inner.ToArray().Should().BeEquivalentTo(data);
@@ -349,7 +350,7 @@ public sealed class NonSeekableStreamTests
         byte[] data = [1, 2, 3];
 
         // when
-        await sut.WriteAsync(data.AsMemory(), TestContext.Current.CancellationToken);
+        await sut.WriteAsync(data.AsMemory(), AbortToken);
 
         // then
         inner.ToArray().Should().BeEquivalentTo(data);
@@ -363,7 +364,7 @@ public sealed class NonSeekableStreamTests
         await using var sut = new NonSeekableStream(inner);
 
         // when/then - no exception means delegation works
-        await sut.FlushAsync(TestContext.Current.CancellationToken);
+        await sut.FlushAsync(AbortToken);
     }
 
     [Fact]

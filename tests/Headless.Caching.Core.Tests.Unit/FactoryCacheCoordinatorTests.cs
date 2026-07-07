@@ -1733,7 +1733,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
                     key,
                     _ => ValueTask.FromResult<string?>("fresh"),
                     _CreateOptions(isFailSafeEnabled: true),
-                    TestContext.Current.CancellationToken
+                    AbortToken
                 );
 
         // then — the store-write exception propagates; fail-safe does NOT swallow it

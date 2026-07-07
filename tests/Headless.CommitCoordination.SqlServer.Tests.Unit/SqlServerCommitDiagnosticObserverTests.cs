@@ -2,6 +2,7 @@
 
 using Headless.CommitCoordination;
 using Headless.CommitCoordination.SqlServer;
+using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -10,7 +11,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Tests;
 
 #pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-public sealed class SqlServerCommitDiagnosticObserverTests
+public sealed class SqlServerCommitDiagnosticObserverTests : TestBase
 {
     [Fact]
     public async Task wait_for_drains_should_return_promptly_when_no_drains_are_pending()
@@ -18,9 +19,7 @@ public sealed class SqlServerCommitDiagnosticObserverTests
         var (observer, _, _) = _CreateObserver();
 
         // No drains were ever tracked; the shutdown wait must complete without spinning its bounded iterations.
-        await observer
-            .WaitForDrainsAsync(TestContext.Current.CancellationToken)
-            .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        await observer.WaitForDrainsAsync(AbortToken).WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
     }
 
     [Fact]
@@ -66,7 +65,7 @@ public sealed class SqlServerCommitDiagnosticObserverTests
             var wait = observer.WaitForDrainsAsync(CancellationToken.None);
             gate.SetResult();
 
-            await wait.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            await wait.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         }
 
         logger
@@ -106,9 +105,7 @@ public sealed class SqlServerCommitDiagnosticObserverTests
         var wait = observer.WaitForDrainsAsync(cts.Token);
         await cts.CancelAsync();
 
-        await wait.Invoking(async x =>
-                await x.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken)
-            )
+        await wait.Invoking(async x => await x.WaitAsync(TimeSpan.FromSeconds(5), AbortToken))
             .Should()
             .ThrowAsync<OperationCanceledException>();
 

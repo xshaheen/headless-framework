@@ -53,13 +53,13 @@ public sealed class SqlServerOutOfBandCommitDetectionTests(SqlServerCommitCoordi
         // SqlClientDiagnosticListener synchronously, so the observer is wired the moment StartAsync returns.
         _diagnostic = _services.GetServices<IHostedService>().OfType<SqlServerCommitDiagnosticHostedService>().Single();
 
-        await _diagnostic.StartAsync(TestContext.Current.CancellationToken);
+        await _diagnostic.StartAsync(AbortToken);
     }
 
     [Fact]
     public async Task should_drain_exactly_once_when_the_sql_server_transaction_commits_out_of_band()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         var drained = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var commitCount = 0;
 
@@ -104,7 +104,7 @@ public sealed class SqlServerOutOfBandCommitDetectionTests(SqlServerCommitCoordi
     [Fact]
     public async Task should_discard_when_the_sql_server_transaction_rolls_back_out_of_band()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         var rolledBack = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var commitCount = 0;
 
@@ -150,7 +150,7 @@ public sealed class SqlServerOutOfBandCommitDetectionTests(SqlServerCommitCoordi
     [Fact]
     public async Task should_resolve_a_scoped_service_inside_the_out_of_band_commit_callback()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         var drained = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var resolvedProbe = false;
         var relationalContextSeen = false;
@@ -195,7 +195,7 @@ public sealed class SqlServerOutOfBandCommitDetectionTests(SqlServerCommitCoordi
         // Two sequential coordinated transactions on the SAME open connection share one ClientConnectionId (the
         // out-of-band correlation key). Proves the keyed registry isolates them: each transaction's work drains
         // exactly once on its OWN commit, with no cross-transaction drain or scope overwrite.
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         var firstDrained = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var secondDrained = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var firstCount = 0;

@@ -6,6 +6,7 @@ using Headless.Permissions;
 using Headless.Permissions.Entities;
 using Headless.Permissions.Repositories;
 using Headless.Permissions.Seeders;
+using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -13,7 +14,7 @@ using Microsoft.Extensions.Hosting;
 namespace Tests;
 
 [Collection<SqlServerPermissionsFixture>]
-public sealed class SqlServerPermissionsStorageTests(SqlServerPermissionsFixture fixture)
+public sealed class SqlServerPermissionsStorageTests(SqlServerPermissionsFixture fixture) : TestBase
 {
     private const string _Schema = "permissions_sql_raw";
 
@@ -25,7 +26,7 @@ public sealed class SqlServerPermissionsStorageTests(SqlServerPermissionsFixture
         using var host = _CreateHost();
 
         // when
-        await host.StartAsync(TestContext.Current.CancellationToken);
+        await host.StartAsync(AbortToken);
         var initializer = host
             .Services.GetRequiredService<IEnumerable<IInitializer>>()
             .Single(x => x is not PermissionsInitializationBackgroundService);
@@ -35,26 +36,11 @@ public sealed class SqlServerPermissionsStorageTests(SqlServerPermissionsFixture
         var group = new PermissionGroupDefinitionRecord(Guid.NewGuid(), "Users", "Users");
         var permission = new PermissionDefinitionRecord(Guid.NewGuid(), "Users", "Users.Create", null, "Create users");
 
-        await grantRepository.InsertAsync(record, TestContext.Current.CancellationToken);
-        await definitionRepository.SaveAsync(
-            [group],
-            [],
-            [],
-            [permission],
-            [],
-            [],
-            TestContext.Current.CancellationToken
-        );
-        var stored = await grantRepository.FindAsync(
-            "Users.Create",
-            "Role",
-            "admin",
-            TestContext.Current.CancellationToken
-        );
-        var storedGroups = await definitionRepository.GetGroupsListAsync(TestContext.Current.CancellationToken);
-        var storedPermissions = await definitionRepository.GetPermissionsListAsync(
-            TestContext.Current.CancellationToken
-        );
+        await grantRepository.InsertAsync(record, AbortToken);
+        await definitionRepository.SaveAsync([group], [], [], [permission], [], [], AbortToken);
+        var stored = await grantRepository.FindAsync("Users.Create", "Role", "admin", AbortToken);
+        var storedGroups = await definitionRepository.GetGroupsListAsync(AbortToken);
+        var storedPermissions = await definitionRepository.GetPermissionsListAsync(AbortToken);
 
         // then
         initializer.IsInitialized.Should().BeTrue();
@@ -76,7 +62,7 @@ public sealed class SqlServerPermissionsStorageTests(SqlServerPermissionsFixture
         using var host = _CreateHost();
 
         // when
-        await host.StartAsync(TestContext.Current.CancellationToken);
+        await host.StartAsync(AbortToken);
 
         // then
         (await _IndexExistsAsync("PermissionGroupDefinitions", "IX_PermissionGroupDefinitions_Name"))
@@ -96,7 +82,7 @@ public sealed class SqlServerPermissionsStorageTests(SqlServerPermissionsFixture
         await _DropSchemaAsync();
         var currentTenant = new TestCurrentTenant("tenant-a");
         using var host = _CreateHost(currentTenant);
-        await host.StartAsync(TestContext.Current.CancellationToken);
+        await host.StartAsync(AbortToken);
         var grantRepository = host.Services.GetRequiredService<IPermissionGrantRepository>();
         var tenantA = new PermissionGrantRecord(
             Guid.NewGuid(),
@@ -116,14 +102,9 @@ public sealed class SqlServerPermissionsStorageTests(SqlServerPermissionsFixture
         );
 
         // when
-        await grantRepository.InsertManyAsync([tenantA, tenantB], TestContext.Current.CancellationToken);
-        var found = await grantRepository.FindAsync(
-            "Users.Approve",
-            "Role",
-            "admin",
-            TestContext.Current.CancellationToken
-        );
-        var list = await grantRepository.GetListAsync("Role", "admin", TestContext.Current.CancellationToken);
+        await grantRepository.InsertManyAsync([tenantA, tenantB], AbortToken);
+        var found = await grantRepository.FindAsync("Users.Approve", "Role", "admin", AbortToken);
+        var list = await grantRepository.GetListAsync("Role", "admin", AbortToken);
 
         // then
         found.Should().NotBeNull();
@@ -138,7 +119,7 @@ public sealed class SqlServerPermissionsStorageTests(SqlServerPermissionsFixture
         // given
         await _DropSchemaAsync();
         using var host = _CreateHost();
-        await host.StartAsync(TestContext.Current.CancellationToken);
+        await host.StartAsync(AbortToken);
         var grantRepository = host.Services.GetRequiredService<IPermissionGrantRepository>();
         var records = Enumerable
             .Range(0, 2101)
@@ -152,15 +133,15 @@ public sealed class SqlServerPermissionsStorageTests(SqlServerPermissionsFixture
             .ToArray();
 
         // when
-        await grantRepository.InsertManyAsync(records, TestContext.Current.CancellationToken);
+        await grantRepository.InsertManyAsync(records, AbortToken);
         var found = await grantRepository.GetListAsync(
             records.Select(x => x.Name).ToArray(),
             "Role",
             "bulk-admin",
-            TestContext.Current.CancellationToken
+            AbortToken
         );
-        await grantRepository.DeleteManyAsync(records, TestContext.Current.CancellationToken);
-        var remaining = await grantRepository.GetListAsync("Role", "bulk-admin", TestContext.Current.CancellationToken);
+        await grantRepository.DeleteManyAsync(records, AbortToken);
+        var remaining = await grantRepository.GetListAsync("Role", "bulk-admin", AbortToken);
 
         // then
         found.Should().HaveCount(records.Length);
@@ -189,7 +170,7 @@ public sealed class SqlServerPermissionsStorageTests(SqlServerPermissionsFixture
     private async Task _DropSchemaAsync()
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         await using var command = new SqlCommand(
             $"""
             IF OBJECT_ID(N'{_Schema}.PermissionGrants', N'U') IS NOT NULL DROP TABLE [{_Schema}].[PermissionGrants];
@@ -201,13 +182,13 @@ public sealed class SqlServerPermissionsStorageTests(SqlServerPermissionsFixture
             """,
             connection
         );
-        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        await command.ExecuteNonQueryAsync(AbortToken);
     }
 
     private async Task _CreateTablesWithoutIndexesAsync()
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         await using var command = new SqlCommand(
             $"""
             IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = N'{_Schema}') EXEC(N'CREATE SCHEMA [{_Schema}]');
@@ -244,13 +225,13 @@ public sealed class SqlServerPermissionsStorageTests(SqlServerPermissionsFixture
             """,
             connection
         );
-        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        await command.ExecuteNonQueryAsync(AbortToken);
     }
 
     private async Task<bool> _TableExistsAsync(string tableName)
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         await using var command = new SqlCommand(
             """
             SELECT CASE WHEN EXISTS (
@@ -264,13 +245,13 @@ public sealed class SqlServerPermissionsStorageTests(SqlServerPermissionsFixture
         command.Parameters.AddWithValue("@schema", _Schema);
         command.Parameters.AddWithValue("@table", tableName);
 
-        return (bool)await command.ExecuteScalarAsync(TestContext.Current.CancellationToken);
+        return (bool)await command.ExecuteScalarAsync(AbortToken);
     }
 
     private async Task<bool> _IndexExistsAsync(string tableName, string indexName)
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         await using var command = new SqlCommand(
             """
             SELECT CASE WHEN EXISTS (
@@ -284,7 +265,7 @@ public sealed class SqlServerPermissionsStorageTests(SqlServerPermissionsFixture
         command.Parameters.AddWithValue("@index", indexName);
         command.Parameters.AddWithValue("@object", $"{_Schema}.{tableName}");
 
-        return (bool)await command.ExecuteScalarAsync(TestContext.Current.CancellationToken);
+        return (bool)await command.ExecuteScalarAsync(AbortToken);
     }
 
     private sealed class TestCurrentTenant(string? tenantId) : ICurrentTenant

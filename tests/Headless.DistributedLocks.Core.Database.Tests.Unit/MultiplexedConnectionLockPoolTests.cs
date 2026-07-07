@@ -167,7 +167,7 @@ public sealed class MultiplexedConnectionLockPoolTests : TestBase
             _Timeout,
             strategy,
             keepaliveCadence: Timeout.InfiniteTimeSpan,
-            TestContext.Current.CancellationToken
+            AbortToken
         );
     }
 }

@@ -2,13 +2,14 @@
 
 using System.Reflection;
 using Headless.Domain;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 
 #pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
 #pragma warning disable MA0015 // Specify the parameter name in ArgumentException
 namespace Tests;
 
-public sealed class ServiceProviderLocalEventBusTests
+public sealed class ServiceProviderLocalEventBusTests : TestBase
 {
     #region Test Infrastructure
 
@@ -297,7 +298,7 @@ public sealed class ServiceProviderLocalEventBusTests
         var message = new TestLocalMessage("test-value");
 
         // when
-        await publisher.PublishAsync(message, TestContext.Current.CancellationToken);
+        await publisher.PublishAsync(message, AbortToken);
 
         // then
         handler1.ReceivedMessages.Should().ContainSingle().Which.Should().Be("test-value");
@@ -316,7 +317,7 @@ public sealed class ServiceProviderLocalEventBusTests
         var publisher = _CreatePublisher(services);
 
         // when
-        await publisher.PublishAsync(new TestLocalMessage("test"), TestContext.Current.CancellationToken);
+        await publisher.PublishAsync(new TestLocalMessage("test"), AbortToken);
 
         // then
         invocationOrder.Should().ContainInOrder("Negative10", "Default0", "Positive10");
@@ -563,7 +564,7 @@ public sealed class ServiceProviderLocalEventBusTests
         // when - mix sync and async calls
         // ReSharper disable once MethodHasAsyncOverload
         publisher.Publish(new TestLocalMessage("sync1"));
-        await publisher.PublishAsync(new TestLocalMessage("async1"), TestContext.Current.CancellationToken);
+        await publisher.PublishAsync(new TestLocalMessage("async1"), AbortToken);
         // ReSharper disable once MethodHasAsyncOverload
         publisher.Publish(new TestLocalMessage("sync2"));
 

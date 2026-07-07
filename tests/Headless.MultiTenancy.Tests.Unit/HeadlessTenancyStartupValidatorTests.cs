@@ -1,13 +1,14 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.MultiTenancy;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
-public sealed class HeadlessTenancyStartupValidatorTests
+public sealed class HeadlessTenancyStartupValidatorTests : TestBase
 {
     [Fact]
     public async Task should_complete_startup_when_validators_return_only_warning_and_information_diagnostics()
@@ -22,7 +23,7 @@ public sealed class HeadlessTenancyStartupValidatorTests
             logger
         );
 
-        var act = () => validator.StartingAsync(TestContext.Current.CancellationToken);
+        var act = () => validator.StartingAsync(AbortToken);
 
         await act.Should().NotThrowAsync();
         logger.Entries.Should().ContainSingle(entry => entry.Level == LogLevel.Warning);
@@ -74,7 +75,7 @@ public sealed class HeadlessTenancyStartupValidatorTests
                     string.Equals(service.GetType().Name, "HeadlessTenancyStartupValidator", StringComparison.Ordinal)
                 );
 
-        await hostedService.StartingAsync(TestContext.Current.CancellationToken);
+        await hostedService.StartingAsync(AbortToken);
 
         capturing.SeenManifest.Should().BeSameAs(provider.GetRequiredService<TenantPostureManifest>());
         var seam = capturing.SeenManifest!.GetSeam("Http");

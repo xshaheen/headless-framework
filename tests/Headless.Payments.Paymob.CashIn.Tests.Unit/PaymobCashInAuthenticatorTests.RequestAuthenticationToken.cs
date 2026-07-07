@@ -33,7 +33,7 @@ public sealed partial class PaymobCashInAuthenticatorTests
             fixture.TimeProvider,
             fixture.OptionsAccessor
         );
-        var result = await authenticator.RequestAuthenticationTokenAsync(TestContext.Current.CancellationToken);
+        var result = await authenticator.RequestAuthenticationTokenAsync(AbortToken);
 
         // then
         JsonSerializer.Serialize(result).Should().BeEquivalentTo(expectedResponseJson);
@@ -61,9 +61,7 @@ public sealed partial class PaymobCashInAuthenticatorTests
             fixture.OptionsAccessor
         );
 
-        var invocation = FluentActions.Awaiting(() =>
-            authenticator.RequestAuthenticationTokenAsync(TestContext.Current.CancellationToken)
-        );
+        var invocation = FluentActions.Awaiting(() => authenticator.RequestAuthenticationTokenAsync(AbortToken));
 
         // then
         var assertions = await invocation.Should().ThrowAsync<PaymobCashInException>();

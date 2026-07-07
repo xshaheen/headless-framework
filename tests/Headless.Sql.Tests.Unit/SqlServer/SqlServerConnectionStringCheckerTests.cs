@@ -2,6 +2,7 @@
 
 using Headless.Sql;
 using Headless.Sql.SqlServer;
+using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 
@@ -11,7 +12,7 @@ namespace Tests.SqlServer;
 /// Unit tests for <see cref="SqlServerConnectionStringChecker"/>.
 /// These are structural tests; integration tests require actual database.
 /// </summary>
-public sealed class SqlServerConnectionStringCheckerTests
+public sealed class SqlServerConnectionStringCheckerTests : TestBase
 {
     [Fact]
     public void should_implement_IConnectionStringChecker()
@@ -36,7 +37,7 @@ public sealed class SqlServerConnectionStringCheckerTests
         // when
         var (connected, databaseExists) = await sut.CheckAsync(
             "Server=invalid-host-that-does-not-exist;Database=test;Connect Timeout=1;TrustServerCertificate=True",
-            TestContext.Current.CancellationToken
+            AbortToken
         );
 
         // then
@@ -90,7 +91,7 @@ public sealed class SqlServerConnectionStringCheckerTests
         // when - use invalid connection that will fail
         await sut.CheckAsync(
             "Server=invalid-server-12345;Database=test;Connect Timeout=1;TrustServerCertificate=True",
-            TestContext.Current.CancellationToken
+            AbortToken
         );
 
         // then - verify a warning-level Log call was issued.
