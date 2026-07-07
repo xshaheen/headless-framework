@@ -9,7 +9,7 @@ namespace Headless.Payments.Paymob.CashIn.Models.Payment;
 public sealed class CashInKioskPayResponse
 {
     [JsonPropertyName("id")]
-    public int Id { get; init; }
+    public long Id { get; init; }
 
     [JsonPropertyName("pending")]
     public bool Pending { get; init; }
@@ -39,10 +39,10 @@ public sealed class CashInKioskPayResponse
     public bool Is3DSecure { get; init; }
 
     [JsonPropertyName("integration_id")]
-    public int IntegrationId { get; init; }
+    public long IntegrationId { get; init; }
 
     [JsonPropertyName("profile_id")]
-    public int ProfileId { get; init; }
+    public long ProfileId { get; init; }
 
     [JsonPropertyName("has_parent_transaction")]
     public bool HasParentTransaction { get; init; }
@@ -79,10 +79,10 @@ public sealed class CashInKioskPayResponse
     public long RefundedAmountCents { get; init; }
 
     [JsonPropertyName("owner")]
-    public int Owner { get; init; }
+    public long Owner { get; init; }
 
     [JsonPropertyName("source_id")]
-    public int SourceId { get; init; }
+    public long SourceId { get; init; }
 
     [JsonPropertyName("is_captured")]
     public bool IsCaptured { get; init; }

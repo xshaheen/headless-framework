@@ -64,6 +64,7 @@ Register via:
 - Never store credentials in appsettings directly — always bind from secrets or environment variables.
 - Always validate HMAC on CashIn callbacks. The broker exposes four `Validate(...)` overloads: for `CashInCallbackTransaction`, `CashInCallbackToken`, `CashInCallbackQueryParameters`, or a raw concatenated string. Choose by what Paymob sends to your endpoint.
 - Money amounts denominated in cents are typed as `long` throughout CashIn (`CashInCreateIntentionRequest.Amount`, `CreateOrderRequest.AmountCents`, `PaymentKeyRequest.AmountCents`, and the response DTOs). For the legacy payment-key flow (`CreateOrderAsync` / `RequestPaymentKeyAsync`), multiply your decimal EGP amount by 100 yourself; the Services layer does this conversion internally. `CashOutDisburseRequest.Amount` and `CashOutTransaction.Amount` are `decimal` EGP (whole-currency, not cents).
+- Paymob-assigned resource identifiers are typed as `long` (`long?` when nullable) across every request/response DTO — transaction, order, integration, profile, owner, merchant, and gateway-integration IDs, plus kiosk/Aman bill references (`payment_methods` is `IReadOnlyList<long>`). They grow unboundedly and can exceed `int` range, so treat them as 64-bit everywhere. Genuinely bounded domain numbers stay `int` (quantities, package counts, shipping dimensions, status codes, `exp`/`expiration` seconds).
 - CashOut `Disburse(...)` (not `DisburseAsync`) is the broker method. Use `CashOutDisburseRequest` static factory methods — `BankCard`, `Vodafone`, `Etisalat`, `Orange`, `BankWallet`, `Accept` — rather than constructing the record directly.
 - Both brokers (`IPaymobCashInBroker`, `IPaymobCashOutBroker`) are registered as **scoped** with an injected `HttpClient`. Do not treat them as singletons.
 - `IPaymobCashInAuthenticator` and `IPaymobCashOutAuthenticator` are singletons that cache tokens in memory. They handle token refresh automatically (CashIn refreshes 5 minutes before the 60-minute Paymob token expiry; CashOut caches tokens for `TokenRefreshBuffer`, default 10 minutes).
@@ -146,7 +147,7 @@ Create a payment intention (v2 API — preferred):
 ```csharp
 public sealed class PaymentService(IPaymobCashInBroker broker)
 {
-    public async Task<string> CreatePaymentAsync(decimal amountCents, int integrationId, CancellationToken ct)
+    public async Task<string> CreatePaymentAsync(decimal amountCents, long integrationId, CancellationToken ct)
     {
         var response = await broker.CreateIntentionAsync(
             new CashInCreateIntentionRequest
@@ -457,7 +458,7 @@ public sealed class CheckoutService(IPaymobCashInService cashIn)
     public async Task<string> GetIframeUrlAsync(
         decimal amount,
         PaymobCashInCustomerData customer,
-        int cardIntegrationId,
+        long cardIntegrationId,
         string iframeId,
         CancellationToken ct
     )

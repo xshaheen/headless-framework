@@ -74,7 +74,7 @@ public sealed class CashInTransactionData
     public string? AvsAcqResponseCode { get; init; }
 
     [JsonPropertyName("gateway_integration_pk")]
-    public int? GatewayIntegrationPk { get; init; }
+    public long? GatewayIntegrationPk { get; init; }
 
     [JsonPropertyName("batch_no")]
     public int? BatchNo { get; init; }

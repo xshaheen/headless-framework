@@ -8,7 +8,7 @@ namespace Headless.Payments.Paymob.CashIn.Models.Payment;
 public sealed class CashInCashCollectionPayResponse
 {
     [JsonPropertyName("id")]
-    public int Id { get; init; }
+    public long Id { get; init; }
 
     [JsonPropertyName("pending")]
     public required string Pending { get; init; }
@@ -38,16 +38,16 @@ public sealed class CashInCashCollectionPayResponse
     public required string Is3DSecure { get; init; }
 
     [JsonPropertyName("integration_id")]
-    public int IntegrationId { get; init; }
+    public long IntegrationId { get; init; }
 
     [JsonPropertyName("profile_id")]
-    public int ProfileId { get; init; }
+    public long ProfileId { get; init; }
 
     [JsonPropertyName("has_parent_transaction")]
     public required string HasParentTransaction { get; init; }
 
     [JsonPropertyName("order")]
-    public int Order { get; init; }
+    public long Order { get; init; }
 
     [JsonPropertyName("created_at")]
     [JsonConverter(typeof(AddEgyptZoneOffsetToUnspecifiedDateTimeJsonConverter))]
@@ -81,7 +81,7 @@ public sealed class CashInCashCollectionPayResponse
     public required string MerchantStaffTag { get; init; }
 
     [JsonPropertyName("owner")]
-    public int Owner { get; init; }
+    public long Owner { get; init; }
 
     [JsonPropertyName("parent_transaction")]
     public string? ParentTransaction { get; init; }

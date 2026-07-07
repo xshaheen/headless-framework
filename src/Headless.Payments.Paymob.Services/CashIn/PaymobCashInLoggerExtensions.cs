@@ -60,8 +60,8 @@ internal static partial class PaymobCashInLoggerExtensions
     public static partial void LogCannotCreatePaymentKey(
         this ILogger logger,
         Exception exception,
-        int orderId,
-        int integrationId,
+        long orderId,
+        long integrationId,
         long amountCents
     );
 

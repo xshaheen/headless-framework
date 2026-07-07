@@ -8,7 +8,7 @@ namespace Headless.Payments.Paymob.Services.CashIn.Responses;
 public sealed record PaymobCardSavedTokenCashInResponse
 {
     /// <summary>The Paymob-assigned transaction ID.</summary>
-    public required int TransactionId { get; init; }
+    public required long TransactionId { get; init; }
 
     /// <summary>The Paymob-assigned order ID.</summary>
     public required string OrderId { get; init; }

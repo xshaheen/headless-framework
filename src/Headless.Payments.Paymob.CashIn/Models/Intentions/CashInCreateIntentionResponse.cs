@@ -11,7 +11,7 @@ public sealed class CashInCreateIntentionResponse
     public string? RedirectionUrl { get; init; }
 
     [JsonPropertyName("intention_order_id")]
-    public int IntentionOrderId { get; init; }
+    public long IntentionOrderId { get; init; }
 
     [JsonPropertyName("client_secret")]
     public required string ClientSecret { get; init; }

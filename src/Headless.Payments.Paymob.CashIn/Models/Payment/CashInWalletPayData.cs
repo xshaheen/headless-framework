@@ -12,7 +12,7 @@ public sealed class CashInWalletData
     public DateTimeOffset CreatedAt { get; init; }
 
     [JsonPropertyName("gateway_integration_pk")]
-    public int GatewayIntegrationPk { get; init; }
+    public long GatewayIntegrationPk { get; init; }
 
     [JsonPropertyName("redirect_url")]
     public required string RedirectUrl { get; init; }

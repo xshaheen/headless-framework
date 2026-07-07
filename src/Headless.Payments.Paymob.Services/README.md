@@ -83,7 +83,7 @@ public sealed class CheckoutService(IPaymobCashInService cashIn)
     public async Task<string> GetIframeUrlAsync(
         decimal amount,
         PaymobCashInCustomerData customer,
-        int cardIntegrationId,
+        long cardIntegrationId,
         string iframeId,
         CancellationToken ct
     )

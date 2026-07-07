@@ -9,7 +9,7 @@ namespace Headless.Payments.Paymob.CashIn.Models.Transactions;
 public sealed class CashInTransaction
 {
     [JsonPropertyName("id")]
-    public int Id { get; init; }
+    public long Id { get; init; }
 
     [JsonPropertyName("success")]
     public bool Success { get; init; }
@@ -51,7 +51,7 @@ public sealed class CashInTransaction
     public long RefundedAmountCents { get; init; }
 
     [JsonPropertyName("source_id")]
-    public int SourceId { get; init; }
+    public long SourceId { get; init; }
 
     [JsonPropertyName("is_captured")]
     public bool IsCaptured { get; init; }
@@ -60,7 +60,7 @@ public sealed class CashInTransaction
     public long CapturedAmount { get; init; }
 
     [JsonPropertyName("owner")]
-    public int Owner { get; init; }
+    public long Owner { get; init; }
 
     [JsonPropertyName("is_standalone_payment")]
     public bool IsStandalonePayment { get; init; }
@@ -87,10 +87,10 @@ public sealed class CashInTransaction
     public bool IsLive { get; init; }
 
     [JsonPropertyName("integration_id")]
-    public int IntegrationId { get; init; }
+    public long IntegrationId { get; init; }
 
     [JsonPropertyName("profile_id")]
-    public int ProfileId { get; init; }
+    public long ProfileId { get; init; }
 
     [JsonPropertyName("currency")]
     public required string Currency { get; init; }

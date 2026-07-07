@@ -7,8 +7,8 @@ namespace Headless.Payments.Paymob.CashIn.Models.Payment;
 public sealed class CashInPaymentKeyRequest
 {
     public CashInPaymentKeyRequest(
-        int integrationId,
-        int orderId,
+        long integrationId,
+        long orderId,
         CashInBillingData billingData,
         long amountCents,
         string currency = "EGP",
@@ -36,9 +36,9 @@ public sealed class CashInPaymentKeyRequest
         BillingData = billingData;
     }
 
-    public int IntegrationId { get; }
+    public long IntegrationId { get; }
 
-    public int OrderId { get; }
+    public long OrderId { get; }
 
     /// <summary>The amount in the smallest currency unit (integer cents), e.g. <c>10000</c> for 100.00 EGP.</summary>
     public long AmountCents { get; }

@@ -43,7 +43,7 @@ public sealed class CashInCreateIntentionRequest
     /// Provide the configured Integration ID here. Merchants can use the ID as an integer or the name
     /// </summary>
     [JsonPropertyName("payment_methods")]
-    public required IReadOnlyList<int> PaymentMethods { get; init; } = [];
+    public required IReadOnlyList<long> PaymentMethods { get; init; } = [];
 
     [JsonPropertyName("billing_data")]
     public required CashInCreateIntentionRequestBillingData BillingData { get; init; }

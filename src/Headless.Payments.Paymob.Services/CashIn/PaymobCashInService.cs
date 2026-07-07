@@ -316,10 +316,10 @@ public sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<Paym
 
     #region Helpers
 
-    private async Task<(int OrderId, string PaymentKey)> _StartAsync(
+    private async Task<(long OrderId, string PaymentKey)> _StartAsync(
         PaymobCashInCustomerData customer,
         decimal amount,
-        int integrationId,
+        long integrationId,
         int expiration,
         string? merchantOrderId,
         CancellationToken cancellationToken
@@ -351,8 +351,8 @@ public sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<Paym
 
     private async Task<CashInPaymentKeyResponse> _CreatePaymentKeyAsync(
         PaymobCashInCustomerData customer,
-        int integrationId,
-        int orderId,
+        long integrationId,
+        long orderId,
         long amountCents,
         CancellationToken cancellationToken,
         int expiration = 3600

@@ -6,13 +6,13 @@ namespace Headless.Payments.Paymob.CashIn.Models.Payment;
 public sealed class CashInPayPaymentKeyClaims
 {
     [JsonPropertyName("integration_id")]
-    public int IntegrationId { get; init; }
+    public long IntegrationId { get; init; }
 
     [JsonPropertyName("amount_cents")]
     public long AmountCents { get; init; }
 
     [JsonPropertyName("user_id")]
-    public int UserId { get; init; }
+    public long UserId { get; init; }
 
     [JsonPropertyName("currency")]
     public string? Currency { get; init; }
@@ -21,7 +21,7 @@ public sealed class CashInPayPaymentKeyClaims
     public int Exp { get; init; }
 
     [JsonPropertyName("order_id")]
-    public int OrderId { get; init; }
+    public long OrderId { get; init; }
 
     [JsonPropertyName("pmk_ip")]
     public string? PmkIp { get; init; }

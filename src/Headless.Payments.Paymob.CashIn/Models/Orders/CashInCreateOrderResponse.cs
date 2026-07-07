@@ -8,7 +8,7 @@ namespace Headless.Payments.Paymob.CashIn.Models.Orders;
 public sealed class CashInCreateOrderResponse
 {
     [JsonPropertyName("id")]
-    public int Id { get; init; }
+    public long Id { get; init; }
 
     [JsonPropertyName("merchant_order_id")]
     public string? MerchantOrderId { get; init; }

@@ -8,7 +8,7 @@ namespace Headless.Payments.Paymob.CashIn.Models.Transactions;
 public sealed class CashInTransactionBillingData
 {
     [JsonPropertyName("id")]
-    public int Id { get; init; }
+    public long Id { get; init; }
 
     [JsonPropertyName("first_name")]
     public required string FirstName { get; init; }
@@ -50,7 +50,7 @@ public sealed class CashInTransactionBillingData
     public string IpAddress { get; init; } = "NA";
 
     [JsonPropertyName("transaction_id")]
-    public int TransactionId { get; init; }
+    public long TransactionId { get; init; }
 
     [JsonPropertyName("created_at")]
     [JsonConverter(typeof(AddEgyptZoneOffsetToUnspecifiedDateTimeJsonConverter))]
