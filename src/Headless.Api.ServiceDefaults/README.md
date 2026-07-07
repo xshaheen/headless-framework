@@ -183,6 +183,7 @@ Both sections are required.
 ## Dependencies
 
 - `Headless.Api.Core`
+- `FileSignatures`
 - `Microsoft.AspNetCore.OpenApi`
 - `Microsoft.Extensions.Http.Resilience`
 - `Microsoft.Extensions.ServiceDiscovery`
