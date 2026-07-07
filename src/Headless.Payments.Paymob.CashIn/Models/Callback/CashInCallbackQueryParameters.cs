@@ -67,7 +67,7 @@ public sealed class CashInCallbackQueryParameters
     public required string Currency { get; init; }
 
     [JsonPropertyName("error_occured")]
-    public required bool ErrorOccured { get; init; }
+    public required bool ErrorOccurred { get; init; }
 
     [JsonPropertyName("owner")]
     public required long Owner { get; init; }
@@ -148,7 +148,7 @@ public sealed class CashInCallbackQueryParameters
         return AmountCents.ToString(CultureInfo.InvariantCulture)
             + CreatedAt
             + Currency
-            + toString(ErrorOccured)
+            + toString(ErrorOccurred)
             + toString(HasParentTransaction)
             + Id.ToString(CultureInfo.InvariantCulture)
             + IntegrationId.ToString(CultureInfo.InvariantCulture)

@@ -117,7 +117,7 @@ public sealed class CashInCallbackTransaction
     public bool IsHidden { get; init; }
 
     [JsonPropertyName("error_occured")]
-    public bool ErrorOccured { get; init; }
+    public bool ErrorOccurred { get; init; }
 
     [JsonPropertyName("is_live")]
     public bool IsLive { get; init; }
@@ -186,7 +186,7 @@ public sealed class CashInCallbackTransaction
         return AmountCents.ToString(CultureInfo.InvariantCulture)
             + CreatedAt
             + Currency
-            + toString(ErrorOccured)
+            + toString(ErrorOccurred)
             + toString(HasParentTransaction)
             + Id.ToString(CultureInfo.InvariantCulture)
             + IntegrationId.ToString(CultureInfo.InvariantCulture)
