@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.Collections.Frozen;
 using System.Diagnostics;
 using Couchbase;
 using Couchbase.Core.Exceptions;
@@ -536,7 +537,7 @@ public sealed class CouchbaseManager : ICouchbaseManager
         return bucket;
     }
 
-    private async Task<(IScope Scope, ISet<string> Collections)> _GetScopeAsync(
+    private async Task<(IScope Scope, IReadOnlySet<string> Collections)> _GetScopeAsync(
         string clusterKey,
         IBucket bucket,
         string scopeName
@@ -551,7 +552,7 @@ public sealed class CouchbaseManager : ICouchbaseManager
         return (scope, scopeCollections);
     }
 
-    private readonly ConcurrentDictionary<string, Dictionary<string, HashSet<string>>> _scopesCache = [];
+    private readonly ConcurrentDictionary<string, FrozenDictionary<string, FrozenSet<string>>> _scopesCache = [];
     private readonly CompositeFormat _scopesCacheKeyFormat = CompositeFormat.Parse("cluster:{0}:buckets:{1}");
 
     private string _GetScopesCacheKey(string clusterKey, string bucketName)
@@ -565,7 +566,10 @@ public sealed class CouchbaseManager : ICouchbaseManager
         _scopesCache.TryRemove(key, out _);
     }
 
-    private async Task<Dictionary<string, HashSet<string>>> _GetBucketScopeSpecsAsync(string clusterKey, IBucket bucket)
+    private async Task<FrozenDictionary<string, FrozenSet<string>>> _GetBucketScopeSpecsAsync(
+        string clusterKey,
+        IBucket bucket
+    )
     {
         var key = _GetScopesCacheKey(clusterKey, bucket.Name);
 
@@ -575,15 +579,13 @@ public sealed class CouchbaseManager : ICouchbaseManager
         }
 
         var scopesEnumerable = await bucket.Collections.GetAllScopesAsync().ConfigureAwait(false);
-        var mapped = scopesEnumerable.ToDictionary(
+        var mapped = scopesEnumerable.ToFrozenDictionary(
             x => x.Name,
-            x => x.Collections.Select(y => y.Name).ToHashSet(StringComparer.Ordinal),
+            x => x.Collections.Select(y => y.Name).ToFrozenSet(StringComparer.Ordinal),
             StringComparer.Ordinal
         );
 
-        _scopesCache.TryAdd(key, mapped);
-
-        return mapped;
+        return _scopesCache.GetOrAdd(key, mapped);
     }
 
     #endregion
