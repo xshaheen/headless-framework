@@ -55,13 +55,26 @@ internal sealed class RedisStreamManager(
         // instead of rebuilding the StreamPosition[] on every poll iteration.
         var positions = streams.Select(stream => new StreamPosition(stream, StreamPosition.NewMessages)).ToArray();
 
+        var errorDelay = pollDelay;
+
         while (true)
         {
-            var result = await _TryReadConsumerGroupAsync(consumerGroup, positions, token).ConfigureAwait(false);
+            var (succeeded, result) = await _TryReadConsumerGroupAsync(consumerGroup, positions, token)
+                .ConfigureAwait(false);
 
             yield return result;
 
-            await _timeProvider.Delay(pollDelay, token).ConfigureAwait(false);
+            if (succeeded)
+            {
+                errorDelay = pollDelay;
+                await _timeProvider.Delay(pollDelay, token).ConfigureAwait(false);
+            }
+            else
+            {
+                // During a Redis outage back off instead of re-hammering at the fixed poll cadence.
+                errorDelay = _NextBackoff(errorDelay);
+                await _timeProvider.Delay(errorDelay, token).ConfigureAwait(false);
+            }
         }
 
         // ReSharper disable once IteratorNeverReturns
@@ -86,7 +99,7 @@ internal sealed class RedisStreamManager(
             // re-inspected by the All() check below, so leaving it deferred would flatten it twice.
             var result = (
                 await _TryReadConsumerGroupAsync(consumerGroup, positions, token).ConfigureAwait(false)
-            ).ToArray();
+            ).Streams.ToArray();
 
             yield return result;
 
@@ -112,7 +125,7 @@ internal sealed class RedisStreamManager(
         await _redis!.GetDatabase().StreamAcknowledgeAsync(stream, consumerGroup, messageId).ConfigureAwait(false);
     }
 
-    private async Task<IEnumerable<RedisStream>> _TryReadConsumerGroupAsync(
+    private async Task<(bool Succeeded, IEnumerable<RedisStream> Streams)> _TryReadConsumerGroupAsync(
         string consumerGroup,
         StreamPosition[] positions,
         CancellationToken token
@@ -140,7 +153,7 @@ internal sealed class RedisStreamManager(
 
             if (createdPositions.Count == 0)
             {
-                return [];
+                return (Succeeded: true, Streams: []);
             }
 
             //calculate keys HashSlots to start reading per HashSlot
@@ -157,18 +170,31 @@ internal sealed class RedisStreamManager(
 
             var readSet = await Task.WhenAll(groupedPositions).ConfigureAwait(false);
 
-            return readSet.SelectMany(set => set);
+            return (Succeeded: true, Streams: readSet.SelectMany(set => set));
         }
         catch (OperationCanceledException)
         {
-            // ignore
+            // Cancellation is not a read failure; the caller's next Delay(token) ends the poll loop.
+            return (Succeeded: true, Streams: []);
         }
         catch (Exception ex)
         {
             logger.LogReadConsumerGroupFailed(ex, consumerGroup);
         }
 
-        return [];
+        return (Succeeded: false, Streams: []);
+    }
+
+    private static TimeSpan _NextBackoff(TimeSpan current)
+    {
+        var floor = TimeSpan.FromMilliseconds(200);
+        var ceiling = TimeSpan.FromSeconds(30);
+        var doubled = TimeSpan.FromTicks(Math.Max(current.Ticks * 2, floor.Ticks));
+        var capped = doubled > ceiling ? ceiling : doubled;
+#pragma warning disable CA5394 // Non-security jitter for retry backoff; cryptographic RNG is unnecessary here.
+        var jitterMs = Random.Shared.Next(0, (int)Math.Max(1, capped.TotalMilliseconds / 4));
+#pragma warning restore CA5394
+        return capped + TimeSpan.FromMilliseconds(jitterMs);
     }
 
     private async Task _ConnectAsync(CancellationToken cancellationToken = default)

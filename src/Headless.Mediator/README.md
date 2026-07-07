@@ -9,7 +9,7 @@ Adds pipeline behaviors for FluentValidation pre-processing and structured reque
 - `ValidationRequestPreProcessor<TMessage, TResponse>` — runs all registered `IValidator<TMessage>` concurrently before the handler; throws `ValidationException` on any failure.
 - `RequestLoggingBehavior<TMessage, TResponse>` — logs the message name and payload at Debug level before handler execution.
 - `ResponseLoggingBehavior<TMessage, TResponse>` — logs the message name, payload, and response at Debug level after handler execution.
-- `CriticalRequestLoggingBehavior<TMessage, TResponse>` — logs at Warning level when a handler takes ≥ 1 second.
+- `CriticalRequestLoggingBehavior<TMessage, TResponse>` — logs elapsed time and type names at Warning level when a handler takes ≥ 1 second; the full request/response payloads go to a separate Debug-level entry so sensitive data stays out of production logs.
 - Idempotent composite setup extensions: `AddMediatorValidationRequestBehavior()` and `AddMediatorLoggingBehaviors()`.
 - Fine-grained split: `AddMediatorRequestResponseLoggingBehaviors()` (request + response only) and `AddMediatorSlowRequestsLoggingBehaviors()` (slow-request only).
 - Every setup extension accepts an optional `ServiceLifetime` parameter (default `Scoped`).

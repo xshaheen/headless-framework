@@ -42,7 +42,7 @@ There is exactly one package in this domain. No provider choice is required.
 - **Do NOT push HTTP response shaping into behaviors.** Filters, exception handlers, problem-details factories, and response compression belong in `Headless.Api.Core` or standard ASP.NET Core middleware.
 - **What does belong in the pipeline:** FluentValidation pre-processors, request/response logging, slow-request alerts, typed response transforms, domain-specific retry policies for transient handler faults, instrumentation hooks — anything that operates purely on `IRequest<TResponse>` without HTTP semantics.
 - **`ServiceLifetime` is `Scoped` by default.** Pass `ServiceLifetime.Transient` or `ServiceLifetime.Singleton` explicitly if a behavior must not share state across the request scope. The same lifetime applies to all behaviors registered by a composite call like `AddMediatorLoggingBehaviors`.
-- **`CriticalRequestLoggingBehavior` logs at `Warning`.** The threshold is hard-coded at 1 second. Do not use it as a general performance monitor — it is an alert for unusually slow handlers.
+- **`CriticalRequestLoggingBehavior` logs at `Warning`.** The threshold is hard-coded at 1 second. Do not use it as a general performance monitor — it is an alert for unusually slow handlers. The Warning entry carries only the message/response type names, elapsed time, and user ID; the full request/response payloads are emitted in a separate Debug-level entry (`Mediator:SlowMessagePayload`) so credentials or PII inside commands and responses never reach production logs at Warning.
 
 ## Core Concepts
 
@@ -58,7 +58,7 @@ The three logging behaviors are registered by `AddMediatorLoggingBehaviors()`:
 | --- | --- | --- | --- |
 | `RequestLoggingBehavior<TMessage, TResponse>` | `MessagePreProcessor<,>` | Debug | Message name + payload before handler |
 | `ResponseLoggingBehavior<TMessage, TResponse>` | `MessagePostProcessor<,>` | Debug | Message + response after handler |
-| `CriticalRequestLoggingBehavior<TMessage, TResponse>` | `IPipelineBehavior<,>` | Warning | Elapsed time + payload when handler takes ≥ 1 second |
+| `CriticalRequestLoggingBehavior<TMessage, TResponse>` | `IPipelineBehavior<,>` | Warning (names) + Debug (payload) | Elapsed time + type names at Warning; full payloads in a separate Debug entry when handler takes ≥ 1 second |
 
 All three inject `ICurrentUser` so they include the current user ID in log entries and work identically in API, worker, and console hosts.
 
@@ -109,7 +109,7 @@ Adds pipeline behaviors for FluentValidation pre-processing and structured reque
 - `ValidationRequestPreProcessor<TMessage, TResponse>` — runs all registered `IValidator<TMessage>` concurrently before the handler; throws `ValidationException` on any failure.
 - `RequestLoggingBehavior<TMessage, TResponse>` — logs the message name and payload at Debug level before handler execution.
 - `ResponseLoggingBehavior<TMessage, TResponse>` — logs the message name, payload, and response at Debug level after handler execution.
-- `CriticalRequestLoggingBehavior<TMessage, TResponse>` — logs at Warning level when a handler takes ≥ 1 second.
+- `CriticalRequestLoggingBehavior<TMessage, TResponse>` — logs elapsed time and type names at Warning level when a handler takes ≥ 1 second; the full request/response payloads go to a separate Debug-level entry so sensitive data stays out of production logs.
 - Idempotent composite setup extensions: `AddMediatorValidationRequestBehavior()` and `AddMediatorLoggingBehaviors()`.
 - Fine-grained split: `AddMediatorRequestResponseLoggingBehaviors()` (request + response only) and `AddMediatorSlowRequestsLoggingBehaviors()` (slow-request only).
 - Every setup extension accepts an optional `ServiceLifetime` parameter (default `Scoped`).
