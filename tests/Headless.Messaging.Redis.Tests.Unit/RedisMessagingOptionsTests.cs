@@ -23,23 +23,23 @@ public sealed class RedisMessagingOptionsTests : TestBase
     }
 
     [Fact]
-    public void should_have_zero_stream_entries_count_by_default()
+    public void should_have_default_stream_entries_count_of_ten()
     {
         // when
         var options = new RedisMessagingOptions();
 
         // then
-        options.StreamEntriesCount.Should().Be(0);
+        options.StreamEntriesCount.Should().Be(10);
     }
 
     [Fact]
-    public void should_have_zero_connection_pool_size_by_default()
+    public void should_have_default_connection_pool_size_of_ten()
     {
         // when
         var options = new RedisMessagingOptions();
 
         // then
-        options.ConnectionPoolSize.Should().Be(0);
+        options.ConnectionPoolSize.Should().Be(10);
     }
 
     [Fact]
@@ -166,6 +166,54 @@ public sealed class RedisMessagingOptionsTests : TestBase
         // then
         context.Exception.Should().BeSameAs(exception);
         context.Entry.Should().BeNull();
+    }
+
+    // Validator tests
+
+    [Fact]
+    public void validator_should_pass_for_valid_options()
+    {
+        var options = new RedisMessagingOptions { StreamEntriesCount = 5, ConnectionPoolSize = 5 };
+        var validator = new RedisMessagingOptionsValidator();
+
+        var result = validator.Validate(options);
+
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void validator_should_fail_for_zero_stream_entries_count()
+    {
+        var options = new RedisMessagingOptions { StreamEntriesCount = 0 };
+        var validator = new RedisMessagingOptionsValidator();
+
+        var result = validator.Validate(options);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle(e => e.PropertyName == nameof(RedisMessagingOptions.StreamEntriesCount));
+    }
+
+    [Fact]
+    public void validator_should_fail_for_zero_connection_pool_size()
+    {
+        var options = new RedisMessagingOptions { ConnectionPoolSize = 0 };
+        var validator = new RedisMessagingOptionsValidator();
+
+        var result = validator.Validate(options);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle(e => e.PropertyName == nameof(RedisMessagingOptions.ConnectionPoolSize));
+    }
+
+    [Fact]
+    public void validator_should_fail_for_negative_stream_entries_count()
+    {
+        var options = new RedisMessagingOptions { StreamEntriesCount = -1 };
+        var validator = new RedisMessagingOptionsValidator();
+
+        var result = validator.Validate(options);
+
+        result.IsValid.Should().BeFalse();
     }
 
     private static string _GetEndpoint(RedisMessagingOptions options)

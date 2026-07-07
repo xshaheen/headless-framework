@@ -266,16 +266,6 @@ public static class SetupRedisMessaging
         {
             options.Configuration ??= new ConfigurationOptions();
 
-            if (options.StreamEntriesCount == 0)
-            {
-                options.StreamEntriesCount = 10;
-            }
-
-            if (options.ConnectionPoolSize == 0)
-            {
-                options.ConnectionPoolSize = 10;
-            }
-
             if (!options.Configuration.EndPoints.Any())
             {
                 options.Configuration.EndPoints.Add(IPAddress.Loopback, 0);

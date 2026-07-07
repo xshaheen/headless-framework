@@ -48,7 +48,7 @@ public sealed class RedisConnectionPoolTests : TestBase
     public void should_create_pool_with_configured_size()
     {
         // given
-        const uint poolSize = 5;
+        const int poolSize = 5;
         var options = Options.Create(
             new RedisMessagingOptions
             {
