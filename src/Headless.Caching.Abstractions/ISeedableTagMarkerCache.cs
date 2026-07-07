@@ -20,12 +20,6 @@ namespace Headless.Caching;
 /// seeds — including in-process caches: <c>InMemoryCache</c> implements the tag/clear seeds, and its
 /// <see cref="SeedRemoveMarker"/> / <see cref="WriteRemoveMarkerAsync"/> are no-ops (its <c>FlushAsync</c> wipes
 /// physically, so it has no logical remove-generation marker).
-/// <para>
-/// <b>Evolution policy — the member set is frozen as of v1.0.</b> This is itself a feature-detected capability
-/// interface (see the <see cref="ICache"/> evolution policy). Future marker families grow it via a C# default
-/// interface member (so existing implementers are not broken) where a sensible default exists, or via a separate
-/// capability interface where they cannot.
-/// </para>
 /// </remarks>
 [PublicAPI]
 public interface ISeedableTagMarkerCache

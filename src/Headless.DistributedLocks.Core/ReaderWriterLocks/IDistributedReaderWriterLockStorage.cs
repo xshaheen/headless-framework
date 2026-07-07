@@ -4,13 +4,6 @@
 namespace Headless.DistributedLocks;
 
 /// <summary>Storage contract for atomic distributed reader-writer lock operations.</summary>
-/// <remarks>
-/// <b>Evolution policy — this backend SPI is frozen as of v1.0.</b> Custom reader-writer providers implement it,
-/// so adding a member is a breaking change for every implementer. New capability arrives as a C# default
-/// interface member whenever a safe default exists (the framework precedent is
-/// <c>IConnectionScopedLockStorage.BlocksServerSide</c>), or as a separate opt-in seam where no meaningful
-/// default is possible, rather than as a required member here.
-/// </remarks>
 public interface IDistributedReadWriteLockStorage
 {
     /// <summary>

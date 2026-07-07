@@ -353,7 +353,6 @@ Implements lock acquisition, renewal, release, inspection, timeout handling, and
 - When messaging is present, the release consumer is drained at messaging startup whether `AddHeadlessDistributedLocks(...)` runs before or after `AddHeadlessMessaging(...)`; without messaging, waiters fall back to polling.
 - `TryAcquireAsync(..., new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero })` performs a single storage attempt with an internal safety deadline. If that deadline fires (lock-store stall, caller token never cancels), the acquire still returns `null` but emits the `TryOnceSafetyDeadlineFired` log event (`EventId = 24`, Warning) and tags the failure metric `reason=stalled`, distinguishing a stall from routine contention (`reason=contended`). Applies to mutex, reader-writer, and semaphore non-blocking acquires.
 - Lease monitors drain before dispose-time release, so monitoring does not add release retry latency during shutdown.
-- **Evolution policy — the backend storage SPIs are frozen as of v1.0.** `IDistributedLockStorage`, `IDistributedSemaphoreStorage`, and `IDistributedReadWriteLockStorage` are implemented by every custom provider, so adding a member breaks all of them. New capability arrives as a C# default interface member whenever a safe default exists — the precedent is `IConnectionScopedLockStorage.BlocksServerSide` (a DIM defaulting to non-blocking) in `Headless.DistributedLocks.Core.Database` — or as a separate opt-in seam (as `IFencingTokenSource` does) where no meaningful default is possible, rather than as a required member on the storage contract.
 
 ### Installation
 
@@ -463,7 +462,6 @@ Lets database providers map session-scoped or transaction-scoped lock primitives
 - Handle loss is backed by an active `ConnectionMonitor`, not just the connection's `StateChange` event: monitored handles (`CanObserveLoss == true`) run a periodic bounded-timeout server-side probe so a silent half-open connection cancels `LostToken` instead of going unnoticed until the next query. `Monitoring = None` skips that active probe and leaves `LostToken` at `CancellationToken.None`.
 - The engine optimistically multiplexes uncontended locks on distinct keys onto a shared physical connection and transparently falls back to a dedicated connection on contention or advisory-key collision. This is a performance characteristic; lock semantics are unchanged.
 - Reader-writer locks do not issue fencing tokens; `FencingToken` is `null` for read and write handles.
-- **Evolution policy — the database seams are frozen as of v1.0.** `IConnectionScopedLockStorage`, `IReleaseSignal`, and `IFencingTokenSource` are implemented by custom database providers, so adding a member breaks them. New capability arrives as a C# default interface member where a safe default exists — `IConnectionScopedLockStorage.BlocksServerSide` is that precedent, a DIM defaulting to non-blocking so existing stores need not implement it — or as a separate opt-in seam where none does. `IFencingTokenSource` and `IReleaseSignal` are themselves such opt-in seams layered beside the storage contract rather than folded into it.
 
 ### Installation
 

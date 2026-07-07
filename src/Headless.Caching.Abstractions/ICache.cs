@@ -11,13 +11,6 @@ namespace Headless.Caching;
 /// (distributed L2), and the two-tier hybrid. All timestamps are UTC. Methods that accept
 /// <see cref="CacheEntryOptions"/> validate them before any I/O; an invalid option set throws
 /// <see cref="ArgumentOutOfRangeException"/> or <see cref="ArgumentException"/> before anything is written.
-/// <para>
-/// <b>Evolution policy — the member set is frozen as of v1.0.</b> This is a broad contract every provider must
-/// implement, so growing it is a breaking change for every implementer. New capabilities therefore ship as
-/// separate, feature-detected capability interfaces a consumer probes for (<c>cache is IBufferCache</c>,
-/// <c>cache is ISeedableTagMarkerCache</c>) rather than as new members here. Add to this interface only for a
-/// genuinely universal primitive that every backend can honor; otherwise introduce a new capability interface.
-/// </para>
 /// </remarks>
 [PublicAPI]
 public interface ICache

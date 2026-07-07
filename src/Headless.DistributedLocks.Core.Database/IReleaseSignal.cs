@@ -13,13 +13,6 @@ namespace Headless.DistributedLocks;
 /// <c>pollingFallback</c> at the latest even if no signal arrives, so a dropped or missed
 /// <see cref="PublishAsync"/> only costs extra acquisition latency, never a stuck acquirer or a missed lock.
 /// The default <see cref="PollingReleaseSignal"/> implements this in-process.
-/// <para>
-/// <b>Evolution policy — this seam is frozen as of v1.0.</b> Custom wake-up backends implement it, so adding a
-/// member is a breaking change for every implementer. New capability arrives as a C# default interface member
-/// whenever a safe default exists (the framework precedent is
-/// <see cref="IConnectionScopedLockStorage.BlocksServerSide"/>), or as a separate opt-in seam where no
-/// meaningful default is possible, rather than as a required member here.
-/// </para>
 /// </remarks>
 [PublicAPI]
 public interface IReleaseSignal

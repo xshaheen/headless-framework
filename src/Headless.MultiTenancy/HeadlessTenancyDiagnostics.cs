@@ -121,14 +121,6 @@ public sealed class HeadlessTenancyValidationException(
 public sealed record HeadlessTenancyValidationContext(IServiceProvider Services, TenantPostureManifest Manifest);
 
 /// <summary>Validates tenant posture at host startup.</summary>
-/// <remarks>
-/// The single <see cref="Validate"/> member is deliberately synchronous and frozen as of v1.0. Validators run
-/// at host startup and must be cheap and non-blocking (see the member remarks), so a synchronous contract is
-/// the intended shape, not a limitation awaiting an async overload. If a future scenario genuinely needs
-/// async, out-of-band validation, it ships as a new, separately feature-detected interface rather than as an
-/// added member here — custom validators implement this seam, so adding a member would break every
-/// implementer.
-/// </remarks>
 [PublicAPI]
 public interface IHeadlessTenancyValidator
 {
