@@ -25,7 +25,7 @@ public interface IServiceBusProducerDescriptor
 
     /// <summary>
     /// When <see langword="true"/>, session-aware processing is enabled for this producer's topic.
-    /// Every message published to this topic must include a <see cref="AzureServiceBusHeaders.SessionId"/> header.
+    /// Every message published to this topic must include a <see cref="AzureServiceBusMessagingHeaders.SessionId"/> header.
     /// </summary>
     bool EnableSessions { get; }
 }

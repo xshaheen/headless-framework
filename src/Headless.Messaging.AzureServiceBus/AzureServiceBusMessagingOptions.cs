@@ -50,7 +50,7 @@ public sealed class AzureServiceBusMessagingOptions
 
     /// <summary>
     /// Whether Service Bus sessions are enabled. If enabled, all messages must contain a
-    /// <see cref="AzureServiceBusHeaders.SessionId" /> header. Defaults to false.
+    /// <see cref="AzureServiceBusMessagingHeaders.SessionId" /> header. Defaults to false.
     /// </summary>
     public bool EnableSessions { get; set; }
 

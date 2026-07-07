@@ -4,19 +4,19 @@ using Headless.Messaging.AzureServiceBus;
 
 namespace Tests;
 
-public sealed class AzureServiceBusHeadersTests
+public sealed class AzureServiceBusMessagingHeadersTests
 {
     [Fact]
     public void should_have_session_id_header()
     {
         // then
-        AzureServiceBusHeaders.SessionId.Should().Be("headless-session-id");
+        AzureServiceBusMessagingHeaders.SessionId.Should().Be("headless-session-id");
     }
 
     [Fact]
     public void should_have_scheduled_enqueue_time_utc_header()
     {
         // then
-        AzureServiceBusHeaders.ScheduledEnqueueTimeUtc.Should().Be("headless-scheduled-enqueue-time-utc");
+        AzureServiceBusMessagingHeaders.ScheduledEnqueueTimeUtc.Should().Be("headless-scheduled-enqueue-time-utc");
     }
 }

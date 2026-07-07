@@ -79,7 +79,7 @@ internal sealed class AzureServiceBusMessageConfig<TMessage>(Func<TMessage, stri
             :
             [
                 new ProviderHeaderContribution(
-                    AzureServiceBusHeaders.PartitionKey,
+                    AzureServiceBusMessagingHeaders.PartitionKey,
                     message => _ValidatePartitionKey(partitionKeySelector((TMessage)message))
                 ),
             ];

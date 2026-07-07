@@ -37,7 +37,7 @@ public sealed class ServiceBusProducerDescriptorBuilder<T>
 
     /// <summary>
     /// Enables session-aware processing for this producer's topic. Every message published to
-    /// this topic must include a <see cref="AzureServiceBusHeaders.SessionId"/> header.
+    /// this topic must include a <see cref="AzureServiceBusMessagingHeaders.SessionId"/> header.
     /// </summary>
     /// <returns>The same builder for chaining.</returns>
     public ServiceBusProducerDescriptorBuilder<T> WithSessions()

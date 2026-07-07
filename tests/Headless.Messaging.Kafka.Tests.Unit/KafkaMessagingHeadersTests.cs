@@ -5,12 +5,12 @@ using Headless.Testing.Tests;
 
 namespace Tests;
 
-public sealed class KafkaHeadersTests : TestBase
+public sealed class KafkaMessagingHeadersTests : TestBase
 {
     [Fact]
     public void KafkaKey_should_have_expected_value()
     {
         // given, when, then
-        KafkaHeaders.KafkaKey.Should().Be("headless-kafka-key");
+        KafkaMessagingHeaders.KafkaKey.Should().Be("headless-kafka-key");
     }
 }

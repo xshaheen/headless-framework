@@ -66,7 +66,7 @@ options.ForMessage<OrderEvent>(message =>
 );
 ```
 
-`PartitionBy(...)` stamps `KafkaHeaders.KafkaKey` (`headless-kafka-key`) during publish. The selector output is broker-visible metadata, so do not put secrets or raw PII in it.
+`PartitionBy(...)` stamps `KafkaMessagingHeaders.KafkaKey` (`headless-kafka-key`) during publish. The selector output is broker-visible metadata, so do not put secrets or raw PII in it.
 
 Consumer-side Kafka knobs attach to the consumer registration:
 

@@ -3,7 +3,8 @@
 namespace Headless.Messaging.Pulsar;
 
 /// <summary>Framework-defined header names used with the Apache Pulsar transport.</summary>
-public static class PulsarHeaders
+[PublicAPI]
+public static class PulsarMessagingHeaders
 {
     /// <summary>
     /// Header carrying the Pulsar message key, which influences partition routing within a partitioned

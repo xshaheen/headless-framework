@@ -3,7 +3,8 @@
 namespace Headless.Messaging.Kafka;
 
 /// <summary>Framework-defined header names used with the Apache Kafka transport.</summary>
-public static class KafkaHeaders
+[PublicAPI]
+public static class KafkaMessagingHeaders
 {
     /// <summary>
     /// Header carrying the Kafka message key, which controls partition routing.

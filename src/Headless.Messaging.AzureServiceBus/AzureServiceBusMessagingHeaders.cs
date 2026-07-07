@@ -3,7 +3,8 @@
 namespace Headless.Messaging.AzureServiceBus;
 
 /// <summary>Framework-defined header names used with the Azure Service Bus transport.</summary>
-public static class AzureServiceBusHeaders
+[PublicAPI]
+public static class AzureServiceBusMessagingHeaders
 {
     /// <summary>
     /// Header carrying the Service Bus session identifier. Required on every message when
