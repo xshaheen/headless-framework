@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
-using Headless.Api;
 using Headless.Constants;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Http;

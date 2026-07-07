@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
-using Headless.Api;
 using Headless.Api.ServiceDefaults;
 using Headless.DistributedLocks;
 using Headless.EntityFramework.Migrations.Startup;

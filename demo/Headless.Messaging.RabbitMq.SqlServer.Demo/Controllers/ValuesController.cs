@@ -1,6 +1,4 @@
 using Dapper;
-using Headless.CommitCoordination.EntityFramework;
-using Headless.CommitCoordination.SqlServer;
 using Headless.Messaging;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;

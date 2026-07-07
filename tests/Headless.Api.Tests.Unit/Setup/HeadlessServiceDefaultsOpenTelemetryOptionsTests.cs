@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Api;
 using Headless.Api.ServiceDefaults;
 using Microsoft.AspNetCore.Http;
 

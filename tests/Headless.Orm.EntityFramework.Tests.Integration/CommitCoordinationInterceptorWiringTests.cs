@@ -2,7 +2,6 @@
 
 using Headless.Abstractions;
 using Headless.CommitCoordination;
-using Headless.CommitCoordination.EntityFramework;
 using Headless.EntityFramework;
 using Headless.Testing.Helpers;
 using Headless.Testing.Tests;

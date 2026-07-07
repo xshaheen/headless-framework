@@ -1,7 +1,5 @@
 using Dapper;
 using Headless.CommitCoordination;
-using Headless.CommitCoordination.EntityFramework;
-using Headless.CommitCoordination.PostgreSql;
 using Headless.Messaging;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;

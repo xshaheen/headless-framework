@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.CommitCoordination.EntityFramework;
 using Headless.Domain;
 using Headless.EntityFramework;
 using Headless.Messaging;
