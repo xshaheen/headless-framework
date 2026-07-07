@@ -71,6 +71,35 @@ public sealed class ConsumerRegisterTests : TestBase
     }
 
     [Fact]
+    public async Task add_client_async_disposes_and_forgets_new_client_when_initial_pause_fails()
+    {
+        var expected = new InvalidOperationException("pause failed");
+        var client = Substitute.For<IConsumerClient>();
+
+        client.PauseAsync(Arg.Any<CancellationToken>()).Returns(_ => ValueTask.FromException(expected));
+        client.DisposeAsync().Returns(ValueTask.CompletedTask);
+
+        var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
+        var handle = Activator.CreateInstance(handleType, nonPublic: true)!;
+        using var cts = new CancellationTokenSource();
+        handleType.GetProperty("Logger")!.SetValue(handle, NullLogger<ConsumerRegister>.Instance);
+        handleType.GetProperty("Cts")!.SetValue(handle, cts);
+        handleType.GetProperty("GroupName")!.SetValue(handle, "payments");
+        handleType.GetProperty("ConsumerTasks")!.SetValue(handle, new ConcurrentBag<Task>());
+        handleType.GetProperty("IsPaused")!.SetValue(handle, true);
+
+        var addClient = handleType.GetMethod("AddClientAsync")!;
+
+        var act = async () => await (ValueTask)addClient.Invoke(handle, [client])!;
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("pause failed");
+        await client.Received(1).DisposeAsync();
+
+        var snapshot = (IConsumerClient[])handleType.GetMethod("SnapshotClients")!.Invoke(handle, null)!;
+        snapshot.Should().BeEmpty("a client that was never successfully paused must not remain registered");
+    }
+
+    [Fact]
     public async Task restart_disposes_cts_when_execute_async_throws()
     {
         await using var provider = _CreateProvider();

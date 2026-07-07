@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
+using Headless.Messaging.Configuration;
 using Headless.Messaging.Redis;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
@@ -22,9 +23,10 @@ public sealed class RedisConsumerClientFactoryTests : TestBase
         var options = Options.Create(
             new RedisMessagingOptions { Configuration = ConfigurationOptions.Parse("localhost:6379") }
         );
+        var messagingOptions = Options.Create(new MessagingOptions());
         var logger = LoggerFactory.CreateLogger<RedisConsumerClient>();
 
-        var factory = new RedisConsumerClientFactory(options, mockStreamManager, logger);
+        var factory = new RedisConsumerClientFactory(options, messagingOptions, mockStreamManager, logger);
 
         // when
         var client = await factory.CreateAsync("my-consumer-group", 5);
@@ -43,9 +45,10 @@ public sealed class RedisConsumerClientFactoryTests : TestBase
         var options = Options.Create(
             new RedisMessagingOptions { Configuration = ConfigurationOptions.Parse("localhost:6379") }
         );
+        var messagingOptions = Options.Create(new MessagingOptions());
         var logger = LoggerFactory.CreateLogger<RedisConsumerClient>();
 
-        var factory = new RedisConsumerClientFactory(options, mockStreamManager, logger);
+        var factory = new RedisConsumerClientFactory(options, messagingOptions, mockStreamManager, logger);
 
         // when
         var client = await factory.CreateAsync("group-name", 0);
@@ -62,9 +65,10 @@ public sealed class RedisConsumerClientFactoryTests : TestBase
         var options = Options.Create(
             new RedisMessagingOptions { Configuration = ConfigurationOptions.Parse("localhost:6379") }
         );
+        var messagingOptions = Options.Create(new MessagingOptions());
         var logger = LoggerFactory.CreateLogger<RedisConsumerClient>();
 
-        var factory = new RedisConsumerClientFactory(options, mockStreamManager, logger);
+        var factory = new RedisConsumerClientFactory(options, messagingOptions, mockStreamManager, logger);
 
         // when
         var client1 = await factory.CreateAsync("group-1", 1);
@@ -82,9 +86,10 @@ public sealed class RedisConsumerClientFactoryTests : TestBase
         var options = Options.Create(
             new RedisMessagingOptions { Configuration = ConfigurationOptions.Parse("localhost:6379") }
         );
+        var messagingOptions = Options.Create(new MessagingOptions());
         var logger = LoggerFactory.CreateLogger<RedisConsumerClient>();
 
-        var factory = new RedisConsumerClientFactory(options, mockStreamManager, logger);
+        var factory = new RedisConsumerClientFactory(options, messagingOptions, mockStreamManager, logger);
 
         // when
         var act = async () => await factory.CreateAsync("group-name", 1, IntentType.Bus);
