@@ -22,10 +22,9 @@ dotnet add package Headless.AuditLog.Core
 
 Add exactly one storage provider package too:
 
-```bash
-dotnet add package Headless.AuditLog.Storage.EntityFramework
-# or Headless.AuditLog.Storage.PostgreSql / Headless.AuditLog.Storage.SqlServer
-```
+- `dotnet add package Headless.AuditLog.Storage.EntityFramework`
+- `dotnet add package Headless.AuditLog.Storage.PostgreSql`
+- `dotnet add package Headless.AuditLog.Storage.SqlServer`
 
 ## Quick Start
 
@@ -46,6 +45,10 @@ services.AddHeadlessAuditLog(setup =>
     setup.UseEntityFramework<AppDbContext>();
 });
 ```
+
+## Configuration
+
+Configure audit behavior through `setup.ConfigureOptions(...)` and storage shape through `setup.ConfigureStorage(...)`. Then select exactly one storage provider by calling the provider extension, such as `UseEntityFramework<TContext>()`, from the installed storage package.
 
 ## Dependencies
 

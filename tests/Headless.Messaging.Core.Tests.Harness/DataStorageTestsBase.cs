@@ -387,6 +387,72 @@ public abstract class DataStorageTestsBase : TestBase
         await act.Should().NotThrowAsync();
     }
 
+    public virtual async Task should_not_flip_terminal_published_row_back_to_delayed()
+    {
+        if (!Capabilities.SupportsDelayedScheduling)
+        {
+            Assert.Skip("Storage does not support delayed scheduling");
+        }
+
+        // given — a row sealed terminal (Succeeded, no scheduled retry). The dispatcher's shutdown
+        // flush (DisposeAsync → ChangePublishStateToDelayedAsync) can race a consumer that just
+        // dispatched the same row; once one side seals it, the flush must not resurrect it as Delayed.
+        var storage = GetStorage();
+        var storedMessage = await storage.StoreMessageAsync(
+            "terminal-delayed-guard",
+            CreateMessage(),
+            cancellationToken: AbortToken
+        );
+
+        var sealedFirst = await storage.ChangePublishStateAsync(
+            storedMessage,
+            StatusName.Succeeded,
+            nextRetryAt: null,
+            cancellationToken: AbortToken
+        );
+        sealedFirst.Should().BeTrue("the transition to Succeeded must win against a fresh row");
+
+        // when — the late shutdown flush tries to move the sealed row back to Delayed.
+        await storage.ChangePublishStateToDelayedAsync([storedMessage.StorageId], AbortToken);
+
+        // then — the row must remain terminal: a follow-up state change is still rejected by the
+        // terminal guard (a Delayed row would have accepted it) and the retry pickup never sees it.
+        var lateChange = await storage.ChangePublishStateAsync(
+            storedMessage,
+            StatusName.Scheduled,
+            nextRetryAt: DateTime.UtcNow,
+            cancellationToken: AbortToken
+        );
+        lateChange.Should().BeFalse("the terminal seal must survive a late scheduler flush");
+
+        var retriable = await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken);
+        retriable.Should().NotContain(m => m.StorageId == storedMessage.StorageId);
+    }
+
+    public virtual async Task should_ignore_unknown_storage_ids_when_flushing_delayed_state()
+    {
+        if (!Capabilities.SupportsDelayedScheduling)
+        {
+            Assert.Skip("Storage does not support delayed scheduling");
+        }
+
+        // given — one live row plus an id with no backing row (e.g. the row was pruned between the
+        // dispatcher snapshotting its scheduler queue and the shutdown flush running).
+        var storage = GetStorage();
+        var storedMessage = await storage.StoreMessageAsync(
+            "delayed-unknown-id",
+            CreateMessage(),
+            cancellationToken: AbortToken
+        );
+
+        // when
+        var act = async () =>
+            await storage.ChangePublishStateToDelayedAsync([storedMessage.StorageId, Guid.NewGuid()], AbortToken);
+
+        // then
+        await act.Should().NotThrowAsync("missing rows must be skipped, not faulted on");
+    }
+
     public virtual async Task should_get_published_messages_of_need_retry()
     {
         // given

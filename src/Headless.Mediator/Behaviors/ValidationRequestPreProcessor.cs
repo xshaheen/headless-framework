@@ -44,22 +44,50 @@ public sealed class ValidationRequestPreProcessor<TMessage, TResponse>(
             return;
         }
 
-        var validationResults = await Task.WhenAll(
-                validatorList.Select(validator =>
-                    validator.ValidateAsync(new ValidationContext<TMessage>(message), cancellationToken)
-                )
-            )
-            .WithAggregatedExceptions();
+        ValidationResult[] validationResults;
 
-        var failures = validationResults
-            .SelectMany(result => result.Errors)
-            .Where(failure => failure is not null)
-            .ToList();
-
-        if (failures.Count == 0)
+        if (validatorList.Count == 1)
         {
-            return;
+            // Fast path for the dominant single-validator case - avoids Select/Task.WhenAll overhead.
+            var result = await validatorList[0]
+                .ValidateAsync(new ValidationContext<TMessage>(message), cancellationToken)
+                .ConfigureAwait(false);
+
+            if (result.IsValid)
+            {
+                return;
+            }
+
+            validationResults = [result];
         }
+        else
+        {
+            validationResults = await Task.WhenAll(
+                    validatorList.Select(validator =>
+                        validator.ValidateAsync(new ValidationContext<TMessage>(message), cancellationToken)
+                    )
+                )
+                .WithAggregatedExceptions();
+
+            // Early exit if all valid - avoids the failure LINQ chain on the happy path.
+            var allValid = true;
+
+            foreach (var result in validationResults)
+            {
+                if (!result.IsValid)
+                {
+                    allValid = false;
+                    break;
+                }
+            }
+
+            if (allValid)
+            {
+                return;
+            }
+        }
+
+        var failures = validationResults.SelectMany(result => result.Errors).ToList();
 
         _LogMediatorMessageValidation(
             _logger,

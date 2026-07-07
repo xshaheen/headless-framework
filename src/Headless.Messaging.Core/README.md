@@ -245,7 +245,7 @@ builder.Services.AddHeadlessMessaging(setup =>
 ```
 
 - `Version` is validated non-empty and at most 20 characters: the SQL storage providers persist it as a literal into a `VARCHAR(20)`/`nvarchar(20)` column, so an over-long value is rejected at startup instead of failing every outbox insert.
-- `RetryBatchSize` (default 200) caps the retry-pickup batch; `SchedulerBatchSize` (default 1,000) caps the delayed/queued scheduler batch.
+- `RetryBatchSize` (default 200, `> 0`) caps the retry-pickup batch; `SchedulerBatchSize` (default 1,000, `> 0`) caps the delayed/queued scheduler batch.
 
 ## Middleware
 
@@ -319,7 +319,7 @@ Message ordering guarantees depend on the transport provider and configuration:
 
 ### Transport-Specific Ordering
 
-- **Kafka**: Messages with same partition key are strictly ordered within partitions
+- **Kafka**: Messages with same partition key are strictly ordered within partitions. With concurrent consumers, Headless commits offsets only through the contiguous completed watermark for each partition, so a fast high offset does not acknowledge lower in-flight messages.
 - **Azure Service Bus**: FIFO ordering when sessions are enabled (`EnableSessions = true`)
 - **RabbitMQ**: No ordering guarantees by default; consumers may process messages concurrently
 - **AWS SQS**: FIFO queues provide strict ordering; standard queues do not

@@ -383,6 +383,7 @@ internal sealed class ConsumerRegister(
                             catch (Exception e)
                             {
                                 startupReady.TrySetException(e);
+                                _isHealthy = false;
                                 _logger.ConsumerProcessingLoopFailed(e);
                             }
                         },
@@ -659,13 +660,9 @@ internal sealed class ConsumerRegister(
                     }
 
                     // Extract the actual message type for deserialization
-                    // For IConsume<T>.Consume(ConsumeContext<T>, CancellationToken), we need T, not ConsumeContext<T>
-                    var paramType = executor!.Parameters.FirstOrDefault(x => !x.IsFromMessaging)?.ParameterType;
-                    var messageValueType =
-                        paramType is { IsGenericType: true }
-                        && paramType.GetGenericTypeDefinition() == typeof(ConsumeContext<>)
-                            ? paramType.GetGenericArguments()[0]
-                            : paramType;
+                    // For IConsume<T>.Consume(ConsumeContext<T>, CancellationToken), we need T, not ConsumeContext<T>.
+                    // Cached on the descriptor - recomputing it per message is pure reflection overhead.
+                    var messageValueType = executor!.MessageValueType;
 
                     message = await _serializer
                         .DeserializeAsync(transportMessage, messageValueType)

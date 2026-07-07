@@ -2,6 +2,10 @@
 
 NATS JetStream transport provider for the Headless messaging system.
 
+## Problem Solved
+
+Adds a NATS-backed transport to Headless messaging so the core bus and queue abstractions can publish to JetStream subjects while keeping storage, retry, and consumer registration in the shared messaging pipeline.
+
 ## Key Features
 
 - **Lightweight**: Minimal resource footprint, cloud-native

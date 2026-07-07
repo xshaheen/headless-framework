@@ -10,15 +10,21 @@ internal sealed class NoCacheHeadersMiddleware(RequestDelegate next)
     /// <summary>Processes the current request.</summary>
     public async Task InvokeAsync(HttpContext context)
     {
-        context.Response.OnStarting(() =>
-        {
-            if (context.Response.Headers.CacheControl.Count is 0)
+        // State-passing overload: a plain lambda would capture `context` and allocate a closure per request.
+        context.Response.OnStarting(
+            static state =>
             {
-                context.Response.Headers.CacheControl = "no-cache,no-store,must-revalidate";
-            }
+                var httpContext = (HttpContext)state;
 
-            return Task.CompletedTask;
-        });
+                if (httpContext.Response.Headers.CacheControl.Count is 0)
+                {
+                    httpContext.Response.Headers.CacheControl = "no-cache,no-store,must-revalidate";
+                }
+
+                return Task.CompletedTask;
+            },
+            context
+        );
 
         await next(context).ConfigureAwait(false);
     }

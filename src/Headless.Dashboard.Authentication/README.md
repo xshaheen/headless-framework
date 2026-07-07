@@ -14,6 +14,47 @@ Provides a unified authentication system with 5 modes so both Jobs and Messaging
 - **Frontend Config**: Provides auth info to frontend for adaptive login UI
 - **DI Registration**: `SetupDashboardAuthentication.AddDashboardAuthentication(...)` binds `AuthConfig` (validated on start via a FluentValidation validator) and registers `IAuthService`
 
+## Installation
+
+```bash
+dotnet add package Headless.Dashboard.Authentication
+```
+
+Dashboard packages normally reference this package for you. Add it directly only when you are building dashboard infrastructure that consumes the shared auth primitives.
+
+## Quick Start
+
+Use the auth modes through the dashboard package builders:
+
+```csharp
+builder.Services.AddHeadlessMessaging(setup =>
+{
+    setup.UseDashboard(dashboard =>
+    {
+        dashboard.WithBasicAuth("admin", "secret");
+        dashboard.WithSessionTimeout(30);
+    });
+});
+```
+
+For host-owned authentication:
+
+```csharp
+builder.Services.AddAuthorizationBuilder().AddPolicy(
+    "DashboardPolicy",
+    policy => policy.RequireAuthenticatedUser()
+);
+
+builder.Services.AddHeadlessMessaging(setup =>
+{
+    setup.UseDashboard(dashboard => dashboard.WithHostAuthentication("DashboardPolicy"));
+});
+```
+
+## Configuration
+
+`AuthConfig` exposes `Mode`, `BasicCredentials`, `ApiKey`, `CustomValidator`, `SessionTimeoutMinutes`, and `HostAuthorizationPolicy`. The dashboard builders set those values through methods such as `WithNoAuth()`, `WithBasicAuth(...)`, `WithApiKey(...)`, `WithHostAuthentication(...)`, `WithCustomAuth(...)`, and `WithSessionTimeout(...)`.
+
 ## Auth Modes
 
 | Mode | Description |
@@ -71,3 +112,7 @@ app.UseMiddleware<AuthMiddleware>();
 
 - `Headless.Jobs.Dashboard`
 - `Headless.Messaging.Dashboard`
+
+## Side Effects
+
+None when referenced by itself. Dashboard packages register `AuthConfig`, `IAuthService`, and dashboard middleware when their dashboard setup extensions are used.

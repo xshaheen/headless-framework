@@ -52,6 +52,37 @@ public sealed class DistributedReadWriteLockTests : TestBase
     }
 
     [Fact]
+    public async Task should_return_without_throwing_when_release_exceeds_dispose_timeout()
+    {
+        // given — write-release hangs forever in storage. DisposeTimeout bounds the release so
+        // shutdown is never blocked; on timeout the release returns without throwing and the
+        // record TTL is the eventual-consistency fallback.
+        var storage = Substitute.For<IDistributedReadWriteLockStorage>();
+        storage
+            .ReleaseWriteAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => new ValueTask(new TaskCompletionSource().Task));
+
+        var provider = _CreateProvider(
+            storage,
+            options: new DistributedLockOptions { DisposeTimeout = TimeSpan.FromSeconds(5) }
+        );
+
+        // when — run release and advance time past the dispose timeout
+        var releaseTask = provider.ReleaseAsync(ReaderWriterLockMode.Write, "resource", "lease-1", AbortToken);
+
+        for (var i = 0; i < 10; i++)
+        {
+            await Task.Yield();
+            _timeProvider.Advance(TimeSpan.FromSeconds(1));
+        }
+
+        var act = async () => await releaseTask;
+
+        // then
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
     public async Task should_log_safety_deadline_eventid_and_tag_metric_stalled_when_write_deadline_fires()
     {
         // given — write-lock storage that hangs so the non-blocking safety deadline ends the attempt

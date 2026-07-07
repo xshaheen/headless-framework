@@ -287,3 +287,9 @@ None. `MessagingTestHarness` has no configuration class or options object. The o
 - `Headless.Messaging.Core`
 - `Headless.Messaging.InMemory`
 - `Headless.Messaging.InMemoryStorage`
+
+## Side Effects
+
+- `MessagingTestHarness.CreateAsync(...)` builds and owns an in-process `ServiceProvider` until the harness is disposed.
+- `AddMessagingTestHarness()` decorates an existing host's messaging registrations and must run after `AddHeadlessMessaging(...)`.
+- Transport parallelism is disabled inside the harness to keep observations deterministic.

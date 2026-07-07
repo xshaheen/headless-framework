@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using Confluent.Kafka;
 using Confluent.Kafka.Admin;
 using Headless.Messaging.Kafka;
@@ -383,6 +384,112 @@ public sealed class KafkaConsumerClientTests : TestBase
         }
     }
 
+    [Fact]
+    public async Task CommitAsync_should_not_commit_past_inflight_lower_offsets_when_processing_concurrently()
+    {
+        // given
+        var consumer = Substitute.For<IConsumer<string, byte[]>>();
+        var consumeCallCount = 0;
+        consumer
+            .Consume(Arg.Any<TimeSpan>())
+            .Returns(_ =>
+            {
+                var callIndex = Interlocked.Increment(ref consumeCallCount);
+
+                return callIndex switch
+                {
+                    1 => _CreateConsumeResult(100),
+                    2 => _CreateConsumeResult(101),
+                    3 => _CreateConsumeResult(102),
+                    _ => waitAndReturnNull(),
+                };
+
+                static ConsumeResult<string, byte[]> waitAndReturnNull()
+                {
+                    Thread.Sleep(10);
+
+                    return null!;
+                }
+            });
+
+        var committedOffsets = new ConcurrentQueue<long>();
+        consumer
+            .When(c => c.Commit(Arg.Any<IEnumerable<TopicPartitionOffset>>()))
+            .Do(call =>
+            {
+                foreach (var offset in call.Arg<IEnumerable<TopicPartitionOffset>>())
+                {
+                    committedOffsets.Enqueue(offset.Offset.Value);
+                }
+            });
+
+        await using var client = new KafkaConsumerClient(
+            "test-group",
+            3,
+            _options,
+            _serviceProvider,
+            consumerFactory: _ => consumer
+        );
+
+        var releaseOffset100 = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseOffset101 = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var highOffsetCommitted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        client.OnMessageCallback = async (message, sender) =>
+        {
+            var offset = BitConverter.ToInt64(message.Body.Span);
+
+            switch (offset)
+            {
+                case 100:
+                    await releaseOffset100.Task.WaitAsync(AbortToken).ConfigureAwait(false);
+                    await client.CommitAsync(sender).ConfigureAwait(false);
+
+                    break;
+
+                case 101:
+                    await releaseOffset101.Task.WaitAsync(AbortToken).ConfigureAwait(false);
+                    await client.CommitAsync(sender).ConfigureAwait(false);
+
+                    break;
+
+                case 102:
+                    await client.CommitAsync(sender).ConfigureAwait(false);
+                    highOffsetCommitted.TrySetResult();
+
+                    break;
+            }
+        };
+        client.OnLogCallback = _ => { };
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
+
+        try
+        {
+            await highOffsetCommitted.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+
+            committedOffsets.Should().BeEmpty("offset 102 cannot commit while 100 and 101 are still in flight");
+
+            releaseOffset100.TrySetResult();
+            await _WaitUntilAsync(() => committedOffsets.Contains(101), AbortToken);
+            committedOffsets.Should().Equal([101]);
+
+            releaseOffset101.TrySetResult();
+            await _WaitUntilAsync(() => committedOffsets.Contains(103), AbortToken);
+            committedOffsets.Should().Equal([101, 103]);
+
+            consumer.DidNotReceive().Commit(Arg.Any<ConsumeResult<string, byte[]>>());
+        }
+        finally
+        {
+            releaseOffset100.TrySetResult();
+            releaseOffset101.TrySetResult();
+            await cts.CancelAsync();
+            await listeningTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+        }
+    }
+
     // -------------------------------------------------------------------------
     // PauseAsync / ResumeAsync
     // -------------------------------------------------------------------------
@@ -563,6 +670,26 @@ public sealed class KafkaConsumerClientTests : TestBase
                 // Best-effort cleanup only.
             }
 #pragma warning restore ERP022 // Unobserved exception in generic exception handler
+        }
+    }
+
+    private static ConsumeResult<string, byte[]> _CreateConsumeResult(long offset)
+    {
+        return new ConsumeResult<string, byte[]>
+        {
+            TopicPartitionOffset = new TopicPartitionOffset("orders.created", new Partition(0), new Offset(offset)),
+            Message = new Message<string, byte[]> { Value = BitConverter.GetBytes(offset), Headers = [] },
+        };
+    }
+
+    private static async Task _WaitUntilAsync(Func<bool> predicate, CancellationToken cancellationToken)
+    {
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(TimeSpan.FromSeconds(2));
+
+        while (!predicate())
+        {
+            await Task.Delay(10, timeoutCts.Token).ConfigureAwait(false);
         }
     }
 }

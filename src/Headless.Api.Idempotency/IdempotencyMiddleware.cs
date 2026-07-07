@@ -70,7 +70,8 @@ internal sealed partial class IdempotencyMiddleware(
             return;
         }
 
-        var keyHeader = headerValues.LastOrDefault();
+        // Indexer instead of LastOrDefault(): Count != 0 was checked above, and the LINQ path boxes StringValues.
+        var keyHeader = headerValues[^1];
         if (string.IsNullOrWhiteSpace(keyHeader))
         {
             await next(context).ConfigureAwait(false);

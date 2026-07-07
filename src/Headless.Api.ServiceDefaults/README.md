@@ -4,6 +4,18 @@ The one-line bootstrap for Headless APIs. Combines the [`Headless.Api.Core`](../
 
 If you want the happy-path API bootstrap, install this package. It transitively pulls in `Headless.Api.Core`.
 
+## Problem Solved
+
+Most API hosts need the same baseline wiring before application code starts: problem details, response compression, OpenTelemetry, OpenAPI, health checks, forwarded headers, HttpClient resilience, static web assets, and startup validation. This package composes those defaults behind `builder.AddHeadless()`, `app.UseHeadless()`, and `app.MapHeadlessEndpoints()`.
+
+## Key Features
+
+- `AddHeadless()` registers core API primitives plus host defaults.
+- `UseHeadless()` applies the framework middleware order.
+- `MapHeadlessEndpoints()` maps health, liveness, OpenAPI, and static-asset endpoints.
+- Startup validation catches missing Headless middleware or endpoint mapping before the host starts.
+- OpenTelemetry, OpenAPI, service discovery, HttpClient resilience, and static assets are option-driven.
+
 ## Installation
 
 ```bash
@@ -194,3 +206,9 @@ Both sections are required.
 - `OpenTelemetry.Instrumentation.AspNetCore`
 - `OpenTelemetry.Instrumentation.Http`
 - `OpenTelemetry.Instrumentation.Runtime`
+
+## Side Effects
+
+- Registers MVC, Minimal API, validation, OpenTelemetry, OpenAPI, health-check, HttpClient, service-discovery, response-compression, exception-handler, and startup-validation services according to options.
+- `UseHeadless()` adds middleware for forwarded headers, compression, status-code pages, exception handling, HTTPS redirection, HSTS outside Development, and no-cache headers when the response did not set `Cache-Control`.
+- `MapHeadlessEndpoints()` maps `/health`, `/alive`, the configured OpenAPI JSON route, and static web assets when enabled.

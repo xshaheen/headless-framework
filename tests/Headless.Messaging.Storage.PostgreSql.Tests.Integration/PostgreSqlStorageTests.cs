@@ -191,6 +191,14 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     public override Task should_change_publish_state_to_delayed() => base.should_change_publish_state_to_delayed();
 
     [Fact]
+    public override Task should_not_flip_terminal_published_row_back_to_delayed() =>
+        base.should_not_flip_terminal_published_row_back_to_delayed();
+
+    [Fact]
+    public override Task should_ignore_unknown_storage_ids_when_flushing_delayed_state() =>
+        base.should_ignore_unknown_storage_ids_when_flushing_delayed_state();
+
+    [Fact]
     public override Task should_get_published_messages_of_need_retry() =>
         base.should_get_published_messages_of_need_retry();
 

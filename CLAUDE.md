@@ -125,7 +125,12 @@ Single-backend packages with no provider choice keep plain `Add{Feature}` extens
 
 **Public API Discipline:**
 
-- Each package's `public` surface IS its NuGet contract — keep types `internal sealed` and promote to `public` only when consumers must reference them.
+- Each package's `public` surface IS its NuGet contract — keep types `internal sealed` and promote to `public` only when consumers must reference them — "DI resolves it" is not a reason to be public.
+- New namespace matches the owning package; no types (only extension methods, per documented policy) in System.*/Microsoft.*/third-party namespaces; holder class names are prefixed (HeadlessXxxExtensions), never bare BCL-collision names.
+- Async public methods take a trailing CancellationToken cancellationToken = default — including "callback" and "handler" interfaces.
+- Public contracts return IReadOnlyList<>/IReadOnlyDictionary<,>, never mutable List<>/Dictionary<,>.
+- New enums get explicit values; enums consumers may switch on ship a catch-all member and a "members may be added" doc note; sentinel value = 0.
+- [PublicAPI] on externally-consumed types; [EditorBrowsable(Never)] on must-be-public plumbing; XML docs on everything public
 
 **Namespace Policy:**
 
@@ -199,3 +204,4 @@ After creating the project, attach it to [headless-framework.slnx](headless-fram
 ## Learnings
 
 - `Range<T>` uses `null` bounds as infinities; range-to-range operations must compare lower and upper bounds with side-specific semantics instead of reusing value containment. (2026-07-04)
+- Kafka concurrent consumers must commit offsets by per-partition contiguous completed watermark; committing a high completed offset directly can acknowledge lower in-flight messages and lose them after a crash. (2026-07-06)
