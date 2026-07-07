@@ -431,7 +431,9 @@ app.MapHeadlessEndpoints();
 app.Run();
 ```
 
-### Tenant-Context Exception Mapping
+### Configuration
+
+#### Pipeline and Endpoint Behavior
 
 `UseHeadless()` applies Headless' standard ASP.NET Core middleware order:
 
@@ -452,7 +454,7 @@ Antiforgery is **opt-in and consumer-owned**: `AddHeadless()` does not register 
 
 `MapHeadlessEndpoints()` maps `/health` for all health checks with a JSON body containing `status` and per-check `results`, and `/alive` for checks tagged `live`. It also maps OpenAPI JSON documents and static web assets when configured. Health endpoints are named, excluded from OpenAPI descriptions, and allow anonymous requests by default. `AddHeadless()` registers the default `self` liveness check, disables Kestrel's `Server` response header, and applies conservative Kestrel limits: 30MB max request body and 40 request headers. Both `UseHeadless` and `MapHeadlessEndpoints` are idempotent.
 
-### Configuration
+#### Service Options
 
 ```csharp
 builder.AddHeadless(configureServices: options =>
@@ -509,29 +511,29 @@ builder.AddHeadless(configureServices: options =>
 
 ### Dependencies
 
-- `Headless.Api.Abstractions`
-- `Headless.Core`
-- `Headless.MultiTenancy`
-- `Headless.Security.Abstractions`
-- `Headless.Security`
-- `Headless.Caching.Abstractions`
-- `Headless.FluentValidation`
-- `Headless.Hosting`
-- `Asp.Versioning.Http`
-- `DeviceDetector.NET`
-- `FluentValidation`
+- `Headless.Api.Core`
+- `FileSignatures`
 - `Microsoft.AspNetCore.OpenApi`
 - `Microsoft.Extensions.Http.Resilience`
-- `NetEscapades.AspNetCore.SecurityHeaders`
+- `Microsoft.Extensions.ServiceDiscovery`
+- `OpenTelemetry.Exporter.OpenTelemetryProtocol`
+- `OpenTelemetry.Extensions.Hosting`
+- `OpenTelemetry.Instrumentation.AspNetCore`
+- `OpenTelemetry.Instrumentation.Http`
+- `OpenTelemetry.Instrumentation.Runtime`
 
 ### Side Effects
 
-- Registers `HttpContextAccessor`
-- Configures response compression providers
-- Configures route options (lowercase URLs)
-- Configures form options (file upload limits)
-- Configures HSTS options
-- Adds resilience handler to `HttpClient` defaults
+- Enables service-provider validation on startup (`ValidateOnBuild`, `ValidateScopes`).
+- Registers all core primitives from `Headless.Api.Core` including problem details, response compression, JWT, identity, status-code rewriting, and default API conventions.
+- Registers antiforgery services only when `options.Antiforgery.Enabled` is `true`.
+- Configures MVC and Minimal API JSON serializer defaults.
+- Registers ASP.NET Core source-generated input validation (`services.AddValidation()`).
+- Registers OpenTelemetry logging, metrics, and tracing when `OpenTelemetry.Enabled` is `true`.
+- Registers OpenAPI services when `OpenApi.Enabled` is `true`.
+- Configures service discovery when `HttpClient.UseServiceDiscovery` is `true`.
+- Configures HttpClient defaults for standard resilience, service discovery, and application User-Agent.
+- Adds a startup filter that validates `UseHeadless()`, `UseStatusCodesRewriter()`, and `MapHeadlessEndpoints()` usage.
 
 ---
 

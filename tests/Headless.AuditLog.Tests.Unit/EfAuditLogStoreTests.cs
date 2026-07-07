@@ -186,6 +186,21 @@ public sealed class EfAuditLogStoreTests : TestBase
     // ---------------------------------------------------------------------------
 
     [Fact]
+    public void should_throw_argument_exception_when_save_saving_context_is_not_a_db_context()
+    {
+        // given
+        var store = new EfAuditLogStore();
+
+        // when
+#pragma warning disable MA0045 // This test intentionally covers the synchronous Save guard.
+        var act = () => store.Save([_CreateEntryData()], new object());
+#pragma warning restore MA0045
+
+        // then
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
     public async Task should_throw_argument_exception_when_save_async_saving_context_is_not_a_db_context()
     {
         // given

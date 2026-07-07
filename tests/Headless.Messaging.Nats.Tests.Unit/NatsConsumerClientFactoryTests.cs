@@ -16,9 +16,18 @@ public sealed class NatsConsumerClientFactoryTests : TestBase
 
     public NatsConsumerClientFactoryTests()
     {
-        // Port 9 (discard) never hosts NATS; the default 4222 can be occupied by an unrelated
-        // local NATS container, which makes the wrap-connection-failure test non-deterministic.
-        _options = Options.Create(new NatsMessagingOptions { Servers = "nats://127.0.0.1:9" });
+        _options = Options.Create(
+            new NatsMessagingOptions
+            {
+                Servers = "nats://headless-framework-nats-test.invalid:4222",
+                ConfigureConnection = opts =>
+                    opts with
+                    {
+                        ConnectTimeout = TimeSpan.FromMilliseconds(100),
+                        RetryOnInitialConnect = false,
+                    },
+            }
+        );
         _serviceProvider = new ServiceCollection().BuildServiceProvider();
     }
 
@@ -27,7 +36,7 @@ public sealed class NatsConsumerClientFactoryTests : TestBase
     {
         var factory = new NatsConsumerClientFactory(_options, _serviceProvider);
 
-        // ConnectAsync will fail without a real NATS server
+        // ConnectAsync must fail without depending on local port state.
         var act = async () => await factory.CreateAsync("test-group", 1);
 
         var exception = await act.Should().ThrowAsync<BrokerConnectionException>();

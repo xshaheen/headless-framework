@@ -167,7 +167,7 @@ public sealed class InfiniteRetryProcessorTests : TestBase
             }
         }
 
-        public async Task FireNextTimerAsync()
+        public async ValueTask FireNextTimerAsync()
         {
             ControlledTimer timer;
 
@@ -179,11 +179,8 @@ public sealed class InfiniteRetryProcessorTests : TestBase
                 }
             }
 
-            // Dispose is idempotent and Fire() no-ops once disposed, so dispose only after firing.
-            await using (timer.ConfigureAwait(false))
-            {
-                timer.Fire();
-            }
+            timer.Fire();
+            await timer.DisposeAsync();
         }
 
         public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)

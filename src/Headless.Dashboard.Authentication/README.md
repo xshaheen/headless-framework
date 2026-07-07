@@ -20,7 +20,7 @@ Provides a unified authentication system with 5 modes so both Jobs and Messaging
 dotnet add package Headless.Dashboard.Authentication
 ```
 
-Dashboard packages normally reference this package for you. Add it directly only when you are building dashboard infrastructure that consumes the shared auth primitives.
+Most applications get this package transitively through `Headless.Jobs.Dashboard` or `Headless.Messaging.Dashboard`. Add it directly only when you are building dashboard infrastructure that consumes the shared auth primitives.
 
 ## Quick Start
 
@@ -81,6 +81,8 @@ builder.Services.AddDashboardAuthentication(cfg =>
 });
 ```
 
+`AuthConfig` controls credentials, API key, custom validation, host authorization policy, and `SessionTimeoutMinutes`. `AuthConfig.Validate()` throws when the selected mode requires a credential or validator that has not been configured.
+
 Add the middleware to protect `/api/*` paths:
 
 ```csharp
@@ -115,4 +117,6 @@ app.UseMiddleware<AuthMiddleware>();
 
 ## Side Effects
 
-None when referenced by itself. Dashboard packages register `AuthConfig`, `IAuthService`, and dashboard middleware when their dashboard setup extensions are used.
+- No services are registered when this package is referenced by itself.
+- Owning dashboard packages register `AuthConfig`, `IAuthService`, and `AuthMiddleware` when dashboard authentication is enabled.
+- `AuthMiddleware` protects `/api/*` dashboard endpoints while allowing static files, SignalR negotiate endpoints, and auth metadata endpoints through.

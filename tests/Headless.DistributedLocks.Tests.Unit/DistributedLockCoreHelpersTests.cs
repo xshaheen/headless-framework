@@ -45,43 +45,53 @@ public sealed class DistributedLockCoreHelpersTests
 
     #region IsTransientStorageException
 
-    public static TheoryData<Exception> TransientExceptions =>
-        [new TimeoutException(), new IOException("connection reset"), new InvalidDataException("storage blip")];
+    public static TheoryData<ExceptionKind> TransientExceptions =>
+        [ExceptionKind.Timeout, ExceptionKind.IOException, ExceptionKind.InvalidData];
 
-    public static TheoryData<Exception> NonTransientExceptions =>
+    public static TheoryData<ExceptionKind> NonTransientExceptions =>
         [
-            new OperationCanceledException(),
-            new TaskCanceledException(),
-            new ObjectDisposedException("storage"),
-            new InvalidOperationException(),
-            _ArgumentException(),
-            _ArgumentNullException(),
-            _ArgumentOutOfRangeException(),
+            ExceptionKind.OperationCanceled,
+            ExceptionKind.TaskCanceled,
+            ExceptionKind.ObjectDisposed,
+            ExceptionKind.InvalidOperation,
+            ExceptionKind.Argument,
+            ExceptionKind.ArgumentNull,
+            ExceptionKind.ArgumentOutOfRange,
         ];
 
-    // MA0015 requires the paramName argument to resolve to a real parameter, so these factories
-    // exist purely so nameof binds to one instead of a bare string literal the analyzer rejects.
-    private static ArgumentException _ArgumentException(string resource = "resource") =>
-        new("bad resource", nameof(resource));
-
-    private static ArgumentNullException _ArgumentNullException(string resource = "resource") => new(nameof(resource));
-
-    private static ArgumentOutOfRangeException _ArgumentOutOfRangeException(string resource = "resource") =>
-        new(nameof(resource));
-
     [Theory]
-    [MemberData(nameof(TransientExceptions), DisableDiscoveryEnumeration = true)]
-    public void transient_storage_exceptions_should_be_classified_retryable(Exception exception)
+    [MemberData(nameof(TransientExceptions))]
+    public void transient_storage_exceptions_should_be_classified_retryable(ExceptionKind exceptionKind)
     {
+        var exception = _CreateException(exceptionKind);
+
         DistributedLockCoreHelpers.IsTransientStorageException(exception).Should().BeTrue();
     }
 
     [Theory]
-    [MemberData(nameof(NonTransientExceptions), DisableDiscoveryEnumeration = true)]
-    public void programmer_errors_and_cancellation_should_not_be_classified_retryable(Exception exception)
+    [MemberData(nameof(NonTransientExceptions))]
+    public void programmer_errors_and_cancellation_should_not_be_classified_retryable(ExceptionKind exceptionKind)
     {
+        var exception = _CreateException(exceptionKind);
+
         DistributedLockCoreHelpers.IsTransientStorageException(exception).Should().BeFalse();
     }
+
+    private static Exception _CreateException(ExceptionKind kind) =>
+        kind switch
+        {
+            ExceptionKind.Timeout => new TimeoutException(),
+            ExceptionKind.IOException => new IOException("connection reset"),
+            ExceptionKind.InvalidData => new InvalidDataException("storage blip"),
+            ExceptionKind.OperationCanceled => new OperationCanceledException(),
+            ExceptionKind.TaskCanceled => new TaskCanceledException(),
+            ExceptionKind.ObjectDisposed => new ObjectDisposedException("storage"),
+            ExceptionKind.InvalidOperation => new InvalidOperationException(),
+            ExceptionKind.Argument => new ArgumentException("bad resource", nameof(kind)),
+            ExceptionKind.ArgumentNull => new ArgumentNullException(nameof(kind)),
+            ExceptionKind.ArgumentOutOfRange => new ArgumentOutOfRangeException(nameof(kind)),
+            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
+        };
 
     #endregion
 
@@ -211,4 +221,19 @@ public sealed class DistributedLockCoreHelpersTests
     }
 
     #endregion
+
+    public enum ExceptionKind
+    {
+        None = 0,
+        Timeout = 1,
+        IOException = 2,
+        InvalidData = 3,
+        OperationCanceled = 4,
+        TaskCanceled = 5,
+        ObjectDisposed = 6,
+        InvalidOperation = 7,
+        Argument = 8,
+        ArgumentNull = 9,
+        ArgumentOutOfRange = 10,
+    }
 }
