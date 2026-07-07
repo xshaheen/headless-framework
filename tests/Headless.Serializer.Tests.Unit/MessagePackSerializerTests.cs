@@ -343,7 +343,7 @@ public sealed class MessagePackSerializerTests
     {
         var field = typeof(MessagePackSerializer).GetField(
             "_options",
-            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+            BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly
         );
 
         return field?.GetValue(serializer) as MessagePackSerializerOptions

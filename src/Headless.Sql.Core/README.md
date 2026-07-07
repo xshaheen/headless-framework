@@ -26,7 +26,7 @@ builder.Services.AddScoped<ISqlCurrentConnection, DefaultSqlCurrentConnection>()
 
 ## Configuration
 
-There is no options object. Choose the scoped lifetime explicitly when registering `DefaultSqlCurrentConnection`; it is intended to represent one ambient SQL connection per request or unit-of-work scope.
+There is no options object. Register `DefaultSqlCurrentConnection` explicitly as a scoped `ISqlCurrentConnection`; it is intended to represent one ambient SQL connection per request or unit-of-work scope. Then register one provider-specific `ISqlConnectionFactory` from `Headless.Sql.PostgreSql`, `Headless.Sql.SqlServer`, or `Headless.Sql.Sqlite`.
 
 ## Dependencies
 

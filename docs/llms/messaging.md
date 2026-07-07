@@ -981,7 +981,7 @@ Mounts the embedded web UI and monitoring API through an `IStartupFilter` (no ex
 
 ### Problem Solved
 
-Adds Kubernetes node discovery for messaging dashboards.
+Enables automatic discovery and monitoring of messaging nodes in Kubernetes clusters by querying Services for multi-instance dashboard visibility.
 
 ### Key Features
 
@@ -1002,15 +1002,21 @@ services.AddHeadlessMessaging(setup => setup.UseK8sDiscovery());
 
 ### Configuration
 
-Configure namespace and service discovery through the Kubernetes discovery options.
+Configure `K8sDiscoveryOptions` through `UseK8sDiscovery(...)`:
+
+- `K8sClientConfig` — Kubernetes client configuration used to query the cluster. Defaults to `KubernetesClientConfiguration.BuildDefaultConfig()`.
+- `ShowOnlyExplicitVisibleNodes` — when `true` (default), only Services labeled `headless.messaging.visibility:show` are listed as visible dashboard nodes. Set to `false` to show all discovered Services.
 
 ### Dependencies
 
-`Headless.Messaging.Dashboard`, Kubernetes client libraries.
+- `Headless.Messaging.Dashboard`
+- `KubernetesClient`
 
 ### Side Effects
 
-Registers a Kubernetes-backed node discovery provider.
+- Registers a Kubernetes-backed node discovery provider.
+- Queries the Kubernetes API for Services and namespaces.
+- Requires RBAC permissions to read Services and namespaces.
 
 ## Headless.Messaging.OpenTelemetry
 
@@ -1279,7 +1285,7 @@ Registers Kafka transports, connection pool, consumer factory, and provider-spec
 
 ### Problem Solved
 
-Provides NATS and JetStream transport support with subject-based routing.
+Provides a NATS JetStream transport for Headless messaging so applications can publish and consume durable messages with subject-based routing, JetStream acknowledgements, and provider-specific shard subjects while keeping the core messaging API provider-neutral.
 
 ### Key Features
 
@@ -1526,10 +1532,11 @@ Provides test harness utilities for observing messaging behavior without couplin
 
 ### Key Features
 
-- `AddMessagingTestHarness(...)`.
-- Recorded published and consumed messages.
-- Wait helpers for asynchronous assertions.
-- `TestConsumer<T>` helpers.
+- `MessagingTestHarness` records messages at the bus/queue transport layer.
+- `WaitForPublished<T>(...)`, `WaitForConsumed<T>(...)`, `WaitForFaulted<T>(...)`, and `WaitForExhausted<T>(...)` block until a match arrives or the timeout elapses.
+- `WaitForPublished<T>(IntentType.Bus)` and `WaitForPublished<T>(IntentType.Queue)` distinguish identical payloads sent through bus and queue paths.
+- Predicate overloads for filtering by payload shape.
+- `TestConsumer<T>` captures messages without custom handler logic.
 
 ### Design Notes
 
@@ -1546,18 +1553,22 @@ dotnet add package Headless.Messaging.Testing
 ```csharp
 services.AddMessagingTestHarness();
 
-var harness = provider.GetRequiredService<IMessagingTestHarness>();
-await harness.Published.WaitForAsync<OrderPlaced>();
+var harness = provider.GetRequiredService<MessagingTestHarness>();
+await harness.WaitForPublished<OrderPlaced>(TimeSpan.FromSeconds(5));
 ```
 
 ### Configuration
 
-None.
+None. `MessagingTestHarness` has no configuration class or options object. The per-call `timeout` parameter controls how long `WaitFor*` methods wait; when omitted it defaults to `MessagingTestHarness.DefaultTimeout`.
 
 ### Dependencies
 
-`Headless.Messaging.Core`.
+- `Headless.Messaging.Core`
+- `Headless.Messaging.InMemory`
+- `Headless.Messaging.InMemoryStorage`
 
 ### Side Effects
 
-Registers recording transport wrappers and in-memory observable collections for tests.
+- `CreateAsync(...)` builds and owns a test `ServiceProvider`; dispose the harness after each test.
+- `AddMessagingTestHarness()` decorates the host's existing messaging registrations with recording wrappers; call it after `AddHeadlessMessaging(...)`.
+- Transport parallelism is disabled inside the harness for deterministic test execution.

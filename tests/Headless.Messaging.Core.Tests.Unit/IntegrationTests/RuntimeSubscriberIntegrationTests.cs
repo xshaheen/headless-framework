@@ -32,6 +32,7 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
         );
 
         var consumed = await probe.WaitForMessageAsync(AbortToken);
+        await middlewareProbe.WaitUntilExecutedAsync(AbortToken);
 
         consumed.Message.Id.Should().Be("first");
         consumed.MessageName.Should().Be("runtime.integration");
@@ -164,16 +165,16 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
     {
         public async ValueTask InvokeAsync(ConsumeContext context, Func<ValueTask> next)
         {
-            probe.ExecutingCount++;
+            probe.RecordExecuting();
 
             try
             {
                 await next().ConfigureAwait(false);
-                probe.ExecutedCount++;
+                probe.RecordExecuted();
             }
             catch
             {
-                probe.ExceptionCount++;
+                probe.RecordException();
                 throw;
             }
         }
@@ -181,9 +182,35 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
 
     private sealed class RecordingConsumeMiddlewareProbe
     {
-        public int ExecutingCount { get; set; }
-        public int ExecutedCount { get; set; }
-        public int ExceptionCount { get; set; }
+        private readonly TaskCompletionSource _executed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _executingCount;
+        private int _executedCount;
+        private int _exceptionCount;
+
+        public int ExecutingCount => Volatile.Read(ref _executingCount);
+        public int ExecutedCount => Volatile.Read(ref _executedCount);
+        public int ExceptionCount => Volatile.Read(ref _exceptionCount);
+
+        public void RecordExecuting()
+        {
+            Interlocked.Increment(ref _executingCount);
+        }
+
+        public void RecordExecuted()
+        {
+            Interlocked.Increment(ref _executedCount);
+            _executed.TrySetResult();
+        }
+
+        public void RecordException()
+        {
+            Interlocked.Increment(ref _exceptionCount);
+        }
+
+        public Task WaitUntilExecutedAsync(CancellationToken cancellationToken)
+        {
+            return _executed.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
+        }
     }
 
     private sealed class RecordingRuntimeProbe

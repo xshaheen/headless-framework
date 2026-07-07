@@ -726,6 +726,7 @@ public sealed class DispatcherTests : TestBase
             .ChangePublishStateToDelayedAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
             .Returns<ValueTask>(_ => throw new InvalidOperationException("storage down"));
 
+#pragma warning disable CA2000 // The test verifies DisposeAsync via the assertion below.
         var dispatcher = new Dispatcher(
             _logger,
             sender,
@@ -735,6 +736,7 @@ public sealed class DispatcherTests : TestBase
             TimeProvider.System,
             _scopeFactory
         );
+#pragma warning restore CA2000
 
         using var cts = new CancellationTokenSource();
         await dispatcher.StartAsync(cts.Token);

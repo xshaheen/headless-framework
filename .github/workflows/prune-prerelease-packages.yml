@@ -52,22 +52,24 @@ jobs:
           DRY_RUN: ${{ github.event.inputs.dry-run || 'true' }}
         shell: bash
         run: |
-          set -uo pipefail
+          set -euo pipefail
 
           cutoff=$(date -u -d "${MAX_AGE_DAYS} days ago" +%s)
           echo "Owner=$OWNER  max-age-days=$MAX_AGE_DAYS  keep-latest=$KEEP_LATEST  dry-run=$DRY_RUN"
           echo "Cutoff (UTC): $(date -u -d "@$cutoff")"
 
           deleted=0; kept=0; failed=0
+          err_file="$(mktemp)"
+          trap 'rm -f "$err_file"' EXIT
 
           del() {
             local path="$1" tries=0
             while :; do
-              if gh api -X DELETE "$path" >/dev/null 2>/tmp/err; then sleep 0.35; return 0; fi
-              if grep -qiE "rate limit|secondary rate|abuse" /tmp/err && [ "$tries" -lt 6 ]; then
+              if gh api -X DELETE "$path" >/dev/null 2>"$err_file"; then sleep 0.35; return 0; fi
+              if grep -qiE "rate limit|secondary rate|abuse" "$err_file" && [ "$tries" -lt 6 ]; then
                 tries=$((tries+1)); sleep $((tries*30)); continue
               fi
-              echo "  FAIL $path :: $(tr '\n' ' ' </tmp/err)"; return 1
+              echo "  FAIL $path :: $(tr '\n' ' ' <"$err_file")"; return 1
             done
           }
 
