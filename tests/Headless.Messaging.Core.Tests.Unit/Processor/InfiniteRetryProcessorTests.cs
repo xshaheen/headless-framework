@@ -34,12 +34,12 @@ public sealed class InfiniteRetryProcessorTests : TestBase
         await _WaitUntilAsync(() => inner.Calls == 1 && timeProvider.DelayCount == 1, AbortToken);
         var firstDelay = timeProvider.DelayAt(0);
 
-        timeProvider.FireNextTimer();
+        await timeProvider.FireNextTimerAsync();
 
         await _WaitUntilAsync(() => inner.Calls == 2 && timeProvider.DelayCount == 2, AbortToken);
         var secondDelay = timeProvider.DelayAt(1);
 
-        timeProvider.FireNextTimer();
+        await timeProvider.FireNextTimerAsync();
         await _WaitUntilAsync(() => inner.Calls == 3, AbortToken);
         await run.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
 
@@ -76,12 +76,12 @@ public sealed class InfiniteRetryProcessorTests : TestBase
 #pragma warning restore CA2025
 
         await _WaitUntilAsync(() => inner.Calls == 1 && timeProvider.DelayCount == 1, AbortToken);
-        timeProvider.FireNextTimer();
+        await timeProvider.FireNextTimerAsync();
 
         await _WaitUntilAsync(() => inner.Calls == 3 && timeProvider.DelayCount == 2, AbortToken);
         var secondFailureDelay = timeProvider.DelayAt(1);
 
-        timeProvider.FireNextTimer();
+        await timeProvider.FireNextTimerAsync();
         await _WaitUntilAsync(() => inner.Calls == 4, AbortToken);
         await run.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
 
@@ -167,7 +167,7 @@ public sealed class InfiniteRetryProcessorTests : TestBase
             }
         }
 
-        public void FireNextTimer()
+        public async ValueTask FireNextTimerAsync()
         {
             ControlledTimer timer;
 
@@ -180,6 +180,7 @@ public sealed class InfiniteRetryProcessorTests : TestBase
             }
 
             timer.Fire();
+            await timer.DisposeAsync();
         }
 
         public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)

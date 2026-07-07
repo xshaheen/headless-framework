@@ -14,6 +14,11 @@ on:
       - 'src/Headless.Messaging.Dashboard/wwwroot/**'
   pull_request:
     branches: [ "main" ]
+    paths:
+      - '.github/workflows/dashboards.yml'
+      - 'eng/**'
+      - 'src/Headless.Jobs.Dashboard/wwwroot/**'
+      - 'src/Headless.Messaging.Dashboard/wwwroot/**'
   workflow_dispatch:
 
 concurrency:

@@ -398,10 +398,9 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
         }
 
         // when
-        var picked =
-            tableName == "published"
-                ? await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken)
-                : await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken);
+        var picked = string.Equals(tableName, "published", StringComparison.Ordinal)
+            ? await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken)
+            : await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken);
 
         // then
         picked.Should().NotContain(message => message.StorageId == id);
@@ -431,7 +430,7 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
         lockedUntil.Should().BeNull();
         owner.Should().BeNull();
 
-        if (tableName == "received")
+        if (string.Equals(tableName, "received", StringComparison.Ordinal))
         {
             var exceptionInfo = await assertConnection.ExecuteScalarAsync<string?>(
                 """SELECT "ExceptionInfo" FROM messaging.received WHERE "Id" = @Id""",
@@ -703,7 +702,7 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
         DateTime now
     )
     {
-        if (tableName == "published")
+        if (string.Equals(tableName, "published", StringComparison.Ordinal))
         {
             await connection.ExecuteAsync(
                 """

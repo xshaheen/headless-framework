@@ -12,7 +12,7 @@ Enables automatic discovery and monitoring of messaging nodes in Kubernetes clus
 - **Service Integration**: Uses Kubernetes Service for node enumeration
 - **Health Monitoring**: Tracks node availability and status
 - **Dynamic Updates**: Reflects pod scaling events in real-time
-- **No Configuration**: Works with default Kubernetes service discovery
+- **Default Cluster Config**: Uses the ambient Kubernetes client configuration by default
 
 ## Installation
 
@@ -71,7 +71,8 @@ setup.UseK8sDiscovery(k8s =>
 });
 ```
 
-`ShowOnlyExplicitVisibleNodes` defaults to `true`. With that default, only Kubernetes Services labeled `headless.messaging.visibility:show` appear in the dashboard node list. Set it to `false` to list all services returned from the configured namespace.
+- `K8sClientConfig` — Kubernetes client configuration used to query the cluster. Defaults to `KubernetesClientConfiguration.BuildDefaultConfig()`.
+- `ShowOnlyExplicitVisibleNodes` — when `true` (default), only Services labeled `headless.messaging.visibility:show` appear in the dashboard node list. Set it to `false` to list all services returned from the configured namespace.
 
 ## Dependencies
 

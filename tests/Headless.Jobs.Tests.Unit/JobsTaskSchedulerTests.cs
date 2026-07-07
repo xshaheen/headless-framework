@@ -34,7 +34,10 @@ public sealed class JobsTaskSchedulerTests
         await Task.Delay(100, TestContext.Current.CancellationToken);
 
         var dispose = scheduler.DisposeAsync().AsTask();
-        var finished = await Task.WhenAny(dispose, Task.Delay(TimeSpan.FromSeconds(10)));
+        var finished = await Task.WhenAny(
+            dispose,
+            Task.Delay(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken)
+        );
 
         finished.Should().Be(dispose);
         await dispose;

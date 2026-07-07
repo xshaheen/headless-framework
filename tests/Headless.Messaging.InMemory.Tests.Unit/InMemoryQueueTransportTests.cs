@@ -46,40 +46,28 @@ public sealed class InMemoryQueueTransportTests : TestBase
         // given
         await _consumerClient.SubscribeAsync(["test-messageName"]);
 
-        TransportMessage? receivedMessage = null;
+        var received = new TaskCompletionSource<TransportMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
         _consumerClient.OnMessageCallback = (msg, _) =>
         {
-            receivedMessage = msg;
+            received.TrySetResult(msg);
             return Task.CompletedTask;
         };
 
         using var cts = new CancellationTokenSource();
-        var listenTask = Task.Run(
-            async () =>
-            {
-                try
-                {
-                    await _consumerClient.ListeningAsync(TimeSpan.FromSeconds(5), cts.Token);
-                }
-                catch (OperationCanceledException) { }
-            },
-            AbortToken
-        );
-
-        await Task.Delay(50, AbortToken);
+        var listenTask = _StartListening(cts.Token);
 
         var message = _CreateTestMessage("msg-1", "test-messageName");
 
         // when
         var result = await _transport.SendAsync(message, AbortToken);
 
-        await Task.Delay(100, AbortToken);
+        var receivedMessage = await received.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         await cts.CancelAsync();
+        await listenTask.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         // then
         result.Succeeded.Should().BeTrue();
-        receivedMessage.Should().NotBeNull();
-        receivedMessage!.Value.Id.Should().Be("msg-1");
+        receivedMessage.Id.Should().Be("msg-1");
     }
 
     [Fact]
@@ -124,19 +112,7 @@ public sealed class InMemoryQueueTransportTests : TestBase
         };
 
         using var cts = new CancellationTokenSource();
-        var listenTask = Task.Run(
-            async () =>
-            {
-                try
-                {
-                    await _consumerClient.ListeningAsync(TimeSpan.FromSeconds(5), cts.Token);
-                }
-                catch (OperationCanceledException) { }
-            },
-            AbortToken
-        );
-
-        await Task.Delay(50, AbortToken);
+        var listenTask = _StartListening(cts.Token);
 
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
@@ -153,6 +129,7 @@ public sealed class InMemoryQueueTransportTests : TestBase
 
         var receivedMessage = await received.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         await cts.CancelAsync();
+        await listenTask.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         // then
         receivedMessage.GetCorrelationId().Should().Be("corr-123");
@@ -173,20 +150,7 @@ public sealed class InMemoryQueueTransportTests : TestBase
         };
 
         using var cts = new CancellationTokenSource();
-
-        _ = Task.Run(
-            async () =>
-            {
-                try
-                {
-                    await _consumerClient.ListeningAsync(TimeSpan.FromSeconds(5), cts.Token);
-                }
-                catch (OperationCanceledException) { }
-            },
-            AbortToken
-        );
-
-        await Task.Delay(50, AbortToken);
+        var listenTask = _StartListening(cts.Token);
 
         var bodyContent = "{\"key\":\"value\"}"u8.ToArray();
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -201,6 +165,7 @@ public sealed class InMemoryQueueTransportTests : TestBase
 
         var receivedMessage = await received.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         await cts.CancelAsync();
+        await listenTask.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         // then
         receivedMessage.Body.ToArray().Should().Equal(bodyContent);
@@ -262,8 +227,6 @@ public sealed class InMemoryQueueTransportTests : TestBase
             AbortToken
         );
 
-        await Task.Delay(50, AbortToken);
-
         // when - send messages concurrently via transport
         var sendTasks = Enumerable
             .Range(0, messageCount)
@@ -271,8 +234,9 @@ public sealed class InMemoryQueueTransportTests : TestBase
 
         var results = await Task.WhenAll(sendTasks);
 
-        _ = await Task.WhenAny(tcs.Task, Task.Delay(30000, AbortToken));
+        await tcs.Task.WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
         await cts.CancelAsync();
+        await listenTask.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         // then
         results.Should().AllSatisfy(r => r.Succeeded.Should().BeTrue());
@@ -333,13 +297,12 @@ public sealed class InMemoryQueueTransportTests : TestBase
             AbortToken
         );
 
-        await Task.Delay(50, AbortToken);
-
         // when
         var result = await transport.SendAsync(_CreateTestMessage("job-1", "jobs"), AbortToken);
-        _ = await Task.WhenAny(tcs.Task, Task.Delay(5000, AbortToken));
+        await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         await Task.Delay(100, AbortToken);
         await cts.CancelAsync();
+        await Task.WhenAll(listen1, listen2).WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         // then
         result.Succeeded.Should().BeTrue();
@@ -355,5 +318,20 @@ public sealed class InMemoryQueueTransportTests : TestBase
         };
 
         return new TransportMessage(headers, ReadOnlyMemory<byte>.Empty);
+    }
+
+    private Task _StartListening(CancellationToken cancellationToken)
+    {
+        return Task.Run(
+            async () =>
+            {
+                try
+                {
+                    await _consumerClient.ListeningAsync(TimeSpan.FromSeconds(5), cancellationToken);
+                }
+                catch (OperationCanceledException) { }
+            },
+            AbortToken
+        );
     }
 }

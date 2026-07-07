@@ -192,7 +192,9 @@ public sealed class EfAuditLogStoreTests : TestBase
         var store = new EfAuditLogStore();
 
         // when
+#pragma warning disable MA0045 // This test intentionally covers the synchronous Save guard.
         var act = () => store.Save([_CreateEntryData()], new object());
+#pragma warning restore MA0045
 
         // then
         act.Should().Throw<ArgumentException>();

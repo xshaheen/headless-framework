@@ -215,6 +215,10 @@ dotnet add package Headless.Sql.Core
 builder.Services.AddScoped<ISqlCurrentConnection, DefaultSqlCurrentConnection>();
 ```
 
+### Configuration
+
+None. Register `DefaultSqlCurrentConnection` explicitly as a scoped `ISqlCurrentConnection`, and register one provider-specific `ISqlConnectionFactory` from `Headless.Sql.PostgreSql`, `Headless.Sql.SqlServer`, or `Headless.Sql.Sqlite`.
+
 ### Dependencies
 
 - `Headless.Sql.Abstractions`

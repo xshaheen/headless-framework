@@ -186,5 +186,7 @@ public readonly record struct CacheEntryStamps(
 
     // Random.Shared, not a CSPRNG: jitter only desynchronizes expiry, so predictability has no security
     // consequence, and this runs on every jittered write.
+#pragma warning disable CA5394 // Non-security cache-expiry jitter; keep Random.Shared on the hot path.
     private static double _GetRandomUnitDouble() => Random.Shared.NextDouble();
+#pragma warning restore CA5394
 }

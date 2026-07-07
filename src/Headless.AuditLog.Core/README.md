@@ -50,7 +50,7 @@ services.AddHeadlessAuditLog(setup =>
 
 ## Configuration
 
-Configure audit behavior through `setup.ConfigureOptions(...)` and storage shape through `setup.ConfigureStorage(...)`. Then select exactly one storage provider by calling the provider extension, such as `UseEntityFramework<TContext>()`, from the installed storage package.
+Configure audit behavior through `setup.ConfigureOptions(...)`, including options such as `SensitiveDataStrategy`, and storage shape through `setup.ConfigureStorage(...)`, including provider-neutral settings such as schema and table name. Then select exactly one storage provider by calling the provider extension from the installed storage package, such as `UseEntityFramework<TContext>()`, `UsePostgreSql(...)`, or `UseSqlServer(...)`.
 
 Storage options (`AuditLogStorageOptions`):
 

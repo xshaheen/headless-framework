@@ -16,7 +16,18 @@ public sealed class NatsConsumerClientFactoryTests : TestBase
 
     public NatsConsumerClientFactoryTests()
     {
-        _options = Options.Create(new MessagingNatsOptions { Servers = "nats://localhost:4222" });
+        _options = Options.Create(
+            new MessagingNatsOptions
+            {
+                Servers = "nats://headless-framework-nats-test.invalid:4222",
+                ConfigureConnection = opts =>
+                    opts with
+                    {
+                        ConnectTimeout = TimeSpan.FromMilliseconds(100),
+                        RetryOnInitialConnect = false,
+                    },
+            }
+        );
         _serviceProvider = new ServiceCollection().BuildServiceProvider();
     }
 
@@ -25,7 +36,7 @@ public sealed class NatsConsumerClientFactoryTests : TestBase
     {
         var factory = new NatsConsumerClientFactory(_options, _serviceProvider);
 
-        // ConnectAsync will fail without a real NATS server
+        // ConnectAsync must fail without depending on local port state.
         var act = async () => await factory.CreateAsync("test-group", 1);
 
         var exception = await act.Should().ThrowAsync<BrokerConnectionException>();
