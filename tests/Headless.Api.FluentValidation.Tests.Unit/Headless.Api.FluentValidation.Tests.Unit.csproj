@@ -8,6 +8,7 @@
     <PackageReference Include="xunit.v3.mtp-v2" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Headless.Api.Core\Headless.Api.Core.csproj" />
     <ProjectReference Include="..\..\src\Headless.Api.FluentValidation\Headless.Api.FluentValidation.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
   </ItemGroup>
