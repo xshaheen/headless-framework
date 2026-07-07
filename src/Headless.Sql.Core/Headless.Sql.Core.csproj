@@ -2,6 +2,7 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <Description>Default scoped ambient current-connection implementation for provider-agnostic SQL unit-of-work patterns.</Description>
+    <PackageTags>headless;sql;dotnet</PackageTags>
     <RootNamespace>Headless.Sql</RootNamespace>
   </PropertyGroup>
   <ItemGroup>

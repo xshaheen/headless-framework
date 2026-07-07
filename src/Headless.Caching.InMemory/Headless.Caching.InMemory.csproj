@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <Description>in-memory integration for Headless caching.</Description>
+    <Description>In-memory integration for Headless caching.</Description>
     <PackageTags>headless;caching;in-memory;dotnet</PackageTags>
     <RootNamespace>Headless.Caching</RootNamespace>
   </PropertyGroup>
