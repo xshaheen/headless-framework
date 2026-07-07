@@ -1,6 +1,7 @@
 <Project>
-  <!-- Harness/shared projects: prevent MTP from treating them as test hosts -->
-  <PropertyGroup Condition="'$(IsTestProject)' == 'false'">
+  <!-- Harness/shared projects: keep test analyzer defaults, but do not execute them as test hosts. -->
+  <PropertyGroup Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('$(MSBuildProjectName)', '\.Tests\.Harness$'))">
+    <IsTestProject>false</IsTestProject>
     <IsTestingPlatformApplication>false</IsTestingPlatformApplication>
     <GenerateRuntimeConfigurationFiles>true</GenerateRuntimeConfigurationFiles>
   </PropertyGroup>

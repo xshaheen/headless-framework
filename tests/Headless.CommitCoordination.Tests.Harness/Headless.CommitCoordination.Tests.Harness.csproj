@@ -3,7 +3,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Tests</RootNamespace>
     <IsTestProject>false</IsTestProject>
-    <IsTestableProject>false</IsTestableProject>
+    <IsTestableProject>true</IsTestableProject>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.CommitCoordination.Core\Headless.CommitCoordination.Core.csproj" />
