@@ -1,26 +1,12 @@
 <Project>
   <Import Project="../Directory.Build.props" />
-  <PropertyGroup Label="Packages Source Link">
-    <EnablePackageSourceLink
-      Condition="'$(EnablePackageSourceLink)' == '' and ('$(CI)' == 'true' or '$(ContinuousIntegrationBuild)' == 'true')"
-      >true</EnablePackageSourceLink>
-    <EnablePackageSourceLink Condition="'$(EnablePackageSourceLink)' == ''">false</EnablePackageSourceLink>
-    <EnableSourceLink
-      Condition="'$(EnablePackageSourceLink)' != 'true' and '$(EnableSourceLink)' == ''"
-      >false</EnableSourceLink>
-    <EnableSourceControlManagerQueries
-      Condition="'$(EnablePackageSourceLink)' != 'true' and '$(EnableSourceControlManagerQueries)' == ''"
-      >false</EnableSourceControlManagerQueries>
-    <!-- Optional: Embed source files that are not tracked by the source control manager to the PDB -->
-    <EmbedUntrackedSources>true</EmbedUntrackedSources>
-    <!-- Optional: Include PDB in the built .nupkg -->
-    <AllowedOutputExtensionsInPackageBuildOutputFolder>$(AllowedOutputExtensionsInPackageBuildOutputFolder);.pdb</AllowedOutputExtensionsInPackageBuildOutputFolder>
-  </PropertyGroup>
+  <!-- Symbols policy (embedded PDBs, no snupkg) comes from the SDK's HeadlessSymbolFormat
+       default (Headless.NET.Sdk >= 0.0.126); no repo-level override is needed. -->
   <PropertyGroup Label="Packages Information">
     <Product>Headless Framework</Product>
     <Authors>Mahmoud Shaheen</Authors>
     <Company>Mahmoud Shaheen</Company>
-    <Copyright>Copyright (c) Mahmoud Shaheen. All rights Reserved</Copyright>
+    <Copyright>Copyright (c) Mahmoud Shaheen. All rights reserved.</Copyright>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageIcon>logo.png</PackageIcon>
   </PropertyGroup>
@@ -30,6 +16,9 @@
     <PackageReleaseNotes>https://github.com/xshaheen/headless-framework/releases</PackageReleaseNotes>
   </PropertyGroup>
   <ItemGroup Label="Package References">
+    <!-- Unconditional (not Release-only): both are PrivateAssets build-time tools, and a
+         configuration condition makes the restore graph — and the committed packages.lock.json
+         files — depend on the restore configuration, causing lock-file churn. -->
     <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>

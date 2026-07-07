@@ -223,6 +223,11 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
             Task.Run(async () => await _WorkerLoopCoreAsync(workerId).ConfigureAwait(false)).GetAwaiter().GetResult();
 #pragma warning restore MA0045
         }
+        catch (OperationCanceledException) when (_shutdownCts.IsCancellationRequested || _disposed)
+        {
+            // Shutdown cancelled an in-flight await inside the loop (e.g. the idle backoff delay).
+            // Swallow it: an unhandled exception on a manually created thread terminates the process.
+        }
         finally
         {
             SynchronizationContext.SetSynchronizationContext(originalContext);

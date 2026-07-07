@@ -6,17 +6,15 @@ If you want the happy-path API bootstrap, install this package. It transitively 
 
 ## Problem Solved
 
-Consolidates the default Headless ASP.NET Core API setup into `AddHeadless()`, `UseHeadless()`, and `MapHeadlessEndpoints()` so hosts get the expected service registrations, middleware order, operational endpoints, and startup validation without repeating boilerplate in every API.
+Most API hosts need the same baseline wiring before application code starts: problem details, response compression, OpenTelemetry, OpenAPI, health checks, forwarded headers, HttpClient resilience, static web assets, and startup validation. This package composes those defaults behind `builder.AddHeadless()`, `app.UseHeadless()`, and `app.MapHeadlessEndpoints()`.
 
 ## Key Features
 
-- One-call service registration via `AddHeadless()`.
-- One-call middleware defaults via `UseHeadless()`.
-- One-call endpoint mapping via `MapHeadlessEndpoints()`.
-- OpenTelemetry logging, metrics, and tracing with API-friendly defaults.
-- OpenAPI document registration and endpoint mapping.
-- Service discovery and standard HttpClient resilience.
-- Startup validation that catches missing middleware or endpoint wiring.
+- `AddHeadless()` registers core API primitives plus host defaults.
+- `UseHeadless()` applies the framework middleware order.
+- `MapHeadlessEndpoints()` maps health, liveness, OpenAPI, and static-asset endpoints.
+- Startup validation catches missing Headless middleware or endpoint mapping before the host starts.
+- OpenTelemetry, OpenAPI, service discovery, HttpClient resilience, and static assets are option-driven.
 - Transitive access to `Headless.Api.Core` primitives.
 
 ## Installation
@@ -208,3 +206,5 @@ Both sections are required.
 - Configures service discovery when `HttpClient.UseServiceDiscovery` is `true`.
 - Configures HttpClient defaults for standard resilience, service discovery, and application User-Agent.
 - Adds a startup filter that validates `UseHeadless()`, `UseStatusCodesRewriter()`, and `MapHeadlessEndpoints()` usage.
+- `UseHeadless()` adds middleware for forwarded headers, compression, status-code pages, exception handling, HTTPS redirection, HSTS outside Development, and no-cache headers when the response did not set `Cache-Control`.
+- `MapHeadlessEndpoints()` maps `/health`, `/alive`, the configured OpenAPI JSON route, and static web assets when enabled.

@@ -64,7 +64,7 @@ public sealed class HeadlessAuditSaveEntryProcessor(IClock clock, ICurrentUser c
 
         if (entity.DateCreated == default)
         {
-            ObjectPropertiesHelper.TrySetProperty(entity, x => x.DateCreated, () => clock.UtcNow);
+            ObjectPropertiesHelper.TrySetProperty(entity, nameof(ICreateAudit.DateCreated), () => clock.UtcNow);
         }
 
         _TrySetCreateAuditId(entry, currentUser.UserId, currentUser.AccountId);
@@ -100,14 +100,18 @@ public sealed class HeadlessAuditSaveEntryProcessor(IClock clock, ICurrentUser c
 
         if (byUser is not null && byUser.CreatedById == null && currentUserId is not null)
         {
-            ObjectPropertiesHelper.TrySetProperty(byUser, x => x.CreatedById, () => currentUserId);
+            ObjectPropertiesHelper.TrySetProperty(byUser, nameof(ICreateAudit<>.CreatedById), () => currentUserId);
 
             return;
         }
 
         if (byAccount is not null && byAccount.CreatedById == null && currentAccountId is not null)
         {
-            ObjectPropertiesHelper.TrySetProperty(byAccount, x => x.CreatedById, () => currentAccountId);
+            ObjectPropertiesHelper.TrySetProperty(
+                byAccount,
+                nameof(ICreateAudit<>.CreatedById),
+                () => currentAccountId
+            );
         }
     }
 
@@ -135,7 +139,7 @@ public sealed class HeadlessAuditSaveEntryProcessor(IClock clock, ICurrentUser c
             return;
         }
 
-        if (ObjectPropertiesHelper.TrySetProperty(entity, x => x.DateUpdated, () => clock.UtcNow))
+        if (ObjectPropertiesHelper.TrySetProperty(entity, nameof(IUpdateAudit.DateUpdated), () => clock.UtcNow))
         {
             propertyEntry.IsModified = true;
         }
@@ -165,7 +169,7 @@ public sealed class HeadlessAuditSaveEntryProcessor(IClock clock, ICurrentUser c
 
         if (byUser is not null && byUser.UpdatedById is null && currentUserId is not null)
         {
-            if (ObjectPropertiesHelper.TrySetProperty(byUser, x => x.UpdatedById, () => currentUserId))
+            if (ObjectPropertiesHelper.TrySetProperty(byUser, nameof(IUpdateAudit<>.UpdatedById), () => currentUserId))
             {
                 propertyEntry.IsModified = true;
             }
@@ -175,7 +179,13 @@ public sealed class HeadlessAuditSaveEntryProcessor(IClock clock, ICurrentUser c
 
         if (byAccount is not null && byAccount.UpdatedById is null && currentAccountId is not null)
         {
-            if (ObjectPropertiesHelper.TrySetProperty(byAccount, x => x.UpdatedById, () => currentAccountId))
+            if (
+                ObjectPropertiesHelper.TrySetProperty(
+                    byAccount,
+                    nameof(IUpdateAudit<>.UpdatedById),
+                    () => currentAccountId
+                )
+            )
             {
                 propertyEntry.IsModified = true;
             }
@@ -209,7 +219,7 @@ public sealed class HeadlessAuditSaveEntryProcessor(IClock clock, ICurrentUser c
     {
         if (entity.DateDeleted == null || !entry.Property(nameof(IDeleteAudit.DateDeleted)).IsModified)
         {
-            ObjectPropertiesHelper.TrySetProperty(entity, x => x.DateDeleted, () => clock.UtcNow);
+            ObjectPropertiesHelper.TrySetProperty(entity, nameof(IDeleteAudit.DateDeleted), () => clock.UtcNow);
         }
     }
 
@@ -237,12 +247,16 @@ public sealed class HeadlessAuditSaveEntryProcessor(IClock clock, ICurrentUser c
 
         if (byUser is not null && byUser.DeletedById is null && currentUserId is not null)
         {
-            ObjectPropertiesHelper.TrySetProperty(byUser, x => x.DeletedById, () => currentUserId);
+            ObjectPropertiesHelper.TrySetProperty(byUser, nameof(IDeleteAudit<>.DeletedById), () => currentUserId);
         }
 
         if (byAccount is not null && byAccount.DeletedById is null && currentAccountId is not null)
         {
-            ObjectPropertiesHelper.TrySetProperty(byAccount, x => x.DeletedById, () => currentAccountId);
+            ObjectPropertiesHelper.TrySetProperty(
+                byAccount,
+                nameof(IDeleteAudit<>.DeletedById),
+                () => currentAccountId
+            );
         }
     }
 
@@ -276,7 +290,7 @@ public sealed class HeadlessAuditSaveEntryProcessor(IClock clock, ICurrentUser c
     {
         if (entity.DateSuspended == null || !entry.Property(nameof(ISuspendAudit.DateSuspended)).IsModified)
         {
-            ObjectPropertiesHelper.TrySetProperty(entity, x => x.DateSuspended, () => clock.UtcNow);
+            ObjectPropertiesHelper.TrySetProperty(entity, nameof(ISuspendAudit.DateSuspended), () => clock.UtcNow);
         }
     }
 
@@ -304,12 +318,16 @@ public sealed class HeadlessAuditSaveEntryProcessor(IClock clock, ICurrentUser c
 
         if (byUser is not null && byUser.SuspendedById is null && currentUserId is not null)
         {
-            ObjectPropertiesHelper.TrySetProperty(byUser, x => x.SuspendedById, () => currentUserId);
+            ObjectPropertiesHelper.TrySetProperty(byUser, nameof(ISuspendAudit<>.SuspendedById), () => currentUserId);
         }
 
         if (byAccount is not null && byAccount.SuspendedById is null && currentAccountId is not null)
         {
-            ObjectPropertiesHelper.TrySetProperty(byAccount, x => x.SuspendedById, () => currentAccountId);
+            ObjectPropertiesHelper.TrySetProperty(
+                byAccount,
+                nameof(ISuspendAudit<>.SuspendedById),
+                () => currentAccountId
+            );
         }
     }
 

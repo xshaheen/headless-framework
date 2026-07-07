@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <Description>in-memory storage integration for Headless messaging.</Description>
+    <Description>In-memory messaging storage for local development and tests that do not require durable outbox persistence.</Description>
     <PackageTags>headless;messaging;in-memory-storage;dotnet</PackageTags>
   </PropertyGroup>
 

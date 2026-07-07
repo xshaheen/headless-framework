@@ -206,11 +206,12 @@ internal sealed class CequensSmsSender(
             {
                 var signInRequest = new SigningInRequest(_options.ApiKey, _options.UserName);
                 using var signInContent = JsonContent.Create(signInRequest, options: _JsonOptions);
-                var response = await httpClient
+                using var response = await httpClient
                     .PostAsync(_options.TokenEndpoint, signInContent, cancellationToken)
                     .ConfigureAwait(false);
-                var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 
+                // Only the status code is reported on failure, so skip buffering the body to a string and
+                // deserialize the success payload straight off the response stream.
                 if (!response.IsSuccessStatusCode)
                 {
                     logger.LogFailedToGetTokenWithStatusCode(response.StatusCode);
@@ -218,7 +219,11 @@ internal sealed class CequensSmsSender(
                     return null;
                 }
 
-                var token = JsonSerializer.Deserialize<SigningInResponse>(content, _JsonOptions)?.Data?.AccessToken;
+                var signInResponse = await response
+                    .Content.ReadFromJsonAsync<SigningInResponse>(_JsonOptions, cancellationToken)
+                    .ConfigureAwait(false);
+
+                var token = signInResponse?.Data?.AccessToken;
 
                 if (token != null)
                 {

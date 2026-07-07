@@ -19,34 +19,42 @@ Provides a unified authentication system with 5 modes so both Jobs and Messaging
 dotnet add package Headless.Dashboard.Authentication
 ```
 
-Most applications get this package transitively through `Headless.Jobs.Dashboard` or `Headless.Messaging.Dashboard`.
+Most applications get this package transitively through `Headless.Jobs.Dashboard` or `Headless.Messaging.Dashboard`. Add it directly only when you are building dashboard infrastructure that consumes the shared auth primitives.
 
 ## Quick Start
 
-Configure authentication through the owning dashboard package:
+Use the auth modes through the dashboard package builders:
 
 ```csharp
-builder.Services.AddDashboard(dashboard =>
+builder.Services.AddHeadlessMessaging(setup =>
 {
-    dashboard.WithBasicAuth("admin", "secret");
-});
-
-builder.Services.AddHeadlessMessaging(messaging =>
-{
-    messaging.UseDashboard(dashboard => dashboard.WithApiKey("dashboard-api-key"));
+    setup.UseDashboard(dashboard =>
+    {
+        dashboard.WithBasicAuth("admin", "secret");
+        dashboard.WithSessionTimeout(30);
+    });
 });
 ```
 
-Custom dashboard hosts can register the shared primitives directly:
+For host-owned authentication:
 
 ```csharp
-services.AddSingleton(new AuthConfig { Mode = AuthMode.None });
-services.AddSingleton<IAuthService, AuthService>();
+builder.Services.AddAuthorizationBuilder().AddPolicy(
+    "DashboardPolicy",
+    policy => policy.RequireAuthenticatedUser()
+);
 
-app.UseMiddleware<AuthMiddleware>();
+builder.Services.AddHeadlessMessaging(setup =>
+{
+    setup.UseDashboard(dashboard => dashboard.WithHostAuthentication("DashboardPolicy"));
+});
 ```
 
 ## Configuration
+
+`AuthConfig` exposes `Mode`, `BasicCredentials`, `ApiKey`, `CustomValidator`, `SessionTimeoutMinutes`, and `HostAuthorizationPolicy`. The dashboard builders set those values through methods such as `WithNoAuth()`, `WithBasicAuth(...)`, `WithApiKey(...)`, `WithHostAuthentication(...)`, `WithCustomAuth(...)`, and `WithSessionTimeout(...)`.
+
+## Auth Modes
 
 | Mode | Description |
 |------|-------------|
@@ -69,8 +77,13 @@ app.UseMiddleware<AuthMiddleware>();
 
 - `Microsoft.AspNetCore.App` (framework reference)
 
+## Used By
+
+- `Headless.Jobs.Dashboard`
+- `Headless.Messaging.Dashboard`
+
 ## Side Effects
 
-- No services are registered by this package on its own.
+- No services are registered when this package is referenced by itself.
 - Owning dashboard packages register `AuthConfig`, `IAuthService`, and `AuthMiddleware` when dashboard authentication is enabled.
 - `AuthMiddleware` protects `/api/*` dashboard endpoints while allowing static files, SignalR negotiate endpoints, and auth metadata endpoints through.

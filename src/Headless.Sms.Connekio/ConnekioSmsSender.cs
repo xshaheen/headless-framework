@@ -2,6 +2,7 @@
 
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Text.Encodings.Web;
 using Headless.Checks;
 using Headless.Http;
@@ -49,7 +50,7 @@ internal sealed class ConnekioSmsSender(
         return await _SendAsync(
                 _singleSmsEndpoint,
                 () =>
-                    JsonSerializer.Serialize(
+                    JsonContent.Create(
                         new ConnekioSingleSmsRequest
                         {
                             AccountId = _options.AccountId,
@@ -57,7 +58,7 @@ internal sealed class ConnekioSmsSender(
                             Text = request.Text,
                             Msisdn = request.Destination.ToString(),
                         },
-                        _JsonOptions
+                        options: _JsonOptions
                     ),
                 destinationCount: 1,
                 cancellationToken
@@ -80,7 +81,7 @@ internal sealed class ConnekioSmsSender(
         var outcome = await _SendAsync(
                 _batchSmsEndpoint,
                 () =>
-                    JsonSerializer.Serialize(
+                    JsonContent.Create(
                         new ConnekioBatchSmsRequest
                         {
                             AccountId = _options.AccountId,
@@ -91,7 +92,7 @@ internal sealed class ConnekioSmsSender(
                                 .. request.Destinations.Select(r => new ConnekioRecipient { Msisdn = r.ToString() }),
                             ],
                         },
-                        _JsonOptions
+                        options: _JsonOptions
                     ),
                 request.Destinations.Count,
                 cancellationToken
@@ -102,20 +103,21 @@ internal sealed class ConnekioSmsSender(
     }
 
     // Both entry points share one try/catch so the never-throw contract (only OperationCanceledException and
-    // argument-validation propagate) lives in a single place. The payload is built inside the guarded region so
-    // a serialization fault is reported as a failed response rather than thrown.
+    // argument-validation propagate) lives in a single place. JsonContent serializes UTF-8 straight into the
+    // request stream during SendAsync — inside this guarded region — so a serialization fault is still reported
+    // as a failed response rather than thrown, without the UTF-16 payload string StringContent required.
     private async ValueTask<SendSingleSmsResponse> _SendAsync(
         Uri endpoint,
-        [InstantHandle] Func<string> payloadFactory,
+        [InstantHandle] Func<HttpContent> contentFactory,
         int destinationCount,
         CancellationToken cancellationToken
     )
     {
         try
         {
-            var payload = payloadFactory();
+            var content = contentFactory();
 
-            return await _PostAsync(endpoint, payload, destinationCount, cancellationToken).ConfigureAwait(false);
+            return await _PostAsync(endpoint, content, destinationCount, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -131,13 +133,13 @@ internal sealed class ConnekioSmsSender(
 
     private async ValueTask<SendSingleSmsResponse> _PostAsync(
         Uri endpoint,
-        string payload,
+        HttpContent content,
         int destinationCount,
         CancellationToken cancellationToken
     )
     {
         using var requestMessage = new HttpRequestMessage(HttpMethod.Post, endpoint);
-        requestMessage.Content = new StringContent(payload, Encoding.UTF8, "application/json");
+        requestMessage.Content = content;
         requestMessage.Headers.Authorization = _basicAuthHeader;
 
         using var httpClient = httpClientFactory.CreateClient(httpClientName);

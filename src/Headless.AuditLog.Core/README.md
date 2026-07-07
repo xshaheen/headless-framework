@@ -22,10 +22,9 @@ dotnet add package Headless.AuditLog.Core
 
 Add exactly one storage provider package too:
 
-```bash
-dotnet add package Headless.AuditLog.Storage.EntityFramework
-# or Headless.AuditLog.Storage.PostgreSql / Headless.AuditLog.Storage.SqlServer
-```
+- `dotnet add package Headless.AuditLog.Storage.EntityFramework`
+- `dotnet add package Headless.AuditLog.Storage.PostgreSql`
+- `dotnet add package Headless.AuditLog.Storage.SqlServer`
 
 ## Quick Start
 
@@ -49,7 +48,7 @@ services.AddHeadlessAuditLog(setup =>
 
 ## Configuration
 
-Use `ConfigureOptions(...)` for audit behavior such as `SensitiveDataStrategy`. Use `ConfigureStorage(...)` for provider-neutral storage settings such as schema and table name. Exactly one storage provider extension must be registered, for example `UseEntityFramework<TContext>()`, `UsePostgreSql(...)`, or `UseSqlServer(...)`.
+Configure audit behavior through `setup.ConfigureOptions(...)`, including options such as `SensitiveDataStrategy`, and storage shape through `setup.ConfigureStorage(...)`, including provider-neutral settings such as schema and table name. Then select exactly one storage provider by calling the provider extension from the installed storage package, such as `UseEntityFramework<TContext>()`, `UsePostgreSql(...)`, or `UseSqlServer(...)`.
 
 ## Dependencies
 

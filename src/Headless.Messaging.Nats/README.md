@@ -4,7 +4,7 @@ NATS JetStream transport provider for the Headless messaging system.
 
 ## Problem Solved
 
-Provides a NATS JetStream transport for Headless messaging so applications can publish and consume durable messages with subject-based routing, JetStream acknowledgements, and provider-specific shard subjects while keeping the core messaging API provider-neutral.
+Provides a NATS JetStream transport for Headless messaging so applications can publish and consume durable messages with subject-based routing, JetStream acknowledgements, and provider-specific shard subjects while keeping storage, retry, and consumer registration in the shared messaging pipeline.
 
 ## Key Features
 

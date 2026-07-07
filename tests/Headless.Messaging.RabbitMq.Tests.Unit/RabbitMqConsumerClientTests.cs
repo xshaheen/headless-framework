@@ -545,7 +545,10 @@ public sealed class RabbitMqConsumerClientTests : TestBase
 
             await client.ResumeAsync(AbortToken);
 
-            await Task.Delay(100, AbortToken);
+            // Deterministic: _ready completes right after BasicConsumeAsync registers, so waiting
+            // on it (instead of a fixed delay) guarantees the resumed startup finished and the
+            // final cancel lands in the keep-alive delay, which completes gracefully.
+            await client.WaitUntilReadyAsync(AbortToken).AsTask().WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
             _channel
                 .ReceivedCalls()

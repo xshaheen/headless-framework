@@ -41,19 +41,24 @@ public static class ToObjectExtensions
             return default;
         }
 
-        var text = obj.ToString();
-        Debug.Assert(text is not null);
-
         var baseType = typeof(T);
         var underlyingType = Nullable.GetUnderlyingType(baseType) ?? baseType;
 
+        // ToString() only in the branches that consume it: for JSON node inputs it would materialize the
+        // entire raw payload as a string that the deserialization branches below never read.
         if (underlyingType == typeof(Guid) || underlyingType == typeof(string))
         {
+            var text = obj.ToString();
+            Debug.Assert(text is not null);
+
             return (T?)TypeDescriptor.GetConverter(typeof(T)).ConvertFromInvariantString(text);
         }
 
         if (underlyingType.IsEnum)
         {
+            var text = obj.ToString();
+            Debug.Assert(text is not null);
+
             return (T?)Enum.Parse(underlyingType, text);
         }
 

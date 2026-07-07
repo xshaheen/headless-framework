@@ -209,6 +209,13 @@ public sealed class DynamicPermissionDefinitionStore(
 
         var context = new PermissionDefinitionContext();
 
+        // Pre-group once: the per-group scans and the recursive per-record ParentName scans over the full
+        // record list are O(records²) for large permission sets. Lookups preserve source order per key.
+        var permissionsByGroup = permissionRecords.ToLookup(p => p.GroupName, StringComparer.Ordinal);
+        var permissionsByParent = permissionRecords
+            .Where(p => p.ParentName is not null)
+            .ToLookup(p => p.ParentName!, StringComparer.Ordinal);
+
         foreach (var permissionGroupRecord in permissionGroupRecords)
         {
             var permissionGroup = context.AddGroup(permissionGroupRecord.Name, permissionGroupRecord.DisplayName);
@@ -220,13 +227,16 @@ public sealed class DynamicPermissionDefinitionStore(
                 permissionGroup[property.Key] = property.Value;
             }
 
-            var permissionRecordsInThisGroup = permissionRecords.Where(p =>
-                string.Equals(p.GroupName, permissionGroup.Name, StringComparison.Ordinal)
-            );
-
-            foreach (var permissionRecord in permissionRecordsInThisGroup.Where(x => x.ParentName == null))
+            foreach (var permissionRecord in permissionsByGroup[permissionGroup.Name])
             {
-                _UpdateInMemoryStoreCacheAddFeatureRecursively(permissionGroup, permissionRecord, permissionRecords);
+                if (permissionRecord.ParentName == null)
+                {
+                    _UpdateInMemoryStoreCacheAddFeatureRecursively(
+                        permissionGroup,
+                        permissionRecord,
+                        permissionsByParent
+                    );
+                }
             }
         }
     }
@@ -234,7 +244,7 @@ public sealed class DynamicPermissionDefinitionStore(
     private void _UpdateInMemoryStoreCacheAddFeatureRecursively(
         ICanAddChildPermission permissionContainer,
         PermissionDefinitionRecord permissionRecord,
-        List<PermissionDefinitionRecord> allPermissionRecords
+        ILookup<string, PermissionDefinitionRecord> permissionsByParent
     )
     {
         var permission = permissionContainer.AddChild(
@@ -255,13 +265,9 @@ public sealed class DynamicPermissionDefinitionStore(
             permission[property.Key] = property.Value;
         }
 
-        foreach (
-            var subPermission in allPermissionRecords.Where(p =>
-                string.Equals(p.ParentName, permissionRecord.Name, StringComparison.Ordinal)
-            )
-        )
+        foreach (var subPermission in permissionsByParent[permissionRecord.Name])
         {
-            _UpdateInMemoryStoreCacheAddFeatureRecursively(permission, subPermission, allPermissionRecords);
+            _UpdateInMemoryStoreCacheAddFeatureRecursively(permission, subPermission, permissionsByParent);
         }
     }
 

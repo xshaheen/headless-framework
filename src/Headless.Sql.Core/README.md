@@ -26,7 +26,7 @@ builder.Services.AddScoped<ISqlCurrentConnection, DefaultSqlCurrentConnection>()
 
 ## Configuration
 
-None. Register `DefaultSqlCurrentConnection` explicitly as a scoped `ISqlCurrentConnection`, and register one provider-specific `ISqlConnectionFactory` from `Headless.Sql.PostgreSql`, `Headless.Sql.SqlServer`, or `Headless.Sql.Sqlite`.
+There is no options object. Register `DefaultSqlCurrentConnection` explicitly as a scoped `ISqlCurrentConnection`; it is intended to represent one ambient SQL connection per request or unit-of-work scope. Then register one provider-specific `ISqlConnectionFactory` from `Headless.Sql.PostgreSql`, `Headless.Sql.SqlServer`, or `Headless.Sql.Sqlite`.
 
 ## Dependencies
 

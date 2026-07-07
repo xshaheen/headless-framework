@@ -82,9 +82,10 @@ public sealed class ScheduledMediumMessageQueueTests : TestBase
         // then
         moveNextTask.IsCompleted.Should().BeFalse();
 
-        // when
+        // when: 5s bound (not 1s) — under CI scheduling pressure the continuation can take
+        // far longer than the logical work; the fake clock means it can never pass early
         timeProvider.Advance(TimeSpan.FromMilliseconds(250));
-        await moveNextTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+        await moveNextTask.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         // then
         enumerator.Current.StorageId.Should().Be(_StorageGuid(7));

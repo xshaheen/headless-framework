@@ -372,6 +372,45 @@ public sealed class DistributedSemaphoreProviderTests : TestBase
         return DistributedLockAcquireResult.Failed; // Unreachable — Task.Delay throws on cancellation.
     }
 
+    [Fact]
+    public async Task should_return_without_publishing_when_slot_release_exceeds_dispose_timeout()
+    {
+        // given — slot storage hangs forever on release. DisposeTimeout bounds the release so
+        // shutdown is never blocked; on timeout the release returns without throwing, skips the
+        // outbox publish, and the slot's TTL is the fallback.
+        var hangingStorage = Substitute.For<IDistributedSemaphoreStorage>();
+        hangingStorage
+            .ReleaseAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => new ValueTask<bool>(new TaskCompletionSource<bool>().Task));
+        var outboxBus = Substitute.For<IOutboxBus>();
+
+        var provider = new DistributedSemaphoreProvider(
+            hangingStorage,
+            outboxBus,
+            new DistributedLockOptions { DisposeTimeout = TimeSpan.FromSeconds(5) },
+            _guidGenerator,
+            _timeProvider,
+            LoggerFactory.CreateLogger<DistributedSemaphoreProvider>()
+        );
+
+        // when — run release and advance time past the dispose timeout
+        var releaseTask = provider.ReleaseAsync("resource", "slot-lease", AbortToken);
+
+        for (var i = 0; i < 10; i++)
+        {
+            await Task.Yield();
+            _timeProvider.Advance(TimeSpan.FromSeconds(1));
+        }
+
+        var act = async () => await releaseTask;
+
+        // then
+        await act.Should().NotThrowAsync();
+        await outboxBus
+            .DidNotReceive()
+            .PublishAsync(Arg.Any<DistributedLockReleased>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>());
+    }
+
     private DistributedSemaphoreProvider _CreateProvider(DistributedLockOptions? options = null)
     {
         _guidGenerator.Create().Returns(_ => Guid.NewGuid());

@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Security.Cryptography;
 using Headless.Checks;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
@@ -185,5 +184,7 @@ public readonly record struct CacheEntryStamps(
 
     private static long _GetRandomTicks(TimeSpan exclusiveMax) => (long)(exclusiveMax.Ticks * _GetRandomUnitDouble());
 
-    private static double _GetRandomUnitDouble() => RandomNumberGenerator.GetInt32(int.MaxValue) / (double)int.MaxValue;
+    // Random.Shared, not a CSPRNG: jitter only desynchronizes expiry, so predictability has no security
+    // consequence, and this runs on every jittered write.
+    private static double _GetRandomUnitDouble() => Random.Shared.NextDouble();
 }

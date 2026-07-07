@@ -290,6 +290,6 @@ None. `MessagingTestHarness` has no configuration class or options object. The o
 
 ## Side Effects
 
-- `CreateAsync(...)` builds and owns a test `ServiceProvider`; dispose the harness after each test.
-- `AddMessagingTestHarness()` decorates the host's existing messaging registrations with recording wrappers; call it after `AddHeadlessMessaging(...)`.
-- Transport parallelism is disabled inside the harness for deterministic test execution.
+- `MessagingTestHarness.CreateAsync(...)` builds and owns an in-process `ServiceProvider` until the harness is disposed.
+- `AddMessagingTestHarness()` decorates an existing host's messaging registrations and must run after `AddHeadlessMessaging(...)`.
+- Transport parallelism is disabled inside the harness to keep observations deterministic.
