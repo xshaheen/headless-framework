@@ -70,14 +70,14 @@ public sealed class DistributedLockCoreHelpersTests
         new(nameof(resource));
 
     [Theory]
-    [MemberData(nameof(TransientExceptions))]
+    [MemberData(nameof(TransientExceptions), DisableDiscoveryEnumeration = true)]
     public void transient_storage_exceptions_should_be_classified_retryable(Exception exception)
     {
         DistributedLockCoreHelpers.IsTransientStorageException(exception).Should().BeTrue();
     }
 
     [Theory]
-    [MemberData(nameof(NonTransientExceptions))]
+    [MemberData(nameof(NonTransientExceptions), DisableDiscoveryEnumeration = true)]
     public void programmer_errors_and_cancellation_should_not_be_classified_retryable(Exception exception)
     {
         DistributedLockCoreHelpers.IsTransientStorageException(exception).Should().BeFalse();

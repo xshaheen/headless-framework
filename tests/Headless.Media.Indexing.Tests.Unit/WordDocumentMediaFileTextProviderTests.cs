@@ -19,7 +19,7 @@ public sealed class WordDocumentMediaFileTextProviderTests
         await using var fileStream = File.OpenRead(wordFilePath);
 
         // when
-        var result = await _sut.GetTextAsync(fileStream);
+        var result = await _sut.GetTextAsync(fileStream, TestContext.Current.CancellationToken);
 
         // then
         result.Should().Contain("Lorem ipsum dolor"); // Replace with actual expected content
@@ -32,7 +32,7 @@ public sealed class WordDocumentMediaFileTextProviderTests
         await using var stream = _CreateEmptyWordDocument();
 
         // when
-        var result = await _sut.GetTextAsync(stream);
+        var result = await _sut.GetTextAsync(stream, TestContext.Current.CancellationToken);
 
         // then
         result.Should().BeEmpty();
@@ -49,7 +49,7 @@ public sealed class WordDocumentMediaFileTextProviderTests
         Argument.CanWrite(stream);
 
         // when
-        var result = await _sut.GetTextAsync(stream);
+        var result = await _sut.GetTextAsync(stream, TestContext.Current.CancellationToken);
 
         // then
         result.Should().Be($"{expectedText}{Environment.NewLine}");
@@ -67,7 +67,7 @@ public sealed class WordDocumentMediaFileTextProviderTests
         Argument.CanRead(stream);
         Argument.CanWrite(stream);
         // when
-        var result = await _sut.GetTextAsync(stream);
+        var result = await _sut.GetTextAsync(stream, TestContext.Current.CancellationToken);
 
         // then
         result.Should().Be(expectedText);

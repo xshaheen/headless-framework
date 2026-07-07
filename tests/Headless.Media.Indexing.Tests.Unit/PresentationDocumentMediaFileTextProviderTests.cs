@@ -25,7 +25,7 @@ public sealed class PresentationDocumentMediaFileTextProviderTests
 
         // when
         await using var fileStream = File.OpenRead(powerPintFilePath);
-        var result = await _sut.GetTextAsync(fileStream);
+        var result = await _sut.GetTextAsync(fileStream, TestContext.Current.CancellationToken);
 
         // then
         result.Should().Contain("Second"); // Replace with actual expected content
@@ -35,7 +35,7 @@ public sealed class PresentationDocumentMediaFileTextProviderTests
     public async Task get_text_async_should_return_empty_string_when_presentation_has_no_slides()
     {
         await using var stream = _CreateEmptyPresentation();
-        var result = await _sut.GetTextAsync(stream);
+        var result = await _sut.GetTextAsync(stream, TestContext.Current.CancellationToken);
         result.Should().BeEmpty();
     }
 
@@ -44,7 +44,7 @@ public sealed class PresentationDocumentMediaFileTextProviderTests
     {
         const string expectedText = "Test slide content";
         await using var stream = _CreatePresentationWithSlide(expectedText);
-        var result = await _sut.GetTextAsync(stream);
+        var result = await _sut.GetTextAsync(stream, TestContext.Current.CancellationToken);
         result.Should().Be($"{expectedText}{Environment.NewLine}");
     }
 
@@ -53,7 +53,7 @@ public sealed class PresentationDocumentMediaFileTextProviderTests
     {
         var slideTexts = new[] { "Slide 1", "Slide 2", "Slide 3" };
         await using var stream = _CreatePresentationWithSlides(slideTexts);
-        var result = await _sut.GetTextAsync(stream);
+        var result = await _sut.GetTextAsync(stream, TestContext.Current.CancellationToken);
         result.Should().Be(string.Join(Environment.NewLine, slideTexts) + Environment.NewLine);
     }
 

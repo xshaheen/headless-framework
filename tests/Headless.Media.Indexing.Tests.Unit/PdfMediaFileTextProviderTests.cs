@@ -18,7 +18,7 @@ public sealed class PdfMediaFileTextProviderTests
         await using var fileStream = File.OpenRead(pdfFilePath);
 
         // when
-        var result = await _sut.GetTextAsync(fileStream);
+        var result = await _sut.GetTextAsync(fileStream, TestContext.Current.CancellationToken);
 
         // then
         await Verify(result).UseDirectory("Snapshots");
