@@ -17,8 +17,11 @@ public class BaseJobEntity
     /// </summary>
     public virtual string Function { get; set; } = null!;
 
-    /// <summary>Human-readable description of this job instance, used for display in the dashboard.</summary>
-    public virtual string Description { get; set; } = null!;
+    /// <summary>
+    /// Optional human-readable description of this job instance, used for display in the dashboard.
+    /// <see langword="null"/> when no description was supplied.
+    /// </summary>
+    public virtual string? Description { get; set; }
 
     /// <summary>
     /// Optional identifier set at seeding time to correlate this row with its code-defined seed entry.
