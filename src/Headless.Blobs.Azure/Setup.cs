@@ -2,6 +2,7 @@
 
 using Azure.Storage.Blobs;
 using Headless.Abstractions;
+using Headless.Blobs.Azure;
 using Headless.Checks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -9,7 +10,8 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Blobs.Azure;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Blobs;
 
 /// <summary>
 /// Extension members that contribute the Azure Blob Storage provider to the Headless blob setup builder.

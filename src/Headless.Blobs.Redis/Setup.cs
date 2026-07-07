@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
+using Headless.Blobs.Redis;
 using Headless.Checks;
 using Headless.Serializer;
 using Microsoft.Extensions.Configuration;
@@ -8,7 +9,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Blobs.Redis;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Blobs;
 
 /// <summary>Extension methods to register the Redis blob storage provider.</summary>
 [PublicAPI]

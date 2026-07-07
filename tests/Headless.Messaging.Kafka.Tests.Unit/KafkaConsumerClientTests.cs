@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using Confluent.Kafka;
 using Confluent.Kafka.Admin;
+using Headless.Messaging;
 using Headless.Messaging.Kafka;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;

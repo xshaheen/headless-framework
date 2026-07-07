@@ -2,14 +2,15 @@
 
 using FluentValidation;
 using Headless.Checks;
-using Headless.Features;
+using Headless.Features.PostgreSql;
 using Headless.Features.Repositories;
 using Headless.Serializer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace Headless.Features.PostgreSql;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Features;
 
 /// <summary>Extension methods that register the PostgreSQL features storage provider.</summary>
 [PublicAPI]

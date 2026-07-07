@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Sms.Twilio;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -10,7 +11,8 @@ using Microsoft.Extensions.Options;
 using Polly;
 using Twilio.Clients;
 
-namespace Headless.Sms.Twilio;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Sms;
 
 /// <summary>
 /// Extension members for selecting Twilio as the default (unkeyed) SMS provider on

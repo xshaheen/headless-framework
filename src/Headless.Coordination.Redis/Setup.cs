@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Coordination.Redis;
 using Headless.Redis;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -9,7 +10,8 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 
-namespace Headless.Coordination.Redis;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Coordination;
 
 /// <summary>
 /// Extension members on <see cref="HeadlessCoordinationSetupBuilder"/> for selecting Redis as the

@@ -5,8 +5,6 @@ using Headless.DistributedLocks;
 using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
-using Headless.Messaging.InMemory;
-using Headless.Messaging.InMemoryStorage;
 using Headless.Messaging.Internal;
 using Microsoft.Extensions.DependencyInjection;
 using Tests.Helpers;

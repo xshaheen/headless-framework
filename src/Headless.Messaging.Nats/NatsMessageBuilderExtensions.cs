@@ -1,9 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Messaging.Nats;
 using Headless.Messaging.Registration;
 
-namespace Headless.Messaging.Nats;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Messaging;
 
 /// <summary>Extension methods that attach NATS JetStream provider-specific options to a message or consumer registration.</summary>
 [PublicAPI]

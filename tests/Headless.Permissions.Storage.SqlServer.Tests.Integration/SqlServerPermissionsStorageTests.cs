@@ -6,7 +6,6 @@ using Headless.Permissions;
 using Headless.Permissions.Entities;
 using Headless.Permissions.Repositories;
 using Headless.Permissions.Seeders;
-using Headless.Permissions.SqlServer;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;

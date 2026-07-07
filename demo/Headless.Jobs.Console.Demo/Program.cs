@@ -1,5 +1,4 @@
 using Headless.Coordination;
-using Headless.Coordination.PostgreSql;
 using Headless.Jobs.Console.Demo;
 using Headless.Jobs.DbContextFactory;
 using Headless.Jobs.DependencyInjection;

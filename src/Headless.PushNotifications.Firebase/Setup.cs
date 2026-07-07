@@ -3,6 +3,7 @@
 using System.Diagnostics;
 using FirebaseAdmin.Messaging;
 using Headless.Checks;
+using Headless.PushNotifications.Firebase;
 using Headless.PushNotifications.Firebase.Internals;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -13,7 +14,8 @@ using Polly;
 using Polly.Registry;
 using Polly.Retry;
 
-namespace Headless.PushNotifications.Firebase;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.PushNotifications;
 
 /// <summary>
 /// Extension members for selecting Firebase Cloud Messaging as the default (unkeyed) push-notification

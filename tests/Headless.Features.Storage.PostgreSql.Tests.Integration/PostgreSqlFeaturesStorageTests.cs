@@ -2,7 +2,6 @@
 
 using Headless.Features;
 using Headless.Features.Entities;
-using Headless.Features.PostgreSql;
 using Headless.Features.Repositories;
 using Headless.Features.Seeders;
 using Headless.Hosting.Initialization;

@@ -3,7 +3,8 @@
 using Headless.Checks;
 using Headless.Messaging.Registration;
 
-namespace Headless.Messaging.RabbitMq;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Messaging;
 
 /// <summary>Extension methods that attach RabbitMQ provider-specific options to a consumer registration.</summary>
 [PublicAPI]

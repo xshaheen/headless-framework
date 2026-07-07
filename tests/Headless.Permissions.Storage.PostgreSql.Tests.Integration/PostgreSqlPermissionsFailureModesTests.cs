@@ -2,7 +2,6 @@
 
 using Headless.Hosting.Initialization;
 using Headless.Permissions;
-using Headless.Permissions.PostgreSql;
 using Headless.Permissions.Seeders;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;

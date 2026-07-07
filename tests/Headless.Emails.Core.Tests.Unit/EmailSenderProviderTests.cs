@@ -2,7 +2,6 @@
 
 using System.Collections.Frozen;
 using Headless.Emails;
-using Headless.Emails.Dev;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 

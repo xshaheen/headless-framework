@@ -1,9 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Imaging.ImageSharp;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Headless.Imaging.ImageSharp;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Imaging;
 
 /// <summary>
 /// Registers the ImageSharp-based resize and compress contributors with the imaging pipeline.

@@ -4,8 +4,6 @@ using Demo;
 using Demo.Data;
 using Headless.Messaging;
 using Headless.Messaging.Dashboard;
-using Headless.Messaging.InMemory;
-using Headless.Messaging.InMemoryStorage;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.Tokens;

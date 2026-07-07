@@ -2,11 +2,13 @@
 
 using Amazon.Extensions.NETCore.Setup;
 using Amazon.SimpleEmailV2;
+using Headless.Emails.Aws;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-namespace Headless.Emails.Aws;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Emails;
 
 /// <summary>
 /// Extension members for selecting Amazon SES v2 as the default (unkeyed) Headless email sender on

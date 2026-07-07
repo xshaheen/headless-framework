@@ -1,9 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Emails.Dev;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Headless.Emails.Dev;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Emails;
 
 /// <summary>
 /// Extension members for selecting the development (file-writing) or no-op email providers as the default

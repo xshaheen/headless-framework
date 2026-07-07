@@ -3,7 +3,6 @@
 using Headless;
 using Headless.Hosting.Initialization;
 using Headless.Settings;
-using Headless.Settings.PostgreSql;
 using Headless.Settings.Seeders;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;

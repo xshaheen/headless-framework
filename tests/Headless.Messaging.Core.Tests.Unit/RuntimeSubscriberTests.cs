@@ -1,7 +1,5 @@
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
-using Headless.Messaging.InMemory;
-using Headless.Messaging.InMemoryStorage;
 using Headless.Messaging.Runtime;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;

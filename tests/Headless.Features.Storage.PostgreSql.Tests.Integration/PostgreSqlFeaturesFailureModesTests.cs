@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Features;
-using Headless.Features.PostgreSql;
 using Headless.Features.Seeders;
 using Headless.Hosting.Initialization;
 using Microsoft.Extensions.DependencyInjection;

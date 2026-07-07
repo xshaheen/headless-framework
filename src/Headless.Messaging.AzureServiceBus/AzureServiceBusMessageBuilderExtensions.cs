@@ -1,9 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Messaging.AzureServiceBus;
 using Headless.Messaging.Registration;
 
-namespace Headless.Messaging.AzureServiceBus;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Messaging;
 
 /// <summary>Extension methods that attach Azure Service Bus provider-specific options to a message registration.</summary>
 [PublicAPI]

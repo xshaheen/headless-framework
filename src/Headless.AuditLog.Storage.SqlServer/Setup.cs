@@ -2,14 +2,15 @@
 
 using FluentValidation;
 using Headless.Abstractions;
-using Headless.AuditLog;
+using Headless.AuditLog.SqlServer;
 using Headless.Checks;
 using Headless.Serializer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace Headless.AuditLog.SqlServer;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.AuditLog;
 
 [PublicAPI]
 public static class SetupAuditLogSqlServer

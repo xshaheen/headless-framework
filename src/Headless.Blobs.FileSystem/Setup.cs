@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Blobs.FileSystem;
 using Headless.Checks;
 using Headless.Serializer;
 using Microsoft.Extensions.Configuration;
@@ -8,7 +9,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Blobs.FileSystem;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Blobs;
 
 /// <summary>Extension methods to register the file-system blob storage provider.</summary>
 [PublicAPI]

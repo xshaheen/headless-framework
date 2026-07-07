@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Sms;
-using Headless.Sms.Dev;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;

@@ -4,7 +4,6 @@ using System.Reflection;
 using Headless.CommitCoordination;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
-using Headless.Messaging.InMemory;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Storage.PostgreSql;
 using Headless.Testing.Tests;

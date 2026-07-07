@@ -1,15 +1,16 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.CommitCoordination.EntityFramework;
+using Headless.CommitCoordination;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
+using Headless.Messaging.Storage.PostgreSql;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Headless.Messaging.Storage.PostgreSql;
+namespace Headless.Messaging;
 
 /// <summary>
 /// Extension methods for configuring PostgreSQL as the messaging storage backend.

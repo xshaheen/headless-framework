@@ -2,7 +2,6 @@
 
 using System.Data.Common;
 using Headless.AuditLog;
-using Headless.AuditLog.PostgreSql;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Npgsql;

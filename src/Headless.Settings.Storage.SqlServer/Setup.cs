@@ -3,13 +3,14 @@
 using FluentValidation;
 using Headless.Checks;
 using Headless.Serializer;
-using Headless.Settings;
 using Headless.Settings.Repositories;
+using Headless.Settings.SqlServer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace Headless.Settings.SqlServer;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Settings;
 
 /// <summary>Extension members that configure the SQL Server storage backend for the Headless settings feature.</summary>
 [PublicAPI]

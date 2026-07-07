@@ -2,9 +2,7 @@ using Demo;
 using Demo.Contracts.DomainEvents;
 using Demo.Contracts.IntegrationEvents;
 using Headless.Messaging;
-using Headless.Messaging.AzureServiceBus;
 using Headless.Messaging.Dashboard;
-using Headless.Messaging.InMemoryStorage;
 
 var builder = WebApplication.CreateBuilder(args);
 

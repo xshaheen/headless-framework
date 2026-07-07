@@ -1,8 +1,6 @@
 using Demo.Controllers;
 using Headless.Messaging;
 using Headless.Messaging.Dashboard;
-using Headless.Messaging.Redis;
-using Headless.Messaging.Storage.SqlServer;
 using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);

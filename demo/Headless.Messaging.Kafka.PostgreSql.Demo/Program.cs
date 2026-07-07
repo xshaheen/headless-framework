@@ -1,11 +1,8 @@
 using Demo;
 using Demo.Controllers;
-using Headless.CommitCoordination.EntityFramework;
-using Headless.CommitCoordination.PostgreSql;
+using Headless.CommitCoordination;
 using Headless.Messaging;
 using Headless.Messaging.Dashboard;
-using Headless.Messaging.Kafka;
-using Headless.Messaging.Storage.PostgreSql;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 

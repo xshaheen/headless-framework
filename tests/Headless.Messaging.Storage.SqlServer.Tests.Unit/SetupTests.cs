@@ -2,7 +2,6 @@
 
 using Headless.CommitCoordination;
 using Headless.Messaging;
-using Headless.Messaging.Storage.SqlServer;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;

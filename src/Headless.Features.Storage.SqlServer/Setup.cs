@@ -2,14 +2,15 @@
 
 using FluentValidation;
 using Headless.Checks;
-using Headless.Features;
 using Headless.Features.Repositories;
+using Headless.Features.SqlServer;
 using Headless.Serializer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace Headless.Features.SqlServer;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Features;
 
 /// <summary>Extension methods that register the SQL Server features storage provider.</summary>
 [PublicAPI]

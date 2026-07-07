@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.DistributedLocks.InMemory;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Headless.DistributedLocks.InMemory;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.DistributedLocks;
 
 /// <summary>
 /// Extension methods for registering in-process resource locks.

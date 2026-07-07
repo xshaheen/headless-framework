@@ -2,6 +2,7 @@
 
 using Headless.Abstractions;
 using Headless.Blobs.Aws;
+using Headless.Blobs.CloudflareR2;
 using Headless.Checks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -9,7 +10,8 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Blobs.CloudflareR2;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Blobs;
 
 /// <summary>Extension methods to register the Cloudflare R2 blob storage provider.</summary>
 [PublicAPI]

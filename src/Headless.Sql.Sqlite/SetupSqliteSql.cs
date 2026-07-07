@@ -1,10 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Sql.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace Headless.Sql.Sqlite;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Sql;
 
 /// <summary>
 /// Registration extensions for the SQLite SQL data-access provider.

@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.PushNotifications;
-using Headless.PushNotifications.Dev;
-using Headless.PushNotifications.Firebase;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;

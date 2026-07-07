@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.PushNotifications.Dev;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Headless.PushNotifications.Dev;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.PushNotifications;
 
 /// <summary>
 /// Extension members for selecting the no-op (development/testing) push-notification provider as the default

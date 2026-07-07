@@ -4,7 +4,6 @@ using System.Data.Common;
 using Headless.CommitCoordination;
 using Headless.CommitCoordination.SqlServer;
 using Headless.Coordination;
-using Headless.Coordination.SqlServer;
 using Headless.Testing.Testcontainers;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;

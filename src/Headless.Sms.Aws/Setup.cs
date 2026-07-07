@@ -3,12 +3,14 @@
 using Amazon.Extensions.NETCore.Setup;
 using Amazon.SimpleNotificationService;
 using Headless.Checks;
+using Headless.Sms.Aws;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Sms.Aws;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Sms;
 
 /// <summary>
 /// Extension members for selecting AWS SNS as the default (unkeyed) SMS provider on

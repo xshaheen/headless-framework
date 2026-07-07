@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Sms.Cequens;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http.Resilience;
@@ -8,7 +9,8 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Polly;
 
-namespace Headless.Sms.Cequens;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Sms;
 
 /// <summary>
 /// Extension members for selecting Cequens as the default (unkeyed) SMS provider on

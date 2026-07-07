@@ -2,8 +2,6 @@
 
 using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
-using Headless.Messaging.InMemory;
-using Headless.Messaging.InMemoryStorage;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Registration;
 using Microsoft.Extensions.DependencyInjection;

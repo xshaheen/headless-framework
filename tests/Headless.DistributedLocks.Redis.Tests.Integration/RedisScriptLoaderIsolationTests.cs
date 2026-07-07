@@ -2,7 +2,6 @@
 
 using Headless.Caching;
 using Headless.DistributedLocks;
-using Headless.DistributedLocks.Redis;
 using Headless.Testing.Testcontainers;
 using Microsoft.Extensions.DependencyInjection;
 using StackExchange.Redis;

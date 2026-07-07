@@ -4,8 +4,6 @@ using System.Collections.Concurrent;
 using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
-using Headless.Messaging.InMemory;
-using Headless.Messaging.InMemoryStorage;
 using Headless.Messaging.Retry;
 using Headless.Messaging.Testing;
 using Headless.Messaging.Transport;
