@@ -618,6 +618,7 @@ Dynamic, database-backed permission system. Define permissions as code, store as
 |---------|-------------|
 | [Headless.Permissions.Abstractions](src/Headless.Permissions.Abstractions/README.md) | Permission system interfaces |
 | [Headless.Permissions.Core](src/Headless.Permissions.Core/README.md) | Permission system implementation |
+| [Headless.Permissions.Testing](src/Headless.Permissions.Testing/README.md) | Test-only always-allow permission and authorization doubles |
 | [Headless.Permissions.Storage.EntityFramework](src/Headless.Permissions.Storage.EntityFramework/README.md) | EF Core permission storage |
 | [Headless.Permissions.Storage.PostgreSql](src/Headless.Permissions.Storage.PostgreSql/README.md) | PostgreSQL raw-DDL permission storage |
 | [Headless.Permissions.Storage.SqlServer](src/Headless.Permissions.Storage.SqlServer/README.md) | SQL Server raw-DDL permission storage |
@@ -757,9 +758,11 @@ Cross-cutting utilities that don't belong to a specific domain — validation ex
 | [Headless.Generator.Primitives.Abstractions](src/Headless.Generator.Primitives.Abstractions/README.md) | Generator abstractions |
 | [Headless.Hosting](src/Headless.Hosting/README.md) | .NET hosting utilities |
 | [Headless.NetTopologySuite](src/Headless.NetTopologySuite/README.md) | Geospatial utilities |
+| [Headless.Primitives](src/Headless.Primitives/README.md) | Value objects, result pattern, paging models, and domain primitives |
 | [Headless.Redis](src/Headless.Redis/README.md) | Redis utilities |
 | [Headless.Sitemaps](src/Headless.Sitemaps/README.md) | XML sitemap generation |
 | [Headless.Slugs](src/Headless.Slugs/README.md) | URL slug generation |
+| [Headless.Urls](src/Headless.Urls/README.md) | Fluent URL builder and parser |
 
 ## Architecture
 

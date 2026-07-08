@@ -137,11 +137,12 @@ public sealed class CommitScopeFactoryTests
     }
 
     [Fact]
-    public void should_run_rollback_callbacks_when_sync_scope_is_disposed_without_signal()
+    public async Task should_run_rollback_callbacks_when_sync_scope_is_disposed_without_signal()
     {
         var stack = new CommitScopeStack();
         var factory = new CommitScopeFactory(stack);
         var services = new EmptyServiceProvider();
+        var rollbackRan = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var calls = 0;
 
         using (var scope = factory.Begin(services))
@@ -150,13 +151,15 @@ public sealed class CommitScopeFactoryTests
                 (_, _) =>
                 {
                     calls++;
+                    rollbackRan.SetResult();
 
                     return ValueTask.CompletedTask;
                 }
             );
         }
 
-        SpinWait.SpinUntil(() => calls == 1, TimeSpan.FromSeconds(5)).Should().BeTrue();
+        await rollbackRan.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        calls.Should().Be(1);
         stack.Current.Should().BeNull();
     }
 

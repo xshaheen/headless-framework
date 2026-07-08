@@ -13,6 +13,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.Processor;
 
@@ -575,29 +576,27 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
 
-        using var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+        var timeProvider = new FakeTimeProvider();
+        using var context = new ProcessingContext(
+            new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider(),
+            timeProvider,
+            AbortToken
+        );
 
-        // when — kick off ProcessAsync and time how long until the storage call fires.
-        var started = DateTime.UtcNow;
+        // when — kick off ProcessAsync and advance exactly one base interval.
 #pragma warning disable CA2025 // Do not pass 'IDisposable' instances into unawaited tasks
         var processTask = sut.ProcessAsync(context);
 #pragma warning restore CA2025
 
-        // Wait for the first storage call but cap at 3x base interval to avoid hanging the test.
-        var firstStorageAt = await storageCalled.Task.WaitAsync(TimeSpan.FromSeconds(3), AbortToken);
-        var jitterElapsed = firstStorageAt - started;
+        timeProvider.Advance(TimeSpan.FromSeconds(1));
 
-        // Let the rest of the process complete.
-        await processTask;
+        // The first storage call must fire once fake time reaches the base interval; the remaining
+        // process wait uses the same base interval and is advanced separately.
+        await storageCalled.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        timeProvider.Advance(TimeSpan.FromSeconds(1));
+        await processTask.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
 
-        // then — jitter must be strictly less than base interval.
-        // Upper bound is baseInterval (1s); we allow generous tolerance for scheduling noise.
-        jitterElapsed
-            .Should()
-            .BeLessThan(
-                TimeSpan.FromSeconds(2),
-                "first-poll jitter is bounded by base interval (1s) plus scheduling tolerance"
-            );
+        // then — jitter is bounded by the configured base interval, independent of thread-pool scheduling.
         sut.StartupJitterApplied.Should().BeTrue();
     }
 

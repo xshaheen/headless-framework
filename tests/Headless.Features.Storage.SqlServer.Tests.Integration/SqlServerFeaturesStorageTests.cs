@@ -262,10 +262,13 @@ public sealed class SqlServerFeaturesStorageTests(SqlServerFeaturesFixture fixtu
         table.Columns.Add("Value", typeof(string));
         table.Columns.Add("ProviderName", typeof(string));
         table.Columns.Add("ProviderKey", typeof(string));
+        table.Columns.Add("DateCreated", typeof(DateTimeOffset));
+
+        var dateCreated = TimeProvider.System.GetUtcNow();
 
         for (var i = 0; i < totalRows; i++)
         {
-            table.Rows.Add(Guid.NewGuid(), $"Feature_{i:D4}", "true", "Edition", "bulk");
+            table.Rows.Add(Guid.NewGuid(), $"Feature_{i:D4}", "true", "Edition", "bulk", dateCreated);
         }
 
         await using var connection = new SqlConnection(fixture.ConnectionString);
@@ -277,6 +280,7 @@ public sealed class SqlServerFeaturesStorageTests(SqlServerFeaturesFixture fixtu
         bulkCopy.ColumnMappings.Add("Value", "Value");
         bulkCopy.ColumnMappings.Add("ProviderName", "ProviderName");
         bulkCopy.ColumnMappings.Add("ProviderKey", "ProviderKey");
+        bulkCopy.ColumnMappings.Add("DateCreated", "DateCreated");
 
         await bulkCopy.WriteToServerAsync(table, AbortToken);
     }
