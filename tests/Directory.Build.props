@@ -1,17 +1,9 @@
 <Project>
   <Import Project="../Directory.Build.props" />
-  <PropertyGroup Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('$(MSBuildProjectName)', '\.Tests\.Harness$'))">
+  <PropertyGroup
+    Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('$(MSBuildProjectName)', '\.Tests\.Harness$'))">
     <IsTestHarnessProject>true</IsTestHarnessProject>
   </PropertyGroup>
-  <PropertyGroup>
-    <!--
-    xUnit1044: Avoid using TheoryData type arguments that are not serializable
-    -->
-    <NoWarn>$(NoWarn);xUnit1044</NoWarn>
-  </PropertyGroup>
-  <ItemGroup>
-    <Content Include="../xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
-  </ItemGroup>
   <ItemGroup Label="Global Usings">
     <Using Include="NSubstitute" />
     <Using Include="Bogus" />
@@ -35,7 +27,9 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
   </ItemGroup>
-  <ItemGroup Label="Verify">
+  <ItemGroup Label="Global Content">
+    <Content Include="$(MSBuildThisFileDirectory)xunit.runner.json"
+      CopyToOutputDirectory="PreserveNewest" />
     <None Remove="Snapshots\*.received.txt" />
     <None Remove="Snapshots\*.received.cs" />
   </ItemGroup>
