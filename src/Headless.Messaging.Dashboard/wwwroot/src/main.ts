@@ -8,10 +8,72 @@ import router from './router'
 // Vuetify
 import 'vuetify/styles'
 import { createVuetify } from 'vuetify'
-import * as components from 'vuetify/components'
+import {
+  VAlert,
+  VApp,
+  VAppBar,
+  VBadge,
+  VBtn,
+  VCard,
+  VCardActions,
+  VCardText,
+  VCardTitle,
+  VCheckbox,
+  VChip,
+  VDialog,
+  VDivider,
+  VExpandTransition,
+  VFooter,
+  VForm,
+  VIcon,
+  VMain,
+  VPagination,
+  VProgressCircular,
+  VSelect,
+  VSpacer,
+  VTab,
+  VTable,
+  VTabs,
+  VTextField,
+  VToolbar,
+  VToolbarTitle,
+  VTooltip,
+} from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import { aliases, mdi } from 'vuetify/iconsets/mdi'
 import '@mdi/font/css/materialdesignicons.css'
+
+const components = {
+  VAlert,
+  VApp,
+  VAppBar,
+  VBadge,
+  VBtn,
+  VCard,
+  VCardActions,
+  VCardText,
+  VCardTitle,
+  VCheckbox,
+  VChip,
+  VDialog,
+  VDivider,
+  VExpandTransition,
+  VFooter,
+  VForm,
+  VIcon,
+  VMain,
+  VPagination,
+  VProgressCircular,
+  VSelect,
+  VSpacer,
+  VTab,
+  VTable,
+  VTabs,
+  VTextField,
+  VToolbar,
+  VToolbarTitle,
+  VTooltip,
+}
 
 const vuetify = createVuetify({
   components,

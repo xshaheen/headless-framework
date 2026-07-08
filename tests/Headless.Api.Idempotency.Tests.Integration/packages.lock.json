@@ -1005,7 +1005,7 @@
           "Bogus": "[35.6.5, )",
           "Headless.Core": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
-          "Meziantou.Extensions.Logging.Xunit.v3": "[2.0.3, )",
+          "Meziantou.Extensions.Logging.Xunit.v3": "[3.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.9, )",
           "Microsoft.Extensions.Logging": "[10.0.9, )",
           "Microsoft.Extensions.TimeProvider.Testing": "[10.7.0, )",
@@ -1100,9 +1100,9 @@
       },
       "Meziantou.Extensions.Logging.Xunit.v3": {
         "type": "CentralTransitive",
-        "requested": "[2.0.3, )",
-        "resolved": "2.0.3",
-        "contentHash": "bX85l/ptbh1z+Q2t/I5bXK0JuClpWUxBlIh9Kx0bAqOw0FmRbYvKoCfNdBrmojecqFSTdx3xTEG6xsHUj4jLLQ==",
+        "requested": "[3.0.0, )",
+        "resolved": "3.0.0",
+        "contentHash": "00GLDMFfFH7aCz6kCpoxObrqg+4Y4KfQei3RIrqOPSVoEMKXLDCCB/dV76u2Kxd7g5gs+7lq0h/mezNMBMYbcA==",
         "dependencies": {
           "Microsoft.Extensions.Logging.Abstractions": "10.0.9",
           "xunit.v3.extensibility.core": "3.2.2"

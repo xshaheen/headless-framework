@@ -104,8 +104,8 @@
       },
       "FSharp.Core": {
         "type": "Transitive",
-        "resolved": "10.1.203",
-        "contentHash": "I2MFk72yHqfgI594gKFigq8PVIso0Mh1ZUgG9R4n8gyYQ4IwpBxmvecfjnKA7iMLdVHYULB70PsLwYW/K76gew=="
+        "resolved": "10.1.204",
+        "contentHash": "f2HG4CIS+sfFuRY7DYnEa6P/qEW2g4b6O54jcDD9OkDewWlbk7sd2dbL+Enm3/tVSEsMrgQA7m1+smdizBC6fg=="
       },
       "FSharp.UMX": {
         "type": "Transitive",
@@ -379,7 +379,7 @@
           "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Core": "[1.0.0, )",
           "Headless.Messaging.Queue.Abstractions": "[1.0.0, )",
-          "Pulsar.Client": "[3.16.0, )"
+          "Pulsar.Client": "[3.17.0, )"
         }
       },
       "headless.messaging.queue.abstractions": {
@@ -502,13 +502,13 @@
       },
       "Pulsar.Client": {
         "type": "CentralTransitive",
-        "requested": "[3.16.0, )",
-        "resolved": "3.16.0",
-        "contentHash": "9T358up27KvDS0AULZWIJK8z1SEiCBKSaJM6m4LDidsJ74xgfNNGI7MwU/pq11Eu4uF8ToIP4x3xFiBF2NfJpQ==",
+        "requested": "[3.17.0, )",
+        "resolved": "3.17.0",
+        "contentHash": "9M8/t5en7G/hMa821+AkSDeQUHQAjgOpPTW3wpNVvyQ52U53XVa8QWxX/ott9N80u0Qx8aRfMgaPCN+y802IVA==",
         "dependencies": {
           "Apache.Avro": "1.12.1",
           "AvroSchemaGenerator": "2.9.2",
-          "FSharp.Core": "10.1.203",
+          "FSharp.Core": "10.1.204",
           "FSharp.UMX": "1.1.0",
           "K4os.Compression.LZ4": "1.3.6",
           "Microsoft.IO.RecyclableMemoryStream": "3.0.0",

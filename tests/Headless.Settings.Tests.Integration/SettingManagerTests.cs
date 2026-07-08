@@ -57,7 +57,11 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture) : SettingsT
         var settingValues = await settingManager.GetAllDefaultAsync(cancellationToken: AbortToken);
 
         // then
-        var expected = _Definitions.ConvertAll(x => new SettingValue(x.Name, x.DefaultValue));
+        var expected = _Definitions.ConvertAll(x => new SettingValue(
+            x.Name,
+            x.DefaultValue,
+            new SettingValueProvider(DefaultValueSettingValueProvider.ProviderName, Key: null)
+        ));
         settingValues.Should().BeEquivalentTo(expected);
     }
 
