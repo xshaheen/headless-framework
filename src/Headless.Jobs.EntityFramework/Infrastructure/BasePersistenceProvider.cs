@@ -242,7 +242,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ConfigureAwait(false);
     }
 
-    public async Task UpdateTimeJobsWithUnifiedContextAsync(
+    public async Task<Guid[]> UpdateTimeJobsWithUnifiedContextAsync(
         Guid[] timeJobIds,
         JobExecutionState functionContext,
         CancellationToken cancellationToken = default
@@ -254,14 +254,14 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         // InProgress stamp. (Cancel-on-loss + the completion fence neutralize the local job that already spun up.)
         if (!OwnerIdentity.TryGetStampOwner(out var owner))
         {
-            return;
+            return [];
         }
 
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        await dbContext
+        var affected = await dbContext
             .Set<TTimeJob>()
             .Where(x => ((IEnumerable<Guid>)timeJobIds).Contains(x.Id))
             .WhereOwnedBy(owner)
@@ -270,6 +270,24 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 cancellationToken
             )
             .ConfigureAwait(false);
+
+        if (affected == 0)
+        {
+            return [];
+        }
+
+        var updated = dbContext
+            .Set<TTimeJob>()
+            .AsNoTracking()
+            .Where(x => ((IEnumerable<Guid>)timeJobIds).Contains(x.Id))
+            .Where(x => x.OwnerId == owner);
+
+        if (functionContext.PropertiesToUpdate.Contains(nameof(JobExecutionState.Status)))
+        {
+            updated = updated.Where(x => x.Status == functionContext.Status);
+        }
+
+        return await updated.Select(x => x.Id).ToArrayAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<TimeJobEntity[]> GetEarliestTimeJobsAsync(CancellationToken cancellationToken)
@@ -1101,10 +1119,10 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     }
 
     // KTD7: cron-occurrence creation is intentionally NOT guarded by a coarse 'jobs.cron-occurrence-creation'
-    // distributed lock. Each occurrence carries a deterministic id (NextCronOccurrence.Id) and is created via an
-    // upsert keyed on that id, so concurrent creation across nodes converges on a single row — storage-level dedup
-    // is the correctness boundary here. A coarse lock would only serialize independent occurrence ids for no benefit.
-    // Revisit only if evidence shows storage dedup is insufficient (see plan #267 deferred follow-up).
+    // distributed lock. First creation is deduplicated by (ExecutionTime, CronJobId); requeues of known occurrences
+    // update by id. Storage-level dedup is the correctness boundary here. A coarse lock would only serialize
+    // independent occurrences for no benefit. Revisit only if evidence shows storage dedup is insufficient (see plan
+    // #267 deferred follow-up).
     public async IAsyncEnumerable<CronJobOccurrenceEntity<TCronJob>> QueueCronJobOccurrencesAsync(
         (DateTime Key, JobManagerDispatchContext[] Items) cronJobOccurrences,
         [EnumeratorCancellation] CancellationToken cancellationToken = default
@@ -1268,7 +1286,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         return request ?? [];
     }
 
-    public async Task UpdateCronJobOccurrencesWithUnifiedContextAsync(
+    public async Task<Guid[]> UpdateCronJobOccurrencesWithUnifiedContextAsync(
         Guid[] cronOccurrenceIds,
         JobExecutionState functionContext,
         CancellationToken cancellationToken = default
@@ -1277,19 +1295,37 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         // #316/U5 — cron mirror of UpdateTimeJobsWithUnifiedContextAsync: fence the claim→start stamp on WhereOwnedBy.
         if (!OwnerIdentity.TryGetStampOwner(out var owner))
         {
-            return;
+            return [];
         }
 
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        await dbContext
+        var affected = await dbContext
             .Set<CronJobOccurrenceEntity<TCronJob>>()
             .Where(x => ((IEnumerable<Guid>)cronOccurrenceIds).Contains(x.Id))
             .WhereOwnedBy(owner)
             .ExecuteUpdateAsync(setter => setter.UpdateCronJobOccurrence(functionContext), cancellationToken)
             .ConfigureAwait(false);
+
+        if (affected == 0)
+        {
+            return [];
+        }
+
+        var updated = dbContext
+            .Set<CronJobOccurrenceEntity<TCronJob>>()
+            .AsNoTracking()
+            .Where(x => ((IEnumerable<Guid>)cronOccurrenceIds).Contains(x.Id))
+            .Where(x => x.OwnerId == owner);
+
+        if (functionContext.PropertiesToUpdate.Contains(nameof(JobExecutionState.Status)))
+        {
+            updated = updated.Where(x => x.Status == functionContext.Status);
+        }
+
+        return await updated.Select(x => x.Id).ToArrayAsync(cancellationToken).ConfigureAwait(false);
     }
 
     #endregion

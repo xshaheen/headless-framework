@@ -237,12 +237,14 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         return Task.FromResult(Array.Empty<byte>());
     }
 
-    public Task UpdateTimeJobsWithUnifiedContextAsync(
+    public Task<Guid[]> UpdateTimeJobsWithUnifiedContextAsync(
         Guid[] timeJobIds,
         JobExecutionState functionContext,
         CancellationToken cancellationToken = default
     )
     {
+        var updatedIds = new List<Guid>(timeJobIds.Length);
+
         foreach (var id in timeJobIds)
         {
             if (_timeJobs.TryGetValue(id, out var job))
@@ -258,11 +260,15 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
                 var updatedTicker = _CloneTicker(job);
                 _ApplyFunctionContextToTicker(updatedTicker, functionContext);
-                _timeJobs.TryUpdate(id, updatedTicker, job);
+
+                if (_timeJobs.TryUpdate(id, updatedTicker, job))
+                {
+                    updatedIds.Add(id);
+                }
             }
         }
 
-        return Task.CompletedTask;
+        return Task.FromResult(updatedIds.ToArray());
     }
 
     public Task<TimeJobEntity[]> AcquireImmediateTimeJobsAsync(
@@ -909,10 +915,10 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     }
 
     // KTD7: cron-occurrence creation is intentionally NOT guarded by a coarse 'jobs.cron-occurrence-creation'
-    // distributed lock. Each occurrence is keyed by a deterministic id and inserted via TryAdd / updated via
-    // TryUpdate (the durable provider does the same with an id-keyed upsert), so concurrent creation converges on a
-    // single row — storage-level dedup is the correctness boundary. A coarse lock would add no correctness and only
-    // serialize independent ids. Revisit only if evidence shows storage dedup is insufficient (plan #267 follow-up).
+    // distributed lock. The durable provider deduplicates first creation by (ExecutionTime, CronJobId) and requeues
+    // existing occurrences by id; storage-level dedup is the correctness boundary. A coarse lock would add no
+    // correctness and only serialize independent occurrences. Revisit only if evidence shows storage dedup is
+    // insufficient (plan #267 follow-up).
     public async IAsyncEnumerable<CronJobOccurrenceEntity<TCronJob>> QueueCronJobOccurrencesAsync(
         (DateTime Key, JobManagerDispatchContext[] Items) cronJobOccurrences,
         [EnumeratorCancellation] CancellationToken cancellationToken = default
@@ -1185,12 +1191,14 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         return Task.FromResult(Array.Empty<byte>());
     }
 
-    public Task UpdateCronJobOccurrencesWithUnifiedContextAsync(
+    public Task<Guid[]> UpdateCronJobOccurrencesWithUnifiedContextAsync(
         Guid[] timeJobIds,
         JobExecutionState functionContext,
         CancellationToken cancellationToken = default
     )
     {
+        var updatedIds = new List<Guid>(timeJobIds.Length);
+
         foreach (var id in timeJobIds)
         {
             if (_cronOccurrences.TryGetValue(id, out var occurrence))
@@ -1205,11 +1213,15 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
                 var updatedOccurrence = _CloneCronOccurrence(occurrence);
                 _ApplyFunctionContextToCronOccurrence(updatedOccurrence, functionContext);
-                _cronOccurrences.TryUpdate(id, updatedOccurrence, occurrence);
+
+                if (_cronOccurrences.TryUpdate(id, updatedOccurrence, occurrence))
+                {
+                    updatedIds.Add(id);
+                }
             }
         }
 
-        return Task.CompletedTask;
+        return Task.FromResult(updatedIds.ToArray());
     }
 
     public Task<int> ReleaseDeadNodeOccurrenceResourcesAsync(

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Runtime.InteropServices;
 using Confluent.Kafka;
 using Microsoft.Extensions.Logging;
 
@@ -42,7 +43,7 @@ internal sealed class KafkaTransport(ILogger<KafkaTransport> logger, IKafkaConne
                             && !string.IsNullOrEmpty(kafkaMessageKey)
                                 ? kafkaMessageKey
                                 : message.Id,
-                        Value = message.Body.ToArray(),
+                        Value = _GetMessageBodyArray(message.Body),
                     },
                     cancellationToken
                 )
@@ -75,6 +76,20 @@ internal sealed class KafkaTransport(ILogger<KafkaTransport> logger, IKafkaConne
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+    private static byte[] _GetMessageBodyArray(ReadOnlyMemory<byte> body)
+    {
+        if (
+            MemoryMarshal.TryGetArray(body, out var segment)
+            && segment is { Array: { } array, Offset: 0 }
+            && segment.Count == array.Length
+        )
+        {
+            return array;
+        }
+
+        return body.ToArray();
+    }
 }
 
 internal static partial class KafkaTransportLog
