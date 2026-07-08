@@ -34,7 +34,8 @@ QUALITY_BUILD_ARGS = --configuration "$(CONFIGURATION)" --no-restore --no-increm
 TEST_MAX_PARALLEL ?= 3
 TEST_TIMEOUT ?= 15m
 DOTNET_OUTDATED_AUDIT_ARGS ?= --no-restore --idle-timeout $(DEPENDENCY_AUDIT_IDLE_TIMEOUT) --output "$(DEPENDENCY_AUDIT_DIR)/outdated.json" --output-format json
-NUGET_ADVISORY_AUDIT_ARGS ?= --timeout-seconds "$(NUGET_ADVISORY_AUDIT_TIMEOUT)" --output-dir "$(DEPENDENCY_AUDIT_DIR)/nuget-advisories"
+DEPENDENCY_SECURITY_AUDIT_ARGS ?= --timeout-seconds "$(DEPENDENCY_SECURITY_AUDIT_TIMEOUT)" --output-dir "$(DEPENDENCY_AUDIT_DIR)/security" --project "$(PROJECT)" --scan vulnerable --include-transitive --scan deprecated
+NUGET_ADVISORY_AUDIT_ARGS ?= --timeout-seconds "$(NUGET_ADVISORY_AUDIT_TIMEOUT)" --output-dir "$(DEPENDENCY_AUDIT_DIR)/nuget-advisories" --scan vulnerable --include-transitive
 
 COVERAGE_ARGS ?= -p:EnableCodeCoverage=true --coverage-output-format cobertura
 CI_TEST_ARGS ?= --report-trx --coverage --coverage-output-format cobertura
@@ -301,44 +302,7 @@ dependency-audit: ## Write NuGet outdated dependency JSON report without restore
 .PHONY: dependency-security-audit
 dependency-security-audit: ## Check vulnerable/deprecated NuGet packages for PROJECT without restore; fail on timeout.
 	@test -n "$(PROJECT)" || (echo "PROJECT is required. Example: make dependency-security-audit PROJECT=src/Headless.Api/Headless.Api.csproj" && exit 2)
-	@mkdir -p "$(DEPENDENCY_AUDIT_DIR)"
-	@timeout_seconds="$(DEPENDENCY_SECURITY_AUDIT_TIMEOUT)"; \
-	project_name="$$(basename "$(PROJECT)" .csproj)"; \
-	case "$$timeout_seconds" in \
-		''|*[!0-9]*) echo "DEPENDENCY_SECURITY_AUDIT_TIMEOUT must be a positive integer." >&2; exit 2 ;; \
-	esac; \
-	if [ "$$timeout_seconds" -le 0 ]; then \
-		echo "DEPENDENCY_SECURITY_AUDIT_TIMEOUT must be greater than zero." >&2; \
-		exit 2; \
-	fi; \
-	run_audit() { \
-		local name="$$1"; shift; \
-		local output="$(DEPENDENCY_AUDIT_DIR)/$${project_name}.$${name}.txt"; \
-		local pid elapsed status; \
-		printf 'Running NuGet %s audit (timeout=%ss)...\n' "$$name" "$$timeout_seconds"; \
-		$(DOTNET) list "$(PROJECT)" package "$$@" --no-restore --verbosity quiet >"$$output" 2>&1 & \
-		pid="$$!"; \
-		elapsed=0; \
-		while kill -0 "$$pid" 2>/dev/null; do \
-			if [ "$$elapsed" -ge "$$timeout_seconds" ]; then \
-				printf 'NuGet %s audit timed out after %ss.\n' "$$name" "$$timeout_seconds" | tee -a "$$output" >&2; \
-				kill "$$pid" 2>/dev/null || true; \
-				wait "$$pid" 2>/dev/null || true; \
-				return 124; \
-			fi; \
-			sleep 1; \
-			elapsed=$$((elapsed + 1)); \
-		done; \
-		if wait "$$pid"; then \
-			cat "$$output"; \
-			return 0; \
-		fi; \
-		status="$$?"; \
-		cat "$$output" >&2; \
-		return "$$status"; \
-	}; \
-	run_audit vulnerable --vulnerable --include-transitive || exit "$$?"; \
-	run_audit deprecated --deprecated || exit "$$?"
+	./scripts/audit-nuget-advisories.sh $(DEPENDENCY_SECURITY_AUDIT_ARGS)
 
 .PHONY: nuget-advisory-audit
 nuget-advisory-audit: ## Scan source packages for NuGet vulnerabilities with bounded per-project logs.
