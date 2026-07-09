@@ -145,7 +145,7 @@ public sealed class CommitScopeFactoryTests
         var rollbackRan = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var calls = 0;
 
-        using (var scope = factory.Begin(services))
+        await using (var scope = factory.Begin(services))
         {
             scope.Coordinator.OnRollback(
                 (_, _) =>
