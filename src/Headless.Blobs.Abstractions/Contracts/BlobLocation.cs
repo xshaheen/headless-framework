@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Runtime.CompilerServices;
 using Headless.Blobs.Internals;
 using Headless.Checks;
 
@@ -50,7 +51,33 @@ public readonly record struct BlobLocation
     /// <param name="container">The top-level container (bucket/container/root).</param>
     /// <param name="segments">Path segments joined with <c>/</c> to form the object key.</param>
     public BlobLocation(string container, params ReadOnlySpan<string> segments)
-        : this(container, string.Join('/', segments)) { }
+        : this(container: container, path: string.Join('/', segments)) { }
+
+    /// <summary>Creates a location from hierarchical segments where the first segment is the container.</summary>
+    /// <param name="segments">
+    /// The top-level container (bucket/container/root) followed by one or more path segments joined with <c>/</c> to
+    /// form the object key.
+    /// </param>
+    /// <exception cref="ArgumentException">
+    /// Thrown when fewer than two segments are provided, or when the container or the resulting path fails validation.
+    /// </exception>
+    /// <remarks>
+    /// Carries <see cref="OverloadResolutionPriorityAttribute"/>, so any all-string argument list binds here first;
+    /// the other constructors produce identical values and remain reachable via named arguments or an explicit
+    /// <c>(container, span)</c> argument pair. The delegation below uses named arguments for the same reason —
+    /// a positional <c>this(string, string)</c> initializer would re-resolve to this constructor itself.
+    /// </remarks>
+    [OverloadResolutionPriority(1)]
+    public BlobLocation(params ReadOnlySpan<string> segments)
+        : this(
+            container: segments.Length >= 2
+                ? segments[0]
+                : throw new ArgumentException(
+                    "At least two segments are required: a container followed by one or more path segments.",
+                    nameof(segments)
+                ),
+            path: string.Join('/', segments[1..])
+        ) { }
 
     /// <summary>The top-level container (bucket/container/root) that holds the blob.</summary>
     public string Container { get; }
