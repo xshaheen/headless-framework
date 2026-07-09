@@ -281,6 +281,44 @@ public sealed class JsonUtf8SerializerTests : TestBase
         await act.Should().ThrowAsync<ArgumentNullException>();
     }
 
+    [Fact]
+    public async Task should_tolerate_unknown_fields_in_payload_body()
+    {
+        // given - a producer on a newer schema version adds a field this consumer does not know yet
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal) { { "headless-msg-id", "fwd-compat" } };
+        var json = """{"Name":"Compat","Value":7,"FieldAddedInV2":{"nested":true}}"""u8.ToArray();
+        var transport = new TransportMessage(headers, json);
+
+        // when
+        var message = await _serializer.DeserializeAsync(transport, typeof(TestPayload));
+
+        // then - unknown members must be skipped, not rejected (rolling-deploy wire compatibility)
+        var payload = message.Value.Should().BeOfType<TestPayload>().Which;
+        payload.Name.Should().Be("Compat");
+        payload.Value.Should().Be(7);
+    }
+
+    [Fact]
+    public void should_tolerate_unknown_fields_in_message_envelope()
+    {
+        // given - an envelope from a newer producer carrying an extra top-level member
+        const string json = """
+            {
+                "Headers": { "headless-msg-id": "envelope-compat" },
+                "Value": { "Name": "FromWire", "Value": 5 },
+                "FieldAddedInV2": 123
+            }
+            """;
+
+        // when
+        var message = _serializer.Deserialize(json);
+
+        // then
+        message.Should().NotBeNull();
+        message!.Headers["headless-msg-id"].Should().Be("envelope-compat");
+        message.Value.Should().NotBeNull();
+    }
+
     private sealed class TestPayload
     {
         public string? Name { get; init; }

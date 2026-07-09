@@ -63,4 +63,29 @@ public sealed class AccountIdTests
         // then
         result.IsValid.Should().Be(expectedValid);
     }
+
+    [Fact]
+    public void json_round_trip_should_preserve_account_id_value()
+    {
+        // given
+        var accountId = new AccountId("user-1234");
+
+        // when
+        var json = JsonSerializer.Serialize(accountId);
+        var deserialized = JsonSerializer.Deserialize<AccountId>(json);
+
+        // then
+        json.Should().Be("\"user-1234\"");
+        deserialized.Should().Be(accountId);
+    }
+
+    [Fact]
+    public void json_deserialize_should_throw_json_exception_for_empty_account_id()
+    {
+        // when - untrusted input must surface a clean JsonException, not a leaked domain exception
+        var act = () => JsonSerializer.Deserialize<AccountId>("\"\"");
+
+        // then
+        act.Should().Throw<JsonException>();
+    }
 }

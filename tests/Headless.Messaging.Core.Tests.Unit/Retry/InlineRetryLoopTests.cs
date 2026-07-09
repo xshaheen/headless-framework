@@ -4,6 +4,7 @@ using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Retry;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.Retry;
 
@@ -134,5 +135,75 @@ public sealed class InlineRetryLoopTests : TestBase
         result.Should().Be(1);
         attempts.Should().Be(1, "loop must exit on the first attempt when delay >= DispatchTimeout");
         observedInlineRetries.Should().Equal(0);
+    }
+
+    [Fact]
+    public async Task should_observe_cancellation_before_zero_delay_retry()
+    {
+        // A zero-delay strategy must not spin past cancellation: timeProvider.Delay(TimeSpan.Zero, ct)
+        // can return synchronously without observing the token, so the loop checks it explicitly
+        // before each inter-attempt wait. Regression guard for that pre-delay check.
+        var policy = new RetryPolicyOptions { MaxPersistedRetries = 4, MaxInlineRetries = 3 };
+        var attempts = 0;
+        using var cts = new CancellationTokenSource();
+
+        var act = () =>
+            InlineRetryLoop.ExecuteAsync(
+                async (inlineRetries, _) =>
+                {
+                    attempts++;
+                    await cts.CancelAsync();
+                    return (RetryDecision.Continue(TimeSpan.Zero), attempts);
+                },
+                policy,
+                TimeProvider.System,
+                cts.Token
+            );
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        attempts.Should().Be(1, "the loop must not re-enter the attempt after cancellation");
+    }
+
+    [Fact]
+    public async Task should_abort_pending_backoff_delay_when_cancelled()
+    {
+        // The inter-attempt delay must be driven through the injected TimeProvider and stay
+        // cancellable while the loop is parked on it — no wall-clock waits, no missed tokens.
+        var timeProvider = new FakeTimeProvider();
+        var policy = new RetryPolicyOptions { MaxPersistedRetries = 4, MaxInlineRetries = 3 };
+        var attempts = 0;
+
+        // manual lifetime (not `using`): the loop task outlives this scope until awaited below (AsyncFixer04)
+        var cts = new CancellationTokenSource();
+
+        try
+        {
+            var loop = InlineRetryLoop.ExecuteAsync(
+                (inlineRetries, _) =>
+                {
+                    attempts++;
+                    return Task.FromResult((RetryDecision.Continue(TimeSpan.FromSeconds(30)), attempts));
+                },
+                policy,
+                timeProvider,
+                cts.Token
+            );
+
+            // the first attempt completes synchronously and the loop parks on the fake 30s delay
+            attempts.Should().Be(1);
+            loop.IsCompleted.Should().BeFalse();
+
+            // when
+            await cts.CancelAsync();
+
+            // then - the parked delay unwinds as cancellation without any time advance
+            var act = () => loop;
+            await act.Should().ThrowAsync<OperationCanceledException>();
+            attempts.Should().Be(1);
+        }
+        finally
+        {
+            cts.Dispose();
+        }
     }
 }
