@@ -45,6 +45,31 @@ internal static class RetryHelper
         cancellationToken.IsCancellationRequested && ex is OperationCanceledException;
 
     /// <summary>
+    /// Detects a crash-recovered inline burst: the durable <see cref="MediumMessage.InlineAttempts"/>
+    /// counter already reserved the final inline attempt before the process terminated, so no fresh
+    /// attempt may run. Returns a synthetic retryable attempt (with classification bypassed) that
+    /// routes the row to its persisted-retry or exhausted transition, or <see langword="null"/> when
+    /// inline budget remains. Shared by the publish and consume paths so the threshold and message
+    /// cannot drift.
+    /// </summary>
+    public static MessagingRetryAttempt? DetectCrashRecoveredReservation(
+        int reservedInlineAttempts,
+        RetryPolicyOptions policy
+    )
+    {
+        if (reservedInlineAttempts < policy.RetryStrategy.MaxRetryAttempts + 1)
+        {
+            return null;
+        }
+
+        var recoveryException = new InvalidOperationException(
+            "The process terminated after reserving the final inline delivery attempt."
+        );
+
+        return MessagingRetryAttempt.Retryable(OperateResult.Failed(recoveryException), bypassClassification: true);
+    }
+
+    /// <summary>
     /// Invokes the supplied <paramref name="callback"/> with a hard timeout via
     /// <see cref="Task.WaitAsync(TimeSpan,TimeProvider,CancellationToken)"/>.
     /// On timeout the callback is orphaned (continues running in the background) and a

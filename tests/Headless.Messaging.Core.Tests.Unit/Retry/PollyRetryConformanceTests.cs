@@ -47,7 +47,7 @@ public sealed class PollyRetryConformanceTests : TestBase
                 return Task.CompletedTask;
             },
             Guid.Empty,
-            CancellationToken.None
+            AbortToken
         );
 
         retried.Should().Be(expectedRetry);
@@ -82,7 +82,7 @@ public sealed class PollyRetryConformanceTests : TestBase
             },
             static (_, _, _) => Task.CompletedTask,
             Guid.Empty,
-            CancellationToken.None
+            AbortToken
         );
 
         attempts.Should().Be(2);
@@ -117,7 +117,7 @@ public sealed class PollyRetryConformanceTests : TestBase
                 return Task.CompletedTask;
             },
             Guid.Empty,
-            CancellationToken.None
+            AbortToken
         );
 
         attempts.Should().Be(2);
@@ -148,7 +148,7 @@ public sealed class PollyRetryConformanceTests : TestBase
             static (_, _, _, _, _) => Task.FromResult(false),
             static (_, _, _) => Task.CompletedTask,
             Guid.Empty,
-            CancellationToken.None
+            AbortToken
         );
 
         observerCalls.Should().Be(0);
@@ -223,7 +223,7 @@ public sealed class PollyRetryConformanceTests : TestBase
                 },
                 static (_, _, _) => Task.CompletedTask,
                 Guid.Empty,
-                CancellationToken.None
+                AbortToken
             );
         return delay;
     }
@@ -242,7 +242,7 @@ public sealed class PollyRetryConformanceTests : TestBase
                 },
                 static (_, _, _) => Task.CompletedTask,
                 Guid.NewGuid(),
-                CancellationToken.None
+                AbortToken
             );
 
         strategyFailed.Should().BeTrue();

@@ -4,6 +4,7 @@ using System.Threading.Channels;
 using Headless.Jobs;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Models;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using Polly;
@@ -11,7 +12,7 @@ using Polly.Retry;
 
 namespace Tests;
 
-public sealed class JobsRetryPipelineTests
+public sealed class JobsRetryPipelineTests : TestBase
 {
     [Fact]
     public async Task should_delegate_fixed_exponential_and_jittered_delays_to_Polly()
@@ -90,7 +91,7 @@ public sealed class JobsRetryPipelineTests
                 static (_, _) => ValueTask.FromException(new TimeoutException()),
                 static (_, _, _) => ValueTask.CompletedTask,
                 static _ => { },
-                CancellationToken.None
+                AbortToken
             );
 
         await action.Should().ThrowAsync<TimeoutException>();
@@ -135,7 +136,7 @@ public sealed class JobsRetryPipelineTests
                 static (_, _) => ValueTask.FromException(new TimeoutException()),
                 static (_, _, _) => ValueTask.CompletedTask,
                 retryable => finalRetryable = retryable,
-                CancellationToken.None
+                AbortToken
             );
 
         await action.Should().ThrowAsync<TimeoutException>();
@@ -193,7 +194,7 @@ public sealed class JobsRetryPipelineTests
                 static (_, _) => ValueTask.FromException(new TimeoutException()),
                 static (_, _, _) => ValueTask.CompletedTask,
                 static _ => { },
-                CancellationToken.None
+                AbortToken
             );
 
         var execution = action.Should().ThrowAsync<TimeoutException>();

@@ -1025,9 +1025,11 @@ internal sealed class PostgreSqlDataStorage(
         // `ON CONFLICT ON CONSTRAINT` would error out against it).
         // #3 — additionally skip rows whose lease is still active (LockedUntil in the future). A
         // redelivered message that arrives while the row is being dispatched would otherwise
-        // overwrite LockedUntil = NULL and Retries = 0, releasing the active pickup lease
-        // mid-attempt and letting the retry processor re-pick the row while the inline retry loop
-        // is still in flight. Mirrors the matching guard in SqlServerDataStorage._StoreReceivedMessage.
+        // overwrite LockedUntil = NULL, releasing the active pickup lease mid-attempt and letting
+        // the retry processor re-pick the row while the inline retry burst is still in flight.
+        // The DO UPDATE SET list deliberately excludes "Retries" and "InlineAttempts" so a benign
+        // redelivery collapse never resets the durable retry counters.
+        // Mirrors the matching guard in SqlServerDataStorage._StoreReceivedMessage.
         var sql = $"""
             INSERT INTO {_receivedTable}("Id","Version","Name","Group","Content","IntentType","Retries","InlineAttempts","Added","ExpiresAt","NextRetryAt","LockedUntil","Owner","StatusName","MessageId","ExceptionInfo")
             VALUES(@Id,'{messagingOptions.Value.Version}',@Name,@Group,@Content,@IntentType,@Retries,@InlineAttempts,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@Owner,@StatusName,@MessageId,@ExceptionInfo)

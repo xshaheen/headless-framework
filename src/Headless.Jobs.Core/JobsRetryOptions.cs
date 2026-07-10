@@ -59,7 +59,10 @@ internal sealed class JobsRetryOptionsValidator : AbstractValidator<JobsRetryOpt
     public JobsRetryOptionsValidator()
     {
         RuleFor(x => x.RetryStrategy).NotNull();
-        RuleFor(x => x.RetryStrategy.MaxRetryAttempts).GreaterThanOrEqualTo(0);
+        When(
+            x => x.RetryStrategy is not null,
+            () => RuleFor(x => x.RetryStrategy.MaxRetryAttempts).GreaterThanOrEqualTo(0)
+        );
         RuleFor(x => x.OnExhaustedTimeout).GreaterThan(TimeSpan.Zero).LessThanOrEqualTo(TimeSpan.FromHours(1));
     }
 }

@@ -116,12 +116,9 @@ internal sealed class MessageSender : IMessageSender
         }
 
         inlineRetries = message.InlineAttempts;
-        if (inlineRetries >= _retryPolicy.RetryStrategy.MaxRetryAttempts + 1)
+        if (RetryHelper.DetectCrashRecoveredReservation(inlineRetries, _retryPolicy) is { } recoveryAttempt)
         {
-            var recoveryException = new InvalidOperationException(
-                "The process terminated after reserving the final inline delivery attempt."
-            );
-            return MessagingRetryAttempt.Retryable(OperateResult.Failed(recoveryException), bypassClassification: true);
+            return recoveryAttempt;
         }
 
         if (!await _ReserveAttemptAsync(message, cancellationToken).ConfigureAwait(false))

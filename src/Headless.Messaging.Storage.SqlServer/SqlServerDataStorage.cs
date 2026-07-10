@@ -930,7 +930,7 @@ internal sealed class SqlServerDataStorage(
             new SqlParameter("@OriginalRetries", message.Retries),
             new SqlParameter("@OriginalInlineAttempts", originalInlineAttempts),
             new SqlParameter("@LockedUntil", SqlDbType.DateTime2) { Value = message.LockedUntil.ToUtcParameterValue() },
-            new SqlParameter("@CurrentOwner", SqlDbType.NVarChar, 256)
+            new SqlParameter("@CurrentOwner", SqlDbType.NVarChar, options.Value.OwnerColumnMaxLength)
             {
                 Value = message.Owner ?? (object)DBNull.Value,
             },
@@ -1057,9 +1057,11 @@ internal sealed class SqlServerDataStorage(
         //
         // #9 — narrow the WHEN MATCHED predicate to additionally skip rows whose lease is still
         // active (LockedUntil in the future). A redelivered message that arrives while the row
-        // is being dispatched would otherwise overwrite LockedUntil = NULL and Retries = 0,
-        // releasing the active pickup lease mid-attempt and causing the retry processor to
-        // re-pick the row while the inline retry loop is still in flight.
+        // is being dispatched would otherwise overwrite LockedUntil = NULL, releasing the active
+        // pickup lease mid-attempt and causing the retry processor to re-pick the row while the
+        // inline retry burst is still in flight. The UPDATE SET list deliberately excludes
+        // [Retries] and [InlineAttempts] so a benign redelivery collapse never resets the durable
+        // retry counters.
         //
         // #5 — OUTPUT inserted.[Id] returns the authoritative persisted row id (insert or update branch).
         // On the UPDATE branch the existing row keeps its original [Id], which differs from the freshly

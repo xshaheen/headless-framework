@@ -195,17 +195,27 @@ internal sealed class MessagingRetryPipeline
 
         if (continueInline && _policy.RetryStrategy.OnRetry is not null)
         {
-            await _policy
-                .RetryStrategy.OnRetry(
-                    new OnRetryArguments<object>(
-                        args.Context,
-                        Outcome.FromException<object>(exception),
-                        args.AttemptNumber,
-                        args.RetryDelay,
-                        args.Duration
+            // Contain observer failures: a throwing user OnRetry must not abort the in-flight
+            // inline burst (the row is already persisted as Scheduled with the lease held, so an
+            // escaped throw would strand it until DispatchTimeout). Mirrors JobsRetryPipeline.
+            try
+            {
+                await _policy
+                    .RetryStrategy.OnRetry(
+                        new OnRetryArguments<object>(
+                            args.Context,
+                            Outcome.FromException<object>(exception),
+                            args.AttemptNumber,
+                            args.RetryDelay,
+                            args.Duration
+                        )
                     )
-                )
-                .ConfigureAwait(false);
+                    .ConfigureAwait(false);
+            }
+            catch (Exception observerException)
+            {
+                _logger.RetryStrategyThrew(observerException, state.StorageId, observerException.GetType().Name);
+            }
         }
 
         if (!continueInline)
