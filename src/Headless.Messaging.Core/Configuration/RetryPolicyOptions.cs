@@ -21,6 +21,21 @@ namespace Headless.Messaging.Configuration;
 public sealed class RetryPolicyOptions
 {
     /// <summary>
+    /// Gets the default retry classification used by <see cref="RetryStrategy"/>: retry any
+    /// exception that is not a cancellation and not classified permanent by
+    /// <see cref="RetryExceptionClassifier"/>. Reuse (or compose) this predicate when supplying a
+    /// custom <see cref="RetryStrategy"/> value so replacing the strategy does not silently drop
+    /// the framework's failure classification.
+    /// </summary>
+    public static Func<RetryPredicateArguments<object>, ValueTask<bool>> DefaultShouldHandle { get; } =
+        static args =>
+            ValueTask.FromResult(
+                args.Outcome.Exception is { } exception
+                    && exception is not OperationCanceledException
+                    && !RetryExceptionClassifier.IsPermanent(exception)
+            );
+
+    /// <summary>
     /// Gets or sets the Polly retry strategy used for bounded inline delivery attempts.
     /// </summary>
     /// <remarks>
@@ -29,10 +44,10 @@ public sealed class RetryPolicyOptions
     /// default value here is 2, so each pickup reserves at most three observable attempts.
     /// </para>
     /// <para>
-    /// <c>RetryStrategy.ShouldHandle</c> is required and explicitly excludes
-    /// permanent Messaging failures and cancellation by default. The pipeline is built once from
-    /// this configuration and reused; mutating the options after service-provider construction does
-    /// not reconfigure a running pipeline.
+    /// <c>RetryStrategy.ShouldHandle</c> is required and defaults to
+    /// <see cref="DefaultShouldHandle"/>, which excludes permanent Messaging failures and
+    /// cancellation. The pipeline is built once from this configuration and reused; mutating the
+    /// options after service-provider construction does not reconfigure a running pipeline.
     /// </para>
     /// </remarks>
     public RetryStrategyOptions RetryStrategy { get; set; } =
@@ -43,12 +58,7 @@ public sealed class RetryPolicyOptions
             BackoffType = DelayBackoffType.Exponential,
             UseJitter = true,
             MaxDelay = TimeSpan.FromMinutes(5),
-            ShouldHandle = static args =>
-                ValueTask.FromResult(
-                    args.Outcome.Exception is { } exception
-                        && exception is not OperationCanceledException
-                        && !RetryExceptionClassifier.IsPermanent(exception)
-                ),
+            ShouldHandle = DefaultShouldHandle,
         };
 
     /// <summary>

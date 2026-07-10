@@ -830,7 +830,7 @@ builder.Services.AddHeadlessJobs(options =>
 });
 ```
 
-`ShouldHandle` is always explicit; cancellation and `TerminateExecutionException` are excluded by default. Per-row `RetryIntervals` override Polly delay generation and retain fixed-schedule/final-interval reuse semantics. Otherwise Polly owns fixed, linear, exponential, jittered, capped, or custom delays. Jobs owns leases, durable counters, scheduling, and terminal state. The exhausted callback runs in a fresh DI scope only after an atomic owned transition to `Failed`; timeout or callback failure is logged and contained. Lease renewal remains active during attempts and delays; lease loss cancels the pipeline and prevents stale writes.
+`ShouldHandle` is always explicit; cancellation and `TerminateExecutionException` are excluded by default, and that default classification is exposed as `JobsRetryOptions.DefaultShouldHandle` for reuse when replacing `RetryStrategy`. Per-row `RetryIntervals` override Polly delay generation and retain fixed-schedule/final-interval reuse semantics. Otherwise Polly owns fixed, linear, exponential, jittered, capped, or custom delays. Jobs owns leases, durable counters, scheduling, and terminal state. The exhausted callback runs in a fresh DI scope only after an atomic owned transition to `Failed`; timeout or callback failure is logged and contained. Lease renewal remains active during attempts and delays; lease loss cancels the pipeline and prevents stale writes.
 
 Never serialize `RetryStrategyOptions`, `ResiliencePipeline`, `ResilienceContext`, predicates, delay generators, or delegates.
 

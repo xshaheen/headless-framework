@@ -514,6 +514,8 @@ builder.Services.AddHeadlessMessaging(setup =>
 });
 ```
 
+The framework's default classification (retry anything that is not a cancellation and not classified permanent) is exposed as `RetryPolicyOptions.DefaultShouldHandle` — reuse or compose it when replacing `RetryStrategy` so a custom strategy does not silently drop the built-in failure classification.
+
 Worked example with `RetryStrategy.MaxRetryAttempts = 2, MaxPersistedRetries = 2` — total (2+1)×(2+1) = 9 attempts:
 
 ```

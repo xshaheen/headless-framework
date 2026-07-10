@@ -13,6 +13,20 @@ namespace Headless.Jobs;
 public sealed class JobsRetryOptions
 {
     /// <summary>
+    /// Gets the default retry classification used by <see cref="RetryStrategy"/>: retry any
+    /// exception that is not a cancellation and not a <see cref="TerminateExecutionException"/>.
+    /// Reuse (or compose) this predicate when supplying a custom <see cref="RetryStrategy"/> value
+    /// so replacing the strategy does not silently drop the framework's failure classification.
+    /// </summary>
+    public static Func<RetryPredicateArguments<object>, ValueTask<bool>> DefaultShouldHandle { get; } =
+        static args =>
+            ValueTask.FromResult(
+                args.Outcome.Exception is { } exception
+                    && exception is not OperationCanceledException
+                    && exception is not TerminateExecutionException
+            );
+
+    /// <summary>
     /// Gets or sets the Polly retry strategy used for classification, delay generation, retry
     /// observation, and cancellation. Per-row <c>Retries</c> remains the durable retry budget.
     /// </summary>
@@ -22,12 +36,7 @@ public sealed class JobsRetryOptions
             MaxRetryAttempts = int.MaxValue,
             Delay = TimeSpan.FromSeconds(30),
             BackoffType = DelayBackoffType.Constant,
-            ShouldHandle = static args =>
-                ValueTask.FromResult(
-                    args.Outcome.Exception is { } exception
-                        && exception is not OperationCanceledException
-                        && exception is not TerminateExecutionException
-                ),
+            ShouldHandle = DefaultShouldHandle,
         };
 
     /// <summary>Gets or sets the callback invoked after an owned atomic transition to Failed.</summary>
