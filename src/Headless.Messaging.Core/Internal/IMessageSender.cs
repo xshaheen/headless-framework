@@ -50,6 +50,7 @@ internal sealed class MessageSender : IMessageSender
     private readonly IQueueTransport? _queueTransport;
     private readonly TimeProvider _timeProvider;
     private readonly RetryPolicyOptions _retryPolicy;
+    private readonly MessagingRetryPipeline _retryPipeline;
     private readonly CancellationToken _shutdownToken;
 
     public MessageSender(ILogger<MessageSender> logger, IServiceProvider serviceProvider)
@@ -64,6 +65,7 @@ internal sealed class MessageSender : IMessageSender
         var opts = serviceProvider.GetRequiredService<IOptions<MessagingOptions>>().Value;
         _options = opts;
         _retryPolicy = opts.RetryPolicy;
+        _retryPipeline = new MessagingRetryPipeline(_retryPolicy, _timeProvider, logger);
 
         // IHostApplicationLifetime is optional so MessageSender remains usable in test contexts
         // (and non-hosted scenarios). When absent, shutdown cancellation cannot be observed and
@@ -84,17 +86,19 @@ internal sealed class MessageSender : IMessageSender
         // by RetryHelper.IsCancellation in _SetFailedState, which returns without writing terminal
         // state. The row keeps its prior NextRetryAt/Status and the persisted retry processor picks
         // it up on restart.
-        return InlineRetryLoop.ExecuteAsync(
-            (inlineRetries, ct) => _SendWithoutRetryAsync(message, dispatchServices, inlineRetries, ct),
-            _retryPolicy,
-            _timeProvider,
+        return _retryPipeline.ExecuteAsync(
+            (inlineRetries, ct) => _SendWithoutRetryAsync(message, inlineRetries, ct),
+            (inlineRetries, exception, delay, strategyFailed, ct) =>
+                _HandleRetryAsync(message, exception, dispatchServices, inlineRetries, delay, strategyFailed, ct),
+            (inlineRetries, exception, ct) =>
+                _HandleNonRetryableAsync(message, exception, dispatchServices, inlineRetries, ct),
+            message.StorageId,
             _shutdownToken
         );
     }
 
-    private async Task<(RetryDecision Decision, OperateResult Result)> _SendWithoutRetryAsync(
+    private async Task<MessagingRetryAttempt> _SendWithoutRetryAsync(
         MediumMessage message,
-        IServiceProvider dispatchServices,
         int inlineRetries,
         CancellationToken cancellationToken
     )
@@ -107,15 +111,29 @@ internal sealed class MessageSender : IMessageSender
             var leased = await _LeaseAsync(message, cancellationToken).ConfigureAwait(false);
             if (!leased)
             {
-                return (RetryDecision.Stop, OperateResult.Success);
+                return MessagingRetryAttempt.Completed(OperateResult.Success);
             }
+        }
+
+        inlineRetries = message.InlineAttempts;
+        if (inlineRetries >= _retryPolicy.RetryStrategy.MaxRetryAttempts + 1)
+        {
+            var recoveryException = new InvalidOperationException(
+                "The process terminated after reserving the final inline delivery attempt."
+            );
+            return MessagingRetryAttempt.Retryable(OperateResult.Failed(recoveryException), bypassClassification: true);
+        }
+
+        if (!await _ReserveAttemptAsync(message, cancellationToken).ConfigureAwait(false))
+        {
+            return MessagingRetryAttempt.Completed(OperateResult.Success);
         }
 
         var transportMsg = await _serializer.SerializeToTransportMessageAsync(message.Origin).ConfigureAwait(false);
         var selected = await _ResolveTransportAsync(message).ConfigureAwait(false);
         if (selected.Result is { } failure)
         {
-            return (RetryDecision.Stop, failure);
+            return MessagingRetryAttempt.Completed(failure);
         }
 
         var transport = selected.Transport!;
@@ -132,21 +150,12 @@ internal sealed class MessageSender : IMessageSender
 
             _TracingAfter(tracingTimestamp, transportMsg, message.IntentType, brokerAddress, cancellationToken);
 
-            return (RetryDecision.Stop, OperateResult.Success);
+            return MessagingRetryAttempt.Completed(OperateResult.Success);
         }
 
         _TracingError(tracingTimestamp, transportMsg, message.IntentType, brokerAddress, result, cancellationToken);
 
-        var decision = await _SetFailedState(
-                message,
-                result.Exception!,
-                dispatchServices,
-                inlineRetries,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        return (decision, OperateResult.Failed(result.Exception!));
+        return MessagingRetryAttempt.Retryable(OperateResult.Failed(result.Exception!));
     }
 
     private async Task<(ITransport? Transport, OperateResult? Result)> _ResolveTransportAsync(MediumMessage message)
@@ -209,7 +218,15 @@ internal sealed class MessageSender : IMessageSender
     {
         message.ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddSeconds(_options.SucceedMessageExpiredAfter);
         var updated = await _dataStorage
-            .ChangePublishStateAsync(message, StatusName.Succeeded, cancellationToken: cancellationToken)
+            .ChangePublishRetryStateAsync(
+                message,
+                StatusName.Succeeded,
+                nextRetryAt: null,
+                lockedUntil: null,
+                originalRetries: message.Retries,
+                originalInlineAttempts: message.InlineAttempts,
+                cancellationToken
+            )
             .ConfigureAwait(false);
 
         if (!updated)
@@ -222,26 +239,76 @@ internal sealed class MessageSender : IMessageSender
         }
     }
 
-    private async Task<RetryDecision> _SetFailedState(
+    private async Task<bool> _HandleRetryAsync(
+        MediumMessage message,
+        Exception exception,
+        IServiceProvider dispatchServices,
+        int _,
+        TimeSpan delay,
+        bool strategyFailed,
+        CancellationToken cancellationToken
+    )
+    {
+        var inlineRetries = Math.Max(0, message.InlineAttempts - 1);
+        var decision =
+            strategyFailed ? MessagingRetryDecision.Exhausted
+            : !_retryPolicy.HasMoreInlineAttempts(inlineRetries) && message.Retries >= _retryPolicy.MaxPersistedRetries
+                ? MessagingRetryDecision.Exhausted
+            : MessagingRetryDecision.Continue(delay);
+        var persisted = await _SetFailedState(
+                message,
+                exception,
+                dispatchServices,
+                inlineRetries,
+                decision,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+        return persisted.Outcome == MessagingRetryDecision.Kind.Continue;
+    }
+
+    private async Task _HandleNonRetryableAsync(
+        MediumMessage message,
+        Exception exception,
+        IServiceProvider dispatchServices,
+        int _,
+        CancellationToken cancellationToken
+    )
+    {
+        var inlineRetries = Math.Max(0, message.InlineAttempts - 1);
+        await _SetFailedState(
+                message,
+                exception,
+                dispatchServices,
+                inlineRetries,
+                MessagingRetryDecision.Stop,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    private async Task<MessagingRetryDecision> _SetFailedState(
         MediumMessage message,
         Exception ex,
         IServiceProvider dispatchServices,
         int inlineRetries,
+        MessagingRetryDecision decision,
         CancellationToken cancellationToken
     )
     {
         // Host shutdown: an OCE bound to the host's stopping token means the dispatch was aborted,
         // not that the message failed. Returning without writing state preserves the row's existing
         // NextRetryAt/Status, and the persisted retry processor will pick the row up on restart.
-        // cancellationToken on this path IS _shutdownToken — see InlineRetryLoop wiring in
-        // SendAsync above, which forwards _shutdownToken as the inline-loop CT.
+        // cancellationToken on this path IS _shutdownToken — see the Polly pipeline wiring in
+        // SendAsync above, which forwards _shutdownToken as the Polly pipeline CT.
         if (RetryHelper.IsCancellation(ex, cancellationToken))
         {
             _logger.StoredMessageNonRetryableFailure(message.StorageId, "HostShutdown");
-            return RetryDecision.Stop;
+            return MessagingRetryDecision.Stop;
         }
 
-        var decision = _UpdateMessageForRetry(message, ex, inlineRetries);
+        _LogRetryDecision(message, ex, decision);
+        var originalInlineAttempts = message.InlineAttempts;
 
         message.Origin.AddOrUpdateException(ex);
         message.ExpiresAt = message.Added.AddSeconds(_options.FailedMessageExpiredAfter);
@@ -263,12 +330,22 @@ internal sealed class MessageSender : IMessageSender
         // Persist transition: inline budget consumed AND decision Continue means the call site
         // owns the Retries++ . The helper is pure with respect to MediumMessage; this is the only
         // place persisted-pickup count advances.
-        if (decision.Outcome == RetryDecision.Kind.Continue && !state.IsInlineRetryInFlight)
+        if (decision.Outcome == MessagingRetryDecision.Kind.Continue && !state.IsInlineRetryInFlight)
         {
             var originalRetries = message.Retries;
             message.Retries++;
-            return await _PersistFailedStateAsync(message, ex, dispatchServices, decision, state, originalRetries)
+            message.InlineAttempts = 0;
+            await _PersistFailedStateAsync(
+                    message,
+                    ex,
+                    dispatchServices,
+                    decision,
+                    state,
+                    originalRetries,
+                    originalInlineAttempts
+                )
                 .ConfigureAwait(false);
+            return MessagingRetryDecision.Stop;
         }
 
         // #7 — enforce the storage CAS predicate on every state-write site (including inline-in-flight
@@ -281,18 +358,20 @@ internal sealed class MessageSender : IMessageSender
                 dispatchServices,
                 decision,
                 state,
-                originalRetries: message.Retries
+                originalRetries: message.Retries,
+                originalInlineAttempts
             )
             .ConfigureAwait(false);
     }
 
-    private async Task<RetryDecision> _PersistFailedStateAsync(
+    private async Task<MessagingRetryDecision> _PersistFailedStateAsync(
         MediumMessage message,
         Exception ex,
         IServiceProvider dispatchServices,
-        RetryDecision decision,
+        MessagingRetryDecision decision,
         RetryNextState state,
-        int? originalRetries
+        int originalRetries,
+        int originalInlineAttempts
     )
     {
         // #14 — Preserve the active pickup lease on inline-in-flight transitions; clear it on
@@ -300,17 +379,18 @@ internal sealed class MessageSender : IMessageSender
         // Mirrors the consume path's _PersistFailedStateAsync.
         var lockedUntil = state.IsInlineRetryInFlight ? message.LockedUntil : null;
         var affected = await _dataStorage
-            .ChangePublishStateAsync(
+            .ChangePublishRetryStateAsync(
                 message,
                 state.NextStatus,
-                nextRetryAt: state.NextRetryAt,
-                lockedUntil: lockedUntil,
-                originalRetries: originalRetries,
-                cancellationToken: CancellationToken.None
+                state.NextRetryAt,
+                lockedUntil,
+                originalRetries,
+                originalInlineAttempts,
+                CancellationToken.None
             )
             .ConfigureAwait(false);
 
-        if (affected && decision.Outcome == RetryDecision.Kind.Exhausted)
+        if (affected && decision.Outcome == MessagingRetryDecision.Kind.Exhausted)
         {
             // Forward _shutdownToken so the callback's CT honors host shutdown — matching the
             // contract documented on RetryPolicyOptions.OnExhausted and the consume path's behavior.
@@ -324,6 +404,7 @@ internal sealed class MessageSender : IMessageSender
                     dispatchServices,
                     MessageType.Publish,
                     _logger,
+                    _timeProvider,
                     _shutdownToken
                 )
                 .ConfigureAwait(false);
@@ -332,12 +413,12 @@ internal sealed class MessageSender : IMessageSender
         {
             // Storage proves the row is already terminal — only log when the decision would
             // otherwise have fired the callback (Stop never fires OnExhausted regardless).
-            if (decision.Outcome == RetryDecision.Kind.Exhausted)
+            if (decision.Outcome == MessagingRetryDecision.Kind.Exhausted)
             {
                 _logger.SkippingOnExhaustedAlreadyTerminal(message.StorageId);
             }
 
-            return RetryDecision.Stop;
+            return MessagingRetryDecision.Stop;
         }
 
         return decision;
@@ -349,29 +430,35 @@ internal sealed class MessageSender : IMessageSender
         return await _dataStorage.LeasePublishAsync(message, lockedUntil, cancellationToken).ConfigureAwait(false);
     }
 
-    private RetryDecision _UpdateMessageForRetry(MediumMessage message, Exception ex, int inlineRetries)
+    private async Task<bool> _ReserveAttemptAsync(MediumMessage message, CancellationToken cancellationToken)
     {
-        var decision = RetryHelper.RecordAttemptAndComputeDecision(
-            message,
-            ex,
-            _retryPolicy,
-            inlineRetries,
-            logger: _logger
-        );
+        var originalInlineAttempts = message.InlineAttempts;
+        message.InlineAttempts++;
+        var reserved = await _dataStorage
+            .ReservePublishAttemptAsync(message, originalInlineAttempts, cancellationToken)
+            .ConfigureAwait(false);
+        if (!reserved)
+        {
+            message.InlineAttempts = originalInlineAttempts;
+        }
+
+        return reserved;
+    }
+
+    private void _LogRetryDecision(MediumMessage message, Exception ex, MessagingRetryDecision decision)
+    {
         switch (decision.Outcome)
         {
-            case RetryDecision.Kind.Stop:
+            case MessagingRetryDecision.Kind.Stop:
                 _logger.StoredMessageNonRetryableFailure(message.StorageId, ex.GetType().Name);
                 break;
-            case RetryDecision.Kind.Exhausted:
+            case MessagingRetryDecision.Kind.Exhausted:
                 _logger.SenderStoredMessageAfterThreshold(message.StorageId, _retryPolicy.MaxPersistedRetries);
                 break;
-            case RetryDecision.Kind.Continue:
+            case MessagingRetryDecision.Kind.Continue:
                 _logger.SenderRetrying(message.StorageId, message.Retries);
                 break;
         }
-
-        return decision;
     }
 
     #region tracing

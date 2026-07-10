@@ -83,6 +83,20 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
         storage
             .LeaseReceiveAsync(Arg.Any<MediumMessage>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(true));
+        storage
+            .ReserveReceiveAttemptAsync(Arg.Any<MediumMessage>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(true));
+        storage
+            .ChangeReceiveRetryStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(true));
 
         var services = new ServiceCollection();
         services.AddLogging();
@@ -103,9 +117,8 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
                 {
                     RetryPolicy =
                     {
-                        MaxInlineRetries = 0,
+                        RetryStrategy = TestRetryStrategies.FixedDelay(0, TimeSpan.Zero),
                         MaxPersistedRetries = 0,
-                        BackoffStrategy = new FixedIntervalBackoffStrategy(TimeSpan.Zero),
                     },
                 }
         );
@@ -150,12 +163,13 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
         result.Succeeded.Should().BeFalse();
         await storage
             .Received()
-            .ChangeReceiveStateAsync(
+            .ChangeReceiveRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 StatusName.Failed,
                 Arg.Any<DateTime?>(),
                 Arg.Any<DateTime?>(),
-                Arg.Any<int?>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -165,7 +179,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
     {
         // given — simulate app-shutdown cancellation:
         //   OperationCanceledException where CancellationToken.IsCancellationRequested = true.
-        // The executor must classify this as cancellation (RetryDecision.Stop), NOT invoke
+        // The executor must classify this as cancellation, NOT invoke
         // OnExhausted, and NOT write a state transition. The row keeps its prior NextRetryAt and
         // the persisted retry processor picks it up on restart.
         var storage = Substitute.For<IDataStorage>();
@@ -198,9 +212,8 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
             {
                 RetryPolicy =
                 {
-                    MaxInlineRetries = 0,
+                    RetryStrategy = TestRetryStrategies.FixedDelay(0, TimeSpan.Zero),
                     MaxPersistedRetries = 0,
-                    BackoffStrategy = new FixedIntervalBackoffStrategy(TimeSpan.Zero),
                     OnExhausted = (_, _) =>
                     {
                         callbackInvoked = true;

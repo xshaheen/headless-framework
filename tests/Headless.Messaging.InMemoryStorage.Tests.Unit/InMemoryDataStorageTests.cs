@@ -283,6 +283,242 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
         base.should_reject_mismatched_original_retries();
 
     [Fact]
+    public async Task should_reserve_publish_attempt_with_inline_attempt_compare_and_swap()
+    {
+        _EnsureInitialized();
+        var storage = GetStorage();
+        var message = await storage.StoreMessageAsync("inline-cas", CreateMessage(), AbortToken);
+        (await storage.LeasePublishAsync(message, DateTime.UtcNow.AddMinutes(1), AbortToken)).Should().BeTrue();
+        message.InlineAttempts = 1;
+
+        var reserved = await storage.ReservePublishAttemptAsync(message, originalInlineAttempts: 0, AbortToken);
+        message.InlineAttempts = 2;
+        var staleReservation = await storage.ReservePublishAttemptAsync(message, originalInlineAttempts: 0, AbortToken);
+
+        reserved.Should().BeTrue();
+        staleReservation.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_reserve_receive_attempt_with_inline_attempt_compare_and_swap()
+    {
+        _EnsureInitialized();
+        var storage = GetStorage();
+        var message = await storage.StoreReceivedMessageAsync("inline-cas", "group", CreateMessage(), AbortToken);
+        (await storage.LeaseReceiveAsync(message, DateTime.UtcNow.AddMinutes(1), AbortToken)).Should().BeTrue();
+        message.InlineAttempts = 1;
+
+        var reserved = await storage.ReserveReceiveAttemptAsync(message, originalInlineAttempts: 0, AbortToken);
+        message.InlineAttempts = 2;
+        var staleReservation = await storage.ReserveReceiveAttemptAsync(message, originalInlineAttempts: 0, AbortToken);
+
+        reserved.Should().BeTrue();
+        staleReservation.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_reject_stale_publish_retry_transition_after_inline_attempt_advances()
+    {
+        _EnsureInitialized();
+        var storage = GetStorage();
+        var message = await storage.StoreMessageAsync("inline-transition-cas", CreateMessage(), AbortToken);
+        (await storage.LeasePublishAsync(message, DateTime.UtcNow.AddMinutes(1), AbortToken)).Should().BeTrue();
+        message.InlineAttempts = 1;
+        (await storage.ReservePublishAttemptAsync(message, originalInlineAttempts: 0, AbortToken)).Should().BeTrue();
+
+        message.InlineAttempts = 2;
+        var updated = await storage.ChangePublishRetryStateAsync(
+            message,
+            StatusName.Failed,
+            nextRetryAt: DateTime.UtcNow,
+            lockedUntil: null,
+            originalRetries: 0,
+            originalInlineAttempts: 0,
+            cancellationToken: AbortToken
+        );
+
+        updated.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_reject_stale_receive_retry_transition_after_inline_attempt_advances()
+    {
+        _EnsureInitialized();
+        var storage = GetStorage();
+        var message = await storage.StoreReceivedMessageAsync(
+            "inline-transition-cas",
+            "group",
+            CreateMessage(),
+            AbortToken
+        );
+        (await storage.LeaseReceiveAsync(message, DateTime.UtcNow.AddMinutes(1), AbortToken)).Should().BeTrue();
+        message.InlineAttempts = 1;
+        (await storage.ReserveReceiveAttemptAsync(message, originalInlineAttempts: 0, AbortToken)).Should().BeTrue();
+
+        message.InlineAttempts = 2;
+        var updated = await storage.ChangeReceiveRetryStateAsync(
+            message,
+            StatusName.Failed,
+            nextRetryAt: DateTime.UtcNow,
+            lockedUntil: null,
+            originalRetries: 0,
+            originalInlineAttempts: 0,
+            cancellationToken: AbortToken
+        );
+
+        updated.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_reject_attempt_reservation_after_publish_lease_expires()
+    {
+        _EnsureInitialized();
+        var storage = GetStorage();
+        var message = await storage.StoreMessageAsync("expired-reservation", CreateMessage(), AbortToken);
+        var lease = TimeSpan.FromSeconds(10);
+        (await storage.LeasePublishAsync(message, _fakeTimeProvider!.GetUtcNow().UtcDateTime.Add(lease), AbortToken))
+            .Should()
+            .BeTrue();
+        message.InlineAttempts = 1;
+        _fakeTimeProvider.Advance(lease);
+
+        (await storage.ReservePublishAttemptAsync(message, originalInlineAttempts: 0, AbortToken)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_reject_attempt_reservation_after_receive_lease_expires()
+    {
+        _EnsureInitialized();
+        var storage = GetStorage();
+        var message = await storage.StoreReceivedMessageAsync(
+            "expired-reservation",
+            "group",
+            CreateMessage(),
+            AbortToken
+        );
+        var lease = TimeSpan.FromSeconds(10);
+        (await storage.LeaseReceiveAsync(message, _fakeTimeProvider!.GetUtcNow().UtcDateTime.Add(lease), AbortToken))
+            .Should()
+            .BeTrue();
+        message.InlineAttempts = 1;
+        _fakeTimeProvider.Advance(lease);
+
+        (await storage.ReserveReceiveAttemptAsync(message, originalInlineAttempts: 0, AbortToken)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_reject_stale_publish_success_after_replacement_lease_is_acquired()
+    {
+        _EnsureInitialized();
+        var storage = GetStorage();
+        NodeMembership.SetIdentity("owner-a");
+        var message = await storage.StoreMessageAsync("stale-success", CreateMessage(), AbortToken);
+        var lease = TimeSpan.FromSeconds(10);
+        (await storage.LeasePublishAsync(message, _fakeTimeProvider!.GetUtcNow().UtcDateTime.Add(lease), AbortToken))
+            .Should()
+            .BeTrue();
+        message.InlineAttempts = 1;
+        (await storage.ReservePublishAttemptAsync(message, originalInlineAttempts: 0, AbortToken)).Should().BeTrue();
+        var staleLockedUntil = message.LockedUntil;
+        var staleOwner = message.Owner;
+
+        _fakeTimeProvider.Advance(lease);
+        NodeMembership.SetIdentity("owner-b");
+        (await storage.LeasePublishAsync(message, _fakeTimeProvider.GetUtcNow().UtcDateTime.Add(lease), AbortToken))
+            .Should()
+            .BeTrue();
+        message.LockedUntil = staleLockedUntil;
+        message.Owner = staleOwner;
+
+        (
+            await storage.ChangePublishRetryStateAsync(
+                message,
+                StatusName.Succeeded,
+                null,
+                null,
+                message.Retries,
+                message.InlineAttempts,
+                AbortToken
+            )
+        )
+            .Should()
+            .BeFalse();
+    }
+
+    [Fact]
+    public async Task should_reject_stale_receive_success_after_replacement_lease_is_acquired()
+    {
+        _EnsureInitialized();
+        var storage = GetStorage();
+        NodeMembership.SetIdentity("owner-a");
+        var message = await storage.StoreReceivedMessageAsync("stale-success", "group", CreateMessage(), AbortToken);
+        var lease = TimeSpan.FromSeconds(10);
+        (await storage.LeaseReceiveAsync(message, _fakeTimeProvider!.GetUtcNow().UtcDateTime.Add(lease), AbortToken))
+            .Should()
+            .BeTrue();
+        message.InlineAttempts = 1;
+        (await storage.ReserveReceiveAttemptAsync(message, originalInlineAttempts: 0, AbortToken)).Should().BeTrue();
+        var staleLockedUntil = message.LockedUntil;
+        var staleOwner = message.Owner;
+
+        _fakeTimeProvider.Advance(lease);
+        NodeMembership.SetIdentity("owner-b");
+        (await storage.LeaseReceiveAsync(message, _fakeTimeProvider.GetUtcNow().UtcDateTime.Add(lease), AbortToken))
+            .Should()
+            .BeTrue();
+        message.LockedUntil = staleLockedUntil;
+        message.Owner = staleOwner;
+
+        (
+            await storage.ChangeReceiveRetryStateAsync(
+                message,
+                StatusName.Succeeded,
+                null,
+                null,
+                message.Retries,
+                message.InlineAttempts,
+                AbortToken
+            )
+        )
+            .Should()
+            .BeFalse();
+    }
+
+    [Fact]
+    public async Task should_preserve_durable_retry_counters_on_expired_lease_redelivery()
+    {
+        _EnsureInitialized();
+        var storage = GetStorage();
+        var origin = CreateMessage();
+        var message = await storage.StoreReceivedMessageAsync("redelivery-budget", "group", origin, AbortToken);
+        (await storage.LeaseReceiveAsync(message, _fakeTimeProvider!.GetUtcNow().UtcDateTime.AddMinutes(1), AbortToken))
+            .Should()
+            .BeTrue();
+        message.InlineAttempts = 1;
+        (await storage.ReserveReceiveAttemptAsync(message, originalInlineAttempts: 0, AbortToken)).Should().BeTrue();
+        message.Retries = 1;
+        message.InlineAttempts = 0;
+        (
+            await storage.ChangeReceiveRetryStateAsync(
+                message,
+                StatusName.Failed,
+                _fakeTimeProvider.GetUtcNow().UtcDateTime,
+                null,
+                originalRetries: 0,
+                originalInlineAttempts: 1,
+                cancellationToken: AbortToken
+            )
+        )
+            .Should()
+            .BeTrue();
+
+        var redelivered = await storage.StoreReceivedMessageAsync("redelivery-budget", "group", origin, AbortToken);
+
+        redelivered.Retries.Should().Be(1);
+        redelivered.InlineAttempts.Should().Be(0);
+    }
+
+    [Fact]
     public override Task should_report_false_when_received_exception_message_is_already_terminal() =>
         base.should_report_false_when_received_exception_message_is_already_terminal();
 

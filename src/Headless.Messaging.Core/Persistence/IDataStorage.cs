@@ -66,6 +66,24 @@ public interface IDataStorage
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>Updates published retry state with optimistic checks for both durable retry counters.</summary>
+    ValueTask<bool> ChangePublishRetryStateAsync(
+        MediumMessage message,
+        StatusName state,
+        DateTime? nextRetryAt,
+        DateTime? lockedUntil,
+        int originalRetries,
+        int originalInlineAttempts,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Atomically reserves the next published delivery attempt under the active lease.</summary>
+    ValueTask<bool> ReservePublishAttemptAsync(
+        MediumMessage message,
+        int originalInlineAttempts,
+        CancellationToken cancellationToken = default
+    );
+
     /// <summary>
     /// Writes a pre-attempt lease on a published message, setting <c>LockedUntil</c> on the row so
     /// the persisted retry processor excludes it while a dispatch attempt is active.
@@ -116,6 +134,24 @@ public interface IDataStorage
         DateTime? nextRetryAt = null,
         DateTime? lockedUntil = null,
         int? originalRetries = null,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Updates received retry state with optimistic checks for both durable retry counters.</summary>
+    ValueTask<bool> ChangeReceiveRetryStateAsync(
+        MediumMessage message,
+        StatusName state,
+        DateTime? nextRetryAt,
+        DateTime? lockedUntil,
+        int originalRetries,
+        int originalInlineAttempts,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Atomically reserves the next received delivery attempt under the active lease.</summary>
+    ValueTask<bool> ReserveReceiveAttemptAsync(
+        MediumMessage message,
+        int originalInlineAttempts,
         CancellationToken cancellationToken = default
     );
 

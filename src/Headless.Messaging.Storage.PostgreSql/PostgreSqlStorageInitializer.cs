@@ -309,7 +309,8 @@ internal sealed class PostgreSqlStorageInitializer(
             	"Group" VARCHAR(200) NULL,
             	"Content" TEXT NULL,
                 "IntentType" SMALLINT NOT NULL,
-            	"Retries" INT NOT NULL,
+                "Retries" INT NOT NULL,
+                "InlineAttempts" INT NOT NULL DEFAULT 0,
             	"Added" TIMESTAMPTZ NOT NULL,
                 "ExpiresAt" TIMESTAMPTZ NULL,
                 "NextRetryAt" TIMESTAMPTZ NULL,
@@ -352,7 +353,8 @@ internal sealed class PostgreSqlStorageInitializer(
             	"Name" VARCHAR(200) NOT NULL,
             	"Content" TEXT NULL,
                 "IntentType" SMALLINT NOT NULL,
-            	"Retries" INT NOT NULL,
+                "Retries" INT NOT NULL,
+                "InlineAttempts" INT NOT NULL DEFAULT 0,
             	"Added" TIMESTAMPTZ NOT NULL,
                 "ExpiresAt" TIMESTAMPTZ NULL,
                 "NextRetryAt" TIMESTAMPTZ NULL,
@@ -361,6 +363,9 @@ internal sealed class PostgreSqlStorageInitializer(
             	"StatusName" VARCHAR(50) NOT NULL,
                 "MessageId" VARCHAR(200) NOT NULL
             );
+
+            ALTER TABLE {GetReceivedTableName()} ADD COLUMN IF NOT EXISTS "InlineAttempts" INT NOT NULL DEFAULT 0;
+            ALTER TABLE {GetPublishedTableName()} ADD COLUMN IF NOT EXISTS "InlineAttempts" INT NOT NULL DEFAULT 0;
 
             CREATE INDEX IF NOT EXISTS "idx_published_ExpiresAt_StatusName" ON {GetPublishedTableName()}("ExpiresAt","StatusName");
             CREATE INDEX IF NOT EXISTS "idx_published_Version_ExpiresAt_StatusName" ON {GetPublishedTableName()} ("Version","ExpiresAt","StatusName");

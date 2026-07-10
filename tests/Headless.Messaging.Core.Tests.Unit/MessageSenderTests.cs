@@ -62,6 +62,20 @@ public sealed class MessageSenderTests : TestBase
         storage
             .LeasePublishAsync(Arg.Any<MediumMessage>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(true));
+        storage
+            .ReservePublishAttemptAsync(Arg.Any<MediumMessage>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(true));
+        storage
+            .ChangePublishRetryStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(true));
 
         var services = new ServiceCollection();
         services.AddLogging();
@@ -91,6 +105,20 @@ public sealed class MessageSenderTests : TestBase
     {
         storage
             .LeasePublishAsync(Arg.Any<MediumMessage>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(true));
+        storage
+            .ReservePublishAttemptAsync(Arg.Any<MediumMessage>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(true));
+        storage
+            .ChangePublishRetryStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(ValueTask.FromResult(true));
 
         var services = new ServiceCollection();
@@ -157,12 +185,7 @@ public sealed class MessageSenderTests : TestBase
             transport,
             new MessagingOptions
             {
-                RetryPolicy =
-                {
-                    MaxInlineRetries = 4,
-                    MaxPersistedRetries = 0,
-                    BackoffStrategy = new ZeroDelayRetryBackoffStrategy(),
-                },
+                RetryPolicy = { RetryStrategy = TestRetryStrategies.ZeroDelay(4), MaxPersistedRetries = 0 },
             }
         );
 
@@ -219,9 +242,8 @@ public sealed class MessageSenderTests : TestBase
             {
                 RetryPolicy =
                 {
-                    MaxInlineRetries = 1,
+                    RetryStrategy = TestRetryStrategies.FixedDelay(1, TimeSpan.FromMilliseconds(40)),
                     MaxPersistedRetries = 0,
-                    BackoffStrategy = new FixedDelayRetryBackoffStrategy(TimeSpan.FromMilliseconds(40)),
                 },
             }
         );
@@ -273,9 +295,8 @@ public sealed class MessageSenderTests : TestBase
             {
                 RetryPolicy =
                 {
-                    MaxInlineRetries = 0,
+                    RetryStrategy = TestRetryStrategies.FixedDelay(0, TimeSpan.FromSeconds(5)),
                     MaxPersistedRetries = 1,
-                    BackoffStrategy = new FixedDelayRetryBackoffStrategy(TimeSpan.FromSeconds(5)),
                 },
             }
         );
@@ -287,13 +308,13 @@ public sealed class MessageSenderTests : TestBase
         result.Succeeded.Should().BeFalse();
         await storage
             .Received(1)
-            .ChangePublishStateAsync(
+            .ChangePublishRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 StatusName.Failed,
-                Arg.Any<object?>(),
                 Arg.Is<DateTime?>(value => value.HasValue),
                 Arg.Any<DateTime?>(),
-                Arg.Is<int?>(value => value == 0),
+                Arg.Is<int>(value => value == 0),
+                Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -328,9 +349,6 @@ public sealed class MessageSenderTests : TestBase
             .SendAsync(transportMessage, Arg.Any<CancellationToken>())
             .Returns(OperateResult.Failed(new ArgumentNullException("param")));
 
-        var backoffStrategy = Substitute.For<IRetryBackoffStrategy>();
-        backoffStrategy.Compute(Arg.Any<int>(), Arg.Any<int>(), Arg.Any<Exception>()).Returns(RetryDecision.Stop);
-
         var callbackInvoked = false;
         var sender = _CreateSender(
             storage,
@@ -340,9 +358,8 @@ public sealed class MessageSenderTests : TestBase
             {
                 RetryPolicy =
                 {
-                    MaxInlineRetries = 0,
+                    RetryStrategy = TestRetryStrategies.PermanentArgument(0),
                     MaxPersistedRetries = 0,
-                    BackoffStrategy = backoffStrategy,
                     OnExhausted = (_, _) =>
                     {
                         callbackInvoked = true;
@@ -360,13 +377,13 @@ public sealed class MessageSenderTests : TestBase
         callbackInvoked.Should().BeFalse();
         await storage
             .Received()
-            .ChangePublishStateAsync(
+            .ChangePublishRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 StatusName.Failed,
-                Arg.Any<object?>(),
                 Arg.Is<DateTime?>(v => v == null),
                 Arg.Any<DateTime?>(),
-                Arg.Any<int?>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -376,7 +393,7 @@ public sealed class MessageSenderTests : TestBase
     {
         // given — IHostApplicationLifetime.ApplicationStopping is signalled and the transport
         // surfaces an OCE bound to that same token. The sender must classify this as cancellation
-        // (RetryDecision.Stop), NOT invoke OnExhausted, and NOT write a state transition. The row's
+        // (non-retryable), NOT invoke OnExhausted, and NOT write a state transition. The row's
         // existing NextRetryAt remains and the persisted retry processor picks it up on restart.
         var storage = Substitute.For<IDataStorage>();
         storage
@@ -412,9 +429,8 @@ public sealed class MessageSenderTests : TestBase
             {
                 RetryPolicy =
                 {
-                    MaxInlineRetries = 0,
+                    RetryStrategy = TestRetryStrategies.FixedDelay(0, TimeSpan.Zero),
                     MaxPersistedRetries = 4,
-                    BackoffStrategy = new FixedIntervalBackoffStrategy(TimeSpan.Zero),
                     OnExhausted = (_, _) =>
                     {
                         callbackInvoked = true;
@@ -484,9 +500,8 @@ public sealed class MessageSenderTests : TestBase
             {
                 RetryPolicy =
                 {
-                    MaxInlineRetries = 0,
+                    RetryStrategy = TestRetryStrategies.FixedDelay(0, TimeSpan.Zero),
                     MaxPersistedRetries = 0,
-                    BackoffStrategy = new FixedDelayRetryBackoffStrategy(TimeSpan.Zero),
                     OnExhausted = (_, _) =>
                     {
                         callbackInvoked = true;
@@ -495,6 +510,17 @@ public sealed class MessageSenderTests : TestBase
                 },
             }
         );
+        storage
+            .ChangePublishRetryStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(false));
 
         // when — config forces Exhausted on the first failure
         var result = await sender.SendAsync(_CreateMediumMessage());
@@ -504,13 +530,13 @@ public sealed class MessageSenderTests : TestBase
         callbackInvoked.Should().BeFalse();
         await storage
             .Received(1)
-            .ChangePublishStateAsync(
+            .ChangePublishRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 StatusName.Failed,
-                Arg.Any<object?>(),
                 Arg.Is<DateTime?>(v => v == null),
                 Arg.Any<DateTime?>(),
-                Arg.Any<int?>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -570,9 +596,8 @@ public sealed class MessageSenderTests : TestBase
             {
                 RetryPolicy =
                 {
-                    MaxInlineRetries = 0,
+                    RetryStrategy = TestRetryStrategies.ZeroDelay(0),
                     MaxPersistedRetries = 0,
-                    BackoffStrategy = new ZeroDelayRetryBackoffStrategy(),
                     OnExhausted = (info, _) =>
                     {
                         observed = info.ServiceProvider.GetRequiredService<ScopedMarker>();
@@ -604,7 +629,10 @@ public sealed class MessageSenderTests : TestBase
             storage,
             serializer,
             transport,
-            new MessagingOptions { RetryPolicy = { MaxInlineRetries = 0, MaxPersistedRetries = 0 } }
+            new MessagingOptions
+            {
+                RetryPolicy = { RetryStrategy = TestRetryStrategies.ZeroDelay(0), MaxPersistedRetries = 0 },
+            }
         );
 
         // Override the happy-path lease stub from _CreateSender so the lease returns false.
@@ -914,4 +942,74 @@ public sealed class MessageSenderTests : TestBase
     }
 
     private sealed class ScopedMarker;
+
+    [Fact]
+    public async Task should_not_invoke_transport_when_crash_recovery_finds_reserved_inline_budget_consumed()
+    {
+        var storage = Substitute.For<IDataStorage>();
+        storage
+            .ChangePublishStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<object?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(true));
+        var serializer = Substitute.For<ISerializer>();
+        var transport = Substitute.For<ITransport>();
+        var sender = _CreateSender(
+            storage,
+            serializer,
+            transport,
+            new MessagingOptions
+            {
+                RetryPolicy = { RetryStrategy = TestRetryStrategies.ZeroDelay(2), MaxPersistedRetries = 1 },
+            }
+        );
+        var message = _CreateMediumMessage();
+        message.InlineAttempts = 3;
+
+        await sender.SendAsync(message);
+
+        await transport.DidNotReceiveWithAnyArgs().SendAsync(default!, default);
+        message.Retries.Should().Be(1);
+        message.InlineAttempts.Should().Be(0);
+        await storage
+            .Received(1)
+            .ChangePublishRetryStateAsync(
+                Arg.Is<MediumMessage>(value => value.Retries == 1 && value.InlineAttempts == 0),
+                StatusName.Failed,
+                Arg.Is<DateTime?>(value => value.HasValue),
+                Arg.Is<DateTime?>(value => value == null),
+                Arg.Is(0),
+                Arg.Is(3),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_not_invoke_transport_or_write_state_when_attempt_reservation_is_lost()
+    {
+        var storage = Substitute.For<IDataStorage>();
+        var serializer = Substitute.For<ISerializer>();
+        var transport = Substitute.For<ITransport>();
+        var sender = _CreateSender(storage, serializer, transport, new MessagingOptions());
+        storage
+            .ReservePublishAttemptAsync(Arg.Any<MediumMessage>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(false));
+        var message = _CreateMediumMessage();
+
+        var result = await sender.SendAsync(message);
+
+        result.Succeeded.Should().BeTrue();
+        message.InlineAttempts.Should().Be(0);
+        await serializer.DidNotReceiveWithAnyArgs().SerializeToTransportMessageAsync(default!);
+        await transport.DidNotReceiveWithAnyArgs().SendAsync(default!, default);
+        await storage
+            .DidNotReceiveWithAnyArgs()
+            .ChangePublishRetryStateAsync(default!, default, default, default, default, default, default);
+    }
 }

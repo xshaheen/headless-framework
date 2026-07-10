@@ -501,11 +501,11 @@ internal static partial class LoggerExtensions
 
     [LoggerMessage(
         EventId = 68,
-        EventName = "BackoffStrategyThrew",
+        EventName = "RetryStrategyThrew",
         Level = LogLevel.Error,
-        Message = "IRetryBackoffStrategy.Compute threw {ExceptionType} for message {StorageId}. Treating as Exhausted to avoid an infinite retry loop on a buggy strategy."
+        Message = "The Polly retry predicate or delay generator threw {ExceptionType} for message {StorageId}. Treating the retry budget as exhausted."
     )]
-    public static partial void BackoffStrategyThrew(
+    public static partial void RetryStrategyThrew(
         this ILogger logger,
         Exception ex,
         Guid storageId,
