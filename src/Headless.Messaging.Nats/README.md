@@ -12,6 +12,7 @@ Provides a NATS JetStream transport for Headless messaging so applications can p
 - **JetStream**: Persistent streams with at-least-once delivery
 - **Subject Routing**: Hierarchical subject/message-name patterns (e.g., `orders.*.created`)
 - **Connection Pooling**: Round-robin pool for publish throughput
+- **Host-Cancellable Startup**: Connection and JetStream topology setup honor host shutdown while preserving configured timeouts.
 
 ## Installation
 

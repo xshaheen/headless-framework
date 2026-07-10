@@ -141,7 +141,8 @@ public sealed class ConsumerClientPauseResumeTests
 
         public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
 
-        public ValueTask SubscribeAsync(IEnumerable<string> topics) => ValueTask.CompletedTask;
+        public ValueTask SubscribeAsync(IEnumerable<string> topics, CancellationToken cancellationToken = default) =>
+            ValueTask.CompletedTask;
 
         public ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
             ValueTask.CompletedTask;

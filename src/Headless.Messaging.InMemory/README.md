@@ -13,6 +13,7 @@ Provides a lightweight, no-infrastructure message queue for local development, t
 - **Testing Friendly**: Deterministic, synchronous behavior
 - **Same API**: Identical interface to production transports
 - **Thread-Safe**: Concurrent producer/consumer support
+- **Uniform Cancellation**: Consumer startup implements the same host-cancellable contract as broker-backed providers.
 
 ## Design Notes
 

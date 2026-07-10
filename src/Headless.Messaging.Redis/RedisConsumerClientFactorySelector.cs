@@ -12,28 +12,45 @@ internal sealed class RedisConsumerClientFactorySelector(
     private readonly RedisConsumerClientFactory? _queueFactory = queueFactories.LastOrDefault();
     private readonly RedisPubSubConsumerClientFactory? _busFactory = busFactories.LastOrDefault();
 
-    public Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent)
+    public Task<IConsumerClient> CreateAsync(
+        string groupName,
+        byte groupConcurrent,
+        CancellationToken cancellationToken = default
+    )
     {
         if (_busFactory is not null)
         {
-            return _busFactory.CreateAsync(groupName, groupConcurrent);
+            return _busFactory.CreateAsync(groupName, groupConcurrent, cancellationToken);
         }
 
         if (_queueFactory is not null)
         {
-            return _queueFactory.CreateAsync(groupName, groupConcurrent);
+            return _queueFactory.CreateAsync(groupName, groupConcurrent, cancellationToken);
         }
 
         throw new InvalidOperationException("Headless.Messaging.Redis has no configured consumer client factory.");
     }
 
-    public Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent, IntentType intentType)
+    public Task<IConsumerClient> CreateAsync(
+        string groupName,
+        byte groupConcurrent,
+        IntentType intentType,
+        CancellationToken cancellationToken = default
+    )
     {
 #pragma warning disable CA2000 // The selected factory transfers IConsumerClient ownership to the caller.
         return intentType switch
         {
-            IntentType.Bus when _busFactory is not null => _busFactory.CreateAsync(groupName, groupConcurrent),
-            IntentType.Queue when _queueFactory is not null => _queueFactory.CreateAsync(groupName, groupConcurrent),
+            IntentType.Bus when _busFactory is not null => _busFactory.CreateAsync(
+                groupName,
+                groupConcurrent,
+                cancellationToken
+            ),
+            IntentType.Queue when _queueFactory is not null => _queueFactory.CreateAsync(
+                groupName,
+                groupConcurrent,
+                cancellationToken
+            ),
             IntentType.Bus => throw new InvalidOperationException(
                 "Headless.Messaging.Redis was not configured for Redis Pub/Sub bus delivery. Call UseRedisPubSub(...)."
             ),

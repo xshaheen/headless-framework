@@ -13,6 +13,7 @@ Provides both Redis Streams queue delivery and Redis Pub/Sub broadcast delivery 
 - Consumer groups, acknowledgment, pending-entry claiming, and durable queue delivery for Streams.
 - Volatile broadcast delivery for Pub/Sub to currently connected subscribers.
 - Shared StackExchange.Redis dependency and Redis configuration model.
+- Streams and Pub/Sub consumer startup honor host cancellation through connection, provisioning, and subscription.
 
 ## Design Notes
 

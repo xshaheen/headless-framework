@@ -15,6 +15,7 @@ Enables bus fan-out through SNS topics and queue work delivery through SQS queue
 - **Dead Letter Queues**: Built-in failure handling
 - **IAM Integration**: Automatic policy configuration
 - **FIFO Support**: Preserves `.fifo` suffixes and configures FIFO topics/queues when message names end with `.fifo`.
+- **Host-Cancellable Startup**: Consumer connection, topology provisioning, and subscription honor host shutdown.
 
 ## Design Notes
 

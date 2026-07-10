@@ -20,9 +20,12 @@ Provides the foundational runtime for reliable distributed messaging with transa
 - **Type-Safe Dispatch**: Reflection-free consumer invocation via compile-time generated code
 - **Extension System**: Pluggable storage and transport providers, with exactly one storage provider required
 - **Bootstrapper**: Hosted service for startup and shutdown coordination
+- **Host-Cancellable Consumer Startup**: Factory creation, metadata provisioning, and subscription receive the host-stopping token without converting cancellation into broker failures
 - **Circuit Breaker**: Per-consumer-group circuit breaker (Closed → Open → HalfOpen) with exponential open-duration escalation
 - **Adaptive Retry Backpressure**: Retry processor backs off polling when circuit-open rate exceeds threshold
 - **Distributed Lock Integration**: Optional `IDistributedLock`-backed mutual exclusion for multi-replica retry pickup (`UseStorageLock`)
+
+Consumer providers implement trailing optional cancellation tokens on both `IConsumerClientFactory.CreateAsync(...)` contract shapes and on `IConsumerClient.FetchMessageNamesAsync(...)` / `SubscribeAsync(...)`. Core passes the host-stopping token through metadata startup and a linked group token through worker creation and subscription. Providers preserve `OperationCanceledException` so shutdown is not reported as a broker connection failure.
 
 ## Installation
 

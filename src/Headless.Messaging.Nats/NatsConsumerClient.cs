@@ -52,7 +52,7 @@ internal sealed class NatsConsumerClient(
 
     public BrokerAddress BrokerAddress => new("nats", BrokerAddressDisplay.FormatMany(_natsOptions.Servers));
 
-    public async Task ConnectAsync()
+    public async Task ConnectAsync(CancellationToken cancellationToken = default)
     {
         // Consumer connections disable reconnect so failures propagate to the
         // circuit breaker instead of being silently retried by the NATS client.
@@ -62,11 +62,14 @@ internal sealed class NatsConsumerClient(
         };
 
         _connection = new NatsConnection(opts);
-        await _connection.ConnectAsync().ConfigureAwait(false);
+        await _connection.ConnectAsync().AsTask().WaitAsync(cancellationToken).ConfigureAwait(false);
         _jsContext = new NatsJSContext(_connection);
     }
 
-    public async ValueTask<ICollection<string>> FetchMessageNamesAsync(IEnumerable<string> messageNames)
+    public async ValueTask<ICollection<string>> FetchMessageNamesAsync(
+        IEnumerable<string> messageNames,
+        CancellationToken cancellationToken = default
+    )
     {
         // Materialize once: the source is consumed by GroupBy and the return value, so a lazy
         // input would otherwise be enumerated twice.
@@ -88,7 +91,7 @@ internal sealed class NatsConsumerClient(
                 StringComparer.Ordinal
             );
 
-            using var cts = new CancellationTokenSource(_natsOptions.StreamCreateTimeout);
+            using var cts = _natsOptions.StreamCreateTimeout.ToCancellationTokenSource(cancellationToken);
 
             // Several consumer groups can normalize to the same stream name, and each group only knows its
             // own subjects. CreateOrUpdateStream REPLACES the subject list, so union with whatever the stream
@@ -206,9 +209,10 @@ internal sealed class NatsConsumerClient(
         ];
     }
 
-    public ValueTask SubscribeAsync(IEnumerable<string> messageNames)
+    public ValueTask SubscribeAsync(IEnumerable<string> messageNames, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNull(messageNames);
+        cancellationToken.ThrowIfCancellationRequested();
 
         _subscribedMessageNames = messageNames.ToList();
 

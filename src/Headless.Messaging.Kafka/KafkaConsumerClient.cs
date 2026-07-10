@@ -59,7 +59,10 @@ internal sealed class KafkaConsumerClient : IConsumerClient
 
     public BrokerAddress BrokerAddress => new("kafka", BrokerAddressDisplay.FormatMany(_kafkaOptions.Servers));
 
-    public async ValueTask<ICollection<string>> FetchMessageNamesAsync(IEnumerable<string> messageNames)
+    public async ValueTask<ICollection<string>> FetchMessageNamesAsync(
+        IEnumerable<string> messageNames,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotNull(messageNames);
 
@@ -107,11 +110,12 @@ internal sealed class KafkaConsumerClient : IConsumerClient
                             ReplicationFactor = _kafkaOptions.TopicOptions.ReplicationFactor,
                         })
                     )
+                    .WaitAsync(cancellationToken)
                     .ConfigureAwait(false);
             }
 #pragma warning disable ERP022
             catch (CreateTopicsException e) when (e.Message.Contains("already exists", StringComparison.Ordinal)) { }
-            catch (Exception e)
+            catch (Exception e) when (e is not OperationCanceledException)
             {
                 var logArgs = new LogMessageEventArgs
                 {
@@ -126,9 +130,10 @@ internal sealed class KafkaConsumerClient : IConsumerClient
         return normalizedTopics;
     }
 
-    public ValueTask SubscribeAsync(IEnumerable<string> topics)
+    public ValueTask SubscribeAsync(IEnumerable<string> topics, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNull(topics);
+        cancellationToken.ThrowIfCancellationRequested();
 
         Connect();
 

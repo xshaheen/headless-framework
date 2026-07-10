@@ -123,6 +123,29 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task queue_intent_fetch_should_propagate_exact_token()
+    {
+        var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
+        await using var client = new AmazonSqsConsumerClient(
+            "test-group",
+            1,
+            _CreateOptions(),
+            logger,
+            IntentType.Queue
+        );
+        var sqsClient = Substitute.For<IAmazonSQS>();
+        sqsClient
+            .CreateQueueAsync(Arg.Any<CreateQueueRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new CreateQueueResponse { QueueUrl = "https://sqs.local/orders" });
+        _SetPrivateFields(client, sqsClient, string.Empty);
+        using var cts = new CancellationTokenSource();
+
+        await client.FetchMessageNamesAsync(["orders"], cts.Token);
+
+        await sqsClient.Received(1).CreateQueueAsync(Arg.Any<CreateQueueRequest>(), cts.Token);
+    }
+
+    [Fact]
     public async Task should_log_error_when_consumeAsync_throws_in_concurrent_mode()
     {
         // given

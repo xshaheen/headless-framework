@@ -33,7 +33,10 @@ internal sealed class RedisConsumerClient(
 
     public BrokerAddress BrokerAddress => new("redis", options.Value.DisplayEndpoint);
 
-    public async ValueTask SubscribeAsync(IEnumerable<string> messageNames)
+    public async ValueTask SubscribeAsync(
+        IEnumerable<string> messageNames,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotNull(messageNames);
 
@@ -41,7 +44,9 @@ internal sealed class RedisConsumerClient(
 
         foreach (var messageName in arr)
         {
-            await redis.CreateStreamWithConsumerGroupAsync(messageName, groupId).ConfigureAwait(false);
+            await redis
+                .CreateStreamWithConsumerGroupAsync(messageName, groupId, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         _messageNames = arr;

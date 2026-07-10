@@ -69,14 +69,16 @@ The transport should:
 
 ### `IConsumerClientFactory`
 
-`CreateAsync(groupName, groupConcurrent)` is called twice in practice:
+`CreateAsync(groupName, groupConcurrent, cancellationToken)` is called twice in practice:
 
-- once during startup/topic discovery
-- once for each live consumer thread
+- once during startup/topology discovery with the host-stopping token
+- once for each live consumer thread with its linked consumer-group token
 
 The factory should therefore be safe to call repeatedly, and client construction should not start background receive loops too early.
 
-### `IConsumerClient.FetchTopicsAsync`
+Factories must let `OperationCanceledException` escape unchanged instead of wrapping shutdown cancellation as `BrokerConnectionException`.
+
+### `IConsumerClient.FetchMessageNamesAsync`
 
 This is the broker-normalization and provisioning hook.
 
@@ -88,9 +90,15 @@ Use it for broker-specific work such as:
 
 If the broker uses topic names as-is, the default pass-through behavior is enough.
 
+The method receives the host-stopping token and must pass it through broker connection and topology operations.
+When a provider SDK operation has no native cancellation parameter, await it through a cancellation-aware wait and retain the provider's existing timeout.
+
 ### `IConsumerClient.SubscribeAsync`
 
-This should bind the current consumer group to the resolved topics produced by `FetchTopicsAsync(...)`.
+The method receives the linked consumer-group token and must pass it through broker subscription and topology operations.
+Apply the same cancellation-aware wait rule to subscription operations that lack native cancellation.
+
+This should bind the current consumer group to the resolved message names produced by `FetchMessageNamesAsync(...)`.
 
 ### `IConsumerClient.ListeningAsync`
 
@@ -188,7 +196,7 @@ Each provider `README.md` should document:
 - publish semantics, including whether broker-side scheduling exists
 - consume semantics for commit, reject, redelivery, and dead-letter behavior
 - ordering guarantees under broker-native rules and `ConsumerThreadCount`
-- auto-provisioning done by `FetchTopicsAsync(...)` or `SubscribeAsync(...)`
+- auto-provisioning done by `FetchMessageNamesAsync(...)` or `SubscribeAsync(...)`
 - topic naming restrictions, required custom headers, and payload limits
 
 ## Good implementation signals
@@ -196,7 +204,7 @@ Each provider `README.md` should document:
 A provider is usually aligned with the framework when:
 
 - direct publishing works through `ITransport` without special-case code in core
-- topic provisioning is isolated to `FetchTopicsAsync(...)`
+- destination provisioning is isolated to `FetchMessageNamesAsync(...)`
 - every consumed message reaches `OnMessageCallback(...)` with a valid `Headers.Group`
 - commit/reject behavior is broker-correct and symmetric with the callback token
 - pause/resume works without cancelling the receive task

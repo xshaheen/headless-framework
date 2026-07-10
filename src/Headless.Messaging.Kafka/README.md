@@ -14,6 +14,7 @@ Enables high-throughput, distributed event streaming using Apache Kafka with con
 - **Retention**: Persistent message storage with configurable retention
 - **At-Least-Once Delivery**: Broker delivery plus Headless retry/outbox recovery; consumers must remain idempotent
 - **Kafka Configuration Access**: Exposes raw Kafka producer and consumer settings through `MainConfig` and consumer-specific options
+- **Host-Cancellable Startup**: Topic creation and subscription setup honor host shutdown.
 
 ## Design Notes
 
@@ -122,7 +123,7 @@ options.EnableSubscriberParallelExecute = false; // Disable parallel execution
 - Delay stays in the core pipeline. This provider does not add broker-native scheduling.
 - Commit commits the consumed partition offset. Under concurrent consumption, commits advance only through the contiguous completed offset watermark per partition.
 - Reject seeks back to the failed offset so Kafka can redeliver on the next poll.
-- `FetchTopicsAsync(...)` creates concrete topics when auto-create is enabled and normalizes wildcard subscriptions.
+- `FetchMessageNamesAsync(...)` creates concrete topics when auto-create is enabled and normalizes wildcard subscriptions.
 - `SubscribeAsync(...)` joins the configured consumer group to those topics.
 - Partition keys control ordering. Parallel handlers or multiple partitions can reorder observed processing.
 - Topic names, header sizes, and record sizes follow Kafka broker limits.

@@ -222,6 +222,7 @@ services.AddHeadlessMessaging(setup =>
 - **Fail-fast defaults**: Duplicate consumer or runtime registrations are rejected by default. Anonymous runtime delegates must provide `HandlerId`.
 - **Telemetry parity**: Existing diagnostic listener and metric names stay stable across direct publish, outbox publish, and runtime subscriptions.
 - **Consumer lifecycle semantics**: `IConsumerLifecycle` runs per delivery on the scoped consumer instance. Do not treat it as application startup or shutdown.
+- **Consumer startup is host-cancellable**: consumer factory creation, metadata provisioning, and subscription receive the host-stopping token. Provider implementations preserve `OperationCanceledException`; do not wrap shutdown cancellation as a broker failure.
 - **Core handles outbox automatically** when paired with EF Core -- messages are stored in database before being dispatched to transport.
 - **Atomic outbox is on by default on the EF storage path** (`setup.UseEntityFramework<TContext>()`): a publish inside a coordinated transaction is atomic with the DB write, zero consumer wiring — do not hand-wire commit coordination for it. Opt out with `setup.UseEntityFramework<TContext>(o => o.EnableTransactionalOutbox = false)` (the opt-out travels with the EF storage choice). Raw-ADO paths (`UsePostgreSql`/`UseSqlServer` by connection string) stay explicit opt-in: wire `AddPostgreSqlCommitCoordination()`/`AddSqlServerCommitCoordination()` plus the coordinated-transaction helpers.
 - **Mis-wire fails loud at startup**: if the outbox is enabled but the commit interceptor is not firing, `CommitInterceptorStartupGate<TContext>` logs a warning by default; set `CommitProbeMode.Strict` (via `services.Configure<CommitInterceptorProbeOptions>(o => o.Mode = CommitProbeMode.Strict)`) to fail startup instead of shipping a silently non-transactional outbox.
@@ -441,10 +442,13 @@ Wires messaging into dependency injection: registration, publishing, dispatch, m
 - Strict publish tenancy via `RequireTenantOnPublish()`.
 - Storage-backed retry/outbox and cleanup processors.
 - Circuit breaker monitor/control APIs.
+- Host-cancellable consumer factory creation, metadata provisioning, and subscription.
 
 ### Design Notes
 
 Core owns logical metadata and provider-independent correctness. Provider packages own broker-specific values and limits. `CorrelationFrom(...)` is a universal logical knob; partition keys, routing keys, subject shards, and message group ids are provider hatches because their semantics differ.
+
+The public consumer startup contracts accept trailing optional cancellation tokens: both `IConsumerClientFactory.CreateAsync(...)` overload shapes, `IConsumerClient.FetchMessageNamesAsync(...)`, and `IConsumerClient.SubscribeAsync(...)`. Core passes the host-stopping token to metadata startup and a linked group token to worker creation and subscription. Implementations must let `OperationCanceledException` escape unchanged.
 
 The blessed cross-package SPI (the contracts that storage providers, transports, and dashboards resolve or implement) lives in the public `Headless.Messaging.Runtime` namespace: `IProcessingServer` (implement to attach a long-running unit to the bootstrap sequence) and `IConsumerServiceSelector` / `MethodMatcherCache` (inspect the resolved consumer topology). The `TransportNaming` (`WildcardToRegex`, `Normalize`) and `RuntimeTypeInspection` (`IsComplexType`, `DeclaresFieldOfType`) helpers in the same namespace are `internal` and shared with the first-party transports via `InternalsVisibleTo` — they are not part of the NuGet contract. These types were previously exposed under `Headless.Messaging.Internal`; that namespace now holds only genuine implementation detail. The monitoring status is a typed enum — `StatusName` (in `Headless.Messaging.Monitoring`, next to `MessageView`/`MessageQuery`) — so `MessageView.StatusName` and the `MessageQuery.StatusName` filter are compile-time safe. Storage providers persist and compare the enum member names verbatim as strings, so the SQL column contract is unchanged, and the dashboard serializes the status by name to keep the SPA wire shape stable.
 
@@ -1086,6 +1090,7 @@ Provides AWS SNS bus transport and AWS SQS queue transport.
 - SQS queues for queue delivery.
 - FIFO topic/queue support.
 - Producer hatch: `UseAws(aws => aws.MessageGroupId(message => ...))`.
+- Consumer startup honors host cancellation through SNS/SQS provisioning and subscription.
 
 ### Design Notes
 
@@ -1137,6 +1142,7 @@ Provides Azure Service Bus topic and queue transports.
 - Topic and queue transport support.
 - Session-aware processing.
 - Producer hatch: `UseAzureServiceBus(asb => asb.PartitionKey(message => ...))`.
+- Consumer startup honors host cancellation through client, topology, and processor setup.
 
 ### Design Notes
 
@@ -1183,6 +1189,7 @@ Provides in-process bus and queue transport for local development and tests.
 - `setup.UseInMemory()`.
 - In-process bus and queue delivery.
 - No external broker.
+- Consumer startup implements the same host-cancellable contract as broker-backed providers.
 
 ### Installation
 
@@ -1255,6 +1262,7 @@ Provides Kafka queue-intent transport for partitioned, consumer-group processing
 - Kafka topic auto-creation support.
 - Producer hatch: `UseKafka(kafka => kafka.PartitionBy(message => ...))`.
 - Consumer hatch: `consumer.UseKafka(kafka => kafka.IsolationLevel(IsolationLevel.ReadCommitted))`.
+- Consumer startup honors host cancellation while creating topics and subscriptions.
 
 ### Design Notes
 
@@ -1305,6 +1313,7 @@ Provides a NATS JetStream transport for Headless messaging so applications can p
 - Stream auto-creation and durable consumers.
 - Producer hatch: `UseNats(nats => nats.SubjectShard(message => ...))`.
 - Consumer hatch: `consumer.UseNats(nats => nats.Sharded())`.
+- Consumer startup honors host cancellation while connecting and provisioning JetStream topology, while preserving configured topology timeouts.
 
 ### Design Notes
 
@@ -1353,6 +1362,7 @@ Provides Apache Pulsar transport support.
 - `setup.UsePulsar(...)`.
 - Pulsar bus and queue transport support.
 - TLS-related options through provider configuration.
+- Consumer startup honors host cancellation while acquiring the client and subscribing, while preserving configured timeouts.
 
 ### Installation
 
@@ -1389,6 +1399,7 @@ Provides RabbitMQ exchange and queue transport support.
 - `setup.UseRabbitMq(...)`.
 - Bus exchange and queue delivery.
 - Consumer hatch: `consumer.UseRabbitMq(rabbit => rabbit.PrefetchCount(...))`.
+- Consumer startup threads host cancellation through connection, channel, exchange, queue, and binding operations.
 
 ### Design Notes
 
@@ -1439,6 +1450,7 @@ Provides Redis-backed messaging transport options.
 - `setup.UseRedis(...)`.
 - Redis pub/sub bus transport.
 - Redis transport support for messaging scenarios that can accept Redis delivery semantics.
+- Streams and Pub/Sub consumer startup honor host cancellation through connection, provisioning, and subscription.
 
 ### Installation
 

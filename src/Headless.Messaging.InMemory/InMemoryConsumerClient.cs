@@ -68,9 +68,10 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     /// <param name="messageNames">The list of message names to subscribe to</param>
     /// <returns>A completed task</returns>
     /// <exception cref="ArgumentNullException">Thrown when messageNames is null</exception>
-    public ValueTask SubscribeAsync(IEnumerable<string> messageNames)
+    public ValueTask SubscribeAsync(IEnumerable<string> messageNames, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNull(messageNames);
+        cancellationToken.ThrowIfCancellationRequested();
         _queue.Subscribe(_intentType, _groupId, messageNames);
         _ready.TrySetResult();
 

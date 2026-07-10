@@ -107,17 +107,22 @@ internal sealed class ConsumerRegister(
         }
         catch
         {
-            // Clean up any partially created consumer handles before resetting state.
-            try
+            // Host cancellation can race this failure path with DisposeAsync. Only the startup
+            // owner may reset state; once disposal wins, it owns cleanup and the terminal state.
+            if ((LifecycleState)Volatile.Read(ref _state) == LifecycleState.Starting)
             {
-                await PulseAsync().ConfigureAwait(false);
-            }
+                try
+                {
+                    await PulseAsync().ConfigureAwait(false);
+                }
 #pragma warning disable ERP022 // Best-effort cleanup — state reset below prevents stale handles from being accessible.
-            // ReSharper disable once EmptyGeneralCatchClause
-            catch { }
+                // ReSharper disable once EmptyGeneralCatchClause
+                catch { }
 #pragma warning restore ERP022
 
-            Interlocked.Exchange(ref _state, (int)LifecycleState.NotStarted);
+                Interlocked.CompareExchange(ref _state, (int)LifecycleState.NotStarted, (int)LifecycleState.Starting);
+            }
+
             Interlocked.Exchange(ref _pendingTopologyRefresh, 0);
             throw;
         }
@@ -299,11 +304,16 @@ internal sealed class ConsumerRegister(
             ICollection<string> messageNames;
             try
             {
-                await using var client = await _CreateConsumerClientAsync(groupName, limit, intentType)
+                await using var client = await _CreateConsumerClientAsync(
+                        groupName,
+                        limit,
+                        intentType,
+                        _stoppingCts.Token
+                    )
                     .ConfigureAwait(false);
                 client.OnLogCallback = _WriteLog;
                 messageNames = await client
-                    .FetchMessageNamesAsync(matchGroup.Value.Select(x => x.MessageName))
+                    .FetchMessageNamesAsync(matchGroup.Value.Select(x => x.MessageName), _stoppingCts.Token)
                     .ConfigureAwait(false);
             }
             catch (BrokerConnectionException e)
@@ -351,7 +361,12 @@ internal sealed class ConsumerRegister(
                         {
                             try
                             {
-                                var innerClient = await _CreateConsumerClientAsync(groupName, limit, intentType)
+                                var innerClient = await _CreateConsumerClientAsync(
+                                        groupName,
+                                        limit,
+                                        intentType,
+                                        groupCts.Token
+                                    )
                                     .ConfigureAwait(false);
 
                                 await handle.AddClientAsync(innerClient).ConfigureAwait(false);
@@ -366,7 +381,7 @@ internal sealed class ConsumerRegister(
                                     groupCts.Token
                                 );
 
-                                await innerClient.SubscribeAsync(messageNames).ConfigureAwait(false);
+                                await innerClient.SubscribeAsync(messageNames, groupCts.Token).ConfigureAwait(false);
                                 await _AwaitConsumerReadyThenListenAsync(innerClient, startupReady, groupCts.Token)
                                     .ConfigureAwait(false);
                             }
@@ -387,7 +402,7 @@ internal sealed class ConsumerRegister(
                                 _logger.ConsumerProcessingLoopFailed(e);
                             }
                         },
-                        groupCts.Token,
+                        CancellationToken.None,
                         TaskCreationOptions.LongRunning,
                         TaskScheduler.Default
                     )
@@ -408,12 +423,13 @@ internal sealed class ConsumerRegister(
     private Task<IConsumerClient> _CreateConsumerClientAsync(
         string groupName,
         byte groupConcurrent,
-        IntentType intentType
+        IntentType intentType,
+        CancellationToken cancellationToken
     )
     {
         return _consumerClientFactory is IIntentAwareConsumerClientFactory intentAwareFactory
-            ? intentAwareFactory.CreateAsync(groupName, groupConcurrent, intentType)
-            : _consumerClientFactory.CreateAsync(groupName, groupConcurrent);
+            ? intentAwareFactory.CreateAsync(groupName, groupConcurrent, intentType, cancellationToken)
+            : _consumerClientFactory.CreateAsync(groupName, groupConcurrent, cancellationToken);
     }
 
     private void _EnsureConsumerFactorySupportsIntent(IEnumerable<ConsumerGroupKey> groupKeys)

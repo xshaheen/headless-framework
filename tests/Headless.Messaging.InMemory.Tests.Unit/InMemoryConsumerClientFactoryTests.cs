@@ -33,6 +33,17 @@ public sealed class InMemoryConsumerClientFactoryTests : TestBase
     }
 
     [Fact]
+    public async Task should_preserve_factory_cancellation()
+    {
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        var act = async () => await _factory.CreateAsync("test-group", 1, cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
     public async Task should_create_client_with_specified_group_name()
     {
         // given
