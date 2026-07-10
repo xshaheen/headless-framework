@@ -83,6 +83,114 @@ public sealed class JobsTaskSchedulerTests : TestBase
     }
 
     [Fact]
+    public async Task QueueAsync_dispatches_high_then_normal_then_low_priority()
+    {
+        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 1);
+        var blockerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseBlocker = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var executionOrder = new List<JobPriority>();
+
+        await scheduler.QueueAsync(
+            async _ =>
+            {
+                blockerStarted.TrySetResult();
+                await releaseBlocker.Task.ConfigureAwait(false);
+            },
+            JobPriority.Normal,
+            AbortToken
+        );
+        await blockerStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+
+        foreach (var priority in new[] { JobPriority.Low, JobPriority.Normal, JobPriority.High })
+        {
+            await scheduler.QueueAsync(
+                _ =>
+                {
+                    executionOrder.Add(priority);
+                    return Task.CompletedTask;
+                },
+                priority,
+                AbortToken
+            );
+        }
+
+        releaseBlocker.SetResult();
+        (await scheduler.WaitForRunningTasksAsync(TimeSpan.FromSeconds(10))).Should().BeTrue();
+
+        executionOrder.Should().Equal(JobPriority.High, JobPriority.Normal, JobPriority.Low);
+    }
+
+    [Fact]
+    public async Task QueueAsync_capacity_wait_honors_cancellation()
+    {
+        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 1);
+        var blockerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseBlocker = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        await scheduler.QueueAsync(
+            async _ =>
+            {
+                blockerStarted.TrySetResult();
+                await releaseBlocker.Task.ConfigureAwait(false);
+            },
+            JobPriority.Normal,
+            AbortToken
+        );
+        await blockerStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+
+        for (var i = 0; i < 1024; i++)
+        {
+            await scheduler.QueueAsync(_ => Task.CompletedTask, JobPriority.Normal, AbortToken);
+        }
+
+        using var restartCts = new CancellationTokenSource();
+        var capacityWait = scheduler.QueueAsync(_ => Task.CompletedTask, JobPriority.Normal, restartCts.Token);
+        restartCts.Cancel();
+
+        var act = () => capacityWait;
+        await act.Should().ThrowAsync<OperationCanceledException>();
+
+        releaseBlocker.SetResult();
+        (await scheduler.WaitForRunningTasksAsync(TimeSpan.FromSeconds(10))).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task QueueAsync_capacity_cancellation_does_not_cancel_admitted_work()
+    {
+        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 1);
+        var blockerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseBlocker = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var admittedRan = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var capacityCts = new CancellationTokenSource();
+
+        await scheduler.QueueAsync(
+            async _ =>
+            {
+                blockerStarted.TrySetResult();
+                await releaseBlocker.Task.ConfigureAwait(false);
+            },
+            JobPriority.Normal,
+            AbortToken
+        );
+        await blockerStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+
+        await scheduler.QueueAsync(
+            _ =>
+            {
+                admittedRan.TrySetResult();
+                return Task.CompletedTask;
+            },
+            JobPriority.Normal,
+            capacityCts.Token,
+            AbortToken
+        );
+        capacityCts.Cancel();
+        releaseBlocker.SetResult();
+
+        await admittedRan.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+    }
+
+    [Fact]
     public async Task Dispose_while_worker_idles_in_backoff_completes_cleanly()
     {
         // A worker that finished its work parks in the idle backoff delay awaiting the shutdown

@@ -122,39 +122,46 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
         {
             if (_executionContext.Functions.Length != 0)
             {
-                var functionsToRun = await _internalJobsManager
-                    .SetTickersInProgress(_executionContext.Functions, cancellationToken)
-                    .ConfigureAwait(false);
-
-                foreach (var function in functionsToRun.OrderBy(x => x.CachedPriority))
+                foreach (var function in _executionContext.Functions.OrderBy(x => x.CachedPriority))
                 {
                     var semaphore = _concurrencyGate.GetSemaphoreOrNull(
                         function.FunctionName,
                         function.CachedMaxConcurrency
                     );
 
-                    _ = _taskScheduler.QueueAsync(
-                        async ct =>
-                        {
-                            if (semaphore != null)
+                    await _taskScheduler
+                        .QueueAsync(
+                            async ct =>
                             {
-                                await semaphore.WaitAsync(ct).ConfigureAwait(false);
-                            }
+                                if (semaphore != null)
+                                {
+                                    await semaphore.WaitAsync(ct).ConfigureAwait(false);
+                                }
 
-                            try
-                            {
-                                await _taskHandler
-                                    .ExecuteTaskAsync(function, isDue: false, cancellationToken: ct)
-                                    .ConfigureAwait(false);
-                            }
-                            finally
-                            {
-                                semaphore?.Release();
-                            }
-                        },
-                        function.CachedPriority,
-                        stoppingToken
-                    );
+                                try
+                                {
+                                    var claimed = await _internalJobsManager
+                                        .SetTickersInProgress([function], ct)
+                                        .ConfigureAwait(false);
+                                    if (claimed.Length == 0)
+                                    {
+                                        return;
+                                    }
+
+                                    await _taskHandler
+                                        .ExecuteTaskAsync(claimed[0], isDue: false, cancellationToken: ct)
+                                        .ConfigureAwait(false);
+                                }
+                                finally
+                                {
+                                    semaphore?.Release();
+                                }
+                            },
+                            function.CachedPriority,
+                            cancellationToken,
+                            stoppingToken
+                        )
+                        .ConfigureAwait(false);
                 }
 
                 _executionContext.SetFunctions(functions: null);

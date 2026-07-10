@@ -70,4 +70,8 @@ public sealed class PostgreSqlConformanceTests(PostgreSqlJobsCoordinationFixture
     [Fact]
     public override Task node_death_sweep_leaves_a_valid_lease_inprogress_row_to_the_lease() =>
         base.node_death_sweep_leaves_a_valid_lease_inprogress_row_to_the_lease();
+
+    [Fact]
+    public override Task queueing_a_time_job_claims_its_child_tree() =>
+        base.queueing_a_time_job_claims_its_child_tree();
 }

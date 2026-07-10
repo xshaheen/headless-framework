@@ -29,15 +29,22 @@ internal sealed class JobsExecutionTaskHandler(
     // it as a lost lease — the lease window, after which the row is certainly being reclaimed elsewhere.
     private readonly TimeSpan _leaseDuration = schedulerOptions.LeaseDuration;
 
-    public async Task ExecuteTaskAsync(
+    public Task ExecuteTaskAsync(
         JobExecutionState context,
         bool isDue,
         CancellationToken cancellationToken = default
+    ) => _ExecuteTaskAsync(context, isDue, isChild: false, cancellationToken);
+
+    private async Task _ExecuteTaskAsync(
+        JobExecutionState context,
+        bool isDue,
+        bool isChild,
+        CancellationToken cancellationToken
     )
     {
         if (context.Type == JobType.CronJobOccurrence)
         {
-            await _RunContextFunctionAsync(context, isDue, cancellationToken).ConfigureAwait(false);
+            await _RunContextFunctionAsync(context, isDue, cancellationToken, isChild).ConfigureAwait(false);
             return;
         }
 
@@ -50,7 +57,7 @@ internal sealed class JobsExecutionTaskHandler(
         var hasChildren = context.TimeJobChildren.Count > 0;
 
         // Add parent task
-        tasksToRunNow[tasksToRunNowCount++] = _RunContextFunctionAsync(context, isDue, cancellationToken);
+        tasksToRunNow[tasksToRunNowCount++] = _RunContextFunctionAsync(context, isDue, cancellationToken, isChild);
 
         if (hasChildren)
         {
@@ -267,7 +274,8 @@ internal sealed class JobsExecutionTaskHandler(
                 context.RetryCount = attempt;
                 break;
             }
-            catch (TaskCanceledException ex)
+            catch (OperationCanceledException ex)
+                when (context.LeaseLost || cancellationTokenSource.IsCancellationRequested)
             {
                 if (context.LeaseLost)
                 {
@@ -670,7 +678,9 @@ internal sealed class JobsExecutionTaskHandler(
     {
         try
         {
-            await ExecuteTaskAsync(context, isDue, cancellationToken).ConfigureAwait(false);
+            // Descendants are pre-leased with the root claim; transition each child to InProgress before its lease
+            // fence and preserve that child identity recursively for grandchildren.
+            await _ExecuteTaskAsync(context, isDue, isChild: true, cancellationToken).ConfigureAwait(false);
         }
 #pragma warning disable ERP022 // Scheduler must continue running if task execution throws outside status handling.
         catch (Exception exception)

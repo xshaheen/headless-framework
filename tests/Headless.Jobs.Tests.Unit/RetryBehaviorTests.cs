@@ -78,6 +78,109 @@ public sealed class RetryBehaviorTests : TestBase
     }
 
     [Fact]
+    public async Task ExecuteTaskAsync_stamps_child_ownership_before_running_child_delegate()
+    {
+        var services = new ServiceCollection();
+        var internalManager = Substitute.For<IInternalJobManager>();
+        var instrumentation = Substitute.For<IJobsInstrumentation>();
+        services.AddSingleton(internalManager);
+        services.AddSingleton(instrumentation);
+        await using var serviceProvider = services.BuildServiceProvider();
+
+        var childId = Guid.NewGuid();
+        var childOwned = false;
+        internalManager
+            .UpdateTickerAsync(Arg.Is<JobExecutionState>(x => x.JobId == childId), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                childOwned = true;
+                return Task.FromResult(1);
+            });
+        internalManager
+            .UpdateTickerAsync(Arg.Is<JobExecutionState>(x => x.JobId != childId), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(1));
+        internalManager
+            .RenewLeaseAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
+            .Returns(call => Task.FromResult(call.Arg<JobExecutionState>().JobId != childId || childOwned ? 1 : 0));
+
+        var handler = new JobsExecutionTaskHandler(
+            serviceProvider,
+            TimeProvider.System,
+            instrumentation,
+            internalManager,
+            new SchedulerOptionsBuilder(),
+            NullLogger<JobsExecutionTaskHandler>.Instance
+        );
+        var childInvoked = false;
+        var parent = new JobExecutionState
+        {
+            JobId = Guid.NewGuid(),
+            FunctionName = "Parent",
+            Type = JobType.TimeJob,
+            ExecutionTime = DateTime.UtcNow,
+            RetryIntervals = [0],
+            Status = JobStatus.Queued,
+            CachedDelegate = (_, _, _) => Task.CompletedTask,
+        };
+        parent.TimeJobChildren.Add(
+            new JobExecutionState
+            {
+                JobId = childId,
+                ParentId = parent.JobId,
+                FunctionName = "Child",
+                Type = JobType.TimeJob,
+                RetryIntervals = [0],
+                RunCondition = RunCondition.OnSuccess,
+                Status = JobStatus.Idle,
+                CachedDelegate = (_, _, _) =>
+                {
+                    childInvoked = true;
+                    return Task.CompletedTask;
+                },
+            }
+        );
+
+        await handler.ExecuteTaskAsync(parent, isDue: false, cancellationToken: AbortToken);
+
+        childInvoked.Should().BeTrue();
+        await internalManager
+            .Received()
+            .UpdateTickerAsync(Arg.Is<JobExecutionState>(x => x.JobId == childId), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ExecuteTaskAsync_marks_cooperative_base_operation_cancellation_as_cancelled()
+    {
+        var (handler, context, manager, _) = _SetupRetryTestFixture([0], retries: 0);
+        context.CachedDelegate = (cancellationToken, _, functionContext) =>
+        {
+            functionContext.RequestCancellation();
+            throw new OperationCanceledException(cancellationToken);
+        };
+
+        await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
+
+        context.Status.Should().Be(JobStatus.Cancelled);
+        await manager
+            .Received(1)
+            .UpdateTickerAsync(Arg.Is<JobExecutionState>(x => x.Status == JobStatus.Cancelled), CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task ExecuteTaskAsync_treats_foreign_operation_cancellation_as_failure()
+    {
+        var (handler, context, manager, _) = _SetupRetryTestFixture([0], retries: 0);
+        context.CachedDelegate = (_, _, _) => throw new OperationCanceledException("provider timeout");
+
+        await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
+
+        context.Status.Should().Be(JobStatus.Failed);
+        await manager
+            .Received(1)
+            .UpdateTickerAsync(Arg.Is<JobExecutionState>(x => x.Status == JobStatus.Failed), CancellationToken.None);
+    }
+
+    [Fact]
     public async Task ExecuteTaskAsync_cancels_the_running_job_when_renewal_fails_with_a_db_outage()
     {
         // #463: a renewal that errors (DB unreachable) — or that cannot complete within the renewal cadence — must

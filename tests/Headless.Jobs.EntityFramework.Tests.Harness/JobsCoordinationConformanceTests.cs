@@ -905,6 +905,106 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
         }
     }
 
+    public virtual async Task queueing_a_time_job_claims_its_child_tree()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        using var host = fixture.BuildHost("node-a");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var owner = host.Services.GetRequiredService<INodeMembership>().Identity!.Value.ToString();
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            var grandChild = new TimeJobEntity
+            {
+                Id = Guid.NewGuid(),
+                Function = "grand-child",
+                RunCondition = RunCondition.OnSuccess,
+            };
+            var child = new TimeJobEntity
+            {
+                Id = Guid.NewGuid(),
+                Function = "child",
+                RunCondition = RunCondition.OnSuccess,
+                Children = [grandChild],
+            };
+            var root = new TimeJobEntity
+            {
+                Id = Guid.NewGuid(),
+                Function = "root",
+                ExecutionTime = DateTime.UtcNow.AddSeconds(5),
+                Children = [child],
+            };
+            await persistence.AddTimeJobsAsync([root], ct);
+            var roots = await persistence.GetEarliestTimeJobsAsync(ct);
+
+            var claimed = await persistence.QueueTimeJobsAsync(roots, ct).ToListAsync(ct);
+
+            claimed.Should().ContainSingle();
+            claimed[0].Status.Should().Be(JobStatus.Queued);
+            claimed[0].Children.Should().ContainSingle();
+            claimed[0].Children.Single().Children.Should().ContainSingle();
+            (await fixture.ReadTimeJobDetailAsync(child.Id, ct)).OwnerId.Should().Be(owner);
+            (await fixture.ReadTimeJobDetailAsync(grandChild.Id, ct)).OwnerId.Should().Be(owner);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    public virtual async Task fallback_queueing_a_time_job_claims_its_child_tree()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        using var host = fixture.BuildHost("node-a");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var owner = host.Services.GetRequiredService<INodeMembership>().Identity!.Value.ToString();
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            var grandChild = new TimeJobEntity
+            {
+                Id = Guid.NewGuid(),
+                Function = "grand-child",
+                RunCondition = RunCondition.OnSuccess,
+            };
+            var child = new TimeJobEntity
+            {
+                Id = Guid.NewGuid(),
+                Function = "child",
+                RunCondition = RunCondition.OnSuccess,
+                Children = [grandChild],
+            };
+            var root = new TimeJobEntity
+            {
+                Id = Guid.NewGuid(),
+                Function = "root",
+                ExecutionTime = DateTime.UtcNow.AddMinutes(-1),
+                Children = [child],
+            };
+            await persistence.AddTimeJobsAsync([root], ct);
+
+            var claimed = await persistence.QueueTimedOutTimeJobsAsync(ct).ToListAsync(ct);
+
+            claimed.Should().ContainSingle();
+            claimed[0].Children.Should().ContainSingle();
+            claimed[0].Children.Single().Children.Should().ContainSingle();
+            (await fixture.ReadTimeJobDetailAsync(child.Id, ct)).OwnerId.Should().Be(owner);
+            (await fixture.ReadTimeJobDetailAsync(grandChild.Id, ct)).OwnerId.Should().Be(owner);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
     private static async Task _WaitUntilAsync(Func<Task<bool>> condition, TimeSpan timeout, CancellationToken ct)
     {
         var stopwatch = Stopwatch.StartNew();

@@ -103,8 +103,16 @@ internal sealed class JobsFallbackBackgroundService(
 
                                         try
                                         {
+                                            var claimed = await internalJobsManager
+                                                .SetTickersInProgress([function], ct)
+                                                .ConfigureAwait(false);
+                                            if (claimed.Length == 0)
+                                            {
+                                                return;
+                                            }
+
                                             await tickerExecutionTaskHandler
-                                                .ExecuteTaskAsync(function, isDue: true, cancellationToken: ct)
+                                                .ExecuteTaskAsync(claimed[0], isDue: true, cancellationToken: ct)
                                                 .ConfigureAwait(false);
                                         }
                                         finally
