@@ -52,7 +52,7 @@ builder.Services.AddHeadlessMessaging(setup =>
     //{
     //    var logger = failed.ServiceProvider.GetRequiredService<ILogger<Program>>();
     //    logger.LogError($@"A message of type {failed.MessageType} failed after consuming the retry budget
-    //        (MaxInlineRetries={setup.Options.RetryPolicy.MaxInlineRetries}, MaxPersistedRetries={setup.Options.RetryPolicy.MaxPersistedRetries}),
+    //        (MaxRetryAttempts={setup.Options.RetryPolicy.RetryStrategy.MaxRetryAttempts}, MaxPersistedRetries={setup.Options.RetryPolicy.MaxPersistedRetries}),
     //        requiring manual troubleshooting. Message name: {failed.Message.GetName()}");
     //    return Task.CompletedTask;
     //};

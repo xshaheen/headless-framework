@@ -15,6 +15,7 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="NCrontab.Signed" />
+    <PackageReference Include="Polly.Core" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Jobs.Abstractions\Headless.Jobs.Abstractions.csproj" />

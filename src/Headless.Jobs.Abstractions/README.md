@@ -13,6 +13,8 @@ Provides the shared contracts — `ITimeJobManager<TTimeJob>`, `ICronJobManager<
 - **Execution context**: `JobFunctionContext` and `JobFunctionContext<TRequest>` — exposes `Id`, `Type`, `RetryCount`, `IsDue`, `ScheduledFor`, `FunctionName`, `CronOccurrenceOperations`, and `RequestCancellation()`.
 - **Attribute types**: `JobFunctionAttribute` (`[JobFunction]`) for function/cron registration; `JobsConstructorAttribute` (`[JobsConstructor]`) for custom DI injection.
 - **Retry primitives**: `TimeJobEntity.Retries`, `RetryIntervals`, `RetryCount`; `CronJobEntity.Retries`, `RetryIntervals`.
+
+These fields are the durable representation. Runtime retry predicates, delays, and observation are configured with Polly.Core directly by `Headless.Jobs.Core`; Polly objects and delegates are never serialized into job rows.
 - **Node-death policy**: `NodeDeathPolicy` enum (`Retry` / `MarkFailed` / `Skip`) on both entity types; propagated from `CronJobEntity` to every generated occurrence.
 - **Exception types**: `JobValidatorException` (with `Errors` list for batch failures); `TerminateExecutionException` (stop without retry, optional final `JobStatus`).
 - **Fluent chain builder**: `FluentChainJobBuilder<TTimeJob>` for defining parent–child–grandchild job chains up to 3 levels / 5 siblings per level.

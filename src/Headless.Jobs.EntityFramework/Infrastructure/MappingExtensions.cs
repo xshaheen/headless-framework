@@ -28,6 +28,7 @@ internal static class MappingExtensions
             Id = e.Id,
             Function = e.Function,
             Retries = e.Retries,
+            RetryCount = e.RetryCount,
             RetryIntervals = e.RetryIntervals,
             UpdatedAt = e.UpdatedAt,
             ParentId = e.ParentId,
@@ -39,6 +40,7 @@ internal static class MappingExtensions
                     Id = ch.Id,
                     Function = ch.Function,
                     Retries = ch.Retries,
+                    RetryCount = ch.RetryCount,
                     RetryIntervals = ch.RetryIntervals,
                     RunCondition = ch.RunCondition,
                     OnNodeDeath = ch.OnNodeDeath,
@@ -47,6 +49,7 @@ internal static class MappingExtensions
                         {
                             Function = gch.Function,
                             Retries = gch.Retries,
+                            RetryCount = gch.RetryCount,
                             RetryIntervals = gch.RetryIntervals,
                             Id = gch.Id,
                             RunCondition = gch.RunCondition,
@@ -69,6 +72,7 @@ internal static class MappingExtensions
             UpdatedAt = e.UpdatedAt,
             CronJobId = e.CronJobId,
             OnNodeDeath = e.OnNodeDeath,
+            RetryCount = e.RetryCount,
             CronJob = new TCronJob
             {
                 Id = e.CronJob.Id,
@@ -96,6 +100,7 @@ internal static class MappingExtensions
             // nested stamp below is the load-bearing one — without it a MarkFailed/Skip occurrence degrades to the
             // Retry enum default when re-queued.
             OnNodeDeath = e.OnNodeDeath,
+            RetryCount = e.RetryCount,
             CronJob = new TCronJob
             {
                 Id = e.CronJob.Id,
