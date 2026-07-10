@@ -303,6 +303,46 @@ public sealed class RetryBehaviorTests : TestBase
     }
 
     [Fact]
+    public async Task ExecuteTaskAsync_bounds_a_hanging_per_retry_exception_observer()
+    {
+        // #6 (sibling of the OnExhausted bound): a slow / hanging IJobExceptionHandler.HandleExceptionAsync on the
+        // per-retry path must not stall retry progression until lease loss. A tiny OnExhaustedTimeout cancels the
+        // observer's linked token so a cooperative handler short-circuits and the retry proceeds to completion.
+        var observerTokenCancelled = false;
+        var exceptionHandler = Substitute.For<Headless.Jobs.Interfaces.IJobExceptionHandler>();
+        exceptionHandler
+            .HandleExceptionAsync(
+                Arg.Any<Exception>(),
+                Arg.Any<Guid>(),
+                Arg.Any<JobType>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(async call =>
+            {
+                var token = call.Arg<CancellationToken>();
+                token.Register(() => observerTokenCancelled = true);
+                await Task.Delay(Timeout.InfiniteTimeSpan, token);
+            });
+
+        var options = _ZeroDelayRetryOptions();
+        options.OnExhaustedTimeout = TimeSpan.FromMilliseconds(20);
+        var (handler, context, _, attempts) = _SetupRetryTestFixture(
+            [],
+            retries: 1,
+            retryOptions: options,
+            configureServices: services => services.AddSingleton(exceptionHandler)
+        );
+
+        await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
+
+        // Initial + 1 retry = 2 attempts: the hanging observer did not block the retry from running.
+        attempts.Should().HaveCount(2);
+        context.Status.Should().Be(JobStatus.Failed);
+        // The observer's linked token was cancelled by the timeout bound so a cooperative handler can short-circuit.
+        observerTokenCancelled.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task ExecuteTaskAsync_cancels_the_running_job_when_renewal_fails_with_a_db_outage()
     {
         // #463: a renewal that errors (DB unreachable) — or that cannot complete within the renewal cadence — must

@@ -836,6 +836,8 @@ Never serialize `RetryStrategyOptions`, `ResiliencePipeline`, `ResilienceContext
 
 #### Global Exception Handler
 
+`HandleExceptionAsync` fires once per failed attempt — after each attempt's durable retry state is persisted (and once more at final failure) — not only once per job. Use it for per-attempt side effects (alerting, metrics, log sinks); use `JobsRetryOptions.OnExhausted` for the once-only notification after the retry budget is consumed. Each handler invocation is bounded by `OnExhaustedTimeout`; a hanging handler is logged and orphaned so it cannot stall retry progression.
+
 ```csharp
 public sealed class MyJobExceptionHandler(ILogger<MyJobExceptionHandler> logger)
     : IJobExceptionHandler

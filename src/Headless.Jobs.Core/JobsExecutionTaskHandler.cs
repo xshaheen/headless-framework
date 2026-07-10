@@ -493,16 +493,71 @@ internal sealed class JobsExecutionTaskHandler
             return;
         }
 
+        // Bound the handler with the same hard-timeout + orphan-handling mechanics as _InvokeOnExhaustedAsync: on the
+        // per-retry path this call runs inline before the pipeline computes the next delay, so a slow / hanging
+        // IJobExceptionHandler would otherwise stall every retry of a failing job until lease loss. The linked token is
+        // passed to the handler and cancelled on timeout so a cooperative handler can short-circuit; the CTS is
+        // disposed only once an orphaned handler can no longer observe it (deferred continuation), never underneath it.
+        var handlerCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        Task? handlerTask = null;
         try
         {
-            await handler
-                .HandleExceptionAsync(exception, context.JobId, context.Type, cancellationToken)
+            handlerTask = handler.HandleExceptionAsync(exception, context.JobId, context.Type, handlerCts.Token);
+            await handlerTask
+                .WaitAsync(_retryOptions.OnExhaustedTimeout, _timeProvider, cancellationToken)
                 .ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            await handlerCts.CancelAsync().ConfigureAwait(false);
+            _logger.LogJobExceptionObserverTimedOut(
+                context.JobId,
+                context.FunctionName,
+                _retryOptions.OnExhaustedTimeout.TotalSeconds
+            );
         }
         catch (Exception observerException)
         {
             _logger.LogJobExceptionObserverFailed(observerException, context.JobId, context.FunctionName);
         }
+        finally
+        {
+            if (handlerTask is { IsCompleted: false })
+            {
+                // A handler that ignores cancellation may still observe handlerCts.Token. Transfer ownership until it
+                // completes instead of disposing the linked CTS underneath it (mirrors _InvokeOnExhaustedAsync).
+#pragma warning disable CA2025 // The continuation owns and disposes the captured CTS after handler completion.
+                _ = _DisposeObserverResourcesAfterCompletionAsync(handlerTask, handlerCts);
+#pragma warning restore CA2025
+            }
+            else
+            {
+                handlerCts.Dispose();
+            }
+        }
+    }
+
+    private static async Task _DisposeObserverResourcesAfterCompletionAsync(
+        Task handlerTask,
+        CancellationTokenSource handlerCts
+    )
+    {
+#pragma warning disable VSTHRD003 // The task is user handler work intentionally observed by this ownership continuation.
+#pragma warning disable ERP022 // The bounded caller already logged handler failure; this continuation only releases the CTS.
+        try
+        {
+            await handlerTask.ConfigureAwait(false);
+        }
+        catch
+        {
+            // Failure was already logged by the bounded caller.
+        }
+        finally
+        {
+            handlerCts.Dispose();
+        }
+#pragma warning restore ERP022
+#pragma warning restore VSTHRD003
     }
 
     private async Task _InvokeOnExhaustedAsync(
@@ -918,5 +973,18 @@ internal static partial class JobsExecutionTaskHandlerLog
         Exception exception,
         Guid jobId,
         string function
+    );
+
+    [LoggerMessage(
+        EventId = 3110,
+        Level = LogLevel.Warning,
+        Message = "Job exception observer for job {JobId} ({Function}) exceeded its {TimeoutSeconds}s bound and was "
+            + "cancelled; retry and durable state continue."
+    )]
+    public static partial void LogJobExceptionObserverTimedOut(
+        this ILogger logger,
+        Guid jobId,
+        string function,
+        double timeoutSeconds
     );
 }
