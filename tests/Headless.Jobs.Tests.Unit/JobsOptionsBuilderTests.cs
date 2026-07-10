@@ -4,6 +4,7 @@ using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
+using Polly.Retry;
 
 #pragma warning disable REFL017 // Don't use name of wrong member
 namespace Tests;
@@ -29,6 +30,25 @@ public sealed class JobsOptionsBuilderTests
             JobType jobType,
             CancellationToken cancellationToken = default
         ) => Task.CompletedTask;
+    }
+
+    [Fact]
+    public void ConfigureRetries_exposes_direct_Polly_options()
+    {
+        var builder = new JobsOptionsBuilder<FakeTimeJob, FakeCronJob>(
+            new JobsExecutionContext(),
+            new SchedulerOptionsBuilder()
+        );
+        var strategy = new RetryStrategyOptions
+        {
+            MaxRetryAttempts = 7,
+            Delay = TimeSpan.FromSeconds(2),
+            ShouldHandle = static _ => ValueTask.FromResult(true),
+        };
+
+        builder.ConfigureRetries(options => options.RetryStrategy = strategy);
+
+        builder.RetryOptions.RetryStrategy.Should().BeSameAs(strategy);
     }
 
     [Fact]
