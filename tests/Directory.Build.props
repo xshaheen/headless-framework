@@ -1,7 +1,6 @@
 <Project>
   <Import Project="../Directory.Build.props" />
-  <PropertyGroup
-    Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('$(MSBuildProjectName)', '\.Tests\.Harness$'))">
+  <PropertyGroup Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('$(MSBuildProjectName)', '\.Tests\.Harness$'))">
     <IsTestHarnessProject>true</IsTestHarnessProject>
   </PropertyGroup>
   <ItemGroup Label="Global Usings">
@@ -28,8 +27,7 @@
     </PackageReference>
   </ItemGroup>
   <ItemGroup Label="Global Content">
-    <Content Include="$(MSBuildThisFileDirectory)xunit.runner.json"
-      CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="$(MSBuildThisFileDirectory)xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
     <None Remove="Snapshots\*.received.txt" />
     <None Remove="Snapshots\*.received.cs" />
   </ItemGroup>

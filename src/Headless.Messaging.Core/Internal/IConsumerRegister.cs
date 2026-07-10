@@ -208,7 +208,7 @@ internal sealed class ConsumerRegister(
 
         try
         {
-            await PulseAsync().ConfigureAwait(false);
+            await PulseAsync(waitTimeout: _options.ShutdownTimeout).ConfigureAwait(false);
         }
         catch (AggregateException e)
         {
@@ -231,7 +231,7 @@ internal sealed class ConsumerRegister(
         }
     }
 
-    public async Task PulseAsync(bool removeCircuitState = true)
+    public async Task PulseAsync(bool removeCircuitState = true, TimeSpan? waitTimeout = null)
     {
         // Cancel all group CTSes
         foreach (var handle in _groupHandles.Values)
@@ -246,7 +246,7 @@ internal sealed class ConsumerRegister(
             try
             {
                 await Task.WhenAll(allTasks)
-                    .WaitAsync(TimeSpan.FromSeconds(2), _timeProvider, CancellationToken.None)
+                    .WaitAsync(waitTimeout ?? TimeSpan.FromSeconds(2), _timeProvider, CancellationToken.None)
                     .ConfigureAwait(false);
             }
 #pragma warning disable ERP022, RCS1075 // Intentional: timeout or cancellation — proceed with cleanup

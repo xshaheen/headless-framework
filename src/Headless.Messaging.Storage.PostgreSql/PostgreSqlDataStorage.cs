@@ -1022,6 +1022,8 @@ internal sealed class PostgreSqlDataStorage(
         ];
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
         var poisonMessages = new List<PoisonMessage>();
         var result = await connection
@@ -1071,20 +1073,17 @@ internal sealed class PostgreSqlDataStorage(
 
                     return messages;
                 },
+                transaction: transaction,
                 commandTimeout: messagingOptions.Value.CommandTimeout,
                 sqlParams: sqlParams,
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
 
-        await _MarkPoisonMessagesTerminalAsync(
-                connection,
-                transaction: null,
-                tableName,
-                poisonMessages,
-                cancellationToken
-            )
+        await _MarkPoisonMessagesTerminalAsync(connection, transaction, tableName, poisonMessages, cancellationToken)
             .ConfigureAwait(false);
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
         return result;
     }

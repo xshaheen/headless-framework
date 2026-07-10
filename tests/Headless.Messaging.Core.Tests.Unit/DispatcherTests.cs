@@ -749,6 +749,53 @@ public sealed class DispatcherTests : TestBase
         await act.Should().NotThrowAsync("scheduler-flush failures during shutdown are logged, not propagated");
     }
 
+    [Fact]
+    public async Task dispose_should_wait_for_inflight_processing_loop()
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _executor
+            .ExecuteAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<IServiceProvider>(),
+                Arg.Any<ConsumerExecutorDescriptor?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(async _ =>
+            {
+                entered.TrySetResult();
+                await release.Task.ConfigureAwait(false);
+                return OperateResult.Success;
+            });
+        var options = Options.Create(
+            new MessagingOptions
+            {
+                EnableSubscriberParallelExecute = true,
+                SubscriberParallelExecuteThreadCount = 1,
+                SubscriberParallelExecuteBufferFactor = 1,
+                ShutdownTimeout = TimeSpan.FromSeconds(5),
+            }
+        );
+        var dispatcher = new Dispatcher(
+            _logger,
+            new TestThreadSafeMessageSender(),
+            options,
+            _executor,
+            _storage,
+            TimeProvider.System,
+            _scopeFactory
+        );
+        using var cts = new CancellationTokenSource();
+        await dispatcher.StartAsync(cts.Token);
+        await dispatcher.EnqueueToExecute(_CreateTestMessage(), cancellationToken: AbortToken);
+        await entered.Task.WaitAsync(AbortToken);
+
+        var dispose = dispatcher.DisposeAsync().AsTask();
+        dispose.IsCompleted.Should().BeFalse("the processing loop still owns an in-flight handler");
+        release.TrySetResult();
+        await dispose;
+    }
+
     private static MediumMessage _CreateTestMessage(int storageId) => _CreateTestMessage(_StorageGuid(storageId));
 
     private static MediumMessage _CreateTestMessage(Guid? storageId = null)

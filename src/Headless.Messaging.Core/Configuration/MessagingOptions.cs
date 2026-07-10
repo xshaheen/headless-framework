@@ -231,6 +231,12 @@ public sealed class MessagingOptions
     public TimeSpan OutboxFlushTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
+    /// Gets or sets the maximum time shutdown waits for messaging background loops and in-flight
+    /// handlers to observe cancellation. Default is 30 seconds.
+    /// </summary>
+    public TimeSpan ShutdownTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
     /// Gets or sets the cadence of the dead-owner recovery reconcile backstop. Default is 1 minute.
     /// </summary>
     /// <remarks>
@@ -298,6 +304,7 @@ public sealed class MessagingOptions
         target.TransportPublishTimeout = TransportPublishTimeout;
         target.CommandTimeout = CommandTimeout;
         target.OutboxFlushTimeout = OutboxFlushTimeout;
+        target.ShutdownTimeout = ShutdownTimeout;
         target.DeadNodeReconcileInterval = DeadNodeReconcileInterval;
         _CopyJsonSerializerOptions(JsonSerializerOptions, target.JsonSerializerOptions);
         RetryPolicy.CopyTo(target.RetryPolicy);
@@ -482,6 +489,11 @@ internal sealed class MessagingOptionsValidator : AbstractValidator<MessagingOpt
             .WithMessage("OutboxFlushTimeout must be greater than zero.")
             .LessThanOrEqualTo(TimeSpan.FromMinutes(5))
             .WithMessage("OutboxFlushTimeout must not exceed 5 minutes.");
+        RuleFor(x => x.ShutdownTimeout)
+            .GreaterThan(TimeSpan.Zero)
+            .WithMessage("ShutdownTimeout must be greater than zero.")
+            .LessThanOrEqualTo(TimeSpan.FromMinutes(5))
+            .WithMessage("ShutdownTimeout must not exceed 5 minutes.");
         // No upper bound: the reconcile is a backstop cadence, not a correctness deadline (the per-row
         // LockedUntil floor recovers rows independently), so a long interval is a legitimate choice.
         RuleFor(x => x.DeadNodeReconcileInterval)

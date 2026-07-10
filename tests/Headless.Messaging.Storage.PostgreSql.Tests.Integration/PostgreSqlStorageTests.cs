@@ -291,6 +291,10 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
         base.should_not_return_leased_received_message_until_lease_expires();
 
     [Fact]
+    public override Task should_return_unstored_snapshot_when_redelivery_hits_active_receive_lease() =>
+        base.should_return_unstored_snapshot_when_redelivery_hits_active_receive_lease();
+
+    [Fact]
     public override Task should_handle_concurrent_state_updates_to_same_row() =>
         base.should_handle_concurrent_state_updates_to_same_row();
 
