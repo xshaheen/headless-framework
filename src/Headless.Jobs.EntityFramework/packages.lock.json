@@ -477,7 +477,8 @@
           "Headless.Coordination.Core": "[1.0.0, )",
           "Headless.DistributedLocks.Abstractions": "[1.0.0, )",
           "Headless.Jobs.Abstractions": "[1.0.0, )",
-          "NCrontab.Signed": "[3.4.0, )"
+          "NCrontab.Signed": "[3.4.0, )",
+          "Polly.Core": "[8.7.0, )"
         }
       },
       "headless.primitives": {
