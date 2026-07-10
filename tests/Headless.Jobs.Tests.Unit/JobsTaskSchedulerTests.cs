@@ -145,10 +145,19 @@ public sealed class JobsTaskSchedulerTests : TestBase
 
         using var restartCts = new CancellationTokenSource();
         var capacityWait = scheduler.QueueAsync(_ => Task.CompletedTask, JobPriority.Normal, restartCts.Token);
-        restartCts.Cancel();
+        await restartCts.CancelAsync();
 
-        var act = () => capacityWait;
-        await act.Should().ThrowAsync<OperationCanceledException>();
+        var capacityWaitWasCancelled = false;
+        try
+        {
+            await capacityWait;
+        }
+        catch (OperationCanceledException)
+        {
+            capacityWaitWasCancelled = true;
+        }
+
+        capacityWaitWasCancelled.Should().BeTrue();
 
         releaseBlocker.SetResult();
         (await scheduler.WaitForRunningTasksAsync(TimeSpan.FromSeconds(10))).Should().BeTrue();
@@ -184,7 +193,7 @@ public sealed class JobsTaskSchedulerTests : TestBase
             capacityCts.Token,
             AbortToken
         );
-        capacityCts.Cancel();
+        await capacityCts.CancelAsync();
         releaseBlocker.SetResult();
 
         await admittedRan.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);

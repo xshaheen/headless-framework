@@ -38,8 +38,10 @@ public sealed class CoordinatedTransactionAmbiguousCommitTests : TestBase
         commitFailure.Arm();
         var operationCalls = 0;
 
-        var act = () =>
-            db.ExecuteCoordinatedTransactionAsync(
+        var commitOutcomeWasAmbiguous = false;
+        try
+        {
+            await db.ExecuteCoordinatedTransactionAsync(
                 async (context, cancellationToken) =>
                 {
                     operationCalls++;
@@ -49,8 +51,13 @@ public sealed class CoordinatedTransactionAmbiguousCommitTests : TestBase
                 scope.ServiceProvider,
                 cancellationToken: AbortToken
             );
+        }
+        catch (TransientCommitMarkerException)
+        {
+            commitOutcomeWasAmbiguous = true;
+        }
 
-        await act.Should().ThrowAsync<TransientCommitMarkerException>();
+        commitOutcomeWasAmbiguous.Should().BeTrue();
         operationCalls.Should().Be(1);
         (await db.Set<ProbeRow>().AsNoTracking().CountAsync(AbortToken)).Should().Be(1);
     }
