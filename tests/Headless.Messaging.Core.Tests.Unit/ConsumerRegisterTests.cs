@@ -11,6 +11,7 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
@@ -392,6 +393,43 @@ public sealed class ConsumerRegisterTests : TestBase
         await act.Should()
             .ThrowAsync<InvalidOperationException>()
             .WithMessage("*IIntentAwareConsumerClientFactory*queue consumers*");
+    }
+
+    [Fact]
+    public async Task pulse_should_wait_consumer_tasks_using_configured_timeout_not_legacy_two_seconds()
+    {
+        var fakeTime = new FakeTimeProvider();
+        await using var provider = _CreateProvider(configureServices: services =>
+            services.AddSingleton<TimeProvider>(fakeTime)
+        );
+        var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
+
+        var stillRunning = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
+        var handle = Activator.CreateInstance(handleType, nonPublic: true)!;
+        using var handleCts = new CancellationTokenSource();
+        handleType.GetProperty("Logger")!.SetValue(handle, NullLogger<ConsumerRegister>.Instance);
+        handleType.GetProperty("Cts")!.SetValue(handle, handleCts);
+        handleType.GetProperty("GroupName")!.SetValue(handle, "payments");
+        handleType.GetProperty("ConsumerTasks")!.SetValue(handle, new ConcurrentBag<Task> { stillRunning.Task });
+
+        var groupHandlesField = typeof(ConsumerRegister).GetField(
+            "_groupHandles",
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+        )!;
+        var groupHandles = groupHandlesField.GetValue(register)!;
+        groupHandles.GetType().GetProperty("Item")!.SetValue(groupHandles, handle, ["payments"]);
+
+        var pulse = register.PulseAsync(removeCircuitState: true, waitTimeout: TimeSpan.FromSeconds(30));
+
+        // Past the legacy hardcoded 2s bound: under the configured 30s budget the wait must
+        // still be pending. The old fixed 2s WaitAsync would already have expired here.
+        fakeTime.Advance(TimeSpan.FromSeconds(3));
+        await Task.Delay(50, AbortToken);
+        pulse.IsCompleted.Should().BeFalse("PulseAsync must honor the configured waitTimeout, not the legacy 2s");
+
+        stillRunning.TrySetResult();
+        await pulse.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
     }
 
     private ServiceProvider _CreateProvider(

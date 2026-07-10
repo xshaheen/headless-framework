@@ -11,6 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 using Tests.Helpers;
 
 namespace Tests;
@@ -792,6 +793,133 @@ public sealed class DispatcherTests : TestBase
 
         var dispose = dispatcher.DisposeAsync().AsTask();
         dispose.IsCompleted.Should().BeFalse("the processing loop still owns an in-flight handler");
+        release.TrySetResult();
+        await dispose;
+    }
+
+    [Fact]
+    public async Task dispose_should_complete_via_timeout_path_when_handler_never_observes_cancellation()
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _logger.IsEnabled(LogLevel.Error).Returns(true);
+        _executor
+            .ExecuteAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<IServiceProvider>(),
+                Arg.Any<ConsumerExecutorDescriptor?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(async _ =>
+            {
+                entered.TrySetResult();
+                await release.Task.ConfigureAwait(false);
+                return OperateResult.Success;
+            });
+        var timeProvider = new FakeTimeProvider();
+        var options = Options.Create(
+            new MessagingOptions
+            {
+                EnableSubscriberParallelExecute = true,
+                SubscriberParallelExecuteThreadCount = 1,
+                SubscriberParallelExecuteBufferFactor = 1,
+                ShutdownTimeout = TimeSpan.FromSeconds(5),
+            }
+        );
+        var dispatcher = new Dispatcher(
+            _logger,
+            new TestThreadSafeMessageSender(),
+            options,
+            _executor,
+            _storage,
+            timeProvider,
+            _scopeFactory
+        );
+        using var cts = new CancellationTokenSource();
+        await dispatcher.StartAsync(cts.Token);
+        await dispatcher.EnqueueToExecute(_CreateTestMessage(), cancellationToken: AbortToken);
+        await entered.Task.WaitAsync(AbortToken);
+
+        // First dispose: the handler ignores cancellation, so completion must come from the
+        // ShutdownTimeout branch (_CompleteTimedOutShutdownAsync), never from the handler.
+        var firstDispose = dispatcher.DisposeAsync().AsTask();
+        for (var i = 0; i < 100 && !firstDispose.IsCompleted; i++)
+        {
+            timeProvider.Advance(TimeSpan.FromSeconds(1));
+            await Task.Delay(10, AbortToken);
+        }
+
+        firstDispose.IsCompleted.Should().BeTrue("DisposeAsync must return once ShutdownTimeout expires");
+        await firstDispose;
+
+        _logger
+            .ReceivedCalls()
+            .Any(call =>
+                string.Equals(call.GetMethodInfo().Name, nameof(ILogger.Log), StringComparison.Ordinal)
+                && call.GetArguments() is { Length: >= 2 } args
+                && args[1] is EventId eventId
+                && string.Equals(eventId.Name, "ProcessorStopFailed", StringComparison.Ordinal)
+            )
+            .Should()
+            .BeTrue("the timeout path logs ProcessorStopFailed");
+
+        // Second dispose joins the eventual cleanup bounded by ShutdownTimeout; it completes
+        // once the handler finally finishes and the cleanup drains.
+        var secondDispose = dispatcher.DisposeAsync().AsTask();
+        secondDispose.IsCompleted.Should().BeFalse("eventual cleanup still owns the in-flight handler");
+        release.TrySetResult();
+        await secondDispose.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+    }
+
+    [Fact]
+    public async Task start_should_throw_when_dispose_is_still_draining()
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _executor
+            .ExecuteAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<IServiceProvider>(),
+                Arg.Any<ConsumerExecutorDescriptor?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(async _ =>
+            {
+                entered.TrySetResult();
+                await release.Task.ConfigureAwait(false);
+                return OperateResult.Success;
+            });
+        var options = Options.Create(
+            new MessagingOptions
+            {
+                EnableSubscriberParallelExecute = true,
+                SubscriberParallelExecuteThreadCount = 1,
+                SubscriberParallelExecuteBufferFactor = 1,
+                ShutdownTimeout = TimeSpan.FromSeconds(5),
+            }
+        );
+        var dispatcher = new Dispatcher(
+            _logger,
+            new TestThreadSafeMessageSender(),
+            options,
+            _executor,
+            _storage,
+            TimeProvider.System,
+            _scopeFactory
+        );
+        using var cts = new CancellationTokenSource();
+        await dispatcher.StartAsync(cts.Token);
+        await dispatcher.EnqueueToExecute(_CreateTestMessage(), cancellationToken: AbortToken);
+        await entered.Task.WaitAsync(AbortToken);
+
+        var dispose = dispatcher.DisposeAsync().AsTask();
+
+        var act = async () => await dispatcher.StartAsync(cts.Token);
+
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("Dispatcher shutdown is still in progress.");
+
         release.TrySetResult();
         await dispose;
     }

@@ -1109,6 +1109,8 @@ internal sealed class PostgreSqlDataStorage(
             ? $"UPDATE {tableName} SET \"StatusName\"=@StatusName,\"NextRetryAt\"=NULL,\"LockedUntil\"=NULL,\"Owner\"=NULL,\"ExpiresAt\"=@ExpiresAt,\"ExceptionInfo\"=@ExceptionInfo WHERE \"Id\"=@Id AND {_TerminalRowGuardSimple};"
             : $"UPDATE {tableName} SET \"StatusName\"=@StatusName,\"NextRetryAt\"=NULL,\"LockedUntil\"=NULL,\"Owner\"=NULL,\"ExpiresAt\"=@ExpiresAt WHERE \"Id\"=@Id AND {_TerminalRowGuardSimple};";
 
+        var savepointIndex = 0;
+
         foreach (var poisonMessage in poisonMessages)
         {
             object[] sqlParams =
@@ -1123,15 +1125,65 @@ internal sealed class PostgreSqlDataStorage(
                 sqlParams = [.. sqlParams, new NpgsqlParameter("@ExceptionInfo", poisonMessage.ExceptionInfo)];
             }
 
-            await connection
-                .ExecuteNonQueryAsync(
-                    sql,
-                    transaction: transaction,
-                    commandTimeout: messagingOptions.Value.CommandTimeout,
-                    sqlParams: sqlParams,
-                    cancellationToken: cancellationToken
-                )
-                .ConfigureAwait(false);
+            // One failing terminal mark must not roll back the shared transaction — it also carries the
+            // healthy rows' claim leases. PostgreSQL aborts the whole transaction on any statement failure,
+            // so per-row isolation requires a savepoint; a bare try/catch would leave the transaction in
+            // the aborted state and doom the final COMMIT anyway. The failed row stays leased until its
+            // lease expires, matching the deserialization-failure path above.
+            var savepointName = transaction is null ? null : $"headless_poison_mark_{savepointIndex++}";
+
+            if (savepointName is not null)
+            {
+                await connection
+                    .ExecuteNonQueryAsync(
+                        $"SAVEPOINT {savepointName};",
+                        transaction: transaction,
+                        commandTimeout: messagingOptions.Value.CommandTimeout,
+                        cancellationToken: cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+
+            try
+            {
+                await connection
+                    .ExecuteNonQueryAsync(
+                        sql,
+                        transaction: transaction,
+                        commandTimeout: messagingOptions.Value.CommandTimeout,
+                        sqlParams: sqlParams,
+                        cancellationToken: cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                if (savepointName is not null)
+                {
+                    await connection
+                        .ExecuteNonQueryAsync(
+                            $"RELEASE SAVEPOINT {savepointName};",
+                            transaction: transaction,
+                            commandTimeout: messagingOptions.Value.CommandTimeout,
+                            cancellationToken: cancellationToken
+                        )
+                        .ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogPoisonMessageTerminalMarkFailed(poisonMessage.StorageId, tableName, ex);
+
+                if (savepointName is not null)
+                {
+                    await connection
+                        .ExecuteNonQueryAsync(
+                            $"ROLLBACK TO SAVEPOINT {savepointName};",
+                            transaction: transaction,
+                            commandTimeout: messagingOptions.Value.CommandTimeout,
+                            cancellationToken: cancellationToken
+                        )
+                        .ConfigureAwait(false);
+                }
+            }
         }
     }
 

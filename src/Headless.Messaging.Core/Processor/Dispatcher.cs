@@ -249,7 +249,21 @@ internal sealed class Dispatcher : IDispatcher
         {
             if (_eventualCleanupTask is { } eventualCleanupTask)
             {
-                await eventualCleanupTask.ConfigureAwait(false);
+                // Bound the reentrant join: both IDispatcher and IConsumerRegister are registered as
+                // IProcessingServer over this same instance, so the second dispose always lands here.
+                // An unbounded await would let a handler that never observes cancellation hang host
+                // shutdown past ShutdownTimeout — the exact failure the option exists to prevent. On
+                // timeout the cleanup keeps running in background and logs its own outcome.
+                try
+                {
+                    await eventualCleanupTask
+                        .WaitAsync(_options.ShutdownTimeout, _timeProvider, CancellationToken.None)
+                        .ConfigureAwait(false);
+                }
+                catch (TimeoutException ex)
+                {
+                    _logger.ProcessorStopFailed(ex, nameof(Dispatcher));
+                }
             }
 
             return;
