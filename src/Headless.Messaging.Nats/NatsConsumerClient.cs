@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.Net.Sockets;
 using Headless.Checks;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Runtime;
@@ -452,7 +453,10 @@ internal sealed class NatsConsumerClient(
 
     private static bool _IsConnectionFailure(Exception exception)
     {
-        return exception is NatsException or NatsJSConnectionException;
+        return exception
+            is NatsConnectionFailedException
+                or NatsJSConnectionException
+                or NatsException { InnerException: SocketException or IOException };
     }
 
     private async ValueTask _DispatchMessageAsync(

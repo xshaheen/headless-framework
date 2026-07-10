@@ -15,7 +15,7 @@ Provides a NATS JetStream transport for Headless messaging so applications can p
 
 ## Design Notes
 
-Connection failures (`NatsException`, `NatsJSConnectionException`) terminate the listener instead of retrying in place, so the supervising consumer register's health watchdog can replace the failed client; JetStream API errors and other consumer errors keep retrying per-subject with backoff. The `ConnectError` log entry for this path states that the listener is terminating for supervised restart. During host shutdown, NATS bounds its in-flight handler drain by the remaining shared `MessagingOptions.ShutdownTimeout` budget instead of starting an independent 30-second drain.
+Connection-specific failures (`NatsConnectionFailedException`, `NatsJSConnectionException`, or a `NatsException` wrapping `SocketException`/`IOException`) terminate the listener instead of retrying in place, so the supervising consumer register's health watchdog can replace the failed client. JetStream protocol, timeout, API, and other consumer errors retry per-subject with backoff. The `ConnectError` log entry for the connection-failure path states that the listener is terminating for supervised restart. During host shutdown, NATS bounds its in-flight handler drain by the remaining shared `MessagingOptions.ShutdownTimeout` budget instead of starting an independent 30-second drain.
 
 ## Installation
 

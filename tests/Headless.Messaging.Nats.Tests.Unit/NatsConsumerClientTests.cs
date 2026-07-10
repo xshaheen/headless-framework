@@ -694,6 +694,83 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task ListeningAsync_should_retry_protocol_timeout_without_terminating_listener()
+    {
+        var timeProvider = new FakeTimeProvider();
+        var protocolFailure = new NatsJSProtocolException(408, NatsHeaders.Messages.RequestTimeout, "Request Timeout");
+        var transientLogged = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondAttempt = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var consumer = Substitute.For<INatsJSConsumer>();
+        var callCount = 0;
+        consumer
+            .NextAsync(
+                Arg.Any<INatsDeserialize<ReadOnlyMemory<byte>>>(),
+                Arg.Any<NatsJSNextOpts?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(call =>
+            {
+                if (Interlocked.Increment(ref callCount) == 1)
+                {
+                    return ValueTask.FromException<INatsJSMsg<ReadOnlyMemory<byte>>?>(protocolFailure);
+                }
+
+                secondAttempt.TrySetResult();
+                return new ValueTask<INatsJSMsg<ReadOnlyMemory<byte>>?>(
+                    Task.Delay(Timeout.InfiniteTimeSpan, call.Arg<CancellationToken>())
+                        .ContinueWith<INatsJSMsg<ReadOnlyMemory<byte>>?>(
+                            static task =>
+                            {
+                                task.GetAwaiter().GetResult();
+                                return null;
+                            },
+                            CancellationToken.None,
+                            TaskContinuationOptions.ExecuteSynchronously,
+                            TaskScheduler.Default
+                        )
+                );
+            });
+        var client = new NatsConsumerClient(
+            "test-group",
+            1,
+            _options,
+            _serviceProvider,
+            (_, _, _) => Task.FromResult(consumer),
+            timeProvider: timeProvider
+        )
+        {
+            OnLogCallback = args =>
+            {
+                if (
+                    args.LogType == MqLogType.ExceptionReceived
+                    && args.Reason?.Contains("Request Timeout", StringComparison.Ordinal) == true
+                )
+                {
+                    transientLogged.TrySetResult();
+                }
+            },
+        };
+        await client.SubscribeAsync(["orders"]);
+        using var cts = new CancellationTokenSource();
+        var listening = client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token).AsTask();
+
+        try
+        {
+            var firstOutcome = await Task.WhenAny(transientLogged.Task, listening).WaitAsync(AbortToken);
+            firstOutcome.Should().Be(transientLogged.Task, "protocol timeouts retry within the subject loop");
+
+            timeProvider.Advance(TimeSpan.FromSeconds(2));
+            await secondAttempt.Task.WaitAsync(AbortToken);
+            listening.IsCompleted.Should().BeFalse();
+        }
+        finally
+        {
+            await _StopListeningAsync(listening, cts);
+            await client.DisposeAsync();
+        }
+    }
+
+    [Fact]
     public async Task PauseAsync_and_ResumeAsync_should_restart_fetch_with_a_fresh_receive_token()
     {
         // given
