@@ -31,10 +31,12 @@ public interface INodeMembership : IMembershipEventSource
     NodeIdentity? Identity { get; }
 
     /// <summary>
-    /// Cancelled when the local process's own membership is lost (superseded incarnation, store eviction,
-    /// or explicit <see cref="LeaveAsync"/>). Use this token to stop ownership-sensitive background work
-    /// without polling. The configured <see cref="CoordinationOptions.MembershipLostBehavior"/> determines
-    /// whether the host is also stopped.
+    /// Cancelled when the local process's own membership is lost: a superseded incarnation, store eviction,
+    /// explicit <see cref="LeaveAsync"/>, or a heartbeat write that could not be confirmed within the
+    /// remaining <see cref="CoordinationOptions.DeadThreshold"/> budget (a hung or continuously failing
+    /// store call self-fences the node even when the store never rejected the write). Use this token to
+    /// stop ownership-sensitive background work without polling. The configured
+    /// <see cref="CoordinationOptions.MembershipLostBehavior"/> determines whether the host is also stopped.
     /// </summary>
     CancellationToken LocalMembershipLostToken { get; }
 

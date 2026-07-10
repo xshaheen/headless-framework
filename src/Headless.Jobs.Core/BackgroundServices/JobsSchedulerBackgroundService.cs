@@ -5,7 +5,9 @@ using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.JobsThreadPool;
+using Headless.Jobs.Models;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Jobs.BackgroundServices;
@@ -24,6 +26,7 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
     private readonly IJobFunctionConcurrencyGate _concurrencyGate;
     private readonly TimeProvider _timeProvider;
     private readonly IJobsOwnerIdentity _ownerIdentity;
+    private readonly ILogger<JobsSchedulerBackgroundService> _logger;
     private int _started;
     public bool SkipFirstRun { get; set; }
     public bool IsRunning => _started == 1;
@@ -35,7 +38,8 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
         IInternalJobManager internalJobsManager,
         IJobFunctionConcurrencyGate concurrencyGate,
         TimeProvider timeProvider,
-        IJobsOwnerIdentity ownerIdentity
+        IJobsOwnerIdentity ownerIdentity,
+        ILogger<JobsSchedulerBackgroundService> logger
     )
     {
         _executionContext = Argument.IsNotNull(executionContext);
@@ -45,6 +49,7 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
         _concurrencyGate = Argument.IsNotNull(concurrencyGate);
         _timeProvider = Argument.IsNotNull(timeProvider);
         _ownerIdentity = Argument.IsNotNull(ownerIdentity);
+        _logger = Argument.IsNotNull(logger);
         _restartThrottle = new RestartThrottleManager(() => _schedulerLoopCancellationTokenSource?.Cancel());
     }
 
@@ -140,11 +145,25 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
 
                                 try
                                 {
-                                    var claimed = await _internalJobsManager
-                                        .SetTickersInProgress([function], ct)
-                                        .ConfigureAwait(false);
+                                    JobExecutionState[] claimed;
+                                    try
+                                    {
+                                        claimed = await _internalJobsManager
+                                            .SetTickersInProgress([function], ct)
+                                            .ConfigureAwait(false);
+                                    }
+                                    catch (Exception ex) when (ex is not OperationCanceledException)
+                                    {
+                                        // The worker pool swallows delegate exceptions; without this log a failed
+                                        // claim write would leave the row Queued with zero operator signal until
+                                        // the fallback sweep re-claims it after the lease lapses.
+                                        _logger.LogJobAdmissionClaimFailed(ex, function.JobId, function.FunctionName);
+                                        return;
+                                    }
+
                                     if (claimed.Length == 0)
                                     {
+                                        _logger.LogJobAdmissionClaimLost(function.JobId, function.FunctionName);
                                         return;
                                     }
 
@@ -253,4 +272,28 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
         _schedulerLoopCancellationTokenSource?.Dispose();
         base.Dispose();
     }
+}
+
+// Shared by JobsSchedulerBackgroundService and JobsFallbackBackgroundService — the per-service ILogger
+// instance keeps the log category distinct while the message shape stays in one place.
+internal static partial class JobsAdmissionClaimLog
+{
+    [LoggerMessage(
+        EventId = 3210,
+        Level = LogLevel.Warning,
+        Message = "Admission-time claim write for job {JobId} ({FunctionName}) failed; the row stays Queued until the fallback sweep re-claims it after its lease lapses."
+    )]
+    public static partial void LogJobAdmissionClaimFailed(
+        this ILogger logger,
+        Exception exception,
+        Guid jobId,
+        string functionName
+    );
+
+    [LoggerMessage(
+        EventId = 3211,
+        Level = LogLevel.Debug,
+        Message = "Admission-time claim for job {JobId} ({FunctionName}) affected no rows (ownership lapsed or another wrapper won); skipping execution."
+    )]
+    public static partial void LogJobAdmissionClaimLost(this ILogger logger, Guid jobId, string functionName);
 }

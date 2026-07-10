@@ -74,4 +74,8 @@ public sealed class SqlServerConformanceTests(SqlServerJobsCoordinationFixture f
     [Fact]
     public override Task queueing_a_time_job_claims_its_child_tree() =>
         base.queueing_a_time_job_claims_its_child_tree();
+
+    [Fact]
+    public override Task fallback_queueing_a_time_job_claims_its_child_tree() =>
+        base.fallback_queueing_a_time_job_claims_its_child_tree();
 }

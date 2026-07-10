@@ -3,6 +3,7 @@
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.JobsThreadPool;
+using Headless.Jobs.Models;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -103,11 +104,29 @@ internal sealed class JobsFallbackBackgroundService(
 
                                         try
                                         {
-                                            var claimed = await internalJobsManager
-                                                .SetTickersInProgress([function], ct)
-                                                .ConfigureAwait(false);
+                                            JobExecutionState[] claimed;
+                                            try
+                                            {
+                                                claimed = await internalJobsManager
+                                                    .SetTickersInProgress([function], ct)
+                                                    .ConfigureAwait(false);
+                                            }
+                                            catch (Exception ex) when (ex is not OperationCanceledException)
+                                            {
+                                                // The worker pool swallows delegate exceptions; without this log a
+                                                // failed claim write would leave the row Queued with zero operator
+                                                // signal until the next fallback sweep after the lease lapses.
+                                                logger.LogJobAdmissionClaimFailed(
+                                                    ex,
+                                                    function.JobId,
+                                                    function.FunctionName
+                                                );
+                                                return;
+                                            }
+
                                             if (claimed.Length == 0)
                                             {
+                                                logger.LogJobAdmissionClaimLost(function.JobId, function.FunctionName);
                                                 return;
                                             }
 

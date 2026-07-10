@@ -62,6 +62,48 @@ public sealed class CoordinatedTransactionAmbiguousCommitTests : TestBase
         (await db.Set<ProbeRow>().AsNoTracking().CountAsync(AbortToken)).Should().Be(1);
     }
 
+    [Fact]
+    public async Task should_replay_operation_when_a_transient_failure_occurs_before_commit()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync(AbortToken);
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddEntityFrameworkCommitCoordination();
+        services.AddDbContext<AmbiguousCommitDbContext>(
+            (_, options) =>
+                options
+                    .UseSqlite(connection)
+                    .ReplaceService<IExecutionStrategyFactory, OneShotRetryExecutionStrategyFactory>()
+        );
+        await using var provider = services.BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AmbiguousCommitDbContext>();
+        await db.Database.EnsureCreatedAsync(AbortToken);
+        var operationCalls = 0;
+
+        await db.ExecuteCoordinatedTransactionAsync(
+            async (context, cancellationToken) =>
+            {
+                operationCalls++;
+                if (operationCalls == 1)
+                {
+                    // A failure BEFORE commit starts must propagate to the execution strategy and replay
+                    // with a fresh transaction and coordinator — the documented pre-commit half of the contract.
+                    throw new TransientCommitMarkerException();
+                }
+
+                context.Set<ProbeRow>().Add(new ProbeRow { Name = "committed-after-retry" });
+                await context.SaveChangesAsync(cancellationToken);
+            },
+            scope.ServiceProvider,
+            cancellationToken: AbortToken
+        );
+
+        operationCalls.Should().Be(2);
+        (await db.Set<ProbeRow>().AsNoTracking().CountAsync(AbortToken)).Should().Be(1);
+    }
+
     private sealed class AmbiguousCommitDbContext(DbContextOptions<AmbiguousCommitDbContext> options)
         : DbContext(options)
     {
