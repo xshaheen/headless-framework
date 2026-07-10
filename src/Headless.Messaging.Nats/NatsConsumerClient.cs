@@ -246,9 +246,11 @@ internal sealed class NatsConsumerClient(
 
                 var startupReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 startupTasks.Add(startupReady.Task);
+#pragma warning disable AsyncFixer04 // Every subject task is joined below, including the startup-failure path.
                 tasks.Add(
                     _ConsumeSubjectAsync(streamGroup.Key, consumerConfig, timeout, startupReady, listeningCts.Token)
                 );
+#pragma warning restore AsyncFixer04
             }
         }
 
@@ -265,6 +267,17 @@ internal sealed class NatsConsumerClient(
             catch
             {
                 await listeningCts.CancelAsync().ConfigureAwait(false);
+
+                // A sibling subject may already be using the linked token. Join all loops before the
+                // token source leaves scope, while preserving the original startup failure.
+                try
+                {
+                    await Task.WhenAll(tasks).ConfigureAwait(false);
+                }
+#pragma warning disable ERP022 // The outer startup exception is the actionable failure and is rethrown below.
+                catch { }
+#pragma warning restore ERP022
+
                 throw;
             }
 
@@ -669,7 +682,12 @@ internal sealed class NatsConsumerClient(
         }
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
+    {
+        return ShutdownAsync(_ShutdownDrainTimeout);
+    }
+
+    public async ValueTask ShutdownAsync(TimeSpan timeout)
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
         {
@@ -689,7 +707,12 @@ internal sealed class NatsConsumerClient(
         {
             try
             {
-                await Task.WhenAll(inFlight).WaitAsync(_ShutdownDrainTimeout, _timeProvider).ConfigureAwait(false);
+                if (timeout <= TimeSpan.Zero)
+                {
+                    throw new TimeoutException("The shared messaging shutdown deadline has expired.");
+                }
+
+                await Task.WhenAll(inFlight).WaitAsync(timeout, _timeProvider).ConfigureAwait(false);
             }
             catch (Exception ex)
             {

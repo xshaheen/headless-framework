@@ -8,6 +8,10 @@ namespace Headless.Messaging.Transport;
 [PublicAPI]
 public interface IDispatcher : IProcessingServer
 {
+    /// <summary>Stops the dispatcher using the supplied remaining shutdown budget.</summary>
+    /// <param name="timeout">The remaining end-to-end messaging shutdown budget.</param>
+    ValueTask DisposeAsync(TimeSpan timeout);
+
     ValueTask EnqueueToPublish(MediumMessage message, CancellationToken cancellationToken = default);
 
     ValueTask EnqueueToExecute(

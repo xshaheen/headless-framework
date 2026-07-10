@@ -35,6 +35,7 @@ internal sealed class ConsumerRegister(
     IServiceScopeFactory serviceScopeFactory
 ) : IConsumerRegister
 {
+    private static readonly TimeSpan _RestartShutdownTimeout = TimeSpan.FromSeconds(2);
     private static readonly DiagnosticListener _DiagnosticListener = new(
         MessageDiagnosticListenerNames.DiagnosticListenerName
     );
@@ -47,7 +48,9 @@ internal sealed class ConsumerRegister(
 
     private ICircuitBreakerStateManager? _circuitBreakerStateManager;
     private IConsumerClientFactory _consumerClientFactory = null!;
+#pragma warning disable CA2213 // Disposed through the remaining-budget DisposeAsync(TimeSpan) overload.
     private IDispatcher _dispatcher = null!;
+#pragma warning restore CA2213
     private int _state = (int)LifecycleState.NotStarted;
     private readonly SemaphoreSlim _restartGate = new(1, 1);
     private volatile bool _isHealthy = true;
@@ -190,6 +193,8 @@ internal sealed class ConsumerRegister(
 
     public async ValueTask DisposeAsync()
     {
+        var shutdownStarted = _timeProvider.GetTimestamp();
+
         // Spin until we win the transition to Disposed, or discover someone else already did.
         while (true)
         {
@@ -208,7 +213,8 @@ internal sealed class ConsumerRegister(
 
         try
         {
-            await PulseAsync(waitTimeout: _options.ShutdownTimeout).ConfigureAwait(false);
+            await PulseAsync(waitTimeout: _GetRemainingTimeout(shutdownStarted, _options.ShutdownTimeout))
+                .ConfigureAwait(false);
         }
         catch (AggregateException e)
         {
@@ -223,7 +229,9 @@ internal sealed class ConsumerRegister(
             // ReSharper disable once ConditionIsAlwaysTrueOrFalseAccordingToNullableAPIContract
             if (_dispatcher is not null)
             {
-                await _dispatcher.DisposeAsync().ConfigureAwait(false);
+                await _dispatcher
+                    .DisposeAsync(_GetRemainingTimeout(shutdownStarted, _options.ShutdownTimeout))
+                    .ConfigureAwait(false);
             }
 
             _restartGate.Dispose();
@@ -233,6 +241,9 @@ internal sealed class ConsumerRegister(
 
     public async Task PulseAsync(bool removeCircuitState = true, TimeSpan? waitTimeout = null)
     {
+        var shutdownTimeout = waitTimeout ?? _RestartShutdownTimeout;
+        var shutdownStarted = _timeProvider.GetTimestamp();
+
         // Cancel all group CTSes
         foreach (var handle in _groupHandles.Values)
         {
@@ -245,28 +256,30 @@ internal sealed class ConsumerRegister(
         {
             try
             {
-                await Task.WhenAll(allTasks)
-                    .WaitAsync(waitTimeout ?? TimeSpan.FromSeconds(2), _timeProvider, CancellationToken.None)
+                await _WaitWithinShutdownBudgetAsync(Task.WhenAll(allTasks), shutdownStarted, shutdownTimeout)
                     .ConfigureAwait(false);
             }
-#pragma warning disable ERP022, RCS1075 // Intentional: timeout or cancellation — proceed with cleanup
-            // ReSharper disable once EmptyGeneralCatchClause
+#pragma warning disable ERP022, RCS1075 // Listener cancellation/failure must not prevent client cleanup.
             catch (Exception) { }
 #pragma warning restore ERP022, RCS1075
         }
 
         // Dispose all handles; only remove circuit state on final teardown,
         // not on transport restarts where state must survive broker reconnects.
-        foreach (var handle in _groupHandles.Values)
+        var handles = _groupHandles.Values.ToArray();
+        if (handles.Length > 0)
         {
-            await handle.DisposeAsync().ConfigureAwait(false);
-            if (removeCircuitState)
-            {
-                if (_circuitBreakerStateManager is not null)
-                {
-                    await _circuitBreakerStateManager.RemoveGroupAsync(handle.GroupName).ConfigureAwait(false);
-                }
-            }
+            var remaining = _GetRemainingTimeout(shutdownStarted, shutdownTimeout);
+            var disposalTask = Task.WhenAll(handles.Select(handle => handle.DisposeAsync(remaining).AsTask()));
+            await _WaitWithinShutdownBudgetAsync(disposalTask, shutdownStarted, shutdownTimeout).ConfigureAwait(false);
+        }
+
+        if (removeCircuitState && _circuitBreakerStateManager is not null)
+        {
+            await Task.WhenAll(
+                    handles.Select(handle => _circuitBreakerStateManager.RemoveGroupAsync(handle.GroupName).AsTask())
+                )
+                .ConfigureAwait(false);
         }
 
         _groupHandles.Clear();
@@ -276,6 +289,49 @@ internal sealed class ConsumerRegister(
         // CTS.Dispose alone does not deregister Token.Register callbacks.
         await _stoppingCtsRegistration.DisposeAsync().ConfigureAwait(false);
         _stoppingCts.Dispose();
+    }
+
+    private TimeSpan _GetRemainingTimeout(long started, TimeSpan timeout)
+    {
+        var remaining = timeout - _timeProvider.GetElapsedTime(started);
+        return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
+    }
+
+#pragma warning disable VSTHRD003 // The caller-created task is explicitly deadline-bounded or fault-observed below.
+    private async Task _WaitWithinShutdownBudgetAsync(Task task, long started, TimeSpan timeout)
+    {
+        if (task.IsCompleted)
+        {
+            await task.ConfigureAwait(false);
+            return;
+        }
+
+        var remaining = _GetRemainingTimeout(started, timeout);
+        if (remaining == TimeSpan.Zero)
+        {
+            _ObserveEventually(task);
+            return;
+        }
+
+        try
+        {
+            await task.WaitAsync(remaining, _timeProvider, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            _ObserveEventually(task);
+        }
+    }
+#pragma warning restore VSTHRD003
+
+    private static void _ObserveEventually(Task task)
+    {
+        _ = task.ContinueWith(
+            static completed => _ = completed.Exception,
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default
+        );
     }
 
     public async ValueTask ExecuteAsync()
@@ -907,7 +963,7 @@ internal sealed class ConsumerRegister(
         Disposed = 4,
     }
 
-    private sealed class GroupHandle : IAsyncDisposable
+    private sealed class GroupHandle
     {
         private readonly Lock _clientsLock = new();
         private bool _disposing;
@@ -995,7 +1051,7 @@ internal sealed class ConsumerRegister(
             }
         }
 
-        public async ValueTask DisposeAsync()
+        public async ValueTask DisposeAsync(TimeSpan shutdownTimeout)
         {
             await Cts.CancelAsync().ConfigureAwait(false);
             Cts.Dispose();
@@ -1007,10 +1063,8 @@ internal sealed class ConsumerRegister(
                 snapshot = [.. _clients];
             }
 
-            foreach (var client in snapshot)
-            {
-                await client.DisposeAsync().ConfigureAwait(false);
-            }
+            await Task.WhenAll(snapshot.Select(client => client.ShutdownAsync(shutdownTimeout).AsTask()))
+                .ConfigureAwait(false);
         }
     }
 

@@ -243,7 +243,12 @@ internal sealed class Dispatcher : IDispatcher
         }
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
+    {
+        return DisposeAsync(_options.ShutdownTimeout);
+    }
+
+    public async ValueTask DisposeAsync(TimeSpan timeout)
     {
         if (_disposed)
         {
@@ -254,10 +259,19 @@ internal sealed class Dispatcher : IDispatcher
                 // An unbounded await would let a handler that never observes cancellation hang host
                 // shutdown past ShutdownTimeout — the exact failure the option exists to prevent. On
                 // timeout the cleanup keeps running in background and logs its own outcome.
+                if (timeout <= TimeSpan.Zero)
+                {
+                    _logger.ProcessorStopFailed(
+                        new TimeoutException("The shared messaging shutdown deadline has expired."),
+                        nameof(Dispatcher)
+                    );
+                    return;
+                }
+
                 try
                 {
                     await eventualCleanupTask
-                        .WaitAsync(_options.ShutdownTimeout, _timeProvider, CancellationToken.None)
+                        .WaitAsync(timeout, _timeProvider, CancellationToken.None)
                         .ConfigureAwait(false);
                 }
                 catch (TimeoutException ex)
@@ -274,7 +288,7 @@ internal sealed class Dispatcher : IDispatcher
         if (_tasksCts is not null)
         {
             await _tasksCts.CancelAsync().ConfigureAwait(false);
-            if (!await _WaitForBackgroundTasksAsync().ConfigureAwait(false))
+            if (!await _WaitForBackgroundTasksAsync(timeout).ConfigureAwait(false))
             {
                 return;
             }
@@ -343,7 +357,7 @@ internal sealed class Dispatcher : IDispatcher
     /// <remarks>
     /// This is the only call site that flips <see cref="_disposed"/> back to <see langword="false"/>.
     /// All other consumers must treat the dispatcher as terminally disposed once
-    /// <see cref="DisposeAsync"/> has run.
+    /// <see cref="DisposeAsync()"/> has run.
     /// </remarks>
     private void _ResetStateIfNeeded()
     {
@@ -472,7 +486,7 @@ internal sealed class Dispatcher : IDispatcher
         );
     }
 
-    private async ValueTask<bool> _WaitForBackgroundTasksAsync()
+    private async ValueTask<bool> _WaitForBackgroundTasksAsync(TimeSpan timeout)
     {
         var tasks = new List<Task>(_processingTasks.Length + 2);
         if (_sendingTask is { } sendingTask)
@@ -493,11 +507,17 @@ internal sealed class Dispatcher : IDispatcher
 
         var completionTask = Task.WhenAll(tasks);
 
+        if (timeout <= TimeSpan.Zero)
+        {
+            var exception = new TimeoutException("The shared messaging shutdown deadline has expired.");
+            _logger.ProcessorStopFailed(exception, nameof(Dispatcher));
+            _eventualCleanupTask = _CompleteTimedOutShutdownAsync(tasks);
+            return false;
+        }
+
         try
         {
-            await completionTask
-                .WaitAsync(_options.ShutdownTimeout, _timeProvider, CancellationToken.None)
-                .ConfigureAwait(false);
+            await completionTask.WaitAsync(timeout, _timeProvider, CancellationToken.None).ConfigureAwait(false);
         }
         catch (TimeoutException ex)
         {

@@ -842,7 +842,7 @@ public sealed class DispatcherTests : TestBase
 
         // First dispose: the handler ignores cancellation, so completion must come from the
         // ShutdownTimeout branch (_CompleteTimedOutShutdownAsync), never from the handler.
-        var firstDispose = dispatcher.DisposeAsync().AsTask();
+        var firstDispose = dispatcher.DisposeAsync(TimeSpan.FromSeconds(2)).AsTask();
         for (var i = 0; i < 100 && !firstDispose.IsCompleted; i++)
         {
             timeProvider.Advance(TimeSpan.FromSeconds(1));
@@ -863,12 +863,15 @@ public sealed class DispatcherTests : TestBase
             .Should()
             .BeTrue("the timeout path logs ProcessorStopFailed");
 
-        // Second dispose joins the eventual cleanup bounded by ShutdownTimeout; it completes
-        // once the handler finally finishes and the cleanup drains.
-        var secondDispose = dispatcher.DisposeAsync().AsTask();
+        // A reentrant dispose uses only the caller's remaining shared budget, not the full configured
+        // ShutdownTimeout again. Eventual cleanup remains fault-observed after this join times out.
+        var secondDispose = dispatcher.DisposeAsync(TimeSpan.FromSeconds(1)).AsTask();
         secondDispose.IsCompleted.Should().BeFalse("eventual cleanup still owns the in-flight handler");
-        release.TrySetResult();
+        timeProvider.Advance(TimeSpan.FromSeconds(1));
         await secondDispose.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        release.TrySetResult();
+        await dispatcher.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
     }
 
     [Fact]

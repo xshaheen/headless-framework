@@ -1,10 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
+using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.Nats;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Time.Testing;
 using NATS.Client.Core;
 using NATS.Client.JetStream;
 using MsOptions = Microsoft.Extensions.Options;
@@ -881,6 +884,28 @@ public sealed class NatsConsumerClientTests : TestBase
             catch (OperationCanceledException) { }
             catch (ObjectDisposedException) { }
         }
+    }
+
+    [Fact]
+    public async Task ShutdownAsync_should_cap_in_flight_drain_to_remaining_shared_budget()
+    {
+        var timeProvider = new FakeTimeProvider();
+        var stuckHandler = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var client = new NatsConsumerClient("test-group", 1, _options, _serviceProvider, timeProvider: timeProvider);
+        var inFlightHandlers =
+            (ConcurrentDictionary<Task, byte>)
+                typeof(NatsConsumerClient)
+                    .GetField("_inFlightHandlers", BindingFlags.NonPublic | BindingFlags.Instance)!
+                    .GetValue(client)!;
+        inFlightHandlers.TryAdd(stuckHandler.Task, 0).Should().BeTrue();
+
+        var shutdown = ((IConsumerClient)client).ShutdownAsync(TimeSpan.FromSeconds(2)).AsTask();
+        shutdown.IsCompleted.Should().BeFalse();
+
+        timeProvider.Advance(TimeSpan.FromSeconds(2));
+        await shutdown.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+
+        stuckHandler.TrySetResult();
     }
 
     private NatsConsumerClient _CreateClient(string groupName, byte groupConcurrent = 1)

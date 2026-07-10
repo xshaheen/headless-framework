@@ -231,13 +231,13 @@ public sealed class MessagingOptions
     public TimeSpan OutboxFlushTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
-    /// Gets or sets the maximum time each shutdown drain stage waits for messaging background loops and
+    /// Gets or sets the maximum end-to-end time messaging shutdown waits for background loops and
     /// in-flight handlers to observe cancellation. Default is 30 seconds.
     /// </summary>
     /// <remarks>
-    /// The consumer-register listener drain and the dispatcher loop drain each use this budget, so a full
-    /// shutdown can wait up to twice this value. Provider-specific in-flight drains (for example the NATS
-    /// 30-second AckWait-aligned drain) run after these stages and are independent of this option.
+    /// One monotonic deadline is shared by the consumer-register listener drain, concurrent consumer-client
+    /// disposal, provider-specific in-flight drains, and the dispatcher loop drain. When the deadline expires,
+    /// remaining cleanup continues fault-observed in the background so host shutdown can proceed.
     /// </remarks>
     public TimeSpan ShutdownTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
