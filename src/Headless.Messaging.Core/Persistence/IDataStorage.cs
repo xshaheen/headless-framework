@@ -103,6 +103,34 @@ public interface IDataStorage
     );
 
     /// <summary>
+    /// Atomically acquires the dispatch lease AND durably reserves the next inline delivery attempt
+    /// in a single statement — the fresh-dispatch fast path that replaces a
+    /// <see cref="LeasePublishAsync"/> + <see cref="ReservePublishAttemptAsync"/> pair with one
+    /// round trip. Succeeds only when the row is non-terminal, unleased or lease-expired, and both
+    /// durable counters still match the caller's view (<c>Retries</c> and
+    /// <paramref name="originalInlineAttempts"/>).
+    /// </summary>
+    /// <param name="message">
+    /// The message to lease. The caller pre-increments <c>InlineAttempts</c> (the reservation value
+    /// written on success) and rolls it back when this method returns <see langword="false"/>. On
+    /// success the caller's <c>LockedUntil</c> and <c>Owner</c> are also updated.
+    /// </param>
+    /// <param name="lockedUntil">UTC timestamp at which the lease expires.</param>
+    /// <param name="originalInlineAttempts">Optimistic-concurrency token for <c>InlineAttempts</c>.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>
+    /// <see langword="true"/> when the lease and reservation were written; <see langword="false"/> when the row is
+    /// terminal, actively leased by another owner, counter state moved, or the row was not found.
+    /// Callers must stop the attempt path on <see langword="false"/>.
+    /// </returns>
+    ValueTask<bool> LeasePublishAndReserveAttemptAsync(
+        MediumMessage message,
+        DateTime lockedUntil,
+        int originalInlineAttempts,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
     /// Updates the status of a received message in storage.
     /// </summary>
     /// <param name="message">The message whose state is changing.</param>
@@ -170,6 +198,19 @@ public interface IDataStorage
     ValueTask<bool> LeaseReceiveAsync(
         MediumMessage message,
         DateTime lockedUntil,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Atomically acquires the consume lease AND durably reserves the next inline delivery attempt
+    /// in a single statement — the fresh-dispatch fast path that replaces a
+    /// <see cref="LeaseReceiveAsync"/> + <see cref="ReserveReceiveAttemptAsync"/> pair with one
+    /// round trip. Same contract as <see cref="LeasePublishAndReserveAttemptAsync"/>.
+    /// </summary>
+    ValueTask<bool> LeaseReceiveAndReserveAttemptAsync(
+        MediumMessage message,
+        DateTime lockedUntil,
+        int originalInlineAttempts,
         CancellationToken cancellationToken = default
     );
 

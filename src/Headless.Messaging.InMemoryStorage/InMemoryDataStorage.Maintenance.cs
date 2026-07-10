@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 
@@ -38,6 +39,48 @@ internal sealed partial class InMemoryDataStorage
             }
 
             current.InlineAttempts = message.InlineAttempts;
+            return ValueTask.FromResult(true);
+        }
+    }
+
+    private static ValueTask<bool> _LeaseAndReserveAttemptAsync(
+        ConcurrentDictionary<Guid, MemoryMessage> messages,
+        MediumMessage message,
+        DateTime lockedUntil,
+        int originalInlineAttempts,
+        TimeProvider timeProvider,
+        string? owner,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!messages.TryGetValue(message.StorageId, out var current))
+        {
+            return ValueTask.FromResult(false);
+        }
+
+        lock (current)
+        {
+            // Fresh-dispatch fast path: lease acquisition + attempt reservation in one atomic step.
+            // Combines _LeaseAsync's lease-contention guard with _ReserveAttemptAsync's durable
+            // counter CAS; no owner match is required because this path is TAKING the lease.
+            var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
+            if (
+                (current.StatusName is StatusName.Succeeded or StatusName.Failed) && current.NextRetryAt is null
+                || current.Retries != message.Retries
+                || current.InlineAttempts != originalInlineAttempts
+                || (current.LockedUntil is not null && current.LockedUntil > nowUtc)
+            )
+            {
+                return ValueTask.FromResult(false);
+            }
+
+            var utcLockedUntil = ((DateTime?)lockedUntil).ToUtcOrSelf();
+            current.LockedUntil = utcLockedUntil;
+            current.Owner = owner;
+            current.InlineAttempts = message.InlineAttempts;
+            message.LockedUntil = utcLockedUntil;
+            message.Owner = owner;
             return ValueTask.FromResult(true);
         }
     }

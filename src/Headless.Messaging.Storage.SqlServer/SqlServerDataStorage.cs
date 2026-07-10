@@ -163,6 +163,13 @@ internal sealed class SqlServerDataStorage(
         CancellationToken cancellationToken = default
     ) => _LeaseMessageAsync(_publishedTable, message, lockedUntil, cancellationToken);
 
+    public ValueTask<bool> LeasePublishAndReserveAttemptAsync(
+        MediumMessage message,
+        DateTime lockedUntil,
+        int originalInlineAttempts,
+        CancellationToken cancellationToken = default
+    ) => _LeaseAndReserveAttemptAsync(_publishedTable, message, lockedUntil, originalInlineAttempts, cancellationToken);
+
     /// <summary>
     /// Updates the status of a received message, including writing <c>ExceptionInfo</c> when the
     /// message faulted. Respects the terminal-row guard — permanently completed rows are not mutated.
@@ -285,6 +292,13 @@ internal sealed class SqlServerDataStorage(
         DateTime lockedUntil,
         CancellationToken cancellationToken = default
     ) => _LeaseMessageAsync(_receivedTable, message, lockedUntil, cancellationToken);
+
+    public ValueTask<bool> LeaseReceiveAndReserveAttemptAsync(
+        MediumMessage message,
+        DateTime lockedUntil,
+        int originalInlineAttempts,
+        CancellationToken cancellationToken = default
+    ) => _LeaseAndReserveAttemptAsync(_receivedTable, message, lockedUntil, originalInlineAttempts, cancellationToken);
 
     /// <summary>
     /// Persists a published outbox message to the <c>Published</c> table. When <paramref name="transaction"/>
@@ -1095,6 +1109,60 @@ internal sealed class SqlServerDataStorage(
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
+    }
+
+    private async ValueTask<bool> _LeaseAndReserveAttemptAsync(
+        string tableName,
+        MediumMessage message,
+        DateTime lockedUntil,
+        int originalInlineAttempts,
+        CancellationToken cancellationToken
+    )
+    {
+        // Fresh-dispatch fast path: acquire the lease AND reserve the next inline attempt in one
+        // statement (one round trip instead of the _LeaseMessageAsync + _ReserveAttemptAsync pair).
+        // Combines the lease-contention predicate (#15) with the durable-counter CAS from
+        // _ReserveAttemptAsync; no owner match is required because this path is TAKING the lease.
+        var sql =
+            $"UPDATE {tableName} SET LockedUntil=@LockedUntil, Owner=@Owner, InlineAttempts=@InlineAttempts WHERE Id=@Id "
+            + "AND (LockedUntil IS NULL OR LockedUntil <= @Now) "
+            + $"AND {_TerminalRowGuardWithRetries}";
+
+        var owner = nodeMembership.GetOwnerTag();
+        object[] sqlParams =
+        [
+            new SqlParameter("@Id", message.StorageId),
+            new SqlParameter("@LockedUntil", SqlDbType.DateTime2)
+            {
+                Value = ((DateTime?)lockedUntil).ToUtcParameterValue(),
+            },
+            new SqlParameter("@Owner", SqlDbType.NVarChar, options.Value.OwnerColumnMaxLength)
+            {
+                Value = owner ?? (object)DBNull.Value,
+            },
+            new SqlParameter("@InlineAttempts", message.InlineAttempts),
+            new SqlParameter("@OriginalRetries", message.Retries),
+            new SqlParameter("@OriginalInlineAttempts", originalInlineAttempts),
+            new SqlParameter("@Now", SqlDbType.DateTime2) { Value = timeProvider.GetUtcNow().UtcDateTime },
+        ];
+
+        await using var connection = new SqlConnection(options.Value.ConnectionString);
+        var affectedRows = await connection
+            .ExecuteNonQueryAsync(
+                sql,
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                sqlParams: sqlParams,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (affectedRows > 0)
+        {
+            message.LockedUntil = ((DateTime?)lockedUntil).ToUtcOrSelf();
+            message.Owner = owner;
+        }
+
+        return affectedRows > 0;
     }
 
     private async ValueTask<bool> _LeaseMessageAsync(

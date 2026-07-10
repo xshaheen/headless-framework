@@ -84,6 +84,14 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
             .LeaseReceiveAsync(Arg.Any<MediumMessage>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(true));
         storage
+            .LeaseReceiveAndReserveAttemptAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<DateTime>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(true));
+        storage
             .ReserveReceiveAttemptAsync(Arg.Any<MediumMessage>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(true));
         storage

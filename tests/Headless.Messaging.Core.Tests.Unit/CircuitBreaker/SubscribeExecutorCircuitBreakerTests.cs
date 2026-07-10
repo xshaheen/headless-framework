@@ -89,6 +89,14 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
             .LeaseReceiveAsync(Arg.Any<MediumMessage>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(true));
         storage
+            .LeaseReceiveAndReserveAttemptAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<DateTime>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(true));
+        storage
             .ReserveReceiveAttemptAsync(Arg.Any<MediumMessage>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(true));
         storage
@@ -274,7 +282,12 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         var (executor, cbMock) = _CreateExecutor(invoker, storage);
 
         storage
-            .LeaseReceiveAsync(Arg.Any<MediumMessage>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .LeaseReceiveAndReserveAttemptAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<DateTime>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(ValueTask.FromResult(false));
 
         // when

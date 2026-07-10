@@ -199,6 +199,22 @@ internal sealed partial class InMemoryDataStorage(
             cancellationToken
         );
 
+    public ValueTask<bool> LeasePublishAndReserveAttemptAsync(
+        MediumMessage message,
+        DateTime lockedUntil,
+        int originalInlineAttempts,
+        CancellationToken cancellationToken = default
+    ) =>
+        _LeaseAndReserveAttemptAsync(
+            PublishedMessages,
+            message,
+            lockedUntil,
+            originalInlineAttempts,
+            timeProvider,
+            nodeMembership.GetOwnerTag(),
+            cancellationToken
+        );
+
     public ValueTask<bool> ChangeReceiveStateAsync(
         MediumMessage message,
         StatusName state,
@@ -317,6 +333,22 @@ internal sealed partial class InMemoryDataStorage(
             ReceivedMessages,
             message,
             lockedUntil,
+            timeProvider,
+            nodeMembership.GetOwnerTag(),
+            cancellationToken
+        );
+
+    public ValueTask<bool> LeaseReceiveAndReserveAttemptAsync(
+        MediumMessage message,
+        DateTime lockedUntil,
+        int originalInlineAttempts,
+        CancellationToken cancellationToken = default
+    ) =>
+        _LeaseAndReserveAttemptAsync(
+            ReceivedMessages,
+            message,
+            lockedUntil,
+            originalInlineAttempts,
             timeProvider,
             nodeMembership.GetOwnerTag(),
             cancellationToken

@@ -106,22 +106,31 @@ internal sealed class MessageSender : IMessageSender
         // Atomic pickup already wrote a live lease. Re-leasing would immediately fail against the
         // storage lease predicate and strand rows returned by GetPublishedMessagesOfNeedRetryAsync.
         var now = _timeProvider.GetUtcNow().UtcDateTime;
-        if (message.LockedUntil is not { } lockedUntil || lockedUntil <= now)
-        {
-            var leased = await _LeaseAsync(message, cancellationToken).ConfigureAwait(false);
-            if (!leased)
-            {
-                return MessagingRetryAttempt.Completed(OperateResult.Success);
-            }
-        }
+        var needsLease = message.LockedUntil is not { } lockedUntil || lockedUntil <= now;
 
         inlineRetries = message.InlineAttempts;
         if (RetryHelper.DetectCrashRecoveredReservation(inlineRetries, _retryPolicy) is { } recoveryAttempt)
         {
+            // The recovery transition still writes CAS-guarded state, which requires an active
+            // lease — take a plain lease (no fresh reservation; the crashed reservation is spent).
+            if (needsLease && !await _LeaseAsync(message, cancellationToken).ConfigureAwait(false))
+            {
+                return MessagingRetryAttempt.Completed(OperateResult.Success);
+            }
+
             return recoveryAttempt;
         }
 
-        if (!await _ReserveAttemptAsync(message, cancellationToken).ConfigureAwait(false))
+        if (needsLease)
+        {
+            // Fresh-dispatch fast path: acquire the lease AND durably reserve the first attempt in
+            // one statement instead of two sequential writes (lease + reserve) on the same row.
+            if (!await _LeaseAndReserveAttemptAsync(message, cancellationToken).ConfigureAwait(false))
+            {
+                return MessagingRetryAttempt.Completed(OperateResult.Success);
+            }
+        }
+        else if (!await _ReserveAttemptAsync(message, cancellationToken).ConfigureAwait(false))
         {
             return MessagingRetryAttempt.Completed(OperateResult.Success);
         }
@@ -425,6 +434,22 @@ internal sealed class MessageSender : IMessageSender
     {
         var lockedUntil = _timeProvider.GetUtcNow().UtcDateTime.Add(_retryPolicy.DispatchTimeout);
         return await _dataStorage.LeasePublishAsync(message, lockedUntil, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<bool> _LeaseAndReserveAttemptAsync(MediumMessage message, CancellationToken cancellationToken)
+    {
+        var lockedUntil = _timeProvider.GetUtcNow().UtcDateTime.Add(_retryPolicy.DispatchTimeout);
+        var originalInlineAttempts = message.InlineAttempts;
+        message.InlineAttempts++;
+        var reserved = await _dataStorage
+            .LeasePublishAndReserveAttemptAsync(message, lockedUntil, originalInlineAttempts, cancellationToken)
+            .ConfigureAwait(false);
+        if (!reserved)
+        {
+            message.InlineAttempts = originalInlineAttempts;
+        }
+
+        return reserved;
     }
 
     private async Task<bool> _ReserveAttemptAsync(MediumMessage message, CancellationToken cancellationToken)

@@ -81,6 +81,14 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .LeaseReceiveAsync(Arg.Any<MediumMessage>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(true));
         storage
+            .LeaseReceiveAndReserveAttemptAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<DateTime>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(true));
+        storage
             .ReserveReceiveAttemptAsync(Arg.Any<MediumMessage>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(true));
         storage
@@ -469,9 +477,15 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             }
         );
 
-        // Override the happy-path lease stub from _CreateExecutor so the lease returns false.
+        // Override the happy-path stub from _CreateExecutor so the fresh-dispatch combined
+        // lease+reserve write reports lease contention.
         storage
-            .LeaseReceiveAsync(Arg.Any<MediumMessage>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .LeaseReceiveAndReserveAttemptAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<DateTime>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(ValueTask.FromResult(false));
 
         // when
@@ -752,6 +766,9 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .ReserveReceiveAttemptAsync(Arg.Any<MediumMessage>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(false));
         var message = _CreateMediumMessage();
+        // Pre-leased row (as after an atomic pickup) so the standalone mid-burst reservation path
+        // is exercised rather than the fresh-dispatch combined lease+reserve write.
+        message.LockedUntil = DateTime.UtcNow.AddMinutes(5);
 
         var result = await executor.ExecuteAsync(message, _EmptyScope, _CreateDescriptor(), CancellationToken.None);
 
@@ -761,6 +778,34 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         await storage
             .DidNotReceiveWithAnyArgs()
             .ChangeReceiveRetryStateAsync(default!, default, default, default, default, default, default);
+    }
+
+    [Fact]
+    public async Task should_issue_single_combined_storage_write_before_fresh_consume()
+    {
+        var storage = Substitute.For<IDataStorage>();
+        var invoker = Substitute.For<ISubscribeInvoker>();
+        invoker
+            .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new ConsumerExecutedResult(null, null, Guid.NewGuid().ToString(), null, null)));
+        var executor = _CreateExecutor(invoker, storage, new MessagingOptions());
+        var message = _CreateMediumMessage();
+
+        var result = await executor.ExecuteAsync(message, _EmptyScope, _CreateDescriptor(), CancellationToken.None);
+
+        // A fresh (never-leased) consume must pay exactly one pre-attempt storage write: the
+        // combined lease+reserve statement, never the two-step lease-then-reserve pair.
+        result.Succeeded.Should().BeTrue();
+        await storage
+            .Received(1)
+            .LeaseReceiveAndReserveAttemptAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<DateTime>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            );
+        await storage.DidNotReceiveWithAnyArgs().LeaseReceiveAsync(default!, default, default);
+        await storage.DidNotReceiveWithAnyArgs().ReserveReceiveAttemptAsync(default!, default, default);
     }
 
     private sealed class ScopedMarker;

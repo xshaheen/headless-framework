@@ -63,6 +63,14 @@ public sealed class MessageSenderTests : TestBase
             .LeasePublishAsync(Arg.Any<MediumMessage>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(true));
         storage
+            .LeasePublishAndReserveAttemptAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<DateTime>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(true));
+        storage
             .ReservePublishAttemptAsync(Arg.Any<MediumMessage>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(true));
         storage
@@ -105,6 +113,14 @@ public sealed class MessageSenderTests : TestBase
     {
         storage
             .LeasePublishAsync(Arg.Any<MediumMessage>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(true));
+        storage
+            .LeasePublishAndReserveAttemptAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<DateTime>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(ValueTask.FromResult(true));
         storage
             .ReservePublishAttemptAsync(Arg.Any<MediumMessage>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
@@ -635,9 +651,15 @@ public sealed class MessageSenderTests : TestBase
             }
         );
 
-        // Override the happy-path lease stub from _CreateSender so the lease returns false.
+        // Override the happy-path stub from _CreateSender so the fresh-dispatch combined
+        // lease+reserve write reports lease contention.
         storage
-            .LeasePublishAsync(Arg.Any<MediumMessage>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .LeasePublishAndReserveAttemptAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<DateTime>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(ValueTask.FromResult(false));
 
         // when
@@ -1001,6 +1023,9 @@ public sealed class MessageSenderTests : TestBase
             .ReservePublishAttemptAsync(Arg.Any<MediumMessage>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(false));
         var message = _CreateMediumMessage();
+        // Pre-leased row (as after an atomic pickup) so the standalone mid-burst reservation path
+        // is exercised rather than the fresh-dispatch combined lease+reserve write.
+        message.LockedUntil = DateTime.UtcNow.AddMinutes(5);
 
         var result = await sender.SendAsync(message);
 
@@ -1011,5 +1036,38 @@ public sealed class MessageSenderTests : TestBase
         await storage
             .DidNotReceiveWithAnyArgs()
             .ChangePublishRetryStateAsync(default!, default, default, default, default, default, default);
+    }
+
+    [Fact]
+    public async Task should_issue_single_combined_storage_write_before_fresh_dispatch()
+    {
+        // given
+        var storage = Substitute.For<IDataStorage>();
+        var transportMessage = _CreateTransportMessage();
+        var serializer = Substitute.For<ISerializer>();
+        serializer.SerializeToTransportMessageAsync(Arg.Any<Message>()).Returns(ValueTask.FromResult(transportMessage));
+        var transport = Substitute.For<ITransport>();
+        transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
+        // Stub with the exact instance - an Arg.Any<TransportMessage> matcher makes NSubstitute
+        // invoke TransportMessage.Equals against a default record value, which throws.
+        transport.SendAsync(transportMessage, Arg.Any<CancellationToken>()).Returns(OperateResult.Success);
+        var sender = _CreateSender(storage, serializer, transport, new MessagingOptions());
+
+        // when
+        var result = await sender.SendAsync(_CreateMediumMessage());
+
+        // then — a fresh (never-leased) dispatch must pay exactly one pre-attempt storage write:
+        // the combined lease+reserve statement, never the two-step lease-then-reserve pair.
+        result.Succeeded.Should().BeTrue();
+        await storage
+            .Received(1)
+            .LeasePublishAndReserveAttemptAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<DateTime>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            );
+        await storage.DidNotReceiveWithAnyArgs().LeasePublishAsync(default!, default, default);
+        await storage.DidNotReceiveWithAnyArgs().ReservePublishAttemptAsync(default!, default, default);
     }
 }

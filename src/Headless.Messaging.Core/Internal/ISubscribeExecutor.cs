@@ -150,23 +150,33 @@ internal sealed class SubscribeExecutor(
         // ago and re-leasing only inflates the rolling-restart retry-gap upper bound by the queue
         // delay. Fresh transport dispatches (LockedUntil null or expired) still take the lease.
         var now = timeProvider.GetUtcNow().UtcDateTime;
-        if (message.LockedUntil is not { } lockedUntil || lockedUntil <= now)
+        var needsLease = message.LockedUntil is not { } lockedUntil || lockedUntil <= now;
+
+        inlineRetries = message.InlineAttempts;
+        if (RetryHelper.DetectCrashRecoveredReservation(inlineRetries, _retryPolicy) is { } recoveryAttempt)
         {
-            var leased = await _LeaseAsync(message, cancellationToken).ConfigureAwait(false);
-            if (!leased)
+            // The recovery transition still writes CAS-guarded state, which requires an active
+            // lease — take a plain lease (no fresh reservation; the crashed reservation is spent).
+            if (needsLease && !await _LeaseAsync(message, cancellationToken).ConfigureAwait(false))
+            {
+                _ReleaseHalfOpenProbe(message);
+                return MessagingRetryAttempt.Completed(OperateResult.Success);
+            }
+
+            return recoveryAttempt;
+        }
+
+        if (needsLease)
+        {
+            // Fresh-dispatch fast path: acquire the lease AND durably reserve the first attempt in
+            // one statement instead of two sequential writes (lease + reserve) on the same row.
+            if (!await _LeaseAndReserveAttemptAsync(message, cancellationToken).ConfigureAwait(false))
             {
                 _ReleaseHalfOpenProbe(message);
                 return MessagingRetryAttempt.Completed(OperateResult.Success);
             }
         }
-
-        inlineRetries = message.InlineAttempts;
-        if (RetryHelper.DetectCrashRecoveredReservation(inlineRetries, _retryPolicy) is { } recoveryAttempt)
-        {
-            return recoveryAttempt;
-        }
-
-        if (!await _ReserveAttemptAsync(message, cancellationToken).ConfigureAwait(false))
+        else if (!await _ReserveAttemptAsync(message, cancellationToken).ConfigureAwait(false))
         {
             _ReleaseHalfOpenProbe(message);
             return MessagingRetryAttempt.Completed(OperateResult.Success);
@@ -484,6 +494,22 @@ internal sealed class SubscribeExecutor(
     {
         var lockedUntil = timeProvider.GetUtcNow().UtcDateTime.Add(_retryPolicy.DispatchTimeout);
         return await dataStorage.LeaseReceiveAsync(message, lockedUntil, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<bool> _LeaseAndReserveAttemptAsync(MediumMessage message, CancellationToken cancellationToken)
+    {
+        var lockedUntil = timeProvider.GetUtcNow().UtcDateTime.Add(_retryPolicy.DispatchTimeout);
+        var originalInlineAttempts = message.InlineAttempts;
+        message.InlineAttempts++;
+        var reserved = await dataStorage
+            .LeaseReceiveAndReserveAttemptAsync(message, lockedUntil, originalInlineAttempts, cancellationToken)
+            .ConfigureAwait(false);
+        if (!reserved)
+        {
+            message.InlineAttempts = originalInlineAttempts;
+        }
+
+        return reserved;
     }
 
     private async Task<bool> _ReserveAttemptAsync(MediumMessage message, CancellationToken cancellationToken)

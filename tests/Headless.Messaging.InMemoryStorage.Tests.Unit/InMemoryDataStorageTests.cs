@@ -283,6 +283,14 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
         base.should_reject_mismatched_original_retries();
 
     [Fact]
+    public override Task should_lease_and_reserve_publish_attempt_in_single_step() =>
+        base.should_lease_and_reserve_publish_attempt_in_single_step();
+
+    [Fact]
+    public override Task should_reject_lease_and_reserve_with_stale_inline_attempts_token() =>
+        base.should_reject_lease_and_reserve_with_stale_inline_attempts_token();
+
+    [Fact]
     public async Task should_reserve_publish_attempt_with_inline_attempt_compare_and_swap()
     {
         _EnsureInitialized();
