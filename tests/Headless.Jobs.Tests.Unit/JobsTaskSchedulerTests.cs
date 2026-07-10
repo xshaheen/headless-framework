@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using Headless.Jobs.Enums;
 using Headless.Jobs.JobsThreadPool;
 using Headless.Testing.Tests;
@@ -118,6 +119,95 @@ public sealed class JobsTaskSchedulerTests : TestBase
         (await scheduler.WaitForRunningTasksAsync(TimeSpan.FromSeconds(10))).Should().BeTrue();
 
         executionOrder.Should().Equal(JobPriority.High, JobPriority.Normal, JobPriority.Low);
+    }
+
+    [Fact]
+    public async Task QueueAsync_steals_higher_priority_work_from_other_workers_before_local_low_priority()
+    {
+        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 2);
+
+        // Occupy both workers so the follow-up items stay parked in their queues until we release exactly one
+        // worker. Each blocker records the worker thread it runs on so we can release a specific worker.
+        var firstBlockerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var firstBlockerRelease = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondBlockerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondBlockerRelease = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        string? firstBlockerWorker = null;
+        string? secondBlockerWorker = null;
+
+        await scheduler.QueueAsync(
+            async _ =>
+            {
+                firstBlockerWorker = Thread.CurrentThread.Name;
+                firstBlockerStarted.TrySetResult();
+                await firstBlockerRelease.Task.ConfigureAwait(false);
+            },
+            JobPriority.Normal,
+            AbortToken
+        );
+        await scheduler.QueueAsync(
+            async _ =>
+            {
+                secondBlockerWorker = Thread.CurrentThread.Name;
+                secondBlockerStarted.TrySetResult();
+                await secondBlockerRelease.Task.ConfigureAwait(false);
+            },
+            JobPriority.Normal,
+            AbortToken
+        );
+
+        await firstBlockerStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        await secondBlockerStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+
+        // With both workers parked, round-robin distribution places the single High item on worker 1's local
+        // queue and leaves worker 0's local queue holding only a Low item. Releasing worker 0 forces its
+        // dequeue to steal the High item from worker 1's queue before it runs its own local Low item.
+        var executionOrder = new ConcurrentQueue<string>();
+        var highRan = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        for (var i = 0; i < 2; i++)
+        {
+            await scheduler.QueueAsync(
+                _ =>
+                {
+                    executionOrder.Enqueue("Low");
+                    return Task.CompletedTask;
+                },
+                JobPriority.Low,
+                AbortToken
+            );
+        }
+
+        await scheduler.QueueAsync(
+            _ =>
+            {
+                executionOrder.Enqueue("High");
+                highRan.TrySetResult();
+                return Task.CompletedTask;
+            },
+            JobPriority.High,
+            AbortToken
+        );
+
+        // Release worker 0 only, keeping worker 1 parked, so worker 0 is the sole consumer and the drain
+        // order is single-threaded and deterministic.
+        var worker0Release = string.Equals(firstBlockerWorker, "Headless.Jobs.Worker-0", StringComparison.Ordinal)
+            ? firstBlockerRelease
+            : secondBlockerRelease;
+        worker0Release.SetResult();
+
+        await highRan.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+
+        executionOrder.TryPeek(out var firstExecuted).Should().BeTrue();
+        firstExecuted.Should().Be("High");
+
+        // Release the remaining worker and let everything drain.
+        firstBlockerRelease.TrySetResult();
+        secondBlockerRelease.TrySetResult();
+
+        (await scheduler.WaitForRunningTasksAsync(TimeSpan.FromSeconds(10))).Should().BeTrue();
+
+        executionOrder.Should().Equal("High", "Low", "Low");
     }
 
     [Fact]

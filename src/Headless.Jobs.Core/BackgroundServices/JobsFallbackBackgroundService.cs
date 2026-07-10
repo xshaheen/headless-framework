@@ -3,7 +3,6 @@
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.JobsThreadPool;
-using Headless.Jobs.Models;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -95,50 +94,14 @@ internal sealed class JobsFallbackBackgroundService(
                         {
                             await jobsTaskScheduler
                                 .QueueAsync(
-                                    async ct =>
-                                    {
-                                        if (semaphore != null)
-                                        {
-                                            await semaphore.WaitAsync(ct).ConfigureAwait(false);
-                                        }
-
-                                        try
-                                        {
-                                            JobExecutionState[] claimed;
-                                            try
-                                            {
-                                                claimed = await internalJobsManager
-                                                    .SetTickersInProgress([function], ct)
-                                                    .ConfigureAwait(false);
-                                            }
-                                            catch (Exception ex) when (ex is not OperationCanceledException)
-                                            {
-                                                // The worker pool swallows delegate exceptions; without this log a
-                                                // failed claim write would leave the row Queued with zero operator
-                                                // signal until the next fallback sweep after the lease lapses.
-                                                logger.LogJobAdmissionClaimFailed(
-                                                    ex,
-                                                    function.JobId,
-                                                    function.FunctionName
-                                                );
-                                                return;
-                                            }
-
-                                            if (claimed.Length == 0)
-                                            {
-                                                logger.LogJobAdmissionClaimLost(function.JobId, function.FunctionName);
-                                                return;
-                                            }
-
-                                            await tickerExecutionTaskHandler
-                                                .ExecuteTaskAsync(claimed[0], isDue: true, cancellationToken: ct)
-                                                .ConfigureAwait(false);
-                                        }
-                                        finally
-                                        {
-                                            semaphore?.Release();
-                                        }
-                                    },
+                                    JobsAdmissionWorkItem.Create(
+                                        internalJobsManager,
+                                        tickerExecutionTaskHandler,
+                                        logger,
+                                        semaphore,
+                                        function,
+                                        isDue: true
+                                    ),
                                     function.CachedPriority,
                                     stoppingToken
                                 )

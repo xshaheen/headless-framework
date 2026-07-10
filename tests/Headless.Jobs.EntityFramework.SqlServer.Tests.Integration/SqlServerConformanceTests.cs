@@ -78,4 +78,12 @@ public sealed class SqlServerConformanceTests(SqlServerJobsCoordinationFixture f
     [Fact]
     public override Task fallback_queueing_a_time_job_claims_its_child_tree() =>
         base.fallback_queueing_a_time_job_claims_its_child_tree();
+
+    [Fact]
+    public override Task unified_context_inprogress_stamp_requires_a_queued_row() =>
+        base.unified_context_inprogress_stamp_requires_a_queued_row();
+
+    [Fact]
+    public override Task cron_unified_context_inprogress_stamp_requires_a_queued_row() =>
+        base.cron_unified_context_inprogress_stamp_requires_a_queued_row();
 }

@@ -1005,6 +1005,109 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
         }
     }
 
+    /// <summary>
+    /// #316/U5 (strict Queued→InProgress fence): the unified-context start stamp promotes a Queued row owned by this
+    /// node to InProgress exactly once. A duplicate same-owner scheduler wrapper cannot revalidate the now-running row —
+    /// the second call matches zero rows because the row is no longer Queued. Pins the EF LINQ translation of the
+    /// <c>rowsToUpdate.Where(x =&gt; x.Status == JobStatus.Queued)</c> guard against a real database.
+    /// </summary>
+    public virtual async Task unified_context_inprogress_stamp_requires_a_queued_row()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        using var host = fixture.BuildHost("node-a");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var owner = host.Services.GetRequiredService<INodeMembership>().Identity!.Value.ToString();
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+            var id = Guid.NewGuid();
+            await fixture.SeedTimeJobAsync(id, "unified-start", (int)JobStatus.Queued, owner, ct);
+
+            var start = new JobExecutionState { FunctionName = "unified-start" }.SetProperty(
+                x => x.Status,
+                JobStatus.InProgress
+            );
+
+            // First stamp promotes the Queued row to InProgress.
+            (await persistence.UpdateTimeJobsWithUnifiedContextAsync([id], start, ct))
+                .Should()
+                .Equal(id);
+
+            // Second stamp is a no-op: the row is InProgress, not Queued, so the strict fence excludes it.
+            (await persistence.UpdateTimeJobsWithUnifiedContextAsync([id], start, ct))
+                .Should()
+                .BeEmpty();
+
+            (await fixture.ReadTimeJobAsync(id, ct)).Should().Be(((int)JobStatus.InProgress, owner));
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    /// <summary>
+    /// #316/U5 (cron mirror): the cron-occurrence unified-context start stamp promotes a Queued occurrence owned by this
+    /// node to InProgress exactly once; the duplicate same-owner wrapper matches zero rows on the second call. Pins the
+    /// EF LINQ translation of the cron mirror's <c>rowsToUpdate.Where(x =&gt; x.Status == JobStatus.Queued)</c> guard.
+    /// </summary>
+    public virtual async Task cron_unified_context_inprogress_stamp_requires_a_queued_row()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        using var host = fixture.BuildHost("node-a");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var owner = host.Services.GetRequiredService<INodeMembership>().Identity!.Value.ToString();
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+            var cronId = Guid.NewGuid();
+            await fixture.SeedCronJobAsync(cronId, "cron-start", "* * * * *", NodeDeathPolicy.Retry, ct);
+
+            var occurrenceId = Guid.NewGuid();
+            await fixture.SeedCronOccurrenceAsync(
+                occurrenceId,
+                cronId,
+                (int)JobStatus.Queued,
+                owner,
+                NodeDeathPolicy.Retry,
+                null,
+                DateTime.UtcNow.AddHours(-1),
+                ct
+            );
+
+            var start = new JobExecutionState { FunctionName = "cron-start" }.SetProperty(
+                x => x.Status,
+                JobStatus.InProgress
+            );
+
+            // First stamp promotes the Queued occurrence to InProgress.
+            (await persistence.UpdateCronJobOccurrencesWithUnifiedContextAsync([occurrenceId], start, ct))
+                .Should()
+                .Equal(occurrenceId);
+
+            // Second stamp is a no-op: the occurrence is InProgress, not Queued, so the strict fence excludes it.
+            (await persistence.UpdateCronJobOccurrencesWithUnifiedContextAsync([occurrenceId], start, ct))
+                .Should()
+                .BeEmpty();
+
+            (await fixture.ReadCronOccurrenceAsync(occurrenceId, ct)).Should().Be(((int)JobStatus.InProgress, owner));
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
     private static async Task _WaitUntilAsync(Func<Task<bool>> condition, TimeSpan timeout, CancellationToken ct)
     {
         var stopwatch = Stopwatch.StartNew();

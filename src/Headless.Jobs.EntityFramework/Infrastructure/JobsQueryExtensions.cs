@@ -47,6 +47,34 @@ public static class JobsQueryExtensions
     }
 
     /// <summary>
+    /// Selects the rows the fallback sweep may claim: <c>Idle</c>, or <c>Queued</c> with a lapsed or absent lease
+    /// (<c>LockedUntil == null || LockedUntil &lt;= now</c>). Unlike <c>WhereCanAcquire</c> this is the owner-agnostic
+    /// fallback predicate — <paramref name="now"/> is the injected application clock, bound as a parameter so EF
+    /// translates <c>LockedUntil &lt;= @now</c>.
+    /// </summary>
+    public static IQueryable<TTimeJob> WhereCanFallbackClaim<TTimeJob>(this IQueryable<TTimeJob> q, DateTime now)
+        where TTimeJob : TimeJobEntity<TTimeJob>
+    {
+        return q.Where(e =>
+            e.Status == JobStatus.Idle
+            || (e.Status == JobStatus.Queued && (e.LockedUntil == null || e.LockedUntil <= now))
+        );
+    }
+
+    /// <inheritdoc cref="WhereCanFallbackClaim{TTimeJob}(System.Linq.IQueryable{TTimeJob},System.DateTime)"/>
+    public static IQueryable<CronJobOccurrenceEntity<TCronJob>> WhereCanFallbackClaim<TCronJob>(
+        this IQueryable<CronJobOccurrenceEntity<TCronJob>> q,
+        DateTime now
+    )
+        where TCronJob : CronJobEntity
+    {
+        return q.Where(e =>
+            e.Status == JobStatus.Idle
+            || (e.Status == JobStatus.Queued && (e.LockedUntil == null || e.LockedUntil <= now))
+        );
+    }
+
+    /// <summary>
     /// Selects the non-terminal rows owned by <paramref name="owner"/> for dead-node reclaim. Unlike
     /// <c>WhereCanAcquire</c> this drops the loose unowned/lease-expired arms (KTD5/R4): a survivor reacting
     /// to a dead incarnation reclaims only that incarnation's rows — never unowned-but-idle rows nor a
