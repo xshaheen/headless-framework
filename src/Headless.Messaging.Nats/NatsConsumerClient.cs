@@ -217,50 +217,76 @@ internal sealed class NatsConsumerClient(
 
     public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
-        var streamGroups = _subscribedMessageNames!.GroupBy(
-            x => _natsOptions.NormalizeStreamName(x),
-            StringComparer.Ordinal
-        );
-        var tasks = new List<Task>();
-        var startupTasks = new List<Task>();
-
-        foreach (var streamGroup in streamGroups)
+        var listeningCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        try
         {
-            var groupName = TransportNaming.Normalize(name);
-            var shardedMessageNames = _ResolveShardedMessageNames(streamGroup);
+            var streamGroups = _subscribedMessageNames!.GroupBy(
+                x => _natsOptions.NormalizeStreamName(x),
+                StringComparer.Ordinal
+            );
+            var tasks = new List<Task>();
+            var startupTasks = new List<Task>();
 
-            foreach (var subject in BuildConsumerSubjects(streamGroup, shardedMessageNames))
+            foreach (var streamGroup in streamGroups)
             {
-                var durableName = BuildDurableName(groupName, subject, intentType);
+                var groupName = TransportNaming.Normalize(name);
+                var shardedMessageNames = _ResolveShardedMessageNames(streamGroup);
 
-                var consumerConfig = new ConsumerConfig(durableName)
+                foreach (var subject in BuildConsumerSubjects(streamGroup, shardedMessageNames))
                 {
-                    FilterSubject = subject,
-                    DeliverPolicy = ConsumerConfigDeliverPolicy.New,
-                    AckWait = TimeSpan.FromSeconds(30),
-                };
+                    var durableName = BuildDurableName(groupName, subject, intentType);
 
-                _natsOptions.ConsumerOptions?.Invoke(consumerConfig);
+                    var consumerConfig = new ConsumerConfig(durableName)
+                    {
+                        FilterSubject = subject,
+                        DeliverPolicy = ConsumerConfigDeliverPolicy.New,
+                        AckWait = TimeSpan.FromSeconds(30),
+                    };
 
-                var startupReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-                startupTasks.Add(startupReady.Task);
-                tasks.Add(
-                    _ConsumeSubjectAsync(streamGroup.Key, consumerConfig, timeout, startupReady, cancellationToken)
-                );
+                    _natsOptions.ConsumerOptions?.Invoke(consumerConfig);
+
+                    var startupReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    startupTasks.Add(startupReady.Task);
+                    tasks.Add(
+                        _ConsumeSubjectAsync(streamGroup.Key, consumerConfig, timeout, startupReady, listeningCts.Token)
+                    );
+                }
             }
-        }
 
-        if (startupTasks.Count == 0)
-        {
-            _ready.TrySetResult();
-        }
-        else
-        {
-            await Task.WhenAll(startupTasks).ConfigureAwait(false);
-            _ready.TrySetResult();
-        }
+            if (startupTasks.Count == 0)
+            {
+                _ready.TrySetResult();
+            }
+            else
+            {
+                try
+                {
+                    await Task.WhenAll(startupTasks).ConfigureAwait(false);
+                }
+                catch
+                {
+                    await listeningCts.CancelAsync().ConfigureAwait(false);
+                    throw;
+                }
 
-        await Task.WhenAll(tasks).ConfigureAwait(false);
+                _ready.TrySetResult();
+            }
+
+            if (tasks.Count == 0)
+            {
+                return;
+            }
+
+            // A subject loop only completes on shutdown or an unrecoverable failure. Stop its sibling
+            // loops when either happens so Task.WhenAll cannot hide the failure behind still-running subjects.
+            _ = await Task.WhenAny(tasks).ConfigureAwait(false);
+            await listeningCts.CancelAsync().ConfigureAwait(false);
+            await Task.WhenAll(tasks).ConfigureAwait(false);
+        }
+        finally
+        {
+            listeningCts.Dispose();
+        }
     }
 
     private HashSet<string> _ResolveShardedMessageNames(IEnumerable<string> messageNames)
@@ -352,6 +378,12 @@ internal sealed class NatsConsumerClient(
                         await _timeProvider.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
                         continue;
                     }
+                    catch (Exception ex) when (_IsConnectionFailure(ex))
+                    {
+                        // Reconnect is deliberately owned by ConsumerRegister. Let the receive loop
+                        // terminate so its health watchdog can replace this failed client.
+                        throw;
+                    }
                     catch (Exception ex)
                     {
                         OnLogCallback?.Invoke(
@@ -381,6 +413,19 @@ internal sealed class NatsConsumerClient(
                 startupReady.TrySetCanceled(cancellationToken);
                 break;
             }
+            catch (Exception ex) when (_IsConnectionFailure(ex))
+            {
+                startupReady.TrySetException(ex);
+                OnLogCallback?.Invoke(
+                    new LogMessageEventArgs
+                    {
+                        LogType = MqLogType.ConnectError,
+                        Reason = $"NATS connection failed for stream '{streamName}': {ex}",
+                    }
+                );
+
+                throw;
+            }
             catch (Exception ex)
             {
                 OnLogCallback?.Invoke(
@@ -395,6 +440,11 @@ internal sealed class NatsConsumerClient(
                 await _timeProvider.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
             }
         }
+    }
+
+    private static bool _IsConnectionFailure(Exception exception)
+    {
+        return exception is NatsException or NatsJSConnectionException;
     }
 
     private async ValueTask _DispatchMessageAsync(

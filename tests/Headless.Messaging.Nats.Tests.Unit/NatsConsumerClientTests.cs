@@ -611,6 +611,86 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task ListeningAsync_should_exit_and_report_connect_error_when_receive_connection_fails()
+    {
+        // given
+        var connectionFailure = new NatsConnectionFailedException("connection failed after startup");
+        var failedConsumer = Substitute.For<INatsJSConsumer>();
+        failedConsumer
+            .NextAsync(
+                Arg.Any<INatsDeserialize<ReadOnlyMemory<byte>>>(),
+                Arg.Any<NatsJSNextOpts?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(_ => new ValueTask<INatsJSMsg<ReadOnlyMemory<byte>>?>(
+                Task.FromException<INatsJSMsg<ReadOnlyMemory<byte>>?>(connectionFailure)
+            ));
+        var siblingCanceled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var siblingConsumer = Substitute.For<INatsJSConsumer>();
+        siblingConsumer
+            .NextAsync(
+                Arg.Any<INatsDeserialize<ReadOnlyMemory<byte>>>(),
+                Arg.Any<NatsJSNextOpts?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(async call =>
+            {
+                try
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, call.Arg<CancellationToken>());
+                    return null;
+                }
+                catch (OperationCanceledException)
+                {
+                    siblingCanceled.TrySetResult();
+                    throw;
+                }
+            });
+
+        await using var client = new NatsConsumerClient(
+            "test-group",
+            1,
+            _options,
+            _serviceProvider,
+            (_, config, _) =>
+                Task.FromResult(config.FilterSubject == "orders.created" ? failedConsumer : siblingConsumer)
+        );
+        await client.SubscribeAsync(["orders.created", "orders.updated"]);
+
+        var connectError = new TaskCompletionSource<LogMessageEventArgs>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        client.OnLogCallback = args =>
+        {
+            if (args.LogType == MqLogType.ConnectError)
+            {
+                connectError.TrySetResult(args);
+            }
+        };
+
+        // when
+        var act = async () =>
+            await client
+                .ListeningAsync(TimeSpan.FromMilliseconds(50), AbortToken)
+                .AsTask()
+                .WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<NatsConnectionFailedException>();
+        var logged = await connectError.Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+        logged.Reason.Should().Contain("orders");
+        logged.Reason.Should().Contain("connection failed after startup");
+        await siblingCanceled.Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+        await failedConsumer
+            .Received(1)
+            .NextAsync(
+                Arg.Any<INatsDeserialize<ReadOnlyMemory<byte>>>(),
+                Arg.Any<NatsJSNextOpts?>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
     public async Task PauseAsync_and_ResumeAsync_should_restart_fetch_with_a_fresh_receive_token()
     {
         // given

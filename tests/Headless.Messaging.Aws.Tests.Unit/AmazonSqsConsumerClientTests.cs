@@ -54,7 +54,8 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         ILogger<AmazonSqsConsumerClient> logger,
         LogLevel level,
         int eventId,
-        Exception? exception = null
+        Exception? exception = null,
+        string? messageContains = null
     )
     {
         var matchingCalls = logger
@@ -72,7 +73,11 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
                     && loggedLevel == level
                     && arguments[1] is EventId loggedEventId
                     && loggedEventId.Id == eventId
-                    && (exception is null || Equals(arguments[3], exception));
+                    && (exception is null || Equals(arguments[3], exception))
+                    && (
+                        messageContains is null
+                        || arguments[2]?.ToString()?.Contains(messageContains, StringComparison.Ordinal) == true
+                    );
             })
             .ToList();
 
@@ -269,7 +274,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task should_handle_invalid_message_structure_and_reject()
+    public async Task should_release_invalid_message_structure_for_redrive_after_three_seconds()
     {
         // given
         var options = _CreateOptions();
@@ -325,7 +330,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         messageReceived.Should().BeFalse("invalid messages should not be processed");
 
         // Verify error was logged
-        _AssertLoggedEvent(logger, LogLevel.Error, 4201);
+        _AssertLoggedEvent(logger, LogLevel.Error, 4201, messageContains: "configure an SQS redrive policy");
 
         // Verify message was rejected
         await sqsClient
@@ -834,7 +839,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task should_handle_json_deserialization_error()
+    public async Task should_release_json_deserialization_error_for_redrive_after_three_seconds()
     {
         // given
         var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
@@ -886,7 +891,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
 
         // then
         callbackInvoked.Should().BeFalse("invalid JSON should not be processed");
-        _AssertLoggedEvent(logger, LogLevel.Error, 4200);
+        _AssertLoggedEvent(logger, LogLevel.Error, 4200, messageContains: "configure an SQS redrive policy");
 
         await sqsClient
             .Received(1)

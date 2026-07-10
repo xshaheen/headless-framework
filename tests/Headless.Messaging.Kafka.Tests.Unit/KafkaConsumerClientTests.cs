@@ -270,6 +270,54 @@ public sealed class KafkaConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task CommitAsync_should_ignore_offset_after_partition_is_revoked()
+    {
+        // given
+        var consumer = Substitute.For<IConsumer<string, byte[]>>();
+        await using var client = new KafkaConsumerClient(
+            "test-group",
+            1,
+            _options,
+            _serviceProvider,
+            consumerFactory: _ => consumer
+        );
+        client.Connect();
+        var consumeResult = _CreateConsumeResult(17);
+        client.PartitionsAssigned([consumeResult.TopicPartition]);
+
+        // when
+        client.PartitionsRevoked([consumeResult.TopicPartitionOffset]);
+        await client.CommitAsync(consumeResult);
+
+        // then
+        consumer.DidNotReceive().Commit(Arg.Any<ConsumeResult<string, byte[]>>());
+    }
+
+    [Fact]
+    public async Task RejectAsync_should_ignore_offset_after_partition_is_lost()
+    {
+        // given
+        var consumer = Substitute.For<IConsumer<string, byte[]>>();
+        await using var client = new KafkaConsumerClient(
+            "test-group",
+            1,
+            _options,
+            _serviceProvider,
+            consumerFactory: _ => consumer
+        );
+        client.Connect();
+        var consumeResult = _CreateConsumeResult(17);
+        client.PartitionsAssigned([consumeResult.TopicPartition]);
+
+        // when
+        client.PartitionsLost([consumeResult.TopicPartitionOffset]);
+        await client.RejectAsync(consumeResult);
+
+        // then
+        consumer.DidNotReceive().Seek(Arg.Any<TopicPartitionOffset>());
+    }
+
+    [Fact]
     public async Task Connect_should_apply_consumer_isolation_level_config()
     {
         // given
@@ -486,6 +534,122 @@ public sealed class KafkaConsumerClientTests : TestBase
         {
             releaseOffset100.TrySetResult();
             releaseOffset101.TrySetResult();
+            await cts.CancelAsync();
+            await listeningTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+        }
+    }
+
+    [Fact]
+    public async Task CommitAsync_should_ignore_tracked_delivery_from_before_reassignment()
+    {
+        // given
+        var consumer = Substitute.For<IConsumer<string, byte[]>>();
+        var consumeResult = _CreateConsumeResult(42);
+        var consumeCallCount = 0;
+        consumer
+            .Consume(Arg.Any<TimeSpan>())
+            .Returns(_ =>
+            {
+                if (Interlocked.Increment(ref consumeCallCount) == 1)
+                {
+                    return consumeResult;
+                }
+
+                Thread.Sleep(10);
+                return null!;
+            });
+
+        await using var client = new KafkaConsumerClient(
+            "test-group",
+            2,
+            _options,
+            _serviceProvider,
+            consumerFactory: _ => consumer
+        );
+        client.PartitionsAssigned([consumeResult.TopicPartition]);
+        var capturedSender = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.OnMessageCallback = (_, sender) =>
+        {
+            capturedSender.TrySetResult(sender!);
+            return Task.CompletedTask;
+        };
+        client.OnLogCallback = _ => { };
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
+
+        try
+        {
+            var sender = await capturedSender.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+
+            // when
+            client.PartitionsRevoked([consumeResult.TopicPartitionOffset]);
+            client.PartitionsAssigned([consumeResult.TopicPartition]);
+            await client.CommitAsync(sender);
+
+            // then
+            consumer.DidNotReceive().Commit(Arg.Any<IEnumerable<TopicPartitionOffset>>());
+        }
+        finally
+        {
+            await cts.CancelAsync();
+            await listeningTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+        }
+    }
+
+    [Fact]
+    public async Task RejectAsync_should_ignore_tracked_delivery_from_before_reassignment()
+    {
+        // given
+        var consumer = Substitute.For<IConsumer<string, byte[]>>();
+        var consumeResult = _CreateConsumeResult(42);
+        var consumeCallCount = 0;
+        consumer
+            .Consume(Arg.Any<TimeSpan>())
+            .Returns(_ =>
+            {
+                if (Interlocked.Increment(ref consumeCallCount) == 1)
+                {
+                    return consumeResult;
+                }
+
+                Thread.Sleep(10);
+                return null!;
+            });
+
+        await using var client = new KafkaConsumerClient(
+            "test-group",
+            2,
+            _options,
+            _serviceProvider,
+            consumerFactory: _ => consumer
+        );
+        client.PartitionsAssigned([consumeResult.TopicPartition]);
+        var capturedSender = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.OnMessageCallback = (_, sender) =>
+        {
+            capturedSender.TrySetResult(sender!);
+            return Task.CompletedTask;
+        };
+        client.OnLogCallback = _ => { };
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
+
+        try
+        {
+            var sender = await capturedSender.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+
+            // when
+            client.PartitionsRevoked([consumeResult.TopicPartitionOffset]);
+            client.PartitionsAssigned([consumeResult.TopicPartition]);
+            await client.RejectAsync(sender);
+
+            // then
+            consumer.DidNotReceive().Seek(Arg.Any<TopicPartitionOffset>());
+        }
+        finally
+        {
             await cts.CancelAsync();
             await listeningTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
         }

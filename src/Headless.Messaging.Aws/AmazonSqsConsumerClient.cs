@@ -509,14 +509,14 @@ internal static partial class AmazonSqsConsumerClientLog
     [LoggerMessage(
         EventId = 4200,
         Level = LogLevel.Error,
-        Message = "Failed to deserialize SQS message. Moving to DLQ."
+        Message = "Failed to deserialize SQS message. Releasing it for retry; configure an SQS redrive policy to move repeatedly failing messages to a dead-letter queue."
     )]
     public static partial void SqsMessageDeserializationFailed(this ILogger logger, Exception exception);
 
     [LoggerMessage(
         EventId = 4201,
         Level = LogLevel.Error,
-        Message = "Invalid SQS message structure: deserialization returned null or missing MessageAttributes. Moving to DLQ."
+        Message = "Invalid SQS message structure: deserialization returned null or missing MessageAttributes. Releasing it for retry; configure an SQS redrive policy to move repeatedly failing messages to a dead-letter queue."
     )]
     public static partial void InvalidSqsMessageStructure(this ILogger logger);
 
