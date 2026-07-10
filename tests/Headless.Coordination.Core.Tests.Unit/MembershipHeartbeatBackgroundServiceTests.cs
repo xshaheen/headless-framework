@@ -71,6 +71,71 @@ public sealed class MembershipHeartbeatBackgroundServiceTests : TestBase
     }
 
     [Fact]
+    public async Task should_self_fence_after_heartbeat_failures_reach_the_dead_threshold()
+    {
+        var options = new CoordinationOptions
+        {
+            HeartbeatInterval = TimeSpan.FromSeconds(1),
+            SuspicionThreshold = TimeSpan.FromSeconds(2),
+            DeadThreshold = TimeSpan.FromSeconds(3),
+        };
+        var store = new FakeMembershipStore { ThrowOnHeartbeat = true };
+        var (sut, timeProvider, membership) = _CreateSut(store, options);
+        await membership.RegisterAsync(AbortToken);
+
+        await sut.RunOnceAsync(AbortToken);
+        membership.Identity.Should().NotBeNull();
+
+        timeProvider.Advance(options.DeadThreshold);
+        await sut.RunOnceAsync(AbortToken);
+
+        membership.Identity.Should().BeNull();
+        membership.LocalMembershipLostToken.IsCancellationRequested.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_self_fence_when_heartbeat_call_hangs_past_the_dead_threshold()
+    {
+        var options = new CoordinationOptions
+        {
+            HeartbeatInterval = TimeSpan.FromSeconds(1),
+            SuspicionThreshold = TimeSpan.FromSeconds(2),
+            DeadThreshold = TimeSpan.FromSeconds(3),
+        };
+        var store = new FakeMembershipStore { BlockOnHeartbeat = true };
+        var (sut, timeProvider, membership) = _CreateSut(store, options);
+        await membership.RegisterAsync(AbortToken);
+
+        var heartbeat = sut.RunOnceAsync(AbortToken);
+        timeProvider.Advance(options.DeadThreshold);
+        await heartbeat.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        store.HeartbeatRelease.TrySetResult();
+
+        membership.Identity.Should().BeNull();
+        membership.LocalMembershipLostToken.IsCancellationRequested.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_not_self_fence_for_liveness_read_failures_while_heartbeats_succeed()
+    {
+        var options = new CoordinationOptions
+        {
+            HeartbeatInterval = TimeSpan.FromSeconds(1),
+            SuspicionThreshold = TimeSpan.FromSeconds(2),
+            DeadThreshold = TimeSpan.FromSeconds(3),
+        };
+        var store = new FakeMembershipStore { ThrowOnRead = true };
+        var (sut, timeProvider, membership) = _CreateSut(store, options);
+        await membership.RegisterAsync(AbortToken);
+
+        timeProvider.Advance(options.DeadThreshold + options.HeartbeatInterval);
+        await sut.RunOnceAsync(AbortToken);
+
+        membership.Identity.Should().NotBeNull();
+        membership.LocalMembershipLostToken.IsCancellationRequested.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task should_swallow_leave_failure_during_stop()
     {
         // given

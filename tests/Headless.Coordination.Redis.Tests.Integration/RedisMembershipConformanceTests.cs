@@ -41,6 +41,18 @@ public sealed class RedisMembershipConformanceTests(RedisMembershipFixture fixtu
         base.should_reject_stale_and_impossible_heartbeats_with_generation_guard();
 
     [Fact]
+    public override Task should_reject_heartbeat_for_dead_current_incarnation() =>
+        base.should_reject_heartbeat_for_dead_current_incarnation();
+
+    [Fact]
+    public override Task should_reject_heartbeat_after_graceful_leave() =>
+        base.should_reject_heartbeat_after_graceful_leave();
+
+    [Fact]
+    public override Task should_reject_heartbeat_after_current_incarnation_is_pruned() =>
+        base.should_reject_heartbeat_after_current_incarnation_is_pruned();
+
+    [Fact]
     public override Task should_reject_stale_heartbeat_after_retained_state_is_pruned() =>
         base.should_reject_stale_heartbeat_after_retained_state_is_pruned();
 

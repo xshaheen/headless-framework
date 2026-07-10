@@ -14,6 +14,8 @@ internal sealed class MembershipHeartbeatBackgroundService(
 ) : BackgroundService
 {
     private Dictionary<NodeIdentity, NodeLivenessState> _previous = [];
+    private long _lastConfirmedHeartbeatTimestamp = timeProvider.GetTimestamp();
+    private NodeIdentity? _trackedIdentity;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -104,16 +106,68 @@ internal sealed class MembershipHeartbeatBackgroundService(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        try
+        if (membership.Identity is { } identity)
         {
-            if (
-                membership.Identity is not null
-                && !await membership.HeartbeatAsync(cancellationToken).ConfigureAwait(false)
-            )
+            if (_trackedIdentity != identity)
             {
+                _trackedIdentity = identity;
+                _lastConfirmedHeartbeatTimestamp = timeProvider.GetTimestamp();
+            }
+
+            var elapsed = timeProvider.GetElapsedTime(_lastConfirmedHeartbeatTimestamp);
+            var remaining = options.DeadThreshold - elapsed;
+            if (remaining <= TimeSpan.Zero)
+            {
+                await membership.FailStopAsync(identity).ConfigureAwait(false);
                 return;
             }
 
+            using var timeoutCts = new CancellationTokenSource(remaining, timeProvider);
+            using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken,
+                timeoutCts.Token
+            );
+
+            try
+            {
+                var accepted = await membership
+                    .HeartbeatAsync(heartbeatCts.Token)
+                    .AsTask()
+                    .WaitAsync(heartbeatCts.Token)
+                    .ConfigureAwait(false);
+                if (!accepted)
+                {
+                    return;
+                }
+
+                _lastConfirmedHeartbeatTimestamp = timeProvider.GetTimestamp();
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (OperationCanceledException ex) when (timeoutCts.IsCancellationRequested)
+            {
+                logger.HeartbeatFailed(ex, identity, options.DeadThreshold, options.DeadThreshold);
+                await membership.FailStopAsync(identity).ConfigureAwait(false);
+                return;
+            }
+            catch (Exception ex)
+            {
+                elapsed = timeProvider.GetElapsedTime(_lastConfirmedHeartbeatTimestamp);
+                logger.HeartbeatFailed(ex, identity, elapsed, options.DeadThreshold);
+
+                if (elapsed >= options.DeadThreshold)
+                {
+                    await membership.FailStopAsync(identity).ConfigureAwait(false);
+                }
+
+                return;
+            }
+        }
+
+        try
+        {
             var snapshots = await membership.GetLivenessSnapshotAsync(cancellationToken).ConfigureAwait(false);
             _PublishDiff(snapshots);
         }

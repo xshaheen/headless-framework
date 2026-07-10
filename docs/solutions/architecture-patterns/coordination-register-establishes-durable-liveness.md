@@ -150,13 +150,17 @@ UPDATE coordination.liveness WITH (UPDLOCK, HOLDLOCK)
 IF @@ROWCOUNT = 0 INSERT INTO coordination.liveness (...) SELECT ..., SYSUTCDATETIME(), NULL WHERE NOT EXISTS (...);
 ```
 
-**Redis — register runs the same gen-guarded heartbeat Lua (no new script, server `TIME`):**
+**Redis — register runs the gen-guarded heartbeat Lua in creation mode (server `TIME`):**
 
 ```csharp
 _descriptors[descriptor.Identity] = descriptor;                 // write-through cache for the hot path
 _metadataJson[descriptor.Identity] = _SerializeDictionary(descriptor.Metadata);
-await scriptsLoader.EvaluateAsync(Db, RedisMembershipHeartbeatScriptDefinition.Instance, /* HSET :known + ZADD :live, gated on genKey == incarnation, ts from redis.call('TIME') */ ct);
+var parameters = _CreateHeartbeatParams(descriptor.Identity, allowCreate: true);
+await scriptsLoader.EvaluateAsync(Db, RedisMembershipHeartbeatScriptDefinition.Instance, parameters, ct);
 ```
+
+Periodic heartbeats call the same script with `allowCreate: false`; a dead, gracefully left, or
+pruned incarnation cannot recreate its liveness entry and must register a higher incarnation.
 
 **Conformance test — the invariant pin (runs on every provider):**
 

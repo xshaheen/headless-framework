@@ -55,7 +55,7 @@ public interface INodeMembership : IMembershipEventSource
     /// <param name="cancellationToken">Propagates notification that the operation should be cancelled.</param>
     /// <returns>
     /// <see langword="true"/> if the heartbeat was accepted by the store; <see langword="false"/> if the
-    /// local identity has already been superseded and the node should stop.
+    /// local identity has been superseded, declared dead, gracefully left, or pruned, and the node should stop.
     /// </returns>
     ValueTask<bool> HeartbeatAsync(CancellationToken cancellationToken = default);
 
