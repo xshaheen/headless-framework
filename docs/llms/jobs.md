@@ -82,6 +82,9 @@ Optional add-ons:
 Minimum wiring (in-memory storage, no persistence):
 
 ```csharp
+using Polly;
+using Polly.Retry;
+
 builder.Services.AddHeadlessJobs(options =>
 {
     options.ConfigureScheduler(scheduler =>
@@ -345,6 +348,15 @@ builder.Services.AddHeadlessJobs(options =>
         scheduler.FallbackIntervalChecker = TimeSpan.FromSeconds(30);
     });
     options.SetExceptionHandler<MyJobExceptionHandler>();
+    options.ConfigureRetries(retry =>
+    {
+        retry.RetryStrategy.ShouldHandle = args =>
+            ValueTask.FromResult(args.Outcome.Exception is HttpRequestException);
+        retry.RetryStrategy.Delay = TimeSpan.FromSeconds(30);
+        retry.RetryStrategy.BackoffType = DelayBackoffType.Exponential;
+        retry.RetryStrategy.UseJitter = true;
+        retry.RetryStrategy.MaxDelay = TimeSpan.FromMinutes(5);
+    });
 });
 
 // 2. Define a cron job (requires Jobs.SourceGenerator)
@@ -408,6 +420,7 @@ builder.Services.AddHeadlessJobs(options =>
 - `Headless.DistributedLocks.Abstractions`
 - `Headless.Extensions`
 - `NCrontab.Signed`
+- `Polly.Core`
 
 ### Side Effects
 
@@ -766,7 +779,7 @@ builder
 
 #### Retry Configuration
 
-Set `Retries` and `RetryIntervals` (seconds between attempts) on the entity:
+`Retries`, `RetryCount`, and `RetryIntervals` remain the durable retry representation. `Retries` excludes the original execution. `RetryCount` is persisted monotonically before each wait so a recovered process resumes from the consumed budget. Set `Retries` and optional `RetryIntervals` (seconds between attempts) on the entity:
 
 ```csharp
 await timeJobManager.AddAsync(
@@ -787,6 +800,39 @@ await timeJobManager.AddAsync(
 - `JobFunctionContext.RetryCount` carries the current attempt number.
 - If `RetryIntervals` is shorter than `Retries`, the last interval is reused.
 - If `RetryIntervals` is null or empty, default is 30 seconds.
+
+Runtime execution uses Polly.Core directly. Configure the reusable pipeline through `JobsOptionsBuilder.ConfigureRetries`:
+
+```csharp
+builder.Services.AddHeadlessJobs(options =>
+{
+    options.ConfigureRetries(retry =>
+    {
+        retry.RetryStrategy = new RetryStrategyOptions
+        {
+            MaxRetryAttempts = int.MaxValue, // optional global cap; row Retries remains durable
+            Delay = TimeSpan.FromSeconds(30),
+            BackoffType = DelayBackoffType.Exponential,
+            UseJitter = true,
+            MaxDelay = TimeSpan.FromMinutes(5),
+            ShouldHandle = args => ValueTask.FromResult(
+                args.Outcome.Exception is TimeoutException or HttpRequestException
+            ),
+        };
+        retry.OnExhaustedTimeout = TimeSpan.FromSeconds(30);
+        retry.OnExhausted = (context, ct) =>
+        {
+            context.ServiceProvider.GetRequiredService<ILogger<Program>>()
+                .LogError(context.Exception, "Job {JobId} exhausted", context.JobId);
+            return Task.CompletedTask;
+        };
+    });
+});
+```
+
+`ShouldHandle` is always explicit; cancellation and `TerminateExecutionException` are excluded by default. Per-row `RetryIntervals` override Polly delay generation and retain fixed-schedule/final-interval reuse semantics. Otherwise Polly owns fixed, linear, exponential, jittered, capped, or custom delays. Jobs owns leases, durable counters, scheduling, and terminal state. The exhausted callback runs in a fresh DI scope only after an atomic owned transition to `Failed`; timeout or callback failure is logged and contained. Lease renewal remains active during attempts and delays; lease loss cancels the pipeline and prevents stale writes.
+
+Never serialize `RetryStrategyOptions`, `ResiliencePipeline`, `ResilienceContext`, predicates, delay generators, or delegates.
 
 #### Global Exception Handler
 

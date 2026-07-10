@@ -228,7 +228,7 @@ services.AddHeadlessMessaging(setup =>
 - **Dashboard.K8s requires RBAC** permissions to read pods/endpoints in the Kubernetes API.
 - **Callbacks enable async response routing**: Set `CallbackName` on `PublishOptions` (bus) **or** `EnqueueOptions` (queue) to a response message name. When the consumer completes, a correlated response message is automatically published to that name through the durable bus path — regardless of which intent delivered the request. The consumer calls `context.SetResponse<TResponse>(value)` to publish a typed response body; if it does not, the callback still goes out as a headers-only message when response headers are present. This is **not** request/reply — the caller does not `await` the response. A separate consumer must handle the response message. Use `context.Headers.RemoveCallback()` to suppress, `RewriteCallback()` to redirect, or `AddResponseHeader()` to attach extra headers to the response. Callback delivery is **at-least-once** — a crash, or a transient failure of the success-mark write after the response outbox row is written, redelivers the request and republishes the response, so make response consumers idempotent (dedupe on `(CorrelationId, CorrelationSequence)`; `CorrelationId` alone is ambiguous across hops because it is set to the immediate parent message id per hop, not the chain root). **Footgun on the bus path:** a published (pub/sub) request is delivered to *every* matching subscriber, so each one fires its own callback — N subscribers produce N response messages. Point-to-point (`IQueue` / `IOutboxQueue`) delivers to one consumer and produces exactly one response; prefer it for command→result chaining unless you intend scatter-gather (correlate the fan-in via `CorrelationId` / `CorrelationSequence`).
 - **Strict publish tenancy is opt-in**: Use `builder.AddHeadlessTenancy(tenancy => tenancy.Messaging(m => m.PropagateTenant().RequireTenantOnPublish()))`. The previous `MessagingBuilder.AddTenantPropagation()` extension has been removed; the root tenancy seam is the single composition point. When neither `PublishOptions.TenantId` nor ambient `ICurrentTenant` is set, the publish wrapper throws `Headless.Abstractions.MissingTenantContextException`. See [Strict Publish Tenancy](#strict-publish-tenancy) and the multi-tenancy doc's [Message Consumers](multi-tenancy.md#message-consumers) section.
-- **Retry behavior is configured via `MessagingOptions.RetryPolicy`** (`MaxInlineRetries`, `MaxPersistedRetries`, `InitialDispatchGrace`, `BackoffStrategy`, `OnExhausted`, `OnExhaustedTimeout`). `OnExhausted` fires **only** on `RetryDecision.Exhausted` — not on permanent exceptions or cancellation (`RetryDecision.Stop`). The 5 removed pre-1.0 primitives — `FailedRetryCount`, `FailedRetryInterval`, `FallbackWindowLookbackSeconds`, `RetryBackoffStrategy`, `FailedThresholdCallback` — have direct replacements in `RetryPolicy` / `RetryProcessorOptions`; see the [Retry Policy](#retry-policy) section for the migration table.
+- **Retry behavior is configured via `MessagingOptions.RetryPolicy`**. `RetryStrategy` is a public Polly `RetryStrategyOptions` contract; `MaxPersistedRetries`, durable scheduling, leases, and terminal callbacks remain Messaging-owned. Configure `ShouldHandle` explicitly. `OnExhausted` fires only after a matched failure consumes the complete budget and the owned terminal write succeeds.
 - **Distributed lock**: see [Distributed Lock Integration](#distributed-lock-integration) for when to enable, when to skip, and the two-layer model (per-row `LockedUntil` lease + coarse-grained distributed lock).
 - **Never write framework metadata through provider hatches**. For publish options, use typed properties; raw `Headers.TenantId` is accepted only by the legacy tenant-integrity path and should not be authored directly.
 - **Treat provider hatches as physical broker routing/configuration**. Producer-side hatches live on `IMessageBuilder<TMessage>`; consumer-side hatches live on `IBusConsumerBuilder<TConsumer>` or `IQueueConsumerBuilder<TConsumer>` only when that provider currently exposes consumer settings.
@@ -484,7 +484,7 @@ services.AddHeadlessMessaging(setup =>
 
 ### Dependencies
 
-`Headless.Messaging.Abstractions`, `Headless.Messaging.Bus.Abstractions`, `Headless.Messaging.Queue.Abstractions`, `Headless.Coordination.Abstractions`, `Headless.Coordination.Core`, `Headless.Hosting`, `Headless.Abstractions`, `Headless.Checks`. (`Headless.Coordination.Core` hosts the shared `DeadOwnerRecoveryBridge`.)
+`Headless.Messaging.Abstractions`, `Headless.Messaging.Bus.Abstractions`, `Headless.Messaging.Queue.Abstractions`, `Headless.Coordination.Abstractions`, `Headless.Coordination.Core`, `Headless.Hosting`, `Headless.Abstractions`, `Headless.Checks`, `Polly.Core`. (`Headless.Coordination.Core` hosts the shared `DeadOwnerRecoveryBridge`.)
 
 ### Side Effects
 
@@ -492,22 +492,42 @@ Registers messaging services, hosted processors, publishers, consumers, storage 
 
 ## Retry Policy
 
-Retries up to `MaxInlineRetries` run **inline** inside the same `ExecuteAsync` / `SendAsync` call (with `Task.Delay` between attempts). Once the inline budget is exhausted, the message is persisted with `NextRetryAt` set and picked up by `MessageNeedToRetryProcessor` (up to `MaxPersistedRetries` times). Each pickup then bursts another round of `MaxInlineRetries` inline attempts.
+`RetryStrategy.MaxRetryAttempts` excludes the original execution and controls inline retries through a reusable Polly `ResiliencePipeline`. Once the inline budget is exhausted, Messaging persists `NextRetryAt` and `MessageNeedToRetryProcessor` performs up to `MaxPersistedRetries` pickups. `InlineAttempts` is reserved atomically before each invocation, so process recovery cannot reset the current burst.
 
-Worked example with `MaxInlineRetries = 2, MaxPersistedRetries = 2` — total (2+1)×(2+1) = 9 attempts:
+```csharp
+using Polly;
+using Polly.Retry;
+
+builder.Services.AddHeadlessMessaging(setup =>
+{
+    setup.Options.RetryPolicy.RetryStrategy = new RetryStrategyOptions
+    {
+        MaxRetryAttempts = 2,
+        Delay = TimeSpan.FromSeconds(1),
+        BackoffType = DelayBackoffType.Exponential,
+        UseJitter = true,
+        MaxDelay = TimeSpan.FromMinutes(5),
+        ShouldHandle = args => ValueTask.FromResult(
+            args.Outcome.Exception is TimeoutException or HttpRequestException
+        ),
+    };
+});
+```
+
+Worked example with `RetryStrategy.MaxRetryAttempts = 2, MaxPersistedRetries = 2` — total (2+1)×(2+1) = 9 attempts:
 
 ```
 pickup 1 (initial dispatch):
   attempt 1 (original)        ── inline
-  attempt 2 (inline retry #1) ── inline, after BackoffStrategy delay
-  attempt 3 (inline retry #2) ── inline, after BackoffStrategy delay → persist (1/2)
+  attempt 2 (inline retry #1) ── inline, after Polly delay
+  attempt 3 (inline retry #2) ── inline, after Polly delay → persist (1/2)
 pickup 2 (persisted retry #1):
   attempt 4                   ── inline
-  attempt 5 (inline retry #1) ── inline, after BackoffStrategy delay
-  attempt 6 (inline retry #2) ── inline, after BackoffStrategy delay → persist (2/2)
+  attempt 5 (inline retry #1) ── inline, after Polly delay
+  attempt 6 (inline retry #2) ── inline, after Polly delay → persist (2/2)
 pickup 3 (persisted retry #2):
   attempt 7                   ── inline
-  attempt 8 (inline retry #1) ── inline, after BackoffStrategy delay
+  attempt 8 (inline retry #1) ── inline, after Polly delay
   attempt 9 (inline retry #2) ── final; on failure → Exhausted → OnExhausted fires
 ```
 
@@ -544,11 +564,11 @@ var info = new FailedInfo
 
 | Old property | New property | Notes |
 | --- | --- | --- |
-| `FailedRetryCount` | `RetryPolicy.MaxPersistedRetries` | Controls persisted-retry pickups. Total attempts = `(MaxInlineRetries + 1) × (MaxPersistedRetries + 1)`. Set both to `0` to disable retries. |
+| `FailedRetryCount` | `RetryPolicy.MaxPersistedRetries` | Controls persisted-retry pickups. Total attempts = `(RetryStrategy.MaxRetryAttempts + 1) × (MaxPersistedRetries + 1)`. |
 | `FailedRetryInterval` | `RetryProcessorOptions.BaseInterval` | Default `60s`. |
 | `FallbackWindowLookbackSeconds` | *removed* | No replacement — `MessageNeedToRetryProcessor` now polls without a lookback window. |
-| `RetryBackoffStrategy` | `RetryPolicy.BackoffStrategy` | Strategy contract is now one `Compute(int persistedRetryCount, int inlineRetryCount, Exception exception)` method returning `RetryDecision`. |
-| `FailedThresholdCallback` | `RetryPolicy.OnExhausted` | **Semantic change:** the callback now fires only on `RetryDecision.Exhausted`, not on permanent exceptions or cancellation (`RetryDecision.Stop`). |
+| `RetryBackoffStrategy` | `RetryPolicy.RetryStrategy` | Configure Polly's `RetryStrategyOptions` directly, including explicit `ShouldHandle`, backoff, jitter, delay generator, cap, and `OnRetry`. |
+| `FailedThresholdCallback` | `RetryPolicy.OnExhausted` | The Messaging-owned callback fires only after an owned terminal transition following complete retryable-budget exhaustion. |
 
 ## Distributed Lock Integration
 
