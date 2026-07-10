@@ -479,7 +479,7 @@ services.AddHeadlessMessaging(setup =>
 - Retry configuration lives under `RetryPolicy`, publish/receive retry processors, and storage cleanup options. `RetryBatchSize` (default 200, `> 0`) caps the retry-pickup batch and `SchedulerBatchSize` (default 1,000, `> 0`) caps the delayed/queued scheduler batch.
 - `UseStorageLock` coordinates retry processors through a messaging-keyed distributed lock provider.
 - `DeadNodeReconcileInterval` (default 1 minute, `> 0`) sets the always-on dead-owner recovery reconcile cadence (see [Dead-owner recovery](#dead-owner-recovery)). Independent of `UseStorageLock`.
-- `ShutdownTimeout` (default 30 seconds, `> 0`, `<= 5m`) bounds how long shutdown waits for messaging loops and in-flight handlers to observe cancellation.
+- `ShutdownTimeout` (default 30 seconds, `> 0`, `<= 5m`) bounds each shutdown drain stage: the consumer-register listener drain and the dispatcher loop drain each get this budget, so a full shutdown can wait up to twice this value. Provider-specific in-flight drains (for example NATS's fixed 30-second AckWait-aligned drain) are independent of this option.
 - Register middleware through `MessagingBuilder.AddBusPublishMiddleware<T>()`, `AddBusConsumeMiddleware<T>()`, `AddPublishMiddlewareFor<TMiddleware,TMessage>()`, and `AddConsumeMiddlewareFor<TMiddleware,TMessage>(groupName)`.
 - Runtime subscriptions attach handlers after startup through `IRuntimeSubscriber`.
 
@@ -1314,6 +1314,8 @@ Provides a NATS JetStream transport for Headless messaging so applications can p
 `SubjectShard(...)` appends one safe subject token to the logical message name. It rejects `.`, `*`, `>`, whitespace, and control characters so payload values cannot change the subject hierarchy or wildcard behavior.
 
 Shard symmetry is required: when a message uses `SubjectShard(...)` on the producer side, every consumer registered for that message must call `.UseNats(c => c.Sharded())` on its consumer registration. This is validated at startup and throws `InvalidOperationException` if violated. The reason: NATS delivers zero messages with no error when a FilterSubject does not match any shard subject — the asymmetry causes silent data loss that is otherwise very difficult to diagnose.
+
+Connection failures (`NatsException`, `NatsJSConnectionException`) terminate the listener instead of retrying in place, so the supervising consumer register's health watchdog can replace the failed client; JetStream API errors and other consumer errors keep retrying per-subject with backoff.
 
 ### Installation
 

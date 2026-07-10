@@ -285,6 +285,11 @@ public sealed class MessagingOptionsValidationTests : TestBase
             .BeFalse();
 
         new MessagingOptionsValidator()
+            .Validate(new MessagingOptions { ShutdownTimeout = TimeSpan.FromMinutes(6) })
+            .IsValid.Should()
+            .BeFalse();
+
+        new MessagingOptionsValidator()
             .Validate(new MessagingOptions { CommandTimeout = TimeSpan.FromMinutes(6) })
             .IsValid.Should()
             .BeFalse();

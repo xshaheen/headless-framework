@@ -489,19 +489,7 @@ internal sealed class InMemoryDataStorage(
                 existing.ExceptionInfo = null;
 
                 return ValueTask.FromResult(
-                    new MediumMessage
-                    {
-                        StorageId = existing.StorageId,
-                        Origin = existing.Origin,
-                        Content = existing.Content,
-                        IntentType = existing.IntentType,
-                        Added = existing.Added,
-                        ExpiresAt = existing.ExpiresAt,
-                        NextRetryAt = existing.NextRetryAt,
-                        LockedUntil = existing.LockedUntil,
-                        Owner = existing.Owner,
-                        Retries = existing.Retries,
-                    }
+                    _CreateUnstoredReceivedMessage(message, serialized, added, initialNextRetryAt, existing.StorageId)
                 );
             }
 
@@ -515,11 +503,12 @@ internal sealed class InMemoryDataStorage(
         MediumMessage message,
         string serialized,
         DateTime added,
-        DateTime initialNextRetryAt
+        DateTime initialNextRetryAt,
+        Guid? storageId = null
     ) =>
         new()
         {
-            StorageId = guidGenerator.Create(),
+            StorageId = storageId ?? guidGenerator.Create(),
             Origin = message.Origin,
             Content = serialized,
             IntentType = message.IntentType,

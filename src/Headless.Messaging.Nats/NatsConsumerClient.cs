@@ -217,76 +217,70 @@ internal sealed class NatsConsumerClient(
 
     public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
-        var listeningCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        try
+        using var listeningCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
+        var streamGroups = _subscribedMessageNames!.GroupBy(
+            x => _natsOptions.NormalizeStreamName(x),
+            StringComparer.Ordinal
+        );
+        var tasks = new List<Task>();
+        var startupTasks = new List<Task>();
+
+        foreach (var streamGroup in streamGroups)
         {
-            var streamGroups = _subscribedMessageNames!.GroupBy(
-                x => _natsOptions.NormalizeStreamName(x),
-                StringComparer.Ordinal
-            );
-            var tasks = new List<Task>();
-            var startupTasks = new List<Task>();
+            var groupName = TransportNaming.Normalize(name);
+            var shardedMessageNames = _ResolveShardedMessageNames(streamGroup);
 
-            foreach (var streamGroup in streamGroups)
+            foreach (var subject in BuildConsumerSubjects(streamGroup, shardedMessageNames))
             {
-                var groupName = TransportNaming.Normalize(name);
-                var shardedMessageNames = _ResolveShardedMessageNames(streamGroup);
+                var durableName = BuildDurableName(groupName, subject, intentType);
 
-                foreach (var subject in BuildConsumerSubjects(streamGroup, shardedMessageNames))
+                var consumerConfig = new ConsumerConfig(durableName)
                 {
-                    var durableName = BuildDurableName(groupName, subject, intentType);
+                    FilterSubject = subject,
+                    DeliverPolicy = ConsumerConfigDeliverPolicy.New,
+                    AckWait = TimeSpan.FromSeconds(30),
+                };
 
-                    var consumerConfig = new ConsumerConfig(durableName)
-                    {
-                        FilterSubject = subject,
-                        DeliverPolicy = ConsumerConfigDeliverPolicy.New,
-                        AckWait = TimeSpan.FromSeconds(30),
-                    };
+                _natsOptions.ConsumerOptions?.Invoke(consumerConfig);
 
-                    _natsOptions.ConsumerOptions?.Invoke(consumerConfig);
-
-                    var startupReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-                    startupTasks.Add(startupReady.Task);
-                    tasks.Add(
-                        _ConsumeSubjectAsync(streamGroup.Key, consumerConfig, timeout, startupReady, listeningCts.Token)
-                    );
-                }
+                var startupReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                startupTasks.Add(startupReady.Task);
+                tasks.Add(
+                    _ConsumeSubjectAsync(streamGroup.Key, consumerConfig, timeout, startupReady, listeningCts.Token)
+                );
             }
-
-            if (startupTasks.Count == 0)
-            {
-                _ready.TrySetResult();
-            }
-            else
-            {
-                try
-                {
-                    await Task.WhenAll(startupTasks).ConfigureAwait(false);
-                }
-                catch
-                {
-                    await listeningCts.CancelAsync().ConfigureAwait(false);
-                    throw;
-                }
-
-                _ready.TrySetResult();
-            }
-
-            if (tasks.Count == 0)
-            {
-                return;
-            }
-
-            // A subject loop only completes on shutdown or an unrecoverable failure. Stop its sibling
-            // loops when either happens so Task.WhenAll cannot hide the failure behind still-running subjects.
-            _ = await Task.WhenAny(tasks).ConfigureAwait(false);
-            await listeningCts.CancelAsync().ConfigureAwait(false);
-            await Task.WhenAll(tasks).ConfigureAwait(false);
         }
-        finally
+
+        if (startupTasks.Count == 0)
         {
-            listeningCts.Dispose();
+            _ready.TrySetResult();
         }
+        else
+        {
+            try
+            {
+                await Task.WhenAll(startupTasks).ConfigureAwait(false);
+            }
+            catch
+            {
+                await listeningCts.CancelAsync().ConfigureAwait(false);
+                throw;
+            }
+
+            _ready.TrySetResult();
+        }
+
+        if (tasks.Count == 0)
+        {
+            return;
+        }
+
+        // A subject loop only completes on shutdown or an unrecoverable failure. Stop its sibling
+        // loops when either happens so Task.WhenAll cannot hide the failure behind still-running subjects.
+        _ = await Task.WhenAny(tasks).ConfigureAwait(false);
+        await listeningCts.CancelAsync().ConfigureAwait(false);
+        await Task.WhenAll(tasks).ConfigureAwait(false);
     }
 
     private HashSet<string> _ResolveShardedMessageNames(IEnumerable<string> messageNames)
@@ -420,7 +414,8 @@ internal sealed class NatsConsumerClient(
                     new LogMessageEventArgs
                     {
                         LogType = MqLogType.ConnectError,
-                        Reason = $"NATS connection failed for stream '{streamName}': {ex}",
+                        Reason =
+                            $"NATS connection failed for stream '{streamName}', terminating listener for supervised restart: {ex}",
                     }
                 );
 
