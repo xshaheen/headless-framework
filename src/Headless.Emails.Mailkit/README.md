@@ -13,11 +13,11 @@ Provides email sending via standard SMTP protocol using MailKit, supporting any 
 - SSL/TLS support: `SecureSocketOptions.StartTls` (default), `SslOnConnect`, `None`, `Auto`
 - Optional authentication (username + password); anonymous SMTP when credentials are omitted
 - Three `UseMailkit` overloads: `IConfiguration`, `Action<MailkitSmtpOptions>`, `Action<MailkitSmtpOptions, IServiceProvider>`
-- `SmtpCommandException` and `SmtpProtocolException` are caught and returned as `Failed()` responses; `AuthenticationException` propagates
+- `SmtpCommandException`, `SmtpProtocolException`, and `AuthenticationException` are all caught and returned as `Failed()` responses (auth failures additionally logged at critical level); only cancellation and argument validation propagate. On success the SMTP server's final response is surfaced as `ProviderMessageId`
 
 ## Design Notes
 
-The pool (`MaxPoolSize`, default 10) amortizes TCP connect + TLS handshake across concurrent sends. Each `SmtpClient` is reconnected (and authenticated if credentials are set) lazily when retrieved from the pool in a disconnected or unauthenticated state; the connect/authenticate phase is bounded by `Timeout` (which otherwise governs only read/write). Authentication failures (`AuthenticationException`) are intentionally re-thrown rather than returned as `Failed()` — they represent configuration errors, not transient delivery failures, and must be surfaced at startup or on first send. A client left connected-but-unauthenticated by such a failure is disposed on return instead of being pooled, so it is never reused with authentication skipped.
+The pool (`MaxPoolSize`, default 10) amortizes TCP connect + TLS handshake across concurrent sends. Each `SmtpClient` is reconnected (and authenticated if credentials are set) lazily when retrieved from the pool in a disconnected or unauthenticated state; the connect/authenticate phase is bounded by `Timeout` (which otherwise governs only read/write). Authentication failures (`AuthenticationException`) are returned as a failed `SendSingleEmailResponse` per the `IEmailSender` return-not-throw contract, and additionally logged at critical level because they represent configuration errors rather than transient delivery failures. A client left connected-but-unauthenticated by such a failure is disposed on return instead of being pooled, so it is never reused with authentication skipped; a later send re-authenticates.
 
 ## Installation
 

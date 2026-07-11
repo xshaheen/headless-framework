@@ -28,6 +28,7 @@ public sealed class AzureCommunicationEmailSenderTests : TestBase
 
         // then
         response.Success.Should().BeTrue();
+        response.ProviderMessageId.Should().Be("op-123");
         _logger.Messages.Should().BeEmpty();
     }
 

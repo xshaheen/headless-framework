@@ -10,6 +10,7 @@ namespace Headless.Sms.Aws;
 /// priority over Promotional. Credentials and region are supplied via <c>AWSOptions</c> passed to
 /// <c>UseAwsSns</c> or resolved from the default AWS SDK credential chain.
 /// </remarks>
+[PublicAPI]
 public sealed class AwsSnsSmsOptions
 {
     /// <summary>

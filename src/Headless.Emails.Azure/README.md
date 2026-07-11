@@ -12,7 +12,7 @@ Provides email sending via Azure Communication Services using the unified `IEmai
 - Three authentication modes: connection string, endpoint + access key, and endpoint + managed-identity `TokenCredential`
 - Maps `SendSingleEmailRequest` (From, To/Cc/Bcc, Subject, HTML + plain-text bodies, attachments) to an ACS `EmailMessage`
 - Attachment content type derived from the file name via `EmailAttachmentContentType.Resolve()` (`application/octet-stream` fallback)
-- Both a thrown `RequestFailedException` and a completed-but-failed terminal status map to `SendSingleEmailResponse.Failed(...)`
+- Both a thrown `RequestFailedException` and a completed-but-failed terminal status map to `SendSingleEmailResponse.Failed(...)`; a `Succeeded` status carries the ACS operation id as `ProviderMessageId`
 - Non-PII logging on failure (operation id, status, error code — no recipient/sender addresses)
 
 ## Design Notes

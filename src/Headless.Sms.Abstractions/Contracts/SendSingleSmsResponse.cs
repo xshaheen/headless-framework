@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Net.Sockets;
 using Headless.Checks;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
@@ -60,21 +59,12 @@ public sealed class SendSingleSmsResponse
     }
 
     /// <summary>
-    /// Creates a failed response from a caught exception, classifying BCL transport exceptions as transient.
-    /// Provider packages can call the overload that takes an explicit <see cref="SmsFailureKind"/> when they
-    /// need provider-specific or resilience-pipeline classification.
-    /// </summary>
-    /// <param name="exception">The caught exception. Must not be <see langword="null"/>.</param>
-    /// <exception cref="ArgumentNullException"><paramref name="exception"/> is <see langword="null"/>.</exception>
-    public static SendSingleSmsResponse FromException(Exception exception)
-    {
-        return FromException(exception, _ClassifyTransportException(exception));
-    }
-
-    /// <summary>
-    /// Creates a failed response from a caught exception with an explicitly classified kind, for providers
-    /// whose backend signals errors as typed exceptions (for example the AWS SNS SDK). Carries the same
-    /// non-empty-message guarantee as <see cref="FromException(Exception)"/>.
+    /// Creates a failed response from a caught exception with an explicitly classified kind. The failure
+    /// classification is the single responsibility of <c>SmsFailureKinds.FromException</c> (in
+    /// <c>Headless.Sms.Core</c>), which is Polly-aware; providers pass its result here rather than have this
+    /// contract type re-derive a kind. Surfaces the exception message (falling back to the exception type
+    /// name when the message is empty) so the non-empty-message guarantee of <see cref="Failed(string, SmsFailureKind)"/>
+    /// always holds.
     /// </summary>
     /// <param name="exception">The caught exception. Must not be <see langword="null"/>.</param>
     /// <param name="failureKind">The failure classification derived from the provider's own contract.</param>
@@ -86,15 +76,6 @@ public sealed class SendSingleSmsResponse
         var message = string.IsNullOrWhiteSpace(exception.Message) ? exception.GetType().Name : exception.Message;
 
         return Failed(message, failureKind);
-    }
-
-    private static SmsFailureKind _ClassifyTransportException(Exception exception)
-    {
-        return exception switch
-        {
-            HttpRequestException or IOException or TimeoutException or SocketException => SmsFailureKind.Transient,
-            _ => SmsFailureKind.Unknown,
-        };
     }
 }
 

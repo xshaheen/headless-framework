@@ -10,6 +10,7 @@ namespace Headless.Sms.VictoryLink;
 /// accordingly. Credentials (<see cref="UserName"/> / <see cref="Password"/>) are sent in the request
 /// body on every call.
 /// </remarks>
+[PublicAPI]
 public sealed class VictoryLinkSmsOptions
 {
     /// <summary>The VictoryLink API endpoint for sending SMS messages. Defaults to the VictoryLink production URL.</summary>

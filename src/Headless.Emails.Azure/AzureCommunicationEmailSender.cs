@@ -37,9 +37,9 @@ internal sealed class AzureCommunicationEmailSender(EmailClient client, ILogger<
     /// <param name="request">The email message to send.</param>
     /// <param name="cancellationToken">Token used to cancel the send operation.</param>
     /// <returns>
-    /// A successful response when ACS completes the send with a <c>Succeeded</c> status; a failed
-    /// response when ACS rejects the request (<see cref="RequestFailedException"/>) or completes with a
-    /// non-<c>Succeeded</c> terminal status.
+    /// A successful response (carrying the ACS operation id as the provider message id) when ACS completes
+    /// the send with a <c>Succeeded</c> status; a failed response when ACS rejects the request
+    /// (<see cref="RequestFailedException"/>) or completes with a non-<c>Succeeded</c> terminal status.
     /// </returns>
     public async ValueTask<SendSingleEmailResponse> SendAsync(
         SendSingleEmailRequest request,
@@ -70,7 +70,9 @@ internal sealed class AzureCommunicationEmailSender(EmailClient client, ILogger<
 
         if (result.Status == EmailSendStatus.Succeeded)
         {
-            return SendSingleEmailResponse.Succeeded();
+            // The ACS operation id is the correlation handle for the accepted message (used to query
+            // delivery status), so it is surfaced as the provider message id.
+            return SendSingleEmailResponse.Succeeded(operation.Id);
         }
 
         // ACS reached a terminal non-Succeeded state (for example Failed/Canceled) without throwing.

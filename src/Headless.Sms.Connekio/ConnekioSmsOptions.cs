@@ -10,6 +10,7 @@ namespace Headless.Sms.Connekio;
 /// and batch sends route to separate endpoints; the sender selects the endpoint automatically based on the
 /// number of recipients in the request.
 /// </remarks>
+[PublicAPI]
 public sealed class ConnekioSmsOptions
 {
     /// <summary>The Connekio endpoint for sending a single SMS. Defaults to the Connekio production URL.</summary>

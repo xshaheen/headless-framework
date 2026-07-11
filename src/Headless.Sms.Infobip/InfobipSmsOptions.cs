@@ -10,6 +10,7 @@ namespace Headless.Sms.Infobip;
 /// personal base URL shown on the Infobip web portal (for example
 /// <c>https://&lt;your-id&gt;.api.infobip.com</c>).
 /// </remarks>
+[PublicAPI]
 public sealed class InfobipSmsOptions
 {
     /// <summary>The registered sender name or number shown to recipients.</summary>

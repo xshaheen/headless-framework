@@ -79,7 +79,7 @@ Install `Headless.Emails.Abstractions` + one provider. Register with `AddHeadles
 
 `Headless.Emails.Core` owns the setup builder (`AddHeadlessEmails`, `HeadlessEmailsSetupBuilder`, `HeadlessEmailInstanceBuilder`) and the `IEmailSenderProvider` implementation, plus internal MimeKit conversion (`ConvertToMimeMessageAsync()`) and attachment content-type derivation (`EmailAttachmentContentType.Resolve()`). Providers pull it transitively — you rarely install it directly.
 
-Send emails via `IEmailSender.SendAsync(SendSingleEmailRequest)` which returns `SendSingleEmailResponse` with `Success` and `FailureError`.
+Send emails via `IEmailSender.SendAsync(SendSingleEmailRequest)` which returns `SendSingleEmailResponse` with `Success`, an optional `ProviderMessageId` (the backend's message id on success), and `FailureError` (non-null on failure). Every provider/transport failure is reported through the response — only `OperationCanceledException` and argument validation propagate.
 
 Register additional **named** senders alongside an optional default: `setup.AddNamed("marketing", i => i.UseMailkit(…))`. Resolve them with `[FromKeyedServices("marketing")] IEmailSender` or `IEmailSenderProvider.GetSender("marketing")`. The default sender is optional; when configured it resolves as the unkeyed `IEmailSender` (with no default, the unkeyed `IEmailSender` is simply not registered). Each named sender is keyed under its name and isolates its own provider, options, and backend clients.
 
@@ -91,11 +91,11 @@ Register additional **named** senders alongside an optional default: `setup.AddN
 - Use `IEmailSender` from `Headless.Emails.Abstractions` — never reference `AzureCommunicationEmailSender`, `AwsSesEmailSender`, `MailkitEmailSender`, or other concrete types in application code.
 - Always use `Emails.Dev` (`UseDevelopment(path)` or `UseNoop()`) in development environments to prevent sending real emails. Gate with `builder.Environment.IsDevelopment()`.
 - `SendSingleEmailRequest` requires both `From` (an `EmailRequestAddress`) and `Destination` (an `EmailRequestDestination`) — they are `required` properties. Provide at least one of `MessageHtml` or `MessageText`; every sender calls `SendSingleEmailRequest.EnsureHasBody()` and throws `InvalidOperationException` when both are null or whitespace (`NoopEmailSender` is the exception — it discards everything and never validates).
-- Check `response.Success` after calling `SendAsync` — do not assume success. Read `response.FailureError` (non-null when `Success` is false) on failure.
+- Check `response.Success` after calling `SendAsync` — do not assume success. Read `response.FailureError` (non-null when `Success` is false) on failure, and `response.ProviderMessageId` (the backend's message id) on success. No provider throws for a delivery/transport failure — only `OperationCanceledException` and argument validation propagate.
 - `Emails.Azure` requires a sender domain that is **verified and linked** in the Communication Services resource. A misconfigured sender surfaces as a failed `SendSingleEmailResponse`, not an exception you can pre-validate. `UseAzure` requires exactly one auth mode (connection string, endpoint + access key, or endpoint + `TokenCredential`); the `IConfiguration` overload binds only the string/key modes (a `TokenCredential` cannot be bound from configuration). ACS ignores the sender's display name (`senderAddress` is a bare string).
 - `Emails.Aws` uses AWS SES **v2** (`AWSSDK.SimpleEmailV2`), not v1. Pass `AWSOptions?` (nullable — `null` uses the default `AWSOptions` registered in the DI container) to `UseAwsSes(...)`.
 - For SMTP via MailKit, configure `MailkitSmtpOptions`: `Server` (required), `Port` (default 587), `SocketOptions` (default `StartTls`), `Timeout` (default 30s), `MaxPoolSize` (default 10; the pool always keeps one fast-path slot, so `0` retains at most one connection rather than disabling pooling).
-- `MailkitEmailSender` uses an `ObjectPool<SmtpClient>` — SMTP connections are pooled and reused. Authentication happens on reconnect, bounded by `Timeout` (which otherwise governs only read/write). If `AuthenticationException` is thrown (wrong credentials), it propagates — it is not swallowed like SMTP command/protocol errors — and the connection is discarded rather than returned to the pool, so a later send never reuses an unauthenticated client.
+- `MailkitEmailSender` uses an `ObjectPool<SmtpClient>` — SMTP connections are pooled and reused. Authentication happens on reconnect, bounded by `Timeout` (which otherwise governs only read/write). A credential rejection (`AuthenticationException`) is returned as a failed `SendSingleEmailResponse` (like SMTP command/protocol errors) and additionally logged at critical level because it signals a configuration error; the connection is discarded rather than returned to the pool, and the next send re-authenticates. On success the SMTP server's final response is surfaced as `ProviderMessageId`.
 - All providers register the default `IEmailSender` as an unkeyed singleton; named senders (and their backend clients and options) register as keyed singletons under the instance name.
 - `DevEmailSender` appends to a file with separators — it writes `MessageText` preferring it over `MessageHtml` for readability.
 - `Emails.Core` provides the builder and shared utilities consumed by providers — it is not used directly in application code (except the `AddHeadlessEmails` entry point, which is the provider-agnostic registration call).
@@ -119,9 +119,10 @@ Register additional **named** senders alongside an optional default: `setup.AddN
 
 All contract value types (`SendSingleEmailRequest`, `EmailRequestAddress`, `EmailRequestDestination`, `EmailRequestAttachment`) are immutable `sealed record`s. `EmailRequestAttachment` carries `Name`, `File` (`ReadOnlyMemory<byte>`), and an optional `ContentType` (inferred from `Name` when null).
 
-`SendSingleEmailResponse` is a closed type (private constructor). Use the static factory pair that providers call:
-- `SendSingleEmailResponse.Succeeded()` — `Success = true`
-- `SendSingleEmailResponse.Failed(string failureError)` — `Success = false`, `FailureError` non-null
+`SendSingleEmailResponse` is a closed type (private constructor). Use the static factories that providers call:
+- `SendSingleEmailResponse.Succeeded(string? providerMessageId = null)` — `Success = true`; `ProviderMessageId` carries the backend's message id when it returns one (SES message id, Azure ACS operation id, or the SMTP server's final response), `null` otherwise
+- `SendSingleEmailResponse.Failed(string failureError)` — `Success = false`, `FailureError` non-null (throws `ArgumentException` on a null/empty reason)
+- `SendSingleEmailResponse.FromException(Exception exception)` — a failed response surfacing the exception message (falling back to the exception type name when the message is empty)
 
 The `[MemberNotNullWhen(false, nameof(FailureError))]` attribute enables null-safe access: if `response.Success` is false, the compiler knows `FailureError` is not null.
 
@@ -157,7 +158,7 @@ builder.Services.AddHeadlessEmails(setup =>
 |---|---|---|---|
 | `Headless.Emails.Azure` | Running on Azure, want ACS Email with managed-identity auth and a verified sender domain | No Azure Communication Services resource; want SMTP portability | ACS REST API (not SMTP); blocks until ACS reaches a terminal status (`WaitUntil.Completed`); managed-domain send limit is low (5/min); sender display name not honored; `Azure.Communication.Email` dependency |
 | `Headless.Emails.Aws` | Running on AWS, need SES deliverability, compliance, and send-rate guarantees | No AWS account; want SMTP portability | SES API (not SMTP); simple sends use a REST path, attachments fall back to raw MIME via SES; AWS SDK dependency |
-| `Headless.Emails.Mailkit` | Need SMTP portability (SendGrid, Gmail, Outlook, on-premises); want connection pooling | SES/ACS API required; not running SMTP server | SMTP is synchronous per-connection; pooling amortizes connect cost; `AuthenticationException` propagates (not returned as failure) |
+| `Headless.Emails.Mailkit` | Need SMTP portability (SendGrid, Gmail, Outlook, on-premises); want connection pooling | SES/ACS API required; not running SMTP server | SMTP is synchronous per-connection; pooling amortizes connect cost; a credential rejection (`AuthenticationException`) is returned as a failed response (logged critical) |
 | `Headless.Emails.Dev` | Local development, CI, integration tests | Production traffic | No real delivery; `DevEmailSender` writes to disk; `NoopEmailSender` silently discards |
 
 ---
@@ -178,7 +179,7 @@ Provides a provider-agnostic email sending API for switching email providers wit
 - `EmailRequestAddress` — wraps email address + optional display name; supports implicit conversion from `string`
 - `EmailRequestDestination` — sealed record grouping `ToAddresses` (required), `CcAddresses`, `BccAddresses`
 - `EmailRequestAttachment` — sealed record: `Name` + `File` (`ReadOnlyMemory<byte>`) + optional `ContentType`
-- `SendSingleEmailResponse` — closed result type with `Success` bool and nullable `FailureError` string
+- `SendSingleEmailResponse` — closed result type with `Success` bool, nullable `ProviderMessageId` (the backend's message id on success), and nullable `FailureError` string (non-null on failure); built via `Succeeded`, `Failed`, or `FromException`
 
 ### Installation
 
@@ -306,9 +307,9 @@ Provides email sending via AWS SES v2 using the unified `IEmailSender` abstracti
 - Simple sends (no attachments) use the SES structured API path — no MIME serialization
 - Attachment sends serialize to raw MIME and use the SES raw message path
 - AWS SDK configuration integration (`AWSOptions` from `AWSSDK.Extensions.NETCore.Setup`)
-- SES-specific exceptions (`MessageRejectedException`, `BadRequestException`, `NotFoundException`, `AccountSuspendedException`, `MailFromDomainNotVerifiedException`, `LimitExceededException`, `TooManyRequestsException`, `SendingPausedException`) propagate — not wrapped in `Failed()`
+- SES-specific exceptions (`MessageRejectedException`, `BadRequestException`, `NotFoundException`, `AccountSuspendedException`, `MailFromDomainNotVerifiedException`, `LimitExceededException`, `TooManyRequestsException`, `SendingPausedException`) — surfaced by the SDK as `AmazonSimpleEmailServiceV2Exception` — are returned as a failed `SendSingleEmailResponse` (the provider's raw error message is surfaced to the caller), never thrown; only `OperationCanceledException` and argument validation propagate. On success `ProviderMessageId` carries the SES message id
 - BCC is delivered via the SES envelope (`Destination`) and the `Bcc` header is hidden from the serialized MIME on the raw (attachment) path, so BCC recipients are never disclosed
-- Non-PII logging on non-success HTTP responses (status code, request ID, message ID — no recipient/sender addresses)
+- Non-PII logging on failures (SES error code, HTTP status, request/message id — never the exception message, which can embed a rejected address, and never recipient/sender addresses)
 - Strongly-typed SES event tracking contracts (`Headless.Emails.Aws.Tracking`) for delivery/bounce/complaint/open/click/etc. notifications (see [Email Event Tracking](#email-event-tracking))
 
 ### Installation
@@ -432,12 +433,12 @@ Provides email sending via Azure Communication Services using the unified `IEmai
 - Three authentication modes: connection string, endpoint + access key, and endpoint + managed-identity `TokenCredential`
 - Maps `SendSingleEmailRequest` (From, To/Cc/Bcc, Subject, HTML + plain-text bodies, attachments) to an ACS `EmailMessage`
 - Attachment content type derived from the file name via `EmailAttachmentContentType.Resolve()` (`application/octet-stream` fallback)
-- Both a thrown `RequestFailedException` and a completed-but-failed terminal status map to `SendSingleEmailResponse.Failed(...)`
+- Both a thrown `RequestFailedException` and a completed-but-failed terminal status map to `SendSingleEmailResponse.Failed(...)`; a `Succeeded` status carries the ACS operation id as `ProviderMessageId`
 - Non-PII logging on failure (operation id, status, error code — no recipient/sender addresses)
 
 ### Design Notes
 
-The send uses `EmailClient.SendAsync(WaitUntil.Completed, …)`, so the call blocks until ACS reaches a terminal state — matching the contract's "accepted for delivery" success semantics. ACS can complete a long-running send with a non-`Succeeded` status **without throwing**, so the sender inspects `operation.Value.Status` and treats any terminal non-`Succeeded` state as a failure (an exception-only check would report rejected mail as delivered). Only `Succeeded` returns `Succeeded()`; unrelated exceptions (cancellation, argument errors) propagate.
+The send uses `EmailClient.SendAsync(WaitUntil.Completed, …)`, so the call blocks until ACS reaches a terminal state — matching the contract's "accepted for delivery" success semantics. ACS can complete a long-running send with a non-`Succeeded` status **without throwing**, so the sender inspects `operation.Value.Status` and treats any terminal non-`Succeeded` state as a failure (an exception-only check would report rejected mail as delivered). Only `Succeeded` returns `Succeeded(operation.Id)` (the operation id becomes the `ProviderMessageId`); unrelated exceptions (cancellation, argument errors) propagate.
 
 The package depends on `Azure.Core` (not `Azure.Identity`): supply your own `DefaultAzureCredential` through the delegate overload to keep the dependency surface narrow. The `IConfiguration` overload binds only the connection-string and endpoint + access-key modes. ACS's `senderAddress` is a bare string, so the sender's display name is not honored. No custom retry loop is added — `Azure.Core`'s pipeline already retries 429/5xx honoring `Retry-After`. The sender domain must be verified and linked in the Communication Services resource; managed-domain send limits are low (5/min; custom domains 30/min).
 
@@ -601,11 +602,11 @@ Provides email sending via standard SMTP protocol using MailKit, supporting any 
 - SSL/TLS support: `SecureSocketOptions.StartTls` (default), `SslOnConnect`, `None`, `Auto`
 - Optional authentication (username + password); anonymous SMTP when credentials are omitted
 - Three `UseMailkit` overloads: `IConfiguration`, `Action<MailkitSmtpOptions>`, `Action<MailkitSmtpOptions, IServiceProvider>`
-- `SmtpCommandException` and `SmtpProtocolException` are caught and returned as `Failed()` responses; `AuthenticationException` propagates
+- `SmtpCommandException`, `SmtpProtocolException`, and `AuthenticationException` are all caught and returned as `Failed()` responses (auth failures additionally logged at critical level); only cancellation and argument validation propagate. On success the SMTP server's final response is surfaced as `ProviderMessageId`
 
 ### Design Notes
 
-The pool (`MaxPoolSize`, default 10) amortizes TCP connect + TLS handshake across concurrent sends. Each `SmtpClient` is reconnected (and authenticated if credentials are set) lazily when retrieved from the pool in a disconnected or unauthenticated state; the connect/authenticate phase is bounded by `Timeout`. Authentication failures (`AuthenticationException`) are intentionally re-thrown rather than returned as `Failed()` — they represent configuration errors, not transient delivery failures, and must be surfaced at startup or on first send. A client left connected-but-unauthenticated by such a failure is disposed on return instead of being pooled, so it is never reused with authentication skipped.
+The pool (`MaxPoolSize`, default 10) amortizes TCP connect + TLS handshake across concurrent sends. Each `SmtpClient` is reconnected (and authenticated if credentials are set) lazily when retrieved from the pool in a disconnected or unauthenticated state; the connect/authenticate phase is bounded by `Timeout`. Authentication failures (`AuthenticationException`) are returned as a failed `SendSingleEmailResponse` per the `IEmailSender` return-not-throw contract, and additionally logged at critical level because they represent configuration errors rather than transient delivery failures. A client left connected-but-unauthenticated by such a failure is disposed on return instead of being pooled, so it is never reused with authentication skipped; a later send re-authenticates.
 
 ### Installation
 

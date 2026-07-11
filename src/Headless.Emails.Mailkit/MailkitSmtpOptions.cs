@@ -13,6 +13,7 @@ namespace Headless.Emails.Mailkit;
 /// overloads mutate an already-constructed instance inside the options delegate, which <c>init</c>-only setters
 /// disallow. Do not change these back to <c>init</c>.
 /// </remarks>
+[PublicAPI]
 public sealed class MailkitSmtpOptions
 {
     /// <summary>The SMTP server hostname or IP address.</summary>

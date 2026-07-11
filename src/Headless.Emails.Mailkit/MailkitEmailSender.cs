@@ -17,10 +17,14 @@ namespace Headless.Emails.Mailkit;
 /// or faulted clients are discarded rather than returned. The pool size is governed by
 /// <see cref="MailkitSmtpOptions.MaxPoolSize"/>.
 /// <para>
-/// Transient SMTP errors (<see cref="MailKit.Net.Smtp.SmtpCommandException"/>,
-/// <see cref="MailKit.Net.Smtp.SmtpProtocolException"/>) are logged and surfaced as a
-/// failed <see cref="SendSingleEmailResponse"/> rather than thrown.
-/// Authentication failures are logged at critical level and rethrown.
+/// SMTP command/protocol errors (<see cref="MailKit.Net.Smtp.SmtpCommandException"/>,
+/// <see cref="MailKit.Net.Smtp.SmtpProtocolException"/>) and authentication failures
+/// (<see cref="MailKit.Security.AuthenticationException"/>) are all surfaced as a failed
+/// <see cref="SendSingleEmailResponse"/> rather than thrown, per the <see cref="IEmailSender"/> contract;
+/// authentication failures are additionally logged at critical level because they signal a configuration
+/// error. Only cancellation and argument validation propagate. On success the SMTP server's final
+/// response is surfaced as <see cref="SendSingleEmailResponse.ProviderMessageId"/> (it typically embeds the
+/// server's queue id).
 /// </para>
 /// </remarks>
 internal sealed class MailkitEmailSender(
@@ -36,15 +40,13 @@ internal sealed class MailkitEmailSender(
     /// <param name="request">The email message to send.</param>
     /// <param name="cancellationToken">Token used to cancel the send operation.</param>
     /// <returns>
-    /// A successful response when the SMTP server accepts the message; a failed response
-    /// when an SMTP command or protocol error occurs.
+    /// A successful response (carrying the SMTP server's final response as the provider message id) when
+    /// the server accepts the message; a failed response when an SMTP command, protocol, or authentication
+    /// error occurs.
     /// </returns>
     /// <exception cref="InvalidOperationException">
     /// Thrown when both <see cref="SendSingleEmailRequest.MessageText"/> and
     /// <see cref="SendSingleEmailRequest.MessageHtml"/> are <see langword="null"/> or whitespace-only.
-    /// </exception>
-    /// <exception cref="MailKit.Security.AuthenticationException">
-    /// Thrown when the SMTP server rejects the configured credentials.
     /// </exception>
     public async ValueTask<SendSingleEmailResponse> SendAsync(
         SendSingleEmailRequest request,
@@ -59,10 +61,13 @@ internal sealed class MailkitEmailSender(
         using var mimeMessage = await request.ConvertToMimeMessageAsync(cancellationToken).ConfigureAwait(false);
 
         var client = pool.Get();
+        string serverResponse;
         try
         {
             await _EnsureConnectedAsync(client, settings, cancellationToken).ConfigureAwait(false);
-            await client.SendAsync(mimeMessage, cancellationToken).ConfigureAwait(false);
+
+            // MailKit returns the SMTP server's final free-form response (typically embedding the queue id).
+            serverResponse = await client.SendAsync(mimeMessage, cancellationToken).ConfigureAwait(false);
         }
         catch (MailKit.Net.Smtp.SmtpCommandException ex)
         {
@@ -76,15 +81,17 @@ internal sealed class MailkitEmailSender(
         }
         catch (AuthenticationException ex)
         {
+            // Per the IEmailSender contract, a credential rejection is returned as a failed response rather
+            // than thrown; it is logged at critical level because it signals a configuration error.
             logger.LogSmtpAuthenticationFailed(ex);
-            throw;
+            return SendSingleEmailResponse.Failed($"Authentication error: {ex.Message}");
         }
         finally
         {
             pool.Return(client);
         }
 
-        return SendSingleEmailResponse.Succeeded();
+        return SendSingleEmailResponse.Succeeded(string.IsNullOrWhiteSpace(serverResponse) ? null : serverResponse);
     }
 
     private static async Task _EnsureConnectedAsync(

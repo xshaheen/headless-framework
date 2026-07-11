@@ -5,4 +5,7 @@
     <PackageTags>headless;emails;dotnet</PackageTags>
     <RootNamespace>Headless.Emails</RootNamespace>
   </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+  </ItemGroup>
 </Project>
