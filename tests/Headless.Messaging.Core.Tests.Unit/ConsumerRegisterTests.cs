@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Concurrent;
 using System.Reflection;
 using Headless.Messaging;
@@ -471,8 +472,8 @@ public sealed class ConsumerRegisterTests : TestBase
             "_groupHandles",
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         )!;
-        var groupHandles = groupHandlesField.GetValue(register)!;
-        groupHandles.GetType().GetProperty("Item")!.SetValue(groupHandles, handle, ["payments"]);
+        var groupHandles = (IDictionary)groupHandlesField.GetValue(register)!;
+        groupHandles.Add("payments", handle);
 
         var pulse = register.PulseAsync(removeCircuitState: true, waitTimeout: TimeSpan.FromSeconds(30));
 
