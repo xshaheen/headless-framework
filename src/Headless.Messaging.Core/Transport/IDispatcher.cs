@@ -13,7 +13,10 @@ public interface IDispatcher : IProcessingServer
     /// <param name="cancellationToken">
     /// Reserved for API consistency. Shutdown cleanup remains governed by <paramref name="timeout"/>.
     /// </param>
-    ValueTask DisposeAsync(TimeSpan timeout, CancellationToken cancellationToken = default);
+    ValueTask DisposeAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
+    {
+        return DisposeAsync();
+    }
 
     ValueTask EnqueueToPublish(MediumMessage message, CancellationToken cancellationToken = default);
 

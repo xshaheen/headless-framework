@@ -218,6 +218,7 @@ services.AddHeadlessMessaging(setup =>
 - **Do NOT use raw transport client libraries** (e.g., `RabbitMQ.Client`, `Confluent.Kafka`) directly -- always use the `Headless.Messaging` abstraction layer.
 - **Ordering depends on transport**: Kafka orders by partition key. Azure Service Bus orders by session. RabbitMQ has no ordering with multiple consumers. Set `ConsumerThreadCount = 1` for strict ordering.
 - **RabbitMQ credentials**: The framework rejects default `guest`/`guest` credentials. Always configure explicit username/password.
+- **AWS SQS redrive is external**: Configure a dead-letter queue and redrive policy with a bounded receive count. Headless releases malformed SNS envelopes for retry but does not provision redrive infrastructure.
 - **Message-name mapping**: Map message types to logical message names via `setup.ForMessage<TMessage>(x => x.MessageName("message.name"))` (primary) or conventions. `IMessagingBuilder.WithMessageNameMapping<TMessage>("message.name")` remains available inside the `AddHeadlessMessaging` callback for standalone/publisher-only overrides.
 - **Fail-fast defaults**: Duplicate consumer or runtime registrations are rejected by default. Anonymous runtime delegates must provide `HandlerId`.
 - **Telemetry parity**: Existing diagnostic listener and metric names stay stable across direct publish, outbox publish, and runtime subscriptions.
