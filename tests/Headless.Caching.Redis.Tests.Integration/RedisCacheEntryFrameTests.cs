@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers;
 using System.Buffers.Binary;
 using Headless.Caching;
 using StackExchange.Redis;
@@ -380,6 +381,79 @@ public sealed class RedisCacheEntryFrameTests
         var decoded = _Decode(_RedisValue(bytes));
 
         decoded.IsFramed.Should().BeFalse();
+    }
+
+    [Fact]
+    public void should_encode_spliced_frames_byte_identical_to_single_buffer_encode()
+    {
+        // EncodeSpliced feeds the wire directly (two-segment RedisValue, #580); the CAS scripts slice these
+        // exact bytes, so the spliced encoding must be byte-identical to the single-buffer Encode output.
+        var payload = Encoding.UTF8.GetBytes("spliced-payload");
+        var logical = new DateTime(2026, 06, 03, 12, 00, 00, DateTimeKind.Utc);
+        var physical = logical.AddMinutes(5);
+        var eager = logical.AddMinutes(2);
+        var lastModified = logical.AddMinutes(-3);
+        var created = logical.AddMinutes(-10);
+        string[] tags = ["tenant:1", "profile"];
+
+        var single = _Encode(
+            _RedisValue(payload),
+            isNull: false,
+            logical,
+            physical,
+            TimeSpan.FromSeconds(30),
+            eager,
+            etag: "etag-value",
+            lastModified,
+            tags,
+            created
+        );
+
+        var spliced = RedisCacheEntryFrame.EncodeSpliced(
+            payload,
+            logical,
+            physical,
+            TimeSpan.FromSeconds(30),
+            eager,
+            etag: "etag-value",
+            lastModified,
+            tags,
+            created
+        );
+
+        spliced.ToArray().Should().Equal(single);
+    }
+
+    [Fact]
+    public void should_encode_spliced_minimal_frame_byte_identical_to_single_buffer_encode()
+    {
+        var payload = Encoding.UTF8.GetBytes("v");
+
+        var single = _Encode(_RedisValue(payload), isNull: false, logicalExpiresAt: null, physicalExpiresAt: null);
+        var spliced = RedisCacheEntryFrame.EncodeSpliced(
+            payload,
+            logicalExpiresAt: null,
+            physicalExpiresAt: null,
+            slidingExpiration: null
+        );
+
+        spliced.ToArray().Should().Equal(single);
+    }
+
+    [Fact]
+    public void should_decode_frames_from_contiguous_memory()
+    {
+        // The lease read path (#580) decodes straight off pooled memory; the ValueSegment must be a slice of
+        // the supplied buffer with the same content the RedisValue decode path produces.
+        var value = Encoding.UTF8.GetBytes("memory-decoded");
+        var logical = new DateTime(2026, 06, 03, 12, 00, 00, DateTimeKind.Utc);
+
+        var encoded = _Encode(_RedisValue(value), isNull: false, logical, logical.AddMinutes(5));
+        var decoded = RedisCacheEntryFrame.Decode((ReadOnlyMemory<byte>)encoded.AsMemory());
+
+        decoded.IsFramed.Should().BeTrue();
+        decoded.LogicalExpiresAt.Should().Be(logical);
+        decoded.ValueSegment.ToArray().Should().Equal(value);
     }
 
     private static byte[] _Encode(
