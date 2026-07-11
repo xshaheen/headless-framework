@@ -9,7 +9,11 @@ namespace Headless.Caching.Benchmarks.Scenarios;
 public abstract class CacheOperationBenchmarksBase
 {
     private const int _Seed = 2112;
-    private readonly TimeSpan _expiration = TimeSpan.FromMinutes(1);
+
+    // Must comfortably exceed a full BenchmarkDotNet case (pilot + warmup + actual iterations can pass a minute):
+    // the hot keys are seeded once in GlobalSetup, and a shorter TTL lets them expire mid-case, silently turning
+    // the tail of HotGetAsync into a miss benchmark (bimodal distribution, miss-sized allocations).
+    private readonly TimeSpan _expiration = TimeSpan.FromHours(1);
     private ICacheBenchmarkClient? _client;
     private BenchmarkPayload? _payload;
     private string[] _keys = [];
