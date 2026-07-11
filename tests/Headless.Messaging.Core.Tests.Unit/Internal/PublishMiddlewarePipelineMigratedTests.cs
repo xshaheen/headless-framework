@@ -45,7 +45,7 @@ public sealed class PublishMiddlewarePipelineMigratedTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddScoped<
-            IPublishMiddleware<PublishingContext<MigratedPublishMessage>>,
+            IPublishMiddleware<PublishContext<MigratedPublishMessage>>,
             TenantStampingPublishMiddleware
         >();
         var pipeline = _BuildPipeline(services);
@@ -76,7 +76,7 @@ public sealed class PublishMiddlewarePipelineMigratedTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddScoped<
-            IPublishMiddleware<PublishingContext<MigratedPublishMessage>>,
+            IPublishMiddleware<PublishContext<MigratedPublishMessage>>,
             DelayMultiplyingPublishMiddleware
         >();
         var pipeline = _BuildPipeline(services);
@@ -106,7 +106,7 @@ public sealed class PublishMiddlewarePipelineMigratedTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddScoped<
-            IPublishMiddleware<PublishingContext<MigratedPublishMessage>>,
+            IPublishMiddleware<PublishContext<MigratedPublishMessage>>,
             NullingOptionsPublishMiddleware
         >();
         var pipeline = _BuildPipeline(services);
@@ -135,10 +135,7 @@ public sealed class PublishMiddlewarePipelineMigratedTests : TestBase
     {
         // given
         var services = new ServiceCollection();
-        services.AddScoped<
-            IPublishMiddleware<PublishingContext<MigratedPublishMessage>>,
-            DelayNullingPublishMiddleware
-        >();
+        services.AddScoped<IPublishMiddleware<PublishContext<MigratedPublishMessage>>, DelayNullingPublishMiddleware>();
         var pipeline = _BuildPipeline(services);
         TimeSpan? observedDelay = TimeSpan.FromSeconds(1);
 
@@ -189,7 +186,7 @@ public sealed class PublishMiddlewarePipelineMigratedTests : TestBase
         var services = new ServiceCollection();
         services.AddSingleton(recorder);
         services.AddScoped<
-            IPublishMiddleware<PublishingContext<MigratedPublishMessage>>,
+            IPublishMiddleware<PublishContext<MigratedPublishMessage>>,
             InstanceTrackingPublishMiddleware
         >();
         var pipeline = _BuildPipeline(services);
@@ -226,7 +223,7 @@ public sealed class PublishMiddlewarePipelineMigratedTests : TestBase
         services.AddSingleton(recorder);
         services.AddScoped<IPublishMiddleware<PublishContext>, RecordingBusPublishMiddleware>();
         services.AddScoped<
-            IPublishMiddleware<PublishingContext<MigratedPublishMessage>>,
+            IPublishMiddleware<PublishContext<MigratedPublishMessage>>,
             RecordingTypedPublishMiddleware
         >();
         var pipeline = _BuildPipeline(services);
@@ -257,7 +254,7 @@ public sealed class PublishMiddlewarePipelineMigratedTests : TestBase
         var services = new ServiceCollection();
         services.AddSingleton(recorder);
         services.AddScoped<
-            IPublishMiddleware<PublishingContext<MigratedPublishMessage>>,
+            IPublishMiddleware<PublishContext<MigratedPublishMessage>>,
             RecordingTypedPublishMiddleware
         >();
         var pipeline = _BuildPipeline(services);
@@ -302,37 +299,36 @@ public sealed class PublishMiddlewarePipelineMigratedTests : TestBase
         public void RecordInstance(Guid id) => _instanceIds.Enqueue(id);
     }
 
-    private sealed class TenantStampingPublishMiddleware : IPublishMiddleware<PublishingContext<MigratedPublishMessage>>
+    private sealed class TenantStampingPublishMiddleware : IPublishMiddleware<PublishContext<MigratedPublishMessage>>
     {
-        public ValueTask InvokeAsync(PublishingContext<MigratedPublishMessage> context, Func<ValueTask> next)
+        public ValueTask InvokeAsync(PublishContext<MigratedPublishMessage> context, Func<ValueTask> next)
         {
             context.Options = (context.Options ?? new PublishOptions()) with { TenantId = "tenant-from-middleware" };
             return next();
         }
     }
 
-    private sealed class DelayMultiplyingPublishMiddleware
-        : IPublishMiddleware<PublishingContext<MigratedPublishMessage>>
+    private sealed class DelayMultiplyingPublishMiddleware : IPublishMiddleware<PublishContext<MigratedPublishMessage>>
     {
-        public ValueTask InvokeAsync(PublishingContext<MigratedPublishMessage> context, Func<ValueTask> next)
+        public ValueTask InvokeAsync(PublishContext<MigratedPublishMessage> context, Func<ValueTask> next)
         {
             context.DelayTime *= 2;
             return next();
         }
     }
 
-    private sealed class NullingOptionsPublishMiddleware : IPublishMiddleware<PublishingContext<MigratedPublishMessage>>
+    private sealed class NullingOptionsPublishMiddleware : IPublishMiddleware<PublishContext<MigratedPublishMessage>>
     {
-        public ValueTask InvokeAsync(PublishingContext<MigratedPublishMessage> context, Func<ValueTask> next)
+        public ValueTask InvokeAsync(PublishContext<MigratedPublishMessage> context, Func<ValueTask> next)
         {
             context.Options = null;
             return next();
         }
     }
 
-    private sealed class DelayNullingPublishMiddleware : IPublishMiddleware<PublishingContext<MigratedPublishMessage>>
+    private sealed class DelayNullingPublishMiddleware : IPublishMiddleware<PublishContext<MigratedPublishMessage>>
     {
-        public ValueTask InvokeAsync(PublishingContext<MigratedPublishMessage> context, Func<ValueTask> next)
+        public ValueTask InvokeAsync(PublishContext<MigratedPublishMessage> context, Func<ValueTask> next)
         {
             context.DelayTime = null;
             return next();
@@ -340,11 +336,11 @@ public sealed class PublishMiddlewarePipelineMigratedTests : TestBase
     }
 
     private sealed class InstanceTrackingPublishMiddleware(MigratedPublishRecorder recorder)
-        : IPublishMiddleware<PublishingContext<MigratedPublishMessage>>
+        : IPublishMiddleware<PublishContext<MigratedPublishMessage>>
     {
         private readonly Guid _id = Guid.NewGuid();
 
-        public ValueTask InvokeAsync(PublishingContext<MigratedPublishMessage> context, Func<ValueTask> next)
+        public ValueTask InvokeAsync(PublishContext<MigratedPublishMessage> context, Func<ValueTask> next)
         {
             recorder.RecordInstance(_id);
             return next();
@@ -363,9 +359,9 @@ public sealed class PublishMiddlewarePipelineMigratedTests : TestBase
     }
 
     private sealed class RecordingTypedPublishMiddleware(MigratedPublishRecorder recorder)
-        : IPublishMiddleware<PublishingContext<MigratedPublishMessage>>
+        : IPublishMiddleware<PublishContext<MigratedPublishMessage>>
     {
-        public async ValueTask InvokeAsync(PublishingContext<MigratedPublishMessage> context, Func<ValueTask> next)
+        public async ValueTask InvokeAsync(PublishContext<MigratedPublishMessage> context, Func<ValueTask> next)
         {
             recorder.Record("typed.before");
             await next().ConfigureAwait(false);

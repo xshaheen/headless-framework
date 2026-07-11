@@ -30,12 +30,18 @@ internal sealed class RedisPubSubConsumerClient(
 
     public BrokerAddress BrokerAddress => new("redis_pubsub", options.Value.DisplayEndpoint);
 
-    public ValueTask<ICollection<string>> FetchMessageNamesAsync(IEnumerable<string> messageNames)
+    public ValueTask<ICollection<string>> FetchMessageNamesAsync(
+        IEnumerable<string> messageNames,
+        CancellationToken cancellationToken = default
+    )
     {
         return ValueTask.FromResult<ICollection<string>>([.. Argument.IsNotNull(messageNames)]);
     }
 
-    public async ValueTask SubscribeAsync(IEnumerable<string> messageNames)
+    public async ValueTask SubscribeAsync(
+        IEnumerable<string> messageNames,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotNull(messageNames);
 
@@ -44,7 +50,7 @@ internal sealed class RedisPubSubConsumerClient(
             ObjectDisposedException.ThrowIf(condition: true, instance: this);
         }
 
-        var connection = await connectionProvider.ConnectAsync().ConfigureAwait(false);
+        var connection = await connectionProvider.ConnectAsync(cancellationToken).ConfigureAwait(false);
         var subscriber = connection.GetSubscriber();
 
         foreach (var messageName in Argument.IsNotNull(messageNames).Distinct(StringComparer.Ordinal))
@@ -74,13 +80,13 @@ internal sealed class RedisPubSubConsumerClient(
         return new ValueTask(_ready.Task.WaitAsync(cancellationToken));
     }
 
-    public ValueTask CommitAsync(object? sender)
+    public ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default)
     {
         _ = sender;
         return ValueTask.CompletedTask;
     }
 
-    public ValueTask RejectAsync(object? sender)
+    public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
     {
         _ = sender;
         return ValueTask.CompletedTask;

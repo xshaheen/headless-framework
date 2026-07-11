@@ -7,11 +7,14 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Serialization;
 
-public sealed class JsonUtf8Serializer(IOptions<MessagingOptions> messagingOptionsAccessor) : ISerializer
+internal sealed class JsonUtf8Serializer(IOptions<MessagingOptions> messagingOptionsAccessor) : ISerializer
 {
     private readonly JsonSerializerOptions _jsonOptions = messagingOptionsAccessor.Value.JsonSerializerOptions;
 
-    public ValueTask<TransportMessage> SerializeToTransportMessageAsync(Message message)
+    public ValueTask<TransportMessage> SerializeToTransportMessageAsync(
+        Message message,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotNull(message);
 
@@ -25,7 +28,11 @@ public sealed class JsonUtf8Serializer(IOptions<MessagingOptions> messagingOptio
         return new ValueTask<TransportMessage>(new TransportMessage(message.Headers, jsonBytes));
     }
 
-    public ValueTask<Message> DeserializeAsync(TransportMessage transportMessage, Type? valueType)
+    public ValueTask<Message> DeserializeAsync(
+        TransportMessage transportMessage,
+        Type? valueType,
+        CancellationToken cancellationToken = default
+    )
     {
         if (valueType == null || transportMessage.Body.Length == 0)
         {

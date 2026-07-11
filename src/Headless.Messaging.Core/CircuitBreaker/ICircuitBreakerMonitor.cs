@@ -140,6 +140,7 @@ public interface ICircuitBreakerMonitor
     /// if the circuit was previously Open or HalfOpen. This is the operator/agent manual recovery path.
     /// </summary>
     /// <param name="groupName">The consumer group name.</param>
+    /// <param name="cancellationToken">A token to observe while awaiting the resume callback.</param>
     /// <returns>
     /// <see langword="true"/> if a reset was performed (the group was found and was Open or HalfOpen);
     /// <see langword="false"/> if the group was not found or was already Closed.
@@ -151,17 +152,18 @@ public interface ICircuitBreakerMonitor
     /// denial-of-service attacks where an unauthenticated caller prematurely re-opens a closed circuit.
     /// </para>
     /// </remarks>
-    ValueTask<bool> ResetAsync(string groupName);
+    ValueTask<bool> ResetAsync(string groupName, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Force-resets the circuit for the specified delivery intent and consumer group to <see cref="CircuitBreakerState.Closed"/>.
     /// </summary>
     /// <param name="intentType">The delivery intent (<see cref="IntentType.Bus"/> or <see cref="IntentType.Queue"/>).</param>
     /// <param name="groupName">The consumer group name.</param>
+    /// <param name="cancellationToken">A token to observe while awaiting the resume callback.</param>
     /// <returns>
     /// <see langword="true"/> if a reset was performed; <see langword="false"/> if the group was not found or was already Closed.
     /// </returns>
-    ValueTask<bool> ResetAsync(IntentType intentType, string groupName);
+    ValueTask<bool> ResetAsync(IntentType intentType, string groupName, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Force-opens the circuit for the specified consumer group, transitioning it to
@@ -169,6 +171,7 @@ public interface ICircuitBreakerMonitor
     /// increment escalation level (forced opens bypass natural failure counting).
     /// </summary>
     /// <param name="groupName">The consumer group name.</param>
+    /// <param name="cancellationToken">A token to observe while awaiting the pause callback.</param>
     /// <returns>
     /// <see langword="true"/> if the circuit was force-opened (group was found and was Closed or HalfOpen);
     /// <see langword="false"/> if the group was not found or was already Open.
@@ -180,7 +183,7 @@ public interface ICircuitBreakerMonitor
     /// denial-of-service attacks where an unauthenticated caller can arbitrarily pause consumers.
     /// </para>
     /// </remarks>
-    ValueTask<bool> ForceOpenAsync(string groupName);
+    ValueTask<bool> ForceOpenAsync(string groupName, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Force-opens the circuit for the specified delivery intent and consumer group, transitioning it to
@@ -188,8 +191,13 @@ public interface ICircuitBreakerMonitor
     /// </summary>
     /// <param name="intentType">The delivery intent (<see cref="IntentType.Bus"/> or <see cref="IntentType.Queue"/>).</param>
     /// <param name="groupName">The consumer group name.</param>
+    /// <param name="cancellationToken">A token to observe while awaiting the pause callback.</param>
     /// <returns>
     /// <see langword="true"/> if the circuit was force-opened; <see langword="false"/> if the group was not found or was already Open.
     /// </returns>
-    ValueTask<bool> ForceOpenAsync(IntentType intentType, string groupName);
+    ValueTask<bool> ForceOpenAsync(
+        IntentType intentType,
+        string groupName,
+        CancellationToken cancellationToken = default
+    );
 }

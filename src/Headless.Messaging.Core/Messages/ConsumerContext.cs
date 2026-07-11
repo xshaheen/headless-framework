@@ -8,7 +8,7 @@ namespace Headless.Messaging.Messages;
 /// <remarks>Create a new instance of  <see cref="ConsumerContext" /> .</remarks>
 /// <param name="descriptor">consumer method descriptor. </param>
 /// <param name="message"> received message.</param>
-public class ConsumerContext(ConsumerExecutorDescriptor descriptor, MediumMessage message)
+internal sealed class ConsumerContext(ConsumerExecutorDescriptor descriptor, MediumMessage message)
 {
     public ConsumerContext(ConsumerContext context)
         : this(context.ConsumerDescriptor, context.MediumMessage) { }

@@ -7,7 +7,7 @@ namespace Headless.Messaging;
 /// </summary>
 /// <typeparam name="TContext">
 /// The publish context type this middleware handles. Use <see cref="PublishContext"/> to intercept
-/// all publish operations or <c>PublishingContext&lt;TMessage&gt;</c> to target a specific message type.
+/// all publish operations or <c>PublishContext&lt;TMessage&gt;</c> to target a specific message type.
 /// </typeparam>
 /// <remarks>
 /// Publish middleware is executed in priority order (lower value runs earlier) for every outbound

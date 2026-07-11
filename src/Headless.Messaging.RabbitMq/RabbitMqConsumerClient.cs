@@ -62,7 +62,10 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
             string.Create(CultureInfo.InvariantCulture, $"{_rabbitMqOptions.HostName}:{_rabbitMqOptions.Port}")
         );
 
-    public async ValueTask SubscribeAsync(IEnumerable<string> messageNames)
+    public async ValueTask SubscribeAsync(
+        IEnumerable<string> messageNames,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotNull(messageNames);
 
@@ -78,7 +81,9 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
                 _queueNames.Add(queueName);
             }
 
-            await _channel!.QueueBindAsync(queueName, _exchangeName, messageName).ConfigureAwait(false);
+            await _channel!
+                .QueueBindAsync(queueName, _exchangeName, messageName, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
         }
     }
 
@@ -169,14 +174,14 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         return new ValueTask(_ready.Task.WaitAsync(cancellationToken));
     }
 
-    public async ValueTask CommitAsync(object? sender)
+    public async ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default)
     {
-        await _consumer!.BasicAck((ulong)sender!).ConfigureAwait(false);
+        await _consumer!.BasicAck((ulong)sender!, cancellationToken).ConfigureAwait(false);
     }
 
-    public async ValueTask RejectAsync(object? sender)
+    public async ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
     {
-        await _consumer!.BasicReject((ulong)sender!).ConfigureAwait(false);
+        await _consumer!.BasicReject((ulong)sender!, cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask PauseAsync(CancellationToken cancellationToken = default)

@@ -6,7 +6,7 @@ using Headless.Messaging.Runtime;
 
 namespace Headless.Messaging.Dashboard;
 
-public static class HtmlHelper
+internal static class HtmlHelper
 {
     public static string MethodEscaped(MethodInfo method)
     {

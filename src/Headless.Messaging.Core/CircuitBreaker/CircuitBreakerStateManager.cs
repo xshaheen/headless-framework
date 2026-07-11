@@ -521,7 +521,7 @@ internal sealed class CircuitBreakerStateManager(
         GetSnapshot(CircuitBreakerGroupKeys.For(intentType, groupName));
 
     /// <inheritdoc />
-    public async ValueTask<bool> ResetAsync(string groupName)
+    public async ValueTask<bool> ResetAsync(string groupName, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNull(groupName);
         Argument.IsLessThanOrEqualTo(groupName.Length, 256);
@@ -574,11 +574,14 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <inheritdoc />
-    public ValueTask<bool> ResetAsync(IntentType intentType, string groupName) =>
-        ResetAsync(CircuitBreakerGroupKeys.For(intentType, groupName));
+    public ValueTask<bool> ResetAsync(
+        IntentType intentType,
+        string groupName,
+        CancellationToken cancellationToken = default
+    ) => ResetAsync(CircuitBreakerGroupKeys.For(intentType, groupName), cancellationToken);
 
     /// <inheritdoc />
-    public async ValueTask<bool> ForceOpenAsync(string groupName)
+    public async ValueTask<bool> ForceOpenAsync(string groupName, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNull(groupName);
         Argument.IsLessThanOrEqualTo(groupName.Length, 256);
@@ -649,8 +652,11 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <inheritdoc />
-    public ValueTask<bool> ForceOpenAsync(IntentType intentType, string groupName) =>
-        ForceOpenAsync(CircuitBreakerGroupKeys.For(intentType, groupName));
+    public ValueTask<bool> ForceOpenAsync(
+        IntentType intentType,
+        string groupName,
+        CancellationToken cancellationToken = default
+    ) => ForceOpenAsync(CircuitBreakerGroupKeys.For(intentType, groupName), cancellationToken);
 
     /// <summary>
     /// Asynchronously disposes all per-group <see cref="Timer"/> instances and cancels

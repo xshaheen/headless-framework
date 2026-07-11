@@ -265,7 +265,7 @@ public sealed class ConsumerRegisterTests : TestBase
                 {
                     var client = Substitute.For<IConsumerClient>();
                     client
-                        .FetchMessageNamesAsync(Arg.Any<IEnumerable<string>>())
+                        .FetchMessageNamesAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
                         .Returns(ValueTask.FromResult<ICollection<string>>(["fake-messageName"]));
                     return Task.FromResult(client);
                 }
@@ -576,21 +576,29 @@ public sealed class ConsumerRegisterTests : TestBase
 
         public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
 
-        public ValueTask<ICollection<string>> FetchMessageNamesAsync(IEnumerable<string> messageNames)
+        public ValueTask<ICollection<string>> FetchMessageNamesAsync(
+            IEnumerable<string> messageNames,
+            CancellationToken cancellationToken = default
+        )
         {
             return ValueTask.FromResult<ICollection<string>>(messageNames.ToArray());
         }
 
-        public ValueTask SubscribeAsync(IEnumerable<string> messageNames) => ValueTask.CompletedTask;
+        public ValueTask SubscribeAsync(
+            IEnumerable<string> messageNames,
+            CancellationToken cancellationToken = default
+        ) => ValueTask.CompletedTask;
 
         public ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
         {
             return ValueTask.CompletedTask;
         }
 
-        public ValueTask CommitAsync(object? sender) => ValueTask.CompletedTask;
+        public ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default) =>
+            ValueTask.CompletedTask;
 
-        public ValueTask RejectAsync(object? sender) => ValueTask.CompletedTask;
+        public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default) =>
+            ValueTask.CompletedTask;
 
         public ValueTask PauseAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
 
@@ -612,12 +620,18 @@ public sealed class ConsumerRegisterTests : TestBase
 
         public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
 
-        public ValueTask<ICollection<string>> FetchMessageNamesAsync(IEnumerable<string> messageNames)
+        public ValueTask<ICollection<string>> FetchMessageNamesAsync(
+            IEnumerable<string> messageNames,
+            CancellationToken cancellationToken = default
+        )
         {
             return ValueTask.FromResult<ICollection<string>>(messageNames.ToArray());
         }
 
-        public ValueTask SubscribeAsync(IEnumerable<string> messageNames) => ValueTask.CompletedTask;
+        public ValueTask SubscribeAsync(
+            IEnumerable<string> messageNames,
+            CancellationToken cancellationToken = default
+        ) => ValueTask.CompletedTask;
 
         public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
         {
@@ -641,9 +655,11 @@ public sealed class ConsumerRegisterTests : TestBase
             _ready.TrySetResult();
         }
 
-        public ValueTask CommitAsync(object? sender) => ValueTask.CompletedTask;
+        public ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default) =>
+            ValueTask.CompletedTask;
 
-        public ValueTask RejectAsync(object? sender) => ValueTask.CompletedTask;
+        public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default) =>
+            ValueTask.CompletedTask;
 
         public ValueTask PauseAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
 
@@ -664,12 +680,18 @@ public sealed class ConsumerRegisterTests : TestBase
 
         public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
 
-        public ValueTask<ICollection<string>> FetchMessageNamesAsync(IEnumerable<string> messageNames)
+        public ValueTask<ICollection<string>> FetchMessageNamesAsync(
+            IEnumerable<string> messageNames,
+            CancellationToken cancellationToken = default
+        )
         {
             return ValueTask.FromResult<ICollection<string>>(messageNames.ToArray());
         }
 
-        public ValueTask SubscribeAsync(IEnumerable<string> messageNames) => ValueTask.CompletedTask;
+        public ValueTask SubscribeAsync(
+            IEnumerable<string> messageNames,
+            CancellationToken cancellationToken = default
+        ) => ValueTask.CompletedTask;
 
         public ValueTask WaitUntilReadyAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
 
@@ -678,9 +700,11 @@ public sealed class ConsumerRegisterTests : TestBase
             await Task.Delay(Timeout.Infinite, cancellationToken);
         }
 
-        public ValueTask CommitAsync(object? sender) => ValueTask.CompletedTask;
+        public ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default) =>
+            ValueTask.CompletedTask;
 
-        public ValueTask RejectAsync(object? sender) => ValueTask.CompletedTask;
+        public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default) =>
+            ValueTask.CompletedTask;
 
         public ValueTask PauseAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
 
@@ -699,12 +723,18 @@ public sealed class ConsumerRegisterTests : TestBase
 
         public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
 
-        public ValueTask<ICollection<string>> FetchMessageNamesAsync(IEnumerable<string> messageNames)
+        public ValueTask<ICollection<string>> FetchMessageNamesAsync(
+            IEnumerable<string> messageNames,
+            CancellationToken cancellationToken = default
+        )
         {
             return ValueTask.FromResult<ICollection<string>>(messageNames.ToArray());
         }
 
-        public ValueTask SubscribeAsync(IEnumerable<string> messageNames) => ValueTask.CompletedTask;
+        public ValueTask SubscribeAsync(
+            IEnumerable<string> messageNames,
+            CancellationToken cancellationToken = default
+        ) => ValueTask.CompletedTask;
 
         public ValueTask WaitUntilReadyAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
 
@@ -718,9 +748,11 @@ public sealed class ConsumerRegisterTests : TestBase
             _failure.TrySetException(exception);
         }
 
-        public ValueTask CommitAsync(object? sender) => ValueTask.CompletedTask;
+        public ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default) =>
+            ValueTask.CompletedTask;
 
-        public ValueTask RejectAsync(object? sender) => ValueTask.CompletedTask;
+        public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default) =>
+            ValueTask.CompletedTask;
 
         public ValueTask PauseAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
 

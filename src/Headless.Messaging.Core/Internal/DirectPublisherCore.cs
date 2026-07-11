@@ -32,7 +32,9 @@ internal static class DirectPublisherCore
         TransportMessage transportMsg;
         try
         {
-            transportMsg = await serializer.SerializeToTransportMessageAsync(message).ConfigureAwait(false);
+            transportMsg = await serializer
+                .SerializeToTransportMessageAsync(message, cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (Exception e)
         {

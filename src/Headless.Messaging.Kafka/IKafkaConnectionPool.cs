@@ -16,7 +16,7 @@ namespace Headless.Messaging.Kafka;
 /// exclusive access. Call <see cref="Return"/> after each publish to recycle the producer.
 /// When the pool is at capacity, <see cref="Return"/> disposes the surplus producer instead.
 /// </remarks>
-public interface IKafkaConnectionPool
+internal interface IKafkaConnectionPool
 {
     /// <summary>Gets the formatted broker addresses used by this pool.</summary>
     string ServersAddress { get; }
@@ -40,7 +40,7 @@ public interface IKafkaConnectionPool
 }
 
 /// <summary>Default implementation of <see cref="IKafkaConnectionPool"/>.</summary>
-public sealed class KafkaConnectionPool : IKafkaConnectionPool, IDisposable
+internal sealed class KafkaConnectionPool : IKafkaConnectionPool, IDisposable
 {
     private readonly KafkaMessagingOptions _options;
     private readonly ConcurrentQueue<IProducer<string, byte[]>> _producerPool;

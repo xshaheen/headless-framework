@@ -687,7 +687,7 @@ public sealed class BusTests : TestBase
         // given
         var serializer = Substitute.For<ISerializer>();
         serializer
-            .SerializeToTransportMessageAsync(Arg.Any<Message>())
+            .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
             .Returns<ValueTask<TransportMessage>>(_ => throw new InvalidOperationException("Serializer failure"));
 
         var options = new MessagingOptions();

@@ -361,7 +361,7 @@ internal sealed class ConsumerRegister(
                     .ConfigureAwait(false);
                 client.OnLogCallback = _WriteLog;
                 messageNames = await client
-                    .FetchMessageNamesAsync(matchGroup.Value.Select(x => x.MessageName))
+                    .FetchMessageNamesAsync(matchGroup.Value.Select(x => x.MessageName), _stoppingCts.Token)
                     .ConfigureAwait(false);
             }
             catch (BrokerConnectionException e)
@@ -424,7 +424,7 @@ internal sealed class ConsumerRegister(
                                     groupCts.Token
                                 );
 
-                                await innerClient.SubscribeAsync(messageNames).ConfigureAwait(false);
+                                await innerClient.SubscribeAsync(messageNames, groupCts.Token).ConfigureAwait(false);
                                 await _AwaitConsumerReadyThenListenAsync(innerClient, startupReady, groupCts.Token)
                                     .ConfigureAwait(false);
                             }
@@ -674,7 +674,8 @@ internal sealed class ConsumerRegister(
 
                     if (!probeAcquired)
                     {
-                        await client.RejectAsync(sender).ConfigureAwait(false);
+                        // Settlement is must-complete: never abandon a reject on host shutdown.
+                        await client.RejectAsync(sender, CancellationToken.None).ConfigureAwait(false);
                         return;
                     }
                 }
@@ -723,7 +724,7 @@ internal sealed class ConsumerRegister(
                     var messageValueType = executor!.MessageValueType;
 
                     message = await _serializer
-                        .DeserializeAsync(transportMessage, messageValueType)
+                        .DeserializeAsync(transportMessage, messageValueType, hostShutdownToken)
                         .ConfigureAwait(false);
                     message.RemoveException();
                 }
@@ -786,7 +787,8 @@ internal sealed class ConsumerRegister(
                         )
                         .ConfigureAwait(false);
 
-                    await client.CommitAsync(sender).ConfigureAwait(false);
+                    // Settlement is must-complete: never abandon a commit on host shutdown.
+                    await client.CommitAsync(sender, CancellationToken.None).ConfigureAwait(false);
 
                     var bypassCallback = _options.RetryPolicy.OnExhausted;
                     if (stored && bypassCallback is not null)
@@ -870,14 +872,16 @@ internal sealed class ConsumerRegister(
                         .ConfigureAwait(false);
                     probeOutcomeTransferred = true;
 
-                    await client.CommitAsync(sender).ConfigureAwait(false);
+                    // Settlement is must-complete: never abandon a commit on host shutdown.
+                    await client.CommitAsync(sender, CancellationToken.None).ConfigureAwait(false);
                 }
             }
             catch (Exception e)
             {
                 _logger.LogProcessReceivedMessageFailed(e, transportMessage);
 
-                await client.RejectAsync(sender).ConfigureAwait(false);
+                // Settlement is must-complete: never abandon a reject on host shutdown.
+                await client.RejectAsync(sender, CancellationToken.None).ConfigureAwait(false);
 
                 _TracingError(
                     tracingTimestamp,

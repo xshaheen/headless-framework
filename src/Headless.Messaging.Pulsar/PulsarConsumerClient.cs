@@ -32,16 +32,18 @@ internal sealed class PulsarConsumerClient(
 
     public BrokerAddress BrokerAddress => new("pulsar", BrokerAddressDisplay.Format(_pulsarOptions.ServiceUrl));
 
-    public async ValueTask SubscribeAsync(IEnumerable<string> topics)
+    public async ValueTask SubscribeAsync(IEnumerable<string> topics, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNull(topics);
 
         var serviceName = Assembly.GetEntryAssembly()?.GetName().Name!.ToLowerInvariant();
 
         // Pulsar.Client's SubscribeAsync lacks CancellationToken — use WaitAsync as a
-        // timeout guard. Plan to migrate to DotPulsar (apache/pulsar-dotnet) when producer
-        // batching ships: https://github.com/apache/pulsar-dotpulsar/issues/7
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        // timeout guard that also honors the caller's token. Plan to migrate to DotPulsar
+        // (apache/pulsar-dotnet) when producer batching ships:
+        // https://github.com/apache/pulsar-dotpulsar/issues/7
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(TimeSpan.FromSeconds(30));
         _consumerClient = await client
             .NewConsumer()
             .Topics(topics)
@@ -142,7 +144,8 @@ internal sealed class PulsarConsumerClient(
                         }
                     );
 
-                    await RejectAsync(currentMessage.MessageId).ConfigureAwait(false);
+                    // Settlement is must-complete: nack the malformed message regardless of shutdown.
+                    await RejectAsync(currentMessage.MessageId, CancellationToken.None).ConfigureAwait(false);
                     return;
                 }
 
@@ -151,12 +154,12 @@ internal sealed class PulsarConsumerClient(
         }
     }
 
-    public async ValueTask CommitAsync(object? sender)
+    public async ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default)
     {
         await _consumerClient!.AcknowledgeAsync((MessageId)sender!).ConfigureAwait(false);
     }
 
-    public async ValueTask RejectAsync(object? sender)
+    public async ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
     {
         if (sender is MessageId id)
         {

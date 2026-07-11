@@ -68,7 +68,7 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     /// <param name="messageNames">The list of message names to subscribe to</param>
     /// <returns>A completed task</returns>
     /// <exception cref="ArgumentNullException">Thrown when messageNames is null</exception>
-    public ValueTask SubscribeAsync(IEnumerable<string> messageNames)
+    public ValueTask SubscribeAsync(IEnumerable<string> messageNames, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNull(messageNames);
         _queue.Subscribe(_intentType, _groupId, messageNames);
@@ -212,8 +212,9 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     /// Commits the processing of a message.
     /// </summary>
     /// <param name="sender">The sender object</param>
+    /// <param name="cancellationToken">Unused; the in-memory transport settles synchronously.</param>
     /// <returns>A completed task</returns>
-    public ValueTask CommitAsync(object? sender)
+    public ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default)
     {
         return ValueTask.CompletedTask;
     }
@@ -222,8 +223,9 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     /// Rejects the processing of a message.
     /// </summary>
     /// <param name="sender">The sender object</param>
+    /// <param name="cancellationToken">Unused; the in-memory transport settles synchronously.</param>
     /// <returns>A completed task</returns>
-    public ValueTask RejectAsync(object? sender)
+    public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
     {
         return ValueTask.CompletedTask;
     }

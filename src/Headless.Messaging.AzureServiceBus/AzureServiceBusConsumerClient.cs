@@ -42,7 +42,10 @@ internal sealed class AzureServiceBusConsumerClient(
     public BrokerAddress BrokerAddress =>
         ServiceBusHelpers.GetBrokerAddress(_asbOptions.ConnectionString, _asbOptions.Namespace);
 
-    public async ValueTask SubscribeAsync(IEnumerable<string> messageNames)
+    public async ValueTask SubscribeAsync(
+        IEnumerable<string> messageNames,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotNull(messageNames);
 
@@ -67,9 +70,9 @@ internal sealed class AzureServiceBusConsumerClient(
         // Get existing rules
 
         var allRuleNames = new List<string>();
-        var allRules = _administrationClient!.GetRulesAsync(_asbOptions.TopicPath, subscriptionName);
+        var allRules = _administrationClient!.GetRulesAsync(_asbOptions.TopicPath, subscriptionName, cancellationToken);
 
-        await foreach (var rule in allRules)
+        await foreach (var rule in allRules.WithCancellation(cancellationToken))
         {
             allRuleNames.Add(rule.Name);
         }
@@ -109,7 +112,8 @@ internal sealed class AzureServiceBusConsumerClient(
                 .CreateRuleAsync(
                     _asbOptions.TopicPath,
                     subscriptionName,
-                    new CreateRuleOptions { Name = newRule, Filter = currentRuleToAdd }
+                    new CreateRuleOptions { Name = newRule, Filter = currentRuleToAdd },
+                    cancellationToken
                 )
                 .ConfigureAwait(false);
 
@@ -119,7 +123,7 @@ internal sealed class AzureServiceBusConsumerClient(
         foreach (var oldRule in allRuleNames.Except(messageNamesList, StringComparer.Ordinal))
         {
             await _administrationClient
-                .DeleteRuleAsync(_asbOptions.TopicPath, subscriptionName, oldRule)
+                .DeleteRuleAsync(_asbOptions.TopicPath, subscriptionName, oldRule, cancellationToken)
                 .ConfigureAwait(false);
 
             logger.RuleRemoved(oldRule);
@@ -163,16 +167,16 @@ internal sealed class AzureServiceBusConsumerClient(
         return new ValueTask(_ready.Task.WaitAsync(cancellationToken));
     }
 
-    public async ValueTask CommitAsync(object? sender)
+    public async ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default)
     {
         var commitInput = (AzureServiceBusConsumerCommitInput)sender!;
-        await commitInput.CompleteMessageAsync().ConfigureAwait(false);
+        await commitInput.CompleteMessageAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public async ValueTask RejectAsync(object? sender)
+    public async ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
     {
         var commitInput = (AzureServiceBusConsumerCommitInput)sender!;
-        await commitInput.AbandonMessageAsync().ConfigureAwait(false);
+        await commitInput.AbandonMessageAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask PauseAsync(CancellationToken cancellationToken = default)
