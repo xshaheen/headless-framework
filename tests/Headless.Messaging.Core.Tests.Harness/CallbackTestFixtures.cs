@@ -80,6 +80,8 @@ public enum CallbackRequestMode
     Normal,
     Rewrite,
     Remove,
+    TypedNull,
+    HeadersOnly,
 }
 
 public sealed record CallbackQueueRequestMessage(string Id);
@@ -123,6 +125,11 @@ public sealed class CallbackRequestConsumer : IConsume<CallbackRequestMessage>
             case CallbackRequestMode.Remove:
                 context.Headers.RemoveCallback();
                 context.SetResponse(new CallbackResponse(context.Message.Id, context.IntentType.ToString()));
+                break;
+            case CallbackRequestMode.TypedNull:
+                context.SetResponse<CallbackResponse>(null!);
+                break;
+            case CallbackRequestMode.HeadersOnly:
                 break;
             default:
                 context.SetResponse(new CallbackResponse(context.Message.Id, context.IntentType.ToString()));

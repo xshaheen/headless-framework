@@ -548,6 +548,62 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         context.Headers[Headers.Type].Should().Be(nameof(CallbackResponse));
     }
 
+    public virtual async Task should_publish_typed_null_callback_response()
+    {
+        // given
+        var requestMessageId = $"typed-null-{Guid.NewGuid():N}";
+        var request = new CallbackRequestMessage(Guid.NewGuid().ToString("N"), CallbackRequestMode.TypedNull);
+
+        // when
+        await Publisher.PublishAsync(
+            request,
+            new PublishOptions
+            {
+                MessageId = requestMessageId,
+                MessageName = "callback-request",
+                CallbackName = "callback-response",
+            },
+            AbortToken
+        );
+
+        var callback = await _WaitForStoredCallbackAsync(requestMessageId, TimeSpan.FromSeconds(20));
+
+        // then
+        callback.Should().NotBeNull("the typed-null callback should reach transport and durable receive storage");
+        callback!.Origin.Value.Should().BeNull();
+        callback.Origin.Headers[Headers.Type].Should().Be(nameof(CallbackResponse));
+        callback.Origin.Headers[Headers.CorrelationId].Should().Be(requestMessageId);
+        callback.ExceptionInfo.Should().Contain($"Failed to deserialize message of type {nameof(CallbackResponse)}");
+    }
+
+    public virtual async Task should_publish_headers_only_callback_response()
+    {
+        // given
+        var requestMessageId = $"headers-only-{Guid.NewGuid():N}";
+        var request = new CallbackRequestMessage(Guid.NewGuid().ToString("N"), CallbackRequestMode.HeadersOnly);
+
+        // when
+        await Publisher.PublishAsync(
+            request,
+            new PublishOptions
+            {
+                MessageId = requestMessageId,
+                MessageName = "callback-request",
+                CallbackName = "callback-response",
+            },
+            AbortToken
+        );
+
+        var callback = await _WaitForStoredCallbackAsync(requestMessageId, TimeSpan.FromSeconds(20));
+
+        // then
+        callback.Should().NotBeNull("the headers-only callback should reach transport and durable receive storage");
+        callback!.Origin.Value.Should().BeNull();
+        callback.Origin.Headers[Headers.Type].Should().Be(nameof(Object));
+        callback.Origin.Headers[Headers.CorrelationId].Should().Be(requestMessageId);
+        callback.ExceptionInfo.Should().Contain($"Failed to deserialize message of type {nameof(CallbackResponse)}");
+    }
+
     public virtual async Task should_rewrite_callback_when_response_is_set()
     {
         // given
@@ -724,6 +780,47 @@ public abstract class MessagingIntegrationTestsBase : TestBase
 
         var succeeded = await _FindReceivedMessagesAsync(messageId, StatusName.Succeeded, AbortToken);
         succeeded.Should().BeEmpty("response serialization failure must not mark the request consume as succeeded");
+    }
+
+    private async Task<MediumMessage?> _WaitForStoredCallbackAsync(string correlationId, TimeSpan timeout)
+    {
+        var monitoringApi = DataStorage.GetMonitoringApi();
+        var timeProvider = ServiceProvider.GetRequiredService<TimeProvider>();
+        var deadline = timeProvider.GetUtcNow() + timeout;
+
+        while (timeProvider.GetUtcNow() < deadline)
+        {
+            var page = await monitoringApi.GetMessagesAsync(
+                new MessageQuery
+                {
+                    MessageType = MessageType.Subscribe,
+                    Name = ResolveMessageName("callback-response"),
+                    CurrentPage = 0,
+                    PageSize = 100,
+                },
+                AbortToken
+            );
+
+            page.TotalItems.Should()
+                .BeLessThan(100, "callback correlation filtering is in-memory; rows beyond one page risk truncation");
+
+            foreach (var candidate in page.Items)
+            {
+                var stored = await monitoringApi.GetReceivedMessageAsync(candidate.StorageId, AbortToken);
+                if (
+                    stored?.ExceptionInfo is not null
+                    && stored.Origin.Headers.TryGetValue(Headers.CorrelationId, out var storedCorrelationId)
+                    && string.Equals(storedCorrelationId, correlationId, StringComparison.Ordinal)
+                )
+                {
+                    return stored;
+                }
+            }
+
+            await timeProvider.Delay(TimeSpan.FromMilliseconds(100), AbortToken);
+        }
+
+        return null;
     }
 
     protected async Task EnsureTestSubscriberReadyAsync(
