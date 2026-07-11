@@ -10,7 +10,7 @@ Provides reliable background job scheduling with cron expressions, delayed execu
 
 - **`AddHeadlessJobs()`**: single DI entry point; registers managers, background services, and the in-memory persistence provider.
 - **Scheduler background service**: polls for due time jobs and cron occurrences on `FallbackIntervalChecker` cadence (default 30s); also driven by soft-notification signals for near-zero latency.
-- **Custom thread pool** (`JobsTaskScheduler`): bounds active async executions by `MaxConcurrency` (default `Environment.ProcessorCount`), with idle-worker timeout.
+- **Custom thread pool** (`JobsTaskScheduler`): bounds active async executions by `MaxConcurrency` (default `Environment.ProcessorCount`), honors `High` → `Normal` → `Low` dequeue order, and gives `LongRunning` work a dedicated thread.
 - **Sliding lease renewal** (#316): jobs verify ownership immediately before user code starts, then extend `LockedUntil` on `LeaseRenewalInterval` cadence; cancel-on-loss if renewal affects zero rows or errors.
 - **`DisableBackgroundServices()`**: suppresses background execution; only the managers are registered (useful for enqueue-only nodes and test projects).
 - **Seeder API**: `UseJobsSeeder(...)` for startup data seeding; `IgnoreSeedDefinedCronJobs()` to skip auto-seeding of attribute-defined cron jobs.
@@ -25,7 +25,13 @@ The pickup lease uses the injected `TimeProvider` (application clock) for the cl
 
 `SchedulerOptionsBuilder.NodeId` is used as the row owner only on the in-memory single-process path. On the durable path it is overridden by `JobsOwnerIdentityAdapter` (reads `node@incarnation` from `Headless.Coordination`); `NodeId` becomes a pre-registration display fallback only.
 
-The scheduler only invokes handlers for rows whose `Queued` → `InProgress` write is still owned by the current node. The execution handler performs one more lease check before invoking user code; if ownership was lost, it leaves the row `InProgress` for stalled reclaim and skips the delegate.
+Jobs remain `Queued` while waiting for worker and per-function concurrency capacity. The worker performs the owned `Queued` → `InProgress` write immediately before execution, then the execution handler performs one more lease check before invoking user code. If ownership expired while queued, the worker skips the delegate instead of starting an unowned job. Because that transition must happen at admission time, each admitted job issues its own single-row claim write — a tick with N co-due functions performs N claim round trips instead of one batched write; this is the deliberate cost of the single-winner fence.
+
+Claiming a chained time job leases its direct children and grandchildren to the same owner while leaving their status `Idle`; each child transitions to `InProgress` only when its `RunCondition` is satisfied. Reclaimed time jobs and cron occurrences preserve `RetryCount`, so execution resumes from the persisted attempt instead of resetting the retry budget.
+
+Only cancellation tied to the job's cancellation token (including `context.RequestCancellation()`) is classified as `Cancelled`. A detected lease loss writes no terminal status — the row stays `InProgress` so the stalled-reclaim sweep recovers it per `OnNodeDeath`. An unrelated `OperationCanceledException` is handled as a failure and follows the configured retry policy.
+
+Cron expressions are evaluated in `SchedulerTimeZone`. A spring-forward occurrence inside an invalid local-time gap is shifted forward by the gap; an ambiguous fall-back occurrence runs once at the later UTC instant (the standard-time offset).
 
 Jobs uses reusable Polly.Core `ResiliencePipeline` instances for runtime retry execution. `JobsRetryOptions.RetryStrategy` is the public Polly configuration surface, while `Retries`, `RetryCount`, and `RetryIntervals` remain the durable authority. `RetryCount` is persisted before every wait; lease renewal stays active across attempts and delays, and a lost lease cancels the pipeline and fences terminal writes. Per-row `RetryIntervals` override Polly delay generation and reuse their last value when shorter than `Retries`. Polly configuration and delegates are never serialized.
 

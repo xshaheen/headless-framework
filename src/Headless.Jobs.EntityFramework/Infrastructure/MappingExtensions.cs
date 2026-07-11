@@ -42,6 +42,7 @@ internal static class MappingExtensions
                     Retries = ch.Retries,
                     RetryCount = ch.RetryCount,
                     RetryIntervals = ch.RetryIntervals,
+                    ParentId = ch.ParentId,
                     RunCondition = ch.RunCondition,
                     OnNodeDeath = ch.OnNodeDeath,
                     Children = ch
@@ -52,6 +53,7 @@ internal static class MappingExtensions
                             RetryCount = gch.RetryCount,
                             RetryIntervals = gch.RetryIntervals,
                             Id = gch.Id,
+                            ParentId = gch.ParentId,
                             RunCondition = gch.RunCondition,
                             OnNodeDeath = gch.OnNodeDeath,
                         })
@@ -71,8 +73,9 @@ internal static class MappingExtensions
             Id = e.Id,
             UpdatedAt = e.UpdatedAt,
             CronJobId = e.CronJobId,
-            OnNodeDeath = e.OnNodeDeath,
             RetryCount = e.RetryCount,
+            ExecutionTime = e.ExecutionTime,
+            OnNodeDeath = e.OnNodeDeath,
             CronJob = new TCronJob
             {
                 Id = e.CronJob.Id,
@@ -121,15 +124,18 @@ internal static class MappingExtensions
         var propsToUpdate = functionContext.PropertiesToUpdate;
 
         // STATUS / SKIPPED
-        if (propsToUpdate.Contains(nameof(JobExecutionState.Status)) && functionContext.Status != JobStatus.Skipped)
+        if (propsToUpdate.Contains(nameof(JobExecutionState.Status)))
         {
-            setters.SetProperty(x => x.Status, functionContext.Status);
-        }
-        else
-        {
-            setters
-                .SetProperty(x => x.Status, functionContext.Status)
-                .SetProperty(x => x.SkippedReason, functionContext.ExceptionDetails);
+            if (functionContext.Status == JobStatus.Skipped)
+            {
+                setters
+                    .SetProperty(x => x.Status, functionContext.Status)
+                    .SetProperty(x => x.SkippedReason, functionContext.ExceptionDetails);
+            }
+            else
+            {
+                setters.SetProperty(x => x.Status, functionContext.Status);
+            }
         }
 
         // EXECUTED_AT
@@ -182,15 +188,18 @@ internal static class MappingExtensions
         var propsToUpdate = functionContext.PropertiesToUpdate;
 
         // STATUS / SKIPPED
-        if (propsToUpdate.Contains(nameof(JobExecutionState.Status)) && functionContext.Status != JobStatus.Skipped)
+        if (propsToUpdate.Contains(nameof(JobExecutionState.Status)))
         {
-            setters.SetProperty(x => x.Status, functionContext.Status);
-        }
-        else
-        {
-            setters
-                .SetProperty(x => x.Status, functionContext.Status)
-                .SetProperty(x => x.SkippedReason, functionContext.ExceptionDetails);
+            if (functionContext.Status == JobStatus.Skipped)
+            {
+                setters
+                    .SetProperty(x => x.Status, functionContext.Status)
+                    .SetProperty(x => x.SkippedReason, functionContext.ExceptionDetails);
+            }
+            else
+            {
+                setters.SetProperty(x => x.Status, functionContext.Status);
+            }
         }
 
         // EXECUTED_AT

@@ -94,24 +94,14 @@ internal sealed class JobsFallbackBackgroundService(
                         {
                             await jobsTaskScheduler
                                 .QueueAsync(
-                                    async ct =>
-                                    {
-                                        if (semaphore != null)
-                                        {
-                                            await semaphore.WaitAsync(ct).ConfigureAwait(false);
-                                        }
-
-                                        try
-                                        {
-                                            await tickerExecutionTaskHandler
-                                                .ExecuteTaskAsync(function, isDue: true, cancellationToken: ct)
-                                                .ConfigureAwait(false);
-                                        }
-                                        finally
-                                        {
-                                            semaphore?.Release();
-                                        }
-                                    },
+                                    JobsAdmissionWorkItem.Create(
+                                        internalJobsManager,
+                                        tickerExecutionTaskHandler,
+                                        logger,
+                                        semaphore,
+                                        function,
+                                        isDue: true
+                                    ),
                                     function.CachedPriority,
                                     stoppingToken
                                 )

@@ -13,6 +13,7 @@ Stores lock records directly in Redis with atomic acquire, replace, release, rea
 - `RedisDistributedSemaphoreStorage` implements `IDistributedSemaphoreStorage`.
 - `UseRedis()` registers Redis-backed mutex, reader-writer lock, and semaphore providers through `AddHeadlessDistributedLocks(...)`.
 - Uses `HeadlessRedisScriptsLoader` for atomic Lua script operations.
+- Mutex compare-and-swap uses Redis `KEEPTTL`, preserving the existing expiration when `ReplaceIfEqualAsync(..., newTtl: null)` is used.
 
 ## Installation
 

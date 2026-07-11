@@ -18,7 +18,9 @@ Provides registration, heartbeat, event derivation, fail-stop self-loss, and ord
 
 `RegisterAsync` durably establishes both the cold descriptor and an initial store-clock liveness entry in one guarded write, so a node is `Alive` (and its role/metadata are visible) immediately after register — without waiting for the first heartbeat. The background loop owns every subsequent beat. Registration is incarnation-guarded: a stale or superseded incarnation establishes no liveness.
 
-Self-heartbeat rejection is a local fencing failure. The default `MembershipLostBehavior.StopApplication` asks the host to stop; `StopMembershipOnly` is for hosts that explicitly quiesce every worker.
+Self-heartbeat rejection is a local fencing failure. A heartbeat write is deadline-bounded by the remaining `DeadThreshold` budget, so a continuously failing or hung store call self-fences the node once no write has been confirmed for that threshold; snapshot-read failures do not fence a node whose heartbeats still succeed. The default `MembershipLostBehavior.StopApplication` asks the host to stop; `StopMembershipOnly` is for hosts that explicitly quiesce every worker.
+
+An incarnation is terminal once it leaves, reaches `DeadThreshold`, or its retained liveness entry is pruned. Providers reject later heartbeats for that same incarnation; recovery requires allocating and registering a higher incarnation, so a delayed process cannot resurrect its old ownership identity.
 
 Core also hosts the shared dead-owner recovery bridge — a generic `BackgroundService` parameterized by an `IDeadOwnerReclaimer` that reclaims dead-incarnation resources on `NodeLeft` events plus a periodic `Dead`-only snapshot reconcile (idempotent dedup, `CancellationToken.None` writes). It is internal infrastructure consumed by registering a closed generic from the owning assembly (Jobs, Messaging) via `InternalsVisibleTo`; each closed type yields a distinct hosted service and logger category. Coordination.Core does not register it — the consuming feature does.
 

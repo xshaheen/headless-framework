@@ -22,8 +22,10 @@ identities, so a restarted node never inherits its dead predecessor's standing.
 ### Incarnation
 The monotonic generation number that qualifies a Node identity. Allocated by an atomic increment in
 the store at registration; a heartbeat or leave carrying a prior incarnation is rejected at the
-write so a stale run cannot resurrect or overwrite a newer one. *Avoid:* generation (use Incarnation
-for the per-node value; "generation table/counter" names the durable authority that issues it).
+write so a stale run cannot resurrect or overwrite a newer one. The current incarnation also becomes
+terminal once it is dead, gracefully left, or pruned; recovery requires registering a higher
+incarnation. *Avoid:* generation (use Incarnation for the per-node value; "generation table/counter"
+names the durable authority that issues it).
 
 ### Descriptor
 The cold, write-once record of a Node identity: host/ports, role, metadata. Established at
@@ -37,7 +39,8 @@ first heartbeat.
 
 ### Liveness state
 The store-evaluated condition of a Node identity, transitioning Alive → Suspected → Recovered (back
-to Alive) or → Dead/Left. Computed from how stale the Liveness row is against the store clock, using
+to Alive) or → Dead/Left. Dead and Left are terminal for that incarnation, as is removal of its retained
+liveness entry. Computed from how stale the Liveness row is against the store clock, using
 store-evaluated thresholds — never by an application node comparing wall clocks.
 
 ### Store as temporal authority
@@ -48,9 +51,11 @@ write/primary path.
 
 ### Incarnation guard
 The write-time check that a heartbeat, leave, or registration write only takes effect when its
-incarnation is still the current generation for that node id, performed atomically with the write
-(pessimistic row lock on the relational stores, compare-in-Lua on Redis). The mechanism that makes
-the Store-as-temporal-authority invariant enforceable under concurrency.
+incarnation is still the current generation for that node id and has not become terminal, performed
+atomically with the write (pessimistic row lock on the relational stores, compare-in-Lua on Redis).
+Registration may create the liveness entry; periodic heartbeats may only refresh an existing live
+entry. The mechanism that makes the Store-as-temporal-authority invariant enforceable under
+concurrency.
 
 ### Authoritative provider
 A coordination provider that can offer a server clock plus a linearizable liveness-row read/write,

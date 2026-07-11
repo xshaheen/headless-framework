@@ -13,6 +13,7 @@ Provides a no-infrastructure backend for code that depends on `IDistributedLock`
 - `InMemoryDistributedSemaphoreStorage` implements `IDistributedSemaphoreStorage`.
 - `UseInMemory()` registers in-process mutex, reader-writer lock, and semaphore providers through `AddHeadlessDistributedLocks(...)`.
 - Uses injected `TimeProvider` for deterministic TTL behavior.
+- Mutex compare-and-swap preserves the existing absolute expiration when `ReplaceIfEqualAsync(..., newTtl: null)` is used.
 
 ## Design Notes
 

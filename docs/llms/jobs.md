@@ -158,7 +158,7 @@ public static Task ExecuteAsync(IServiceProvider sp, CancellationToken ct) { ...
 public async Task ExecuteAsync(JobFunctionContext<OrderRequest> context, CancellationToken ct) { ... }
 ```
 
-The first positional argument is the `functionName` string that must match the `Function` property on `TimeJobEntity` or `CronJobEntity`. Priority (`JobPriority.Normal` / `High` / `LongRunning`) and max-concurrency are optional parameters.
+The first positional argument is the `functionName` string that must match the `Function` property on `TimeJobEntity` or `CronJobEntity`. Priority (`JobPriority.Normal` / `High` / `Low` / `LongRunning`) and max-concurrency are optional parameters.
 
 ### Lease Model and Sliding Renewal
 
@@ -308,7 +308,7 @@ Provides reliable background job scheduling with cron expressions, delayed execu
 
 - **`AddHeadlessJobs()`**: single DI entry point; registers managers, background services, and the in-memory persistence provider.
 - **Scheduler background service**: polls for due time jobs and cron occurrences on `FallbackIntervalChecker` cadence (default 30s); also driven by soft-notification signals for near-zero latency.
-- **Custom thread pool** (`JobsTaskScheduler`): bounds active async executions by `MaxConcurrency` (default `Environment.ProcessorCount`), with idle-worker timeout.
+- **Custom thread pool** (`JobsTaskScheduler`): bounds active async executions by `MaxConcurrency` (default `Environment.ProcessorCount`), honors `High` → `Normal` → `Low` dequeue order, and gives `LongRunning` work a dedicated thread.
 - **Sliding lease renewal** (#316): jobs verify ownership immediately before user code starts, then extend `LockedUntil` on `LeaseRenewalInterval` cadence; cancel-on-loss if renewal affects zero rows or errors.
 - **`DisableBackgroundServices()`**: suppresses background execution; only the managers are registered (useful for worker-side-only nodes and test projects).
 - **Seeder API**: `UseJobsSeeder(Func<ITimeJobManager<TTimeJob>, Task>)` and `UseJobsSeeder(Func<ICronJobManager<TCronJob>, Task>)` for startup data seeding; `IgnoreSeedDefinedCronJobs()` to skip auto-seeding of attribute-defined cron jobs.
@@ -323,7 +323,13 @@ The pickup lease (`LockedUntil`) uses the injected `TimeProvider` (application c
 
 `SchedulerOptionsBuilder.NodeId` is used as the row owner only on the in-memory single-process path (defaults to `Environment.MachineName`). On the durable path this value is overridden by `JobsOwnerIdentityAdapter` which reads the `node@incarnation` string from `Headless.Coordination`; `NodeId` becomes a pre-registration display fallback only.
 
-The scheduler only invokes handlers for rows whose `Queued` → `InProgress` write is still owned by the current node. The execution handler performs one more lease check before invoking user code; if ownership was lost, it leaves the row `InProgress` for stalled reclaim and skips the delegate.
+Jobs remain `Queued` while waiting for worker and per-function concurrency capacity. The worker performs the owned `Queued` → `InProgress` write immediately before execution, then the execution handler performs one more lease check before invoking user code. If ownership expired while queued, the worker skips the delegate instead of starting an unowned job. Because that transition must happen at admission time, each admitted job issues its own single-row claim write — a tick with N co-due functions performs N claim round trips instead of one batched write; this is the deliberate cost of the single-winner fence.
+
+Claiming a chained time job leases its direct children and grandchildren to the same owner while leaving their status `Idle`; each child transitions to `InProgress` only when its `RunCondition` is satisfied. Reclaimed time jobs and cron occurrences preserve `RetryCount`, so execution resumes from the persisted attempt instead of resetting the retry budget.
+
+Only cancellation tied to the job's cancellation token (including `context.RequestCancellation()`) is classified as `Cancelled`. A detected lease loss writes no terminal status — the row stays `InProgress` so the stalled-reclaim sweep recovers it per `OnNodeDeath`. An unrelated `OperationCanceledException` is handled as a failure and follows the configured retry policy.
+
+Cron expressions are evaluated in `SchedulerTimeZone`. A spring-forward occurrence inside an invalid local-time gap is shifted forward by the gap; an ambiguous fall-back occurrence runs once at the later UTC instant (the standard-time offset).
 
 ### Installation
 
@@ -646,7 +652,7 @@ Activity tag reference:
 | `headless.jobs.job.id` | `123e4567-…` |
 | `headless.jobs.job.type` | `TimeJob`, `CronJob` |
 | `headless.jobs.job.function` | `ProcessOrder` |
-| `headless.jobs.job.priority` | `Normal`, `High`, `LongRunning` |
+| `headless.jobs.job.priority` | `Normal`, `High`, `Low`, `LongRunning` |
 | `headless.jobs.job.machine` | `web-01` |
 | `headless.jobs.job.parent_id` | parent job GUID |
 | `headless.jobs.job.enqueued_from` | `OrderController.Create (Program.cs:42)` |
@@ -685,6 +691,8 @@ Provides persistence of time jobs and cron occurrences across restarts and acros
 - **`UseJobsDbContext<TDbContext>(dbOptions, schema?)`**: registers a dedicated `JobsDbContext` with configurable schema.
 - **`UseApplicationDbContext<TDbContext>(ConfigurationType)`**: shares an existing application `DbContext` instead of a dedicated one.
 - **Database-clock lease authority**: on the EF path, lease renewal comparisons (`LockedUntil`) use the database server clock (`now()`/`GETUTCDATE()`), not the node's `TimeProvider`. Cross-node clock skew cannot reclaim a healthy renewing job.
+- **Atomic chain claims**: a root time-job claim leases its direct children and grandchildren to the same owner in one database update; fallback recovery uses the same tree claim and never steals a live queued lease.
+- **Durable retry state**: root jobs, descendants, and cron occurrences retain their persisted `RetryCount` when projected for execution.
 - **Node identity and recovery**: stamps `node@incarnation` as the row owner; dead-node reclaim driven by `NodeLeft` events plus periodic reconcile (`DeadNodeReconcileInterval`).
 - **Fail-fast coordination check**: startup throws `InvalidOperationException` when no coordination provider is registered.
 - **Cron-expression caching**: reuses the host's `ICache` (optional). No `ICache` → reads from DB, cache invalidation is skipped. Cache failures are fail-open.
@@ -942,7 +950,7 @@ public sealed class LongRunningCronJob
 | `Succeeded` | Completed successfully |
 | `DueDone` | Cron occurrence completed within its due window |
 | `Failed` | Retries exhausted or unhandled exception |
-| `Cancelled` | Token cancelled or `context.RequestCancellation()` called |
+| `Cancelled` | Job token cancelled or `context.RequestCancellation()` called; a detected lease loss instead leaves the row `InProgress` for stalled reclaim |
 | `Skipped` | `TerminateExecutionException` or `SkipIfAlreadyRunning()` |
 
 #### Node-Death Policy (OnNodeDeath)

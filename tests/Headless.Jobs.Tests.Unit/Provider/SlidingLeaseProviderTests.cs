@@ -124,7 +124,100 @@ public sealed class SlidingLeaseProviderTests : TestBase
         (await provider.RenewTimeJobLeaseAsync(job.Id, AbortToken)).Should().Be(0);
     }
 
+    [Fact]
+    public async Task QueueTimeJobs_claims_the_job_tree_and_preserves_retry_counts()
+    {
+        var (provider, _) = _Create();
+        var root = _TimeJob(JobStatus.Idle, owner: null, lockedUntil: null);
+        root.ExecutionTime = _Now.AddMilliseconds(500);
+        root.RetryCount = 2;
+        var child = _TimeJob(JobStatus.Idle, owner: null, lockedUntil: null);
+        child.ParentId = root.Id;
+        child.ExecutionTime = null;
+        child.RetryCount = 3;
+        var grandChild = _TimeJob(JobStatus.Idle, owner: null, lockedUntil: null);
+        grandChild.ParentId = child.Id;
+        grandChild.ExecutionTime = null;
+        grandChild.RetryCount = 4;
+        await provider.AddTimeJobsAsync([root, child, grandChild], AbortToken);
+        var roots = await provider.GetEarliestTimeJobsAsync(AbortToken);
+
+        TimeJobEntity? claimed = null;
+        await foreach (var job in provider.QueueTimeJobsAsync(roots, AbortToken))
+        {
+            claimed = job;
+        }
+
+        claimed.Should().NotBeNull();
+        claimed!.RetryCount.Should().Be(2);
+        claimed.Children.Should().ContainSingle().Which.RetryCount.Should().Be(3);
+        claimed.Children.Single().Children.Should().ContainSingle().Which.RetryCount.Should().Be(4);
+
+        var storedChild = await provider.GetTimeJobByIdAsync(child.Id, AbortToken);
+        var storedGrandChild = await provider.GetTimeJobByIdAsync(grandChild.Id, AbortToken);
+        storedChild!.OwnerId.Should().Be(_NodeA);
+        storedChild.LockedUntil.Should().Be(_Now.Add(_Lease));
+        storedGrandChild!.OwnerId.Should().Be(_NodeA);
+        storedGrandChild.LockedUntil.Should().Be(_Now.Add(_Lease));
+    }
+
+    [Fact]
+    public async Task QueueTimedOutTimeJobs_does_not_steal_a_live_main_scheduler_claim()
+    {
+        var (provider, time) = _Create();
+        var job = _TimeJob(JobStatus.Idle, owner: null, lockedUntil: null);
+        await provider.AddTimeJobsAsync([job], AbortToken);
+        var stored = await provider.GetTimeJobByIdAsync(job.Id, AbortToken);
+        await foreach (
+            var _ in provider.QueueTimeJobsAsync(
+                [new TimeJobEntity { Id = job.Id, UpdatedAt = stored!.UpdatedAt }],
+                AbortToken
+            )
+        ) { }
+
+        var whileLeased = await provider.QueueTimedOutTimeJobsAsync(AbortToken).ToListAsync(AbortToken);
+
+        whileLeased.Should().BeEmpty();
+
+        time.Advance(_Lease.Add(TimeSpan.FromSeconds(1)));
+        var afterExpiry = await provider.QueueTimedOutTimeJobsAsync(AbortToken).ToListAsync(AbortToken);
+
+        afterExpiry.Should().ContainSingle().Which.Id.Should().Be(job.Id);
+    }
+
     // ── U3: stalled-job reclaim (lapsed-lease InProgress, per policy) ────────────────────────────────────────
+
+    [Fact]
+    public async Task QueueTimedOutTimeJobs_claims_the_job_tree()
+    {
+        var (provider, _) = _Create();
+        var root = _TimeJob(JobStatus.Idle, owner: null, lockedUntil: null);
+        var child = _TimeJob(JobStatus.Idle, owner: null, lockedUntil: null);
+        child.ParentId = root.Id;
+        child.ExecutionTime = null;
+        var grandChild = _TimeJob(JobStatus.Idle, owner: null, lockedUntil: null);
+        grandChild.ParentId = child.Id;
+        grandChild.ExecutionTime = null;
+        await provider.AddTimeJobsAsync([root, child, grandChild], AbortToken);
+
+        var claimed = await provider.QueueTimedOutTimeJobsAsync(AbortToken).ToListAsync(AbortToken);
+
+        claimed.Should().ContainSingle().Which.Id.Should().Be(root.Id);
+        claimed[0].Status.Should().Be(JobStatus.Queued);
+        claimed[0].Children.Should().ContainSingle().Which.Id.Should().Be(child.Id);
+        claimed[0].Children.Single().Children.Should().ContainSingle().Which.Id.Should().Be(grandChild.Id);
+
+        var storedChild = await provider.GetTimeJobByIdAsync(child.Id, AbortToken);
+        var storedGrandChild = await provider.GetTimeJobByIdAsync(grandChild.Id, AbortToken);
+        storedChild!.OwnerId.Should().Be(_NodeA);
+        storedChild.LockedUntil.Should().Be(_Now.Add(_Lease));
+        storedGrandChild!.OwnerId.Should().Be(_NodeA);
+        storedGrandChild.LockedUntil.Should().Be(_Now.Add(_Lease));
+
+        var start = new JobExecutionState { FunctionName = "fn" }.SetProperty(x => x.Status, JobStatus.InProgress);
+        (await provider.UpdateTimeJobsWithUnifiedContextAsync([root.Id], start, AbortToken)).Should().Equal(root.Id);
+        (await provider.GetTimeJobByIdAsync(root.Id, AbortToken))!.Status.Should().Be(JobStatus.InProgress);
+    }
 
     [Fact]
     public async Task ReclaimStalledTimeJobs_retry_releases_lapsed_row_to_idle()
@@ -277,6 +370,19 @@ public sealed class SlidingLeaseProviderTests : TestBase
         (await provider.GetTimeJobByIdAsync(job.Id, AbortToken))!.Status.Should().Be(JobStatus.InProgress);
     }
 
+    [Fact]
+    public async Task UnifiedContextUpdate_does_not_restamp_an_already_running_row()
+    {
+        var (provider, _) = _Create();
+        var job = _TimeJob(JobStatus.InProgress, _NodeA, _Now.AddMinutes(1));
+        await provider.AddTimeJobsAsync([job], AbortToken);
+        var unified = new JobExecutionState { FunctionName = "fn" }.SetProperty(x => x.Status, JobStatus.InProgress);
+
+        var stampedIds = await provider.UpdateTimeJobsWithUnifiedContextAsync([job.Id], unified, AbortToken);
+
+        stampedIds.Should().BeEmpty();
+    }
+
     // ── cron occurrence mirrors (renew + reclaim) ────────────────────────────────────────────────────────────
 
     private async Task<Guid> _SeedCronOccurrence(
@@ -300,6 +406,31 @@ public sealed class SlidingLeaseProviderTests : TestBase
         };
         await provider.InsertCronJobOccurrencesAsync([occurrence], CancellationToken.None);
         return occurrence.Id;
+    }
+
+    [Fact]
+    public async Task QueueTimedOutCronJobs_does_not_steal_a_live_main_scheduler_claim()
+    {
+        var (provider, time) = _Create();
+        var id = await _SeedCronOccurrence(provider, JobStatus.Queued, _NodeA, _Now.Add(_Lease));
+
+        var whileLeased = await provider.QueueTimedOutCronJobOccurrencesAsync(AbortToken).ToListAsync(AbortToken);
+
+        whileLeased.Should().BeEmpty();
+
+        time.Advance(_Lease.Add(TimeSpan.FromSeconds(1)));
+        var afterExpiry = await provider.QueueTimedOutCronJobOccurrencesAsync(AbortToken).ToListAsync(AbortToken);
+
+        afterExpiry.Should().ContainSingle().Which.Id.Should().Be(id);
+        afterExpiry[0].Status.Should().Be(JobStatus.Queued);
+
+        var start = new JobExecutionState { FunctionName = "fn" }.SetProperty(x => x.Status, JobStatus.InProgress);
+        (await provider.UpdateCronJobOccurrencesWithUnifiedContextAsync([id], start, AbortToken)).Should().Equal(id);
+        (await provider.GetAllCronJobOccurrencesAsync(x => x.Id == id, AbortToken))
+            .Should()
+            .ContainSingle()
+            .Which.Status.Should()
+            .Be(JobStatus.InProgress);
     }
 
     [Fact]

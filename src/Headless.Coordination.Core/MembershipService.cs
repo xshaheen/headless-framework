@@ -84,6 +84,17 @@ internal sealed class MembershipService(
         _identity = null;
     }
 
+    internal async ValueTask FailStopAsync(NodeIdentity identity)
+    {
+        if (Identity is not { } current || current != identity)
+        {
+            return;
+        }
+
+        _identity = null;
+        await _SignalLocalMembershipLostAsync(identity).ConfigureAwait(false);
+    }
+
     public async ValueTask<bool> IsAliveAsync(NodeIdentity identity, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();

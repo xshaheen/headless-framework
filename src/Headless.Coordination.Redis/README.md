@@ -10,6 +10,7 @@ Provides a Redis-backed membership provider for deployments where Redis is the a
 
 - Incarnation allocation uses persistent `INCR` counters.
 - Heartbeat, read, leave, and cleanup scripts use Redis `TIME`.
+- Heartbeats reject dead, gracefully left, and missing/pruned member payloads for the same incarnation.
 - `:known` retains recently dead members so Dead is observable before cleanup.
 - `:known` also mirrors current node generations so snapshot reads do not issue one `GET` per member.
 - Generation counters are not purged by default.

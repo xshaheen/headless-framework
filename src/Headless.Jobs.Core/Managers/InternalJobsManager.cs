@@ -192,7 +192,7 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
                     RetryCount = grandChild.RetryCount,
                     RetryIntervals = grandChild.RetryIntervals,
                     ParentId = grandChild.ParentId,
-                    RunCondition = child.RunCondition ?? RunCondition.OnAnyCompletedStatus,
+                    RunCondition = grandChild.RunCondition ?? RunCondition.OnAnyCompletedStatus,
                 })
             );
 
