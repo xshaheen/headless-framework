@@ -10,7 +10,10 @@ public interface IDispatcher : IProcessingServer
 {
     /// <summary>Stops the dispatcher using the supplied remaining shutdown budget.</summary>
     /// <param name="timeout">The remaining end-to-end messaging shutdown budget.</param>
-    ValueTask DisposeAsync(TimeSpan timeout);
+    /// <param name="cancellationToken">
+    /// Reserved for API consistency. Shutdown cleanup remains governed by <paramref name="timeout"/>.
+    /// </param>
+    ValueTask DisposeAsync(TimeSpan timeout, CancellationToken cancellationToken = default);
 
     ValueTask EnqueueToPublish(MediumMessage message, CancellationToken cancellationToken = default);
 

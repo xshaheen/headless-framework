@@ -252,7 +252,7 @@ internal sealed class Dispatcher : IDispatcher
         return DisposeAsync(_options.ShutdownTimeout);
     }
 
-    public async ValueTask DisposeAsync(TimeSpan timeout)
+    public async ValueTask DisposeAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
     {
         var shutdownStarted = _timeProvider.GetTimestamp();
 

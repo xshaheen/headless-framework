@@ -14,7 +14,10 @@ public interface IConsumerClient : IAsyncDisposable
     /// The messaging core also bounds how long it waits for this operation.
     /// </remarks>
     /// <param name="timeout">The remaining end-to-end messaging shutdown budget.</param>
-    ValueTask ShutdownAsync(TimeSpan timeout)
+    /// <param name="cancellationToken">
+    /// Reserved for API consistency. Implementations must complete or safely detach cleanup even when cancellation is requested.
+    /// </param>
+    ValueTask ShutdownAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
     {
         return DisposeAsync();
     }

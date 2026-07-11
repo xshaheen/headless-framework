@@ -394,7 +394,7 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
         // given
         var storage = GetStorage();
         var id = Guid.NewGuid();
-        var now = DateTime.UtcNow;
+        var now = TimeProvider.GetUtcNow().UtcDateTime;
 
         await using (var connection = new NpgsqlConnection(fixture.ConnectionString))
         {
@@ -454,7 +454,7 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
         var serializer = GetSerializer();
         var poisonId = Guid.NewGuid();
         var healthyId = Guid.NewGuid();
-        var now = DateTime.UtcNow;
+        var now = TimeProvider.GetUtcNow().UtcDateTime;
 
         await using (var connection = new NpgsqlConnection(fixture.ConnectionString))
         {

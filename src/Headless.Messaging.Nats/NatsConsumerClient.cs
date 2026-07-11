@@ -691,7 +691,7 @@ internal sealed class NatsConsumerClient(
         return ShutdownAsync(_ShutdownDrainTimeout);
     }
 
-    public async ValueTask ShutdownAsync(TimeSpan timeout)
+    public async ValueTask ShutdownAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
         {
@@ -699,7 +699,7 @@ internal sealed class NatsConsumerClient(
         }
 
         _pauseGate.Release();
-        _ready.TrySetCanceled();
+        _ready.TrySetCanceled(CancellationToken.None);
         await _CancelReceives().ConfigureAwait(false);
 
         // Drain in-flight concurrent handlers before disposing the semaphore and connection, so a
@@ -716,7 +716,9 @@ internal sealed class NatsConsumerClient(
                     throw new TimeoutException("The shared messaging shutdown deadline has expired.");
                 }
 
-                await Task.WhenAll(inFlight).WaitAsync(timeout, _timeProvider).ConfigureAwait(false);
+                await Task.WhenAll(inFlight)
+                    .WaitAsync(timeout, _timeProvider, CancellationToken.None)
+                    .ConfigureAwait(false);
             }
             catch (Exception ex)
             {
