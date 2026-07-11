@@ -9,6 +9,7 @@
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Blobs.SshNet.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Blobs.SshNet.Tests.Integration" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Blobs.Abstractions\Headless.Blobs.Abstractions.csproj" />

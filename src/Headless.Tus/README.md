@@ -26,9 +26,10 @@ package aligns on one version.
   `AllowedMethods` (includes the PATCH/DELETE that default CORS configs miss)
 - `CorsPolicyBuilder.WithTusHeaders()` — applies all three in one call; origins and credentials stay
   the caller's decision
-- `TusExpiredUploadsCleanupService` + `services.AddTusExpiredUploadsCleanup(...)` — background job
+- `services.AddTusExpiredUploadsCleanup(...)` — registers an internal background hosted service
   that periodically calls `ITusExpirationStore.RemoveExpiredFilesAsync` (expired **incomplete**
-  uploads only; completed uploads are never touched)
+  uploads only; completed uploads are never touched); tuned via the public
+  `TusExpiredUploadsCleanupOptions`
 
 ## Design Notes
 
@@ -88,6 +89,6 @@ app.UseCors("tus");
 
 ## Side Effects
 
-- `AddTusExpiredUploadsCleanup` registers a hosted service (`TusExpiredUploadsCleanupService`) and
+- `AddTusExpiredUploadsCleanup` registers an internal hosted service and
   `TimeProvider.System` (TryAdd).
 - No other DI registrations; `TusCorsDefaults` / `WithTusHeaders` are pure helpers.

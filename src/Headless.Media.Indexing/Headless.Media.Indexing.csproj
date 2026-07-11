@@ -5,6 +5,9 @@
     <PackageTags>headless;media;indexing;dotnet</PackageTags>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Media.Indexing.Tests.Unit" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="DocumentFormat.OpenXml" />
     <PackageReference Include="PdfPig" />
   </ItemGroup>

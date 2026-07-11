@@ -10,6 +10,7 @@ namespace Headless.Media.Indexing;
 /// MIME type such as <c>application/pdf</c>) and need the matching provider without hard-coding the
 /// format-to-provider mapping themselves. This resolver centralizes that dispatch.
 /// </remarks>
+[PublicAPI]
 public interface IMediaFileTextProviderResolver
 {
     /// <summary>

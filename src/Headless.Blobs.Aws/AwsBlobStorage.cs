@@ -24,7 +24,7 @@ namespace Headless.Blobs.Aws;
 /// type is reused as-is by the Cloudflare R2 provider, which cannot manage buckets; keeping bucket lifecycle off this
 /// type is what lets R2 stay honestly capability-less. <see cref="UploadAsync"/> never auto-creates a missing bucket.
 /// </remarks>
-public sealed class AwsBlobStorage(
+internal sealed class AwsBlobStorage(
     IAmazonS3 s3,
     IMimeTypeProvider mimeTypeProvider,
     IClock clock,

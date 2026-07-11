@@ -460,7 +460,7 @@ No options of its own. Each store's options are configured through its provider'
 - Registers `IBlobStorageProvider` as singleton (backed by the container's keyed `IBlobStorage` registrations).
 - Registers a called-once marker that rejects a second `AddHeadlessBlobs` call on the same service collection.
 - Default `Use{Provider}`: registers `IBlobStorage` as unkeyed singleton.
-- `AddNamed(... Use{Provider})`: registers `IBlobStorage` as keyed singleton (`name`). For AWS, Azure, and CloudflareR2 also registers `IPresignedUrlBlobStorage` as keyed singleton (`name`). For AWS, Azure, FileSystem, Redis, and SshNet also registers `IBlobContainerManager` (default + keyed `name`); CloudflareR2 registers none. For SshNet, also registers a keyed `SftpClientPool` singleton (`name`).
+- `AddNamed(... Use{Provider})`: registers `IBlobStorage` as keyed singleton (`name`). For AWS, Azure, and CloudflareR2 also registers `IPresignedUrlBlobStorage` as keyed singleton (`name`). For AWS, Azure, FileSystem, Redis, and SshNet also registers `IBlobContainerManager` (default + keyed `name`); CloudflareR2 registers none. For SshNet, also registers a keyed internal SFTP connection pool singleton (`name`).
 - There is no global (unkeyed) `IPresignedUrlBlobStorage` registration.
 
 ---
@@ -935,14 +935,14 @@ Provides blob storage via SFTP/SSH for scenarios requiring file transfer to remo
 - Metadata stored in a sidecar companion file (reserved `.hlmeta` suffix) beside each blob.
 - Emulated paging: `ListAsync` lists recursively, sorts by key, and encodes a start-after-key as the opaque token.
 - Container lifecycle via `SshBlobContainerManager` resolved from DI (`EnsureContainerAsync` is a validated `mkdir -p`).
-- Connection pooling (`SftpClientPool`); each store owns its own pool.
+- Connection pooling via an internal SFTP client pool; each store owns its own pool.
 
 ### Design Notes
 
 - **Universal metadata via sidecars.** SFTP has no native blob-metadata concept, so metadata is persisted in a companion `.hlmeta` file written content-first after the blob — a second round-trip per metadata-bearing write/read. A missing sidecar reads as empty metadata; the pair is **non-atomic**. Sidecars are filtered from every listing/exists/count/delete result; a blob key ending in `.hlmeta` is rejected at `BlobLocation` construction. Deleting or moving a blob deletes/moves its sidecar.
 - **Non-atomic `Move`.** `MoveAsync` is copy-then-delete with best-effort destination rollback; the sidecar moves with the blob. There is no atomic server-side rename.
 - **Emulated paging tier + validated directory creation.** `ListAsync` re-scans recursively, sorted by key, resuming after the start-after-key token (weaker stability under concurrent writes). `EnsureContainerAsync` and the upload/move retry paths validate and normalize every path segment through the resolve seam, so created directories match where uploads are written. Non-seekable upload streams pass through to the SFTP write stream unbuffered.
-- **Connection-pool lifetime is a caller responsibility (documented, not policed).** Each store owns an `SftpClientPool` bounded to `MaxPoolSize`. `OpenReadStreamAsync` hands the pooled `SftpClient` to the returned stream, so the slot is reclaimed only when the caller disposes the `BlobDownloadResult` — an undisposed result leaks a slot, and after `MaxPoolSize` leaks the pool is exhausted. The pool has **no acquire timeout by design**: a saturated pool applies backpressure and blocks until a slot frees or the operation's `CancellationToken` cancels. Consumers must dispose download results promptly (`OpenReadStreamAsync` is `[MustDisposeResource]`), size `MaxPoolSize` for peak concurrency, and always pass a cancellation token. The framework intentionally does not add a finalizer safety-net or elastic overflow — the same "consumer owns the boundary" stance applied to cache-key lengths and message payload sizes.
+- **Connection-pool lifetime is a caller responsibility (documented, not policed).** Each store owns an internal SFTP connection pool bounded to `MaxPoolSize`. `OpenReadStreamAsync` hands a pooled SFTP client to the returned stream, so the slot is reclaimed only when the caller disposes the `BlobDownloadResult` — an undisposed result leaks a slot, and after `MaxPoolSize` leaks the pool is exhausted. The pool has **no acquire timeout by design**: a saturated pool applies backpressure and blocks until a slot frees or the operation's `CancellationToken` cancels. Consumers must dispose download results promptly (`OpenReadStreamAsync` is `[MustDisposeResource]`), size `MaxPoolSize` for peak concurrency, and always pass a cancellation token. The framework intentionally does not add a finalizer safety-net or elastic overflow — the same "consumer owns the boundary" stance applied to cache-key lengths and message payload sizes.
 
 ### Installation
 
@@ -997,6 +997,6 @@ builder.Services.AddHeadlessBlobs(blobs =>
 
 Registered via `AddHeadlessBlobs(b => b.UseSsh(...))` or `AddNamed("name", i => i.UseSsh(...))`:
 
-- Default (`UseSsh`): registers `SftpClientPool` as unkeyed singleton; registers `IBlobStorage` as unkeyed singleton and `IBlobContainerManager` as unkeyed singleton (`SshBlobContainerManager`).
-- Named (`AddNamed ... UseSsh`): registers `SftpClientPool`, `IBlobStorage`, and `IBlobContainerManager` each as keyed singleton (`name`). Each named store owns its own pool instance bound to its named options.
+- Default (`UseSsh`): registers an internal SFTP connection pool as unkeyed singleton; registers `IBlobStorage` as unkeyed singleton and `IBlobContainerManager` as unkeyed singleton (internal `SshBlobContainerManager`).
+- Named (`AddNamed ... UseSsh`): registers the internal SFTP connection pool, `IBlobStorage`, and `IBlobContainerManager` each as keyed singleton (`name`). Each named store owns its own pool instance bound to its named options.
 - No presigned URL support — `IPresignedUrlBlobStorage` is never registered for SshNet stores.

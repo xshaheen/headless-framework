@@ -3,7 +3,7 @@
 using Azure.Storage.Blobs.Models;
 using FluentValidation.TestHelper;
 using Headless.Testing.Tests;
-using Headless.Tus.Options;
+using Headless.Tus;
 
 namespace Tests.Azure;
 

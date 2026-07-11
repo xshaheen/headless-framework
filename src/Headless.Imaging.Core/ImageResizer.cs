@@ -18,7 +18,7 @@ namespace Headless.Imaging;
 /// If all contributors return <see cref="ImageProcessState.Unsupported"/>, the result is
 /// <c>ImageStreamResizeResult.NotSupported()</c>.
 /// </remarks>
-public sealed class ImageResizer(
+internal sealed class ImageResizer(
     IEnumerable<IImageResizerContributor> contributors,
     IOptions<ImagingOptions> optionsAccessor
 ) : IImageResizer

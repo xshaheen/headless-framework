@@ -14,7 +14,7 @@ namespace Headless.Imaging;
 /// after every attempt. If all contributors return <see cref="ImageProcessState.Unsupported"/>,
 /// the result is <c>ImageStreamCompressResult.NotSupported()</c>.
 /// </remarks>
-public sealed class ImageCompressor(IEnumerable<IImageCompressorContributor> contributors) : IImageCompressor
+internal sealed class ImageCompressor(IEnumerable<IImageCompressorContributor> contributors) : IImageCompressor
 {
     private readonly IEnumerable<IImageCompressorContributor> _contributors = contributors.Reverse();
 

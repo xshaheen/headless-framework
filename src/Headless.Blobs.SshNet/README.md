@@ -13,7 +13,7 @@ Provides blob storage via SFTP/SSH for scenarios requiring file transfer to remo
 - Metadata stored in a sidecar companion file (reserved `.hlmeta` suffix) beside each blob.
 - Emulated paging: `ListAsync` lists recursively, sorts by key, and encodes a start-after-key as the opaque token.
 - Container lifecycle via `SshBlobContainerManager` resolved from DI (`EnsureContainerAsync` is a validated `mkdir -p`).
-- Connection pooling (`SftpClientPool`); each store owns its own pool.
+- Connection pooling via an internal SFTP client pool; each store owns its own pool.
 
 ## Design Notes
 
@@ -26,7 +26,7 @@ Provides blob storage via SFTP/SSH for scenarios requiring file transfer to remo
 Like cache-key length and message payload sizes elsewhere in the framework, connection-pool lifetime is delegated to the consumer — the pool applies backpressure but does not police caller mistakes:
 
 - **Dispose every `OpenReadStreamAsync` result promptly** (`await using`, or a `finally`). The returned `BlobDownloadResult` owns a pooled `SftpClient` until it is disposed; an undisposed result **leaks a pool slot**. After `MaxPoolSize` leaks the pool is exhausted and every subsequent operation blocks. `OpenReadStreamAsync` is annotated `[MustDisposeResource]` so the analyzer flags a missed dispose.
-- **`SftpClientPool` has no acquire timeout — this is deliberate backpressure.** When all `MaxPoolSize` connections are busy, acquiring blocks until a slot frees or the operation's `CancellationToken` is cancelled. Size `MaxPoolSize` for your peak concurrency and always pass a cancellation token so a saturated pool fails fast instead of hanging.
+- **The internal SFTP connection pool has no acquire timeout — this is deliberate backpressure.** When all `MaxPoolSize` connections are busy, acquiring blocks until a slot frees or the operation's `CancellationToken` is cancelled. Size `MaxPoolSize` for your peak concurrency and always pass a cancellation token so a saturated pool fails fast instead of hanging.
 
 ## Installation
 
@@ -81,6 +81,6 @@ builder.Services.AddHeadlessBlobs(blobs =>
 
 Registered via `AddHeadlessBlobs(b => b.UseSsh(...))` or `AddNamed("name", i => i.UseSsh(...))`:
 
-- Default (`UseSsh`): registers `SftpClientPool` as unkeyed singleton; registers `IBlobStorage` as unkeyed singleton and `IBlobContainerManager` as unkeyed singleton (`SshBlobContainerManager`).
-- Named (`AddNamed ... UseSsh`): registers `SftpClientPool`, `IBlobStorage`, and `IBlobContainerManager` each as keyed singleton (`name`). Each named store owns its own pool instance bound to its named options.
+- Default (`UseSsh`): registers an internal SFTP connection pool as unkeyed singleton; registers `IBlobStorage` as unkeyed singleton and `IBlobContainerManager` as unkeyed singleton (internal `SshBlobContainerManager`).
+- Named (`AddNamed ... UseSsh`): registers the internal SFTP connection pool, `IBlobStorage`, and `IBlobContainerManager` each as keyed singleton (`name`). Each named store owns its own pool instance bound to its named options.
 - No presigned URL support — `IPresignedUrlBlobStorage` is never registered for SshNet stores.

@@ -5,6 +5,7 @@ using FluentValidation;
 namespace Headless.Imaging;
 
 /// <summary>Options that govern the core imaging pipeline.</summary>
+[PublicAPI]
 public sealed class ImagingOptions
 {
     /// <summary>

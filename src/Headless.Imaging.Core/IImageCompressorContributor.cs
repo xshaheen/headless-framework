@@ -12,6 +12,7 @@ namespace Headless.Imaging;
 /// which causes the pipeline to fall through to the next contributor. The last registered
 /// contributor whose result is not <c>Unsupported</c> determines the final outcome.
 /// </remarks>
+[PublicAPI]
 public interface IImageCompressorContributor
 {
     /// <summary>

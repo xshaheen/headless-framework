@@ -5,8 +5,7 @@ using System.Security.Cryptography;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using Headless.Testing.Tests;
-using Headless.Tus.Options;
-using Headless.Tus.Services;
+using Headless.Tus;
 using Tests.TestSetup;
 
 namespace Tests.Flows;

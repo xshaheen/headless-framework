@@ -21,11 +21,13 @@ public sealed record BlobDownloadResult(
     IReadOnlyDictionary<string, string>? Metadata = null
 ) : IAsyncDisposable, IDisposable
 {
+    /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
         await Stream.DisposeAsync().ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
     public void Dispose()
     {
         Stream.Dispose();

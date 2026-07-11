@@ -48,8 +48,7 @@ internal sealed class TusExpiredUploadsCleanupOptionsValidator : AbstractValidat
 /// then every <see cref="TusExpiredUploadsCleanupOptions.Interval"/>; failures are logged and
 /// the loop continues.
 /// </remarks>
-[PublicAPI]
-public sealed partial class TusExpiredUploadsCleanupService(
+internal sealed partial class TusExpiredUploadsCleanupService(
     ITusExpirationStore store,
     IOptions<TusExpiredUploadsCleanupOptions> options,
     TimeProvider timeProvider,

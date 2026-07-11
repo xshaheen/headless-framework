@@ -19,7 +19,7 @@ namespace Headless.Imaging.ImageSharp;
 /// detection and pass-through, but the ImageSharp resize pipeline does not apply mode-specific
 /// transformations differently for those formats — they are resized the same as other supported types.
 /// </remarks>
-public sealed class ImageSharpImageResizerContributor(ILogger<ImageSharpImageResizerContributor> logger)
+internal sealed class ImageSharpImageResizerContributor(ILogger<ImageSharpImageResizerContributor> logger)
     : IImageResizerContributor
 {
     /// <inheritdoc />

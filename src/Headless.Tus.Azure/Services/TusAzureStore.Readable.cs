@@ -3,7 +3,8 @@
 using Headless.Tus.Models;
 using tusdotnet.Interfaces;
 
-namespace Headless.Tus.Services;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Tus;
 
 public sealed partial class TusAzureStore : ITusReadableStore
 {
