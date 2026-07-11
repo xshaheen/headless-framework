@@ -124,6 +124,60 @@ internal static class RedisCacheEntryFrame
     }
 
     /// <summary>
+    /// Encodes a framed entry as a two-segment <see cref="ReadOnlySequence{T}"/> — the header/section prefix in
+    /// its own buffer, the caller's <paramref name="payload"/> spliced in as the second segment with NO copy
+    /// (#580 zero-concat writes). The frame layout has no value-length field (the value segment is implicitly
+    /// "to the end"), so the wire bytes are identical to the single-buffer <c>Encode</c> overloads'. The caller
+    /// owns the payload buffer and must keep it alive until the sequence is fully consumed — for a SE.Redis
+    /// write command that means until the command's await completes, since the sequence is read when the socket
+    /// write fires. A null value has no payload; encode it through the <see cref="RedisValue"/> overload instead.
+    /// </summary>
+    public static ReadOnlySequence<byte> EncodeSpliced(
+        ReadOnlyMemory<byte> payload,
+        DateTime? logicalExpiresAt,
+        DateTime? physicalExpiresAt,
+        TimeSpan? slidingExpiration,
+        DateTime? eagerRefreshAt = null,
+        string? etag = null,
+        DateTime? lastModifiedAt = null,
+        IReadOnlyCollection<string>? tags = null,
+        DateTime? createdAt = null
+    )
+    {
+        // valueLength: 0 sizes the buffer to exactly the header + optional-sections prefix.
+        var header = _BuildFrame(
+            0,
+            isNull: false,
+            logicalExpiresAt,
+            physicalExpiresAt,
+            slidingExpiration,
+            eagerRefreshAt,
+            etag,
+            lastModifiedAt,
+            tags,
+            createdAt,
+            out _
+        );
+
+        var first = new MemorySegment(header);
+        var last = first.Append(payload);
+
+        return new ReadOnlySequence<byte>(first, 0, last, payload.Length);
+    }
+
+    private sealed class MemorySegment : ReadOnlySequenceSegment<byte>
+    {
+        public MemorySegment(ReadOnlyMemory<byte> memory) => Memory = memory;
+
+        public MemorySegment Append(ReadOnlyMemory<byte> memory)
+        {
+            var next = new MemorySegment(memory) { RunningIndex = RunningIndex + Memory.Length };
+            Next = next;
+            return next;
+        }
+    }
+
+    /// <summary>
     /// Builds the framed buffer sized <c>payloadOffset + valueLength</c> with the full header and every present
     /// optional section written, leaving the value segment (from <paramref name="payloadOffset"/> to the end)
     /// uninitialized for the caller to fill. This is the payload-agnostic core shared by both <c>Encode</c>

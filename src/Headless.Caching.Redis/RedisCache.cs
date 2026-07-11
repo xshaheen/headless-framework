@@ -395,7 +395,19 @@ public sealed class RedisCache(
 
         var now = timeProvider.GetUtcNow();
         var normalizedExpiration = _NormalizeExpiration(expiration);
-        var redisValue = _ToFramedRedisValue(value, normalizedExpiration, now);
+        var expiresAt = _GetExpirationDateTime(normalizedExpiration, now);
+
+        // #580 zero-concat write: the using scope extends past the EVALSHA await because the pooled payload
+        // buffer backs the outgoing value until the command is written to the socket.
+        using var framed = _EncodeFramedWrite(
+            value,
+            isNull: value is null,
+            logicalExpiresAt: expiresAt,
+            physicalExpiresAt: expiresAt,
+            slidingExpiration: null,
+            createdAt: now.UtcDateTime
+        );
+
         var expectedValue = _ToRedisValue(expected);
 
         var expiresMs = _GetExpirationMilliseconds(expiration, now);
@@ -408,7 +420,7 @@ public sealed class RedisCache(
                 new
                 {
                     key = (RedisKey)_GetKey(key),
-                    value = redisValue,
+                    value = framed.Value,
                     expected = expectedValue,
                     expectedIsNull = expected is null ? 1 : 0,
                     expires = expiresArg,
@@ -2510,9 +2522,23 @@ public sealed class RedisCache(
         }
 
         expiresIn = _NormalizeExpiration(expiresIn);
-        var redisValue = _ToFramedRedisValue(value, expiresIn, timeProvider.GetUtcNow());
+        var now = timeProvider.GetUtcNow();
+        var expiresAt = _GetExpirationDateTime(expiresIn, now);
 
-        return await _database.StringSetAsync(key, redisValue, expiresIn, when).ConfigureAwait(false);
+        // #580 zero-concat write: the using scope extends past the SET await because the pooled payload buffer
+        // backs the outgoing value until the command is written to the socket.
+        using var framed = _EncodeFramedWrite(
+            value,
+            isNull: value is null,
+            logicalExpiresAt: expiresAt,
+            physicalExpiresAt: expiresAt,
+            slidingExpiration: null,
+            // Direct upsert path stamps the birth time so a prior tag/clear marker does not invalidate the new
+            // value (Family-2 version-pinning compares CreatedAt against the newest applicable marker).
+            createdAt: now.UtcDateTime
+        );
+
+        return await _database.StringSetAsync(key, framed.Value, expiresIn, when).ConfigureAwait(false);
     }
 
     private RedisValue _ToFramedRedisValue<T>(T? value, TimeSpan? expiresIn, DateTimeOffset now)
@@ -2582,6 +2608,81 @@ public sealed class RedisCache(
             tags,
             createdAt
         );
+    }
+
+    /// <summary>
+    /// Pairs a wire-ready <see cref="RedisValue"/> with the pooled serializer buffer backing its value segment
+    /// (#580 zero-concat writes). SE.Redis reads the value when the socket write fires, so the buffer must stay
+    /// rented until the write command's await completes: writers scope this in a <c>using</c> that extends past
+    /// the await. A null owner means the value is a self-contained <c>byte[]</c> with nothing to return.
+    /// </summary>
+    private readonly struct FramedValueWrite(RedisValue value, PooledByteBufferWriter? payloadOwner) : IDisposable
+    {
+        public RedisValue Value { get; } = value;
+
+        public void Dispose() => payloadOwner?.Dispose();
+    }
+
+    // #580 zero-concat write: same value-segment fast paths as _EncodeFramedValue, but a serialized payload stays
+    // in its pooled buffer and rides the wire as the second ReadOnlySequence segment instead of being concatenated
+    // with the header into a fresh byte[] per write. Single-key writers use this; bulk writes (UpsertAllAsync)
+    // stay on _EncodeFramedValue because their N pooled buffers would all have to outlive one batched await.
+    private FramedValueWrite _EncodeFramedWrite<T>(
+        T? value,
+        bool isNull,
+        DateTime? logicalExpiresAt,
+        DateTime? physicalExpiresAt,
+        TimeSpan? slidingExpiration,
+        DateTime? eagerRefreshAt = null,
+        string? etag = null,
+        DateTime? lastModifiedAt = null,
+        IReadOnlyCollection<string>? tags = null,
+        DateTime? createdAt = null
+    )
+    {
+        if (isNull || value is null or string or byte[])
+        {
+            var framed = RedisCacheEntryFrame.Encode(
+                isNull ? RedisValue.EmptyString : _ToRedisValue(value),
+                isNull,
+                logicalExpiresAt,
+                physicalExpiresAt,
+                slidingExpiration,
+                eagerRefreshAt,
+                etag,
+                lastModifiedAt,
+                tags,
+                createdAt
+            );
+
+            return new FramedValueWrite(framed, payloadOwner: null);
+        }
+
+        var buffer = new PooledByteBufferWriter();
+
+        try
+        {
+            serializer.Serialize(value, buffer);
+
+            var spliced = RedisCacheEntryFrame.EncodeSpliced(
+                buffer.WrittenMemory,
+                logicalExpiresAt,
+                physicalExpiresAt,
+                slidingExpiration,
+                eagerRefreshAt,
+                etag,
+                lastModifiedAt,
+                tags,
+                createdAt
+            );
+
+            return new FramedValueWrite(spliced, buffer);
+        }
+        catch
+        {
+            buffer.Dispose();
+            throw;
+        }
     }
 
     // Single-tier (L2 only): the per-tier readOptions have no meaning here and are ignored.
@@ -2658,7 +2759,9 @@ public sealed class RedisCache(
             return true;
         }
 
-        var redisValue = _EncodeFramedValue(
+        // #580 zero-concat write: the using scope extends past the SET/EVALSHA await because the pooled payload
+        // buffer backs the outgoing value until the command is written to the socket.
+        using var framed = _EncodeFramedWrite(
             entry.Value,
             entry.IsNull,
             entry.LogicalExpiresAt,
@@ -2683,7 +2786,7 @@ public sealed class RedisCache(
         // markers, not a reverse index — so there is no per-tag index to reconcile and no cluster restriction).
         if (!hasExpectedStamp)
         {
-            await _database.StringSetAsync(redisKey, redisValue, expiresIn).ConfigureAwait(false);
+            await _database.StringSetAsync(redisKey, framed.Value, expiresIn).ConfigureAwait(false);
             return true;
         }
 
@@ -2698,7 +2801,7 @@ public sealed class RedisCache(
                 new
                 {
                     key = (RedisKey)redisKey,
-                    value = (RedisValue)redisValue,
+                    value = framed.Value,
                     expectedValue,
                     keyTtlMs,
                     headerLen = RedisCacheEntryFrame.HeaderLength,
