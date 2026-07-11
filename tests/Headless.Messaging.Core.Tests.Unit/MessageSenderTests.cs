@@ -1014,7 +1014,7 @@ public sealed class MessageSenderTests : TestBase
 
         await sender.SendAsync(message);
 
-        await transport.DidNotReceiveWithAnyArgs().SendAsync(default!, default);
+        await transport.DidNotReceiveWithAnyArgs().SendAsync(default!, AbortToken);
         message.Retries.Should().Be(1);
         message.InlineAttempts.Should().Be(0);
         await storage
@@ -1049,11 +1049,11 @@ public sealed class MessageSenderTests : TestBase
 
         result.Succeeded.Should().BeTrue();
         message.InlineAttempts.Should().Be(0);
-        await serializer.DidNotReceiveWithAnyArgs().SerializeToTransportMessageAsync(default!);
-        await transport.DidNotReceiveWithAnyArgs().SendAsync(default!, default);
+        await serializer.DidNotReceiveWithAnyArgs().SerializeToTransportMessageAsync(default!, AbortToken);
+        await transport.DidNotReceiveWithAnyArgs().SendAsync(default!, AbortToken);
         await storage
             .DidNotReceiveWithAnyArgs()
-            .ChangePublishRetryStateAsync(default!, default, default, default, default, default, default);
+            .ChangePublishRetryStateAsync(default!, default, default, default, default, default, AbortToken);
     }
 
     [Fact]
@@ -1087,7 +1087,7 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
             );
-        await storage.DidNotReceiveWithAnyArgs().LeasePublishAsync(default!, default, default);
-        await storage.DidNotReceiveWithAnyArgs().ReservePublishAttemptAsync(default!, default, default);
+        await storage.DidNotReceiveWithAnyArgs().LeasePublishAsync(default!, default, AbortToken);
+        await storage.DidNotReceiveWithAnyArgs().ReservePublishAttemptAsync(default!, default, AbortToken);
     }
 }

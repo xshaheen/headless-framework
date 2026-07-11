@@ -110,14 +110,14 @@ public sealed class ConsumerRegisterTests : TestBase
         var first = Substitute.For<IConsumerClient>();
         var second = Substitute.For<IConsumerClient>();
         first
-            .ShutdownAsync(Arg.Any<TimeSpan>())
+            .ShutdownAsync(Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 firstStarted.TrySetResult();
                 return new ValueTask(release.Task);
             });
         second
-            .ShutdownAsync(Arg.Any<TimeSpan>())
+            .ShutdownAsync(Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 secondStarted.TrySetResult();
@@ -459,7 +459,7 @@ public sealed class ConsumerRegisterTests : TestBase
         var client = Substitute.For<IConsumerClient>();
         TimeSpan? receivedShutdownTimeout = null;
         client
-            .ShutdownAsync(Arg.Any<TimeSpan>())
+            .ShutdownAsync(Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
             .Returns(call =>
             {
                 receivedShutdownTimeout = call.Arg<TimeSpan>();
@@ -488,7 +488,7 @@ public sealed class ConsumerRegisterTests : TestBase
         await pulse.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         receivedShutdownTimeout.Should().Be(TimeSpan.FromSeconds(10));
-        await client.Received(1).ShutdownAsync(TimeSpan.FromSeconds(10));
+        await client.Received(1).ShutdownAsync(Arg.Is(TimeSpan.FromSeconds(10)), Arg.Any<CancellationToken>());
     }
 
     private ServiceProvider _CreateProvider(
