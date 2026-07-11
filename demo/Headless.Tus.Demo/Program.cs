@@ -5,7 +5,6 @@ using System.Text;
 using Azure.Storage.Blobs;
 using Demo.Services;
 using Headless.Tus;
-using Headless.Tus.Services;
 using Microsoft.Extensions.Azure;
 using Microsoft.Net.Http.Headers;
 using tusdotnet;
