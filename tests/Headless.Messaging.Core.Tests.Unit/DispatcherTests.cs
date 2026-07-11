@@ -751,6 +751,56 @@ public sealed class DispatcherTests : TestBase
     }
 
     [Fact]
+    public async Task dispose_should_bound_scheduler_flush_by_remaining_shutdown_budget()
+    {
+        var flushStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFlush = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var timeProvider = new FakeTimeProvider();
+        _storage
+            .ChangePublishStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<object?>(),
+                Arg.Any<DateTime?>(),
+                cancellationToken: Arg.Any<CancellationToken>()
+            )
+            .Returns(new ValueTask<bool>(true));
+        _storage
+            .ChangePublishStateToDelayedAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                flushStarted.TrySetResult();
+                return new ValueTask(releaseFlush.Task);
+            });
+        var dispatcher = new Dispatcher(
+            _logger,
+            new TestThreadSafeMessageSender(),
+            Options.Create(new MessagingOptions { EnablePublishParallelSend = false }),
+            _executor,
+            _storage,
+            timeProvider,
+            _scopeFactory
+        );
+        using var cts = new CancellationTokenSource();
+        await dispatcher.StartAsync(cts.Token);
+        await dispatcher.EnqueueToScheduler(
+            _CreateTestMessage(_StorageGuid(1)),
+            timeProvider.GetUtcNow().UtcDateTime.AddSeconds(50),
+            cancellationToken: AbortToken
+        );
+
+        var dispose = dispatcher.DisposeAsync(TimeSpan.FromSeconds(2)).AsTask();
+        await flushStarted.Task.WaitAsync(AbortToken);
+        dispose.IsCompleted.Should().BeFalse();
+
+        timeProvider.Advance(TimeSpan.FromSeconds(2));
+        await dispose.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+
+        releaseFlush.TrySetResult();
+        await dispatcher.DisposeAsync(TimeSpan.FromSeconds(2));
+    }
+
+    [Fact]
     public async Task dispose_should_wait_for_inflight_processing_loop()
     {
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

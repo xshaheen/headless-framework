@@ -243,15 +243,18 @@ internal sealed class ConsumerRegister(
     {
         var shutdownTimeout = waitTimeout ?? _RestartShutdownTimeout;
         var shutdownStarted = _timeProvider.GetTimestamp();
+        var handles = _groupHandles.Values.ToArray();
 
-        // Cancel all group CTSes
-        foreach (var handle in _groupHandles.Values)
+        // Signal every group concurrently so one slow cancellation callback cannot delay the others.
+        if (handles.Length > 0)
         {
-            await handle.Cts.CancelAsync().ConfigureAwait(false);
+            var cancellationTask = Task.WhenAll(handles.Select(handle => handle.Cts.CancelAsync()));
+            await _WaitWithinShutdownBudgetAsync(cancellationTask, shutdownStarted, shutdownTimeout)
+                .ConfigureAwait(false);
         }
 
         // Wait for all consumer tasks to complete
-        var allTasks = _groupHandles.Values.SelectMany(h => h.ConsumerTasks).ToArray();
+        var allTasks = handles.SelectMany(handle => handle.ConsumerTasks).ToArray();
         if (allTasks.Length > 0)
         {
             try
@@ -266,7 +269,6 @@ internal sealed class ConsumerRegister(
 
         // Dispose all handles; only remove circuit state on final teardown,
         // not on transport restarts where state must survive broker reconnects.
-        var handles = _groupHandles.Values.ToArray();
         if (handles.Length > 0)
         {
             var remaining = _GetRemainingTimeout(shutdownStarted, shutdownTimeout);
@@ -274,6 +276,19 @@ internal sealed class ConsumerRegister(
             await _WaitWithinShutdownBudgetAsync(disposalTask, shutdownStarted, shutdownTimeout).ConfigureAwait(false);
         }
 
+        _groupHandles.Clear();
+
+        var finalizationTask = _FinalizePulseAsync(handles, removeCircuitState, _stoppingCtsRegistration, _stoppingCts);
+        await _WaitWithinShutdownBudgetAsync(finalizationTask, shutdownStarted, shutdownTimeout).ConfigureAwait(false);
+    }
+
+    private async Task _FinalizePulseAsync(
+        IReadOnlyCollection<GroupHandle> handles,
+        bool removeCircuitState,
+        CancellationTokenRegistration stoppingRegistration,
+        CancellationTokenSource stoppingCts
+    )
+    {
         if (removeCircuitState && _circuitBreakerStateManager is not null)
         {
             await Task.WhenAll(
@@ -282,13 +297,10 @@ internal sealed class ConsumerRegister(
                 .ConfigureAwait(false);
         }
 
-        _groupHandles.Clear();
-
-        // Dispose the token registration before disposing the CTS to prevent
-        // accumulated Dispose callbacks across successive ReStartAsync calls.
-        // CTS.Dispose alone does not deregister Token.Register callbacks.
-        await _stoppingCtsRegistration.DisposeAsync().ConfigureAwait(false);
-        _stoppingCts.Dispose();
+        // Dispose the token registration before disposing the CTS to prevent accumulated callbacks
+        // across successive restarts. Snapshots keep eventual cleanup isolated from replacement state.
+        await stoppingRegistration.DisposeAsync().ConfigureAwait(false);
+        stoppingCts.Dispose();
     }
 
     private TimeSpan _GetRemainingTimeout(long started, TimeSpan timeout)
@@ -309,7 +321,7 @@ internal sealed class ConsumerRegister(
         var remaining = _GetRemainingTimeout(started, timeout);
         if (remaining == TimeSpan.Zero)
         {
-            _ObserveEventually(task);
+            task.Forget();
             return;
         }
 
@@ -319,20 +331,10 @@ internal sealed class ConsumerRegister(
         }
         catch (TimeoutException)
         {
-            _ObserveEventually(task);
+            task.Forget();
         }
     }
 #pragma warning restore VSTHRD003
-
-    private static void _ObserveEventually(Task task)
-    {
-        _ = task.ContinueWith(
-            static completed => _ = completed.Exception,
-            CancellationToken.None,
-            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
-            TaskScheduler.Default
-        );
-    }
 
     public async ValueTask ExecuteAsync()
     {
