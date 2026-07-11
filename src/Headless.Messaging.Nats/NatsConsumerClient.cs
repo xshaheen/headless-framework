@@ -20,7 +20,9 @@ internal sealed class NatsConsumerClient(
     IServiceProvider serviceProvider,
     Func<string, ConsumerConfig, CancellationToken, Task<INatsJSConsumer>>? consumerFactory = null,
     IntentType intentType = IntentType.Bus,
-    TimeProvider? timeProvider = null
+    TimeProvider? timeProvider = null,
+    Func<NatsConnection, Task>? connect = null,
+    Func<NatsConnection, ValueTask>? disposeConnection = null
 ) : IConsumerClient
 {
     private readonly Lock _receiveLock = new();
@@ -40,7 +42,10 @@ internal sealed class NatsConsumerClient(
     private readonly ConsumerPauseGate _pauseGate = new();
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
+#pragma warning disable CA2213 // Disposal is deferred until the tokenless SDK connection attempt settles.
     private NatsConnection? _connection;
+#pragma warning restore CA2213
+    private Task? _connectTask;
     private NatsJSContext? _jsContext;
     private ReceiveTokenState _receiveTokenState = new();
     private IEnumerable<string>? _subscribedMessageNames;
@@ -61,9 +66,13 @@ internal sealed class NatsConsumerClient(
             MaxReconnectRetry = 0,
         };
 
-        _connection = new NatsConnection(opts);
-        await _connection.ConnectAsync().AsTask().WaitAsync(cancellationToken).ConfigureAwait(false);
-        _jsContext = new NatsJSContext(_connection);
+        var connection = new NatsConnection(opts);
+        _connection = connection;
+        var connectTask = connect?.Invoke(connection) ?? connection.ConnectAsync().AsTask();
+        _connectTask = connectTask;
+
+        await connectTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+        _jsContext = new NatsJSContext(connection);
     }
 
     public async ValueTask<ICollection<string>> FetchMessageNamesAsync(
@@ -677,10 +686,59 @@ internal sealed class NatsConsumerClient(
         receiveTokenStateToDispose?.Dispose();
         _semaphore?.Dispose();
 
-        if (_connection is not null)
+        if (_connection is { } connection)
         {
-            await _connection.DisposeAsync().ConfigureAwait(false);
+            // A tokenless NATS connection attempt cannot be canceled. Do not make caller cancellation
+            // wait for it, but retain ownership until it settles so disposal cannot race socket setup.
+            if (_connectTask is null || _connectTask.IsCompleted)
+            {
+                await _DisposeConnectionAsync(connection).ConfigureAwait(false);
+            }
+            else
+            {
+                _DisposeConnectionAfterConnectAsync(connection, _connectTask).Forget();
+            }
         }
+    }
+
+    private async Task _DisposeConnectionAfterConnectAsync(NatsConnection connection, Task? connectTask)
+    {
+        if (connectTask is not null)
+        {
+            try
+            {
+#pragma warning disable VSTHRD003 // This client owns and drains the SDK task started by ConnectAsync.
+                await connectTask.ConfigureAwait(false);
+#pragma warning restore VSTHRD003
+            }
+#pragma warning disable ERP022 // The original ConnectAsync caller observes the failure; cleanup must continue.
+            catch
+            {
+                // The original ConnectAsync caller observes the connection failure or cancellation.
+                // Disposal still owns the connection and must run after the attempt reaches a terminal state.
+            }
+#pragma warning restore ERP022
+        }
+
+        try
+        {
+            await _DisposeConnectionAsync(connection).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            OnLogCallback?.Invoke(
+                new LogMessageEventArgs
+                {
+                    LogType = MqLogType.ExceptionReceived,
+                    Reason = $"Failed to dispose NATS connection after connection attempt settled: {ex}",
+                }
+            );
+        }
+    }
+
+    private ValueTask _DisposeConnectionAsync(NatsConnection connection)
+    {
+        return disposeConnection?.Invoke(connection) ?? connection.DisposeAsync();
     }
 
     private ReceiveTokenLease _AcquireReceiveLease(CancellationToken cancellationToken)

@@ -252,6 +252,43 @@ public sealed class NatsConsumerClientTests : TestBase
         await act.Should().NotThrowAsync();
     }
 
+    [Fact]
+    public async Task should_defer_connection_disposal_until_canceled_connect_attempt_settles()
+    {
+        var connectStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var connectCompletion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var connectionDisposed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var client = new NatsConsumerClient(
+            "test-group",
+            1,
+            _options,
+            _serviceProvider,
+            connect: _ =>
+            {
+                connectStarted.SetResult();
+                return connectCompletion.Task;
+            },
+            disposeConnection: _ =>
+            {
+                connectionDisposed.SetResult();
+                return ValueTask.CompletedTask;
+            }
+        );
+        using var cts = new CancellationTokenSource();
+
+        var connectTask = client.ConnectAsync(cts.Token);
+        await connectStarted.Task.WaitAsync(AbortToken);
+        await cts.CancelAsync();
+
+        var act = async () => await connectTask;
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        await client.DisposeAsync();
+        connectionDisposed.Task.IsCompleted.Should().BeFalse();
+
+        connectCompletion.SetResult();
+        await connectionDisposed.Task.WaitAsync(AbortToken);
+    }
+
     // Pause/Resume tests
 
     [Fact]
