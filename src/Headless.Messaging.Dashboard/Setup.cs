@@ -64,7 +64,7 @@ public static class SetupMessagingDashboard
                 dashboardApp.UseRouting();
                 if (config.CorsPolicyBuilder is not null)
                 {
-                    dashboardApp.UseCors("Messaging_Dashboard_CORS");
+                    dashboardApp.UseCors("HeadlessMessagingDashboardCORS");
                 }
 
                 // Add authentication + authorization middleware

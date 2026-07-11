@@ -44,7 +44,7 @@ internal sealed class DashboardOptionsExtension(Action<MessagingDashboardOptions
         {
             if (Builder.CorsPolicyBuilder is not null)
             {
-                options.AddPolicy("Messaging_Dashboard_CORS", Builder.CorsPolicyBuilder);
+                options.AddPolicy("HeadlessMessagingDashboardCORS", Builder.CorsPolicyBuilder);
             }
         });
 

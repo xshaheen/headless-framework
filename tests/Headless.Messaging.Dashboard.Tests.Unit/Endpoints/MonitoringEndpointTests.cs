@@ -200,11 +200,11 @@ public sealed class MonitoringEndpointTests : TestBase
 
         appBuilder.Services.AddRouting();
         appBuilder.Services.AddAuthorization();
-        appBuilder.Services.AddCors(o => o.AddPolicy("Messaging_Dashboard_CORS", p => p.AllowAnyOrigin()));
+        appBuilder.Services.AddCors(o => o.AddPolicy("HeadlessMessagingDashboardCORS", p => p.AllowAnyOrigin()));
 
         var app = appBuilder.Build();
         app.UseRouting();
-        app.UseCors("Messaging_Dashboard_CORS");
+        app.UseCors("HeadlessMessagingDashboardCORS");
         app.MapMessagingDashboardEndpoints(config);
 
         return app;
