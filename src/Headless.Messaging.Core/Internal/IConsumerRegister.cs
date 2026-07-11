@@ -828,6 +828,7 @@ internal sealed class ConsumerRegister(
                                 _options.RetryPolicy.OnExhaustedTimeout,
                                 storageId: Guid.Empty,
                                 _logger,
+                                _timeProvider,
                                 hostShutdownToken
                             )
                             .ConfigureAwait(false);

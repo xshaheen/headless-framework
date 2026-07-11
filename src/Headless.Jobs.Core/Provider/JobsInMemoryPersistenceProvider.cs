@@ -76,6 +76,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
                     if (_timeJobs.TryUpdate(timeJob.Id, updatedTicker, existingTicker))
                     {
+                        _ClaimIdleDescendants(timeJob.Id, now);
                         timeJob.UpdatedAt = now;
                         timeJob.OwnerId = _ownerId;
                         timeJob.LockedUntil = now.Add(_leaseDuration);
@@ -84,6 +85,35 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                         yield return timeJob;
                     }
                 }
+            }
+        }
+    }
+
+    private void _ClaimIdleDescendants(Guid rootId, DateTime now)
+    {
+        foreach (var childId in _GetChildrenIds(rootId))
+        {
+            _ClaimIdleJob(childId, now);
+
+            foreach (var grandChildId in _GetChildrenIds(childId))
+            {
+                _ClaimIdleJob(grandChildId, now);
+            }
+        }
+    }
+
+    private void _ClaimIdleJob(Guid jobId, DateTime now)
+    {
+        while (_timeJobs.TryGetValue(jobId, out var existing) && existing.Status == JobStatus.Idle)
+        {
+            var claimed = _CloneTicker(existing);
+            claimed.OwnerId = _ownerId;
+            claimed.LockedUntil = now.Add(_leaseDuration);
+            claimed.UpdatedAt = now;
+
+            if (_timeJobs.TryUpdate(jobId, claimed, existing))
+            {
+                return;
             }
         }
     }
@@ -101,7 +131,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         var timeJobsToUpdate = _timeJobs
             .Values.Where(x =>
                 x.ExecutionTime != null
-                && x.Status is JobStatus.Idle or JobStatus.Queued
+                && _CanFallbackClaim(x.Status, x.LockedUntil, now)
                 && x.ExecutionTime <= fallbackThreshold
             ) // Only tasks older than 1 second
             .ToArray();
@@ -114,18 +144,23 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             if (_timeJobs.TryGetValue(job.Id, out var existingTicker))
             {
                 // Check if we can update (matching EF's Where condition)
-                if (existingTicker.UpdatedAt <= job.UpdatedAt)
+                if (
+                    existingTicker.UpdatedAt <= job.UpdatedAt
+                    && _CanFallbackClaim(existingTicker.Status, existingTicker.LockedUntil, now)
+                )
                 {
                     var updatedTicker = _CloneTicker(existingTicker);
                     updatedTicker.OwnerId = _ownerId;
                     updatedTicker.LockedUntil = now.Add(_leaseDuration);
                     updatedTicker.UpdatedAt = now;
-                    updatedTicker.Status = JobStatus.InProgress;
+                    updatedTicker.Status = JobStatus.Queued;
 
                     if (_timeJobs.TryUpdate(job.Id, updatedTicker, existingTicker))
                     {
+                        _ClaimIdleDescendants(job.Id, now);
+
                         // Only build the full hierarchy for successfully acquired jobs
-                        yield return _ForQueueTimeJobs(job);
+                        yield return _ForQueueTimeJobs(updatedTicker);
                     }
                 }
             }
@@ -249,11 +284,13 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         {
             if (_timeJobs.TryGetValue(id, out var job))
             {
-                // #316/U5 claim→start ownership recheck (mirror EF WhereOwnedBy): only stamp rows still owned by
-                // this node and non-terminal, so a row re-claimed by another owner is not clobbered.
+                // #316/U5 claim→start ownership recheck: reject another owner and require Queued for the
+                // InProgress transition so a duplicate same-owner scheduler wrapper cannot revalidate a running row.
                 var ownedNonTerminal = _IsOwnedNonTerminal(job.OwnerId, job.Status);
+                var canTransitionToInProgress =
+                    functionContext.Status != JobStatus.InProgress || job.Status == JobStatus.Queued;
 
-                if (!ownedNonTerminal)
+                if (!ownedNonTerminal || !canTransitionToInProgress)
                 {
                     continue;
                 }
@@ -993,7 +1030,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         var fallbackThreshold = now.AddSeconds(-1); // Fallback picks up tasks older than main 1-second window
 
         var occurrencesToUpdate = _cronOccurrences
-            .Values.Where(x => x.Status is JobStatus.Idle or JobStatus.Queued && x.ExecutionTime <= fallbackThreshold) // Only tasks older than 1 second
+            .Values.Where(x => _CanFallbackClaim(x.Status, x.LockedUntil, now) && x.ExecutionTime <= fallbackThreshold) // Only tasks older than 1 second
             .ToArray();
 
         foreach (var occurrence in occurrencesToUpdate)
@@ -1002,13 +1039,16 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
             if (_cronOccurrences.TryGetValue(occurrence.Id, out var existingOccurrence))
             {
-                if (existingOccurrence.UpdatedAt <= occurrence.UpdatedAt)
+                if (
+                    existingOccurrence.UpdatedAt <= occurrence.UpdatedAt
+                    && _CanFallbackClaim(existingOccurrence.Status, existingOccurrence.LockedUntil, now)
+                )
                 {
                     var updatedOccurrence = _CloneCronOccurrence(existingOccurrence);
                     updatedOccurrence.OwnerId = _ownerId;
                     updatedOccurrence.LockedUntil = now.Add(_leaseDuration);
                     updatedOccurrence.UpdatedAt = now;
-                    updatedOccurrence.Status = JobStatus.InProgress;
+                    updatedOccurrence.Status = JobStatus.Queued;
 
                     if (_cronOccurrences.TryUpdate(occurrence.Id, updatedOccurrence, existingOccurrence))
                     {
@@ -1203,10 +1243,12 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         {
             if (_cronOccurrences.TryGetValue(id, out var occurrence))
             {
-                // #316/U5 — cron mirror of the claim→start ownership recheck.
+                // #316/U5 — cron mirror of the strict claim→start ownership recheck.
                 var ownedNonTerminal = _IsOwnedNonTerminal(occurrence.OwnerId, occurrence.Status);
+                var canTransitionToInProgress =
+                    functionContext.Status != JobStatus.InProgress || occurrence.Status == JobStatus.Queued;
 
-                if (!ownedNonTerminal)
+                if (!ownedNonTerminal || !canTransitionToInProgress)
                 {
                     continue;
                 }
@@ -1496,11 +1538,15 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         {
             Id = job.Id,
             Function = job.Function,
+            Status = job.Status,
             Retries = job.Retries,
+            RetryCount = job.RetryCount,
             RetryIntervals = job.RetryIntervals,
             UpdatedAt = job.UpdatedAt,
             ParentId = job.ParentId,
             ExecutionTime = job.ExecutionTime,
+            OwnerId = job.OwnerId,
+            LockedUntil = job.LockedUntil,
             OnNodeDeath = job.OnNodeDeath,
             Children = [],
         };
@@ -1528,7 +1574,9 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                     Id = ch.Id,
                     Function = ch.Function,
                     Retries = ch.Retries,
+                    RetryCount = ch.RetryCount,
                     RetryIntervals = ch.RetryIntervals,
+                    ParentId = ch.ParentId,
                     RunCondition = ch.RunCondition,
                     OnNodeDeath = ch.OnNodeDeath,
                     Children = [],
@@ -1552,7 +1600,9 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                                 Id = gch.Id,
                                 Function = gch.Function,
                                 Retries = gch.Retries,
+                                RetryCount = gch.RetryCount,
                                 RetryIntervals = gch.RetryIntervals,
+                                ParentId = gch.ParentId,
                                 RunCondition = gch.RunCondition,
                                 OnNodeDeath = gch.OnNodeDeath,
                             }
@@ -1576,6 +1626,9 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         var children = _childrenIndex.GetOrAdd(parentId, static _ => new ConcurrentDictionary<Guid, byte>());
         children.TryAdd(childId, 0);
     }
+
+    private static bool _CanFallbackClaim(JobStatus status, DateTime? lockedUntil, DateTime now) =>
+        status == JobStatus.Idle || (status == JobStatus.Queued && (lockedUntil == null || lockedUntil <= now));
 
     private void _RemoveChildIndex(Guid parentId, Guid childId)
     {

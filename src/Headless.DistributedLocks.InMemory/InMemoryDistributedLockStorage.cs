@@ -88,7 +88,7 @@ public sealed class InMemoryDistributedLockStorage(TimeProvider timeProvider) : 
     /// <param name="expectedId">The lease ID the caller currently holds. Must not be <see langword="null"/> or empty.</param>
     /// <param name="newId">The replacement lease ID. Must not be <see langword="null"/> or empty.</param>
     /// <param name="newTtl">
-    /// Optional new TTL. When <see langword="null"/> the replaced entry has no expiry.
+    /// Optional new TTL. When <see langword="null"/> the existing expiration is preserved.
     /// </param>
     /// <param name="cancellationToken">Token to observe for cancellation before the operation.</param>
     /// <returns>
@@ -129,7 +129,8 @@ public sealed class InMemoryDistributedLockStorage(TimeProvider timeProvider) : 
                 return ValueTask.FromResult(false);
             }
 
-            state.Entry = new LockEntry(newId, _GetExpiration(newTtl));
+            var expiration = newTtl.HasValue ? _GetExpiration(newTtl) : existing.Expiration;
+            state.Entry = new LockEntry(newId, expiration);
 
             return ValueTask.FromResult(true);
         }

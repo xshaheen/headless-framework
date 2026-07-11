@@ -61,6 +61,7 @@ internal sealed class SubscribeExecutor(
     private readonly string? _hostName = HostIdentity.GetInstanceHostname();
     private readonly MessagingOptions _options = options.Value;
     private readonly RetryPolicyOptions _retryPolicy = options.Value.RetryPolicy;
+    private readonly MessagingRetryPipeline _retryPipeline = new(options.Value.RetryPolicy, timeProvider, logger);
 
     public async Task<OperateResult> ExecuteAsync(
         MediumMessage message,
@@ -103,7 +104,13 @@ internal sealed class SubscribeExecutor(
                     cancellationToken
                 );
 
-                await _SetFailedState(message, exception, dispatchServices, cancellationToken: cancellationToken)
+                await _SetFailedState(
+                        message,
+                        exception,
+                        dispatchServices,
+                        decision: MessagingRetryDecision.Stop,
+                        cancellationToken: cancellationToken
+                    )
                     .ConfigureAwait(false);
                 return OperateResult.Failed(exception);
             }
@@ -112,21 +119,22 @@ internal sealed class SubscribeExecutor(
         //record instance id
         message.Origin.Headers[Headers.ExecutionInstanceId] = _hostName;
 
-        return await InlineRetryLoop
+        return await _retryPipeline
             .ExecuteAsync(
-                (inlineRetries, ct) =>
-                    _ExecuteWithoutRetryAsync(message, descriptor, dispatchServices, inlineRetries, ct),
-                _retryPolicy,
-                timeProvider,
+                (inlineRetries, ct) => _ExecuteWithoutRetryAsync(message, descriptor, inlineRetries, ct),
+                (inlineRetries, exception, delay, strategyFailed, ct) =>
+                    _HandleRetryAsync(message, exception, dispatchServices, inlineRetries, delay, strategyFailed, ct),
+                (inlineRetries, exception, ct) =>
+                    _HandleNonRetryableAsync(message, exception, dispatchServices, inlineRetries, ct),
+                message.StorageId,
                 cancellationToken
             )
             .ConfigureAwait(false);
     }
 
-    private async Task<(RetryDecision Decision, OperateResult Result)> _ExecuteWithoutRetryAsync(
+    private async Task<MessagingRetryAttempt> _ExecuteWithoutRetryAsync(
         MediumMessage message,
         ConsumerExecutorDescriptor descriptor,
-        IServiceProvider dispatchServices,
         int inlineRetries,
         CancellationToken cancellationToken
     )
@@ -142,14 +150,36 @@ internal sealed class SubscribeExecutor(
         // ago and re-leasing only inflates the rolling-restart retry-gap upper bound by the queue
         // delay. Fresh transport dispatches (LockedUntil null or expired) still take the lease.
         var now = timeProvider.GetUtcNow().UtcDateTime;
-        if (message.LockedUntil is not { } lockedUntil || lockedUntil <= now)
+        var needsLease = message.LockedUntil is not { } lockedUntil || lockedUntil <= now;
+
+        inlineRetries = message.InlineAttempts;
+        if (RetryHelper.DetectCrashRecoveredReservation(inlineRetries, _retryPolicy) is { } recoveryAttempt)
         {
-            var leased = await _LeaseAsync(message, cancellationToken).ConfigureAwait(false);
-            if (!leased)
+            // The recovery transition still writes CAS-guarded state, which requires an active
+            // lease — take a plain lease (no fresh reservation; the crashed reservation is spent).
+            if (needsLease && !await _LeaseAsync(message, cancellationToken).ConfigureAwait(false))
             {
                 _ReleaseHalfOpenProbe(message);
-                return (RetryDecision.Stop, OperateResult.Success);
+                return MessagingRetryAttempt.Completed(OperateResult.Success);
             }
+
+            return recoveryAttempt;
+        }
+
+        if (needsLease)
+        {
+            // Fresh-dispatch fast path: acquire the lease AND durably reserve the first attempt in
+            // one statement instead of two sequential writes (lease + reserve) on the same row.
+            if (!await _LeaseAndReserveAttemptAsync(message, cancellationToken).ConfigureAwait(false))
+            {
+                _ReleaseHalfOpenProbe(message);
+                return MessagingRetryAttempt.Completed(OperateResult.Success);
+            }
+        }
+        else if (!await _ReserveAttemptAsync(message, cancellationToken).ConfigureAwait(false))
+        {
+            _ReleaseHalfOpenProbe(message);
+            return MessagingRetryAttempt.Completed(OperateResult.Success);
         }
 
         try
@@ -177,7 +207,7 @@ internal sealed class SubscribeExecutor(
                 );
             }
 
-            return (RetryDecision.Stop, OperateResult.Success);
+            return MessagingRetryAttempt.Completed(OperateResult.Success);
         }
         catch (Exception ex)
         {
@@ -188,11 +218,7 @@ internal sealed class SubscribeExecutor(
                 message.Origin.GetExecutionInstanceId()
             );
 
-            return (
-                await _SetFailedState(message, ex, dispatchServices, inlineRetries, cancellationToken)
-                    .ConfigureAwait(false),
-                OperateResult.Failed(ex)
-            );
+            return MessagingRetryAttempt.Retryable(OperateResult.Failed(ex));
         }
     }
 
@@ -208,7 +234,15 @@ internal sealed class SubscribeExecutor(
         // surface the asymmetry for operators. Use CancellationToken.None so the must-complete
         // success-write semantics align with the publish-path's MessageSender._SetSuccessfulState.
         var updated = await dataStorage
-            .ChangeReceiveStateAsync(message, StatusName.Succeeded, cancellationToken: CancellationToken.None)
+            .ChangeReceiveRetryStateAsync(
+                message,
+                StatusName.Succeeded,
+                nextRetryAt: null,
+                lockedUntil: null,
+                originalRetries: message.Retries,
+                originalInlineAttempts: message.InlineAttempts,
+                cancellationToken: CancellationToken.None
+            )
             .ConfigureAwait(false);
 
         if (!updated)
@@ -223,11 +257,60 @@ internal sealed class SubscribeExecutor(
         }
     }
 
-    private async Task<RetryDecision> _SetFailedState(
+    private async Task<bool> _HandleRetryAsync(
+        MediumMessage message,
+        Exception exception,
+        IServiceProvider dispatchServices,
+        int _,
+        TimeSpan delay,
+        bool strategyFailed,
+        CancellationToken cancellationToken
+    )
+    {
+        var inlineRetries = Math.Max(0, message.InlineAttempts - 1);
+        var decision =
+            strategyFailed ? MessagingRetryDecision.Exhausted
+            : !_retryPolicy.HasMoreInlineAttempts(inlineRetries) && message.Retries >= _retryPolicy.MaxPersistedRetries
+                ? MessagingRetryDecision.Exhausted
+            : MessagingRetryDecision.Continue(delay);
+        var persisted = await _SetFailedState(
+                message,
+                exception,
+                dispatchServices,
+                inlineRetries,
+                decision,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+        return persisted.Outcome == MessagingRetryDecision.Kind.Continue;
+    }
+
+    private async Task _HandleNonRetryableAsync(
+        MediumMessage message,
+        Exception exception,
+        IServiceProvider dispatchServices,
+        int _,
+        CancellationToken cancellationToken
+    )
+    {
+        var inlineRetries = Math.Max(0, message.InlineAttempts - 1);
+        await _SetFailedState(
+                message,
+                exception,
+                dispatchServices,
+                inlineRetries,
+                MessagingRetryDecision.Stop,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    private async Task<MessagingRetryDecision> _SetFailedState(
         MediumMessage message,
         Exception ex,
         IServiceProvider dispatchServices,
         int inlineRetries = 0,
+        MessagingRetryDecision decision = default,
         CancellationToken cancellationToken = default
     )
     {
@@ -241,10 +324,11 @@ internal sealed class SubscribeExecutor(
         {
             logger.StoredMessageExecutionCanceled(message.StorageId);
             _ReleaseHalfOpenProbe(message);
-            return RetryDecision.Stop;
+            return MessagingRetryDecision.Stop;
         }
 
-        var decision = _UpdateMessageForRetry(message, ex, inlineRetries);
+        _LogRetryDecision(message, ex, decision);
+        var originalInlineAttempts = message.InlineAttempts;
 
         message.Origin.AddOrUpdateException(ex);
         message.ExceptionInfo = ex.ExpandMessage();
@@ -267,20 +351,23 @@ internal sealed class SubscribeExecutor(
         // Persist transition: inline budget consumed AND decision Continue means the call site
         // owns the Retries++ . The helper is pure with respect to MediumMessage; this is the only
         // place persisted-pickup count advances.
-        if (decision.Outcome == RetryDecision.Kind.Continue && !state.IsInlineRetryInFlight)
+        if (decision.Outcome == MessagingRetryDecision.Kind.Continue && !state.IsInlineRetryInFlight)
         {
             var originalRetries = message.Retries;
             message.Retries++;
-            return await _PersistFailedStateAsync(
+            message.InlineAttempts = 0;
+            await _PersistFailedStateAsync(
                     message,
                     ex,
                     dispatchServices,
                     decision,
                     state,
                     originalRetries,
+                    originalInlineAttempts,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
+            return MessagingRetryDecision.Stop;
         }
 
         // #7 — enforce the storage CAS predicate on every state-write site (including inline-in-flight
@@ -294,18 +381,20 @@ internal sealed class SubscribeExecutor(
                 decision,
                 state,
                 originalRetries: message.Retries,
+                originalInlineAttempts,
                 cancellationToken
             )
             .ConfigureAwait(false);
     }
 
-    private async Task<RetryDecision> _PersistFailedStateAsync(
+    private async Task<MessagingRetryDecision> _PersistFailedStateAsync(
         MediumMessage message,
         Exception ex,
         IServiceProvider dispatchServices,
-        RetryDecision decision,
+        MessagingRetryDecision decision,
         RetryNextState state,
-        int? originalRetries,
+        int originalRetries,
+        int originalInlineAttempts,
         CancellationToken cancellationToken
     )
     {
@@ -326,22 +415,23 @@ internal sealed class SubscribeExecutor(
         //
         // #14 — Preserve the active pickup lease on inline-in-flight transitions. Without an
         // explicit `lockedUntil`, the storage default of NULL would clear the row's lease mid-burst,
-        // making the row eligible for pickup by the retry processor while the inline-retry loop is
+        // making the row eligible for pickup by the retry processor while the inline retry burst is
         // still mid-sleep. Persisted-retry transitions DO clear the lease (lockedUntil: null) so the
         // row can be re-picked.
         var lockedUntil = state.IsInlineRetryInFlight ? message.LockedUntil : null;
         var affected = await dataStorage
-            .ChangeReceiveStateAsync(
+            .ChangeReceiveRetryStateAsync(
                 message,
                 state.NextStatus,
-                nextRetryAt: state.NextRetryAt,
-                lockedUntil: lockedUntil,
-                originalRetries: originalRetries,
-                cancellationToken: CancellationToken.None
+                state.NextRetryAt,
+                lockedUntil,
+                originalRetries,
+                originalInlineAttempts,
+                CancellationToken.None
             )
             .ConfigureAwait(false);
 
-        if (affected && decision.Outcome == RetryDecision.Kind.Exhausted)
+        if (affected && decision.Outcome == MessagingRetryDecision.Kind.Exhausted)
         {
             // #6 — shared OnExhausted body lives in RetryHelper; only MessageType varies per path.
             await RetryHelper
@@ -352,6 +442,7 @@ internal sealed class SubscribeExecutor(
                     dispatchServices,
                     MessageType.Subscribe,
                     logger,
+                    timeProvider,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -362,13 +453,13 @@ internal sealed class SubscribeExecutor(
             // OnExhausted is skipped here; the log line is only emitted when the decision would
             // otherwise have fired the callback (Stop redeliveries never fire OnExhausted regardless,
             // so suppressing the log avoids noise for non-callback paths).
-            if (decision.Outcome == RetryDecision.Kind.Exhausted)
+            if (decision.Outcome == MessagingRetryDecision.Kind.Exhausted)
             {
                 logger.SkippingOnExhaustedAlreadyTerminal(message.StorageId);
             }
 
             _ReleaseHalfOpenProbe(message);
-            return RetryDecision.Stop;
+            return MessagingRetryDecision.Stop;
         }
 
         // Report the original (inner) exception to the circuit breaker so transient-classification
@@ -405,29 +496,51 @@ internal sealed class SubscribeExecutor(
         return await dataStorage.LeaseReceiveAsync(message, lockedUntil, cancellationToken).ConfigureAwait(false);
     }
 
-    private RetryDecision _UpdateMessageForRetry(MediumMessage message, Exception ex, int inlineRetries)
+    private async Task<bool> _LeaseAndReserveAttemptAsync(MediumMessage message, CancellationToken cancellationToken)
     {
-        var decision = RetryHelper.RecordAttemptAndComputeDecision(
-            message,
-            ex,
-            _retryPolicy,
-            inlineRetries,
-            logger: logger
-        );
+        var lockedUntil = timeProvider.GetUtcNow().UtcDateTime.Add(_retryPolicy.DispatchTimeout);
+        var originalInlineAttempts = message.InlineAttempts;
+        message.InlineAttempts++;
+        var reserved = await dataStorage
+            .LeaseReceiveAndReserveAttemptAsync(message, lockedUntil, originalInlineAttempts, cancellationToken)
+            .ConfigureAwait(false);
+        if (!reserved)
+        {
+            message.InlineAttempts = originalInlineAttempts;
+        }
+
+        return reserved;
+    }
+
+    private async Task<bool> _ReserveAttemptAsync(MediumMessage message, CancellationToken cancellationToken)
+    {
+        var originalInlineAttempts = message.InlineAttempts;
+        message.InlineAttempts++;
+        var reserved = await dataStorage
+            .ReserveReceiveAttemptAsync(message, originalInlineAttempts, cancellationToken)
+            .ConfigureAwait(false);
+        if (!reserved)
+        {
+            message.InlineAttempts = originalInlineAttempts;
+        }
+
+        return reserved;
+    }
+
+    private void _LogRetryDecision(MediumMessage message, Exception ex, MessagingRetryDecision decision)
+    {
         switch (decision.Outcome)
         {
-            case RetryDecision.Kind.Stop:
+            case MessagingRetryDecision.Kind.Stop:
                 logger.StoredMessageNonRetryableFailure(message.StorageId, ex.GetType().Name);
                 break;
-            case RetryDecision.Kind.Exhausted:
+            case MessagingRetryDecision.Kind.Exhausted:
                 logger.ConsumerStoredMessageAfterThreshold(message.StorageId, _retryPolicy.MaxPersistedRetries);
                 break;
-            case RetryDecision.Kind.Continue:
+            case MessagingRetryDecision.Kind.Continue:
                 logger.ConsumerExecutionRetrying(message.StorageId, message.Retries);
                 break;
         }
-
-        return decision;
     }
 
     private async Task _InvokeConsumerMethodAsync(

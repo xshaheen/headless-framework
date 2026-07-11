@@ -768,7 +768,8 @@
           "Headless.Coordination.Core": "[1.0.0, )",
           "Headless.DistributedLocks.Abstractions": "[1.0.0, )",
           "Headless.Jobs.Abstractions": "[1.0.0, )",
-          "NCrontab.Signed": "[3.4.0, )"
+          "NCrontab.Signed": "[3.4.0, )",
+          "Polly.Core": "[8.7.0, )"
         }
       },
       "headless.jobs.dashboard": {
@@ -817,7 +818,8 @@
           "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Queue.Abstractions": "[1.0.0, )",
           "Headless.MultiTenancy": "[1.0.0, )",
-          "Microsoft.Extensions.Options": "[10.0.9, )"
+          "Microsoft.Extensions.Options": "[10.0.9, )",
+          "Polly.Core": "[8.7.0, )"
         }
       },
       "headless.messaging.queue.abstractions": {

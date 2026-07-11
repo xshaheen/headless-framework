@@ -21,7 +21,7 @@ internal sealed class ReplaceIfEqualScriptDefinition : RedisScriptDefinition
               if (@expires ~= nil and @expires ~= '') then
                 return redis.call('set', @key, @value, 'PX', @expires) and 1 or 0
               else
-                return redis.call('set', @key, @value) and 1 or 0
+                return redis.call('set', @key, @value, 'KEEPTTL') and 1 or 0
               end
             else
               return -1

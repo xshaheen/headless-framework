@@ -394,7 +394,8 @@
           "Headless.Messaging.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Queue.Abstractions": "[1.0.0, )",
-          "Headless.MultiTenancy": "[1.0.0, )"
+          "Headless.MultiTenancy": "[1.0.0, )",
+          "Polly.Core": "[8.7.0, )"
         }
       },
       "headless.messaging.dashboard": {
