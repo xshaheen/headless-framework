@@ -41,6 +41,10 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var lockedUntil = now.Add(_leaseDuration);
+        var batch =
+            timeJobs.Length <= JobsClaimStrategyDefaults.MaxCandidatePageSize
+                ? timeJobs
+                : timeJobs.Take(JobsClaimStrategyDefaults.MaxCandidatePageSize).ToArray();
         Guid[] wonIds;
 
         await using (
@@ -57,12 +61,12 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                     dbContext,
                     transaction,
                     mapping,
-                    _BuildDirectCandidates(timeJobs, mapping),
+                    _BuildDirectCandidates(batch, mapping),
                     owner,
                     now,
                     lockedUntil,
                     cancellationToken,
-                    timeJobs
+                    batch
                         .SelectMany(
                             (job, index) =>
                                 new NpgsqlParameter[]
@@ -138,6 +142,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                            AND (root.{mapping.LockedUntil} IS NULL
                                 OR (root.{mapping.LockedUntil} <= @now AND root.{mapping.OnNodeDeath} = @retry))))
                 ORDER BY root.{mapping.ExecutionTime}, root.{mapping.Id}
+                LIMIT {JobsClaimStrategyDefaults.MaxClaimBatchSize}
                 FOR UPDATE SKIP LOCKED
                 """;
             var wonIds = await _ClaimRootsAsync(
@@ -455,6 +460,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                                 OR (occurrence.{mapping.LockedUntil} <= @now
                                     AND occurrence.{mapping.OnNodeDeath} = @retry))))
                 ORDER BY occurrence.{mapping.ExecutionTime}, occurrence.{mapping.Id}
+                LIMIT {JobsClaimStrategyDefaults.MaxClaimBatchSize}
                 FOR UPDATE SKIP LOCKED
             )
             UPDATE {mapping.Table} AS occurrence
@@ -497,6 +503,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             INNER JOIN (VALUES {values}) AS requested(id, updated_at)
                 ON requested.id = root.{mapping.Id} AND requested.updated_at = root.{mapping.UpdatedAt}
             ORDER BY root.{mapping.ExecutionTime} NULLS FIRST, root.{mapping.Id}
+            LIMIT {JobsClaimStrategyDefaults.MaxClaimBatchSize}
             FOR UPDATE OF root SKIP LOCKED
             """;
     }

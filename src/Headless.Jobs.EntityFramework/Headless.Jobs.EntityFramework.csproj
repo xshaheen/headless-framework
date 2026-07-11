@@ -8,7 +8,9 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Jobs.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Jobs.EntityFramework.PostgreSql" />
+    <InternalsVisibleTo Include="Headless.Jobs.EntityFramework.PostgreSql.Tests.Integration" />
     <InternalsVisibleTo Include="Headless.Jobs.EntityFramework.SqlServer" />
+    <InternalsVisibleTo Include="Headless.Jobs.EntityFramework.SqlServer.Tests.Integration" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="FlexLabs.EntityFrameworkCore.Upsert" />

@@ -33,10 +33,10 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
                 IJobPersistenceProvider<TimeJobEntity, CronJobEntity>
             >();
             var executionTime = DateTime.UtcNow;
-            var roots = Enumerable.Range(0, 2).Select(_ => _CreateJobTree(executionTime)).ToArray();
+            var roots = Enumerable.Range(0, 101).Select(_ => _CreateJobTree(executionTime)).ToArray();
             await first.AddTimeJobsAsync(roots, ct);
             var candidates = await first.GetEarliestTimeJobsAsync(ct);
-            candidates.Should().HaveCount(2);
+            candidates.Should().HaveCount(101);
 
             var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             var firstClaim = _ClaimTimeJobsAsync(first, candidates, gate.Task, ct);
@@ -44,9 +44,15 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
             gate.SetResult();
             var claims = await Task.WhenAll(firstClaim, secondClaim);
 
-            claims.SelectMany(x => x).Select(x => x.Id).Should().OnlyHaveUniqueItems();
-            claims.SelectMany(x => x).Should().HaveCount(2);
-            foreach (var root in roots)
+            claims.Should().Contain(x => x.Length > 0);
+            var initiallyClaimedIds = claims.SelectMany(x => x).Select(x => x.Id).ToHashSet();
+            var remainingCandidates = candidates.Where(x => !initiallyClaimedIds.Contains(x.Id)).ToArray();
+            var followUp = await first.QueueTimeJobsAsync(remainingCandidates, ct).ToArrayAsync(ct);
+            var claimedRoots = claims.SelectMany(x => x).Concat(followUp).ToArray();
+            claimedRoots.Select(x => x.Id).Should().OnlyHaveUniqueItems();
+            claimedRoots.Should().HaveCount(101);
+            var claimedRootIds = claimedRoots.Select(x => x.Id).ToHashSet();
+            foreach (var root in roots.Where(x => claimedRootIds.Contains(x.Id)))
             {
                 var rootClaim = await fixture.ReadTimeJobDetailAsync(root.Id, ct);
                 rootClaim.OwnerId.Should().NotBeNullOrWhiteSpace();
@@ -80,26 +86,19 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
             var cronId = Guid.NewGuid();
             await fixture.SeedCronJobAsync(cronId, "fallback", "* * * * *", NodeDeathPolicy.Retry, ct);
             var executionTime = DateTime.UtcNow.AddMinutes(-2);
-            await fixture.SeedCronOccurrenceAsync(
-                Guid.NewGuid(),
-                cronId,
-                (int)JobStatus.Idle,
-                null,
-                NodeDeathPolicy.Retry,
-                null,
-                executionTime,
-                ct
-            );
-            await fixture.SeedCronOccurrenceAsync(
-                Guid.NewGuid(),
-                cronId,
-                (int)JobStatus.Idle,
-                null,
-                NodeDeathPolicy.Retry,
-                null,
-                executionTime.AddSeconds(1),
-                ct
-            );
+            foreach (var index in Enumerable.Range(0, 101))
+            {
+                await fixture.SeedCronOccurrenceAsync(
+                    Guid.NewGuid(),
+                    cronId,
+                    (int)JobStatus.Idle,
+                    null,
+                    NodeDeathPolicy.Retry,
+                    null,
+                    executionTime.AddMilliseconds(index),
+                    ct
+                );
+            }
             var first = firstHost.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
             var second = secondHost.Services.GetRequiredService<
                 IJobPersistenceProvider<TimeJobEntity, CronJobEntity>
@@ -110,8 +109,10 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
             gate.SetResult();
             var claims = await Task.WhenAll(firstClaim, secondClaim);
 
-            claims.SelectMany(x => x).Select(x => x.Id).Should().OnlyHaveUniqueItems();
-            claims.SelectMany(x => x).Should().HaveCount(2);
+            claims.Should().OnlyContain(x => x.Length > 0);
+            var claimedOccurrences = claims.SelectMany(x => x).ToArray();
+            claimedOccurrences.Select(x => x.Id).Should().OnlyHaveUniqueItems();
+            claimedOccurrences.Should().HaveCount(101);
         }
         finally
         {

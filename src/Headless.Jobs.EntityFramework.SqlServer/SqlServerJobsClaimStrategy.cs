@@ -27,7 +27,6 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
-    private const int _MaxDirectClaimBatchSize = 1000;
     private readonly TimeSpan _leaseDuration = optionsBuilder.LeaseDuration;
 
     public async IAsyncEnumerable<TimeJobEntity> ClaimTimeJobsAsync(
@@ -56,34 +55,31 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             var mapping = TimeJobRelationalMapping.Create<TDbContext, TTimeJob>(dbContext);
             var readPastHints = await _GetReadPastHintsAsync(dbContext, transaction, cancellationToken)
                 .ConfigureAwait(false);
-            var wonIdList = new List<Guid>(timeJobs.Length);
-            foreach (var batch in timeJobs.Chunk(_MaxDirectClaimBatchSize))
-            {
-                var batchWonIds = await _ClaimRootsAsync(
-                        dbContext,
-                        transaction,
-                        mapping,
-                        _BuildDirectCandidates(batch, mapping, readPastHints),
-                        owner,
-                        now,
-                        lockedUntil,
-                        cancellationToken,
-                        batch
-                            .SelectMany(
-                                (job, index) =>
-                                    new SqlParameter[]
-                                    {
-                                        new(_ParameterName("id", index), job.Id),
-                                        _DateTimeParameter(_ParameterName("updatedAt", index), job.UpdatedAt),
-                                    }
-                            )
-                            .ToArray()
-                    )
-                    .ConfigureAwait(false);
-                wonIdList.AddRange(batchWonIds);
-            }
-
-            wonIds = wonIdList.ToArray();
+            var batch =
+                timeJobs.Length <= JobsClaimStrategyDefaults.MaxCandidatePageSize
+                    ? timeJobs
+                    : timeJobs.Take(JobsClaimStrategyDefaults.MaxCandidatePageSize).ToArray();
+            wonIds = await _ClaimRootsAsync(
+                    dbContext,
+                    transaction,
+                    mapping,
+                    _BuildDirectCandidates(batch, mapping, readPastHints),
+                    owner,
+                    now,
+                    lockedUntil,
+                    cancellationToken,
+                    batch
+                        .SelectMany(
+                            (job, index) =>
+                                new SqlParameter[]
+                                {
+                                    new(_ParameterName("id", index), job.Id),
+                                    _DateTimeParameter(_ParameterName("updatedAt", index), job.UpdatedAt),
+                                }
+                        )
+                        .ToArray()
+                )
+                .ConfigureAwait(false);
 
             await _StampDescendantsAsync(
                     dbContext,
@@ -141,7 +137,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             var readPastHints = await _GetReadPastHintsAsync(dbContext, transaction, cancellationToken)
                 .ConfigureAwait(false);
             var candidates = $"""
-                SELECT TOP (2147483647) root.{mapping.Id}
+                SELECT TOP ({JobsClaimStrategyDefaults.MaxClaimBatchSize}) root.{mapping.Id}
                 FROM {mapping.Table} AS root WITH ({readPastHints})
                 WHERE root.{mapping.ExecutionTime} IS NOT NULL
                   AND root.{mapping.ExecutionTime} <= @fallbackThreshold
@@ -415,7 +411,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
 #pragma warning disable CA2100
         command.CommandText = $"""
             WITH candidate AS (
-                SELECT TOP (2147483647) occurrence.{mapping.Id}
+                SELECT TOP ({JobsClaimStrategyDefaults.MaxClaimBatchSize}) occurrence.{mapping.Id}
                 FROM {mapping.Table} AS occurrence WITH ({readPastHints})
                 WHERE occurrence.{mapping.Id} = @id
                   AND occurrence.{mapping.ExecutionTime} = @executionTime
@@ -477,7 +473,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
 #pragma warning disable CA2100
         command.CommandText = $"""
             WITH candidates AS (
-                SELECT TOP (2147483647) occurrence.{mapping.Id}
+                SELECT TOP ({JobsClaimStrategyDefaults.MaxClaimBatchSize}) occurrence.{mapping.Id}
                 FROM {mapping.Table} AS occurrence WITH ({readPastHints})
                 WHERE occurrence.{mapping.ExecutionTime} <= @fallbackThreshold
                   AND (occurrence.{mapping.Status} = @idle
@@ -526,7 +522,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             timeJobs.Select((_, index) => $"(@{_ParameterName("id", index)}, @{_ParameterName("updatedAt", index)})")
         );
         return $"""
-            SELECT TOP (2147483647) root.{mapping.Id}
+            SELECT TOP ({JobsClaimStrategyDefaults.MaxClaimBatchSize}) root.{mapping.Id}
             FROM {mapping.Table} AS root WITH ({readPastHints})
             INNER JOIN (VALUES {values}) AS requested(id, updated_at)
                 ON requested.id = root.{mapping.Id} AND requested.updated_at = root.{mapping.UpdatedAt}

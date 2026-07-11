@@ -102,7 +102,21 @@ public static class JobsCoordinationFixtureExtensions
         string nodeId,
         MembershipLostBehavior lostBehavior = MembershipLostBehavior.StopMembershipOnly,
         TimeProvider? timeProvider = null
+    ) => _BuildHost<JobsDbContext>(fixture, nodeId, "jobs", lostBehavior, timeProvider);
+
+    /// <summary>Builds a host with a custom Jobs DbContext so provider SQL can be verified against renamed mappings.</summary>
+    public static IHost BuildMappedHost<TDbContext>(this IJobsCoordinationFixture fixture, string nodeId, string schema)
+        where TDbContext : JobsDbContext<TimeJobEntity, CronJobEntity> =>
+        _BuildHost<TDbContext>(fixture, nodeId, schema, MembershipLostBehavior.StopMembershipOnly, null);
+
+    private static IHost _BuildHost<TDbContext>(
+        IJobsCoordinationFixture fixture,
+        string nodeId,
+        string schema,
+        MembershipLostBehavior lostBehavior,
+        TimeProvider? timeProvider
     )
+        where TDbContext : JobsDbContext<TimeJobEntity, CronJobEntity>
     {
         var builder = Host.CreateApplicationBuilder();
         builder.Logging.SetMinimumLevel(LogLevel.Warning);
@@ -131,7 +145,7 @@ public static class JobsCoordinationFixtureExtensions
             options.DisableBackgroundServices();
             options.UseEntityFramework(ef =>
             {
-                ef.UseJobsDbContext<JobsDbContext>(fixture.ConfigureStore, schema: "jobs");
+                ef.UseJobsDbContext<TDbContext>(fixture.ConfigureStore, schema);
                 fixture.ConfigureClaims(ef);
             });
         });
@@ -273,8 +287,15 @@ public static class JobsCoordinationFixtureExtensions
     /// </summary>
     public static async Task CreateJobsSchemaAsync(IHost host, CancellationToken cancellationToken)
     {
+        await CreateJobsSchemaAsync<JobsDbContext>(host, cancellationToken);
+    }
+
+    /// <summary>Creates tables for a custom mapped Jobs DbContext.</summary>
+    public static async Task CreateJobsSchemaAsync<TDbContext>(IHost host, CancellationToken cancellationToken)
+        where TDbContext : DbContext
+    {
         await using var scope = host.Services.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<JobsDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<TDbContext>();
         var creator = (RelationalDatabaseCreator)db.GetService<IDatabaseCreator>();
         await creator.CreateTablesAsync(cancellationToken);
     }

@@ -1048,6 +1048,7 @@ This is an optimization extension for `Headless.Jobs.EntityFramework`, not an in
 ### Key Features
 
 - Claims existing time jobs and cron occurrences with `UPDATE ... RETURNING` over a `FOR UPDATE SKIP LOCKED` candidate query.
+- Bounds set-based root and fallback-occurrence selection to 100 winners per transaction; skipped or excess work remains eligible for the next scheduler pass.
 - Creates cron occurrences with `INSERT ... ON CONFLICT DO NOTHING ... RETURNING` to deduplicate each execution-time and cron-job pair.
 - Derives and delimits schema, table, and column identifiers from the EF model while parameterizing runtime values.
 - Claims the root and two supported descendant levels in one transaction and returns work only after commit.
@@ -1106,6 +1107,7 @@ This is an optimization extension for `Headless.Jobs.EntityFramework`, not an in
 ### Key Features
 
 - Selects claim candidates with `UPDLOCK`, `READPAST`, and `ROWLOCK`, then returns winners from the same update through `OUTPUT inserted...`.
+- Bounds set-based root and fallback-occurrence selection to 100 winners per transaction to limit lock footprint and escalation risk; skipped or excess work remains eligible for the next scheduler pass.
 - Adds `READCOMMITTEDLOCK` when `READ_COMMITTED_SNAPSHOT` is enabled, as required for `READPAST` under read-committed snapshot isolation.
 - Creates cron occurrences atomically against the unique execution-time and cron-job key.
 - Derives and delimits schema, table, and column identifiers from the EF model while parameterizing runtime values.

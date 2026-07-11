@@ -9,6 +9,12 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Headless.Jobs.Infrastructure;
 
+internal static class JobsClaimStrategyDefaults
+{
+    public const int MaxCandidatePageSize = 1000;
+    public const int MaxClaimBatchSize = 100;
+}
+
 internal interface IJobsClaimStrategy<TTimeJob, TCronJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
