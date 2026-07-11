@@ -17,10 +17,17 @@ public sealed class NatsMessagingOptionsTests : TestBase
     }
 
     [Fact]
-    public void should_have_default_connection_pool_size()
+    public void should_default_connection_pool_size_to_one()
     {
         var options = new NatsMessagingOptions();
-        options.ConnectionPoolSize.Should().Be(10);
+        options.ConnectionPoolSize.Should().Be(1);
+    }
+
+    [Fact]
+    public void should_default_max_consecutive_consume_failures_to_ten()
+    {
+        var options = new NatsMessagingOptions();
+        options.MaxConsecutiveConsumeFailures.Should().Be(10);
     }
 
     [Fact]
@@ -239,5 +246,19 @@ public sealed class NatsMessagingOptionsTests : TestBase
         var result = validator.Validate(options);
 
         result.IsValid.Should().BeFalse();
+    }
+
+    [Fact]
+    public void validator_should_fail_for_zero_max_consecutive_consume_failures()
+    {
+        var options = new NatsMessagingOptions { MaxConsecutiveConsumeFailures = 0 };
+        var validator = new NatsMessagingOptionsValidator();
+
+        var result = validator.Validate(options);
+
+        result.IsValid.Should().BeFalse();
+        result
+            .Errors.Should()
+            .ContainSingle(e => e.PropertyName == nameof(NatsMessagingOptions.MaxConsecutiveConsumeFailures));
     }
 }
