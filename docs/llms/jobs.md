@@ -1,6 +1,6 @@
 ---
 domain: Jobs (Background Jobs)
-packages: Jobs.Abstractions, Jobs.Core, Jobs.Dashboard, Jobs.SourceGenerator, Jobs.OpenTelemetry, Jobs.EntityFramework
+packages: Jobs.Abstractions, Jobs.Core, Jobs.Dashboard, Jobs.SourceGenerator, Jobs.OpenTelemetry, Jobs.EntityFramework, Jobs.EntityFramework.PostgreSql, Jobs.EntityFramework.SqlServer
 ---
 
 # Jobs (Background Jobs)
@@ -15,6 +15,7 @@ packages: Jobs.Abstractions, Jobs.Core, Jobs.Dashboard, Jobs.SourceGenerator, Jo
     - [Lease Model and Sliding Renewal](#lease-model-and-sliding-renewal)
     - [Distributed Coordination and Node Identity](#distributed-coordination-and-node-identity)
     - [Commit-Coordinated Enqueue (Atomic Enqueue)](#commit-coordinated-enqueue-atomic-enqueue)
+- [Choosing a Provider](#choosing-a-provider)
 - [Headless.Jobs.Abstractions](#headlessjobsabstractions)
     - [Problem Solved](#problem-solved)
     - [Key Features](#key-features)
@@ -67,12 +68,30 @@ packages: Jobs.Abstractions, Jobs.Core, Jobs.Dashboard, Jobs.SourceGenerator, Jo
     - [Dependencies](#dependencies-5)
     - [Side Effects](#side-effects-5)
     - [Error Handling and Retries](#error-handling-and-retries)
+- [Headless.Jobs.EntityFramework.PostgreSql](#headlessjobsentityframeworkpostgresql)
+    - [Problem Solved](#problem-solved-6)
+    - [Key Features](#key-features-6)
+    - [Design Notes](#design-notes-3)
+    - [Installation](#installation-6)
+    - [Quick Start](#quick-start-6)
+    - [Configuration](#configuration-6)
+    - [Dependencies](#dependencies-6)
+    - [Side Effects](#side-effects-6)
+- [Headless.Jobs.EntityFramework.SqlServer](#headlessjobsentityframeworksqlserver)
+    - [Problem Solved](#problem-solved-7)
+    - [Key Features](#key-features-7)
+    - [Design Notes](#design-notes-4)
+    - [Installation](#installation-7)
+    - [Quick Start](#quick-start-7)
+    - [Configuration](#configuration-7)
+    - [Dependencies](#dependencies-7)
+    - [Side Effects](#side-effects-7)
 
 > High-performance background job scheduler for .NET with cron expressions, time-based scheduling, compile-time source-generated registration, and distributed coordination.
 
 ## Quick Orientation
 
-Required packages: `Jobs.Core` + `Jobs.EntityFramework` (persistence) + `Jobs.SourceGenerator` (compile-time job registration).
+Required packages: `Jobs.Core` + `Jobs.EntityFramework` (persistence) + `Jobs.SourceGenerator` (compile-time job registration). Add the PostgreSQL or SQL Server Jobs EF provider package for native atomic claims; otherwise the EF package uses its portable optimistic-CAS fallback.
 
 Optional add-ons:
 - `Jobs.Dashboard` — monitoring UI with authentication (basic, API key, host auth) plus live-cluster node view
@@ -113,6 +132,7 @@ Mark job methods with `[JobFunction("name")]` (or `[JobFunction("name", cronExpr
 - The registration attribute is `[JobFunction]` (`JobFunctionAttribute` in `Headless.Jobs.Base`). The first positional argument is the function name; `cronExpression` is a named parameter. Add `Headless.Jobs.SourceGenerator` to the project for compile-time registration.
 - Call `AddHeadlessJobs()` on `IServiceCollection`. There is no `app.UseJobs()` call — the scheduler starts automatically through `IHostedService` registered by `AddHeadlessJobs`.
 - Use `Jobs.EntityFramework` for durable persistence. Without it, jobs live in memory and are lost on restart.
+- Configure `UsePostgreSqlClaims()` or `UseSqlServerClaims()` inside the existing `UseEntityFramework` builder when the matching provider package is installed. Configure only one. Omitting both deliberately keeps the portable EF optimistic-CAS claim path.
 - For the durable operational store, register `AddHeadlessCoordination(c => c.Use…(conn))` BEFORE `AddHeadlessJobs(o => o.UseEntityFramework(…))`. Without coordination, startup throws `InvalidOperationException` naming `AddHeadlessCoordination`.
 - On the durable path, node identity is `node@incarnation` (store-allocated by Coordination), not `Environment.MachineName`. `SchedulerOptionsBuilder.NodeId` is only a pre-registration display fallback — it is NOT the row owner on the durable path.
 - Running jobs slide their pickup lease forward on the `LeaseRenewalInterval` cadence (default ≈ `LeaseDuration / 3`), so `LeaseDuration` (default 5 min) no longer needs to exceed the longest job runtime. Keep `LeaseDuration` ≥ `FallbackIntervalChecker` to avoid spurious re-claims of rows that are claimed but not yet started.
@@ -215,6 +235,18 @@ await db.ExecuteCoordinatedTransactionAsync(
 - `AddAsync` / `AddBatchAsync` **throw** on failure (validation, dead/completed transaction, mis-wire). `Update` / `Delete` return `JobResult<T>` and do not throw.
 - A returned entity on the coordinated path means the row was **enlisted** (commits with the transaction), not that dispatch ran. The fallback poll sweep (`FallbackIntervalChecker`, default 30s) recovers a missed post-commit dispatch.
 - The durable coordinated path needs **two separate registrations**: `AddHeadlessCoordination(...)` (the `Headless.Coordination` distributed-lock/membership subsystem for the operational store) AND a `Add{Provider}CommitCoordination()` (the `Headless.CommitCoordination` transactional scope subsystem). Similar names, different systems.
+
+## Choosing a Provider
+
+The base EF package is the compatibility layer. Native claim packages optimize pickup without changing the scheduler contract, lease rules, descendant stamping, or fallback-window behavior.
+
+| Provider | Use when | Avoid when | Trade-off |
+|---|---|---|---|
+| EF optimistic CAS | The EF database is unsupported by a native package, or contention is low | Many workers regularly race for the same due rows | Zero extra provider package, but losing workers perform failed compare-and-swap work |
+| PostgreSQL atomic claims | PostgreSQL 14+ hosts contend for due work | The operational store is not PostgreSQL | `FOR UPDATE SKIP LOCKED` lets claimers select disjoint unlocked candidates in one update-and-return transaction |
+| SQL Server atomic claims | SQL Server 2019+ or Azure SQL hosts contend for due work | Page-lock contention or escalation dominates and cannot be operationally addressed | `READPAST` skips row locks, but page locks can still block; `ROWLOCK` is not a guarantee |
+
+Native selection belongs inside `UseEntityFramework`; do not add a standalone service registration. Configure exactly one native claim provider. Selecting both is rejected during registration, while selecting neither retains the CAS fallback.
 
 ---
 
@@ -996,3 +1028,116 @@ await cronJobManager.AddAsync(
 ```
 
 The claim predicate's lease-expiry re-claim arm is gated on `OnNodeDeath == Retry`, so clock skew cannot speculatively re-run `Skip` or `MarkFailed` jobs.
+
+---
+
+## Headless.Jobs.EntityFramework.PostgreSql
+
+### Problem Solved
+
+Replaces the portable EF select-and-compare-and-swap pickup path with PostgreSQL-native atomic claim-and-return operations under scheduler contention.
+
+### Key Features
+
+- Claims existing time jobs and cron occurrences with `UPDATE ... RETURNING` over a `FOR UPDATE SKIP LOCKED` candidate query.
+- Creates cron occurrences with `INSERT ... ON CONFLICT DO NOTHING ... RETURNING` to deduplicate each execution-time and cron-job pair.
+- Derives and delimits schema, table, and column identifiers from the EF model while parameterizing runtime values.
+- Claims the root and two supported descendant levels in one transaction and returns work only after commit.
+
+### Design Notes
+
+`SKIP LOCKED` lets concurrent workers move past candidates locked by another claim transaction. The update, descendant stamping, and returned winners share one explicit transaction, so a rolled-back claim exposes no executable work. PostgreSQL 14 or later is the supported baseline; the underlying primitive exists on older releases, but they are outside this package's tested support target.
+
+### Installation
+
+```bash
+dotnet add package Headless.Jobs.EntityFramework.PostgreSql
+```
+
+### Quick Start
+
+```csharp
+using Headless.Jobs;
+using Headless.Jobs.DbContextFactory;
+using Microsoft.EntityFrameworkCore;
+
+builder
+    .Services.AddHeadlessJobs()
+    .UseEntityFramework(ef =>
+    {
+        ef.UseJobsDbContext<JobsDbContext>(db => db.UseNpgsql(connectionString));
+        ef.UsePostgreSqlClaims();
+    });
+```
+
+### Configuration
+
+`UsePostgreSqlClaims()` has no provider-specific options. Configure the `DbContext`, schema, and pool size through the existing Jobs EF builder. Register exactly one native claim provider. Omitting this call keeps the portable EF optimistic-CAS fallback.
+
+### Dependencies
+
+- `Headless.Jobs.EntityFramework`
+- `Npgsql.EntityFrameworkCore.PostgreSQL`
+
+### Side Effects
+
+- Replaces the default Jobs EF claim strategy with the PostgreSQL atomic strategy.
+- Executes provider-native, parameterized SQL against the mapped Jobs tables during pickup.
+- Does not change scheduler cadence, leases, retry policy, or the public persistence contract.
+
+---
+
+## Headless.Jobs.EntityFramework.SqlServer
+
+### Problem Solved
+
+Replaces the portable EF select-and-compare-and-swap pickup path with SQL Server-native atomic claim-and-output operations under scheduler contention.
+
+### Key Features
+
+- Selects claim candidates with `UPDLOCK`, `READPAST`, and `ROWLOCK`, then returns winners from the same update through `OUTPUT inserted...`.
+- Adds `READCOMMITTEDLOCK` when `READ_COMMITTED_SNAPSHOT` is enabled, as required for `READPAST` under read-committed snapshot isolation.
+- Creates cron occurrences atomically against the unique execution-time and cron-job key.
+- Derives and delimits schema, table, and column identifiers from the EF model while parameterizing runtime values.
+- Claims the root and two supported descendant levels in one transaction and returns work only after commit.
+
+### Design Notes
+
+`READPAST` skips row locks, not page locks. Page locking or lock escalation can therefore block competing claimers even with `ROWLOCK`, which is a preference rather than a guarantee. The package does not change `LOCK_ESCALATION`; operators should measure contention, lock memory, and workload behavior before applying database-level changes. SQL Server 2019 or later and Azure SQL are the supported targets.
+
+### Installation
+
+```bash
+dotnet add package Headless.Jobs.EntityFramework.SqlServer
+```
+
+### Quick Start
+
+```csharp
+using Headless.Jobs;
+using Headless.Jobs.DbContextFactory;
+using Microsoft.EntityFrameworkCore;
+
+builder
+    .Services.AddHeadlessJobs()
+    .UseEntityFramework(ef =>
+    {
+        ef.UseJobsDbContext<JobsDbContext>(db => db.UseSqlServer(connectionString));
+        ef.UseSqlServerClaims();
+    });
+```
+
+### Configuration
+
+`UseSqlServerClaims()` has no provider-specific options. Configure the `DbContext`, schema, and pool size through the existing Jobs EF builder. Register exactly one native claim provider. Omitting this call keeps the portable EF optimistic-CAS fallback. The strategy detects `READ_COMMITTED_SNAPSHOT` and adjusts its locking hints.
+
+### Dependencies
+
+- `Headless.Jobs.EntityFramework`
+- `Microsoft.EntityFrameworkCore.SqlServer`
+
+### Side Effects
+
+- Replaces the default Jobs EF claim strategy with the SQL Server atomic strategy.
+- Executes provider-native, parameterized SQL against the mapped Jobs tables during pickup.
+- Does not change lock-escalation settings, scheduler cadence, leases, retry policy, or the public persistence contract.

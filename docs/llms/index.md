@@ -482,6 +482,8 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Jobs.Dashboard` — Auth and web UI for job monitoring.
 - `Headless.Jobs.OpenTelemetry` — Tracing and metrics.
 - `Headless.Jobs.EntityFramework` — EF Core job state persistence; uses optional `Headless.Caching.ICache` for cron-expression caching.
+- `Headless.Jobs.EntityFramework.PostgreSql` — PostgreSQL atomic claims using `FOR UPDATE SKIP LOCKED`.
+- `Headless.Jobs.EntityFramework.SqlServer` — SQL Server atomic claims using `UPDLOCK`, `READPAST`, and `ROWLOCK`.
 
 ### Dashboards (shared)
 - `Headless.Dashboard.Authentication` — Shared authentication middleware (none / Basic / API key / host-app / custom) for the Jobs and Messaging dashboards.

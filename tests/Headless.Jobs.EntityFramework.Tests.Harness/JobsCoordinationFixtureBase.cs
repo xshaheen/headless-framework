@@ -1,10 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data;
 using System.Data.Common;
 using Headless.Coordination;
 using Headless.Jobs;
 using Headless.Jobs.DbContextFactory;
 using Headless.Jobs.DependencyInjection;
+using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -32,6 +34,9 @@ public interface IJobsCoordinationFixture
 
     /// <summary>Wires the EF Core provider for the Jobs store (e.g. <c>db.UseNpgsql(ConnectionString)</c>).</summary>
     void ConfigureStore(DbContextOptionsBuilder db);
+
+    /// <summary>Enables this backend's native claim strategy through the public Jobs EF builder.</summary>
+    void ConfigureClaims(JobsEfCoreOptionBuilder<TimeJobEntity, CronJobEntity> builder);
 
     /// <summary>Creates a new, unopened provider-specific connection (Npgsql / SqlClient).</summary>
     DbConnection CreateConnection();
@@ -125,8 +130,10 @@ public static class JobsCoordinationFixtureExtensions
             // is driven by the MembershipRecoveryBridge + coordination heartbeat, both of which still run.
             options.DisableBackgroundServices();
             options.UseEntityFramework(ef =>
-                ef.UseJobsDbContext<JobsDbContext>(fixture.ConfigureStore, schema: "jobs")
-            );
+            {
+                ef.UseJobsDbContext<JobsDbContext>(fixture.ConfigureStore, schema: "jobs");
+                fixture.ConfigureClaims(ef);
+            });
         });
 
         // Lets a test inject a deliberately skewed clock to prove the EF lease-expiry path reads the DB clock, not
@@ -238,6 +245,12 @@ public static class JobsCoordinationFixtureExtensions
         this IJobsCoordinationFixture fixture,
         CancellationToken cancellationToken
     ) => _CountAsync(fixture, $"SELECT COUNT(*) FROM {fixture.QualifiedCronJobsTable};", cancellationToken);
+
+    /// <summary>Counts CronJobOccurrence rows on an independent connection.</summary>
+    public static Task<int> CountCronOccurrencesAsync(
+        this IJobsCoordinationFixture fixture,
+        CancellationToken cancellationToken
+    ) => _CountAsync(fixture, $"SELECT COUNT(*) FROM {fixture.QualifiedCronJobOccurrencesTable};", cancellationToken);
 
     private static async Task<int> _CountAsync(
         IJobsCoordinationFixture fixture,
@@ -399,6 +412,31 @@ public static class JobsCoordinationFixtureExtensions
         return (status, ownerId);
     }
 
+    /// <summary>Reads a CronJobOccurrence's durable owner and lease.</summary>
+    public static async Task<(string? OwnerId, DateTime? LockedUntil)> ReadCronOccurrenceClaimAsync(
+        this IJobsCoordinationFixture fixture,
+        Guid id,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = fixture.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            $"SELECT \"OwnerId\", \"LockedUntil\" FROM {fixture.QualifiedCronJobOccurrencesTable} WHERE \"Id\" = @id;";
+        _AddParameter(command, "@id", id);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            throw new InvalidOperationException($"CronJobOccurrence {id} not found.");
+        }
+
+        var ownerId = await reader.IsDBNullAsync(0, cancellationToken) ? null : reader.GetString(0);
+        var lockedUntil = await reader.IsDBNullAsync(1, cancellationToken) ? (DateTime?)null : reader.GetDateTime(1);
+        return (ownerId, lockedUntil);
+    }
+
     /// <summary>Reads back a TimeJob's status + owner for assertions.</summary>
     public static async Task<(int Status, string? OwnerId)> ReadTimeJobAsync(
         this IJobsCoordinationFixture fixture,
@@ -466,7 +504,15 @@ public static class JobsCoordinationFixtureExtensions
     {
         var parameter = command.CreateParameter();
         parameter.ParameterName = name;
-        parameter.Value = value;
+        if (value is DateTime dateTime)
+        {
+            parameter.DbType = DbType.DateTime2;
+            parameter.Value = DateTime.SpecifyKind(dateTime, DateTimeKind.Unspecified);
+        }
+        else
+        {
+            parameter.Value = value;
+        }
         command.Parameters.Add(parameter);
     }
 }

@@ -241,7 +241,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                     continue;
                 }
 
-                itemToAdd.CronJob = _ProjectCronJob(item, owner);
+                itemToAdd.CronJob = MappingExtensions.ProjectCronJob<TCronJob>(item, owner);
                 yield return itemToAdd;
                 continue;
             }
@@ -277,21 +277,10 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 OnNodeDeath = item.OnNodeDeath,
                 UpdatedAt = now,
                 CreatedAt = item.NextCronOccurrence.CreatedAt,
-                CronJob = _ProjectCronJob(item, owner),
+                CronJob = MappingExtensions.ProjectCronJob<TCronJob>(item, owner),
             };
         }
     }
-
-    private static TCronJob _ProjectCronJob(JobManagerDispatchContext item, string owner) =>
-        new()
-        {
-            Id = item.Id,
-            Function = item.FunctionName,
-            InitIdentifier = owner,
-            Expression = item.Expression,
-            Retries = item.Retries,
-            RetryIntervals = item.RetryIntervals,
-        };
 
     private Task<int> _ClaimTimeJobTreeAsync(
         DbSet<TTimeJob> context,

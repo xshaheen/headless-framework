@@ -61,7 +61,7 @@ That shape keeps provider decisions at the composition root:
 | API contracts and host defaults | `Headless.Api.Abstractions` | `Headless.Api.Core` or `Headless.Api.ServiceDefaults` for runnable API hosts |
 | Cache contracts | `Headless.Caching.Abstractions` | `Headless.Caching.Core` plus one default provider: in-memory, Redis, or hybrid; add named caches when a service needs multiple stores |
 | Blob storage contracts | `Headless.Blobs.Abstractions` | `Headless.Blobs.Core` plus Azure, AWS, Cloudflare R2, filesystem, Redis, or SFTP provider |
-| Background job contracts | `Headless.Jobs.Abstractions` | `Headless.Jobs.Core`, `Headless.Jobs.SourceGenerator`, dashboard, OpenTelemetry, or EF Core persistence |
+| Background job contracts | `Headless.Jobs.Abstractions` | `Headless.Jobs.Core`, `Headless.Jobs.SourceGenerator`, dashboard, OpenTelemetry, EF Core persistence, and a PostgreSQL or SQL Server native claim provider when contention warrants it |
 | Distributed lock contracts | `Headless.DistributedLocks.Abstractions` | `Headless.DistributedLocks.Core` plus in-memory, Redis, PostgreSQL, or SQL Server provider |
 | Cluster membership contracts | `Headless.Coordination.Abstractions` | `Headless.Coordination.Core` plus Redis, PostgreSQL, or SQL Server provider |
 | Transaction-bound side-effect contracts | `Headless.CommitCoordination.Abstractions` | `Headless.CommitCoordination.Core` plus EF Core, PostgreSQL, SQL Server, in-memory, or durable-work package |
@@ -381,6 +381,8 @@ Distributed background job scheduling with cron expressions, delayed execution, 
 | [Headless.Jobs.Dashboard](src/Headless.Jobs.Dashboard/README.md) | Web UI for job monitoring |
 | [Headless.Jobs.OpenTelemetry](src/Headless.Jobs.OpenTelemetry/README.md) | Tracing and metrics for job execution |
 | [Headless.Jobs.EntityFramework](src/Headless.Jobs.EntityFramework/README.md) | EF Core job state persistence; uses optional `Headless.Caching.ICache` for cron-expression caching |
+| [Headless.Jobs.EntityFramework.PostgreSql](src/Headless.Jobs.EntityFramework.PostgreSql/README.md) | PostgreSQL atomic claims with `FOR UPDATE SKIP LOCKED` |
+| [Headless.Jobs.EntityFramework.SqlServer](src/Headless.Jobs.EntityFramework.SqlServer/README.md) | SQL Server atomic claims with `UPDLOCK`, `READPAST`, and `ROWLOCK` |
 
 ### OpenAPI
 
