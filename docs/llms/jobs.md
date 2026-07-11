@@ -451,12 +451,12 @@ Provides operational visibility into the Jobs scheduler — job queues, executio
 - **Authentication options**: `WithBasicAuth(username, password)`, `WithApiKey(apiKey)`, `WithHostAuthentication(policy?)` (delegates to host app's auth), or explicit no-auth mode for isolated development dashboards.
 - **Live cluster view**: `GET /api/nodes` returns live node projections from `Headless.Coordination` membership; `NodeJoined` / `NodeLeft` / `NodeSuspected` push updates over SignalR — no polling required.
 - **Error monitoring**: surfaces failed, cancelled, and skipped jobs; retry counts; execution timings; exception messages.
-- **Fluent builder**: `SetBasePath(path)`, `SetBackendDomain(domain)`, `SetCorsPolicy(policy)`.
+- **Fluent builder**: `SetBasePath(path)`, `SetBackendDomain(domain)`, `SetCorsOrigins(origins)`, `SetCorsPolicy(policy)`.
 - **Pair with OpenTelemetry**: Dashboard for operational triage; `Jobs.OpenTelemetry` for trace-level diagnostics.
 
 ### Design Notes
 
-The dashboard exposes operational endpoints that can create, update, delete, run, cancel, start, stop, and restart jobs. Treat `WithNoAuth()` or omitted auth as development-only unless the dashboard is isolated behind trusted network controls. Production deployments should use `WithHostAuthentication(...)`, `WithBasicAuth(...)`, or `WithApiKey(...)`, and should set an explicit CORS policy instead of relying on open cross-origin access.
+The dashboard exposes operational endpoints that can create, update, delete, run, cancel, start, stop, and restart jobs. Authentication must be chosen explicitly — if no auth method (including `WithNoAuth()`) is called, the host fails to start, so the dashboard never ships publicly by omission. Treat `WithNoAuth()` as development-only unless the dashboard is isolated behind trusted network controls; production deployments should use `WithHostAuthentication(...)`, `WithBasicAuth(...)`, or `WithApiKey(...)`. No CORS policy is applied by default (same-origin only); use `SetCorsOrigins(...)` when the SPA is served cross-origin.
 
 ### Installation
 
@@ -492,18 +492,18 @@ builder
         // Path and domain
         dashboard.SetBasePath("/jobs");
         dashboard.SetBackendDomain("https://api.example.com");
-        dashboard.SetCorsPolicy("MyPolicy");
+        dashboard.SetCorsOrigins("https://admin.example.com"); // needed only when the SPA is cross-origin
 
-        // Authentication — pick one:
+        // Authentication — required, pick one:
         dashboard.WithBasicAuth("admin", "secret"); // username/password
         dashboard.WithApiKey("my-api-key"); // Bearer token / query param
         dashboard.WithHostAuthentication(); // delegate to host auth
         dashboard.WithHostAuthentication("AdminPolicy"); // host auth + policy
-        // Omitting auth = public dashboard; use only in isolated development environments.
+        // Or opt out explicitly with dashboard.WithNoAuth() — isolated development environments only.
     });
 ```
 
-Auth detection is automatic: no auth → public; basic auth → username/password login UI; API key → bearer token; host auth → delegates to the host's authentication middleware.
+Auth detection is automatic: explicit `WithNoAuth()` → public; basic auth → username/password login UI; API key → bearer token; host auth → delegates to the host's authentication middleware.
 
 ### Dependencies
 

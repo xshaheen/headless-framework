@@ -58,9 +58,14 @@ public static class SetupMessagingDashboard
                     }
                 );
 
-                // Set up routing and CORS
+                // Set up routing and CORS. The CORS policy is registered only when the consumer configured
+                // one (SetCorsOrigins / SetCorsPolicy); by default the SPA is same-origin with its API, so no
+                // policy is applied.
                 dashboardApp.UseRouting();
-                dashboardApp.UseCors("Messaging_Dashboard_CORS");
+                if (config.CorsPolicyBuilder is not null)
+                {
+                    dashboardApp.UseCors("Messaging_Dashboard_CORS");
+                }
 
                 // Add authentication + authorization middleware
                 if (config.Auth.IsEnabled)

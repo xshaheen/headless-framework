@@ -35,6 +35,13 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
     private readonly DashboardOptionsBuilder _dashboardOptions = Argument.IsNotNull(dashboardOptions);
     private readonly TimeProvider _timeProvider = Argument.IsNotNull(timeProvider);
 
+    // Graph endpoints materialize one entry per day across [pastDays, futureDays], so an unclamped span
+    // could drive multi-million-object allocation independent of stored row count. Clamp the request-supplied
+    // offsets to a bounded window (±1 year) before computing the range.
+    private const int _MaxGraphRangeDays = 366;
+
+    private static int _ClampGraphDays(int days) => Math.Clamp(days, -_MaxGraphRangeDays, _MaxGraphRangeDays);
+
     public async Task<TTimeJob[]> GetTimeJobsAsync(CancellationToken cancellationToken = default)
     {
         return await _persistenceProvider.GetTimeJobsAsync(predicate: null, cancellationToken).ConfigureAwait(false);
@@ -80,8 +87,8 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
     )
     {
         var today = _timeProvider.GetUtcNow().UtcDateTime.Date;
-        var startDate = today.AddDays(pastDays);
-        var endDate = today.AddDays(futureDays);
+        var startDate = today.AddDays(_ClampGraphDays(pastDays));
+        var endDate = today.AddDays(_ClampGraphDays(futureDays));
 
         var timeJobs = await _persistenceProvider
             .GetTimeJobsAsync(
@@ -138,8 +145,8 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
     )
     {
         var today = _timeProvider.GetUtcNow().UtcDateTime.Date;
-        var startDate = today.AddDays(pastDays);
-        var endDate = today.AddDays(futureDays);
+        var startDate = today.AddDays(_ClampGraphDays(pastDays));
+        var endDate = today.AddDays(_ClampGraphDays(futureDays));
 
         var cronJobOccurrences = await _persistenceProvider
             .GetAllCronJobOccurrencesAsync(
@@ -212,8 +219,8 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
     )
     {
         var today = _timeProvider.GetUtcNow().UtcDateTime.Date;
-        var startDate = today.AddDays(pastDays);
-        var endDate = today.AddDays(futureDays);
+        var startDate = today.AddDays(_ClampGraphDays(pastDays));
+        var endDate = today.AddDays(_ClampGraphDays(futureDays));
 
         var cronJobOccurrences = await _persistenceProvider
             .GetAllCronJobOccurrencesAsync(
