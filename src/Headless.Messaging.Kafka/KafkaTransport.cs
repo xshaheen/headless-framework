@@ -49,7 +49,7 @@ internal sealed class KafkaTransport(ILogger<KafkaTransport> logger, IKafkaConne
                 )
                 .ConfigureAwait(false);
 
-            if (result.Status is PersistenceStatus.Persisted or PersistenceStatus.PossiblyPersisted)
+            if (result.Status is PersistenceStatus.Persisted)
             {
                 if (_logger.IsEnabled(LogLevel.Debug))
                 {

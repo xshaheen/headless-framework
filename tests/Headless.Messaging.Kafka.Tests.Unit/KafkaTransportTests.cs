@@ -409,7 +409,7 @@ public sealed class KafkaTransportTests : TestBase
     }
 
     [Fact]
-    public async Task should_succeed_when_status_is_PossiblyPersisted()
+    public async Task should_fail_when_status_is_PossiblyPersisted()
     {
         // given
         await using var transport = new KafkaTransport(_logger, _pool);
@@ -435,7 +435,9 @@ public sealed class KafkaTransportTests : TestBase
         var result = await transport.SendAsync(message, AbortToken);
 
         // then
-        result.Succeeded.Should().BeTrue();
+        result.Succeeded.Should().BeFalse();
+        result.Exception.Should().BeOfType<PublisherSentFailedException>();
+        result.Exception!.Message.Should().Contain("persisted failed");
     }
 
     [Fact]

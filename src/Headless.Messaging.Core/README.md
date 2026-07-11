@@ -101,6 +101,9 @@ await serviceProvider.GetRequiredService<IOutboxBus>()
 For durable infrastructure, replace the in-memory providers with exactly one storage provider and one transport provider:
 
 ```csharp
+using Polly;
+using Polly.Retry;
+
 builder.Services.AddHeadlessMessaging(setup =>
 {
     setup.UsePostgreSql(options =>
@@ -352,19 +355,26 @@ Message ordering guarantees depend on the transport provider and configuration:
 ```csharp
 builder.Services.AddHeadlessMessaging(setup =>
 {
-    setup.Options.RetryPolicy.MaxInlineRetries = 2;
     setup.Options.RetryPolicy.MaxPersistedRetries = 15;
     setup.Options.RetryPolicy.DispatchTimeout = TimeSpan.FromMinutes(5);
     setup.Options.TransportPublishTimeout = TimeSpan.FromSeconds(10);
     setup.Options.CommandTimeout = TimeSpan.FromSeconds(30);
     setup.Options.OutboxFlushTimeout = TimeSpan.FromSeconds(30);
-    setup.Options.RetryPolicy.BackoffStrategy = new ExponentialBackoffStrategy(
-        initialDelay: TimeSpan.FromSeconds(1),
-        maxDelay: TimeSpan.FromMinutes(5)
-    );
+    setup.Options.ShutdownTimeout = TimeSpan.FromSeconds(30);
+    setup.Options.RetryPolicy.RetryStrategy = new RetryStrategyOptions
+    {
+        MaxRetryAttempts = 2,
+        Delay = TimeSpan.FromSeconds(1),
+        BackoffType = DelayBackoffType.Exponential,
+        UseJitter = true,
+        MaxDelay = TimeSpan.FromMinutes(5),
+        ShouldHandle = args => ValueTask.FromResult(
+            args.Outcome.Exception is TimeoutException or HttpRequestException
+        ),
+    };
     setup.Options.RetryPolicy.OnExhausted = (info, ct) =>
     {
-        // Fires only when budget is fully consumed (Exhausted), not on permanent failures (Stop).
+        // Fires only after the retryable budget is fully consumed and stored terminally.
         var logger = info.ServiceProvider.GetRequiredService<ILogger<MyService>>();
         logger.LogError(info.Exception, "Message {Id} permanently failed", info.Message.StorageId);
         return Task.CompletedTask;
@@ -376,12 +386,11 @@ builder.Services.AddHeadlessMessaging(setup =>
 
 | Property | Type | Default | Notes |
 | --- | --- | --- | --- |
-| `MaxInlineRetries` | `int` | `2` | Retries to run inline on each delivery before persisting. `>= 0`. |
-| `MaxPersistedRetries` | `int` | `15` | Maximum persisted-retry pickups. `>= 0`. Total attempts = `(MaxInlineRetries + 1) × (MaxPersistedRetries + 1)`. |
+| `RetryStrategy` | `Polly.Retry.RetryStrategyOptions` | Exponential, jittered, 2 retries | Public Polly configuration for inline retry classification, delay, and observation. Configure `ShouldHandle` explicitly. |
+| `MaxPersistedRetries` | `int` | `15` | Maximum persisted-retry pickups. `>= 0`. Total attempts = `(RetryStrategy.MaxRetryAttempts + 1) × (MaxPersistedRetries + 1)`. |
 | `InitialDispatchGrace` | `TimeSpan` | `30s` | Initial `NextRetryAt` delay before crash-recovery pickup can see a newly stored row. |
 | `DispatchTimeout` | `TimeSpan` | `5m` | Active delivery lease written to `LockedUntil` before each publish/consume attempt. `> 0`, `<= 1h`. Handlers exceeding this remain at-least-once and may be re-dispatched. |
-| `BackoffStrategy` | `IRetryBackoffStrategy` | `new ExponentialBackoffStrategy()` | Strategy returns `RetryDecision.Stop` (permanent), `RetryDecision.Continue(delay)` (transient), or `RetryDecision.Exhausted` (custom budget exhausted). |
-| `OnExhausted` | `Func<FailedInfo, CancellationToken, Task>?` | `null` | Fires only on `RetryDecision.Exhausted`. Does NOT fire on `RetryDecision.Stop`. |
+| `OnExhausted` | `Func<FailedInfo, CancellationToken, Task>?` | `null` | Fires only after a retryable failure consumes the complete budget and the owned terminal write succeeds. |
 | `OnExhaustedTimeout` | `TimeSpan` | `30s` | Bounds the exhausted callback wait. |
 
 Top-level messaging timeouts that influence retry behavior:
@@ -391,6 +400,7 @@ Top-level messaging timeouts that influence retry behavior:
 | `TransportPublishTimeout` | `TimeSpan` | `10s` | Linked with host shutdown and passed to transport publish calls. If the broker client honors cancellation, stuck publishes fail into the retry policy instead of outliving shutdown. |
 | `CommandTimeout` | `TimeSpan` | `30s` | Applied to SQL-backed storage commands, including terminal writes that deliberately use `CancellationToken.None`. |
 | `OutboxFlushTimeout` | `TimeSpan` | `30s` | Bounds the post-commit drain that flushes buffered outbox messages to the transport. The drain runs with `CancellationToken.None`, so an unresponsive broker would otherwise hold the request thread, DI scope, and DB connection indefinitely. Undispatched messages stay durable and are recovered by the relay sweep. `> 0`, `<= 5m`. |
+| `ShutdownTimeout` | `TimeSpan` | `30s` | End-to-end messaging shutdown bound shared by the consumer-register listener drain, concurrent consumer-client disposal, provider-specific in-flight drains, and the dispatcher loop drain. Cleanup still running when the deadline expires continues fault-observed in the background. `> 0`, `<= 5m`. |
 | `DeadNodeReconcileInterval` | `TimeSpan` | `1m` | Cadence of the always-on dead-owner recovery reconcile backstop. `> 0` (no upper bound — the per-row `LockedUntil` floor owns correctness). Independent of `UseStorageLock`. |
 
 Persisted retries use two independent timestamps: `NextRetryAt` controls when a row is due, and `LockedUntil` controls whether an active attempt still owns the row. Retry pickup filters on both. Retry state writes clear `LockedUntil`; counter advances use an optimistic `Retries == originalRetries` predicate so concurrent replicas cannot overwrite each other's retry budget.
@@ -401,35 +411,35 @@ When a Coordination provider is registered, storage rows also stamp nullable `Ow
 
 ### Exhausted vs Stop
 
-`OnExhausted` fires **only on `RetryDecision.Exhausted`** — the retry budget was fully consumed and the failure was transient.
+`OnExhausted` fires only after the retry budget was fully consumed by a failure matched by Polly's configured `ShouldHandle`.
 
 When tenant propagation is configured, `OnExhausted` runs under the message envelope tenant for publish, consume, and poisoned-on-arrival paths. Poisoned broker redelivery skips the callback when storage reports the terminal row was not mutated.
 
-It does **NOT** fire on `RetryDecision.Stop`. Stop is the framework's signal for:
+It does not fire for:
 
-- **Permanent exceptions** classified by the backoff strategy (`SubscriberNotFoundException`, `ArgumentException`, `ArgumentNullException`, `InvalidOperationException`, `NotSupportedException`).
+- **Permanent exceptions** rejected by `RetryStrategy.ShouldHandle`.
 - **Cancellation** (`OperationCanceledException` whose token matches the dispatch cancellation token).
 
 For a single exit point covering both Stop and Exhausted, use consume/publish middleware.
 
 ### Inline vs Persisted Retry Paths
 
-Retries up to `MaxInlineRetries` run inline inside the same `ExecuteAsync` / `SendAsync` call. Once the inline budget is exhausted, the message is persisted with `NextRetryAt` set and picked up by `MessageNeedToRetryProcessor` (up to `MaxPersistedRetries` times). Each pickup then bursts another round of `MaxInlineRetries` inline attempts.
+`RetryStrategy.MaxRetryAttempts` excludes the original execution and controls inline retries in the reusable Polly pipeline. Once that budget is exhausted, Messaging persists `NextRetryAt` and the retry processor performs up to `MaxPersistedRetries` pickups. Messaging reserves each attempt durably in `InlineAttempts` before invoking user or transport code, so a crash cannot reset the current burst.
 
-Worked example with `MaxInlineRetries = 2, MaxPersistedRetries = 2` — total (2+1)×(2+1) = 9 attempts:
+Worked example with `RetryStrategy.MaxRetryAttempts = 2, MaxPersistedRetries = 2` — total (2+1)×(2+1) = 9 attempts:
 
 ```
 pickup 1 (initial dispatch):
   attempt 1 (original)        ── inline
-  attempt 2 (inline retry #1) ── inline, after BackoffStrategy delay
-  attempt 3 (inline retry #2) ── inline, after BackoffStrategy delay → persist (1/2)
+  attempt 2 (inline retry #1) ── inline, after Polly delay
+  attempt 3 (inline retry #2) ── inline, after Polly delay → persist (1/2)
 pickup 2 (persisted retry #1):
   attempt 4                   ── inline
-  attempt 5 (inline retry #1) ── inline, after BackoffStrategy delay
-  attempt 6 (inline retry #2) ── inline, after BackoffStrategy delay → persist (2/2)
+  attempt 5 (inline retry #1) ── inline, after Polly delay
+  attempt 6 (inline retry #2) ── inline, after Polly delay → persist (2/2)
 pickup 3 (persisted retry #2):
   attempt 7                   ── inline
-  attempt 8 (inline retry #1) ── inline, after BackoffStrategy delay
+  attempt 8 (inline retry #1) ── inline, after Polly delay
   attempt 9 (inline retry #2) ── final; on failure → Exhausted → OnExhausted fires
 ```
 
@@ -587,6 +597,7 @@ Operational invariant: set Coordination's dead threshold no lower than the large
 - `Headless.Extensions`
 - `Headless.Checks`
 - `Headless.MultiTenancy`
+- `Polly.Core`
 - Transport package (RabbitMQ, Kafka, etc.)
 - Storage package (PostgreSql, SqlServer, etc.)
 

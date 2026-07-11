@@ -6,6 +6,23 @@ namespace Headless.Messaging.Transport;
 public interface IConsumerClient : IAsyncDisposable
 {
     /// <summary>
+    /// Shuts down the consumer client while bounding provider-specific in-flight work.
+    /// </summary>
+    /// <remarks>
+    /// Implementations with their own drain stage should honor <paramref name="timeout"/>. The default
+    /// delegates to <see cref="IAsyncDisposable.DisposeAsync"/> for providers without an in-flight drain.
+    /// The messaging core also bounds how long it waits for this operation.
+    /// </remarks>
+    /// <param name="timeout">The remaining end-to-end messaging shutdown budget.</param>
+    /// <param name="cancellationToken">
+    /// Reserved for API consistency. Implementations must complete or safely detach cleanup even when cancellation is requested.
+    /// </param>
+    ValueTask ShutdownAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
+    {
+        return DisposeAsync();
+    }
+
+    /// <summary>
     /// Gets the broker address information that this consumer is connected to
     /// </summary>
     BrokerAddress BrokerAddress { get; }

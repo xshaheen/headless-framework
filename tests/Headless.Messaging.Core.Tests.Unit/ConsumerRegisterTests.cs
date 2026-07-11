@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Concurrent;
 using System.Reflection;
 using Headless.Messaging;
@@ -11,6 +12,7 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
@@ -97,6 +99,49 @@ public sealed class ConsumerRegisterTests : TestBase
 
         var snapshot = (IConsumerClient[])handleType.GetMethod("SnapshotClients")!.Invoke(handle, null)!;
         snapshot.Should().BeEmpty("a client that was never successfully paused must not remain registered");
+    }
+
+    [Fact]
+    public async Task group_handle_shutdown_should_dispose_clients_concurrently()
+    {
+        var firstStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var first = Substitute.For<IConsumerClient>();
+        var second = Substitute.For<IConsumerClient>();
+        first
+            .ShutdownAsync(Arg.Any<TimeSpan>())
+            .Returns(_ =>
+            {
+                firstStarted.TrySetResult();
+                return new ValueTask(release.Task);
+            });
+        second
+            .ShutdownAsync(Arg.Any<TimeSpan>())
+            .Returns(_ =>
+            {
+                secondStarted.TrySetResult();
+                return new ValueTask(release.Task);
+            });
+
+        var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
+        var handle = Activator.CreateInstance(handleType, nonPublic: true)!;
+        using var cts = new CancellationTokenSource();
+        handleType.GetProperty("Logger")!.SetValue(handle, NullLogger<ConsumerRegister>.Instance);
+        handleType.GetProperty("Cts")!.SetValue(handle, cts);
+        handleType.GetProperty("GroupName")!.SetValue(handle, "payments");
+        handleType.GetProperty("ConsumerTasks")!.SetValue(handle, new ConcurrentBag<Task>());
+        var addClient = handleType.GetMethod("AddClientAsync")!;
+        await (ValueTask)addClient.Invoke(handle, [first])!;
+        await (ValueTask)addClient.Invoke(handle, [second])!;
+
+        var shutdown = (
+            (ValueTask)handleType.GetMethod("DisposeAsync")!.Invoke(handle, [TimeSpan.FromSeconds(5)])!
+        ).AsTask();
+        await Task.WhenAll(firstStarted.Task, secondStarted.Task).WaitAsync(AbortToken);
+
+        release.TrySetResult();
+        await shutdown;
     }
 
     [Fact]
@@ -404,6 +449,58 @@ public sealed class ConsumerRegisterTests : TestBase
         await act.Should()
             .ThrowAsync<InvalidOperationException>()
             .WithMessage("*IIntentAwareConsumerClientFactory*queue consumers*");
+    }
+
+    [Fact]
+    public async Task pulse_should_wait_consumer_tasks_using_configured_timeout_not_legacy_two_seconds()
+    {
+        var fakeTime = new FakeTimeProvider();
+        await using var provider = _CreateProvider(configureServices: services =>
+            services.AddSingleton<TimeProvider>(fakeTime)
+        );
+        var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
+
+        var stillRunning = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
+        var handle = Activator.CreateInstance(handleType, nonPublic: true)!;
+        using var handleCts = new CancellationTokenSource();
+        handleType.GetProperty("Logger")!.SetValue(handle, NullLogger<ConsumerRegister>.Instance);
+        handleType.GetProperty("Cts")!.SetValue(handle, handleCts);
+        handleType.GetProperty("GroupName")!.SetValue(handle, "payments");
+        handleType.GetProperty("ConsumerTasks")!.SetValue(handle, new ConcurrentBag<Task> { stillRunning.Task });
+        var client = Substitute.For<IConsumerClient>();
+        TimeSpan? receivedShutdownTimeout = null;
+        client
+            .ShutdownAsync(Arg.Any<TimeSpan>())
+            .Returns(call =>
+            {
+                receivedShutdownTimeout = call.Arg<TimeSpan>();
+                return ValueTask.CompletedTask;
+            });
+        client.DisposeAsync().Returns(ValueTask.CompletedTask);
+        await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, [client])!;
+
+        var groupHandlesField = typeof(ConsumerRegister).GetField(
+            "_groupHandles",
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+        )!;
+        var groupHandles = (IDictionary)groupHandlesField.GetValue(register)!;
+        groupHandles.Add("payments", handle);
+
+        var pulse = register.PulseAsync(removeCircuitState: true, waitTimeout: TimeSpan.FromSeconds(30));
+
+        // Past the legacy hardcoded 2s bound: under the configured 30s budget the wait must
+        // still be pending. The old fixed 2s WaitAsync would already have expired here.
+        fakeTime.Advance(TimeSpan.FromSeconds(3));
+        await Task.Delay(50, AbortToken);
+        pulse.IsCompleted.Should().BeFalse("PulseAsync must honor the configured waitTimeout, not the legacy 2s");
+
+        fakeTime.Advance(TimeSpan.FromSeconds(17));
+        stillRunning.TrySetResult();
+        await pulse.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        receivedShutdownTimeout.Should().Be(TimeSpan.FromSeconds(10));
+        await client.Received(1).ShutdownAsync(TimeSpan.FromSeconds(10));
     }
 
     private ServiceProvider _CreateProvider(

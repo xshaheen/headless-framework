@@ -1,10 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
+using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.Nats;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Time.Testing;
 using NATS.Client.Core;
 using NATS.Client.JetStream;
 using MsOptions = Microsoft.Extensions.Options;
@@ -648,6 +651,166 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task ListeningAsync_should_exit_and_report_connect_error_when_receive_connection_fails()
+    {
+        // given
+        var connectionFailure = new NatsConnectionFailedException("connection failed after startup");
+        var failedConsumer = Substitute.For<INatsJSConsumer>();
+        failedConsumer
+            .NextAsync(
+                Arg.Any<INatsDeserialize<ReadOnlyMemory<byte>>>(),
+                Arg.Any<NatsJSNextOpts?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(_ => new ValueTask<INatsJSMsg<ReadOnlyMemory<byte>>?>(
+                Task.FromException<INatsJSMsg<ReadOnlyMemory<byte>>?>(connectionFailure)
+            ));
+        var siblingCanceled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var siblingConsumer = Substitute.For<INatsJSConsumer>();
+        siblingConsumer
+            .NextAsync(
+                Arg.Any<INatsDeserialize<ReadOnlyMemory<byte>>>(),
+                Arg.Any<NatsJSNextOpts?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(async call =>
+            {
+                try
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, call.Arg<CancellationToken>());
+                    return null;
+                }
+                catch (OperationCanceledException)
+                {
+                    siblingCanceled.TrySetResult();
+                    throw;
+                }
+            });
+
+        await using var client = new NatsConsumerClient(
+            "test-group",
+            1,
+            _options,
+            _serviceProvider,
+            (_, config, _) =>
+                Task.FromResult(
+                    string.Equals(config.FilterSubject, "orders.created", StringComparison.Ordinal)
+                        ? failedConsumer
+                        : siblingConsumer
+                )
+        );
+        await client.SubscribeAsync(["orders.created", "orders.updated"]);
+
+        var connectError = new TaskCompletionSource<LogMessageEventArgs>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        client.OnLogCallback = args =>
+        {
+            if (args.LogType == MqLogType.ConnectError)
+            {
+                connectError.TrySetResult(args);
+            }
+        };
+
+        // when
+        var act = async () =>
+            await client
+                .ListeningAsync(TimeSpan.FromMilliseconds(50), AbortToken)
+                .AsTask()
+                .WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<NatsConnectionFailedException>();
+        var logged = await connectError.Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+        logged.Reason.Should().Contain("orders");
+        logged.Reason.Should().Contain("connection failed after startup");
+        await siblingCanceled.Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+        await failedConsumer
+            .Received(1)
+            .NextAsync(
+                Arg.Any<INatsDeserialize<ReadOnlyMemory<byte>>>(),
+                Arg.Any<NatsJSNextOpts?>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task ListeningAsync_should_retry_protocol_timeout_without_terminating_listener()
+    {
+        var timeProvider = new FakeTimeProvider();
+        var protocolFailure = new NatsJSProtocolException(408, NatsHeaders.Messages.RequestTimeout, "Request Timeout");
+        var transientLogged = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondAttempt = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var consumer = Substitute.For<INatsJSConsumer>();
+        var callCount = 0;
+        consumer
+            .NextAsync(
+                Arg.Any<INatsDeserialize<ReadOnlyMemory<byte>>>(),
+                Arg.Any<NatsJSNextOpts?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(call =>
+            {
+                if (Interlocked.Increment(ref callCount) == 1)
+                {
+                    return ValueTask.FromException<INatsJSMsg<ReadOnlyMemory<byte>>?>(protocolFailure);
+                }
+
+                secondAttempt.TrySetResult();
+                return new ValueTask<INatsJSMsg<ReadOnlyMemory<byte>>?>(
+                    Task.Delay(Timeout.InfiniteTimeSpan, call.Arg<CancellationToken>())
+                        .ContinueWith<INatsJSMsg<ReadOnlyMemory<byte>>?>(
+                            static task =>
+                            {
+                                task.GetAwaiter().GetResult();
+                                return null;
+                            },
+                            CancellationToken.None,
+                            TaskContinuationOptions.ExecuteSynchronously,
+                            TaskScheduler.Default
+                        )
+                );
+            });
+        await using var client = new NatsConsumerClient(
+            "test-group",
+            1,
+            _options,
+            _serviceProvider,
+            (_, _, _) => Task.FromResult(consumer),
+            timeProvider: timeProvider
+        )
+        {
+            OnLogCallback = args =>
+            {
+                if (
+                    args.LogType == MqLogType.ExceptionReceived
+                    && args.Reason?.Contains("Request Timeout", StringComparison.Ordinal) == true
+                )
+                {
+                    transientLogged.TrySetResult();
+                }
+            },
+        };
+        await client.SubscribeAsync(["orders"]);
+        using var cts = new CancellationTokenSource();
+        var listening = client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token).AsTask();
+
+        try
+        {
+            var firstOutcome = await Task.WhenAny(transientLogged.Task, listening).WaitAsync(AbortToken);
+            firstOutcome.Should().Be(transientLogged.Task, "protocol timeouts retry within the subject loop");
+
+            timeProvider.Advance(TimeSpan.FromSeconds(2));
+            await secondAttempt.Task.WaitAsync(AbortToken);
+            listening.IsCompleted.Should().BeFalse();
+        }
+        finally
+        {
+            await _StopListeningAsync(listening, cts);
+        }
+    }
+
+    [Fact]
     public async Task PauseAsync_and_ResumeAsync_should_restart_fetch_with_a_fresh_receive_token()
     {
         // given
@@ -838,6 +1001,37 @@ public sealed class NatsConsumerClientTests : TestBase
             catch (OperationCanceledException) { }
             catch (ObjectDisposedException) { }
         }
+    }
+
+    [Fact]
+    public async Task ShutdownAsync_should_cap_in_flight_drain_to_remaining_shared_budget()
+    {
+        var timeProvider = new FakeTimeProvider();
+        var stuckHandler = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var client = new NatsConsumerClient(
+            "test-group",
+            1,
+            _options,
+            _serviceProvider,
+            timeProvider: timeProvider
+        );
+        var inFlightHandlers =
+            (ConcurrentDictionary<Task, byte>)
+                typeof(NatsConsumerClient)
+                    .GetField(
+                        "_inFlightHandlers",
+                        BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+                    )!
+                    .GetValue(client)!;
+        inFlightHandlers.TryAdd(stuckHandler.Task, 0).Should().BeTrue();
+
+        var shutdown = ((IConsumerClient)client).ShutdownAsync(TimeSpan.FromSeconds(2)).AsTask();
+        shutdown.IsCompleted.Should().BeFalse();
+
+        timeProvider.Advance(TimeSpan.FromSeconds(2));
+        await shutdown.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+
+        stuckHandler.TrySetResult();
     }
 
     private NatsConsumerClient _CreateClient(string groupName, byte groupConcurrent = 1)

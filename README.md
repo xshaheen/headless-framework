@@ -1,11 +1,18 @@
-<div align="center">
+<p align="center">
+  <img src="assets/banner.svg" alt=".NET Headless Framework" width="100%">
+</p>
 
 # .NET Headless Framework
+
+<div align="center">
 
 **The modular .NET framework that stays out of your way.**
 
 [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4)](https://dotnet.microsoft.com)
 [![GitHub Stars](https://img.shields.io/github/stars/xshaheen/headless-framework?style=social)](https://github.com/xshaheen/headless-framework)
+
+
+[اللغة: العربية](README.ar.md)
 
 150+ NuGet packages &bull; Abstraction + provider pattern &bull; Explicit infrastructure
 

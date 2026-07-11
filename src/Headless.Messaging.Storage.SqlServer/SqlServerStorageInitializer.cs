@@ -117,6 +117,17 @@ internal sealed class SqlServerStorageInitializer(
             END CATCH;
 
             BEGIN TRY
+                IF TYPE_ID(N'{schema}.HeadlessMessagingPoisonMessageList') IS NULL
+                    CREATE TYPE [{schema}].[HeadlessMessagingPoisonMessageList] AS TABLE (
+                        [Id] [uniqueidentifier] NOT NULL PRIMARY KEY,
+                        [ExceptionInfo] [nvarchar](max) NOT NULL
+                    );
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() <> 2714 THROW;
+            END CATCH;
+
+            BEGIN TRY
                 IF OBJECT_ID(N'{GetReceivedTableName()}',N'U') IS NULL
                 BEGIN
                     CREATE TABLE {GetReceivedTableName()}(
@@ -131,6 +142,7 @@ internal sealed class SqlServerStorageInitializer(
                         [Content] [nvarchar](max) NULL,
                         [IntentType] [smallint] NOT NULL,
                         [Retries] [int] NOT NULL,
+                        [InlineAttempts] [int] NOT NULL CONSTRAINT [DF_{receivedPrefix}_InlineAttempts] DEFAULT 0,
                         [Added] [datetime2](7) NOT NULL,
                         [ExpiresAt] [datetime2](7) NULL,
                         [NextRetryAt] [datetime2](7) NULL,
@@ -194,6 +206,14 @@ internal sealed class SqlServerStorageInitializer(
             END CATCH;
 
             BEGIN TRY
+                IF COL_LENGTH(N'{GetReceivedTableName()}', N'InlineAttempts') IS NULL
+                    ALTER TABLE {GetReceivedTableName()} ADD [InlineAttempts] [int] NOT NULL CONSTRAINT [DF_{receivedPrefix}_InlineAttempts] DEFAULT 0;
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() NOT IN (1913, 2714, 2705) THROW;
+            END CATCH;
+
+            BEGIN TRY
                 IF COL_LENGTH(N'{GetReceivedTableName()}', N'Owner') IS NULL
                     ALTER TABLE {GetReceivedTableName()} ADD [Owner] [nvarchar]({options.Value.OwnerColumnMaxLength}) NULL;
             END TRY
@@ -219,6 +239,7 @@ internal sealed class SqlServerStorageInitializer(
                         [Content] [nvarchar](max) NULL,
                         [IntentType] [smallint] NOT NULL,
                         [Retries] [int] NOT NULL,
+                        [InlineAttempts] [int] NOT NULL CONSTRAINT [DF_{publishedPrefix}_InlineAttempts] DEFAULT 0,
                         [Added] [datetime2](7) NOT NULL,
                         [ExpiresAt] [datetime2](7) NULL,
                         [NextRetryAt] [datetime2](7) NULL,
@@ -266,6 +287,14 @@ internal sealed class SqlServerStorageInitializer(
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
+            END CATCH;
+
+            BEGIN TRY
+                IF COL_LENGTH(N'{GetPublishedTableName()}', N'InlineAttempts') IS NULL
+                    ALTER TABLE {GetPublishedTableName()} ADD [InlineAttempts] [int] NOT NULL CONSTRAINT [DF_{publishedPrefix}_InlineAttempts] DEFAULT 0;
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() NOT IN (1913, 2714, 2705) THROW;
             END CATCH;
 
             BEGIN TRY

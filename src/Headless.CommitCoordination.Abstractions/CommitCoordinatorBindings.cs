@@ -23,7 +23,7 @@ public sealed class CommitCoordinatorBindings
     /// <summary>
     /// Gets the provider capabilities to attach to the new coordinator root. The enlistment helper constructs
     /// these (for example a relational helper supplies an <see cref="IRelationalCommitContext" />); the signal
-    /// source forwards them untouched to <see cref="ICommitScopeFactory.Begin" />. <see langword="null" /> or
+    /// source forwards them untouched to <see cref="ICommitScopeFactory.BeginNew" />. <see langword="null" /> or
     /// empty for flows that expose no capability. Keeping this a collection of opaque markers preserves the
     /// binding's datastore-agnostic contract — no specific provider handle is hard-coded here.
     /// </summary>

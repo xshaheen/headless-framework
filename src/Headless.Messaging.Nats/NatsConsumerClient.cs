@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.Net.Sockets;
 using Headless.Checks;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Runtime;
@@ -230,6 +231,8 @@ internal sealed class NatsConsumerClient(
 
     public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
+        using var listeningCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
         var streamGroups = _subscribedMessageNames!.GroupBy(
             x => _natsOptions.NormalizeStreamName(x),
             StringComparer.Ordinal
@@ -257,9 +260,11 @@ internal sealed class NatsConsumerClient(
 
                 var startupReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 startupTasks.Add(startupReady.Task);
+#pragma warning disable AsyncFixer04 // Every subject task is joined below, including the startup-failure path.
                 tasks.Add(
-                    _ConsumeSubjectAsync(streamGroup.Key, consumerConfig, timeout, startupReady, cancellationToken)
+                    _ConsumeSubjectAsync(streamGroup.Key, consumerConfig, timeout, startupReady, listeningCts.Token)
                 );
+#pragma warning restore AsyncFixer04
             }
         }
 
@@ -269,10 +274,39 @@ internal sealed class NatsConsumerClient(
         }
         else
         {
-            await Task.WhenAll(startupTasks).ConfigureAwait(false);
+            try
+            {
+                await Task.WhenAll(startupTasks).ConfigureAwait(false);
+            }
+            catch
+            {
+                await listeningCts.CancelAsync().ConfigureAwait(false);
+
+                // A sibling subject may already be using the linked token. Join all loops before the
+                // token source leaves scope, while preserving the original startup failure.
+                try
+                {
+                    await Task.WhenAll(tasks).ConfigureAwait(false);
+                }
+#pragma warning disable ERP022 // The outer startup exception is the actionable failure and is rethrown below.
+                catch { }
+#pragma warning restore ERP022
+
+                throw;
+            }
+
             _ready.TrySetResult();
         }
 
+        if (tasks.Count == 0)
+        {
+            return;
+        }
+
+        // A subject loop only completes on shutdown or an unrecoverable failure. Stop its sibling
+        // loops when either happens so Task.WhenAll cannot hide the failure behind still-running subjects.
+        _ = await Task.WhenAny(tasks).ConfigureAwait(false);
+        await listeningCts.CancelAsync().ConfigureAwait(false);
         await Task.WhenAll(tasks).ConfigureAwait(false);
     }
 
@@ -365,6 +399,12 @@ internal sealed class NatsConsumerClient(
                         await _timeProvider.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
                         continue;
                     }
+                    catch (Exception ex) when (_IsConnectionFailure(ex))
+                    {
+                        // Reconnect is deliberately owned by ConsumerRegister. Let the receive loop
+                        // terminate so its health watchdog can replace this failed client.
+                        throw;
+                    }
                     catch (Exception ex)
                     {
                         OnLogCallback?.Invoke(
@@ -394,6 +434,20 @@ internal sealed class NatsConsumerClient(
                 startupReady.TrySetCanceled(cancellationToken);
                 break;
             }
+            catch (Exception ex) when (_IsConnectionFailure(ex))
+            {
+                startupReady.TrySetException(ex);
+                OnLogCallback?.Invoke(
+                    new LogMessageEventArgs
+                    {
+                        LogType = MqLogType.ConnectError,
+                        Reason =
+                            $"NATS connection failed for stream '{streamName}', terminating listener for supervised restart: {ex}",
+                    }
+                );
+
+                throw;
+            }
             catch (Exception ex)
             {
                 OnLogCallback?.Invoke(
@@ -408,6 +462,14 @@ internal sealed class NatsConsumerClient(
                 await _timeProvider.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
             }
         }
+    }
+
+    private static bool _IsConnectionFailure(Exception exception)
+    {
+        return exception
+            is NatsConnectionFailedException
+                or NatsJSConnectionException
+                or NatsException { InnerException: SocketException or IOException };
     }
 
     private async ValueTask _DispatchMessageAsync(
@@ -637,7 +699,12 @@ internal sealed class NatsConsumerClient(
         }
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
+    {
+        return ShutdownAsync(_ShutdownDrainTimeout);
+    }
+
+    public async ValueTask ShutdownAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
         {
@@ -645,7 +712,7 @@ internal sealed class NatsConsumerClient(
         }
 
         _pauseGate.Release();
-        _ready.TrySetCanceled();
+        _ready.TrySetCanceled(CancellationToken.None);
         await _CancelReceives().ConfigureAwait(false);
 
         // Drain in-flight concurrent handlers before disposing the semaphore and connection, so a
@@ -657,7 +724,14 @@ internal sealed class NatsConsumerClient(
         {
             try
             {
-                await Task.WhenAll(inFlight).WaitAsync(_ShutdownDrainTimeout, _timeProvider).ConfigureAwait(false);
+                if (timeout <= TimeSpan.Zero)
+                {
+                    throw new TimeoutException("The shared messaging shutdown deadline has expired.");
+                }
+
+                await Task.WhenAll(inFlight)
+                    .WaitAsync(timeout, _timeProvider, CancellationToken.None)
+                    .ConfigureAwait(false);
             }
             catch (Exception ex)
             {

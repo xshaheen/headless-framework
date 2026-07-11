@@ -218,6 +218,7 @@ services.AddHeadlessMessaging(setup =>
 - **Do NOT use raw transport client libraries** (e.g., `RabbitMQ.Client`, `Confluent.Kafka`) directly -- always use the `Headless.Messaging` abstraction layer.
 - **Ordering depends on transport**: Kafka orders by partition key. Azure Service Bus orders by session. RabbitMQ has no ordering with multiple consumers. Set `ConsumerThreadCount = 1` for strict ordering.
 - **RabbitMQ credentials**: The framework rejects default `guest`/`guest` credentials. Always configure explicit username/password.
+- **AWS SQS redrive is external**: Configure a dead-letter queue and redrive policy with a bounded receive count. Headless releases malformed SNS envelopes for retry but does not provision redrive infrastructure.
 - **Message-name mapping**: Map message types to logical message names via `setup.ForMessage<TMessage>(x => x.MessageName("message.name"))` (primary) or conventions. `IMessagingBuilder.WithMessageNameMapping<TMessage>("message.name")` remains available inside the `AddHeadlessMessaging` callback for standalone/publisher-only overrides.
 - **Fail-fast defaults**: Duplicate consumer or runtime registrations are rejected by default. Anonymous runtime delegates must provide `HandlerId`.
 - **Telemetry parity**: Existing diagnostic listener and metric names stay stable across direct publish, outbox publish, and runtime subscriptions.
@@ -229,7 +230,7 @@ services.AddHeadlessMessaging(setup =>
 - **Dashboard.K8s requires RBAC** permissions to read pods/endpoints in the Kubernetes API.
 - **Callbacks enable async response routing**: Set `CallbackName` on `PublishOptions` (bus) **or** `EnqueueOptions` (queue) to a response message name. When the consumer completes, a correlated response message is automatically published to that name through the durable bus path — regardless of which intent delivered the request. The consumer calls `context.SetResponse<TResponse>(value)` to publish a typed response body; if it does not, the callback still goes out as a headers-only message when response headers are present. This is **not** request/reply — the caller does not `await` the response. A separate consumer must handle the response message. Use `context.Headers.RemoveCallback()` to suppress, `RewriteCallback()` to redirect, or `AddResponseHeader()` to attach extra headers to the response. Callback delivery is **at-least-once** — a crash, or a transient failure of the success-mark write after the response outbox row is written, redelivers the request and republishes the response, so make response consumers idempotent (dedupe on `(CorrelationId, CorrelationSequence)`; `CorrelationId` alone is ambiguous across hops because it is set to the immediate parent message id per hop, not the chain root). **Footgun on the bus path:** a published (pub/sub) request is delivered to *every* matching subscriber, so each one fires its own callback — N subscribers produce N response messages. Point-to-point (`IQueue` / `IOutboxQueue`) delivers to one consumer and produces exactly one response; prefer it for command→result chaining unless you intend scatter-gather (correlate the fan-in via `CorrelationId` / `CorrelationSequence`).
 - **Strict publish tenancy is opt-in**: Use `builder.AddHeadlessTenancy(tenancy => tenancy.Messaging(m => m.PropagateTenant().RequireTenantOnPublish()))`. The previous `MessagingBuilder.AddTenantPropagation()` extension has been removed; the root tenancy seam is the single composition point. When neither `PublishOptions.TenantId` nor ambient `ICurrentTenant` is set, the publish wrapper throws `Headless.Abstractions.MissingTenantContextException`. See [Strict Publish Tenancy](#strict-publish-tenancy) and the multi-tenancy doc's [Message Consumers](multi-tenancy.md#message-consumers) section.
-- **Retry behavior is configured via `MessagingOptions.RetryPolicy`** (`MaxInlineRetries`, `MaxPersistedRetries`, `InitialDispatchGrace`, `BackoffStrategy`, `OnExhausted`, `OnExhaustedTimeout`). `OnExhausted` fires **only** on `RetryDecision.Exhausted` — not on permanent exceptions or cancellation (`RetryDecision.Stop`). The 5 removed pre-1.0 primitives — `FailedRetryCount`, `FailedRetryInterval`, `FallbackWindowLookbackSeconds`, `RetryBackoffStrategy`, `FailedThresholdCallback` — have direct replacements in `RetryPolicy` / `RetryProcessorOptions`; see the [Retry Policy](#retry-policy) section for the migration table.
+- **Retry behavior is configured via `MessagingOptions.RetryPolicy`**. `RetryStrategy` is a public Polly `RetryStrategyOptions` contract; `MaxPersistedRetries`, durable scheduling, leases, and terminal callbacks remain Messaging-owned. Configure `ShouldHandle` explicitly. `OnExhausted` fires only after a matched failure consumes the complete budget and the owned terminal write succeeds.
 - **Distributed lock**: see [Distributed Lock Integration](#distributed-lock-integration) for when to enable, when to skip, and the two-layer model (per-row `LockedUntil` lease + coarse-grained distributed lock).
 - **Never write framework metadata through provider hatches**. For publish options, use typed properties; raw `Headers.TenantId` is accepted only by the legacy tenant-integrity path and should not be authored directly.
 - **Treat provider hatches as physical broker routing/configuration**. Producer-side hatches live on `IMessageBuilder<TMessage>`; consumer-side hatches live on `IBusConsumerBuilder<TConsumer>` or `IQueueConsumerBuilder<TConsumer>` only when that provider currently exposes consumer settings.
@@ -483,12 +484,13 @@ services.AddHeadlessMessaging(setup =>
 - Retry configuration lives under `RetryPolicy`, publish/receive retry processors, and storage cleanup options. `RetryBatchSize` (default 200, `> 0`) caps the retry-pickup batch and `SchedulerBatchSize` (default 1,000, `> 0`) caps the delayed/queued scheduler batch.
 - `UseStorageLock` coordinates retry processors through a messaging-keyed distributed lock provider.
 - `DeadNodeReconcileInterval` (default 1 minute, `> 0`) sets the always-on dead-owner recovery reconcile cadence (see [Dead-owner recovery](#dead-owner-recovery)). Independent of `UseStorageLock`.
+- `ShutdownTimeout` (default 30 seconds, `> 0`, `<= 5m`) is one end-to-end messaging shutdown bound shared by the consumer-register listener drain, concurrent consumer-client disposal, provider-specific in-flight drains, and the dispatcher loop drain. Cleanup still running when the deadline expires continues fault-observed in the background.
 - Register middleware through `MessagingBuilder.AddBusPublishMiddleware<T>()`, `AddBusConsumeMiddleware<T>()`, `AddPublishMiddlewareFor<TMiddleware,TMessage>()`, and `AddConsumeMiddlewareFor<TMiddleware,TMessage>(groupName)`.
 - Runtime subscriptions attach handlers after startup through `IRuntimeSubscriber`.
 
 ### Dependencies
 
-`Headless.Messaging.Abstractions`, `Headless.Messaging.Bus.Abstractions`, `Headless.Messaging.Queue.Abstractions`, `Headless.Coordination.Abstractions`, `Headless.Coordination.Core`, `Headless.Hosting`, `Headless.Abstractions`, `Headless.Checks`. (`Headless.Coordination.Core` hosts the shared `DeadOwnerRecoveryBridge`.)
+`Headless.Messaging.Abstractions`, `Headless.Messaging.Bus.Abstractions`, `Headless.Messaging.Queue.Abstractions`, `Headless.Coordination.Abstractions`, `Headless.Coordination.Core`, `Headless.Hosting`, `Headless.Abstractions`, `Headless.Checks`, `Polly.Core`. (`Headless.Coordination.Core` hosts the shared `DeadOwnerRecoveryBridge`.)
 
 ### Side Effects
 
@@ -496,22 +498,44 @@ Registers messaging services, hosted processors, publishers, consumers, storage 
 
 ## Retry Policy
 
-Retries up to `MaxInlineRetries` run **inline** inside the same `ExecuteAsync` / `SendAsync` call (with `Task.Delay` between attempts). Once the inline budget is exhausted, the message is persisted with `NextRetryAt` set and picked up by `MessageNeedToRetryProcessor` (up to `MaxPersistedRetries` times). Each pickup then bursts another round of `MaxInlineRetries` inline attempts.
+`RetryStrategy.MaxRetryAttempts` excludes the original execution and controls inline retries through a reusable Polly `ResiliencePipeline`. Once the inline budget is exhausted, Messaging persists `NextRetryAt` and `MessageNeedToRetryProcessor` performs up to `MaxPersistedRetries` pickups. `InlineAttempts` is reserved atomically before each invocation, so process recovery cannot reset the current burst.
 
-Worked example with `MaxInlineRetries = 2, MaxPersistedRetries = 2` — total (2+1)×(2+1) = 9 attempts:
+```csharp
+using Polly;
+using Polly.Retry;
+
+builder.Services.AddHeadlessMessaging(setup =>
+{
+    setup.Options.RetryPolicy.RetryStrategy = new RetryStrategyOptions
+    {
+        MaxRetryAttempts = 2,
+        Delay = TimeSpan.FromSeconds(1),
+        BackoffType = DelayBackoffType.Exponential,
+        UseJitter = true,
+        MaxDelay = TimeSpan.FromMinutes(5),
+        ShouldHandle = args => ValueTask.FromResult(
+            args.Outcome.Exception is TimeoutException or HttpRequestException
+        ),
+    };
+});
+```
+
+The framework's default classification (retry anything that is not a cancellation and not classified permanent) is exposed as `RetryPolicyOptions.DefaultShouldHandle` — reuse or compose it when replacing `RetryStrategy` so a custom strategy does not silently drop the built-in failure classification.
+
+Worked example with `RetryStrategy.MaxRetryAttempts = 2, MaxPersistedRetries = 2` — total (2+1)×(2+1) = 9 attempts:
 
 ```
 pickup 1 (initial dispatch):
   attempt 1 (original)        ── inline
-  attempt 2 (inline retry #1) ── inline, after BackoffStrategy delay
-  attempt 3 (inline retry #2) ── inline, after BackoffStrategy delay → persist (1/2)
+  attempt 2 (inline retry #1) ── inline, after Polly delay
+  attempt 3 (inline retry #2) ── inline, after Polly delay → persist (1/2)
 pickup 2 (persisted retry #1):
   attempt 4                   ── inline
-  attempt 5 (inline retry #1) ── inline, after BackoffStrategy delay
-  attempt 6 (inline retry #2) ── inline, after BackoffStrategy delay → persist (2/2)
+  attempt 5 (inline retry #1) ── inline, after Polly delay
+  attempt 6 (inline retry #2) ── inline, after Polly delay → persist (2/2)
 pickup 3 (persisted retry #2):
   attempt 7                   ── inline
-  attempt 8 (inline retry #1) ── inline, after BackoffStrategy delay
+  attempt 8 (inline retry #1) ── inline, after Polly delay
   attempt 9 (inline retry #2) ── final; on failure → Exhausted → OnExhausted fires
 ```
 
@@ -548,11 +572,11 @@ var info = new FailedInfo
 
 | Old property | New property | Notes |
 | --- | --- | --- |
-| `FailedRetryCount` | `RetryPolicy.MaxPersistedRetries` | Controls persisted-retry pickups. Total attempts = `(MaxInlineRetries + 1) × (MaxPersistedRetries + 1)`. Set both to `0` to disable retries. |
+| `FailedRetryCount` | `RetryPolicy.MaxPersistedRetries` | Controls persisted-retry pickups. Total attempts = `(RetryStrategy.MaxRetryAttempts + 1) × (MaxPersistedRetries + 1)`. |
 | `FailedRetryInterval` | `RetryProcessorOptions.BaseInterval` | Default `60s`. |
 | `FallbackWindowLookbackSeconds` | *removed* | No replacement — `MessageNeedToRetryProcessor` now polls without a lookback window. |
-| `RetryBackoffStrategy` | `RetryPolicy.BackoffStrategy` | Strategy contract is now one `Compute(int persistedRetryCount, int inlineRetryCount, Exception exception)` method returning `RetryDecision`. |
-| `FailedThresholdCallback` | `RetryPolicy.OnExhausted` | **Semantic change:** the callback now fires only on `RetryDecision.Exhausted`, not on permanent exceptions or cancellation (`RetryDecision.Stop`). |
+| `RetryBackoffStrategy` | `RetryPolicy.RetryStrategy` | Configure Polly's `RetryStrategyOptions` directly, including explicit `ShouldHandle`, backoff, jitter, delay generator, cap, and `OnRetry`. |
+| `FailedThresholdCallback` | `RetryPolicy.OnExhausted` | The Messaging-owned callback fires only after an owned terminal transition following complete retryable-budget exhaustion. |
 
 ## Distributed Lock Integration
 
@@ -1096,6 +1120,8 @@ Provides AWS SNS bus transport and AWS SQS queue transport.
 
 `MessageGroupId(...)` is producer-side only because it is stamped while publishing. The provider maps it to native FIFO `MessageGroupId`; it is not a custom message attribute. Values longer than 128 characters are rejected.
 
+Malformed SNS envelopes are released with a 3-second visibility timeout. Headless does not provision a dead-letter queue or redrive policy; configure SQS redrive externally to bound repeated malformed deliveries.
+
 ### Installation
 
 ```bash
@@ -1266,7 +1292,7 @@ Provides Kafka queue-intent transport for partitioned, consumer-group processing
 
 ### Design Notes
 
-Kafka is queue-intent only in this package. `PartitionBy(...)` maps to the Kafka key. The framework does not impose a Kafka key length cap; broker/client configuration owns practical limits. Delivery remains at-least-once; consumers must dedupe by business key or message id. When consumer concurrency is greater than one, successful handlers can finish out of order, but Kafka commits advance only through the contiguous completed offset watermark per partition; a completed high offset does not commit past lower in-flight offsets.
+Kafka is queue-intent only in this package. `PartitionBy(...)` maps to the Kafka key. The framework does not impose a Kafka key length cap; broker/client configuration owns practical limits. Delivery remains at-least-once; consumers must dedupe by business key or message id. A publish succeeds only when Kafka reports `Persisted`; `PossiblyPersisted` is retried and can therefore produce duplicates. When consumer concurrency is greater than one, successful handlers can finish out of order, but Kafka commits advance only through the contiguous completed offset watermark per partition; a completed high offset does not commit past lower in-flight offsets. Rebalances invalidate tracked offsets for revoked or lost partitions so late handlers cannot commit or seek partitions now owned by another consumer.
 
 ### Installation
 
@@ -1320,6 +1346,8 @@ Provides a NATS JetStream transport for Headless messaging so applications can p
 `SubjectShard(...)` appends one safe subject token to the logical message name. It rejects `.`, `*`, `>`, whitespace, and control characters so payload values cannot change the subject hierarchy or wildcard behavior.
 
 Shard symmetry is required: when a message uses `SubjectShard(...)` on the producer side, every consumer registered for that message must call `.UseNats(c => c.Sharded())` on its consumer registration. This is validated at startup and throws `InvalidOperationException` if violated. The reason: NATS delivers zero messages with no error when a FilterSubject does not match any shard subject — the asymmetry causes silent data loss that is otherwise very difficult to diagnose.
+
+Connection-specific failures (`NatsConnectionFailedException`, `NatsJSConnectionException`, or a `NatsException` wrapping `SocketException`/`IOException`) terminate the listener instead of retrying in place, so the supervising consumer register's health watchdog can replace the failed client. JetStream protocol, timeout, API, and other consumer errors retry per-subject with backoff. During host shutdown, NATS bounds its in-flight handler drain by the remaining shared `MessagingOptions.ShutdownTimeout` budget instead of starting an independent 30-second drain.
 
 ### Installation
 
@@ -1403,7 +1431,7 @@ Provides RabbitMQ exchange and queue transport support.
 
 ### Design Notes
 
-RabbitMQ currently exposes consumer-side QoS only in this cluster. Publish routing still follows the logical message name because subscription topology binds queues by logical message name.
+RabbitMQ currently exposes consumer-side QoS only in this cluster. Publish routing still follows the logical message name because subscription topology binds queues by logical message name. When `PublishConfirms` is enabled, publish completion awaits the broker acknowledgement or negative acknowledgement.
 
 ### Installation
 

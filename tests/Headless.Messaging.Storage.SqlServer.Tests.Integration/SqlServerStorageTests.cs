@@ -256,6 +256,14 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
         base.should_reject_mismatched_original_retries();
 
     [Fact]
+    public override Task should_lease_and_reserve_publish_attempt_in_single_step() =>
+        base.should_lease_and_reserve_publish_attempt_in_single_step();
+
+    [Fact]
+    public override Task should_reject_lease_and_reserve_with_stale_inline_attempts_token() =>
+        base.should_reject_lease_and_reserve_with_stale_inline_attempts_token();
+
+    [Fact]
     public override Task should_report_false_when_received_exception_message_is_already_terminal() =>
         base.should_report_false_when_received_exception_message_is_already_terminal();
 
@@ -278,6 +286,10 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
     [Fact]
     public override Task should_not_return_leased_received_message_until_lease_expires() =>
         base.should_not_return_leased_received_message_until_lease_expires();
+
+    [Fact]
+    public override Task should_return_unstored_snapshot_when_redelivery_hits_active_receive_lease() =>
+        base.should_return_unstored_snapshot_when_redelivery_hits_active_receive_lease();
 
     [Fact]
     public override Task should_handle_concurrent_state_updates_to_same_row() =>
@@ -402,7 +414,7 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
         // given
         var storage = GetStorage();
         var id = Guid.NewGuid();
-        var now = DateTime.UtcNow;
+        var now = TimeProvider.GetUtcNow().UtcDateTime;
 
         await using (var connection = new SqlConnection(fixture.ConnectionString))
         {
@@ -451,6 +463,45 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
             );
             exceptionInfo.Should().Contain("JsonException");
         }
+    }
+
+    [Theory]
+    [InlineData("Published")]
+    [InlineData("Received")]
+    public async Task should_return_healthy_retry_row_when_same_claim_batch_contains_poison(string tableName)
+    {
+        var storage = GetStorage();
+        var serializer = GetSerializer();
+        var poisonId = Guid.NewGuid();
+        var healthyId = Guid.NewGuid();
+        var now = TimeProvider.GetUtcNow().UtcDateTime;
+
+        await using (var connection = new SqlConnection(fixture.ConnectionString))
+        {
+            await connection.OpenAsync(AbortToken);
+            await _InsertPoisonRetryRowAsync(connection, tableName, poisonId, now);
+            await _InsertHealthyRetryRowAsync(
+                connection,
+                tableName,
+                healthyId,
+                serializer.Serialize(CreateMessage("healthy-retry")),
+                now
+            );
+        }
+
+        var picked = string.Equals(tableName, "Published", StringComparison.Ordinal)
+            ? await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken)
+            : await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken);
+
+        picked.Select(message => message.StorageId).Should().Contain(healthyId).And.NotContain(poisonId);
+
+        await using var assertConnection = new SqlConnection(fixture.ConnectionString);
+        await assertConnection.OpenAsync(AbortToken);
+        var poisonNextRetryAt = await assertConnection.ExecuteScalarAsync<DateTime?>(
+            $"SELECT NextRetryAt FROM messaging.{tableName} WHERE Id = @Id",
+            new { Id = poisonId }
+        );
+        poisonNextRetryAt.Should().BeNull();
     }
 
     [Fact]
@@ -838,6 +889,52 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
                 MessageId = $"sql-{id:N}",
             }
         );
+
+    private static Task _InsertHealthyRetryRowAsync(
+        SqlConnection connection,
+        string tableName,
+        Guid id,
+        string content,
+        DateTime now
+    )
+    {
+        if (string.Equals(tableName, "Published", StringComparison.Ordinal))
+        {
+            return connection.ExecuteAsync(
+                """
+                INSERT INTO messaging.Published
+                    (Id, Version, Name, Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, LockedUntil, Owner, StatusName, MessageId)
+                VALUES
+                    (@Id, 'v1', 'healthy-published', @Content, 0, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId);
+                """,
+                new
+                {
+                    Id = id,
+                    Content = content,
+                    Now = now,
+                    NextRetryAt = now.AddMinutes(-1),
+                    MessageId = $"healthy-{id:N}",
+                }
+            );
+        }
+
+        return connection.ExecuteAsync(
+            """
+            INSERT INTO messaging.Received
+                (Id, Version, Name, [Group], Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, LockedUntil, Owner, StatusName, MessageId, ExceptionInfo)
+            VALUES
+                (@Id, 'v1', 'healthy-received', 'healthy-group', @Content, 0, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId, NULL);
+            """,
+            new
+            {
+                Id = id,
+                Content = content,
+                Now = now,
+                NextRetryAt = now.AddMinutes(-1),
+                MessageId = $"healthy-{id:N}",
+            }
+        );
+    }
 
     #endregion
 }

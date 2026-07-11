@@ -227,6 +227,7 @@ internal sealed class SqlServerMembershipStore(
                     command.Parameters.AddWithValue("ClusterName", clusterName);
                     command.Parameters.AddWithValue("NodeId", identity.NodeId.Value);
                     command.Parameters.AddWithValue("Incarnation", identity.Incarnation.Value);
+                    command.Parameters.AddWithValue("DeadThresholdMs", _ToMilliseconds(DeadThreshold));
 
                     var accepted = (bool)await command.ExecuteScalarAsync(ct).ConfigureAwait(false);
                     await transaction.CommitAsync(ct).ConfigureAwait(false);
@@ -401,32 +402,18 @@ internal sealed class SqlServerMembershipStore(
             END;
 
             UPDATE {{livenessTable}} WITH (UPDLOCK, HOLDLOCK)
-            SET [{{SqlServerMembershipSchema.Liveness.LastBeat}}] = SYSUTCDATETIME(),
-                [{{SqlServerMembershipSchema.Liveness.LeftAt}}] = NULL
+            SET [{{SqlServerMembershipSchema.Liveness.LastBeat}}] = SYSUTCDATETIME()
             WHERE [{{SqlServerMembershipSchema.ClusterName}}] = @ClusterName
               AND [{{SqlServerMembershipSchema.NodeId}}] = @NodeId
-              AND [{{SqlServerMembershipSchema.Incarnation}}] = @Incarnation;
-
-            IF @@ROWCOUNT = 0
-            BEGIN
-                INSERT INTO {{livenessTable}} (
-                    [{{SqlServerMembershipSchema.ClusterName}}],
-                    [{{SqlServerMembershipSchema.NodeId}}],
-                    [{{SqlServerMembershipSchema.Incarnation}}],
+              AND [{{SqlServerMembershipSchema.Incarnation}}] = @Incarnation
+              AND [{{SqlServerMembershipSchema.Liveness.LeftAt}}] IS NULL
+              AND DATEDIFF_BIG(
+                    millisecond,
                     [{{SqlServerMembershipSchema.Liveness.LastBeat}}],
-                    [{{SqlServerMembershipSchema.Liveness.LeftAt}}]
-                )
-                SELECT @ClusterName, @NodeId, @Incarnation, SYSUTCDATETIME(), NULL
-                WHERE NOT EXISTS (
-                    SELECT 1
-                    FROM {{livenessTable}} WITH (UPDLOCK, HOLDLOCK)
-                    WHERE [{{SqlServerMembershipSchema.ClusterName}}] = @ClusterName
-                      AND [{{SqlServerMembershipSchema.NodeId}}] = @NodeId
-                      AND [{{SqlServerMembershipSchema.Incarnation}}] = @Incarnation
-                );
-            END;
+                    SYSUTCDATETIME()
+                  ) < @DeadThresholdMs;
 
-            SELECT CAST(1 AS bit);
+            SELECT CAST(CASE WHEN @@ROWCOUNT = 1 THEN 1 ELSE 0 END AS bit);
             """;
     }
 

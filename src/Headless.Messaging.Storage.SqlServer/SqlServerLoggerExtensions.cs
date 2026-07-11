@@ -34,4 +34,17 @@ internal static partial class SqlServerLoggerExtensions
         Message = "Fetched {Count} delayed/queued message(s) for scheduling from {Table}."
     )]
     public static partial void LogSchedulerBatchFetched(this ILogger logger, int count, string table);
+
+    [LoggerMessage(
+        EventId = 4,
+        EventName = "PoisonMessageTerminalMarkFailed",
+        Level = LogLevel.Warning,
+        Message = "Failed to mark poison message {StorageId} terminal in {Table}; the batch proceeds and the row stays leased until its lease expires."
+    )]
+    public static partial void LogPoisonMessageTerminalMarkFailed(
+        this ILogger logger,
+        Guid storageId,
+        string table,
+        Exception exception
+    );
 }

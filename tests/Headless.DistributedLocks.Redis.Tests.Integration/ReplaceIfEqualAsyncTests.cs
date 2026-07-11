@@ -87,11 +87,12 @@ public sealed class ReplaceIfEqualAsyncTests(RedisTestFixture fixture)
     }
 
     [Fact]
-    public async Task should_not_set_ttl_when_null()
+    public async Task should_preserve_existing_ttl_when_null()
     {
         // given
         var key = _NewKey();
-        await Db.StringSetAsync(key, "old-value");
+        var ttl = TimeSpan.FromMinutes(5);
+        await Db.StringSetAsync(key, "old-value", ttl);
 
         // when
         var result = await Loader.ReplaceIfEqualAsync(
@@ -105,6 +106,7 @@ public sealed class ReplaceIfEqualAsyncTests(RedisTestFixture fixture)
         // then
         result.Should().BeTrue();
         var keyTtl = await Db.KeyTimeToLiveAsync(key);
-        keyTtl.Should().BeNull(); // no expiry means TTL is null (or -1 in raw Redis)
+        keyTtl.Should().NotBeNull();
+        keyTtl!.Value.Should().BeCloseTo(ttl, precision: TimeSpan.FromSeconds(5));
     }
 }

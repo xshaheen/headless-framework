@@ -83,4 +83,18 @@ internal static partial class LoggerExtensions
         Message = "Coordination membership registration failed after {MaxAttempts} attempts; stopping the membership loop without stopping the host."
     )]
     public static partial void MembershipRegistrationFailed(this ILogger logger, Exception exception, int maxAttempts);
+
+    [LoggerMessage(
+        EventId = 10,
+        EventName = "HeartbeatFailed",
+        Level = LogLevel.Error,
+        Message = "Coordination heartbeat for {Identity} failed for {Elapsed}; the node self-fences after {DeadThreshold} without a confirmed store write."
+    )]
+    public static partial void HeartbeatFailed(
+        this ILogger logger,
+        Exception exception,
+        NodeIdentity identity,
+        TimeSpan elapsed,
+        TimeSpan deadThreshold
+    );
 }

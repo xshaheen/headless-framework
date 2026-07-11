@@ -952,6 +952,58 @@ public abstract class DataStorageTestsBase : TestBase
             .Contain(m => m.StorageId == storedMessage.StorageId);
     }
 
+    public virtual async Task should_return_unstored_snapshot_when_redelivery_hits_active_receive_lease()
+    {
+        var storage = GetStorage();
+        var message = CreateMessage();
+        var storedMessage = await storage.StoreReceivedMessageAsync(
+            "active-lease-redelivery",
+            "test-group",
+            message,
+            AbortToken
+        );
+        var now = _Now();
+
+        await storage.ChangeReceiveStateAsync(
+            storedMessage,
+            StatusName.Failed,
+            nextRetryAt: now.AddSeconds(-1),
+            cancellationToken: AbortToken
+        );
+        var leased = await storage.LeaseReceiveAsync(storedMessage, now.AddMinutes(5), AbortToken);
+        var beforeRedelivery = Capabilities.SupportsMonitoringApi
+            ? await storage.GetMonitoringApi().GetReceivedMessageAsync(storedMessage.StorageId, AbortToken)
+            : null;
+
+        var redelivery = await storage.StoreReceivedMessageAsync(
+            "active-lease-redelivery",
+            "test-group",
+            message,
+            AbortToken
+        );
+
+        leased.Should().BeTrue();
+        redelivery.StorageId.Should().NotBe(storedMessage.StorageId);
+        redelivery.LockedUntil.Should().BeNull();
+        redelivery.Owner.Should().BeNull();
+        (await storage.LeaseReceiveAsync(redelivery, now.AddMinutes(5), AbortToken))
+            .Should()
+            .BeFalse("the guard-blocked upsert returned an unpersisted candidate");
+
+        if (beforeRedelivery is not null)
+        {
+            var afterRedelivery = await storage
+                .GetMonitoringApi()
+                .GetReceivedMessageAsync(storedMessage.StorageId, AbortToken);
+            afterRedelivery.Should().NotBeNull();
+            afterRedelivery!.Content.Should().Be(beforeRedelivery.Content);
+            afterRedelivery.LockedUntil.Should().Be(beforeRedelivery.LockedUntil);
+            afterRedelivery.Owner.Should().Be(beforeRedelivery.Owner);
+            afterRedelivery.Retries.Should().Be(beforeRedelivery.Retries);
+            afterRedelivery.ExceptionInfo.Should().Be(beforeRedelivery.ExceptionInfo);
+        }
+    }
+
     public virtual async Task should_reclaim_published_retry_row_owned_by_dead_node()
     {
         var storage = GetStorage();
@@ -1290,6 +1342,79 @@ public abstract class DataStorageTestsBase : TestBase
 
         first.Should().BeTrue();
         second.Should().BeFalse();
+    }
+
+    public virtual async Task should_lease_and_reserve_publish_attempt_in_single_step()
+    {
+        var storage = GetStorage();
+        var message = await storage.StoreMessageAsync("lease-reserve", CreateMessage(), AbortToken);
+        message.InlineAttempts = 1;
+
+        var reserved = await storage.LeasePublishAndReserveAttemptAsync(
+            message,
+            DateTime.UtcNow.AddMinutes(5),
+            originalInlineAttempts: 0,
+            AbortToken
+        );
+
+        reserved.Should().BeTrue();
+        message.LockedUntil.Should().NotBeNull("a successful combined write must mirror the lease to the caller");
+
+        // The row is now actively leased: a second combined write must be rejected even with the
+        // correct counter token, while the standalone mid-burst reservation under the held lease
+        // still succeeds.
+        message.InlineAttempts = 2;
+        var contended = await storage.LeasePublishAndReserveAttemptAsync(
+            message,
+            DateTime.UtcNow.AddMinutes(5),
+            originalInlineAttempts: 1,
+            AbortToken
+        );
+        contended.Should().BeFalse("an actively leased row must not be re-leased mid-burst");
+
+        var midBurst = await storage.ReservePublishAttemptAsync(message, originalInlineAttempts: 1, AbortToken);
+        midBurst.Should().BeTrue("the lease owner must still be able to reserve the next inline attempt");
+    }
+
+    public virtual async Task should_reject_lease_and_reserve_with_stale_inline_attempts_token()
+    {
+        var storage = GetStorage();
+        var message = await storage.StoreReceivedMessageAsync(
+            "lease-reserve-cas",
+            "test-group",
+            CreateMessage(),
+            AbortToken
+        );
+
+        // First combined write with an already-expired lease leaves the row unleased but advances
+        // the durable InlineAttempts counter to 1.
+        message.InlineAttempts = 1;
+        var first = await storage.LeaseReceiveAndReserveAttemptAsync(
+            message,
+            DateTime.UtcNow.AddSeconds(-1),
+            originalInlineAttempts: 0,
+            AbortToken
+        );
+        first.Should().BeTrue();
+
+        // A contender holding a stale counter view (0) must fail the CAS; the current token (1)
+        // must succeed.
+        message.InlineAttempts = 2;
+        var stale = await storage.LeaseReceiveAndReserveAttemptAsync(
+            message,
+            DateTime.UtcNow.AddMinutes(5),
+            originalInlineAttempts: 0,
+            AbortToken
+        );
+        stale.Should().BeFalse("the durable InlineAttempts token moved; a stale view must not re-reserve");
+
+        var current = await storage.LeaseReceiveAndReserveAttemptAsync(
+            message,
+            DateTime.UtcNow.AddMinutes(5),
+            originalInlineAttempts: 1,
+            AbortToken
+        );
+        current.Should().BeTrue();
     }
 
     public virtual async Task should_report_false_when_received_exception_message_is_already_terminal()

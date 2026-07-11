@@ -4,11 +4,11 @@ using System.Collections.Concurrent;
 using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
-using Headless.Messaging.Retry;
 using Headless.Messaging.Testing;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
+using Polly.Retry;
 
 namespace Tests;
 
@@ -556,9 +556,13 @@ public sealed class EndToEndTests : TestBase
                 options.ForMessage<OrderCreatedEvent>(message =>
                     message.MessageName("order-created").OnBus<FailingConsumer>()
                 );
-                options.Options.RetryPolicy.MaxInlineRetries = 0;
                 options.Options.RetryPolicy.MaxPersistedRetries = 0;
-                options.Options.RetryPolicy.BackoffStrategy = new FixedIntervalBackoffStrategy(TimeSpan.Zero);
+                options.Options.RetryPolicy.RetryStrategy = new RetryStrategyOptions
+                {
+                    MaxRetryAttempts = 0,
+                    Delay = TimeSpan.Zero,
+                    ShouldHandle = static _ => ValueTask.FromResult(true),
+                };
                 options.Options.RetryPolicy.OnExhausted = (_, _) =>
                 {
                     Interlocked.Increment(ref userCallbackFired);
@@ -600,9 +604,13 @@ public sealed class EndToEndTests : TestBase
                 options.ForMessage<OrderCreatedEvent>(message =>
                     message.MessageName("order-created").OnBus<FailingConsumer>()
                 );
-                options.Options.RetryPolicy.MaxInlineRetries = 0;
                 options.Options.RetryPolicy.MaxPersistedRetries = 0;
-                options.Options.RetryPolicy.BackoffStrategy = new FixedIntervalBackoffStrategy(TimeSpan.Zero);
+                options.Options.RetryPolicy.RetryStrategy = new RetryStrategyOptions
+                {
+                    MaxRetryAttempts = 0,
+                    Delay = TimeSpan.Zero,
+                    ShouldHandle = static _ => ValueTask.FromResult(true),
+                };
                 options.Options.RetryPolicy.OnExhaustedTimeout = TimeSpan.FromMilliseconds(200);
                 options.Options.RetryPolicy.OnExhausted = async (_, ct) =>
                 {

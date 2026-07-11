@@ -253,13 +253,7 @@ public sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable,
         {
             var connection = await GetConnectionAsync(cancellationToken).ConfigureAwait(false);
             model = await connection
-                .CreateChannelAsync(
-                    new CreateChannelOptions(
-                        publisherConfirmationsEnabled: _isPublishConfirms,
-                        publisherConfirmationTrackingEnabled: false
-                    ),
-                    cancellationToken
-                )
+                .CreateChannelAsync(BuildChannelOptions(_isPublishConfirms), cancellationToken)
                 .ConfigureAwait(false);
             await model
                 .ExchangeDeclareAsync(
@@ -282,6 +276,9 @@ public sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable,
 
         return model;
     }
+
+    internal static CreateChannelOptions BuildChannelOptions(bool publishConfirms) =>
+        new(publisherConfirmationsEnabled: publishConfirms, publisherConfirmationTrackingEnabled: publishConfirms);
 
     public bool Return(IChannel channel)
     {

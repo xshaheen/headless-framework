@@ -9,7 +9,7 @@ Enables Headless bus and queue delivery over RabbitMQ using a topic exchange, qu
 ## Key Features
 
 - **Topic Exchange/Queue Model**: Declares a topic exchange and binds consumer queues with routing keys derived from message registrations
-- **Reliability**: Optional publisher confirms plus consumer acknowledgments and rejects
+- **Reliability**: Optional publisher confirms that await broker acknowledgments or negative acknowledgments, plus consumer acknowledgments and rejects
 - **Auto-Provisioning**: Automatic exchange and queue creation
 - **Clustering**: Comma-separated broker host names for RabbitMQ cluster connectivity
 - **Queue Arguments**: Queue TTL, queue mode, and queue type are exposed through `RabbitMqMessagingOptions.QueueArguments`
@@ -54,6 +54,7 @@ options.UseRabbitMq(rmq =>
     rmq.Password = builder.Configuration["RabbitMq:Password"]!; // From config
     rmq.VirtualHost = "/";
     rmq.ExchangeName = "myapp.events";
+    rmq.PublishConfirms = true; // Publish completes only after the broker acknowledges or rejects it
     rmq.ConnectionFactoryOptions = factory =>
     {
         factory.AutomaticRecoveryEnabled = true;

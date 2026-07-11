@@ -40,7 +40,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         // cleanup
         await connection.ExecuteAsync(
             new CommandDefinition(
-                $"DROP TABLE IF EXISTS [{customSchema}].Published; DROP TABLE IF EXISTS [{customSchema}].Received; DROP TYPE IF EXISTS [{customSchema}].[HeadlessMessagingIdList]; DROP TYPE IF EXISTS [{customSchema}].[HeadlessMessagingOwnerList]; DROP SCHEMA IF EXISTS [{customSchema}]",
+                $"DROP TABLE IF EXISTS [{customSchema}].Published; DROP TABLE IF EXISTS [{customSchema}].Received; DROP TYPE IF EXISTS [{customSchema}].[HeadlessMessagingIdList]; DROP TYPE IF EXISTS [{customSchema}].[HeadlessMessagingOwnerList]; DROP TYPE IF EXISTS [{customSchema}].[HeadlessMessagingPoisonMessageList]; DROP SCHEMA IF EXISTS [{customSchema}]",
                 cancellationToken: AbortToken
             )
         );
@@ -75,7 +75,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         // cleanup
         await connection.ExecuteAsync(
             new CommandDefinition(
-                $"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingIdList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingOwnerList]; DROP SCHEMA IF EXISTS [{schema}]",
+                $"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingIdList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingOwnerList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingPoisonMessageList]; DROP SCHEMA IF EXISTS [{schema}]",
                 cancellationToken: AbortToken
             )
         );
@@ -121,7 +121,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         // cleanup
         await connection.ExecuteAsync(
             new CommandDefinition(
-                $"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingIdList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingOwnerList]; DROP SCHEMA IF EXISTS [{schema}]",
+                $"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingIdList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingOwnerList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingPoisonMessageList]; DROP SCHEMA IF EXISTS [{schema}]",
                 cancellationToken: AbortToken
             )
         );
@@ -160,7 +160,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         // cleanup
         await connection.ExecuteAsync(
             new CommandDefinition(
-                $"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingIdList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingOwnerList]; DROP SCHEMA IF EXISTS [{schema}]",
+                $"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingIdList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingOwnerList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingPoisonMessageList]; DROP SCHEMA IF EXISTS [{schema}]",
                 cancellationToken: AbortToken
             )
         );
@@ -239,7 +239,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         // cleanup
         await connection.ExecuteAsync(
             new CommandDefinition(
-                $"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingIdList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingOwnerList]; DROP SCHEMA IF EXISTS [{schema}]",
+                $"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingIdList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingOwnerList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingPoisonMessageList]; DROP SCHEMA IF EXISTS [{schema}]",
                 cancellationToken: AbortToken
             )
         );
@@ -273,7 +273,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         // cleanup
         await connection.ExecuteAsync(
             new CommandDefinition(
-                $"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingIdList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingOwnerList]; DROP SCHEMA IF EXISTS [{schema}]",
+                $"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingIdList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingOwnerList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingPoisonMessageList]; DROP SCHEMA IF EXISTS [{schema}]",
                 cancellationToken: AbortToken
             )
         );
@@ -348,7 +348,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         // cleanup
         await connection.ExecuteAsync(
             new CommandDefinition(
-                $"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingIdList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingOwnerList]; DROP SCHEMA IF EXISTS [{schema}]",
+                $"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingIdList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingOwnerList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingPoisonMessageList]; DROP SCHEMA IF EXISTS [{schema}]",
                 cancellationToken: AbortToken
             )
         );

@@ -9,7 +9,7 @@ Provides an authoritative SQL Server membership provider for multi-instance apps
 ## Key Features
 
 - Atomic incarnation allocation under `UPDLOCK, HOLDLOCK`.
-- Equality heartbeat guard rejects stale and impossible incarnations.
+- Heartbeat guard rejects stale, impossible, dead, gracefully left, and pruned incarnations.
 - Liveness classification uses `SYSUTCDATETIME()`.
 - Bounded jittered retry for SQL Server deadlock victim error `1205` during guarded membership writes.
 - DDL initialization uses `sp_getapplock`.

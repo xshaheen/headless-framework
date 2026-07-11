@@ -408,6 +408,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             JobId = job.Id,
             Type = JobType.TimeJob,
             Retries = job.Retries,
+            RetryCount = job.RetryCount,
             RetryIntervals = job.RetryIntervals,
             ParentId = job.ParentId,
             ExecutionTime = job.ExecutionTime ?? timeProvider.GetUtcNow().UtcDateTime,

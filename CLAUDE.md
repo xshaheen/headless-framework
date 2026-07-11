@@ -208,6 +208,9 @@ After creating the project, attach it to [headless-framework.slnx](headless-fram
 
 ## Learnings
 
+- Messaging retry ceilings require an atomic durable attempt reservation before transport or consumer invocation; persisting progress only after failure lets a crash reset an inline burst. Recovery of a consumed reservation advances Messaging-owned persisted state without applying domain exception classification. (2026-07-10)
+- Jobs retry recovery depends on carrying `RetryCount` through every EF and in-memory pickup projection and persisting it before Polly waits; omitting it from a projection silently restores a fresh retry budget after process restart. (2026-07-10)
 - `[JsonExtensionData]` properties must be `{ get; set; }` (never `init`) and every source-gen `JsonSerializerContext` whose models carry extension data needs `[JsonSerializable(typeof(object))]` + `[JsonSerializable(typeof(JsonElement))]`. `init` binding throws on EVERY deserialization; missing object metadata throws on any unknown response field — both at runtime only, build stays green. Found via Paymob CashOut/CashIn unit tests. (2026-07-07)
 - `Range<T>` uses `null` bounds as infinities; range-to-range operations must compare lower and upper bounds with side-specific semantics instead of reusing value containment. (2026-07-04)
 - Kafka concurrent consumers must commit offsets by per-partition contiguous completed watermark; committing a high completed offset directly can acknowledge lower in-flight messages and lose them after a crash. (2026-07-06)
+- MTP `dotnet test --project` can compile+run test code that a direct `dotnet build` rejects with an analyzer error (observed with AsyncFixer04). A green test run is not a clean build — verify changed projects with `dotnet build -c Release -v:minimal` before CI. (2026-07-10)

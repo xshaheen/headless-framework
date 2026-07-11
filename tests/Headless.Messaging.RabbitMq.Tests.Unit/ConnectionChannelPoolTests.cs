@@ -25,6 +25,17 @@ public sealed class ConnectionChannelPoolTests : TestBase
     );
     private readonly ILogger<ConnectionChannelPool> _logger = NullLogger<ConnectionChannelPool>.Instance;
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void should_configure_confirmation_tracking_to_match_publish_confirms(bool publishConfirms)
+    {
+        var options = ConnectionChannelPool.BuildChannelOptions(publishConfirms);
+
+        options.PublisherConfirmationsEnabled.Should().Be(publishConfirms);
+        options.PublisherConfirmationTrackingEnabled.Should().Be(publishConfirms);
+    }
+
     [Fact]
     public void should_initialize_with_correct_host_address()
     {

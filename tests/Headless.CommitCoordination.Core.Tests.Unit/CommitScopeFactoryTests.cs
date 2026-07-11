@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using Headless.CommitCoordination;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
@@ -331,6 +333,37 @@ public sealed class CommitScopeFactoryTests
     }
 
     [Fact]
+    public void signal_source_attach_should_preserve_nested_physical_transaction_capabilities()
+    {
+        var stack = new CommitScopeStack();
+        var factory = new CommitScopeFactory(stack);
+        using var services = new ServiceCollection().BuildServiceProvider();
+        var outerCapability = new TestCapability();
+        var innerCapability = new TestCapability();
+        using var outer = factory.BeginNew(services, [outerCapability]);
+        var scopes = new ConcurrentDictionary<object, ICommitScope>();
+        var key = new object();
+
+        using var inner = CommitSignalSourceAttach.Attach(
+            factory,
+            new CommitCoordinatorBindings
+            {
+                Services = services,
+                Capabilities = [innerCapability],
+                ProviderTransactionKey = key,
+            },
+            scopes,
+            _ => new InvalidOperationException("duplicate"),
+            CancellationToken.None
+        );
+
+        inner.Coordinator.TryGetCapability<TestCapability>(out var resolved).Should().BeTrue();
+        resolved.Should().BeSameAs(innerCapability);
+        outer.Coordinator.TryGetCapability<TestCapability>(out var outerResolved).Should().BeTrue();
+        outerResolved.Should().BeSameAs(outerCapability);
+    }
+
+    [Fact]
     public void pop_handle_should_throw_when_outer_scope_disposed_before_inner()
     {
         var stack = new CommitScopeStack();
@@ -351,4 +384,6 @@ public sealed class CommitScopeFactoryTests
     {
         public void Dispose() { }
     }
+
+    private sealed class TestCapability : ICommitCapability;
 }

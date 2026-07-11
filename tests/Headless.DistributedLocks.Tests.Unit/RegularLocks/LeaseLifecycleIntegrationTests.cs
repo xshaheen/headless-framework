@@ -23,6 +23,20 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
     private readonly IGuidGenerator _guidGenerator = Substitute.For<IGuidGenerator>();
 
     [Fact]
+    public async Task should_preserve_existing_expiration_when_replace_ttl_is_null()
+    {
+        await _storage.InsertAsync("resource", "lease-1", TimeSpan.FromMinutes(10), AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMinutes(2));
+
+        var replaced = await _storage.ReplaceIfEqualAsync("resource", "lease-1", "lease-2", newTtl: null, AbortToken);
+
+        replaced.Should().BeTrue();
+        (await _storage.GetExpirationAsync("resource", AbortToken))
+            .Should()
+            .BeCloseTo(TimeSpan.FromMinutes(8), TimeSpan.FromMilliseconds(1));
+    }
+
+    [Fact]
     public async Task should_not_create_monitor_by_default()
     {
         // given

@@ -6,6 +6,7 @@ using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.JobsThreadPool;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Jobs.BackgroundServices;
@@ -24,6 +25,7 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
     private readonly IJobFunctionConcurrencyGate _concurrencyGate;
     private readonly TimeProvider _timeProvider;
     private readonly IJobsOwnerIdentity _ownerIdentity;
+    private readonly ILogger<JobsSchedulerBackgroundService> _logger;
     private int _started;
     public bool SkipFirstRun { get; set; }
     public bool IsRunning => _started == 1;
@@ -35,7 +37,8 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
         IInternalJobManager internalJobsManager,
         IJobFunctionConcurrencyGate concurrencyGate,
         TimeProvider timeProvider,
-        IJobsOwnerIdentity ownerIdentity
+        IJobsOwnerIdentity ownerIdentity,
+        ILogger<JobsSchedulerBackgroundService> logger
     )
     {
         _executionContext = Argument.IsNotNull(executionContext);
@@ -45,6 +48,7 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
         _concurrencyGate = Argument.IsNotNull(concurrencyGate);
         _timeProvider = Argument.IsNotNull(timeProvider);
         _ownerIdentity = Argument.IsNotNull(ownerIdentity);
+        _logger = Argument.IsNotNull(logger);
         _restartThrottle = new RestartThrottleManager(() => _schedulerLoopCancellationTokenSource?.Cancel());
     }
 
@@ -122,39 +126,28 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
         {
             if (_executionContext.Functions.Length != 0)
             {
-                var functionsToRun = await _internalJobsManager
-                    .SetTickersInProgress(_executionContext.Functions, cancellationToken)
-                    .ConfigureAwait(false);
-
-                foreach (var function in functionsToRun.OrderBy(x => x.CachedPriority))
+                foreach (var function in _executionContext.Functions.OrderBy(x => x.CachedPriority))
                 {
                     var semaphore = _concurrencyGate.GetSemaphoreOrNull(
                         function.FunctionName,
                         function.CachedMaxConcurrency
                     );
 
-                    _ = _taskScheduler.QueueAsync(
-                        async ct =>
-                        {
-                            if (semaphore != null)
-                            {
-                                await semaphore.WaitAsync(ct).ConfigureAwait(false);
-                            }
-
-                            try
-                            {
-                                await _taskHandler
-                                    .ExecuteTaskAsync(function, isDue: false, cancellationToken: ct)
-                                    .ConfigureAwait(false);
-                            }
-                            finally
-                            {
-                                semaphore?.Release();
-                            }
-                        },
-                        function.CachedPriority,
-                        stoppingToken
-                    );
+                    await _taskScheduler
+                        .QueueAsync(
+                            JobsAdmissionWorkItem.Create(
+                                _internalJobsManager,
+                                _taskHandler,
+                                _logger,
+                                semaphore,
+                                function,
+                                isDue: false
+                            ),
+                            function.CachedPriority,
+                            cancellationToken,
+                            stoppingToken
+                        )
+                        .ConfigureAwait(false);
                 }
 
                 _executionContext.SetFunctions(functions: null);

@@ -105,15 +105,15 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var updatedTicker = await context
-                .Where(x => x.Id == timeJob.Id)
-                .Where(x => x.UpdatedAt == timeJob.UpdatedAt)
-                .ExecuteUpdateAsync(
-                    prop =>
-                        prop.SetProperty(x => x.OwnerId, owner)
-                            .SetProperty(x => x.LockedUntil, now.Add(LeaseDuration))
-                            .SetProperty(x => x.UpdatedAt, now)
-                            .SetProperty(x => x.Status, JobStatus.Queued),
+            var rootId = timeJob.Id;
+            var expectedUpdatedAt = timeJob.UpdatedAt;
+            var rootMatches = context.Where(x => x.Id == rootId && x.UpdatedAt == expectedUpdatedAt);
+            var updatedTicker = await _ClaimTimeJobTreeAsync(
+                    context,
+                    rootMatches,
+                    rootId,
+                    owner,
+                    now,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -152,7 +152,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         var timeJobsToUpdate = await context
             .AsNoTracking()
             .Where(x => x.ExecutionTime != null)
-            .Where(x => x.Status == JobStatus.Idle || x.Status == JobStatus.Queued)
+            .WhereCanFallbackClaim(now)
             .Where(x => x.ExecutionTime <= fallbackThreshold) // Only tasks older than 1 second
             .Include(x => x.Children.Where(y => y.ExecutionTime == null))
             .Select(MappingExtensions.ForQueueTimeJobs<TTimeJob>())
@@ -163,17 +163,12 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var affected = await context
-                .Where(x => x.Id == timeJob.Id && x.UpdatedAt <= timeJob.UpdatedAt)
-                .ExecuteUpdateAsync(
-                    setter =>
-                        setter
-                            .SetProperty(x => x.OwnerId, owner)
-                            .SetProperty(x => x.LockedUntil, now.Add(LeaseDuration))
-                            .SetProperty(x => x.UpdatedAt, now)
-                            .SetProperty(x => x.Status, JobStatus.InProgress),
-                    cancellationToken
-                )
+            var rootId = timeJob.Id;
+            var expectedUpdatedAt = timeJob.UpdatedAt;
+            var rootMatches = context
+                .Where(x => x.Id == rootId && x.UpdatedAt <= expectedUpdatedAt)
+                .WhereCanFallbackClaim(now);
+            var affected = await _ClaimTimeJobTreeAsync(context, rootMatches, rootId, owner, now, cancellationToken)
                 .ConfigureAwait(false);
 
             if (affected <= 0)
@@ -181,8 +176,49 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 continue;
             }
 
+            timeJob.OwnerId = owner;
+            timeJob.LockedUntil = now.Add(LeaseDuration);
+            timeJob.UpdatedAt = now;
+            timeJob.Status = JobStatus.Queued;
+
             yield return timeJob;
         }
+    }
+
+    // Single owner of the atomic chain-claim shape shared by the direct (QueueTimeJobsAsync) and fallback
+    // (QueueTimedOutTimeJobsAsync) tickers (mirrors the in-memory provider's _ClaimIdleDescendants): scope the write to
+    // the root, its direct children, and one further generation, gated on the caller's `rootMatches` optimistic-
+    // concurrency subquery. The conditional Status setter flips only the root to Queued and keeps descendants Idle.
+    // Each caller builds its own `rootMatches` (the direct ticker uses an exact-UpdatedAt match, the fallback uses
+    // WhereCanFallbackClaim), so the emitted SQL stays byte-equivalent to the previous inline blocks.
+    private Task<int> _ClaimTimeJobTreeAsync(
+        DbSet<TTimeJob> context,
+        IQueryable<TTimeJob> rootMatches,
+        Guid rootId,
+        string owner,
+        DateTime now,
+        CancellationToken cancellationToken
+    )
+    {
+        var directChildIds = context.Where(x => x.ParentId == rootId).Select(x => x.Id);
+
+        return context
+            .Where(_ => rootMatches.Any())
+            .Where(x =>
+                x.Id == rootId
+                || x.ParentId == rootId
+                || (x.ParentId != null && directChildIds.Contains(x.ParentId.Value))
+            )
+            .Where(x => x.Id == rootId || x.Status == JobStatus.Idle)
+            .ExecuteUpdateAsync(
+                setter =>
+                    setter
+                        .SetProperty(x => x.OwnerId, owner)
+                        .SetProperty(x => x.LockedUntil, now.Add(LeaseDuration))
+                        .SetProperty(x => x.UpdatedAt, now)
+                        .SetProperty(x => x.Status, x => x.Id == rootId ? JobStatus.Queued : x.Status),
+                cancellationToken
+            );
     }
 
     public async Task ReleaseAcquiredTimeJobsAsync(Guid[] timeJobIds, CancellationToken cancellationToken)
@@ -248,10 +284,9 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        // #316/U5 claim→start ownership recheck: fence the unified-context write (the Queued→InProgress stamp and
-        // the run-condition skip writes) on WhereOwnedBy. A row whose lease lapsed and was re-claimed by another
-        // node between this node's claim and start matches 0 rows here, so this node never clobbers the new owner's
-        // InProgress stamp. (Cancel-on-loss + the completion fence neutralize the local job that already spun up.)
+        // #316/U5 claim→start ownership recheck: all unified writes are fenced by owner and non-terminal state.
+        // Queued→InProgress additionally requires the row to still be Queued, so duplicate same-owner scheduler
+        // wrappers cannot revalidate an already-running row. Run-condition skip writes retain the broader fence.
         if (!OwnerIdentity.TryGetStampOwner(out var owner))
         {
             return [];
@@ -261,10 +296,20 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        var affected = await dbContext
+        var rowsToUpdate = dbContext
             .Set<TTimeJob>()
             .Where(x => ((IEnumerable<Guid>)timeJobIds).Contains(x.Id))
-            .WhereOwnedBy(owner)
+            .WhereOwnedBy(owner);
+
+        if (
+            functionContext.PropertiesToUpdate.Contains(nameof(JobExecutionState.Status))
+            && functionContext.Status == JobStatus.InProgress
+        )
+        {
+            rowsToUpdate = rowsToUpdate.Where(x => x.Status == JobStatus.Queued);
+        }
+
+        var affected = await rowsToUpdate
             .ExecuteUpdateAsync(
                 setter => setter.UpdateTimeJob(functionContext, TimeProvider.GetUtcNow().UtcDateTime),
                 cancellationToken
@@ -868,7 +913,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         var cronJobsToUpdate = await context
             .AsNoTracking()
             .Include(x => x.CronJob)
-            .Where(x => x.Status == JobStatus.Idle || x.Status == JobStatus.Queued)
+            .WhereCanFallbackClaim(now)
             .Where(x => x.ExecutionTime <= fallbackThreshold) // Only tasks older than 1 second
             .Select(MappingExtensions.ForQueueCronJobOccurrence<CronJobOccurrenceEntity<TCronJob>, TCronJob>())
             .ToArrayAsync(cancellationToken)
@@ -880,13 +925,14 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
             var affected = await context
                 .Where(x => x.Id == cronJobOccurrence.Id && x.UpdatedAt == cronJobOccurrence.UpdatedAt)
+                .WhereCanFallbackClaim(now)
                 .ExecuteUpdateAsync(
                     setter =>
                         setter
                             .SetProperty(x => x.OwnerId, owner)
                             .SetProperty(x => x.LockedUntil, now.Add(LeaseDuration))
                             .SetProperty(x => x.UpdatedAt, now)
-                            .SetProperty(x => x.Status, JobStatus.InProgress),
+                            .SetProperty(x => x.Status, JobStatus.Queued),
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -895,6 +941,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             {
                 continue;
             }
+
+            cronJobOccurrence.OwnerId = owner;
+            cronJobOccurrence.LockedUntil = now.Add(LeaseDuration);
+            cronJobOccurrence.UpdatedAt = now;
+            cronJobOccurrence.Status = JobStatus.Queued;
 
             yield return cronJobOccurrence;
         }
@@ -1292,7 +1343,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        // #316/U5 — cron mirror of UpdateTimeJobsWithUnifiedContextAsync: fence the claim→start stamp on WhereOwnedBy.
+        // #316/U5 — cron mirror of UpdateTimeJobsWithUnifiedContextAsync, including the strict Queued→InProgress
+        // transition that rejects duplicate same-owner scheduler wrappers.
         if (!OwnerIdentity.TryGetStampOwner(out var owner))
         {
             return [];
@@ -1302,10 +1354,20 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        var affected = await dbContext
+        var rowsToUpdate = dbContext
             .Set<CronJobOccurrenceEntity<TCronJob>>()
             .Where(x => ((IEnumerable<Guid>)cronOccurrenceIds).Contains(x.Id))
-            .WhereOwnedBy(owner)
+            .WhereOwnedBy(owner);
+
+        if (
+            functionContext.PropertiesToUpdate.Contains(nameof(JobExecutionState.Status))
+            && functionContext.Status == JobStatus.InProgress
+        )
+        {
+            rowsToUpdate = rowsToUpdate.Where(x => x.Status == JobStatus.Queued);
+        }
+
+        var affected = await rowsToUpdate
             .ExecuteUpdateAsync(setter => setter.UpdateCronJobOccurrence(functionContext), cancellationToken)
             .ConfigureAwait(false);
 
