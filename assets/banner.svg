@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="520" viewBox="0 0 1600 520" role="img" aria-labelledby="title desc">
+  <title id="title">.NET Headless Framework banner</title>
+  <desc id="desc">A modular framework map showing abstractions, providers, explicit setup, and production infrastructure packages.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#0b1020"/>
+      <stop offset="0.52" stop-color="#13233b"/>
+      <stop offset="1" stop-color="#10271f"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#f8fafc" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#f8fafc" stop-opacity="0.04"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0" stop-color="#67e8f9"/>
+      <stop offset="0.46" stop-color="#a7f3d0"/>
+      <stop offset="1" stop-color="#fcd34d"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="24" flood-color="#000000" flood-opacity="0.34"/>
+    </filter>
+    <style>
+      .small { font-family: Arial, Helvetica, sans-serif; font-size: 24px; font-weight: 500; fill: #cbd5e1; }
+      .title { font-family: Arial, Helvetica, sans-serif; font-size: 72px; font-weight: 800; fill: #f8fafc; letter-spacing: 0; }
+      .subtitle { font-family: Arial, Helvetica, sans-serif; font-size: 30px; font-weight: 500; fill: #dbeafe; letter-spacing: 0; }
+      .chip { font-family: Arial, Helvetica, sans-serif; font-size: 24px; font-weight: 700; fill: #ecfeff; letter-spacing: 0; }
+      .mono { font-family: Menlo, Consolas, monospace; font-size: 22px; font-weight: 650; fill: #e2e8f0; }
+      .muted { fill: #94a3b8; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="520" fill="url(#bg)"/>
+  <path d="M0 390 C210 330 310 458 520 392 C750 320 905 186 1160 224 C1340 250 1465 344 1600 302 L1600 520 L0 520 Z" fill="#0f766e" opacity="0.16"/>
+  <path d="M0 112 C230 38 384 160 590 110 C790 62 980 -8 1192 70 C1360 132 1450 224 1600 182" fill="none" stroke="url(#accent)" stroke-width="3" opacity="0.46"/>
+  <path d="M0 422 C260 352 410 488 650 398 C840 328 1040 272 1268 336 C1408 376 1505 438 1600 404" fill="none" stroke="#67e8f9" stroke-width="2" opacity="0.22"/>
+
+  <g transform="translate(104 82)">
+    <text class="small" x="0" y="0">150+ NuGet packages / Abstractions first / Providers explicit</text>
+    <text class="title" x="0" y="92">.NET Headless Framework</text>
+    <text class="subtitle" x="0" y="144">Composable backend infrastructure without vendor lock-in.</text>
+  </g>
+
+  <g filter="url(#shadow)" transform="translate(106 276)">
+    <rect x="0" y="0" width="460" height="118" rx="24" fill="url(#panel)" stroke="#93c5fd" stroke-opacity="0.28"/>
+    <text class="mono" x="34" y="48">Headless.*.Abstractions</text>
+    <text class="small muted" x="34" y="86">Stable contracts for application code</text>
+  </g>
+
+  <g filter="url(#shadow)" transform="translate(595 276)">
+    <rect x="0" y="0" width="372" height="118" rx="24" fill="url(#panel)" stroke="#a7f3d0" stroke-opacity="0.28"/>
+    <text class="mono" x="34" y="48">Headless.*.Core</text>
+    <text class="small muted" x="34" y="86">Runtime and setup builders</text>
+  </g>
+
+  <g filter="url(#shadow)" transform="translate(997 276)">
+    <rect x="0" y="0" width="496" height="118" rx="24" fill="url(#panel)" stroke="#fcd34d" stroke-opacity="0.28"/>
+    <text class="mono" x="34" y="48">Headless.*.&lt;Provider&gt;</text>
+    <text class="small muted" x="34" y="86">Redis, PostgreSQL, SQL Server, Azure, AWS...</text>
+  </g>
+
+  <g transform="translate(104 430)">
+    <rect x="0" y="0" width="126" height="46" rx="23" fill="#0f766e" fill-opacity="0.62" stroke="#99f6e4" stroke-opacity="0.26"/>
+    <text class="chip" x="28" y="31">API</text>
+    <rect x="146" y="0" width="150" height="46" rx="23" fill="#1d4ed8" fill-opacity="0.58" stroke="#bfdbfe" stroke-opacity="0.24"/>
+    <text class="chip" x="174" y="31">Caching</text>
+    <rect x="316" y="0" width="130" height="46" rx="23" fill="#92400e" fill-opacity="0.58" stroke="#fde68a" stroke-opacity="0.24"/>
+    <text class="chip" x="344" y="31">Blobs</text>
+    <rect x="466" y="0" width="124" height="46" rx="23" fill="#7c3aed" fill-opacity="0.54" stroke="#ddd6fe" stroke-opacity="0.22"/>
+    <text class="chip" x="496" y="31">Jobs</text>
+    <rect x="610" y="0" width="180" height="46" rx="23" fill="#334155" fill-opacity="0.76" stroke="#cbd5e1" stroke-opacity="0.2"/>
+    <text class="chip" x="638" y="31">Messaging</text>
+    <rect x="810" y="0" width="140" height="46" rx="23" fill="#be123c" fill-opacity="0.5" stroke="#fecdd3" stroke-opacity="0.22"/>
+    <text class="chip" x="840" y="31">Locks</text>
+    <rect x="970" y="0" width="190" height="46" rx="23" fill="#166534" fill-opacity="0.58" stroke="#bbf7d0" stroke-opacity="0.22"/>
+    <text class="chip" x="998" y="31">Settings</text>
+    <rect x="1180" y="0" width="214" height="46" rx="23" fill="#0f172a" fill-opacity="0.72" stroke="#e2e8f0" stroke-opacity="0.18"/>
+    <text class="chip" x="1210" y="31">Testing</text>
+  </g>
+</svg>

@@ -124,6 +124,146 @@ public sealed class RangeTests
 
     #endregion
 
+    #region Value Half-Open Has
+
+    public static readonly TheoryData<Range<int>, int, bool> ValueFromInclusiveToExclusiveHasData = new()
+    {
+        { new(1, 10), 5, true }, // Middle
+        { new(1, 10), 1, true }, // From edge is inclusive
+        { new(1, 10), 10, false }, // To edge is exclusive
+        { new(1, 10), 0, false }, // Below
+        { new(1, 10), 11, false }, // Above
+    };
+
+    [Theory]
+    [MemberData(nameof(ValueFromInclusiveToExclusiveHasData))]
+    public void value_from_inclusive_to_exclusive_has_should_include_lower_and_exclude_upper_bound(
+        Range<int> range,
+        int value,
+        bool expected
+    )
+    {
+        // when
+        var result = range.FromInclusiveToExclusiveHas(value);
+
+        // then
+        result.Should().Be(expected);
+    }
+
+    public static readonly TheoryData<Range<int>, int, bool> ValueFromExclusiveToInclusiveHasData = new()
+    {
+        { new(1, 10), 5, true }, // Middle
+        { new(1, 10), 1, false }, // From edge is exclusive
+        { new(1, 10), 10, true }, // To edge is inclusive
+        { new(1, 10), 0, false }, // Below
+        { new(1, 10), 11, false }, // Above
+    };
+
+    [Theory]
+    [MemberData(nameof(ValueFromExclusiveToInclusiveHasData))]
+    public void value_from_exclusive_to_inclusive_has_should_exclude_lower_and_include_upper_bound(
+        Range<int> range,
+        int value,
+        bool expected
+    )
+    {
+        // when
+        var result = range.FromExclusiveToInclusiveHas(value);
+
+        // then
+        result.Should().Be(expected);
+    }
+
+    [Fact]
+    public void value_from_exclusive_to_inclusive_has_should_return_false_for_null_even_when_unbounded_below()
+    {
+        // given - (-inf, "z"]: InclusiveHas treats a null value as contained, but the (From, To] variant
+        // explicitly rejects null values — pin the asymmetry so it only changes deliberately.
+        var range = new Range<string>(null, "z");
+
+        // then
+        range.InclusiveHas((string?)null).Should().BeTrue();
+        range.FromExclusiveToInclusiveHas((string?)null).Should().BeFalse();
+    }
+
+    #endregion
+
+    #region Range Half-Open Has
+
+    public static readonly TheoryData<Range<string>, Range<string>, bool> RangeExclusiveHasData = new()
+    {
+        { new Range<string>("a", "z"), new Range<string>("b", "y"), true }, // Strictly inside
+        { new Range<string>("a", "z"), new Range<string>("a", "y"), false }, // Shared lower edge rejected
+        { new Range<string>("a", "z"), new Range<string>("b", "z"), false }, // Shared upper edge rejected
+        { new Range<string>(null, "z"), new Range<string>("a", "y"), true }, // Unbounded-below outer strictly contains a bounded lower
+        { new Range<string>(null, "z"), new Range<string>(null, "y"), false }, // Unbounded-below inner is never strictly inside
+        { new Range<string>("a", null), new Range<string>("b", null), false }, // Unbounded-above inner is never strictly inside
+        { new Range<string>("a", null), new Range<string>("b", "y"), true }, // Unbounded-above outer strictly contains a bounded upper
+    };
+
+    [Theory]
+    [MemberData(nameof(RangeExclusiveHasData))]
+    public void range_exclusive_has_should_require_strict_containment_on_both_sides(
+        Range<string> range,
+        Range<string> other,
+        bool expected
+    )
+    {
+        // when
+        var result = range.ExclusiveHas(other);
+
+        // then
+        result.Should().Be(expected);
+    }
+
+    public static readonly TheoryData<Range<string>, Range<string>, bool> RangeInRangeLowerInclusiveData = new()
+    {
+        { new Range<string>("a", "z"), new Range<string>("a", "y"), true }, // Shared lower edge allowed
+        { new Range<string>("a", "z"), new Range<string>("b", "z"), false }, // Shared upper edge rejected
+        { new Range<string>(null, "z"), new Range<string>(null, "y"), true }, // Unbounded-below inner allowed inside unbounded-below outer
+        { new Range<string>("a", null), new Range<string>("a", null), false }, // Unbounded-above inner rejected (upper must be strictly inside)
+    };
+
+    [Theory]
+    [MemberData(nameof(RangeInRangeLowerInclusiveData))]
+    public void range_in_range_lower_inclusive_should_allow_shared_lower_and_reject_shared_upper_bound(
+        Range<string> range,
+        Range<string> other,
+        bool expected
+    )
+    {
+        // when
+        var result = range.InRangeLowerInclusive(other);
+
+        // then
+        result.Should().Be(expected);
+    }
+
+    public static readonly TheoryData<Range<string>, Range<string>, bool> RangeFromExclusiveToInclusiveHasData = new()
+    {
+        { new Range<string>("a", "z"), new Range<string>("b", "z"), true }, // Shared upper edge allowed
+        { new Range<string>("a", "z"), new Range<string>("a", "y"), false }, // Shared lower edge rejected
+        { new Range<string>(null, "z"), new Range<string>("a", "z"), true }, // Unbounded-below outer contains a bounded lower
+        { new Range<string>("a", null), new Range<string>("b", null), true }, // Unbounded-above inner allowed inside unbounded-above outer
+    };
+
+    [Theory]
+    [MemberData(nameof(RangeFromExclusiveToInclusiveHasData))]
+    public void range_from_exclusive_to_inclusive_has_should_allow_shared_upper_and_reject_shared_lower_bound(
+        Range<string> range,
+        Range<string> other,
+        bool expected
+    )
+    {
+        // when
+        var result = range.FromExclusiveToInclusiveHas(other);
+
+        // then
+        result.Should().Be(expected);
+    }
+
+    #endregion
+
     #region Is Overlap
 
     public static TheoryData<Range<int>, Range<int>, bool> IsOverlapData =>

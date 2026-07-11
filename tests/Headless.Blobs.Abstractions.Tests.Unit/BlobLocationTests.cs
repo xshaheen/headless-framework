@@ -31,6 +31,68 @@ public sealed class BlobLocationTests : TestBase
     }
 
     [Fact]
+    public void should_treat_first_segment_as_container_when_using_segments_only_ctor()
+    {
+        // Act
+        var location = new BlobLocation(["bucket", "a", "b", "c.txt"]);
+
+        // Assert
+        location.Container.Should().Be("bucket");
+        location.Path.Should().Be("a/b/c.txt");
+    }
+
+    [Fact]
+    public void should_accept_array_when_using_segments_only_ctor()
+    {
+        // Arrange
+        string[] segments = ["bucket", "folder", "file.txt"];
+
+        // Act
+        var location = new BlobLocation(segments);
+
+        // Assert
+        location.Container.Should().Be("bucket");
+        location.Path.Should().Be("folder/file.txt");
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public void should_throw_when_segments_only_ctor_has_fewer_than_two_segments(int length)
+    {
+        // Arrange
+        var segments = new string[length];
+        Array.Fill(segments, "bucket");
+
+        // Act
+        var act = () => new BlobLocation(segments);
+
+        // Assert
+        act.Should().Throw<ArgumentException>().Which.ParamName.Should().Be("segments");
+    }
+
+    [Fact]
+    public void should_prefer_segments_only_ctor_for_all_string_arguments()
+    {
+        // Act — without overload-resolution priority this would bind to the (container, params) ctor
+        // and throw for the empty joined path with ParamName "path" instead.
+        var act = () => new BlobLocation("bucket");
+
+        // Assert
+        act.Should().Throw<ArgumentException>().Which.ParamName.Should().Be("segments");
+    }
+
+    [Fact]
+    public void should_validate_path_when_using_segments_only_ctor()
+    {
+        // Act
+        var act = () => new BlobLocation(["bucket", "..", "secret.txt"]);
+
+        // Assert
+        act.Should().Throw<ArgumentException>().Which.ParamName.Should().Be("path");
+    }
+
+    [Fact]
     public void should_use_value_equality()
     {
         // Assert
