@@ -28,7 +28,7 @@ internal static class DashboardEndpoints
             .WithName("GetAuthInfo")
             .WithSummary("Get authentication configuration")
             .WithTags("Jobs Dashboard")
-            .RequireCors("Jobs_Dashboard_CORS")
+            .RequireCors("HeadlessJobsDashboardCORS")
             .AllowAnonymous();
 
         endpoints
@@ -36,10 +36,10 @@ internal static class DashboardEndpoints
             .WithName("ValidateAuth")
             .WithSummary("Validate authentication credentials")
             .WithTags("Jobs Dashboard")
-            .RequireCors("Jobs_Dashboard_CORS")
+            .RequireCors("HeadlessJobsDashboardCORS")
             .AllowAnonymous();
 
-        var apiGroup = endpoints.MapGroup("/api").WithTags("Jobs Dashboard").RequireCors("Jobs_Dashboard_CORS");
+        var apiGroup = endpoints.MapGroup("/api").WithTags("Jobs Dashboard").RequireCors("HeadlessJobsDashboardCORS");
 
         // Apply authentication if configured
         if (config.Auth.Mode == AuthMode.Host)

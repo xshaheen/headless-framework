@@ -62,7 +62,7 @@ internal static class ServiceCollectionExtensions
         {
             if (config.CorsPolicyBuilder is not null)
             {
-                options.AddPolicy("Jobs_Dashboard_CORS", config.CorsPolicyBuilder);
+                options.AddPolicy("HeadlessJobsDashboardCORS", config.CorsPolicyBuilder);
             }
         });
     }
@@ -117,7 +117,7 @@ internal static class ServiceCollectionExtensions
                 dashboardApp.UseRouting();
                 if (config.CorsPolicyBuilder is not null)
                 {
-                    dashboardApp.UseCors("Jobs_Dashboard_CORS");
+                    dashboardApp.UseCors("HeadlessJobsDashboardCORS");
                 }
 
                 // Add authentication + authorization middleware
