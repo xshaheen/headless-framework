@@ -14,6 +14,12 @@ internal sealed class FakeMembershipStore : IMembershipStore
 
     public bool ThrowOnRegister { get; set; }
 
+    public bool ThrowOnHeartbeat { get; set; }
+
+    public bool BlockOnHeartbeat { get; set; }
+
+    public TaskCompletionSource HeartbeatRelease { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
     public bool ThrowOnRead { get; set; }
 
     public bool ThrowOnReadNodeLiveness { get; set; }
@@ -62,12 +68,23 @@ internal sealed class FakeMembershipStore : IMembershipStore
         return ValueTask.CompletedTask;
     }
 
-    public ValueTask<bool> HeartbeatAsync(NodeIdentity identity, CancellationToken cancellationToken = default)
+    public async ValueTask<bool> HeartbeatAsync(NodeIdentity identity, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         Heartbeats.Add(identity);
 
-        return ValueTask.FromResult(HeartbeatAccepted);
+        if (ThrowOnHeartbeat)
+        {
+            throw new InvalidOperationException("heartbeat unavailable");
+        }
+
+        if (BlockOnHeartbeat)
+        {
+            // Intentionally ignore cancellation so the heartbeat service's own deadline wrapper is exercised.
+            await HeartbeatRelease.Task.ConfigureAwait(false);
+        }
+
+        return HeartbeatAccepted;
     }
 
     public async ValueTask LeaveAsync(NodeIdentity identity, CancellationToken cancellationToken = default)

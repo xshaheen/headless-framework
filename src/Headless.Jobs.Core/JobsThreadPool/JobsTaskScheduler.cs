@@ -19,12 +19,15 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
     private readonly TimeProvider _timeProvider;
 
     // Worker queues for work stealing
-    private readonly ConcurrentQueue<WorkItem>[] _workerQueues;
+    private readonly WorkerQueue[] _workerQueues;
 
     // Global state
     private volatile int _totalQueuedTasks;
     private volatile int _activeTasks;
     private volatile int _activeWorkers;
+    private volatile int _queuedHighPriority;
+    private volatile int _queuedNormalPriority;
+    private volatile int _queuedLowPriority;
     private volatile bool _disposed;
     private volatile bool _isFrozen;
     private volatile int _nextQueueIndex;
@@ -60,10 +63,10 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
         _timeProvider = timeProvider ?? TimeProvider.System;
 
         // Initialize all worker queues upfront for simplicity
-        _workerQueues = new ConcurrentQueue<WorkItem>[maxConcurrency];
+        _workerQueues = new WorkerQueue[maxConcurrency];
         for (var i = 0; i < maxConcurrency; i++)
         {
-            _workerQueues[i] = new ConcurrentQueue<WorkItem>();
+            _workerQueues[i] = new WorkerQueue();
         }
 
         // Start at least one worker immediately to handle incoming tasks
@@ -72,12 +75,19 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
 
     /// <summary>
     /// Queues work to be executed by the scheduler.
-    /// The priority parameter is ignored in this simplified version.
+    /// High-priority work is dequeued before normal and low-priority work on the shared worker pool.
     /// </summary>
-    public async Task QueueAsync(
+    public Task QueueAsync(
         Func<CancellationToken, Task> work,
-        JobPriority priority, // Kept for backward compatibility but ignored
+        JobPriority priority,
         CancellationToken cancellationToken = default
+    ) => QueueAsync(work, priority, cancellationToken, cancellationToken);
+
+    internal async Task QueueAsync(
+        Func<CancellationToken, Task> work,
+        JobPriority priority,
+        CancellationToken capacityCancellationToken,
+        CancellationToken executionCancellationToken
     )
     {
         Argument.IsNotNull(work);
@@ -89,6 +99,8 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
             throw new InvalidOperationException("Scheduler is frozen");
         }
 
+        capacityCancellationToken.ThrowIfCancellationRequested();
+
         // Handle long-running tasks specially
         if (priority == JobPriority.LongRunning)
         {
@@ -99,7 +111,7 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
             {
                 _ = Task
                     .Factory.StartNew(
-                        () => _ExecuteLongRunningWorkAsync(work, cancellationToken),
+                        () => _ExecuteLongRunningWorkAsync(work, executionCancellationToken),
                         CancellationToken.None,
                         TaskCreationOptions.LongRunning,
                         TaskScheduler.Default
@@ -120,12 +132,15 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
         var targetQueue = _workerQueues[queueIndex];
 
         // Wait for capacity if needed
-        await _WaitForCapacityAsync(targetQueue, cancellationToken).ConfigureAwait(false);
+        await _WaitForCapacityAsync(targetQueue, capacityCancellationToken).ConfigureAwait(false);
+        capacityCancellationToken.ThrowIfCancellationRequested();
 
-        // Enqueue work
-        var workItem = new WorkItem(work, cancellationToken);
-        targetQueue.Enqueue(workItem);
+        // Publish counters before the item. A worker may briefly observe a positive count before the queue item is
+        // visible, but it can never dequeue an item and decrement counters that have not been incremented yet.
+        var workItem = new WorkItem(work, executionCancellationToken);
+        _IncrementQueuedPriority(priority);
         var newTotal = Interlocked.Increment(ref _totalQueuedTasks);
+        targetQueue.Enqueue(workItem, priority);
 
         // Ensure we have workers to process the work
         // Check both queue count and total to avoid race conditions
@@ -142,7 +157,7 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
         return Math.Abs(index) % _maxConcurrency;
     }
 
-    private async ValueTask _WaitForCapacityAsync(ConcurrentQueue<WorkItem> queue, CancellationToken cancellationToken)
+    private async ValueTask _WaitForCapacityAsync(WorkerQueue queue, CancellationToken cancellationToken)
     {
         var waitCount = 0;
         while (queue.Count >= _maxCapacityPerWorker && !cancellationToken.IsCancellationRequested)
@@ -246,14 +261,9 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
         {
             var foundWork = false;
 
-            // 1. Try local queue first (fastest path)
-            if (localQueue.TryDequeue(out var workItem))
-            {
-                foundWork = true;
-                consecutiveStealFailures = 0;
-            }
-            // 2. Try work stealing if local queue is empty
-            else if (_TryStealWork(workerId, out workItem))
+            // Check each priority lane across the pool before falling through to a lower lane. A local low-priority
+            // item must not jump ahead of high-priority work queued on another worker.
+            if (_TryDequeueWork(workerId, localQueue, out var workItem))
             {
                 foundWork = true;
                 consecutiveStealFailures = 0;
@@ -312,47 +322,39 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
         }
     }
 
-    private bool _TryStealWork(int thiefWorkerId, out WorkItem workItem)
+    private bool _TryDequeueWork(int workerId, WorkerQueue localQueue, out WorkItem workItem)
     {
-        workItem = default;
-
-        // Try to steal from other workers
-        // Start from a different position each time to avoid patterns
-        var startIndex = (thiefWorkerId + 1) % _maxConcurrency;
-
-        // First pass: steal from queues with multiple items
-        for (var i = 0; i < _maxConcurrency - 1; i++)
+        foreach (var priority in WorkerQueue.OrderedPriorities)
         {
-            var victimIndex = (startIndex + i) % _maxConcurrency;
-            if (victimIndex == thiefWorkerId)
-            {
-                continue; // Don't steal from ourselves
-            }
-
-            var victimQueue = _workerQueues[victimIndex];
-
-            // Only steal if victim has multiple items (leave at least one)
-            if (victimQueue.Count > 1 && victimQueue.TryDequeue(out workItem))
-            {
-                return true;
-            }
-        }
-
-        // Second pass: steal even single items if we're desperate
-        for (var i = 0; i < _maxConcurrency - 1; i++)
-        {
-            var victimIndex = (startIndex + i) % _maxConcurrency;
-            if (victimIndex == thiefWorkerId)
+            if (_GetQueuedPriorityCount(priority) == 0)
             {
                 continue;
             }
 
-            if (_workerQueues[victimIndex].TryDequeue(out workItem))
+            if (localQueue.TryDequeue(priority, out workItem))
             {
+                _DecrementQueuedPriority(priority);
                 return true;
+            }
+
+            var startIndex = (workerId + 1) % _maxConcurrency;
+            for (var i = 0; i < _maxConcurrency - 1; i++)
+            {
+                var victimIndex = (startIndex + i) % _maxConcurrency;
+                if (victimIndex == workerId)
+                {
+                    continue;
+                }
+
+                if (_workerQueues[victimIndex].TryDequeue(priority, out workItem))
+                {
+                    _DecrementQueuedPriority(priority);
+                    return true;
+                }
             }
         }
 
+        workItem = default;
         return false;
     }
 
@@ -458,9 +460,9 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
             CancellationToken.None
         );
 
-        targetQueue.Enqueue(workItem);
-        // Count continuations to keep counter accurate
+        _IncrementQueuedPriority(JobPriority.Normal);
         Interlocked.Increment(ref _totalQueuedTasks);
+        targetQueue.Enqueue(workItem, JobPriority.Normal);
 
         // Ensure worker is available
         _EnsureWorkerAvailable();
@@ -589,5 +591,89 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
 
         _notifyDebounce?.Dispose();
         _shutdownCts?.Dispose();
+    }
+
+    private int _GetQueuedPriorityCount(JobPriority priority) =>
+        priority switch
+        {
+            JobPriority.High => _queuedHighPriority,
+            JobPriority.Low => _queuedLowPriority,
+            _ => _queuedNormalPriority,
+        };
+
+    private void _IncrementQueuedPriority(JobPriority priority)
+    {
+        if (priority == JobPriority.High)
+        {
+            Interlocked.Increment(ref _queuedHighPriority);
+        }
+        else if (priority == JobPriority.Low)
+        {
+            Interlocked.Increment(ref _queuedLowPriority);
+        }
+        else
+        {
+            Interlocked.Increment(ref _queuedNormalPriority);
+        }
+    }
+
+    private void _DecrementQueuedPriority(JobPriority priority)
+    {
+        if (priority == JobPriority.High)
+        {
+            Interlocked.Decrement(ref _queuedHighPriority);
+        }
+        else if (priority == JobPriority.Low)
+        {
+            Interlocked.Decrement(ref _queuedLowPriority);
+        }
+        else
+        {
+            Interlocked.Decrement(ref _queuedNormalPriority);
+        }
+    }
+
+    private sealed class WorkerQueue
+    {
+        public static readonly JobPriority[] OrderedPriorities =
+        [
+            JobPriority.High,
+            JobPriority.Normal,
+            JobPriority.Low,
+        ];
+
+        private readonly ConcurrentQueue<WorkItem> _high = new();
+        private readonly ConcurrentQueue<WorkItem> _normal = new();
+        private readonly ConcurrentQueue<WorkItem> _low = new();
+        private int _count;
+
+        public int Count => _count;
+
+        public bool IsEmpty => _count == 0;
+
+        public void Enqueue(WorkItem workItem, JobPriority priority)
+        {
+            Interlocked.Increment(ref _count);
+            _GetQueue(priority).Enqueue(workItem);
+        }
+
+        public bool TryDequeue(JobPriority priority, out WorkItem workItem)
+        {
+            if (!_GetQueue(priority).TryDequeue(out workItem))
+            {
+                return false;
+            }
+
+            Interlocked.Decrement(ref _count);
+            return true;
+        }
+
+        private ConcurrentQueue<WorkItem> _GetQueue(JobPriority priority) =>
+            priority switch
+            {
+                JobPriority.High => _high,
+                JobPriority.Low => _low,
+                _ => _normal,
+            };
     }
 }

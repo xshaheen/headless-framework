@@ -15,6 +15,10 @@ public interface IMembershipStore
     /// </summary>
     ValueTask UpsertDescriptorAsync(NodeDescriptor descriptor, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Refreshes a live current incarnation. Returns <see langword="false"/> when the incarnation is superseded,
+    /// dead, gracefully left, or missing/pruned; implementations must not recreate terminal liveness here.
+    /// </summary>
     ValueTask<bool> HeartbeatAsync(NodeIdentity identity, CancellationToken cancellationToken = default);
 
     ValueTask LeaveAsync(NodeIdentity identity, CancellationToken cancellationToken = default);

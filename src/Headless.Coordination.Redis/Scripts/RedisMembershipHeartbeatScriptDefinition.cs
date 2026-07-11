@@ -21,6 +21,14 @@ internal sealed class RedisMembershipHeartbeatScriptDefinition : RedisScriptDefi
 
             local nowSecMicro = redis.call('TIME')
             local nowMs = (tonumber(nowSecMicro[1]) * 1000) + math.floor(tonumber(nowSecMicro[2]) / 1000)
+            if tonumber(@allowCreate) ~= 1 then
+              local hardExpiryMs = redis.call('zscore', @liveKey, @member)
+              local payloadExists = redis.call('hexists', @knownKey, @member)
+              if payloadExists ~= 1 or hardExpiryMs == false or tonumber(hardExpiryMs) <= nowMs then
+                return 0
+              end
+            end
+
             local hardExpiryMs = nowMs + tonumber(@hardMs)
             local payload = cjson.encode({
               last_beat_ms = nowMs,
@@ -49,6 +57,7 @@ internal readonly record struct HeartbeatParams(
     string member,
     long incarnation,
     long hardMs,
+    int allowCreate,
     string role,
     string metadata
 );

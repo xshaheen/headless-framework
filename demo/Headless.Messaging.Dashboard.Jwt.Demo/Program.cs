@@ -7,6 +7,7 @@ using Headless.Messaging.Dashboard;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.Tokens;
+using Polly.Retry;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -60,7 +61,11 @@ builder.Services.AddHeadlessMessaging(setup =>
 {
     setup.ForMessagesFromAssembly(typeof(Program).Assembly);
     setup.Options.RetryPolicy.MaxPersistedRetries = 0;
-    setup.Options.RetryPolicy.MaxInlineRetries = 0;
+    setup.Options.RetryPolicy.RetryStrategy = new RetryStrategyOptions
+    {
+        MaxRetryAttempts = 0,
+        ShouldHandle = static _ => ValueTask.FromResult(true),
+    };
     setup.UseInMemoryStorage();
     setup.UseInMemory();
     setup.UseDashboard(d => d.WithHostAuthentication(dashboardPolicy));

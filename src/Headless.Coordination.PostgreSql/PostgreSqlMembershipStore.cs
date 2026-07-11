@@ -143,24 +143,16 @@ internal sealed class PostgreSqlMembershipStore(
                 FOR UPDATE
             ),
             heartbeat AS (
-                INSERT INTO {PostgreSqlMembershipSchema.Liveness.Table} (
-                    {PostgreSqlMembershipSchema.ClusterName},
-                    {PostgreSqlMembershipSchema.NodeId},
-                    {PostgreSqlMembershipSchema.Incarnation},
-                    {PostgreSqlMembershipSchema.Liveness.LastBeat},
-                    {PostgreSqlMembershipSchema.Liveness.LeftAt}
-                )
-                SELECT @ClusterName, @NodeId, @Incarnation, clock_timestamp(), NULL
+                UPDATE {PostgreSqlMembershipSchema.Liveness.Table} AS liveness
+                SET {PostgreSqlMembershipSchema.Liveness.LastBeat} = clock_timestamp()
                 FROM generation
-                WHERE {PostgreSqlMembershipSchema.Generation.CurrentIncarnation} = @Incarnation
-                ON CONFLICT ({PostgreSqlMembershipSchema.ClusterName}, {PostgreSqlMembershipSchema.NodeId}, {PostgreSqlMembershipSchema.Incarnation})
-                DO UPDATE SET
-                    {PostgreSqlMembershipSchema.Liveness.LastBeat} = clock_timestamp(),
-                    {PostgreSqlMembershipSchema.Liveness.LeftAt} = NULL
-                WHERE @Incarnation = (
-                    SELECT {PostgreSqlMembershipSchema.Generation.CurrentIncarnation}
-                    FROM generation
-                )
+                WHERE liveness.{PostgreSqlMembershipSchema.ClusterName} = @ClusterName
+                  AND liveness.{PostgreSqlMembershipSchema.NodeId} = @NodeId
+                  AND liveness.{PostgreSqlMembershipSchema.Incarnation} = @Incarnation
+                  AND generation.{PostgreSqlMembershipSchema.Generation.CurrentIncarnation} = @Incarnation
+                  AND liveness.{PostgreSqlMembershipSchema.Liveness.LeftAt} IS NULL
+                  AND liveness.{PostgreSqlMembershipSchema.Liveness.LastBeat}
+                      > clock_timestamp() - (@DeadThresholdMs * INTERVAL '1 millisecond')
                 RETURNING 1
             )
             SELECT EXISTS(SELECT 1 FROM heartbeat);
@@ -172,6 +164,7 @@ internal sealed class PostgreSqlMembershipStore(
         command.Parameters.AddWithValue("ClusterName", clusterName);
         command.Parameters.AddWithValue("NodeId", identity.NodeId.Value);
         command.Parameters.AddWithValue("Incarnation", identity.Incarnation.Value);
+        command.Parameters.AddWithValue("DeadThresholdMs", _ToMilliseconds(DeadThreshold));
 
         var accepted = (bool)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!;
 
@@ -389,5 +382,7 @@ internal sealed class PostgreSqlMembershipStore(
             CommandTimeout = DatabaseAdoHelpers.GetCommandTimeoutSeconds(providerOptions.Value.CommandTimeout),
         };
     }
+
+    private static long _ToMilliseconds(TimeSpan value) => (long)Math.Ceiling(value.TotalMilliseconds);
 }
 #pragma warning restore CA2100

@@ -2,24 +2,44 @@
 
 namespace Headless.Jobs;
 
-public sealed class RestartThrottleManager(Action onRestartTriggered) : IDisposable
+public sealed class RestartThrottleManager : IDisposable
 {
+    private readonly Action _onRestartTriggered;
+    private readonly TimeProvider _timeProvider;
     private readonly Lock _lock = new();
-    private Timer? _debounceTimer;
+    private ITimer? _debounceTimer;
     private volatile bool _restartPending;
+    private bool _disposed;
 
     private readonly TimeSpan _debounceWindow = TimeSpan.FromMilliseconds(50);
 
+    public RestartThrottleManager(Action onRestartTriggered)
+        : this(onRestartTriggered, TimeProvider.System) { }
+
+    internal RestartThrottleManager(Action onRestartTriggered, TimeProvider timeProvider)
+    {
+        _onRestartTriggered = onRestartTriggered;
+        _timeProvider = timeProvider;
+    }
+
+    /// <summary>Schedules a restart notification after the debounce window.</summary>
+    /// <exception cref="ObjectDisposedException">The manager has been disposed.</exception>
     public void RequestRestart()
     {
         lock (_lock)
         {
+            ObjectDisposedException.ThrowIf(_disposed, this);
             _restartPending = true;
 
             // Create timer only when first needed
             if (_debounceTimer == null)
             {
-                _debounceTimer = new Timer(_OnTimerCallback, state: null, _debounceWindow, Timeout.InfiniteTimeSpan);
+                _debounceTimer = _timeProvider.CreateTimer(
+                    _OnTimerCallback,
+                    state: null,
+                    _debounceWindow,
+                    Timeout.InfiniteTimeSpan
+                );
             }
             else
             {
@@ -31,19 +51,40 @@ public sealed class RestartThrottleManager(Action onRestartTriggered) : IDisposa
 
     private void _OnTimerCallback(object? state)
     {
+        var shouldInvoke = false;
+
         lock (_lock)
         {
-            if (_restartPending)
+            if (!_disposed && _restartPending)
             {
                 _restartPending = false;
-                _debounceTimer?.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
-                onRestartTriggered();
+                shouldInvoke = true;
             }
+        }
+
+        if (shouldInvoke)
+        {
+            _onRestartTriggered();
         }
     }
 
     public void Dispose()
     {
-        _debounceTimer?.Dispose();
+        ITimer? timer;
+
+        lock (_lock)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            _restartPending = false;
+            timer = _debounceTimer;
+            _debounceTimer = null;
+        }
+
+        timer?.Dispose();
     }
 }

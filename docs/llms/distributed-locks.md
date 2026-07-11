@@ -505,6 +505,7 @@ Provides a no-infrastructure backend for code that depends on `IDistributedLock`
 - `InMemoryDistributedSemaphoreStorage` implements `IDistributedSemaphoreStorage`.
 - `UseInMemory()` registers in-process mutex, reader-writer lock, and semaphore providers through `AddHeadlessDistributedLocks(...)`.
 - Uses injected `TimeProvider` for deterministic TTL behavior.
+- Mutex compare-and-swap preserves the existing absolute expiration when `ReplaceIfEqualAsync(..., newTtl: null)` is used.
 
 ### Design Notes
 
@@ -662,6 +663,7 @@ Stores lock records directly in Redis with atomic acquire, replace, release, rea
 - `RedisDistributedSemaphoreStorage` implements `IDistributedSemaphoreStorage`.
 - `UseRedis()` registers Redis-backed mutex, reader-writer lock, and semaphore providers through `AddHeadlessDistributedLocks(...)`.
 - Uses `HeadlessRedisScriptsLoader` for atomic Lua script operations.
+- Mutex compare-and-swap uses Redis `KEEPTTL`, preserving the existing expiration when `ReplaceIfEqualAsync(..., newTtl: null)` is used.
 
 ### Installation
 

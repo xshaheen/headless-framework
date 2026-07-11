@@ -14,13 +14,9 @@ namespace Headless.Messaging.Retry;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Typical <see cref="IRetryBackoffStrategy.Compute"/> implementations return
-/// <see cref="RetryDecision.Stop"/> or <see cref="RetryDecision.Continue"/> and let
-/// <see cref="RecordAttemptAndComputeDecision"/> emit <see cref="RetryDecision.Exhausted"/> when the
-/// configured <c>MaxInlineRetries</c>/<c>MaxPersistedRetries</c> budgets are consumed.
-/// Strategies with their own attempt accounting MAY return <see cref="RetryDecision.Kind.Exhausted"/>
-/// directly; this helper forwards it as a terminal exhaustion (Retries unchanged, <c>OnExhausted</c>
-/// fires) — identical handling to the framework-emitted path.
+/// Polly's configured <c>RetryStrategyOptions.ShouldHandle</c> classifies the failure and its
+/// delay configuration supplies the next retry delay. Messaging maps that runtime outcome into its
+/// own durable scheduled or terminal state.
 /// </para>
 /// <para>
 /// <c>MediumMessage.Retries</c> counts persisted-retry pickups only — inline iterations do not
@@ -30,104 +26,6 @@ namespace Headless.Messaging.Retry;
 /// </remarks>
 internal static class RetryHelper
 {
-    /// <summary>
-    /// Upper bound applied to delays returned by <see cref="IRetryBackoffStrategy.Compute"/>.
-    /// Guards against negative or overflowing values that would crash <see cref="Task.Delay(TimeSpan)"/>
-    /// or overflow <see cref="DateTime"/> arithmetic when computing NextRetryAt.
-    /// </summary>
-    private static readonly TimeSpan _MaxDelay = TimeSpan.FromHours(24);
-
-    /// <summary>
-    /// Classifies a failed delivery attempt into <see cref="RetryDecision.Stop"/>,
-    /// <see cref="RetryDecision.Exhausted"/>, or <see cref="RetryDecision.Continue"/>.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// This method does NOT mutate <paramref name="message"/>. The persisted-pickup counter
-    /// (<c>MediumMessage.Retries</c>) is advanced by the call site after consulting
-    /// <see cref="ResolveNextState"/> — the increment happens only when the transition routes through
-    /// persistence (inline budget consumed AND persisted budget remains).
-    /// </para>
-    /// <para>
-    /// <see cref="RetryDecision.Kind.Exhausted"/> is returned only when BOTH the inline budget
-    /// is consumed on the current dispatch (<c>inlineRetries + 1 &gt; policy.MaxInlineRetries</c>)
-    /// AND the persisted budget is consumed (<c>message.Retries &gt;= policy.MaxPersistedRetries</c>).
-    /// While inline budget remains the helper returns Continue so the inline retry loop can
-    /// continue burst-retrying on the current pickup before terminal.
-    /// </para>
-    /// <para>
-    /// Callers MUST pre-check cancellation via <see cref="IsCancellation"/> and return early before
-    /// invoking this method. The helper does not re-check the token and will record an attempt
-    /// against the retry budget even for shutdown-cancelled invocations if called.
-    /// </para>
-    /// </remarks>
-    public static RetryDecision RecordAttemptAndComputeDecision(
-        MediumMessage message,
-        Exception exception,
-        RetryPolicyOptions policy,
-        int inlineRetries,
-        ILogger? logger = null
-    )
-    {
-        // BackoffStrategy non-null is guaranteed by MessagingOptionsValidator at ValidateOnStart();
-        // no runtime guard needed here.
-
-        // Wrap the strategy call: a throwing custom strategy must not create an infinite
-        // consumer-invocation loop. Treating a throw as Exhausted routes the row to terminal Failed
-        // and invokes OnExhausted so the user is notified, instead of leaving the row in a state
-        // that keeps getting re-picked.
-        RetryDecision decision;
-
-        try
-        {
-            decision = policy.BackoffStrategy.Compute(message.Retries, inlineRetries, exception);
-        }
-        catch (Exception strategyEx)
-        {
-            logger?.BackoffStrategyThrew(strategyEx, message.StorageId, strategyEx.GetType().Name);
-            return RetryDecision.Exhausted;
-        }
-
-        if (decision.Outcome == RetryDecision.Kind.Stop)
-        {
-            return RetryDecision.Stop;
-        }
-
-        if (decision.Outcome == RetryDecision.Kind.Exhausted)
-        {
-            return RetryDecision.Exhausted;
-        }
-
-        // Exhaust only when both axes are consumed. The inline retry loop will burst attempts
-        // up to MaxInlineRetries on each pickup; the persisted retry processor will pick the row
-        // up at most MaxPersistedRetries times after the initial dispatch. The two budgets compose
-        // multiplicatively.
-        if (!policy.HasMoreInlineAttempts(inlineRetries) && message.Retries >= policy.MaxPersistedRetries)
-        {
-            return RetryDecision.Exhausted;
-        }
-
-        // Strategy returned Continue: clamp the delay then surface it.
-        // Defensive clamp because IRetryBackoffStrategy is a public-extension point and
-        // custom strategies may return negative / overflowing values that would crash
-        // Task.Delay or DateTime.Add. Non-finite TimeSpan values (NaN, ±Infinity) cannot be
-        // constructed via TimeSpan.FromMilliseconds — the BCL rejects them at construction time
-        // (ArgumentException / OverflowException). If a strategy tries to produce one, the strategy
-        // call itself throws and the try/catch above routes it to Exhausted. So this clamp only
-        // needs to handle finite-but-out-of-range values: Negative -> Zero; > 24h -> 24h.
-        var clamped = decision.Delay;
-        if (clamped < TimeSpan.Zero)
-        {
-            clamped = TimeSpan.Zero;
-        }
-        else if (clamped > _MaxDelay)
-        {
-            clamped = _MaxDelay;
-        }
-
-        return RetryDecision.Continue(clamped);
-    }
-
     /// <summary>
     /// Returns <see langword="true"/> when the supplied <paramref name="cancellationToken"/>
     /// has been cancelled and <paramref name="ex"/> is an <see cref="OperationCanceledException"/>.
@@ -147,8 +45,33 @@ internal static class RetryHelper
         cancellationToken.IsCancellationRequested && ex is OperationCanceledException;
 
     /// <summary>
+    /// Detects a crash-recovered inline burst: the durable <see cref="MediumMessage.InlineAttempts"/>
+    /// counter already reserved the final inline attempt before the process terminated, so no fresh
+    /// attempt may run. Returns a synthetic retryable attempt (with classification bypassed) that
+    /// routes the row to its persisted-retry or exhausted transition, or <see langword="null"/> when
+    /// inline budget remains. Shared by the publish and consume paths so the threshold and message
+    /// cannot drift.
+    /// </summary>
+    public static MessagingRetryAttempt? DetectCrashRecoveredReservation(
+        int reservedInlineAttempts,
+        RetryPolicyOptions policy
+    )
+    {
+        if (reservedInlineAttempts < policy.RetryStrategy.MaxRetryAttempts + 1)
+        {
+            return null;
+        }
+
+        var recoveryException = new InvalidOperationException(
+            "The process terminated after reserving the final inline delivery attempt."
+        );
+
+        return MessagingRetryAttempt.Retryable(OperateResult.Failed(recoveryException), bypassClassification: true);
+    }
+
+    /// <summary>
     /// Invokes the supplied <paramref name="callback"/> with a hard timeout via
-    /// <see cref="Task.WaitAsync(TimeSpan,CancellationToken)"/>.
+    /// <see cref="Task.WaitAsync(TimeSpan,TimeProvider,CancellationToken)"/>.
     /// On timeout the callback is orphaned (continues running in the background) and a
     /// <c>OnExhaustedTimedOut</c> log event is emitted. Exceptions thrown by the callback
     /// are caught and logged so they cannot crash the dispatch loop. Cancellation observed
@@ -167,6 +90,7 @@ internal static class RetryHelper
         TimeSpan timeout,
         Guid storageId,
         ILogger logger,
+        TimeProvider timeProvider,
         CancellationToken cancellationToken
     )
     {
@@ -203,7 +127,7 @@ internal static class RetryHelper
 
             try
             {
-                await callbackTask.WaitAsync(timeout, cancellationToken).ConfigureAwait(false);
+                await callbackTask.WaitAsync(timeout, timeProvider, cancellationToken).ConfigureAwait(false);
             }
             catch (TimeoutException)
             {
@@ -294,6 +218,7 @@ internal static class RetryHelper
         IServiceProvider dispatchServices,
         MessageType messageType,
         ILogger logger,
+        TimeProvider timeProvider,
         CancellationToken cancellationToken
     )
     {
@@ -321,6 +246,7 @@ internal static class RetryHelper
                 policy.OnExhaustedTimeout,
                 message.StorageId,
                 logger,
+                timeProvider,
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -338,29 +264,29 @@ internal static class RetryHelper
     /// inline delay (and so the polling query cannot race the inline-retry mid-sleep).
     /// </param>
     public static RetryNextState ResolveNextState(
-        RetryDecision decision,
+        MessagingRetryDecision decision,
         int inlineRetries,
         RetryPolicyOptions policy,
         TimeProvider timeProvider,
         DateTime? currentNextRetryAt = null
     )
     {
-        // #1 — when the strategy returns Delay >= DispatchTimeout, the inline loop bails out early
-        // (see InlineRetryLoop.cs) without sleeping, so the persisted-retry path MUST take over.
+        // #1 — when Polly returns Delay >= DispatchTimeout, the inline retry burst ends early
+        // the Polly pipeline must hand control to the persisted-retry path without sleeping.
         // Otherwise the call site would skip the Retries++ increment (gated on
         // !IsInlineRetryInFlight), the row would sit with NextRetryAt set but Retries unchanged,
         // and the persisted budget would never be consumed — OnExhausted would never fire.
         var inlineBudgetWouldOversleep =
-            decision.Outcome == RetryDecision.Kind.Continue && decision.Delay >= policy.DispatchTimeout;
+            decision.Outcome == MessagingRetryDecision.Kind.Continue && decision.Delay >= policy.DispatchTimeout;
 
         var isInlineRetryInFlight =
-            decision.Outcome == RetryDecision.Kind.Continue
+            decision.Outcome == MessagingRetryDecision.Kind.Continue
             && policy.HasMoreInlineAttempts(inlineRetries)
             && !inlineBudgetWouldOversleep;
 
         var nextStatus = isInlineRetryInFlight ? StatusName.Scheduled : StatusName.Failed;
 
-        if (decision.Outcome != RetryDecision.Kind.Continue)
+        if (decision.Outcome != MessagingRetryDecision.Kind.Continue)
         {
             // Stop / Exhausted: clear NextRetryAt so the row is terminal and excluded from pickup.
             return new RetryNextState(isInlineRetryInFlight, NextRetryAt: null, nextStatus);
@@ -377,7 +303,7 @@ internal static class RetryHelper
         }
 
         // Inline-retry in-flight transition: the persisted NextRetryAt only matters for
-        // crash recovery (the inline loop itself drives the actual Task.Delay). Push NextRetryAt
+        // crash recovery (the Polly pipeline itself drives the actual delay). Push NextRetryAt
         // past the inline-retry resume point by InitialDispatchGrace so the polling cycle does
         // not race the inline path mid-sleep, AND preserve any existing schedule that is later
         // (e.g., InitialDispatchGrace from initial store).

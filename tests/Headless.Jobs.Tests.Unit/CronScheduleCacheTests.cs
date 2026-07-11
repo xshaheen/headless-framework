@@ -32,4 +32,67 @@ public sealed class CronScheduleCacheTests
         var invalidated = _cache.Invalidate(expr1);
         invalidated.Should().BeTrue();
     }
+
+    [Fact]
+    public void GetNextOccurrenceOrDefault_shifts_an_invalid_spring_occurrence_forward_by_the_dst_gap()
+    {
+        var cache = new CronScheduleCache(_CreateTestTimeZone());
+        var beforeGap = new DateTime(2026, 3, 28, 23, 0, 0, DateTimeKind.Utc);
+
+        var next = cache.GetNextOccurrenceOrDefault("0 30 2 * * *", beforeGap);
+
+        next.Should().Be(new DateTime(2026, 3, 29, 0, 30, 0, DateTimeKind.Utc));
+    }
+
+    [Fact]
+    public void GetNextOccurrenceOrDefault_uses_the_later_utc_instant_for_an_ambiguous_fall_occurrence()
+    {
+        var cache = new CronScheduleCache(_CreateTestTimeZone());
+        var beforeOverlap = new DateTime(2026, 10, 24, 22, 0, 0, DateTimeKind.Utc);
+
+        var next = cache.GetNextOccurrenceOrDefault("0 30 2 * * *", beforeOverlap);
+
+        next.Should().Be(new DateTime(2026, 10, 25, 0, 30, 0, DateTimeKind.Utc));
+    }
+
+    [Fact]
+    public void GetNextOccurrenceOrDefault_does_not_skip_the_later_fall_occurrence_after_restart()
+    {
+        var cache = new CronScheduleCache(_CreateTestTimeZone());
+        var betweenOverlapInstants = new DateTime(2026, 10, 24, 23, 45, 0, DateTimeKind.Utc);
+
+        var next = cache.GetNextOccurrenceOrDefault("0 30 2 * * *", betweenOverlapInstants);
+
+        next.Should().Be(new DateTime(2026, 10, 25, 0, 30, 0, DateTimeKind.Utc));
+    }
+
+    private static TimeZoneInfo _CreateTestTimeZone()
+    {
+        var daylightTransitionStart = TimeZoneInfo.TransitionTime.CreateFixedDateRule(
+            new DateTime(1, 1, 1, 2, 0, 0),
+            3,
+            29
+        );
+        var daylightTransitionEnd = TimeZoneInfo.TransitionTime.CreateFixedDateRule(
+            new DateTime(1, 1, 1, 3, 0, 0),
+            10,
+            25
+        );
+        var rule = TimeZoneInfo.AdjustmentRule.CreateAdjustmentRule(
+            new DateTime(2026, 1, 1),
+            new DateTime(2026, 12, 31),
+            TimeSpan.FromHours(1),
+            daylightTransitionStart,
+            daylightTransitionEnd
+        );
+
+        return TimeZoneInfo.CreateCustomTimeZone(
+            "Headless.Test.Dst",
+            TimeSpan.FromHours(2),
+            "Headless Test",
+            "Headless Standard",
+            "Headless Daylight",
+            [rule]
+        );
+    }
 }
