@@ -113,7 +113,7 @@ public sealed class KafkaConsumerClientTests : TestBase
 
         // when - FetchMessageNamesAsync will return topics even if admin client fails
         // The topic names are returned regardless of whether topic creation succeeds
-        var result = await client.FetchMessageNamesAsync(["topic1", "topic2"]);
+        var result = await client.FetchMessageNamesAsync(["topic1", "topic2"], AbortToken);
 
         // then
         result.Should().HaveCount(2);
@@ -139,7 +139,7 @@ public sealed class KafkaConsumerClientTests : TestBase
         );
 
         // when
-        var result = await client.FetchMessageNamesAsync(["orders.created", "orders.*"]);
+        var result = await client.FetchMessageNamesAsync(["orders.created", "orders.*"], AbortToken);
 
         // then
         result.Should().Contain("orders.created");
@@ -263,7 +263,7 @@ public sealed class KafkaConsumerClientTests : TestBase
         };
 
         // when
-        await client.RejectAsync(consumeResult);
+        await client.RejectAsync(consumeResult, AbortToken);
 
         // then
         consumer.Received(1).Seek(consumeResult.TopicPartitionOffset);
@@ -287,7 +287,7 @@ public sealed class KafkaConsumerClientTests : TestBase
 
         // when
         client.PartitionsRevoked([consumeResult.TopicPartitionOffset]);
-        await client.CommitAsync(consumeResult);
+        await client.CommitAsync(consumeResult, AbortToken);
 
         // then
         consumer.DidNotReceive().Commit(Arg.Any<ConsumeResult<string, byte[]>>());
@@ -311,7 +311,7 @@ public sealed class KafkaConsumerClientTests : TestBase
 
         // when
         client.PartitionsLost([consumeResult.TopicPartitionOffset]);
-        await client.RejectAsync(consumeResult);
+        await client.RejectAsync(consumeResult, AbortToken);
 
         // then
         consumer.DidNotReceive().Seek(Arg.Any<TopicPartitionOffset>());
@@ -585,7 +585,7 @@ public sealed class KafkaConsumerClientTests : TestBase
             // when
             client.PartitionsRevoked([consumeResult.TopicPartitionOffset]);
             client.PartitionsAssigned([consumeResult.TopicPartition]);
-            await client.CommitAsync(sender);
+            await client.CommitAsync(sender, AbortToken);
 
             // then
             consumer.DidNotReceive().Commit(Arg.Any<IEnumerable<TopicPartitionOffset>>());
@@ -643,7 +643,7 @@ public sealed class KafkaConsumerClientTests : TestBase
             // when
             client.PartitionsRevoked([consumeResult.TopicPartitionOffset]);
             client.PartitionsAssigned([consumeResult.TopicPartition]);
-            await client.RejectAsync(sender);
+            await client.RejectAsync(sender, AbortToken);
 
             // then
             consumer.DidNotReceive().Seek(Arg.Any<TopicPartitionOffset>());

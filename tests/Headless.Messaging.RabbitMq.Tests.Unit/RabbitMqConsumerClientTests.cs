@@ -170,7 +170,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         var topics = new[] { "topic1", "topic2", "topic3" };
 
         // when
-        await client.SubscribeAsync(topics);
+        await client.SubscribeAsync(topics, AbortToken);
 
         // then
         await _channel

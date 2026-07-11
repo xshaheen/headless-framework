@@ -44,7 +44,7 @@ public sealed class InMemoryQueueTransportTests : TestBase
     public async Task should_send_message_successfully()
     {
         // given
-        await _consumerClient.SubscribeAsync(["test-messageName"]);
+        await _consumerClient.SubscribeAsync(["test-messageName"], AbortToken);
 
         var received = new TaskCompletionSource<TransportMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
         _consumerClient.OnMessageCallback = (msg, _) =>
@@ -74,7 +74,7 @@ public sealed class InMemoryQueueTransportTests : TestBase
     public async Task should_return_success_result_on_send()
     {
         // given
-        await _consumerClient.SubscribeAsync(["test-messageName"]);
+        await _consumerClient.SubscribeAsync(["test-messageName"], AbortToken);
         var message = _CreateTestMessage("msg-1", "test-messageName");
 
         // when
@@ -102,7 +102,7 @@ public sealed class InMemoryQueueTransportTests : TestBase
     public async Task should_support_message_headers()
     {
         // given
-        await _consumerClient.SubscribeAsync(["test-messageName"]);
+        await _consumerClient.SubscribeAsync(["test-messageName"], AbortToken);
 
         var received = new TaskCompletionSource<TransportMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
         _consumerClient.OnMessageCallback = (msg, _) =>
@@ -140,7 +140,7 @@ public sealed class InMemoryQueueTransportTests : TestBase
     public async Task should_send_message_body()
     {
         // given
-        await _consumerClient.SubscribeAsync(["test-messageName"]);
+        await _consumerClient.SubscribeAsync(["test-messageName"], AbortToken);
 
         var received = new TaskCompletionSource<TransportMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
         _consumerClient.OnMessageCallback = (msg, _) =>
@@ -191,7 +191,7 @@ public sealed class InMemoryQueueTransportTests : TestBase
     public async Task should_be_thread_safe_for_concurrent_sends()
     {
         // given
-        await _consumerClient.SubscribeAsync(["concurrent-messageName"]);
+        await _consumerClient.SubscribeAsync(["concurrent-messageName"], AbortToken);
 
         var receivedMessages = new List<TransportMessage>();
         var lockObj = new Lock();
@@ -254,8 +254,8 @@ public sealed class InMemoryQueueTransportTests : TestBase
         await using var worker1 = new InMemoryConsumerClient(queue, "workers", 1, IntentType.Queue);
         await using var worker2 = new InMemoryConsumerClient(queue, "workers", 1, IntentType.Queue);
 
-        await worker1.SubscribeAsync(["jobs"]);
-        await worker2.SubscribeAsync(["jobs"]);
+        await worker1.SubscribeAsync(["jobs"], AbortToken);
+        await worker2.SubscribeAsync(["jobs"], AbortToken);
 
         var received = 0;
         var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

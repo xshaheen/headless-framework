@@ -111,8 +111,8 @@ public sealed class InMemoryConsumerClientFactoryTests : TestBase
         var client1 = await _factory.CreateAsync("group-1", 1);
         var client2 = await _factory.CreateAsync("group-2", 1);
 
-        await client1.SubscribeAsync(["shared-messageName"]);
-        await client2.SubscribeAsync(["shared-messageName"]);
+        await client1.SubscribeAsync(["shared-messageName"], AbortToken);
+        await client2.SubscribeAsync(["shared-messageName"], AbortToken);
 
         var messages1 = new List<object>();
         var messages2 = new List<object>();

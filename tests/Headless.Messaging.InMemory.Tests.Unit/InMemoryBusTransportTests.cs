@@ -38,9 +38,9 @@ public sealed class InMemoryBusTransportTests : TestBase
         await using var client2 = new InMemoryConsumerClient(queue, "group-2", 1);
         await using var client3 = new InMemoryConsumerClient(queue, "group-3", 1);
 
-        await client1.SubscribeAsync(["events"]);
-        await client2.SubscribeAsync(["events"]);
-        await client3.SubscribeAsync(["events"]);
+        await client1.SubscribeAsync(["events"], AbortToken);
+        await client2.SubscribeAsync(["events"], AbortToken);
+        await client3.SubscribeAsync(["events"], AbortToken);
 
         var received = new ConcurrentDictionary<string, int>(StringComparer.Ordinal);
         var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

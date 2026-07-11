@@ -30,8 +30,8 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
         await using var client = new NatsConsumerClient("test-group", 0, options, _serviceProvider);
         await client.ConnectAsync();
 
-        var topics = await client.FetchMessageNamesAsync([subject]);
-        await client.SubscribeAsync(topics);
+        var topics = await client.FetchMessageNamesAsync([subject], AbortToken);
+        await client.SubscribeAsync(topics, AbortToken);
 
         var received = new TaskCompletionSource<(TransportMessage msg, object? sender)>(
             TaskCreationOptions.RunContinuationsAsynchronously
@@ -61,7 +61,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
             transportMsg.Headers[MessagingHeaders.Group].Should().Be("test-group");
 
             // commit should not throw
-            await client.CommitAsync(natsMsg);
+            await client.CommitAsync(natsMsg, AbortToken);
         }
         finally
         {
@@ -81,8 +81,8 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
         await using var client = new NatsConsumerClient("test-group", 0, options, _serviceProvider);
         await client.ConnectAsync();
 
-        await client.FetchMessageNamesAsync([subject]);
-        await client.SubscribeAsync([subject]);
+        await client.FetchMessageNamesAsync([subject], AbortToken);
+        await client.SubscribeAsync([subject], AbortToken);
 
         var received = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
         client.OnMessageCallback = (_, sender) =>
@@ -104,7 +104,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
             var natsMsg = await received.Task.WaitAsync(cts.Token);
 
             // then — reject (nak) should not throw
-            await client.RejectAsync(natsMsg);
+            await client.RejectAsync(natsMsg, AbortToken);
         }
         finally
         {
@@ -124,7 +124,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
         await client.ConnectAsync();
 
         // when — FetchMessageNamesAsync with EnableSubscriberClientStreamAndSubjectCreation=true
-        var result = await client.FetchMessageNamesAsync([subject]);
+        var result = await client.FetchMessageNamesAsync([subject], AbortToken);
 
         // then — stream should exist on the NATS server
         result.Should().Contain(subject);
@@ -155,7 +155,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
         await client.ConnectAsync();
 
         // when
-        await client.FetchMessageNamesAsync([subject]);
+        await client.FetchMessageNamesAsync([subject], AbortToken);
 
         // then — stream should use Memory storage (from callback)
         var conn = await fixture.GetConnectionAsync();
@@ -176,8 +176,8 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
         var options = _CreateOptions(enableStreamCreation: false);
         await using var client = new NatsConsumerClient("test-group", 0, options, _serviceProvider);
         await client.ConnectAsync();
-        await client.FetchMessageNamesAsync([subject]);
-        await client.SubscribeAsync([subject]);
+        await client.FetchMessageNamesAsync([subject], AbortToken);
+        await client.SubscribeAsync([subject], AbortToken);
 
         var received = new TaskCompletionSource<TransportMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
         client.OnMessageCallback = (msg, _) =>
@@ -248,8 +248,8 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
         var options = _CreateOptions(enableStreamCreation: false);
         await using var client = new NatsConsumerClient("test-group", 0, options, _serviceProvider);
         await client.ConnectAsync();
-        await client.FetchMessageNamesAsync([subject]);
-        await client.SubscribeAsync([subject]);
+        await client.FetchMessageNamesAsync([subject], AbortToken);
+        await client.SubscribeAsync([subject], AbortToken);
 
         var messageReceived = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var messageCount = 0;

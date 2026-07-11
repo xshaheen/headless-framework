@@ -44,7 +44,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
         var messageNames = new[] { "messageName-1", "messageName-2", "messageName-3" };
 
         // when
-        await _client.SubscribeAsync(messageNames);
+        await _client.SubscribeAsync(messageNames, AbortToken);
 
         // then - should complete without exception
         _client.Should().NotBeNull();
@@ -64,7 +64,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
     public async Task should_invoke_callback_on_message_received()
     {
         // given
-        await _client.SubscribeAsync(["test-messageName"]);
+        await _client.SubscribeAsync(["test-messageName"], AbortToken);
 
         var received = new TaskCompletionSource<(TransportMessage Message, object? Sender)>(
             TaskCreationOptions.RunContinuationsAsynchronously
@@ -107,7 +107,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
     public async Task should_commit_and_release_semaphore()
     {
         // given
-        await _client.SubscribeAsync(["test-messageName"]);
+        await _client.SubscribeAsync(["test-messageName"], AbortToken);
 
         var committed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _client.OnMessageCallback = async (_, sender) =>
@@ -146,7 +146,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
     public async Task should_reject_and_release_semaphore()
     {
         // given
-        await _client.SubscribeAsync(["test-messageName"]);
+        await _client.SubscribeAsync(["test-messageName"], AbortToken);
 
         var rejected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _client.OnMessageCallback = async (_, sender) =>
@@ -184,7 +184,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
     public async Task should_stop_listening_on_cancellation()
     {
         // given
-        await _client.SubscribeAsync(["test-messageName"]);
+        await _client.SubscribeAsync(["test-messageName"], AbortToken);
 
         using var cts = new CancellationTokenSource();
         var listenerStopped = false;
@@ -222,7 +222,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
         var logger = Substitute.For<ILogger<MemoryQueue>>();
         var queue = new MemoryQueue(logger);
         var client = new InMemoryConsumerClient(queue, "dispose-group", 1);
-        await client.SubscribeAsync(["dispose-messageName"]);
+        await client.SubscribeAsync(["dispose-messageName"], AbortToken);
 
         TransportMessage? receivedMessage = null;
         client.OnMessageCallback = (msg, _) =>
@@ -249,7 +249,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
         var queue = new MemoryQueue(logger);
         const byte concurrency = 4;
         var client = new InMemoryConsumerClient(queue, "concurrent-group", concurrency);
-        await client.SubscribeAsync(["concurrent-messageName"]);
+        await client.SubscribeAsync(["concurrent-messageName"], AbortToken);
 
         var processedCount = 0;
         var maxConcurrent = 0;
@@ -322,7 +322,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
         var logger = Substitute.For<ILogger<MemoryQueue>>();
         var queue = new MemoryQueue(logger);
         var client = new InMemoryConsumerClient(queue, "sequential-group", 0);
-        await client.SubscribeAsync(["sequential-messageName"]);
+        await client.SubscribeAsync(["sequential-messageName"], AbortToken);
 
         var processOrder = new List<string>();
         var allProcessed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -384,7 +384,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
     public async Task should_add_group_header_to_delivered_message()
     {
         // given
-        await _client.SubscribeAsync(["test-messageName"]);
+        await _client.SubscribeAsync(["test-messageName"], AbortToken);
 
         var received = new TaskCompletionSource<TransportMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
         _client.OnMessageCallback = (msg, _) =>
@@ -455,7 +455,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
     public async Task PauseAsync_blocks_message_delivery()
     {
         // given
-        await _client.SubscribeAsync(["test-messageName"]);
+        await _client.SubscribeAsync(["test-messageName"], AbortToken);
 
         var receivedCount = 0;
         var received = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -506,7 +506,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
     public async Task should_drain_pending_messages_without_processing()
     {
         // given
-        await _client.SubscribeAsync(["test-messageName"]);
+        await _client.SubscribeAsync(["test-messageName"], AbortToken);
 
         _queue.SendBus(_CreateTestMessage("drain-1", "test-messageName"));
         _queue.SendBus(_CreateTestMessage("drain-2", "test-messageName"));

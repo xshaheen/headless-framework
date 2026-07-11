@@ -494,7 +494,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         );
 
         // when
-        await consumer.BasicAck(42UL);
+        await consumer.BasicAck(42UL, AbortToken);
 
         // then
         await _channel.Received(1).BasicAckAsync(42UL, false, Arg.Any<CancellationToken>());
@@ -516,7 +516,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         );
 
         // when
-        await consumer.BasicAck(42UL);
+        await consumer.BasicAck(42UL, AbortToken);
 
         // then
         await _channel.DidNotReceive().BasicAckAsync(Arg.Any<ulong>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
@@ -538,7 +538,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         );
 
         // when
-        await consumer.BasicReject(42UL);
+        await consumer.BasicReject(42UL, AbortToken);
 
         // then
         await _channel.Received(1).BasicRejectAsync(42UL, true, Arg.Any<CancellationToken>());
@@ -560,7 +560,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         );
 
         // when
-        await consumer.BasicReject(42UL);
+        await consumer.BasicReject(42UL, AbortToken);
 
         // then
         await _channel
@@ -861,9 +861,9 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         );
 
         // when - multiple acks should not block if semaphore is released properly
-        await consumer.BasicAck(1UL);
-        await consumer.BasicAck(2UL);
-        await consumer.BasicAck(3UL);
+        await consumer.BasicAck(1UL, AbortToken);
+        await consumer.BasicAck(2UL, AbortToken);
+        await consumer.BasicAck(3UL, AbortToken);
 
         // then - should complete without deadlock
         await _channel.Received(3).BasicAckAsync(Arg.Any<ulong>(), false, Arg.Any<CancellationToken>());
@@ -885,9 +885,9 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         );
 
         // when - multiple rejects should not block if semaphore is released properly
-        await consumer.BasicReject(1UL);
-        await consumer.BasicReject(2UL);
-        await consumer.BasicReject(3UL);
+        await consumer.BasicReject(1UL, AbortToken);
+        await consumer.BasicReject(2UL, AbortToken);
+        await consumer.BasicReject(3UL, AbortToken);
 
         // then - should complete without deadlock
         await _channel.Received(3).BasicRejectAsync(Arg.Any<ulong>(), true, Arg.Any<CancellationToken>());
