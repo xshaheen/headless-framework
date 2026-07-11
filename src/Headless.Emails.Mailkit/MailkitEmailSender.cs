@@ -17,14 +17,16 @@ namespace Headless.Emails.Mailkit;
 /// or faulted clients are discarded rather than returned. The pool size is governed by
 /// <see cref="MailkitSmtpOptions.MaxPoolSize"/>.
 /// <para>
-/// SMTP command/protocol errors (<see cref="MailKit.Net.Smtp.SmtpCommandException"/>,
-/// <see cref="MailKit.Net.Smtp.SmtpProtocolException"/>) and authentication failures
-/// (<see cref="MailKit.Security.AuthenticationException"/>) are all surfaced as a failed
-/// <see cref="SendSingleEmailResponse"/> rather than thrown, per the <see cref="IEmailSender"/> contract;
-/// authentication failures are additionally logged at critical level because they signal a configuration
-/// error. Only cancellation and argument validation propagate. On success the SMTP server's final
-/// response is surfaced as <see cref="SendSingleEmailResponse.ProviderMessageId"/> (it typically embeds the
-/// server's queue id).
+/// Every send failure is surfaced as a failed <see cref="SendSingleEmailResponse"/> rather than thrown,
+/// per the <see cref="IEmailSender"/> contract: SMTP command/protocol errors
+/// (<see cref="MailKit.Net.Smtp.SmtpCommandException"/>, <see cref="MailKit.Net.Smtp.SmtpProtocolException"/>),
+/// authentication failures (<see cref="MailKit.Security.AuthenticationException"/>), and connect/TLS/transport
+/// faults (for example <see cref="IOException"/>, socket errors, TLS handshake failures, and connect timeouts).
+/// Authentication failures are additionally logged at critical level because they signal a configuration error.
+/// Only the caller's own cancellation (an <see cref="OperationCanceledException"/> whose token is the caller's)
+/// and argument validation propagate; a connect-timeout cancellation is returned as a failure, not thrown. On
+/// success the SMTP server's final response is surfaced as
+/// <see cref="SendSingleEmailResponse.ProviderMessageId"/> (it typically embeds the server's queue id).
 /// </para>
 /// </remarks>
 internal sealed class MailkitEmailSender(
@@ -42,11 +44,14 @@ internal sealed class MailkitEmailSender(
     /// <returns>
     /// A successful response (carrying the SMTP server's final response as the provider message id) when
     /// the server accepts the message; a failed response when an SMTP command, protocol, or authentication
-    /// error occurs.
+    /// error, or a connect/TLS/transport fault (including a connect timeout), occurs.
     /// </returns>
     /// <exception cref="InvalidOperationException">
     /// Thrown when both <see cref="SendSingleEmailRequest.MessageText"/> and
     /// <see cref="SendSingleEmailRequest.MessageHtml"/> are <see langword="null"/> or whitespace-only.
+    /// </exception>
+    /// <exception cref="OperationCanceledException">
+    /// Thrown when <paramref name="cancellationToken"/> is cancelled by the caller during the send.
     /// </exception>
     public async ValueTask<SendSingleEmailResponse> SendAsync(
         SendSingleEmailRequest request,
@@ -69,6 +74,13 @@ internal sealed class MailkitEmailSender(
             // MailKit returns the SMTP server's final free-form response (typically embedding the queue id).
             serverResponse = await client.SendAsync(mimeMessage, cancellationToken).ConfigureAwait(false);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Only the caller's own cancellation propagates. A timeout-CTS-induced cancellation — the connect
+            // timeout fires while the caller's token is NOT cancelled — is a delivery failure and falls through
+            // to the general handler below.
+            throw;
+        }
         catch (MailKit.Net.Smtp.SmtpCommandException ex)
         {
             logger.LogSmtpCommandFailed(ex, ex.StatusCode);
@@ -85,6 +97,15 @@ internal sealed class MailkitEmailSender(
             // than thrown; it is logged at critical level because it signals a configuration error.
             logger.LogSmtpAuthenticationFailed(ex);
             return SendSingleEmailResponse.Failed($"Authentication error: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            // Connect/TLS/transport faults (IOException, SocketException, TLS handshake failures, and connect
+            // timeouts surfaced as a non-caller cancellation) are returned as a failed response per the
+            // IEmailSender return-not-throw contract. Log the exception type only — its message can carry
+            // host/connection detail that does not belong in log sinks.
+            logger.LogSmtpSendFailed(ex.GetType().Name);
+            return SendSingleEmailResponse.FromException(ex);
         }
         finally
         {
@@ -162,4 +183,12 @@ internal static partial class MailkitEmailSenderLoggerExtensions
         Message = "SMTP authentication failed"
     )]
     public static partial void LogSmtpAuthenticationFailed(this ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 4,
+        EventName = "SmtpSendFailed",
+        Level = LogLevel.Error,
+        Message = "Failed to send email via SMTP. ExceptionType={ExceptionType}"
+    )]
+    public static partial void LogSmtpSendFailed(this ILogger logger, string exceptionType);
 }
