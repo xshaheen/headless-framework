@@ -1154,14 +1154,14 @@ internal sealed class SqlServerDataStorage(
                 SET StatusName=@StatusName, NextRetryAt=NULL, LockedUntil=NULL, Owner=NULL, ExpiresAt=@ExpiresAt
                 WHERE Id IN (SELECT Id FROM @Ids) AND {_TerminalRowGuardSimple};
                 """;
-        var sqlParams = new List<object>
-        {
+        object[] sqlParams =
+        [
             new SqlParameter("@StatusName", nameof(StatusName.Failed)),
             new SqlParameter("@ExpiresAt", SqlDbType.DateTime2) { Value = expiresAt },
             isReceivedTable
                 ? _BuildPoisonMessageListTvpParameter(poisonMessages)
                 : _BuildIdListTvpParameter(poisonMessages.Select(message => message.StorageId).ToArray()),
-        };
+        ];
 
         // One savepoint isolates the batched terminal mark from the shared claim transaction. If it fails,
         // poison marking is skipped but healthy-row claims still commit; failed poison rows remain leased.
@@ -1185,7 +1185,7 @@ internal sealed class SqlServerDataStorage(
                     sql,
                     transaction: transaction,
                     commandTimeout: messagingOptions.Value.CommandTimeout,
-                    sqlParams: [.. sqlParams],
+                    sqlParams: sqlParams,
                     cancellationToken: cancellationToken
                 )
                 .ConfigureAwait(false);
