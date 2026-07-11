@@ -449,7 +449,7 @@ public sealed class RedisCacheEntryFrameTests
         var logical = new DateTime(2026, 06, 03, 12, 00, 00, DateTimeKind.Utc);
 
         var encoded = _Encode(_RedisValue(value), isNull: false, logical, logical.AddMinutes(5));
-        var decoded = RedisCacheEntryFrame.Decode((ReadOnlyMemory<byte>)encoded.AsMemory());
+        var decoded = RedisCacheEntryFrame.DecodeMemory(encoded);
 
         decoded.IsFramed.Should().BeTrue();
         decoded.LogicalExpiresAt.Should().Be(logical);

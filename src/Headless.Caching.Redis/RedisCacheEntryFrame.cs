@@ -362,7 +362,7 @@ internal static class RedisCacheEntryFrame
             return DecodedFrame.Unframed;
         }
 
-        return Decode((ReadOnlyMemory<byte>)_ToBytes(value));
+        return DecodeMemory(_ToBytes(value));
     }
 
     /// <summary>
@@ -370,9 +370,11 @@ internal static class RedisCacheEntryFrame
     /// <c>StringGetLeaseAsync</c>) without materializing a <see cref="RedisValue"/> <c>byte[]</c>. The returned
     /// <see cref="DecodedFrame.ValueSegment"/> is a slice of <paramref name="bytes"/> — its lifetime is the
     /// caller's buffer lifetime, so pooled callers must not return the buffer to the pool while the segment is
-    /// still consumed.
+    /// still consumed. Named distinctly from <see cref="Decode(RedisValue)"/> because <c>byte[]</c> converts
+    /// implicitly to both <see cref="RedisValue"/> and <see cref="ReadOnlyMemory{T}"/>, so a shared name would
+    /// make every <c>byte[]</c> call site ambiguous (CS0121) and force an explicit cast.
     /// </summary>
-    public static DecodedFrame Decode(ReadOnlyMemory<byte> bytes)
+    public static DecodedFrame DecodeMemory(ReadOnlyMemory<byte> bytes)
     {
         var span = bytes.Span;
 

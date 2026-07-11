@@ -40,6 +40,11 @@ public sealed class RedisCache(
 {
     /// <summary>Legacy null sentinel retained only for raw pre-envelope payloads and collection entries.</summary>
     private static readonly RedisValue _NullValue = "@@NULL";
+
+    // Single source of truth for the null-sentinel bytes: the lease/memory read paths compare against these
+    // instead of a hand-copied "@@NULL"u8 literal, so the sentinel can never drift between the RedisValue writers
+    // (which store _NullValue) and the byte-level readers. Derived once from _NullValue at type init.
+    private static readonly byte[] _NullValueBytes = (byte[])_NullValue!;
     private const int _BatchSize = 250;
 
     /// <summary>
@@ -1129,7 +1134,7 @@ public sealed class RedisCache(
 
         try
         {
-            var frame = RedisCacheEntryFrame.Decode((ReadOnlyMemory<byte>)lease.Memory);
+            var frame = RedisCacheEntryFrame.DecodeMemory(lease.Memory);
 
             if (!frame.IsFramed)
             {
@@ -1193,7 +1198,7 @@ public sealed class RedisCache(
         {
             ReadOnlyMemory<byte> raw = lease.Memory;
             var now = timeProvider.GetUtcNow().UtcDateTime;
-            var frame = RedisCacheEntryFrame.Decode(raw);
+            var frame = RedisCacheEntryFrame.DecodeMemory(raw);
 
             if (frame.IsFramed)
             {
@@ -2248,9 +2253,10 @@ public sealed class RedisCache(
         return serializer.Deserialize<T>((ReadOnlySequence<byte>)redisValue!);
     }
 
-    // Byte-level mirror of the _NullValue comparison for the lease/memory read paths (#580). The u8 literal must
-    // stay in sync with _NullValue ("@@NULL"); RedisValue equality is content-based, so both compare identically.
-    private static bool _IsNullSentinel(ReadOnlySpan<byte> value) => value.SequenceEqual("@@NULL"u8);
+    // Byte-level mirror of the _NullValue comparison for the lease/memory read paths (#580). Compares against
+    // _NullValueBytes (derived from _NullValue at init) so there is a single sentinel source of truth; RedisValue
+    // equality is content-based, so this matches the RedisValue-path comparison exactly.
+    private static bool _IsNullSentinel(ReadOnlySpan<byte> value) => value.SequenceEqual(_NullValueBytes);
 
     /// <summary>
     /// Single-key read conversion from a pooled <see cref="Lease{T}"/> (#580). The lease buffer is ArrayPool-owned
@@ -2272,7 +2278,7 @@ public sealed class RedisCache(
         try
         {
             ReadOnlyMemory<byte> raw = lease.Memory;
-            var frame = RedisCacheEntryFrame.Decode(raw);
+            var frame = RedisCacheEntryFrame.DecodeMemory(raw);
 
             if (frame.IsFramed)
             {
@@ -2360,7 +2366,7 @@ public sealed class RedisCache(
         try
         {
             ReadOnlyMemory<byte> raw = lease.Memory;
-            var frame = RedisCacheEntryFrame.Decode(raw);
+            var frame = RedisCacheEntryFrame.DecodeMemory(raw);
 
             if (frame.IsFramed)
             {
@@ -2905,7 +2911,7 @@ public sealed class RedisCache(
         {
             ReadOnlyMemory<byte> raw = lease.Memory;
             var now = timeProvider.GetUtcNow().UtcDateTime;
-            var frame = RedisCacheEntryFrame.Decode(raw);
+            var frame = RedisCacheEntryFrame.DecodeMemory(raw);
 
             return await _BuildStoreEntryFromDecodedAsync<T>(raw, frame, now).ConfigureAwait(false);
         }
@@ -2960,7 +2966,7 @@ public sealed class RedisCache(
                 try
                 {
                     rawBytes[i] = (byte[])rawValues[i]!;
-                    decodedFrames[i] = RedisCacheEntryFrame.Decode(rawBytes[i]);
+                    decodedFrames[i] = RedisCacheEntryFrame.DecodeMemory(rawBytes[i]);
                 }
                 catch (Exception e)
                 {
@@ -3105,7 +3111,7 @@ public sealed class RedisCache(
 
         try
         {
-            var frame = RedisCacheEntryFrame.Decode((ReadOnlyMemory<byte>)lease.Memory);
+            var frame = RedisCacheEntryFrame.DecodeMemory(lease.Memory);
 
             if (!frame.IsFramed)
             {
