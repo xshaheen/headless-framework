@@ -33,6 +33,8 @@ Only cancellation tied to the job's cancellation token (including `context.Reque
 
 Cron expressions are evaluated in `SchedulerTimeZone`. A spring-forward occurrence inside an invalid local-time gap is shifted forward by the gap; an ambiguous fall-back occurrence runs once at the later UTC instant (the standard-time offset).
 
+Jobs uses reusable Polly.Core `ResiliencePipeline` instances for runtime retry execution. `JobsRetryOptions.RetryStrategy` is the public Polly configuration surface, while `Retries`, `RetryCount`, and `RetryIntervals` remain the durable authority. `RetryCount` is persisted before every wait; lease renewal stays active across attempts and delays, and a lost lease cancels the pipeline and fences terminal writes. Per-row `RetryIntervals` override Polly delay generation and reuse their last value when shorter than `Retries`. Polly configuration and delegates are never serialized.
+
 There is no `app.UseJobs()` call — the scheduler starts automatically through the `IHostedService` registrations added by `AddHeadlessJobs`.
 
 ## Installation
@@ -46,6 +48,8 @@ dotnet add package Headless.Jobs.Core
 ```csharp
 using Headless.Jobs.Base;
 using Headless.Jobs.Entities;
+using Polly;
+using Polly.Retry;
 
 // 1. Register Jobs
 builder.Services.AddHeadlessJobs(options =>
@@ -56,6 +60,15 @@ builder.Services.AddHeadlessJobs(options =>
         scheduler.SchedulerTimeZone = TimeZoneInfo.Utc;
     });
     options.SetExceptionHandler<MyJobExceptionHandler>();
+    options.ConfigureRetries(retry =>
+    {
+        retry.RetryStrategy.ShouldHandle = args =>
+            ValueTask.FromResult(args.Outcome.Exception is HttpRequestException);
+        retry.RetryStrategy.Delay = TimeSpan.FromSeconds(30);
+        retry.RetryStrategy.BackoffType = DelayBackoffType.Exponential;
+        retry.RetryStrategy.UseJitter = true;
+        retry.RetryStrategy.MaxDelay = TimeSpan.FromMinutes(5);
+    });
 });
 
 // 2. Define a cron job (requires Headless.Jobs.SourceGenerator)
@@ -118,6 +131,7 @@ builder.Services.AddHeadlessJobs(options =>
 - `Headless.DistributedLocks.Abstractions`
 - `Headless.Extensions`
 - `NCrontab.Signed`
+- `Polly.Core`
 
 ## Side Effects
 

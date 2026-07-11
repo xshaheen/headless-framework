@@ -267,6 +267,14 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
         base.should_reject_mismatched_original_retries();
 
     [Fact]
+    public override Task should_lease_and_reserve_publish_attempt_in_single_step() =>
+        base.should_lease_and_reserve_publish_attempt_in_single_step();
+
+    [Fact]
+    public override Task should_reject_lease_and_reserve_with_stale_inline_attempts_token() =>
+        base.should_reject_lease_and_reserve_with_stale_inline_attempts_token();
+
+    [Fact]
     public override Task should_report_false_when_received_exception_message_is_already_terminal() =>
         base.should_report_false_when_received_exception_message_is_already_terminal();
 

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
@@ -83,6 +84,17 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     internal Action<IServiceCollection>? ExternalProviderConfigServiceAction { get; set; }
     internal Action<IServiceCollection>? DashboardServiceAction { get; set; }
     internal Type? JobExceptionHandlerType { get; private set; }
+    internal JobsRetryOptions RetryOptions { get; } = new();
+
+    /// <summary>Configures direct Polly retry behavior and Jobs-owned exhaustion notification.</summary>
+    /// <param name="configure">Action that mutates the retry options.</param>
+    /// <returns>This builder for method chaining.</returns>
+    public JobsOptionsBuilder<TTimeJob, TCronJob> ConfigureRetries(Action<JobsRetryOptions> configure)
+    {
+        Argument.IsNotNull(configure);
+        configure(RetryOptions);
+        return this;
+    }
 
     /// <summary>
     /// Configures the scheduler options (node identity, concurrency, lease duration, and timezone)

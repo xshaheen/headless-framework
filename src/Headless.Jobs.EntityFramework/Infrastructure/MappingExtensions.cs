@@ -103,6 +103,7 @@ internal static class MappingExtensions
             // nested stamp below is the load-bearing one — without it a MarkFailed/Skip occurrence degrades to the
             // Retry enum default when re-queued.
             OnNodeDeath = e.OnNodeDeath,
+            RetryCount = e.RetryCount,
             CronJob = new TCronJob
             {
                 Id = e.CronJob.Id,

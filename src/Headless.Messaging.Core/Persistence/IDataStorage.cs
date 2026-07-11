@@ -66,6 +66,24 @@ public interface IDataStorage
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>Updates published retry state with optimistic checks for both durable retry counters.</summary>
+    ValueTask<bool> ChangePublishRetryStateAsync(
+        MediumMessage message,
+        StatusName state,
+        DateTime? nextRetryAt,
+        DateTime? lockedUntil,
+        int originalRetries,
+        int originalInlineAttempts,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Atomically reserves the next published delivery attempt under the active lease.</summary>
+    ValueTask<bool> ReservePublishAttemptAsync(
+        MediumMessage message,
+        int originalInlineAttempts,
+        CancellationToken cancellationToken = default
+    );
+
     /// <summary>
     /// Writes a pre-attempt lease on a published message, setting <c>LockedUntil</c> on the row so
     /// the persisted retry processor excludes it while a dispatch attempt is active.
@@ -81,6 +99,34 @@ public interface IDataStorage
     ValueTask<bool> LeasePublishAsync(
         MediumMessage message,
         DateTime lockedUntil,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Atomically acquires the dispatch lease AND durably reserves the next inline delivery attempt
+    /// in a single statement — the fresh-dispatch fast path that replaces a
+    /// <see cref="LeasePublishAsync"/> + <see cref="ReservePublishAttemptAsync"/> pair with one
+    /// round trip. Succeeds only when the row is non-terminal, unleased or lease-expired, and both
+    /// durable counters still match the caller's view (<c>Retries</c> and
+    /// <paramref name="originalInlineAttempts"/>).
+    /// </summary>
+    /// <param name="message">
+    /// The message to lease. The caller pre-increments <c>InlineAttempts</c> (the reservation value
+    /// written on success) and rolls it back when this method returns <see langword="false"/>. On
+    /// success the caller's <c>LockedUntil</c> and <c>Owner</c> are also updated.
+    /// </param>
+    /// <param name="lockedUntil">UTC timestamp at which the lease expires.</param>
+    /// <param name="originalInlineAttempts">Optimistic-concurrency token for <c>InlineAttempts</c>.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>
+    /// <see langword="true"/> when the lease and reservation were written; <see langword="false"/> when the row is
+    /// terminal, actively leased by another owner, counter state moved, or the row was not found.
+    /// Callers must stop the attempt path on <see langword="false"/>.
+    /// </returns>
+    ValueTask<bool> LeasePublishAndReserveAttemptAsync(
+        MediumMessage message,
+        DateTime lockedUntil,
+        int originalInlineAttempts,
         CancellationToken cancellationToken = default
     );
 
@@ -119,6 +165,24 @@ public interface IDataStorage
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>Updates received retry state with optimistic checks for both durable retry counters.</summary>
+    ValueTask<bool> ChangeReceiveRetryStateAsync(
+        MediumMessage message,
+        StatusName state,
+        DateTime? nextRetryAt,
+        DateTime? lockedUntil,
+        int originalRetries,
+        int originalInlineAttempts,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Atomically reserves the next received delivery attempt under the active lease.</summary>
+    ValueTask<bool> ReserveReceiveAttemptAsync(
+        MediumMessage message,
+        int originalInlineAttempts,
+        CancellationToken cancellationToken = default
+    );
+
     /// <summary>
     /// Writes a pre-attempt lease on a received message, setting <c>LockedUntil</c> on the row so
     /// the persisted retry processor excludes it while a consume attempt is active.
@@ -134,6 +198,19 @@ public interface IDataStorage
     ValueTask<bool> LeaseReceiveAsync(
         MediumMessage message,
         DateTime lockedUntil,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Atomically acquires the consume lease AND durably reserves the next inline delivery attempt
+    /// in a single statement — the fresh-dispatch fast path that replaces a
+    /// <see cref="LeaseReceiveAsync"/> + <see cref="ReserveReceiveAttemptAsync"/> pair with one
+    /// round trip. Same contract as <see cref="LeasePublishAndReserveAttemptAsync"/>.
+    /// </summary>
+    ValueTask<bool> LeaseReceiveAndReserveAttemptAsync(
+        MediumMessage message,
+        DateTime lockedUntil,
+        int originalInlineAttempts,
         CancellationToken cancellationToken = default
     );
 

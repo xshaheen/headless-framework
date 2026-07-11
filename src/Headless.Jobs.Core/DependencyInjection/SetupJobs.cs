@@ -51,6 +51,13 @@ public static class SetupJobs
             schedulerOptionsBuilder.LeaseDuration > TimeSpan.Zero,
             "SchedulerOptionsBuilder.LeaseDuration must be greater than TimeSpan.Zero."
         );
+        var retryOptions = optionInstance.RetryOptions;
+        services.Configure<JobsRetryOptions, JobsRetryOptionsValidator>(configured =>
+        {
+            configured.RetryStrategy = retryOptions.RetryStrategy;
+            configured.OnExhausted = retryOptions.OnExhausted;
+            configured.OnExhaustedTimeout = retryOptions.OnExhaustedTimeout;
+        });
 
         // The soft lease/fallback ordering warning (LeaseDuration < FallbackIntervalChecker) is emitted at startup by
         // JobsInitializationHostedService, where an ILogger is available.
@@ -147,6 +154,7 @@ public static class SetupJobs
         services.AddSingleton(_ => optionInstance);
         services.AddSingleton(_ => tickerExecutionContext);
         services.AddSingleton(_ => schedulerOptionsBuilder);
+        services.AddSingleton(_ => retryOptions);
         return services;
     }
 
