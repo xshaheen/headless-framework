@@ -6,7 +6,7 @@ using Headless.Payments.Paymob.CashIn.Models.Refunds;
 
 namespace Headless.Payments.Paymob.CashIn;
 
-public partial class PaymobCashInBroker
+internal partial class PaymobCashInBroker
 {
     public async Task<CashInCreateIntentionResponse?> CreateIntentionAsync(
         CashInCreateIntentionRequest request,

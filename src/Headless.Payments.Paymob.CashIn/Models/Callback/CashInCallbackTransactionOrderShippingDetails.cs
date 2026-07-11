@@ -47,12 +47,15 @@ public sealed class CashInCallbackTransactionOrderShippingDetails
     [JsonPropertyName("notes")]
     public string? Notes { get; init; }
 
+    /// <summary>Opaque Paymob passthrough value; shape is provider-defined and usually <see langword="null"/>.</summary>
     [JsonPropertyName("latitude")]
     public object? Latitude { get; init; }
 
+    /// <summary>Opaque Paymob passthrough value; shape is provider-defined and usually <see langword="null"/>.</summary>
     [JsonPropertyName("longitude")]
     public object? Longitude { get; init; }
 
+    /// <summary>Opaque Paymob passthrough value; shape is provider-defined and usually <see langword="null"/>.</summary>
     [JsonPropertyName("return_type")]
     public object? ReturnType { get; init; }
 

@@ -159,15 +159,19 @@ public sealed class CashInCallbackTransaction
         init;
     } = null!;
 
+    /// <summary>Opaque Paymob passthrough value; shape is provider-defined and usually <see langword="null"/>.</summary>
     [JsonPropertyName("other_endpoint_reference")]
     public object? OtherEndpointReference { get; init; }
 
+    /// <summary>Opaque Paymob passthrough value; shape is provider-defined and usually <see langword="null"/>.</summary>
     [JsonPropertyName("merchant_staff_tag")]
     public object? MerchantStaffTag { get; init; }
 
+    /// <summary>Identifier of the parent transaction when this transaction is a refund or void; otherwise <see langword="null"/>.</summary>
     [JsonPropertyName("parent_transaction")]
     public long? ParentTransaction { get; init; }
 
+    /// <summary>Unmodelled JSON fields returned by Paymob, captured so no callback data is lost.</summary>
     [JsonExtensionData]
     public IDictionary<string, object?>? ExtensionData { get; set; }
 

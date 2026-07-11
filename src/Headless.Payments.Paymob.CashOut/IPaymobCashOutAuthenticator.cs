@@ -25,6 +25,7 @@ namespace Headless.Payments.Paymob.CashOut;
 /// </para>
 /// <para>Register with <c>SetupPaymobCashOut.AddPaymobCashOut</c>, which registers this as a singleton.</para>
 /// </remarks>
+[PublicAPI]
 public interface IPaymobCashOutAuthenticator
 {
     /// <summary>
@@ -53,7 +54,7 @@ public interface IPaymobCashOutAuthenticator
     );
 }
 
-public sealed class PaymobCashOutAuthenticator : IPaymobCashOutAuthenticator, IDisposable
+internal sealed class PaymobCashOutAuthenticator : IPaymobCashOutAuthenticator, IDisposable
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly TimeProvider _timeProvider;

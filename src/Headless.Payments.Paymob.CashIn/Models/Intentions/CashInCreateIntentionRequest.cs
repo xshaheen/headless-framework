@@ -2,6 +2,8 @@
 
 namespace Headless.Payments.Paymob.CashIn.Models.Intentions;
 
+/// <summary>Request payload for the Paymob Intention API (<c>IPaymobCashInBroker.CreateIntentionAsync</c>).</summary>
+[PublicAPI]
 public sealed class CashInCreateIntentionRequest
 {
     /// <summary>The total amount in the smallest currency unit (integer cents), e.g. <c>10000</c> for 100.00 EGP.</summary>
@@ -45,12 +47,15 @@ public sealed class CashInCreateIntentionRequest
     [JsonPropertyName("payment_methods")]
     public required IReadOnlyList<long> PaymentMethods { get; init; } = [];
 
+    /// <summary>The customer's billing data (name, contact details, and address) required by Paymob.</summary>
     [JsonPropertyName("billing_data")]
     public required CashInCreateIntentionRequestBillingData BillingData { get; init; }
 
+    /// <summary>The line items included in this intention. May be empty when itemisation is not required.</summary>
     [JsonPropertyName("items")]
     public required IReadOnlyList<CashInCreateIntentionRequestItem> Items { get; init; } = [];
 
+    /// <summary>Optional free-form extra data echoed back in the transaction callback.</summary>
     [JsonPropertyName("extras")]
     public IReadOnlyDictionary<string, object>? Extras { get; init; }
 }

@@ -31,6 +31,7 @@ namespace Headless.Payments.Paymob.CashIn;
 /// The newer Intention API (<c>CreateIntentionAsync</c>) condenses steps 2-4 into a single call
 /// using a secret key rather than the API-key auth flow.
 /// </remarks>
+[PublicAPI]
 public interface IPaymobCashInBroker
 {
     /// <summary>

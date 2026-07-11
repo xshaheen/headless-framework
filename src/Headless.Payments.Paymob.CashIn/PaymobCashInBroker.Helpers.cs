@@ -7,7 +7,7 @@ using Headless.Payments.Paymob.CashIn.Models;
 
 namespace Headless.Payments.Paymob.CashIn;
 
-public partial class PaymobCashInBroker
+internal partial class PaymobCashInBroker
 {
     private async Task<TResponse> _PostAsync<TRequest, TResponse>(
         string url,

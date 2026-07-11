@@ -21,18 +21,25 @@ public sealed class TurnstileWidgetTagHelper(
 {
     private readonly TurnstileOptions _options = optionsAccessor.Get(CaptchaConstants.TurnstileProvider);
 
+    /// <summary>Optional. Widget colour theme rendered as <c>data-theme</c> (for example <c>light</c>, <c>dark</c>, or <c>auto</c>).</summary>
     public string? Theme { get; set; }
 
+    /// <summary>Optional. Widget size rendered as <c>data-size</c> (for example <c>normal</c>, <c>compact</c>, or <c>flexible</c>).</summary>
     public string? Size { get; set; }
 
+    /// <summary>Optional. Name of the JavaScript callback invoked on a successful challenge, rendered as <c>data-callback</c>.</summary>
     public string? Callback { get; set; }
 
+    /// <summary>Optional. Name of the JavaScript callback invoked on an error, rendered as <c>data-error-callback</c>.</summary>
     public string? ErrorCallback { get; set; }
 
+    /// <summary>Optional. Name of the JavaScript callback invoked when the token expires, rendered as <c>data-expired-callback</c>.</summary>
     public string? ExpiredCallback { get; set; }
 
+    /// <summary>Optional. Customer-defined action label rendered as <c>data-action</c> for analytics and challenge scoping.</summary>
     public string? Action { get; set; }
 
+    /// <summary>Optional. Customer data payload rendered as <c>data-cdata</c> and returned with the verification response.</summary>
     public string? CData { get; set; }
 
     /// <summary>Optional. Overrides the language code; defaults to <see cref="ICaptchaLanguageCodeProvider"/>.</summary>

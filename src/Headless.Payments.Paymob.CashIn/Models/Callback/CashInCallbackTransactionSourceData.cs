@@ -14,6 +14,7 @@ public sealed class CashInCallbackTransactionSourceData
     [JsonPropertyName("sub_type")]
     public string? SubType { get; init; }
 
+    /// <summary>Opaque Paymob passthrough value; shape is provider-defined and usually <see langword="null"/>.</summary>
     [JsonPropertyName("tenure")]
     public object? Tenure { get; init; }
 

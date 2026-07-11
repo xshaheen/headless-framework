@@ -35,6 +35,7 @@ public sealed class FirebaseOptions
 /// All values are validated by <see cref="FirebaseOptionsValidator"/> at application startup; the validator
 /// is the single source of truth for the accepted ranges.
 /// </remarks>
+[PublicAPI]
 public sealed class FirebaseRetryOptions
 {
     /// <summary>
