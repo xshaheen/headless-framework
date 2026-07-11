@@ -176,8 +176,8 @@ public sealed class MailkitEmailSenderTests : TestBase
     {
         public override Task ConnectAsync(
             string host,
-            int port,
-            SecureSocketOptions options,
+            int port = 0,
+            SecureSocketOptions options = SecureSocketOptions.Auto,
             CancellationToken cancellationToken = default
         ) => onConnect(cancellationToken);
     }
