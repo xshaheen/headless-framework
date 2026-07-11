@@ -5,6 +5,15 @@ using Headless.Jobs.Models;
 
 namespace Headless.Jobs.Interfaces.Managers;
 
+/// <summary>
+/// Application-facing manager for one-shot (time) jobs: enqueue, update, and delete a single job plus their
+/// batch variants. Resolved from DI as <c>ITimeJobManager&lt;TTimeJob&gt;</c>, where
+/// <typeparamref name="TTimeJob"/> is the application's concrete time job entity. The manager routes writes
+/// through the active commit coordinator when one is present (see <c>AddAsync</c>) and otherwise persists
+/// directly via the configured <c>IJobPersistenceProvider</c>.
+/// </summary>
+/// <typeparam name="TTimeJob">The application's concrete time job entity type.</typeparam>
+[PublicAPI]
 public interface ITimeJobManager<TTimeJob>
     where TTimeJob : TimeJobEntity<TTimeJob>
 {

@@ -7,6 +7,7 @@ namespace Headless.Jobs.Enums;
 /// dies. Applied by the dead-node sweep (terminal transitions) and by the claim predicate's lease-expiry arm
 /// (only <see cref="Retry"/> rows are speculatively re-claimable once their lease expires).
 /// </summary>
+[PublicAPI]
 public enum NodeDeathPolicy
 {
     /// <summary>
@@ -14,14 +15,14 @@ public enum NodeDeathPolicy
     /// the retry budget. Safe only for idempotent jobs — a still-running job whose lease expires may be
     /// speculatively re-claimed and run again.
     /// </summary>
-    Retry,
+    Retry = 0,
 
     /// <summary>Terminal failure on the first node death — no retry. The dead-node sweep sets the row to Failed.</summary>
-    MarkFailed,
+    MarkFailed = 1,
 
     /// <summary>
     /// Terminal Skipped on node death, for idempotency-critical jobs that must never run twice. The dead-node
     /// sweep sets the row to Skipped; the lease-expiry arm never re-claims it.
     /// </summary>
-    Skip,
+    Skip = 2,
 }

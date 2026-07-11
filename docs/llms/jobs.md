@@ -467,7 +467,7 @@ dotnet add package Headless.Jobs.Dashboard
 ### Quick Start
 
 ```csharp
-using Headless.Jobs.DependencyInjection;
+using Headless.Jobs;
 
 builder
     .Services.AddHeadlessJobs()

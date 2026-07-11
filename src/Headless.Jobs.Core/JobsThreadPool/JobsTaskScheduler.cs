@@ -11,7 +11,7 @@ namespace Headless.Jobs.JobsThreadPool;
 /// <summary>
 /// Elastic work-stealing task scheduler.
 /// </summary>
-public sealed class JobsTaskScheduler : IAsyncDisposable
+internal sealed class JobsTaskScheduler : IAsyncDisposable
 {
     private readonly int _maxConcurrency;
     private readonly TimeSpan _idleWorkerTimeout;

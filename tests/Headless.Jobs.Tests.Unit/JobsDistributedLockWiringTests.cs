@@ -2,7 +2,6 @@
 
 using Headless.DistributedLocks;
 using Headless.Jobs;
-using Headless.Jobs.DependencyInjection;
 using Headless.Jobs.Internal;
 using Microsoft.Extensions.DependencyInjection;
 

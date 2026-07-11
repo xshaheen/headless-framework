@@ -5,6 +5,15 @@ using Headless.Jobs.Models;
 
 namespace Headless.Jobs.Interfaces.Managers;
 
+/// <summary>
+/// Application-facing manager for cron job definitions: create, update, and delete a definition plus their
+/// batch variants. The scheduler materializes recurring occurrences from these definitions. Resolved from DI
+/// as <c>ICronJobManager&lt;TCronJob&gt;</c>, where <typeparamref name="TCronJob"/> is the application's
+/// concrete cron job entity. Writes route through the active commit coordinator when one is present (see
+/// <c>AddAsync</c>) and otherwise persist directly via the configured <c>IJobPersistenceProvider</c>.
+/// </summary>
+/// <typeparam name="TCronJob">The application's concrete cron job entity type.</typeparam>
+[PublicAPI]
 public interface ICronJobManager<TCronJob>
     where TCronJob : CronJobEntity
 {

@@ -7,7 +7,7 @@ namespace Headless.Jobs.Interfaces;
 /// <summary>
 /// Internal contract for submitting acquired job contexts to the Jobs thread pool for execution.
 /// </summary>
-public interface IJobsDispatcher
+internal interface IJobsDispatcher
 {
     /// <summary>
     /// <see langword="true"/> when background services are registered and the dispatcher is active.

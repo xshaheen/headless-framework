@@ -12,9 +12,10 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 
-namespace Headless.Jobs.DependencyInjection;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Jobs;
 
-internal static class ServiceCollectionExtensions
+internal static class JobsDashboardServiceCollectionExtensions
 {
     private const string _EmbeddedFileNamespace = "Headless.Jobs.wwwroot.dist";
 
