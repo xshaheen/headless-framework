@@ -16,4 +16,12 @@ public sealed record PaymobKioskCashInRequest(
     long KioskIntegrationId,
     string? MerchantOrderId = null,
     int ExpirationSeconds = 60 * 60
-);
+)
+{
+    // Customer carries PII; it is redacted so a failure log that renders this request
+    // (see PaymobCashInLoggerExtensions) cannot leak it.
+    public override string ToString()
+    {
+        return $"PaymobKioskCashInRequest {{ Amount = {Amount}, KioskIntegrationId = {KioskIntegrationId}, MerchantOrderId = {MerchantOrderId}, ExpirationSeconds = {ExpirationSeconds}, Customer = [redacted] }}";
+    }
+}

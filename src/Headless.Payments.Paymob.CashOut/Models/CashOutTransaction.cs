@@ -53,6 +53,14 @@ public sealed record CashOutTransaction
     [JsonExtensionData]
     public IDictionary<string, object?>? ExtensionData { get; set; }
 
+    // Msisdn, FullName, AmanCashingDetails, StatusDescription, and ExtensionData can carry recipient PII or
+    // arbitrary provider fields; they are redacted so a failure log that renders this transaction (see
+    // PaymobCashOutLoggerExtensions) cannot leak them.
+    public override string ToString()
+    {
+        return $"CashOutTransaction {{ TransactionId = {TransactionId}, Issuer = {Issuer}, Amount = {Amount}, DisbursementStatus = {DisbursementStatus}, StatusCode = {StatusCode}, CreatedAt = {CreatedAt}, UpdatedAt = {UpdatedAt}, Msisdn = [redacted], FullName = [redacted], AmanCashingDetails = [redacted] }}";
+    }
+
     /// <summary>Returns <see langword="true"/> when the disbursement completed successfully.</summary>
     public bool IsSuccess()
     {
