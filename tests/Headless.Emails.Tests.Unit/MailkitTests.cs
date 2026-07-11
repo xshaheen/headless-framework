@@ -112,7 +112,7 @@ public sealed class MailkitEmailSenderTests : TestBase
     public async Task connect_transport_fault_should_return_failed()
     {
         // A connect-level fault (IOException) must be surfaced as a failed response, not thrown.
-        var client = new FakeSmtpClient(_ => Task.FromException(new IOException("connection reset")));
+        using var client = new FakeSmtpClient(_ => Task.FromException(new IOException("connection reset")));
         var sender = _Sender(client);
 
         var result = await sender.SendAsync(_Request(), AbortToken);
@@ -126,7 +126,7 @@ public sealed class MailkitEmailSenderTests : TestBase
     {
         // A timeout-CTS-induced cancellation (the caller's token is NOT cancelled) is a delivery failure,
         // not a caller cancellation, so it is returned rather than thrown.
-        var client = new FakeSmtpClient(_ => Task.FromException(new OperationCanceledException()));
+        using var client = new FakeSmtpClient(_ => Task.FromException(new OperationCanceledException()));
         var sender = _Sender(client);
 
         var result = await sender.SendAsync(_Request(), AbortToken);
@@ -141,7 +141,7 @@ public sealed class MailkitEmailSenderTests : TestBase
         // Only the caller's own cancellation propagates as OperationCanceledException.
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
-        var client = new FakeSmtpClient(ct => Task.FromException(new OperationCanceledException(ct)));
+        using var client = new FakeSmtpClient(ct => Task.FromException(new OperationCanceledException(ct)));
         var sender = _Sender(client);
 
         var act = async () => await sender.SendAsync(_Request(), cts.Token);
