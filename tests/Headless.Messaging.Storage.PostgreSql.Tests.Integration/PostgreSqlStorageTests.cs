@@ -446,6 +446,45 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     }
 
     [Theory]
+    [InlineData("published")]
+    [InlineData("received")]
+    public async Task should_return_healthy_retry_row_when_same_claim_batch_contains_poison(string tableName)
+    {
+        var storage = GetStorage();
+        var serializer = GetSerializer();
+        var poisonId = Guid.NewGuid();
+        var healthyId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+
+        await using (var connection = new NpgsqlConnection(fixture.ConnectionString))
+        {
+            await connection.OpenAsync(AbortToken);
+            await _InsertPoisonRetryRowAsync(connection, tableName, poisonId, now);
+            await _InsertHealthyRetryRowAsync(
+                connection,
+                tableName,
+                healthyId,
+                serializer.Serialize(CreateMessage("healthy-retry")),
+                now
+            );
+        }
+
+        var picked = string.Equals(tableName, "published", StringComparison.Ordinal)
+            ? await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken)
+            : await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken);
+
+        picked.Select(message => message.StorageId).Should().Contain(healthyId).And.NotContain(poisonId);
+
+        await using var assertConnection = new NpgsqlConnection(fixture.ConnectionString);
+        await assertConnection.OpenAsync(AbortToken);
+        var poisonNextRetryAt = await assertConnection.ExecuteScalarAsync<DateTime?>(
+            $"""SELECT "NextRetryAt" FROM messaging.{tableName} WHERE "Id" = @Id""",
+            new { Id = poisonId }
+        );
+        poisonNextRetryAt.Should().BeNull();
+    }
+
+    [Theory]
     [InlineData("published", "Added")]
     [InlineData("published", "ExpiresAt")]
     [InlineData("published", "NextRetryAt")]
@@ -740,6 +779,52 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
                 Now = now,
                 NextRetryAt = now.AddMinutes(-1),
                 MessageId = $"poison-{id:N}",
+            }
+        );
+    }
+
+    private static Task _InsertHealthyRetryRowAsync(
+        NpgsqlConnection connection,
+        string tableName,
+        Guid id,
+        string content,
+        DateTime now
+    )
+    {
+        if (string.Equals(tableName, "published", StringComparison.Ordinal))
+        {
+            return connection.ExecuteAsync(
+                """
+                INSERT INTO messaging.published
+                    ("Id", "Version", "Name", "Content", "IntentType", "Retries", "Added", "ExpiresAt", "NextRetryAt", "LockedUntil", "Owner", "StatusName", "MessageId")
+                VALUES
+                    (@Id, 'v1', 'healthy-published', @Content, 0, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId);
+                """,
+                new
+                {
+                    Id = id,
+                    Content = content,
+                    Now = now,
+                    NextRetryAt = now.AddMinutes(-1),
+                    MessageId = $"healthy-{id:N}",
+                }
+            );
+        }
+
+        return connection.ExecuteAsync(
+            """
+            INSERT INTO messaging.received
+                ("Id", "Version", "Name", "Group", "Content", "IntentType", "Retries", "Added", "ExpiresAt", "NextRetryAt", "LockedUntil", "Owner", "StatusName", "MessageId", "ExceptionInfo")
+            VALUES
+                (@Id, 'v1', 'healthy-received', 'healthy-group', @Content, 0, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId, NULL);
+            """,
+            new
+            {
+                Id = id,
+                Content = content,
+                Now = now,
+                NextRetryAt = now.AddMinutes(-1),
+                MessageId = $"healthy-{id:N}",
             }
         );
     }

@@ -457,6 +457,45 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
         }
     }
 
+    [Theory]
+    [InlineData("Published")]
+    [InlineData("Received")]
+    public async Task should_return_healthy_retry_row_when_same_claim_batch_contains_poison(string tableName)
+    {
+        var storage = GetStorage();
+        var serializer = GetSerializer();
+        var poisonId = Guid.NewGuid();
+        var healthyId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+
+        await using (var connection = new SqlConnection(fixture.ConnectionString))
+        {
+            await connection.OpenAsync(AbortToken);
+            await _InsertPoisonRetryRowAsync(connection, tableName, poisonId, now);
+            await _InsertHealthyRetryRowAsync(
+                connection,
+                tableName,
+                healthyId,
+                serializer.Serialize(CreateMessage("healthy-retry")),
+                now
+            );
+        }
+
+        var picked = string.Equals(tableName, "Published", StringComparison.Ordinal)
+            ? await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken)
+            : await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken);
+
+        picked.Select(message => message.StorageId).Should().Contain(healthyId).And.NotContain(poisonId);
+
+        await using var assertConnection = new SqlConnection(fixture.ConnectionString);
+        await assertConnection.OpenAsync(AbortToken);
+        var poisonNextRetryAt = await assertConnection.ExecuteScalarAsync<DateTime?>(
+            $"SELECT NextRetryAt FROM messaging.{tableName} WHERE Id = @Id",
+            new { Id = poisonId }
+        );
+        poisonNextRetryAt.Should().BeNull();
+    }
+
     [Fact]
     public async Task should_apply_scheduler_batch_size_across_delayed_and_queued_branches()
     {
@@ -842,6 +881,52 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
                 MessageId = $"sql-{id:N}",
             }
         );
+
+    private static Task _InsertHealthyRetryRowAsync(
+        SqlConnection connection,
+        string tableName,
+        Guid id,
+        string content,
+        DateTime now
+    )
+    {
+        if (string.Equals(tableName, "Published", StringComparison.Ordinal))
+        {
+            return connection.ExecuteAsync(
+                """
+                INSERT INTO messaging.Published
+                    (Id, Version, Name, Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, LockedUntil, Owner, StatusName, MessageId)
+                VALUES
+                    (@Id, 'v1', 'healthy-published', @Content, 0, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId);
+                """,
+                new
+                {
+                    Id = id,
+                    Content = content,
+                    Now = now,
+                    NextRetryAt = now.AddMinutes(-1),
+                    MessageId = $"healthy-{id:N}",
+                }
+            );
+        }
+
+        return connection.ExecuteAsync(
+            """
+            INSERT INTO messaging.Received
+                (Id, Version, Name, [Group], Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, LockedUntil, Owner, StatusName, MessageId, ExceptionInfo)
+            VALUES
+                (@Id, 'v1', 'healthy-received', 'healthy-group', @Content, 0, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId, NULL);
+            """,
+            new
+            {
+                Id = id,
+                Content = content,
+                Now = now,
+                NextRetryAt = now.AddMinutes(-1),
+                MessageId = $"healthy-{id:N}",
+            }
+        );
+    }
 
     #endregion
 }
