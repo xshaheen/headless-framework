@@ -25,7 +25,7 @@ namespace Headless.DistributedLocks;
 /// on timeout a warning is logged and the TTL-based expiry acts as the eventual consistency
 /// mechanism.
 /// </remarks>
-public sealed class DistributedReadWriteLock(
+internal sealed class DistributedReadWriteLock(
     IDistributedReadWriteLockStorage storage,
     IOutboxBus? outboxBus,
     DistributedLockOptions lockOptions,

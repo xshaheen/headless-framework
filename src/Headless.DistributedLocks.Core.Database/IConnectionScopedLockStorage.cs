@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.ComponentModel;
+
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
@@ -16,6 +18,7 @@ namespace Headless.DistributedLocks;
 /// storage receives the remaining acquire timeout and owns the native blocking wait.
 /// </remarks>
 [PublicAPI]
+[EditorBrowsable(EditorBrowsableState.Never)]
 public interface IConnectionScopedLockStorage
 {
     /// <summary>

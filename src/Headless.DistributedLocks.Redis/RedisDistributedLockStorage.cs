@@ -28,8 +28,7 @@ namespace Headless.DistributedLocks.Redis;
 /// to the caller unless explicitly caught by this class.
 /// </para>
 /// </remarks>
-[PublicAPI]
-public sealed class RedisDistributedLockStorage(
+internal sealed class RedisDistributedLockStorage(
     IConnectionMultiplexer multiplexer,
     [FromKeyedServices(RedisDistributedLockServiceKeys.ScriptsLoader)] HeadlessRedisScriptsLoader scriptsLoader
 ) : IDistributedLockStorage

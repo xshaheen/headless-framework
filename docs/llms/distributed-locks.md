@@ -343,7 +343,7 @@ Implements lock acquisition, renewal, release, inspection, timeout handling, and
 - `IDistributedReadWriteLockStorage` defines atomic read/write acquire, extend, release, and validation operations for storage providers.
 - `IDistributedSemaphoreStorage` defines acquire, extend, validate, release, and holder-count operations for storage providers.
 - `DistributedLockOptions` configures key prefix, resource name length, waiter limits, and lease-monitor cadence fractions.
-- `AddHeadlessDistributedLocks(...)` is the root builder entry point; provider packages contribute `Use...` methods.
+- `AddHeadlessDistributedLocks(...)` is the single root registration entry point (it returns the `IServiceCollection` for chaining); provider packages contribute `Use...` methods on the `HeadlessDistributedLocksSetupBuilder`.
 - `AddHeadlessDistributedLocks(...)` auto-registers the optional `DistributedLockReleased` consumer descriptor.
 - `IDistributedLocksOptionsExtension` is the setup-time hook used by provider packages to wire supported primitives.
 
