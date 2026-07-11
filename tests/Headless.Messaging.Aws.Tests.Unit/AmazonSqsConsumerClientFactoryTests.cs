@@ -10,6 +10,28 @@ namespace Tests;
 public sealed class AmazonSqsConsumerClientFactoryTests : TestBase
 {
     [Fact]
+    public async Task should_preserve_factory_cancellation()
+    {
+        var factory = new AmazonSqsConsumerClientFactory(
+            Options.Create(
+                new AmazonSqsMessagingOptions
+                {
+                    Region = Amazon.RegionEndpoint.USEast1,
+                    SqsServiceUrl = "http://localhost:4566",
+                    SnsServiceUrl = "http://localhost:4566",
+                }
+            ),
+            Substitute.For<ILogger<AmazonSqsConsumerClient>>()
+        );
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        var act = async () => await factory.CreateAsync("test-group", 1, cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
     public async Task should_create_consumer_client()
     {
         // given

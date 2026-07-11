@@ -59,6 +59,18 @@ public sealed class RedisConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task should_propagate_exact_token_when_subscribing()
+    {
+        var logger = LoggerFactory.CreateLogger<RedisConsumerClient>();
+        await using var client = new RedisConsumerClient("my-group", 1, _mockStreamManager, _options, logger);
+        using var cts = new CancellationTokenSource();
+
+        await client.SubscribeAsync(["orders"], cts.Token);
+
+        await _mockStreamManager.Received(1).CreateStreamWithConsumerGroupAsync("orders", "my-group", cts.Token);
+    }
+
+    [Fact]
     public async Task should_throw_when_subscribing_to_null_topics()
     {
         // given

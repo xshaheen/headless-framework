@@ -180,7 +180,7 @@ public sealed class ConsumerRegisterTests : TestBase
         // so the exception propagates out of ExecuteAsync.
         var factorySub = Substitute.For<IConsumerClientFactory>();
         factorySub
-            .CreateAsync(Arg.Any<string>(), Arg.Any<byte>())
+            .CreateAsync(Arg.Any<string>(), Arg.Any<byte>(), Arg.Any<CancellationToken>())
             .Returns<Task<IConsumerClient>>(_ => throw new InvalidOperationException("boom"));
 
         typeof(ConsumerRegister)
@@ -258,14 +258,14 @@ public sealed class ConsumerRegisterTests : TestBase
         var callCount = 0;
         var factorySub = Substitute.For<IConsumerClientFactory>();
         factorySub
-            .CreateAsync(Arg.Any<string>(), Arg.Any<byte>())
+            .CreateAsync(Arg.Any<string>(), Arg.Any<byte>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 if (Interlocked.Increment(ref callCount) == 1)
                 {
                     var client = Substitute.For<IConsumerClient>();
                     client
-                        .FetchMessageNamesAsync(Arg.Any<IEnumerable<string>>())
+                        .FetchMessageNamesAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
                         .Returns(ValueTask.FromResult<ICollection<string>>(["fake-messageName"]));
                     return Task.FromResult(client);
                 }
@@ -372,6 +372,18 @@ public sealed class ConsumerRegisterTests : TestBase
 
         await register.DisposeAsync();
     }
+
+    [Fact]
+    public Task startup_cancels_when_consumer_factory_creation_is_blocked() =>
+        _AssertStartupCancellationAsync(StartupBoundary.FactoryCreation);
+
+    [Fact]
+    public Task startup_cancels_when_fetching_message_names_is_blocked() =>
+        _AssertStartupCancellationAsync(StartupBoundary.FetchMessageNames);
+
+    [Fact]
+    public Task startup_cancels_when_subscription_is_blocked() =>
+        _AssertStartupCancellationAsync(StartupBoundary.Subscribe);
 
     [Fact]
     public async Task should_mark_register_unhealthy_when_consumer_loop_fails_after_startup()
@@ -553,11 +565,151 @@ public sealed class ConsumerRegisterTests : TestBase
 
     private sealed record QueueOnlyMessage;
 
+    private enum StartupBoundary
+    {
+        FactoryCreation,
+        FetchMessageNames,
+        Subscribe,
+    }
+
+    private async Task _AssertStartupCancellationAsync(StartupBoundary boundary)
+    {
+        var factory = new BlockingStartupConsumerClientFactory(boundary);
+
+        await using var provider = _CreateProvider(
+            configureMessaging: setup =>
+            {
+                setup.ForMessage<BootstrapReadyMessage>(message =>
+                    message
+                        .MessageName("ready-messageName")
+                        .OnBus<BootstrapReadyConsumer>(consumer => consumer.Group("ready-group").Concurrency(1))
+                );
+            },
+            configureServices: services =>
+            {
+                services.AddSingleton<IConsumerClientFactory>(factory);
+                services.AddSingleton<BootstrapReadyConsumer>();
+            }
+        );
+
+        var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
+        using var hostCts = new CancellationTokenSource();
+        var startTask = register.StartAsync(hostCts.Token).AsTask();
+
+        await factory.WaitUntilBlockedAsync(AbortToken);
+        await hostCts.CancelAsync();
+
+        var act = async () => await startTask.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        await _WaitUntilAsync(
+            () =>
+                (int)
+                    typeof(ConsumerRegister)
+                        .GetField("_state", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly)!
+                        .GetValue(register)! == 4,
+            AbortToken
+        );
+    }
+
+    private sealed class BlockingStartupConsumerClientFactory(StartupBoundary boundary) : IConsumerClientFactory
+    {
+        private readonly TaskCompletionSource _blocked = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _createCount;
+
+        public async Task<IConsumerClient> CreateAsync(
+            string groupName,
+            byte groupConcurrent,
+            CancellationToken cancellationToken = default
+        )
+        {
+            var createCount = Interlocked.Increment(ref _createCount);
+
+            if (boundary == StartupBoundary.FactoryCreation)
+            {
+                _blocked.TrySetResult();
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            }
+
+            if (createCount == 1)
+            {
+                return new BoundaryConsumerClient(
+                    boundary == StartupBoundary.FetchMessageNames ? _BlockAsync : null,
+                    null
+                );
+            }
+
+            return new BoundaryConsumerClient(null, boundary == StartupBoundary.Subscribe ? _BlockAsync : null);
+        }
+
+        public Task WaitUntilBlockedAsync(CancellationToken cancellationToken) =>
+            _blocked.Task.WaitAsync(cancellationToken);
+
+        private async ValueTask _BlockAsync(CancellationToken cancellationToken)
+        {
+            _blocked.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        }
+    }
+
+    private sealed class BoundaryConsumerClient(
+        Func<CancellationToken, ValueTask>? fetch,
+        Func<CancellationToken, ValueTask>? subscribe
+    ) : IConsumerClient
+    {
+        public BrokerAddress BrokerAddress => new("test", "boundary");
+
+        public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
+
+        public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
+
+        public async ValueTask<ICollection<string>> FetchMessageNamesAsync(
+            IEnumerable<string> messageNames,
+            CancellationToken cancellationToken = default
+        )
+        {
+            if (fetch is not null)
+            {
+                await fetch(cancellationToken);
+            }
+
+            return messageNames.ToArray();
+        }
+
+        public async ValueTask SubscribeAsync(
+            IEnumerable<string> messageNames,
+            CancellationToken cancellationToken = default
+        )
+        {
+            if (subscribe is not null)
+            {
+                await subscribe(cancellationToken);
+            }
+        }
+
+        public ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
+            new(Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken));
+
+        public ValueTask CommitAsync(object? sender) => ValueTask.CompletedTask;
+
+        public ValueTask RejectAsync(object? sender) => ValueTask.CompletedTask;
+
+        public ValueTask PauseAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+
+        public ValueTask ResumeAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
     private sealed class SequencedConsumerClientFactory(params IConsumerClient[] clients) : IConsumerClientFactory
     {
         private readonly Queue<IConsumerClient> _clients = new(clients);
 
-        public Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent)
+        public Task<IConsumerClient> CreateAsync(
+            string groupName,
+            byte groupConcurrent,
+            CancellationToken cancellationToken = default
+        )
         {
             if (_clients.Count == 0)
             {
@@ -576,12 +728,18 @@ public sealed class ConsumerRegisterTests : TestBase
 
         public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
 
-        public ValueTask<ICollection<string>> FetchMessageNamesAsync(IEnumerable<string> messageNames)
+        public ValueTask<ICollection<string>> FetchMessageNamesAsync(
+            IEnumerable<string> messageNames,
+            CancellationToken cancellationToken = default
+        )
         {
             return ValueTask.FromResult<ICollection<string>>(messageNames.ToArray());
         }
 
-        public ValueTask SubscribeAsync(IEnumerable<string> messageNames) => ValueTask.CompletedTask;
+        public ValueTask SubscribeAsync(
+            IEnumerable<string> messageNames,
+            CancellationToken cancellationToken = default
+        ) => ValueTask.CompletedTask;
 
         public ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
         {
@@ -612,12 +770,18 @@ public sealed class ConsumerRegisterTests : TestBase
 
         public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
 
-        public ValueTask<ICollection<string>> FetchMessageNamesAsync(IEnumerable<string> messageNames)
+        public ValueTask<ICollection<string>> FetchMessageNamesAsync(
+            IEnumerable<string> messageNames,
+            CancellationToken cancellationToken = default
+        )
         {
             return ValueTask.FromResult<ICollection<string>>(messageNames.ToArray());
         }
 
-        public ValueTask SubscribeAsync(IEnumerable<string> messageNames) => ValueTask.CompletedTask;
+        public ValueTask SubscribeAsync(
+            IEnumerable<string> messageNames,
+            CancellationToken cancellationToken = default
+        ) => ValueTask.CompletedTask;
 
         public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
         {
@@ -664,12 +828,18 @@ public sealed class ConsumerRegisterTests : TestBase
 
         public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
 
-        public ValueTask<ICollection<string>> FetchMessageNamesAsync(IEnumerable<string> messageNames)
+        public ValueTask<ICollection<string>> FetchMessageNamesAsync(
+            IEnumerable<string> messageNames,
+            CancellationToken cancellationToken = default
+        )
         {
             return ValueTask.FromResult<ICollection<string>>(messageNames.ToArray());
         }
 
-        public ValueTask SubscribeAsync(IEnumerable<string> messageNames) => ValueTask.CompletedTask;
+        public ValueTask SubscribeAsync(
+            IEnumerable<string> messageNames,
+            CancellationToken cancellationToken = default
+        ) => ValueTask.CompletedTask;
 
         public ValueTask WaitUntilReadyAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
 
@@ -699,12 +869,18 @@ public sealed class ConsumerRegisterTests : TestBase
 
         public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
 
-        public ValueTask<ICollection<string>> FetchMessageNamesAsync(IEnumerable<string> messageNames)
+        public ValueTask<ICollection<string>> FetchMessageNamesAsync(
+            IEnumerable<string> messageNames,
+            CancellationToken cancellationToken = default
+        )
         {
             return ValueTask.FromResult<ICollection<string>>(messageNames.ToArray());
         }
 
-        public ValueTask SubscribeAsync(IEnumerable<string> messageNames) => ValueTask.CompletedTask;
+        public ValueTask SubscribeAsync(
+            IEnumerable<string> messageNames,
+            CancellationToken cancellationToken = default
+        ) => ValueTask.CompletedTask;
 
         public ValueTask WaitUntilReadyAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
 

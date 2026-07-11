@@ -31,9 +31,15 @@ public interface IConsumerClient : IAsyncDisposable
     /// Creates (if necessary) and retrieves message-name identifiers from the message broker
     /// </summary>
     /// <param name="messageNames">Names of the requested messages to fetch</param>
+    /// <param name="cancellationToken">Token to cancel broker topology provisioning.</param>
     /// <returns>A collection of message-name identifiers returned by the broker</returns>
-    ValueTask<ICollection<string>> FetchMessageNamesAsync(IEnumerable<string> messageNames)
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> is canceled.</exception>
+    ValueTask<ICollection<string>> FetchMessageNamesAsync(
+        IEnumerable<string> messageNames,
+        CancellationToken cancellationToken = default
+    )
     {
+        cancellationToken.ThrowIfCancellationRequested();
         return ValueTask.FromResult<ICollection<string>>([.. messageNames]);
     }
 
@@ -41,8 +47,10 @@ public interface IConsumerClient : IAsyncDisposable
     /// Subscribes to a set of message names in the message broker
     /// </summary>
     /// <param name="messageNames">Collection of message-name identifiers to subscribe to</param>
+    /// <param name="cancellationToken">Token to cancel broker subscription setup.</param>
     /// <returns>A task that represents the asynchronous subscribe operation</returns>
-    ValueTask SubscribeAsync(IEnumerable<string> messageNames);
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> is canceled.</exception>
+    ValueTask SubscribeAsync(IEnumerable<string> messageNames, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Starts listening for messages from the subscribed message names

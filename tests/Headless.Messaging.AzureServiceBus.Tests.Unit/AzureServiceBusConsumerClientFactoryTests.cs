@@ -12,6 +12,29 @@ namespace Tests;
 public sealed class AzureServiceBusConsumerClientFactoryTests
 {
     [Fact]
+    public async Task should_preserve_factory_cancellation()
+    {
+        var loggerFactory = Substitute.For<ILoggerFactory>();
+        loggerFactory.CreateLogger(Arg.Any<string>()).Returns(Substitute.For<ILogger>());
+        var factory = new AzureServiceBusConsumerClientFactory(
+            loggerFactory,
+            Options.Create(
+                new AzureServiceBusMessagingOptions
+                {
+                    ConnectionString = "Endpoint=sb://localhost/;SharedAccessKeyName=name;SharedAccessKey=key",
+                }
+            ),
+            new ServiceCollection().BuildServiceProvider()
+        );
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        var act = async () => await factory.CreateAsync("test-group", 1, cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
     public async Task should_throw_broker_connection_exception_when_options_are_invalid()
     {
         // given
