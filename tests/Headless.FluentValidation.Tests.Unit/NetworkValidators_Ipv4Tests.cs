@@ -87,7 +87,7 @@ public sealed class NetworkValidatorsIpv4Tests
 
         var result = validator.TestValidate(model);
 
-        result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("net:invalid_ipv4");
+        result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("g:invalid_ipv4");
     }
 
     #endregion

@@ -89,7 +89,7 @@ public sealed class StringsFluentValidationExtensionsBase64Tests
 
         var result = validator.TestValidate(model);
 
-        result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("strings:invalid_base64");
+        result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("g:invalid_base64");
     }
 
     #endregion

@@ -92,6 +92,13 @@ RuleFor(x => x.Total)
 var errors = result.Errors.ToErrorDescriptors(); // IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>>
 ```
 
+`ToErrorDescriptors()` normalizes every failure's `ErrorCode` to the framework-standard `g:snake_case`
+shape: FluentValidation built-in codes are mapped by `FluentValidationErrorCodeMapper` (for example
+`EmailValidator` → `g:invalid_email`), and the Headless validators in this package emit `g:`-prefixed
+codes via `FluentValidatorErrorDescriber` (for example `Ipv4()` → `g:invalid_ipv4`). Clients therefore
+see a single consistent code namespace in `errors[].code`. Codes you supply yourself through
+`WithErrorDescriptor(...)` are passed through unchanged.
+
 ## Available Validators
 
 | Category | Validators |

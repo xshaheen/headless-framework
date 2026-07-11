@@ -84,7 +84,7 @@ public sealed class StringsFluentValidationExtensionsTrimmedTests
 
         var result = validator.TestValidate(model);
 
-        result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("strings:not_trimmed");
+        result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("g:not_trimmed");
     }
 
     #endregion

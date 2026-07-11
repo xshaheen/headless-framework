@@ -7,8 +7,10 @@ namespace FluentValidation.Resources;
 /// <summary>
 /// Factory methods that return the <see cref="ErrorDescriptor"/> instances used by the Headless
 /// FluentValidation extension rules. Each method returns a descriptor whose code follows the
-/// <c>domain:snake_case</c> convention and whose description is drawn from the localized resource
-/// file.
+/// framework-standard <c>g:snake_case</c> shape (the <c>g:</c> prefix marks the shared "general"
+/// descriptor space) and whose description is drawn from the localized resource file. The nested
+/// classes group the descriptors by validation domain; the domain is an organizational concern
+/// only and is not encoded in the emitted error code.
 /// </summary>
 [PublicAPI]
 public static class FluentValidatorErrorDescriber
@@ -17,16 +19,16 @@ public static class FluentValidatorErrorDescriber
     [PublicAPI]
     public static class Geo
     {
-        /// <summary>Returns the descriptor for an invalid longitude value (code <c>geo:invalid_longitude</c>).</summary>
+        /// <summary>Returns the descriptor for an invalid longitude value (code <c>g:invalid_longitude</c>).</summary>
         public static ErrorDescriptor InvalidLongitude()
         {
-            return new("geo:invalid_longitude", FluentValidatorErrors.geo_invalid_longitude);
+            return new("g:invalid_longitude", FluentValidatorErrors.g_invalid_longitude);
         }
 
-        /// <summary>Returns the descriptor for an invalid latitude value (code <c>geo:invalid_latitude</c>).</summary>
+        /// <summary>Returns the descriptor for an invalid latitude value (code <c>g:invalid_latitude</c>).</summary>
         public static ErrorDescriptor InvalidLatitude()
         {
-            return new("geo:invalid_latitude", FluentValidatorErrors.geo_invalid_latitude);
+            return new("g:invalid_latitude", FluentValidatorErrors.g_invalid_latitude);
         }
     }
 
@@ -34,64 +36,64 @@ public static class FluentValidatorErrorDescriber
     [PublicAPI]
     public static class Strings
     {
-        /// <summary>Returns the descriptor for a string that must contain only digits (code <c>strings:only_numbers</c>).</summary>
+        /// <summary>Returns the descriptor for a string that must contain only digits (code <c>g:only_numbers</c>).</summary>
         public static ErrorDescriptor OnlyNumberValidator()
         {
-            return new(code: "strings:only_numbers", description: FluentValidatorErrors.strings_only_numbers);
+            return new(code: "g:only_numbers", description: FluentValidatorErrors.g_only_numbers);
         }
 
-        /// <summary>Returns the descriptor for a string that must contain only a decimal number (code <c>strings:only_decimals</c>).</summary>
+        /// <summary>Returns the descriptor for a string that must contain only a decimal number (code <c>g:only_decimals</c>).</summary>
         public static ErrorDescriptor OnlyDecimalsValidator()
         {
-            return new(code: "strings:only_decimals", description: FluentValidatorErrors.strings_only_decimals);
+            return new(code: "g:only_decimals", description: FluentValidatorErrors.g_only_decimals);
         }
 
-        /// <summary>Returns the descriptor for an invalid URL slug (code <c>strings:invalid_slug</c>).</summary>
+        /// <summary>Returns the descriptor for an invalid URL slug (code <c>g:invalid_slug</c>).</summary>
         public static ErrorDescriptor InvalidSlug()
         {
-            return new(code: "strings:invalid_slug", description: FluentValidatorErrors.strings_invalid_slug);
+            return new(code: "g:invalid_slug", description: FluentValidatorErrors.g_invalid_slug);
         }
 
-        /// <summary>Returns the descriptor for an invalid username (code <c>strings:invalid_username</c>).</summary>
+        /// <summary>Returns the descriptor for an invalid username (code <c>g:invalid_username</c>).</summary>
         public static ErrorDescriptor InvalidUsername()
         {
-            return new(code: "strings:invalid_username", description: FluentValidatorErrors.strings_invalid_username);
+            return new(code: "g:invalid_username", description: FluentValidatorErrors.g_invalid_username);
         }
 
-        /// <summary>Returns the descriptor for an invalid postal/ZIP code (code <c>strings:invalid_zip_code</c>).</summary>
+        /// <summary>Returns the descriptor for an invalid postal/ZIP code (code <c>g:invalid_zip_code</c>).</summary>
         public static ErrorDescriptor InvalidZipCode()
         {
-            return new(code: "strings:invalid_zip_code", description: FluentValidatorErrors.strings_invalid_zip_code);
+            return new(code: "g:invalid_zip_code", description: FluentValidatorErrors.g_invalid_zip_code);
         }
 
-        /// <summary>Returns the descriptor for an invalid hex color (code <c>strings:invalid_hex_color</c>).</summary>
+        /// <summary>Returns the descriptor for an invalid hex color (code <c>g:invalid_hex_color</c>).</summary>
         public static ErrorDescriptor InvalidHexColor()
         {
-            return new(code: "strings:invalid_hex_color", description: FluentValidatorErrors.strings_invalid_hex_color);
+            return new(code: "g:invalid_hex_color", description: FluentValidatorErrors.g_invalid_hex_color);
         }
 
-        /// <summary>Returns the descriptor for an invalid Base64 string (code <c>strings:invalid_base64</c>).</summary>
+        /// <summary>Returns the descriptor for an invalid Base64 string (code <c>g:invalid_base64</c>).</summary>
         public static ErrorDescriptor InvalidBase64()
         {
-            return new(code: "strings:invalid_base64", description: FluentValidatorErrors.strings_invalid_base64);
+            return new(code: "g:invalid_base64", description: FluentValidatorErrors.g_invalid_base64);
         }
 
-        /// <summary>Returns the descriptor for a string with leading or trailing whitespace (code <c>strings:not_trimmed</c>).</summary>
+        /// <summary>Returns the descriptor for a string with leading or trailing whitespace (code <c>g:not_trimmed</c>).</summary>
         public static ErrorDescriptor NotTrimmed()
         {
-            return new(code: "strings:not_trimmed", description: FluentValidatorErrors.strings_not_trimmed);
+            return new(code: "g:not_trimmed", description: FluentValidatorErrors.g_not_trimmed);
         }
 
-        /// <summary>Returns the descriptor for an invalid culture/locale name (code <c>strings:invalid_culture</c>).</summary>
+        /// <summary>Returns the descriptor for an invalid culture/locale name (code <c>g:invalid_culture</c>).</summary>
         public static ErrorDescriptor InvalidCulture()
         {
-            return new(code: "strings:invalid_culture", description: FluentValidatorErrors.strings_invalid_culture);
+            return new(code: "g:invalid_culture", description: FluentValidatorErrors.g_invalid_culture);
         }
 
-        /// <summary>Returns the descriptor for a string that contains a <c>&lt;script&gt;</c> element (code <c>strings:contains_scripts</c>).</summary>
+        /// <summary>Returns the descriptor for a string that contains a <c>&lt;script&gt;</c> element (code <c>g:contains_scripts</c>).</summary>
         public static ErrorDescriptor ContainsScripts()
         {
-            return new(code: "strings:contains_scripts", description: FluentValidatorErrors.strings_contains_scripts);
+            return new(code: "g:contains_scripts", description: FluentValidatorErrors.g_contains_scripts);
         }
     }
 
@@ -99,22 +101,22 @@ public static class FluentValidatorErrorDescriber
     [PublicAPI]
     public static class Network
     {
-        /// <summary>Returns the descriptor for an invalid IPv4 address (code <c>net:invalid_ipv4</c>).</summary>
+        /// <summary>Returns the descriptor for an invalid IPv4 address (code <c>g:invalid_ipv4</c>).</summary>
         public static ErrorDescriptor InvalidIpv4()
         {
-            return new(code: "net:invalid_ipv4", description: FluentValidatorErrors.net_invalid_ipv4);
+            return new(code: "g:invalid_ipv4", description: FluentValidatorErrors.g_invalid_ipv4);
         }
 
-        /// <summary>Returns the descriptor for an invalid IPv6 address (code <c>net:invalid_ipv6</c>).</summary>
+        /// <summary>Returns the descriptor for an invalid IPv6 address (code <c>g:invalid_ipv6</c>).</summary>
         public static ErrorDescriptor InvalidIpv6()
         {
-            return new(code: "net:invalid_ipv6", description: FluentValidatorErrors.net_invalid_ipv6);
+            return new(code: "g:invalid_ipv6", description: FluentValidatorErrors.g_invalid_ipv6);
         }
 
-        /// <summary>Returns the descriptor for an invalid IP address (code <c>net:invalid_ip</c>).</summary>
+        /// <summary>Returns the descriptor for an invalid IP address (code <c>g:invalid_ip</c>).</summary>
         public static ErrorDescriptor InvalidIp()
         {
-            return new(code: "net:invalid_ip", description: FluentValidatorErrors.net_invalid_ip);
+            return new(code: "g:invalid_ip", description: FluentValidatorErrors.g_invalid_ip);
         }
     }
 
@@ -122,10 +124,10 @@ public static class FluentValidatorErrorDescriber
     [PublicAPI]
     public static class Enums
     {
-        /// <summary>Returns the descriptor for a string that is not a defined enum member name (code <c>enum:invalid_name</c>).</summary>
+        /// <summary>Returns the descriptor for a string that is not a defined enum member name (code <c>g:invalid_enum_name</c>).</summary>
         public static ErrorDescriptor InvalidName()
         {
-            return new(code: "enum:invalid_name", description: FluentValidatorErrors.enum_invalid_name);
+            return new(code: "g:invalid_enum_name", description: FluentValidatorErrors.g_invalid_enum_name);
         }
     }
 
@@ -133,43 +135,34 @@ public static class FluentValidatorErrorDescriber
     [PublicAPI]
     public static class DateTimes
     {
-        /// <summary>Returns the descriptor for a value that must be in the past (code <c>datetime:must_be_in_past</c>).</summary>
+        /// <summary>Returns the descriptor for a value that must be in the past (code <c>g:must_be_in_past</c>).</summary>
         public static ErrorDescriptor MustBeInPast()
         {
-            return new(code: "datetime:must_be_in_past", description: FluentValidatorErrors.datetime_must_be_in_past);
+            return new(code: "g:must_be_in_past", description: FluentValidatorErrors.g_must_be_in_past);
         }
 
-        /// <summary>Returns the descriptor for a value that must be in the future (code <c>datetime:must_be_in_future</c>).</summary>
+        /// <summary>Returns the descriptor for a value that must be in the future (code <c>g:must_be_in_future</c>).</summary>
         public static ErrorDescriptor MustBeInFuture()
         {
-            return new(
-                code: "datetime:must_be_in_future",
-                description: FluentValidatorErrors.datetime_must_be_in_future
-            );
+            return new(code: "g:must_be_in_future", description: FluentValidatorErrors.g_must_be_in_future);
         }
 
-        /// <summary>Returns the descriptor for a value that must not be in the past (code <c>datetime:must_not_be_in_past</c>).</summary>
+        /// <summary>Returns the descriptor for a value that must not be in the past (code <c>g:must_not_be_in_past</c>).</summary>
         public static ErrorDescriptor MustNotBeInPast()
         {
-            return new(
-                code: "datetime:must_not_be_in_past",
-                description: FluentValidatorErrors.datetime_must_not_be_in_past
-            );
+            return new(code: "g:must_not_be_in_past", description: FluentValidatorErrors.g_must_not_be_in_past);
         }
 
-        /// <summary>Returns the descriptor for a value that must not be in the future (code <c>datetime:must_not_be_in_future</c>).</summary>
+        /// <summary>Returns the descriptor for a value that must not be in the future (code <c>g:must_not_be_in_future</c>).</summary>
         public static ErrorDescriptor MustNotBeInFuture()
         {
-            return new(
-                code: "datetime:must_not_be_in_future",
-                description: FluentValidatorErrors.datetime_must_not_be_in_future
-            );
+            return new(code: "g:must_not_be_in_future", description: FluentValidatorErrors.g_must_not_be_in_future);
         }
 
-        /// <summary>Returns the descriptor for a date that does not meet the minimum age requirement (code <c>datetime:minimum_age</c>).</summary>
+        /// <summary>Returns the descriptor for a date that does not meet the minimum age requirement (code <c>g:minimum_age</c>).</summary>
         public static ErrorDescriptor MinimumAge()
         {
-            return new(code: "datetime:minimum_age", description: FluentValidatorErrors.datetime_minimum_age);
+            return new(code: "g:minimum_age", description: FluentValidatorErrors.g_minimum_age);
         }
     }
 
@@ -177,22 +170,22 @@ public static class FluentValidatorErrorDescriber
     [PublicAPI]
     public static class Collections
     {
-        /// <summary>Returns the descriptor for a collection that exceeds the maximum element count (code <c>collection:maximum_elements</c>).</summary>
+        /// <summary>Returns the descriptor for a collection that exceeds the maximum element count (code <c>g:maximum_elements</c>).</summary>
         public static ErrorDescriptor MaximumElementsValidator()
         {
-            return new("collection:maximum_elements", FluentValidatorErrors.collection_maximum_elements);
+            return new("g:maximum_elements", FluentValidatorErrors.g_maximum_elements);
         }
 
-        /// <summary>Returns the descriptor for a collection that is below the minimum element count (code <c>collection:minimum_elements</c>).</summary>
+        /// <summary>Returns the descriptor for a collection that is below the minimum element count (code <c>g:minimum_elements</c>).</summary>
         public static ErrorDescriptor MinimumElementsValidator()
         {
-            return new("collection:minimum_elements", FluentValidatorErrors.collection_minimum_elements);
+            return new("g:minimum_elements", FluentValidatorErrors.g_minimum_elements);
         }
 
-        /// <summary>Returns the descriptor for a collection that contains duplicate elements (code <c>collection:unique_elements</c>).</summary>
+        /// <summary>Returns the descriptor for a collection that contains duplicate elements (code <c>g:unique_elements</c>).</summary>
         public static ErrorDescriptor UniqueElementsValidator()
         {
-            return new("collection:unique_elements", FluentValidatorErrors.collection_unique_elements);
+            return new("g:unique_elements", FluentValidatorErrors.g_unique_elements);
         }
     }
 
@@ -200,37 +193,28 @@ public static class FluentValidatorErrorDescriber
     [PublicAPI]
     public static class PhoneNumbers
     {
-        /// <summary>Returns the descriptor for an invalid phone number (code <c>phone_number:invalid_number</c>).</summary>
+        /// <summary>Returns the descriptor for an invalid phone number (code <c>g:invalid_phone_number</c>).</summary>
         public static ErrorDescriptor InvalidNumber()
         {
-            return new(
-                code: "phone_number:invalid_number",
-                description: FluentValidatorErrors.phone_number_invalid_number
-            );
+            return new(code: "g:invalid_phone_number", description: FluentValidatorErrors.g_invalid_phone_number);
         }
 
-        /// <summary>Returns the descriptor for a missing or invalid country code (code <c>phone_number:invalid_country_code</c>).</summary>
+        /// <summary>Returns the descriptor for a missing or invalid country code (code <c>g:invalid_country_code</c>).</summary>
         public static ErrorDescriptor InvalidNumberCountryCodeValidator()
         {
-            return new(
-                code: "phone_number:invalid_country_code",
-                description: FluentValidatorErrors.phone_number_invalid_country_code
-            );
+            return new(code: "g:invalid_country_code", description: FluentValidatorErrors.g_invalid_country_code);
         }
 
-        /// <summary>Returns the descriptor for a local-only phone number that is not valid internationally (code <c>phone_number:local_number</c>).</summary>
+        /// <summary>Returns the descriptor for a local-only phone number that is not valid internationally (code <c>g:local_phone_number</c>).</summary>
         public static ErrorDescriptor NotLocalNumberValidator()
         {
-            return new(code: "phone_number:local_number", description: FluentValidatorErrors.phone_number_local_number);
+            return new(code: "g:local_phone_number", description: FluentValidatorErrors.g_local_phone_number);
         }
 
-        /// <summary>Returns the descriptor for a number that is not a valid mobile phone number (code <c>phone_number:invalid_mobile_number</c>).</summary>
+        /// <summary>Returns the descriptor for a number that is not a valid mobile phone number (code <c>g:invalid_mobile_number</c>).</summary>
         public static ErrorDescriptor InvalidMobileNumber()
         {
-            return new(
-                code: "phone_number:invalid_mobile_number",
-                description: FluentValidatorErrors.phone_number_invalid_mobile_number
-            );
+            return new(code: "g:invalid_mobile_number", description: FluentValidatorErrors.g_invalid_mobile_number);
         }
     }
 
@@ -238,12 +222,12 @@ public static class FluentValidatorErrorDescriber
     [PublicAPI]
     public static class NationalIds
     {
-        /// <summary>Returns the descriptor for an invalid Egyptian national ID (code <c>national_id:invalid_egyptian_national_id</c>).</summary>
+        /// <summary>Returns the descriptor for an invalid Egyptian national ID (code <c>g:invalid_egyptian_national_id</c>).</summary>
         public static ErrorDescriptor InvalidEgyptianNationalId()
         {
             return new(
-                code: "national_id:invalid_egyptian_national_id",
-                description: FluentValidatorErrors.national_id_invalid_egyptian_national_id
+                code: "g:invalid_egyptian_national_id",
+                description: FluentValidatorErrors.g_invalid_egyptian_national_id
             );
         }
     }
@@ -252,36 +236,36 @@ public static class FluentValidatorErrorDescriber
     [PublicAPI]
     public static class Urls
     {
-        /// <summary>Returns the descriptor for an invalid URL (code <c>url:invalid</c>).</summary>
+        /// <summary>Returns the descriptor for an invalid URL (code <c>g:invalid_url</c>).</summary>
         public static ErrorDescriptor InvalidUrl()
         {
-            return new(code: "url:invalid", description: FluentValidatorErrors.url_invalid);
+            return new(code: "g:invalid_url", description: FluentValidatorErrors.g_invalid_url);
         }
 
-        /// <summary>Returns the descriptor for a malformed CORS origin (code <c>url:invalid_origin_format</c>).</summary>
+        /// <summary>Returns the descriptor for a malformed CORS origin (code <c>g:invalid_origin_format</c>).</summary>
         public static ErrorDescriptor InvalidOriginFormat()
         {
-            return new(code: "url:invalid_origin_format", description: FluentValidatorErrors.url_invalid_origin_format);
+            return new(code: "g:invalid_origin_format", description: FluentValidatorErrors.g_invalid_origin_format);
         }
 
-        /// <summary>Returns the descriptor for a CORS origin whose scheme is not <c>http</c> or <c>https</c> (code <c>url:invalid_origin_scheme</c>).</summary>
+        /// <summary>Returns the descriptor for a CORS origin whose scheme is not <c>http</c> or <c>https</c> (code <c>g:invalid_origin_scheme</c>).</summary>
         public static ErrorDescriptor InvalidOriginScheme()
         {
-            return new(code: "url:invalid_origin_scheme", description: FluentValidatorErrors.url_invalid_origin_scheme);
+            return new(code: "g:invalid_origin_scheme", description: FluentValidatorErrors.g_invalid_origin_scheme);
         }
 
-        /// <summary>Returns the descriptor for a CORS origin that includes a path, query, or fragment (code <c>url:invalid_origin_path</c>).</summary>
+        /// <summary>Returns the descriptor for a CORS origin that includes a path, query, or fragment (code <c>g:invalid_origin_path</c>).</summary>
         public static ErrorDescriptor InvalidOriginNotRootPath()
         {
-            return new(code: "url:invalid_origin_path", description: FluentValidatorErrors.url_invalid_origin_path);
+            return new(code: "g:invalid_origin_path", description: FluentValidatorErrors.g_invalid_origin_path);
         }
 
-        /// <summary>Returns the descriptor for a CORS origin that ends with a trailing slash (code <c>url:invalid_origin_trailing_slash</c>).</summary>
+        /// <summary>Returns the descriptor for a CORS origin that ends with a trailing slash (code <c>g:invalid_origin_trailing_slash</c>).</summary>
         public static ErrorDescriptor InvalidOriginTrailingSlash()
         {
             return new(
-                code: "url:invalid_origin_trailing_slash",
-                description: FluentValidatorErrors.url_invalid_origin_trailing_slash
+                code: "g:invalid_origin_trailing_slash",
+                description: FluentValidatorErrors.g_invalid_origin_trailing_slash
             );
         }
     }

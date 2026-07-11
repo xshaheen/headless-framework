@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Api.Abstractions;
+using Headless.Api.Resources;
 using Microsoft.AspNetCore.Http;
 
 // ReSharper disable once CheckNamespace
@@ -66,7 +67,7 @@ public static class ApiResultExtensions
             ValidationError e => TypedResults.Problem(creator.UnprocessableEntity(e.ToErrorDescriptorDictionary())),
 
             ForbiddenError e => TypedResults.Problem(
-                creator.Forbidden(error: new ErrorDescriptor("g:forbidden", e.Reason))
+                creator.Forbidden(error: new ErrorDescriptor(GeneralErrorCodes.Forbidden, e.Reason))
             ),
 
             UnauthorizedError => TypedResults.Problem(creator.Unauthorized()),

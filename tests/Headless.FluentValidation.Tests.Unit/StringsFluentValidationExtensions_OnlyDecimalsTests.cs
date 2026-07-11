@@ -91,7 +91,7 @@ public sealed class StringsFluentValidationExtensionsOnlyDecimalsTests
 
         var result = validator.TestValidate(model);
 
-        result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("strings:only_decimals");
+        result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("g:only_decimals");
     }
 
     #endregion

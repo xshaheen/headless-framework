@@ -49,6 +49,6 @@ public sealed class CollectionValidatorsMaximumElementsTests
         var sut = new TestModelValidator(max);
         var model = new TestModel { Elements = Enumerable.Range(1, max + extra) };
         var result = sut.TestValidate(model);
-        result.ShouldHaveValidationErrorFor(x => x.Elements).WithErrorCode("collection:maximum_elements");
+        result.ShouldHaveValidationErrorFor(x => x.Elements).WithErrorCode("g:maximum_elements");
     }
 }

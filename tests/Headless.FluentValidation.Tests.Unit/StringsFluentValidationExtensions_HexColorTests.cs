@@ -90,7 +90,7 @@ public sealed class StringsFluentValidationExtensionsHexColorTests
 
         var result = validator.TestValidate(model);
 
-        result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("strings:invalid_hex_color");
+        result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("g:invalid_hex_color");
     }
 
     #endregion
