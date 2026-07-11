@@ -45,12 +45,14 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         Guid[] wonIds;
 
         await using (
-            var dbContext = await dbContextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false)
-        )
-        await using (
-            var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
+            var claimTransaction = await JobsClaimTransaction<TDbContext>.CreateAsync(
+                dbContextFactory,
+                cancellationToken
+            )
         )
         {
+            var dbContext = claimTransaction.DbContext;
+            var transaction = claimTransaction.Transaction;
             var mapping = TimeJobRelationalMapping.Create<TDbContext, TTimeJob>(dbContext);
             var readPastHints = await _GetReadPastHintsAsync(dbContext, transaction, cancellationToken)
                 .ConfigureAwait(false);
@@ -94,8 +96,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                     cancellationToken
                 )
                 .ConfigureAwait(false);
-            cancellationToken.ThrowIfCancellationRequested();
-            await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+            await claimTransaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
 
         var won = wonIds.ToHashSet();
@@ -128,12 +129,14 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         TimeJobEntity[] claimed;
 
         await using (
-            var dbContext = await dbContextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false)
-        )
-        await using (
-            var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
+            var claimTransaction = await JobsClaimTransaction<TDbContext>.CreateAsync(
+                dbContextFactory,
+                cancellationToken
+            )
         )
         {
+            var dbContext = claimTransaction.DbContext;
+            var transaction = claimTransaction.Transaction;
             var mapping = TimeJobRelationalMapping.Create<TDbContext, TTimeJob>(dbContext);
             var readPastHints = await _GetReadPastHintsAsync(dbContext, transaction, cancellationToken)
                 .ConfigureAwait(false);
@@ -184,8 +187,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 .Select(MappingExtensions.ForQueueTimeJobs<TTimeJob>())
                 .ToArrayAsync(cancellationToken)
                 .ConfigureAwait(false);
-            cancellationToken.ThrowIfCancellationRequested();
-            await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+            await claimTransaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
 
         foreach (var timeJob in claimed)
@@ -213,12 +215,14 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         var claimed = new List<CronJobOccurrenceEntity<TCronJob>>();
 
         await using (
-            var dbContext = await dbContextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false)
-        )
-        await using (
-            var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
+            var claimTransaction = await JobsClaimTransaction<TDbContext>.CreateAsync(
+                dbContextFactory,
+                cancellationToken
+            )
         )
         {
+            var dbContext = claimTransaction.DbContext;
+            var transaction = claimTransaction.Transaction;
             var mapping = CronOccurrenceRelationalMapping.Create<TDbContext, TCronJob>(dbContext);
             var readPastHints = await _GetReadPastHintsAsync(dbContext, transaction, cancellationToken)
                 .ConfigureAwait(false);
@@ -258,8 +262,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 }
             }
 
-            cancellationToken.ThrowIfCancellationRequested();
-            await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+            await claimTransaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
 
         foreach (var occurrence in claimed)
@@ -282,12 +285,14 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         CronJobOccurrenceEntity<TCronJob>[] claimed;
 
         await using (
-            var dbContext = await dbContextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false)
-        )
-        await using (
-            var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
+            var claimTransaction = await JobsClaimTransaction<TDbContext>.CreateAsync(
+                dbContextFactory,
+                cancellationToken
+            )
         )
         {
+            var dbContext = claimTransaction.DbContext;
+            var transaction = claimTransaction.Transaction;
             var mapping = CronOccurrenceRelationalMapping.Create<TDbContext, TCronJob>(dbContext);
             var readPastHints = await _GetReadPastHintsAsync(dbContext, transaction, cancellationToken)
                 .ConfigureAwait(false);
@@ -311,8 +316,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 .Select(MappingExtensions.ForQueueCronJobOccurrence<CronJobOccurrenceEntity<TCronJob>, TCronJob>())
                 .ToArrayAsync(cancellationToken)
                 .ConfigureAwait(false);
-            cancellationToken.ThrowIfCancellationRequested();
-            await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+            await claimTransaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
 
         foreach (var occurrence in claimed)

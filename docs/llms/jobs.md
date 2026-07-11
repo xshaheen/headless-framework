@@ -248,6 +248,8 @@ The base EF package is the compatibility layer. Native claim packages optimize p
 
 Native selection belongs inside `UseEntityFramework`; do not add a standalone service registration. Configure exactly one native claim provider. Selecting both is rejected during registration, while selecting neither retains the CAS fallback.
 
+The PostgreSQL and SQL Server packages are EF optimization extensions, not independent persistence providers. `Jobs.EntityFramework` retains job storage, mapping definitions, recovery, the persistence contract, and provider-neutral claim transaction lifecycle primitives. Each extension owns provider-specific claim execution, including SQL, parameters, and locking behavior.
+
 ---
 
 ## Headless.Jobs.Abstractions
@@ -737,6 +739,10 @@ Lease renewal on the EF path anchors `LockedUntil` comparison to the **database 
 
 The `JobsDbContext<TTimeJob, TCronJob>.DbContextOptions` constructor must be `public` for the EF pool to resolve it at startup. Validation fails fast at DI build time.
 
+Install `Headless.Jobs.EntityFramework.PostgreSql` or `Headless.Jobs.EntityFramework.SqlServer` and select it inside the same `UseEntityFramework` builder to replace the CAS pickup path with a provider-native atomic claim-and-return operation. The scheduler and persistence contract remain database-agnostic. Register exactly one native claim provider; selecting both fails during registration.
+
+These packages are EF optimization extensions, not standalone persistence providers. The base package owns the full persistence contract plus provider-neutral mapping definitions and claim-transaction lifecycle primitives; each extension owns provider-specific claim execution, including SQL, parameters, and locking semantics.
+
 ### Installation
 
 ```bash
@@ -1037,6 +1043,8 @@ The claim predicate's lease-expiry re-claim arm is gated on `OnNodeDeath == Retr
 
 Replaces the portable EF select-and-compare-and-swap pickup path with PostgreSQL-native atomic claim-and-return operations under scheduler contention.
 
+This is an optimization extension for `Headless.Jobs.EntityFramework`, not an independent Jobs persistence provider. EF continues to own job storage, mapping definitions, recovery, the public persistence contract, and transaction-lifecycle primitives; this package owns PostgreSQL-specific claim execution, including SQL, parameters, and locking behavior.
+
 ### Key Features
 
 - Claims existing time jobs and cron occurrences with `UPDATE ... RETURNING` over a `FOR UPDATE SKIP LOCKED` candidate query.
@@ -1092,6 +1100,8 @@ builder
 ### Problem Solved
 
 Replaces the portable EF select-and-compare-and-swap pickup path with SQL Server-native atomic claim-and-output operations under scheduler contention.
+
+This is an optimization extension for `Headless.Jobs.EntityFramework`, not an independent Jobs persistence provider. EF continues to own job storage, mapping definitions, recovery, the public persistence contract, and transaction-lifecycle primitives; this package owns SQL Server-specific claim execution, including SQL, parameters, and locking behavior.
 
 ### Key Features
 
