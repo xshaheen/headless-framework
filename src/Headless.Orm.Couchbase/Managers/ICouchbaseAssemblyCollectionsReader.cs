@@ -10,6 +10,7 @@ namespace Headless.Couchbase.Managers;
 /// Discovers Couchbase scope/collection pairs from assembly types, either by scanning assemblies
 /// whose name starts with a given prefix, by a direct assembly list, or from live context instances.
 /// </summary>
+[PublicAPI]
 public interface ICouchbaseAssemblyCollectionsReader
 {
     /// <summary>
@@ -33,9 +34,11 @@ public interface ICouchbaseAssemblyCollectionsReader
 }
 
 /// <summary>A Couchbase scope and collection name pair.</summary>
+[PublicAPI]
 public sealed record ScopeCollection(string Scope, string Collection);
 
 /// <summary>Default <see cref="ICouchbaseAssemblyCollectionsReader"/> implementation.</summary>
+[PublicAPI]
 public sealed class CouchbaseAssemblyCollectionsReader : ICouchbaseAssemblyCollectionsReader
 {
     /// <inheritdoc/>

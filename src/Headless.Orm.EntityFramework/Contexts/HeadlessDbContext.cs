@@ -87,6 +87,7 @@ internal interface IHeadlessDbContextScopeOwner
 /// write machinery.
 /// </para>
 /// </remarks>
+[PublicAPI]
 public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext, IHeadlessDbContextScopeOwner
 {
     private readonly HeadlessDbContextRuntime _runtime;

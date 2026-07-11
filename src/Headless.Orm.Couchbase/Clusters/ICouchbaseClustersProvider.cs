@@ -15,14 +15,21 @@ using GetClusterResult = (ICluster Cluster, Transactions ClusterTransactions);
 /// Provides lazily-created, cached Couchbase cluster and transaction instances identified by a
 /// logical cluster key. Disposing this provider disposes all created clusters.
 /// </summary>
+[PublicAPI]
 public interface ICouchbaseClustersProvider : IAsyncDisposable
 {
     /// <summary>
     /// Returns (or lazily creates) the cluster and transaction manager for <paramref name="clusterKey"/>.
     /// </summary>
     /// <param name="clusterKey">The logical cluster identifier.</param>
+    /// <param name="cancellationToken">
+    /// A token to observe while waiting for the task to complete. Because clusters are created once and
+    /// cached, the token governs the connection attempt that first materializes the cluster for a given
+    /// <paramref name="clusterKey"/>; callers that receive an already-cached cluster complete synchronously
+    /// and do not observe the token.
+    /// </param>
     /// <returns>A tuple of the connected cluster and its transaction manager.</returns>
-    ValueTask<GetClusterResult> GetClusterAsync(string clusterKey);
+    ValueTask<GetClusterResult> GetClusterAsync(string clusterKey, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -34,6 +41,7 @@ public interface ICouchbaseClustersProvider : IAsyncDisposable
 /// means a single physical cluster is shared across all DI scopes within the process. Disposal
 /// iterates all connected clusters and disposes them in sequence.
 /// </remarks>
+[PublicAPI]
 public sealed class CouchbaseClustersProvider(
     ICouchbaseClusterOptionsProvider clusterOptionsProvider,
     ICouchbaseTransactionConfigProvider transactionConfigProvider,
@@ -46,23 +54,37 @@ public sealed class CouchbaseClustersProvider(
 
     /// <inheritdoc/>
     /// <exception cref="ArgumentException"><paramref name="clusterKey"/> is null or empty.</exception>
-    public async ValueTask<GetClusterResult> GetClusterAsync(string clusterKey)
+    public async ValueTask<GetClusterResult> GetClusterAsync(
+        string clusterKey,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotEmpty(clusterKey);
 
+        // The token is captured by the first caller that populates the cache entry for this key; once the
+        // cluster is cached the factory does not run again, so later callers reuse the connection regardless
+        // of their own token. (The process-wide cache lifecycle is tracked separately and out of scope here.)
         return await _Clusters
-            .GetOrAdd(clusterKey, static (clusterKey, @this) => @this._CreateLazyClusterAsync(clusterKey), this)
+            .GetOrAdd(
+                clusterKey,
+                static (clusterKey, state) => state.@this._CreateLazyClusterAsync(clusterKey, state.cancellationToken),
+                (@this: this, cancellationToken)
+            )
             .ConfigureAwait(false);
     }
 
-    private AsyncLazy<GetClusterResult> _CreateLazyClusterAsync(string clusterKey)
+    private AsyncLazy<GetClusterResult> _CreateLazyClusterAsync(string clusterKey, CancellationToken cancellationToken)
     {
         return new(async () =>
         {
-            var clusterOptions = await clusterOptionsProvider.GetAsync(clusterKey).ConfigureAwait(false);
-            var cluster = await Cluster.ConnectAsync(clusterOptions).ConfigureAwait(false);
+            var clusterOptions = await clusterOptionsProvider
+                .GetAsync(clusterKey, cancellationToken)
+                .ConfigureAwait(false);
+            var cluster = await Cluster.ConnectAsync(clusterOptions, cancellationToken).ConfigureAwait(false);
 
-            var transactionConfig = await transactionConfigProvider.GetAsync(clusterKey).ConfigureAwait(false);
+            var transactionConfig = await transactionConfigProvider
+                .GetAsync(clusterKey, cancellationToken)
+                .ConfigureAwait(false);
             var transactions = Transactions.Create(cluster, transactionConfig);
 
             try

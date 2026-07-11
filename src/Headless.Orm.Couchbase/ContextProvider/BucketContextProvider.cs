@@ -10,6 +10,7 @@ namespace Headless.Couchbase.ContextProvider;
 /// Creates and initializes typed <see cref="CouchbaseBucketContext"/> subclasses by resolving the
 /// cluster, opening the bucket, and wiring all <c>IDocumentSet&lt;T&gt;</c> properties.
 /// </summary>
+[PublicAPI]
 public interface IBucketContextProvider
 {
     /// <summary>
@@ -24,22 +25,40 @@ public interface IBucketContextProvider
     /// prepended to the collection name (multi-tenant per scope). Pass <see langword="null"/> to use
     /// each property's declared scope directly.
     /// </param>
+    /// <param name="cancellationToken">A token to observe while waiting for the task to complete.</param>
     /// <returns>An initialized <typeparamref name="T"/> context.</returns>
-    ValueTask<T> GetAsync<T>(string clusterKey, string bucketName, string? defaultScopeName)
+    ValueTask<T> GetAsync<T>(
+        string clusterKey,
+        string bucketName,
+        string? defaultScopeName,
+        CancellationToken cancellationToken = default
+    )
         where T : CouchbaseBucketContext;
 }
 
 /// <summary>Default <see cref="IBucketContextProvider"/> implementation.</summary>
+[PublicAPI]
 public sealed class BucketContextProvider(
     ICouchbaseClustersProvider couchbaseClustersProvider,
     IServiceProvider serviceProvider
 ) : IBucketContextProvider
 {
     /// <inheritdoc/>
-    public async ValueTask<T> GetAsync<T>(string clusterKey, string bucketName, string? defaultScopeName)
+    public async ValueTask<T> GetAsync<T>(
+        string clusterKey,
+        string bucketName,
+        string? defaultScopeName,
+        CancellationToken cancellationToken = default
+    )
         where T : CouchbaseBucketContext
     {
-        var (cluster, transactions) = await couchbaseClustersProvider.GetClusterAsync(clusterKey).ConfigureAwait(false);
+        var (cluster, transactions) = await couchbaseClustersProvider
+            .GetClusterAsync(clusterKey, cancellationToken)
+            .ConfigureAwait(false);
+
+        // Couchbase's ICluster.BucketAsync exposes no CancellationToken overload, so honor the token before
+        // opening the bucket; it is not observed for the duration of the (typically cached) bucket open.
+        cancellationToken.ThrowIfCancellationRequested();
         var bucket = await _GetBucketAsync(cluster, bucketName).ConfigureAwait(false);
 
         return CouchbaseBucketContextInitializer.Initialize<T>(serviceProvider, bucket, transactions, defaultScopeName);

@@ -27,7 +27,7 @@ internal sealed class OutboxIntegrationEventDispatcher(
 {
     public async Task DispatchAsync(
         IReadOnlyList<IIntegrationEvent> integrationEvents,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNull(integrationEvents);
