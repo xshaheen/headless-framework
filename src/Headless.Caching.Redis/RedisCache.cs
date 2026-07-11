@@ -665,9 +665,10 @@ public sealed class RedisCache(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
+        // #580: pooled-lease read — the value buffer is rented from the ArrayPool instead of allocated per GET.
         var redisKey = _GetKey(key);
-        var redisValue = await _database.StringGetAsync(redisKey, cacheOptions.ReadMode).ConfigureAwait(false);
-        return await _RedisValueToCacheValueAsync<T>(redisKey, redisValue).ConfigureAwait(false);
+        var lease = await _database.StringGetLeaseAsync(redisKey, cacheOptions.ReadMode).ConfigureAwait(false);
+        return await _LeaseToCacheValueAsync<T>(redisKey, lease).ConfigureAwait(false);
     }
 
     public async ValueTask<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(
@@ -730,7 +731,7 @@ public sealed class RedisCache(
         {
             var rawValue = rawValues[i];
 
-            // Mirror the previous _RedisValueToCacheValueAsync contract: a missing key surfaces as NoValue so
+            // Mirror the previous _LeaseToCacheValueAsync contract: a missing key surfaces as NoValue so
             // every requested key is present in the result.
             result[originalKeys[i]] = rawValue.HasValue
                 ? await _DecodedToCacheValueAsync<T>(decodedFrames[i]!.Value, rawValue, now).ConfigureAwait(false)
@@ -741,7 +742,7 @@ public sealed class RedisCache(
     }
 
     /// <summary>
-    /// Bulk-read conversion from an already-decoded frame: mirrors <see cref="_RedisValueToCacheValueAsync{T}"/>
+    /// Bulk-read conversion from an already-decoded frame: mirrors <see cref="_LeaseToCacheValueAsync{T}"/>
     /// with <c>rearm: false</c> (no sliding re-arm on bulk reads) but skips the redundant re-decode. Marker
     /// resolution hits the warm <see cref="_markerCache"/> populated by the batched
     /// <see cref="_PrefetchTagMarkersAsync"/>, so no extra Redis round-trip is paid per entry. (#12)
@@ -1036,10 +1037,11 @@ public sealed class RedisCache(
 
         // Fetch the value rather than KeyExists: a fail-safe reserve keeps its Redis TTL aligned to PHYSICAL
         // expiration, so the key can still exist after its LOGICAL expiration. A key-existence check would
-        // report such a logically-expired reserve as present; _RedisValueIsLogicallyPresent applies the same
-        // logical-expiry rule the read methods use.
-        var redisValue = await _database.StringGetAsync(_GetKey(key), cacheOptions.ReadMode).ConfigureAwait(false);
-        return await _RedisValueIsLogicallyPresentAsync(redisValue).ConfigureAwait(false);
+        // report such a logically-expired reserve as present; _LeaseIsLogicallyPresentAsync applies the same
+        // logical-expiry rule the read methods use. Lease read (#580): only the header is inspected, so the
+        // value bytes never become a per-call heap allocation.
+        var lease = await _database.StringGetLeaseAsync(_GetKey(key), cacheOptions.ReadMode).ConfigureAwait(false);
+        return await _LeaseIsLogicallyPresentAsync(lease).ConfigureAwait(false);
     }
 
     public async ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default)
@@ -1104,48 +1106,57 @@ public sealed class RedisCache(
 
         // #11: cache prefixed key to avoid repeated _GetKey allocations (called up to 3x previously)
         var prefixedKey = _GetKey(key);
-        var redisValue = await _database.StringGetAsync(prefixedKey, cacheOptions.ReadMode).ConfigureAwait(false);
 
-        if (!redisValue.HasValue)
+        // Lease read (#580): only frame metadata is inspected, so the value bytes stay pooled.
+        var lease = await _database.StringGetLeaseAsync(prefixedKey, cacheOptions.ReadMode).ConfigureAwait(false);
+
+        if (lease is null)
         {
             return null;
         }
 
-        var frame = RedisCacheEntryFrame.Decode(redisValue);
-
-        if (!frame.IsFramed)
+        try
         {
-            // Non-framed (legacy/raw) keys carry no logical metadata, so fall back to the server TTL. Only
-            // legacy keys pay this second round trip; framed keys return below from the decoded frame.
-            return await _database.KeyTimeToLiveAsync(prefixedKey).ConfigureAwait(false);
+            var frame = RedisCacheEntryFrame.Decode((ReadOnlyMemory<byte>)lease.Memory);
+
+            if (!frame.IsFramed)
+            {
+                // Non-framed (legacy/raw) keys carry no logical metadata, so fall back to the server TTL. Only
+                // legacy keys pay this second round trip; framed keys return below from the decoded frame.
+                return await _database.KeyTimeToLiveAsync(prefixedKey).ConfigureAwait(false);
+            }
+
+            var now = timeProvider.GetUtcNow().UtcDateTime;
+
+            if (_IsExpired(frame.PhysicalExpiresAt, now))
+            {
+                return null;
+            }
+
+            // Family-2: a tag/clear-invalidated entry has no remaining logical expiration for direct reads.
+            var newestMarker = await _ResolveNewestMarkerAsync(frame.Tags).ConfigureAwait(false);
+
+            if (CacheTagInvalidation.IsInvalidated(frame.CreatedAt, newestMarker))
+            {
+                return null;
+            }
+
+            if (frame.SlidingExpiration.HasValue)
+            {
+                return await _database.KeyTimeToLiveAsync(prefixedKey).ConfigureAwait(false);
+            }
+
+            if (_IsExpired(frame.LogicalExpiresAt, now))
+            {
+                return null;
+            }
+
+            return frame.LogicalExpiresAt?.Subtract(now);
         }
-
-        var now = timeProvider.GetUtcNow().UtcDateTime;
-
-        if (_IsExpired(frame.PhysicalExpiresAt, now))
+        finally
         {
-            return null;
+            lease.Dispose();
         }
-
-        // Family-2: a tag/clear-invalidated entry has no remaining logical expiration for direct reads.
-        var newestMarker = await _ResolveNewestMarkerAsync(frame.Tags).ConfigureAwait(false);
-
-        if (CacheTagInvalidation.IsInvalidated(frame.CreatedAt, newestMarker))
-        {
-            return null;
-        }
-
-        if (frame.SlidingExpiration.HasValue)
-        {
-            return await _database.KeyTimeToLiveAsync(prefixedKey).ConfigureAwait(false);
-        }
-
-        if (_IsExpired(frame.LogicalExpiresAt, now))
-        {
-            return null;
-        }
-
-        return frame.LogicalExpiresAt?.Subtract(now);
     }
 
     /// <inheritdoc/>
@@ -1157,18 +1168,20 @@ public sealed class RedisCache(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
+        // Lease read (#580): the value buffer is pool-rented; returned in the finally after deserialization.
         var redisKey = _GetKey(key);
-        var rawValue = await _database.StringGetAsync(redisKey, cacheOptions.ReadMode).ConfigureAwait(false);
+        var lease = await _database.StringGetLeaseAsync(redisKey, cacheOptions.ReadMode).ConfigureAwait(false);
 
-        if (!rawValue.HasValue)
+        if (lease is null)
         {
             return new CacheValueWithExpiration<T>(CacheValue<T>.NoValue, expiration: null);
         }
 
         try
         {
+            ReadOnlyMemory<byte> raw = lease.Memory;
             var now = timeProvider.GetUtcNow().UtcDateTime;
-            var frame = RedisCacheEntryFrame.Decode(rawValue);
+            var frame = RedisCacheEntryFrame.Decode(raw);
 
             if (frame.IsFramed)
             {
@@ -1222,10 +1235,9 @@ public sealed class RedisCache(
 
             // Non-framed (legacy/raw) entry: value is present but carries no logical expiry metadata.
             // Fall back to the live server TTL for the expiration component.
-            var legacyValue =
-                rawValue == _NullValue
-                    ? CacheValue<T>.Null
-                    : new CacheValue<T>(_FromRedisValue<T>(rawValue), hasValue: true);
+            var legacyValue = _IsNullSentinel(raw.Span)
+                ? CacheValue<T>.Null
+                : new CacheValue<T>(_DeserializeValueSegment<T>(raw), hasValue: true);
 
             var legacyTtl = await _database.KeyTimeToLiveAsync(redisKey).ConfigureAwait(false);
 
@@ -1238,8 +1250,12 @@ public sealed class RedisCache(
         }
         catch (Exception e)
         {
-            _logger.LogDeserializationFailed(e, rawValue.Length(), typeof(T).FullName);
+            _logger.LogDeserializationFailed(e, lease.Length, typeof(T).FullName);
             throw;
+        }
+        finally
+        {
+            lease.Dispose();
         }
     }
 
@@ -2220,20 +2236,31 @@ public sealed class RedisCache(
         return serializer.Deserialize<T>((ReadOnlySequence<byte>)redisValue!);
     }
 
-    private async ValueTask<CacheValue<T>> _RedisValueToCacheValueAsync<T>(
+    // Byte-level mirror of the _NullValue comparison for the lease/memory read paths (#580). The u8 literal must
+    // stay in sync with _NullValue ("@@NULL"); RedisValue equality is content-based, so both compare identically.
+    private static bool _IsNullSentinel(ReadOnlySpan<byte> value) => value.SequenceEqual("@@NULL"u8);
+
+    /// <summary>
+    /// Single-key read conversion from a pooled <see cref="Lease{T}"/> (#580). The lease buffer is ArrayPool-owned
+    /// and dispose-controlled, so holding the decoded frame's <c>ValueSegment</c> (a slice of the lease) across the
+    /// marker-resolve and sliding re-arm awaits is safe; the buffer returns to the pool in the finally after every
+    /// consumer (deserializer, sentinel check) has fully materialized its result.
+    /// </summary>
+    private async ValueTask<CacheValue<T>> _LeaseToCacheValueAsync<T>(
         RedisKey redisKey,
-        RedisValue redisValue,
+        Lease<byte>? lease,
         bool rearm = true
     )
     {
-        if (!redisValue.HasValue)
+        if (lease is null)
         {
             return CacheValue<T>.NoValue;
         }
 
         try
         {
-            var frame = RedisCacheEntryFrame.Decode(redisValue);
+            ReadOnlyMemory<byte> raw = lease.Memory;
+            var frame = RedisCacheEntryFrame.Decode(raw);
 
             if (frame.IsFramed)
             {
@@ -2273,23 +2300,27 @@ public sealed class RedisCache(
                 return new CacheValue<T>(framedValue, hasValue: true);
             }
 
-            if (redisValue == _NullValue)
+            if (_IsNullSentinel(raw.Span))
             {
                 return CacheValue<T>.Null;
             }
 
-            var value = _FromRedisValue<T>(redisValue);
+            var value = _DeserializeValueSegment<T>(raw);
             return new CacheValue<T>(value, hasValue: true);
         }
         catch (Exception e)
         {
-            _logger.LogDeserializationFailed(e, redisValue.Length(), typeof(T).FullName);
+            _logger.LogDeserializationFailed(e, lease.Length, typeof(T).FullName);
             throw;
+        }
+        finally
+        {
+            lease.Dispose();
         }
     }
 
     /// <summary>
-    /// Zero-intermediate-copy buffer read. Mirrors <see cref="_RedisValueToCacheValueAsync{T}"/> exactly (expiry,
+    /// Zero-intermediate-copy buffer read. Mirrors <see cref="_LeaseToCacheValueAsync{T}"/> exactly (expiry,
     /// Family-2 tag/clear invalidation, single-key sliding re-arm), but writes the validated payload straight into
     /// <paramref name="destination"/> instead of deserializing it — so the generic path's intermediate
     /// <c>byte[]</c> materialization is skipped and only one copy (frame slice -> caller buffer) is paid.
@@ -2304,17 +2335,20 @@ public sealed class RedisCache(
         Argument.IsNotNull(destination);
         cancellationToken.ThrowIfCancellationRequested();
 
+        // Lease read (#580): the value buffer is pool-rented; the single copy below goes straight from the
+        // leased frame slice into the caller's buffer, then the lease returns to the pool in the finally.
         var redisKey = _GetKey(key);
-        var redisValue = await _database.StringGetAsync(redisKey, cacheOptions.ReadMode).ConfigureAwait(false);
+        var lease = await _database.StringGetLeaseAsync(redisKey, cacheOptions.ReadMode).ConfigureAwait(false);
 
-        if (!redisValue.HasValue)
+        if (lease is null)
         {
             return false;
         }
 
         try
         {
-            var frame = RedisCacheEntryFrame.Decode(redisValue);
+            ReadOnlyMemory<byte> raw = lease.Memory;
+            var frame = RedisCacheEntryFrame.Decode(raw);
 
             if (frame.IsFramed)
             {
@@ -2351,24 +2385,22 @@ public sealed class RedisCache(
             }
 
             // Legacy non-framed entry: the whole stored value is the raw payload.
-            if (redisValue == _NullValue)
+            if (_IsNullSentinel(raw.Span))
             {
                 return false;
             }
 
-            // Write the value straight from its native ReadOnlySequence<byte> storage (SE.Redis 3.0+), avoiding the
-            // intermediate byte[] that (byte[])redisValue would materialize — keeping this path's single-copy intent.
-            foreach (var segment in (ReadOnlySequence<byte>)redisValue!)
-            {
-                destination.Write(segment.Span);
-            }
-
+            destination.Write(raw.Span);
             return true;
         }
         catch (Exception e)
         {
-            _logger.LogDeserializationFailed(e, redisValue.Length(), typeof(byte[]).FullName);
+            _logger.LogDeserializationFailed(e, lease.Length, typeof(byte[]).FullName);
             throw;
+        }
+        finally
+        {
+            lease.Dispose();
         }
     }
 
@@ -2693,7 +2725,16 @@ public sealed class RedisCache(
         Span<byte> header = stackalloc byte[RedisCacheEntryFrame.HeaderLength];
         sequence.Slice(0, length).CopyTo(header);
 
-        return $"b64:{header[..length].ToBase64()}";
+        return _ToConcurrencyStamp(header[..length]);
+    }
+
+    // Contiguous-bytes overload for the lease/memory read paths (#580): both encode the SAME header slice as the
+    // sequence overload above, so stamps from either path stay comparable.
+    private static string _ToConcurrencyStamp(ReadOnlySpan<byte> value)
+    {
+        var length = Math.Min(value.Length, RedisCacheEntryFrame.HeaderLength);
+
+        return $"b64:{value[..length].ToBase64()}";
     }
 
     private static bool _TryDecodeConcurrencyStamp(string stamp, out RedisValue value)
@@ -2749,17 +2790,26 @@ public sealed class RedisCache(
 
     private async ValueTask<CacheStoreEntry<T>> _TryGetEntryAsync<T>(string key)
     {
-        var redisValue = await _database.StringGetAsync(_GetKey(key), cacheOptions.ReadMode).ConfigureAwait(false);
+        // Lease read (#580): the value buffer is pool-rented; returned in the finally after the entry is built.
+        var lease = await _database.StringGetLeaseAsync(_GetKey(key), cacheOptions.ReadMode).ConfigureAwait(false);
 
-        if (!redisValue.HasValue)
+        if (lease is null)
         {
             return CacheStoreEntry<T>.NotFound;
         }
 
-        var now = timeProvider.GetUtcNow().UtcDateTime;
-        var frame = RedisCacheEntryFrame.Decode(redisValue);
+        try
+        {
+            ReadOnlyMemory<byte> raw = lease.Memory;
+            var now = timeProvider.GetUtcNow().UtcDateTime;
+            var frame = RedisCacheEntryFrame.Decode(raw);
 
-        return await _BuildStoreEntryFromDecodedAsync<T>(redisValue, frame, now).ConfigureAwait(false);
+            return await _BuildStoreEntryFromDecodedAsync<T>(raw, frame, now).ConfigureAwait(false);
+        }
+        finally
+        {
+            lease.Dispose();
+        }
     }
 
     // #554: bulk framed cold read. Fetches every key in one MGET (one per hash slot on cluster), decodes all
@@ -2795,7 +2845,10 @@ public sealed class RedisCache(
         var now = timeProvider.GetUtcNow().UtcDateTime;
 
         // Decode all frames up-front so the tag-marker prefetch can gather every stale tag across the batch.
+        // Bulk reads stay on the materialized-array path (there is no batch lease API); the array is cast out
+        // of each RedisValue ONCE here and reused by the per-entry build below.
         var decodedFrames = new RedisCacheEntryFrame.DecodedFrame?[count];
+        var rawBytes = new ReadOnlyMemory<byte>[count];
 
         for (var i = 0; i < count; i++)
         {
@@ -2803,7 +2856,8 @@ public sealed class RedisCache(
             {
                 try
                 {
-                    decodedFrames[i] = RedisCacheEntryFrame.Decode(rawValues[i]);
+                    rawBytes[i] = (byte[])rawValues[i]!;
+                    decodedFrames[i] = RedisCacheEntryFrame.Decode(rawBytes[i]);
                 }
                 catch (Exception e)
                 {
@@ -2828,7 +2882,7 @@ public sealed class RedisCache(
                 continue;
             }
 
-            result[i] = await _BuildStoreEntryFromDecodedAsync<T>(rawValues[i], decodedFrames[i]!.Value, now)
+            result[i] = await _BuildStoreEntryFromDecodedAsync<T>(rawBytes[i], decodedFrames[i]!.Value, now)
                 .ConfigureAwait(false);
         }
 
@@ -2837,19 +2891,20 @@ public sealed class RedisCache(
 
     /// <summary>
     /// Builds a <see cref="CacheStoreEntry{T}"/> from an already-fetched, already-decoded present value. Shared by
-    /// the single-key <see cref="_TryGetEntryAsync{T}"/> and the bulk <see cref="_TryGetAllEntriesAsync{T}"/> paths
-    /// so both apply the exact same freshness, remove/clear/tag invalidation, and metadata-mapping rules. The caller
-    /// guarantees <paramref name="redisValue"/> is present (<see cref="RedisValue.HasValue"/>) and that
-    /// <paramref name="frame"/> is its decoded form. Marker resolution goes through the process-local marker cache;
-    /// the bulk caller pre-warms it so this pays no per-entry round-trip.
+    /// the single-key <see cref="_TryGetEntryAsync{T}"/> (which passes pooled lease memory, #580) and the bulk
+    /// <see cref="_TryGetAllEntriesAsync{T}"/> paths so both apply the exact same freshness, remove/clear/tag
+    /// invalidation, and metadata-mapping rules. The caller guarantees <paramref name="rawValue"/> holds the
+    /// present value's bytes, that <paramref name="frame"/> is its decoded form, and that the backing buffer stays
+    /// alive until this method completes. Marker resolution goes through the process-local marker cache; the bulk
+    /// caller pre-warms it so this pays no per-entry round-trip.
     /// </summary>
     private async ValueTask<CacheStoreEntry<T>> _BuildStoreEntryFromDecodedAsync<T>(
-        RedisValue redisValue,
+        ReadOnlyMemory<byte> rawValue,
         RedisCacheEntryFrame.DecodedFrame frame,
         DateTime now
     )
     {
-        var concurrencyStamp = _ToConcurrencyStamp(redisValue);
+        var concurrencyStamp = _ToConcurrencyStamp(rawValue.Span);
 
         if (frame.IsFramed)
         {
@@ -2864,7 +2919,7 @@ public sealed class RedisCache(
             // (KeyExpire bumps the key TTL but does not rewrite the frame), so reporting it would make the
             // coordinator treat a live, recently-touched key as logically expired and spuriously re-run the
             // factory. Drop it and let freshness rely on key existence + the physical cap, mirroring the
-            // other sliding read paths (_RedisValueToCacheValueAsync, _RedisValueIsLogicallyPresentAsync).
+            // other sliding read paths (_LeaseToCacheValueAsync, _LeaseIsLogicallyPresentAsync).
             var logicalExpiresAt = frame.SlidingExpiration.HasValue ? null : frame.LogicalExpiresAt;
             var slidingExpiration = frame.SlidingExpiration;
 
@@ -2910,7 +2965,7 @@ public sealed class RedisCache(
             };
         }
 
-        if (redisValue == _NullValue)
+        if (_IsNullSentinel(rawValue.Span))
         {
             return new CacheStoreEntry<T>(
                 Found: true,
@@ -2928,7 +2983,7 @@ public sealed class RedisCache(
         return new CacheStoreEntry<T>(
             Found: true,
             IsNull: false,
-            Value: _FromRedisValue<T>(redisValue),
+            Value: _DeserializeValueSegment<T>(rawValue),
             LogicalExpiresAt: null,
             PhysicalExpiresAt: null,
             SlidingExpiration: null
@@ -2938,34 +2993,41 @@ public sealed class RedisCache(
         };
     }
 
-    private async ValueTask<bool> _RedisValueIsLogicallyPresentAsync(RedisValue redisValue)
+    private async ValueTask<bool> _LeaseIsLogicallyPresentAsync(Lease<byte>? lease)
     {
-        if (!redisValue.HasValue)
+        if (lease is null)
         {
             return false;
         }
 
-        var frame = RedisCacheEntryFrame.Decode(redisValue);
-
-        if (!frame.IsFramed)
+        try
         {
-            return true;
+            var frame = RedisCacheEntryFrame.Decode((ReadOnlyMemory<byte>)lease.Memory);
+
+            if (!frame.IsFramed)
+            {
+                return true;
+            }
+
+            var now = timeProvider.GetUtcNow().UtcDateTime;
+
+            if (
+                _IsExpired(frame.PhysicalExpiresAt, now)
+                || (!frame.SlidingExpiration.HasValue && _IsExpired(frame.LogicalExpiresAt, now))
+            )
+            {
+                return false;
+            }
+
+            // Family-2: a tag/clear-invalidated entry is logically absent for direct reads (Exists), even though
+            // its physical reserve survives for fail-safe serving.
+            var newestMarker = await _ResolveNewestMarkerAsync(frame.Tags).ConfigureAwait(false);
+            return !CacheTagInvalidation.IsInvalidated(frame.CreatedAt, newestMarker);
         }
-
-        var now = timeProvider.GetUtcNow().UtcDateTime;
-
-        if (
-            _IsExpired(frame.PhysicalExpiresAt, now)
-            || (!frame.SlidingExpiration.HasValue && _IsExpired(frame.LogicalExpiresAt, now))
-        )
+        finally
         {
-            return false;
+            lease.Dispose();
         }
-
-        // Family-2: a tag/clear-invalidated entry is logically absent for direct reads (Exists), even though its
-        // physical reserve survives for fail-safe serving.
-        var newestMarker = await _ResolveNewestMarkerAsync(frame.Tags).ConfigureAwait(false);
-        return !CacheTagInvalidation.IsInvalidated(frame.CreatedAt, newestMarker);
     }
 
     private ValueTask _TryRearmSlidingEntryAsync(
