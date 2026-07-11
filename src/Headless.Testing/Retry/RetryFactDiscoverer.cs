@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.ComponentModel;
 using Xunit.Internal;
 using Xunit.Sdk;
 using Xunit.v3;
@@ -10,7 +11,7 @@ namespace Headless.Testing.Retry;
 /// xUnit v3 test-case discoverer for <see cref="RetryFactAttribute"/>. Produces a single
 /// <see cref="RetryTestCase"/> per decorated method.
 /// </summary>
-[PublicAPI]
+[EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class RetryFactDiscoverer : IXunitTestCaseDiscoverer
 {
     /// <summary>

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.ComponentModel;
 using Xunit;
 using Xunit.Sdk;
 using Xunit.v3;
@@ -12,7 +13,7 @@ namespace Headless.Testing.Retry;
 /// only the final attempt's messages are forwarded to the real bus.
 /// A diagnostic message is emitted after each non-final failure.
 /// </summary>
-[PublicAPI]
+[EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class RetryTestCaseRunner
     : XunitTestCaseRunnerBase<RetryTestCaseRunnerContext, IXunitTestCase, IXunitTest>
 {

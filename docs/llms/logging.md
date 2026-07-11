@@ -170,7 +170,7 @@ Log level changes here take effect at runtime without restart (hot-reload via `R
 | `Buffered` | `bool` | `true` | Enable buffered writes for lower I/O overhead. |
 | `FlushToDiskInterval` | `TimeSpan` | `1 second` | How often the async sink flushes buffered events to disk. |
 | `RollingInterval` | `RollingInterval` | `Day` | Serilog rolling interval (Hour, Day, Month, …). |
-| `RetainedFileCountLimit` | `int` | `5` | How many rolled files to keep per log category. |
+| `RetainedFileCountLimit` | `int?` | `5` | How many rolled files to keep per log category; `null` retains all files indefinitely. |
 | `MaxHeaderLength` | `int` | `512` | Reserved; not currently used by the file sinks. |
 
 ### Dependencies
