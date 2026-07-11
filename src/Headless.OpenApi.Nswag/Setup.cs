@@ -15,7 +15,7 @@ using NSwag.AspNetCore;
 using NSwag.Generation.AspNetCore;
 using NSwag.Generation.Processors.Security;
 using AccountId = Headless.Primitives.AccountId;
-using Money = Headless.Primitives.Money;
+using MoneyAmount = Headless.Primitives.MoneyAmount;
 using Month = Headless.Primitives.Month;
 using UserId = Headless.Primitives.UserId;
 
@@ -237,7 +237,7 @@ public static class SetupNswag
     /// <remarks>
     /// Mapped types and their resulting schema shapes:
     /// <list type="bullet">
-    ///   <item><description><c>Money</c> / <c>Money?</c> — <c>number</c> (decimal format)</description></item>
+    ///   <item><description><c>MoneyAmount</c> / <c>MoneyAmount?</c> — <c>number</c> (decimal format)</description></item>
     ///   <item><description><c>Month</c> / <c>Month?</c> — <c>integer</c></description></item>
     ///   <item><description><c>AccountId</c> — <see langword="string"/></description></item>
     ///   <item><description><c>UserId</c> — <see langword="string"/></description></item>
@@ -250,24 +250,24 @@ public static class SetupNswag
     {
         settings.TypeMappers.Add(
             new PrimitiveTypeMapper(
-                typeof(Money),
+                typeof(MoneyAmount),
                 schema =>
                 {
                     schema.Type = JsonObjectType.Number;
                     schema.Format = JsonFormatStrings.Decimal;
-                    schema.Title = "Money";
+                    schema.Title = "MoneyAmount";
                 }
             )
         );
         settings.TypeMappers.Add(
             new PrimitiveTypeMapper(
-                typeof(Money?),
+                typeof(MoneyAmount?),
                 schema =>
                 {
                     schema.Type = JsonObjectType.Number;
                     schema.Format = JsonFormatStrings.Decimal;
                     schema.IsNullableRaw = true;
-                    schema.Title = "Nullable<Money>";
+                    schema.Title = "Nullable<MoneyAmount>";
                 }
             )
         );

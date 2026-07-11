@@ -113,11 +113,6 @@ public readonly struct Result<TError> : IEquatable<Result<TError>>
     /// <returns>A failed <see cref="Result{TError}"/>.</returns>
     public static Result<TError> Fail(TError error) => new(isSuccess: false, error: error);
 
-    /// <summary>Creates a successful result. Use <see cref="Ok()"/> instead.</summary>
-    /// <returns>A successful <see cref="Result{TError}"/>.</returns>
-    [Obsolete("Use Ok() instead")]
-    public static Result<TError> Success() => Ok();
-
     // Implicit conversion
 
     /// <summary>Implicitly wraps an error in a failed <see cref="Result{TError}"/>.</summary>

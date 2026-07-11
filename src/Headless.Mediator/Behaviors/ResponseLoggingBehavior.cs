@@ -8,10 +8,10 @@ using Microsoft.Extensions.Logging;
 namespace Headless.Mediator.Behaviors;
 
 /// <summary>
-/// Logs Mediator responses after their handlers execute.
+/// Logs Mediator responses after their handlers execute. Registered as an open-generic pipeline
+/// behavior by <see cref="Headless.Mediator.SetupMediator"/>; not intended for direct consumer use.
 /// </summary>
-[PublicAPI]
-public sealed class ResponseLoggingBehavior<TMessage, TResponse>(
+internal sealed class ResponseLoggingBehavior<TMessage, TResponse>(
     ICurrentUser currentUser,
     ILogger<ResponseLoggingBehavior<TMessage, TResponse>> logger
 ) : MessagePostProcessor<TMessage, TResponse>

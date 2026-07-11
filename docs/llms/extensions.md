@@ -48,7 +48,7 @@ packages: Extensions, Primitives, Urls
 
 `Headless.Extensions` is the framework's base library — almost every other `Headless.*` package depends on it. It has no DI registration and no configuration; you reference types and call extension methods directly. The surface is organized by namespace, each solving one category of repetitive utility code. The `Headless.Primitives` (value objects, result pattern, paging) and `Headless.Urls` (URL builder) namespaces ship as **separate packages** that `Headless.Extensions` references — so every type below remains available to `Headless.Extensions` consumers transitively, but a consumer who only needs the value model or URL builder can depend on the smaller package directly. Both are documented as their own sections below.
 
-- **`Headless.Primitives`** (separate package) — the result pattern (`ApiResult`, `ApiResult<T>`, `Result<TValue, TError>`, `Result<TError>`, `ResultError` hierarchy, `ErrorDescriptor`), source-generated domain primitives (`UserId`, `AccountId`, `Money`, `Month`, `PhoneNumber`), validated value objects (`Currency`, `GeoCoordinate`, `FullGeoCoordinate`, `Range<T>`, `PreferredLocale`, `TimeUnit`), pagination (`IndexPage<T>`, `ContinuationPage<T>`), `ExtraProperties`, `AsyncEvent<T>`, `NameValue<T>`, `OrderBy`, `File`/`Image`, `PageMetadata`, `TenantInformation`.
+- **`Headless.Primitives`** (separate package) — the result pattern (`ApiResult`, `ApiResult<T>`, `Result<TValue, TError>`, `Result<TError>`, `ResultError` hierarchy, `ErrorDescriptor`), source-generated domain primitives (`UserId`, `AccountId`, `MoneyAmount`, `Month`, `PhoneNumber`), validated value objects (`Money`, `GeoCoordinate`, `FullGeoCoordinate`, `Range<T>`, `PreferredLocale`, `TimeUnit`), pagination (`IndexPage<T>`, `ContinuationPage<T>`), `ExtraProperties`, `AsyncEvent<T>`, `NameValue<T>`, `OrderBy`, `File`/`Image`, `PageMetadata`, `TenantInformation`.
 - **`Headless.Urls`** (separate package) — a fluent, mutable `Url` builder/parser plus `QueryParamCollection`, derived from Flurl (MIT).
 - **`Headless.Collections`** — `ParallelForEachAsync` / `ForEachAsync`, `DetectChanges` (added/removed/updated classification), `EquatableArray<T>`, `ComparerFactory`, `TypeList`.
 - **`Headless.Linq`** — `PredicateBuilder` for composing EF Core `Expression<Func<T,bool>>` filters (`And`, `Or`, `Not`, `True`/`False`).
@@ -67,8 +67,8 @@ For strongly-typed primitives **you define yourself**, use the source generator 
 - Return `ApiResult<T>` / `ApiResult` from service methods for **expected** failures (not found, conflict, validation) instead of throwing. Use `Result<TValue, TError>` when you need a custom error type. Reserve exceptions for programmer errors and truly exceptional conditions.
 - Do **not** read `.Value` or `.Error` on a `default` `ApiResult<T>` / `Result<…>` — a default (uninitialized) instance is a failure with no error and throws on access. Always branch on `IsSuccess` / `TryGetValue` first.
 - Do **not** lazy-cache a computed property via the `field` keyword on any `record` in this package's result/error types (or your own). `ResultError.Code` / `Metadata` are deliberately computed on each read so structural record equality stays correct — a `field`-backed cache silently corrupts `Equals`/`GetHashCode`.
-- `Currency` arithmetic is **scalar-only** for scaling: `*` and `/` take a `decimal` (e.g. `price * 1.15m`), not another `Currency`. `+` and `-` take a `Currency` and throw if the currency codes differ. There is no `Currency × Currency` multiply.
-- `Money` is a plain `decimal` primitive with **no currency code**. Use `GetRounded()` for 2-decimal banker's rounding (`MidpointRounding.ToEven`). Use `Currency` when you need an amount paired with a currency code.
+- `Money` arithmetic is **scalar-only** for scaling: `*` and `/` take a `decimal` (e.g. `price * 1.15m`), not another `Money`. `+` and `-` take a `Money` and throw if the currency codes differ. There is no `Money × Money` multiply.
+- `MoneyAmount` is a plain `decimal` primitive with **no currency code**. Use `GetRounded()` for 2-decimal banker's rounding (`MidpointRounding.ToEven`). Use `Money` when you need an amount paired with a currency code.
 - `Range<T>` treats `null` bounds as infinities: `From == null` means unbounded below, and `To == null` means unbounded above. Range-to-range containment, overlap, and `RemoveConflictRangeParts` follow those side-specific semantics; do not use `null` as a concrete point value.
 - `KeyedAsyncLock.LockAsync(key, timeout, timeProvider, ct)` returns `null` on timeout (it does **not** throw) — check the releaser for null and degrade. The unbounded `LockAsync(key, ct)` overload never returns null. The lock is **non-reentrant**: re-acquiring the same key on the same flow without releasing deadlocks.
 - `ParallelForEachAsync` does **not** preserve order and defaults to `Environment.ProcessorCount` degree of parallelism (pass `-1` for unlimited). Use `ForEachAsync` when you need ordered, sequential execution with index/cancellation support.
@@ -91,7 +91,7 @@ The package models **expected** outcomes as values, not exceptions. `ApiResult` 
 
 ### Domain primitives and value objects
 
-Two distinct mechanisms produce strongly-typed values. **Source-generated primitives** (`UserId`, `AccountId`, `Money`, `Month`, `PhoneNumber`) implement `IPrimitive<T>` and are emitted by `Headless.Generator.Primitives` with equality, JSON, and TypeConverter support — they wrap a single underlying value and validate it on creation. **Hand-written value objects** (`Currency`, `GeoCoordinate`, `FullGeoCoordinate`, `Range<T>`, `PreferredLocale`) validate their inputs in the constructor/init and throw on invalid data, so an instance that exists is always valid (e.g. a `GeoCoordinate` can never hold a latitude outside `[-90, 90]`). Both give you value equality. The practical consequence: prefer these over raw `Guid`/`decimal`/`(double, double)` in domain signatures so invalid states are unrepresentable.
+Two distinct mechanisms produce strongly-typed values. **Source-generated primitives** (`UserId`, `AccountId`, `MoneyAmount`, `Month`, `PhoneNumber`) implement `IPrimitive<T>` and are emitted by `Headless.Generator.Primitives` with equality, JSON, and TypeConverter support — they wrap a single underlying value and validate it on creation. **Hand-written value objects** (`Money`, `GeoCoordinate`, `FullGeoCoordinate`, `Range<T>`, `PreferredLocale`) validate their inputs in the constructor/init and throw on invalid data, so an instance that exists is always valid (e.g. a `GeoCoordinate` can never hold a latitude outside `[-90, 90]`). Both give you value equality. The practical consequence: prefer these over raw `Guid`/`decimal`/`(double, double)` in domain signatures so invalid states are unrepresentable.
 
 ### GUID ordering strategy
 
@@ -114,8 +114,8 @@ Eliminates repetitive utility code — result/error modeling, strongly-typed dom
 ### Key Features
 
 - **Result pattern** — `ApiResult` / `ApiResult<T>` with built-in error factories (`NotFound`, `Conflict`, `ValidationFailed`, `Forbidden`, `Unauthorized`); `Result<TValue, TError>` / `Result<TError>` for custom error types; the `ResultError` record hierarchy (`NotFoundError`, `UnauthorizedError`, `ForbiddenError`, `ConflictError`, `ValidationError`, `AggregateError`); `ErrorDescriptor` for structured, severity-tagged API errors; `Match`/`Map`/`Bind` combinators with `…Async` overloads.
-- **Domain primitives** (source-generated, with JSON + TypeConverter support) — `UserId`, `AccountId`, `Money` (decimal amount, banker's rounding), `Month` (1–12), `PhoneNumber` (libphonenumber-backed, digits-only canonicalization).
-- **Value objects** (validated on construction) — `Currency` (amount + currency code, scalar `*`/`/`, same-code `+`/`-`, total ordering), `GeoCoordinate` / `FullGeoCoordinate` (range-checked lat/long, Haversine distance), `Range<T>` (inclusive/exclusive containment, overlap), `PreferredLocale`, `TimeUnit` (duration-string parsing), `NameValue<T>`, `OrderBy`, `ExtraProperties` (ordinal-keyed property bag), `TenantInformation`, `PageMetadata`, `File` / `Image`.
+- **Domain primitives** (source-generated, with JSON + TypeConverter support) — `UserId`, `AccountId`, `MoneyAmount` (decimal amount, banker's rounding), `Month` (1–12), `PhoneNumber` (libphonenumber-backed, digits-only canonicalization).
+- **Value objects** (validated on construction) — `Money` (amount + currency code, scalar `*`/`/`, same-code `+`/`-`, total ordering), `GeoCoordinate` / `FullGeoCoordinate` (range-checked lat/long, Haversine distance), `Range<T>` (inclusive/exclusive containment, overlap), `PreferredLocale`, `TimeUnit` (duration-string parsing), `NameValue<T>`, `OrderBy`, `ExtraProperties` (ordinal-keyed property bag), `TenantInformation`, `PageMetadata`, `File` / `Image`.
 - **Pagination** — `IndexPageRequest` / `IndexPage<T>` (offset) and `ContinuationPageRequest` / `ContinuationPage<T>` (cursor), each with `Select` / `Where` projection.
 - **Collections** — `ParallelForEachAsync` (bounded concurrency) and `ForEachAsync` (ordered sequential, with index/cancellation overloads); `DetectChanges` (added/removed/updated/unchanged classification by key); `EquatableArray<T>` (value-equality array wrapper); `ComparerFactory`; `TypeList` / `ITypeList`; `EnumerableExtensions` materialization helpers — `AsList` / `AsArray` / `AsICollection` / `AsIList` (→ `IList<T>`) / `AsIReadOnlyCollection` / `AsIReadOnlyList` (→ `IReadOnlyList<T>`) / `AsISet` / `AsHashSet` / `AsDictionary` (return the source as-is when it already matches the requested type, otherwise materialize a copy).
 - **Threading** — `KeyedAsyncLock` (per-key async mutual exclusion, optional timeout-returns-null, sharded, non-reentrant); `TaskExtensions` (`Forget`, `WithCancellation`, `GetResultOrDefault`, `WithAggregatedExceptions`, `DelayedAsync`); `AsyncExExtensions` (timeout/safe waits over Nito.AsyncEx primitives); `Async.RunSync` / `Async.Using`; `InterlockedExtensions.InterlockedRaiseTo` (lock-free raise-only max on a `ref long`).
@@ -130,8 +130,8 @@ Eliminates repetitive utility code — result/error modeling, strongly-typed dom
 
 ### Design Notes
 
-- **`Currency` scaling is scalar-only.** `operator *` and `operator /` take a `decimal` factor and round the result to 2 decimal places with `MidpointRounding.ToEven`; there is no `Currency × Currency` multiply. `operator +` / `operator -` require matching currency codes and throw otherwise. Comparison operators exist against both `Currency` and `decimal`, and `Currency` is a total order (mixed-code lists sort by code then amount). This shape prevents the nonsensical "money squared" result and keeps rounding centralized.
-- **`Money` ≠ `Currency`.** `Money` is a source-generated `IPrimitive<decimal>` with no currency code; `GetRounded()` rounds to 2 dp using banker's rounding. Use `Currency` when an amount must travel with its code. Do not treat `Money` as currency-aware.
+- **`Money` scaling is scalar-only.** `operator *` and `operator /` take a `decimal` factor and round the result to 2 decimal places with `MidpointRounding.ToEven`; there is no `Money × Money` multiply. `operator +` / `operator -` require matching currency codes and throw otherwise. Comparison operators exist against both `Money` and `decimal`, and `Money` is a total order (mixed-code lists sort by code then amount). This shape prevents the nonsensical "money squared" result and keeps rounding centralized.
+- **`Money` ≠ `MoneyAmount`.** `MoneyAmount` is a source-generated `IPrimitive<decimal>` with no currency code; `GetRounded()` rounds to 2 dp using banker's rounding. Use `Money` when an amount must travel with its code. Do not treat `MoneyAmount` as currency-aware.
 - **`Range<T>` uses side-specific infinity semantics for `null` bounds.** A `null` `From` is unbounded below; a `null` `To` is unbounded above. Range-to-range containment, overlap, and `RemoveConflictRangeParts` compare lower and upper bounds separately, so subtracting `[m, p]` from `[null, z]` can return both `[null, predecessor(m)]` and `[successor(p), z]`. The value-level containment overloads still test a single point, so do not use `null` as a concrete point value.
 - **Result/error types are value-equal and free of equality-corrupting caches.** `ResultError` is an abstract `record`; its `Code` and `Metadata` are computed on each read rather than stored in a `field`-backed cache, because a lazily-assigned `field` participates in the compiler-generated record `Equals`/`GetHashCode` and silently breaks structural equality. A `default` `ApiResult<T>` / `Result<…>` is an uninitialized failure: reading `.Value` or `.Error` throws — branch on `IsSuccess` first.
 - **`KeyedAsyncLock` timeout returns `null`, is non-reentrant, and is sharded.** The timeout overload returns `null` instead of throwing when the wait elapses, so callers can degrade (skip work / serve stale). The internal semaphore dictionary is sharded into 8–64 stripes (~`ProcessorCount`) to cut contention, and per-key semaphores are reference-counted and removed at zero. Re-entering the same key without releasing deadlocks. The timeout overload takes a `TimeProvider`, so tests can drive it with `FakeTimeProvider`.
@@ -174,16 +174,16 @@ var message = result.Match(
 );
 ```
 
-#### Currency and Money
+#### Money and MoneyAmount
 
 ```csharp
 using Headless.Primitives;
 
-var price = new Currency(100m, "USD");
+var price = new Money(100m, "USD");
 var withTax = price * 1.15m;          // scalar scaling -> 115.00 USD (banker's rounding)
-var total = price + new Currency(20m, "USD"); // same-code addition; throws on code mismatch
+var total = price + new Money(20m, "USD"); // same-code addition; throws on code mismatch
 
-var amount = new Money(9.875m).GetRounded(); // 9.88 (MidpointRounding.ToEven)
+var amount = new MoneyAmount(9.875m).GetRounded(); // 9.88 (MidpointRounding.ToEven)
 ```
 
 #### Bounded vs. ordered iteration
@@ -280,8 +280,8 @@ Domain code that passes raw `Guid`, `decimal`, or `(double, double)`, or throws-
 ### Key Features
 
 - Result pattern: `ApiResult`, `ApiResult<T>`, `Result<TValue, TError>`, `Result<TError>`, the `ResultError` hierarchy, `ErrorDescriptor`, `ApiResultError`.
-- Source-generated domain primitives: `UserId`, `AccountId`, `Money`, `Month`, `PhoneNumber` (implement `IPrimitive<T>`).
-- Hand-written value objects: `Currency`, `GeoCoordinate`, `FullGeoCoordinate`, `Range<T>`, `PreferredLocale`, `TimeUnit`.
+- Source-generated domain primitives: `UserId`, `AccountId`, `MoneyAmount`, `Month`, `PhoneNumber` (implement `IPrimitive<T>`).
+- Hand-written value objects: `Money`, `GeoCoordinate`, `FullGeoCoordinate`, `Range<T>`, `PreferredLocale`, `TimeUnit`.
 - Paging: `IndexPage<T>`, `IndexPageRequest`, `ContinuationPage<T>`, `ContinuationPageRequest`, `PageMetadata`, `OrderBy`, `IHasOrderByRequest` / `IHasMultiOrderByRequest`.
 - Misc: `ExtraProperties` / `IHasExtraProperties`, `Locales` / `LocaleAttribute`, `AsyncEvent<T>`, `NameValue` / `NameValue<T>`, `File` / `Image`, `TenantInformation`.
 
