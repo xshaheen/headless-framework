@@ -772,7 +772,7 @@ public sealed class DispatcherTests : TestBase
                 flushStarted.TrySetResult();
                 return new ValueTask(releaseFlush.Task);
             });
-        var dispatcher = new Dispatcher(
+        await using var dispatcher = new Dispatcher(
             _logger,
             new TestThreadSafeMessageSender(),
             Options.Create(new MessagingOptions { EnablePublishParallelSend = false }),

@@ -656,7 +656,11 @@ public sealed class NatsConsumerClientTests : TestBase
             _options,
             _serviceProvider,
             (_, config, _) =>
-                Task.FromResult(config.FilterSubject == "orders.created" ? failedConsumer : siblingConsumer)
+                Task.FromResult(
+                    string.Equals(config.FilterSubject, "orders.created", StringComparison.Ordinal)
+                        ? failedConsumer
+                        : siblingConsumer
+                )
         );
         await client.SubscribeAsync(["orders.created", "orders.updated"]);
 
@@ -730,7 +734,7 @@ public sealed class NatsConsumerClientTests : TestBase
                         )
                 );
             });
-        var client = new NatsConsumerClient(
+        await using var client = new NatsConsumerClient(
             "test-group",
             1,
             _options,
@@ -766,7 +770,6 @@ public sealed class NatsConsumerClientTests : TestBase
         finally
         {
             await _StopListeningAsync(listening, cts);
-            await client.DisposeAsync();
         }
     }
 
@@ -968,11 +971,20 @@ public sealed class NatsConsumerClientTests : TestBase
     {
         var timeProvider = new FakeTimeProvider();
         var stuckHandler = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var client = new NatsConsumerClient("test-group", 1, _options, _serviceProvider, timeProvider: timeProvider);
+        await using var client = new NatsConsumerClient(
+            "test-group",
+            1,
+            _options,
+            _serviceProvider,
+            timeProvider: timeProvider
+        );
         var inFlightHandlers =
             (ConcurrentDictionary<Task, byte>)
                 typeof(NatsConsumerClient)
-                    .GetField("_inFlightHandlers", BindingFlags.NonPublic | BindingFlags.Instance)!
+                    .GetField(
+                        "_inFlightHandlers",
+                        BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+                    )!
                     .GetValue(client)!;
         inFlightHandlers.TryAdd(stuckHandler.Task, 0).Should().BeTrue();
 
