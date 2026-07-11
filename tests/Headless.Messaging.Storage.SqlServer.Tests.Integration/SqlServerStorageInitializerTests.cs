@@ -245,6 +245,77 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         );
     }
 
+    [Theory]
+    [InlineData("Published")]
+    [InlineData("Received")]
+    public async Task should_replace_standalone_status_index_with_status_added_composite(string table)
+    {
+        // #508 — ([StatusName],[Added]) serves the dashboard hourly-timeline query (StatusName seek +
+        // Added range scan) and subsumes the earlier standalone [StatusName] index (#8), which must be gone.
+        const string schema = "status_added_index_test";
+        var initializer = _CreateInitializer(schema, useStorageLock: false);
+
+        await initializer.InitializeAsync(AbortToken);
+
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+
+        var compositeKeyColumns = (
+            await connection.QueryAsync<string>(
+                new CommandDefinition(
+                    """
+                    SELECT c.name
+                    FROM sys.indexes i
+                    INNER JOIN sys.tables t ON i.object_id = t.object_id
+                    INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
+                    INNER JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+                    INNER JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+                    WHERE s.name = @Schema AND t.name = @Table AND i.name = @IndexName AND ic.is_included_column = 0
+                    ORDER BY ic.key_ordinal
+                    """,
+                    new
+                    {
+                        Schema = schema,
+                        Table = table,
+                        IndexName = $"IX_{schema}_{table}_StatusName_Added",
+                    },
+                    cancellationToken: AbortToken
+                )
+            )
+        ).ToList();
+
+        compositeKeyColumns.Should().BeEquivalentTo(["StatusName", "Added"], opts => opts.WithStrictOrdering());
+
+        var standaloneCount = await connection.QueryFirstOrDefaultAsync<int>(
+            new CommandDefinition(
+                """
+                SELECT COUNT(1)
+                FROM sys.indexes i
+                INNER JOIN sys.tables t ON i.object_id = t.object_id
+                INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
+                WHERE s.name = @Schema AND t.name = @Table AND i.name = @IndexName
+                """,
+                new
+                {
+                    Schema = schema,
+                    Table = table,
+                    IndexName = $"IX_{schema}_{table}_StatusName",
+                },
+                cancellationToken: AbortToken
+            )
+        );
+
+        standaloneCount.Should().Be(0);
+
+        // cleanup
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                $"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingIdList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingOwnerList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingPoisonMessageList]; DROP SCHEMA IF EXISTS [{schema}]",
+                cancellationToken: AbortToken
+            )
+        );
+    }
+
     [Fact]
     public async Task should_be_idempotent()
     {

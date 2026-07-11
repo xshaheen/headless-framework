@@ -187,11 +187,22 @@ internal sealed class SqlServerStorageInitializer(
                 IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
             END CATCH;
 
-            -- #8 — standalone StatusName index so GetStatisticsAsync per-status COUNT_BIGs do an index
-            -- scan instead of a full scan on large tables (composite indexes lead with ExpiresAt/Version).
+            -- #508 — ([StatusName],[Added]) composite serves BOTH the dashboard hourly-timeline query
+            -- (WHERE StatusName=@p AND Added BETWEEN … — a StatusName seek + Added range scan) and the
+            -- per-status COUNT_BIGs in GetStatisticsAsync via its [StatusName] prefix. It strictly subsumes
+            -- the earlier standalone [StatusName] index (#8), which is dropped to avoid a redundant, write-
+            -- amplifying second index. Existing composite indexes lead with ExpiresAt/Version and serve
+            -- neither predicate. DROP IF EXISTS is idempotent across repeated/concurrent inits.
             BEGIN TRY
-                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_StatusName' AND object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
-                    CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_StatusName] ON {GetReceivedTableName()} ([StatusName] ASC);
+                DROP INDEX IF EXISTS [IX_{receivedPrefix}_StatusName] ON {GetReceivedTableName()};
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() NOT IN (1913, 2714, 3701) THROW;
+            END CATCH;
+
+            BEGIN TRY
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_StatusName_Added' AND object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
+                    CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_StatusName_Added] ON {GetReceivedTableName()} ([StatusName] ASC, [Added] ASC);
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
@@ -272,10 +283,18 @@ internal sealed class SqlServerStorageInitializer(
                 IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
             END CATCH;
 
-            -- #8 — see the received-table note above; standalone StatusName index for dashboard statistics.
+            -- #508 — see the received-table note above; ([StatusName],[Added]) composite replaces the
+            -- standalone [StatusName] index for the dashboard hourly-timeline query and statistics COUNTs.
             BEGIN TRY
-                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{publishedPrefix}_StatusName' AND object_id = OBJECT_ID(N'{GetPublishedTableName()}'))
-                    CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_StatusName] ON {GetPublishedTableName()} ([StatusName] ASC);
+                DROP INDEX IF EXISTS [IX_{publishedPrefix}_StatusName] ON {GetPublishedTableName()};
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() NOT IN (1913, 2714, 3701) THROW;
+            END CATCH;
+
+            BEGIN TRY
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{publishedPrefix}_StatusName_Added' AND object_id = OBJECT_ID(N'{GetPublishedTableName()}'))
+                    CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_StatusName_Added] ON {GetPublishedTableName()} ([StatusName] ASC, [Added] ASC);
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;

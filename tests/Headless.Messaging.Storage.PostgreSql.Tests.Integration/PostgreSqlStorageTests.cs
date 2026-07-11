@@ -397,6 +397,68 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     [Theory]
     [InlineData("published")]
     [InlineData("received")]
+    public async Task should_create_status_name_added_composite_index_and_drop_standalone(string table)
+    {
+        // #508 — ("StatusName","Added") serves the dashboard hourly-timeline query; it subsumes and
+        // replaces the earlier standalone ("StatusName") index (#8), which must be gone to avoid redundancy.
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+
+        var indexDef = await connection.QueryFirstOrDefaultAsync<string>(
+            "SELECT indexdef FROM pg_indexes WHERE schemaname = 'messaging' AND indexname = @IndexName",
+            new { IndexName = $"idx_{table}_StatusName_Added" }
+        );
+
+        indexDef.Should().NotBeNull().And.Contain("\"StatusName\", \"Added\"");
+
+        var standaloneCount = await connection.ExecuteScalarAsync<int>(
+            "SELECT COUNT(1) FROM pg_indexes WHERE schemaname = 'messaging' AND indexname = @IndexName",
+            new { IndexName = $"idx_{table}_StatusName" }
+        );
+
+        standaloneCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_create_queued_partial_index_on_published()
+    {
+        // #509 — partial index for the Queued branch of the delayed scheduler's OR predicate.
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+
+        var indexDef = await connection.QueryFirstOrDefaultAsync<string>(
+            "SELECT indexdef FROM pg_indexes WHERE schemaname = 'messaging' AND indexname = 'idx_published_Version_ExpiresAt_Queued'"
+        );
+
+        indexDef.Should().NotBeNull();
+        indexDef.Should().Contain("\"Version\", \"ExpiresAt\"");
+        indexDef.Should().Contain("WHERE").And.Contain("Queued");
+    }
+
+    [Theory]
+    [InlineData("published")]
+    [InlineData("received")]
+    public async Task should_create_content_trgm_gin_index_when_pg_trgm_available(string table)
+    {
+        // #507 — the container role can CREATE EXTENSION pg_trgm, so the trigram content indexes are
+        // created (happy path). This also proves moving CREATE EXTENSION out of the transaction did not
+        // regress trigram-index creation. Managed-PG graceful degradation is covered by the try/catch +
+        // pg_extension probe in _TryEnsureTrgmExtensionAsync (needs a privilege-restricted role to exercise).
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+
+        var indexDef = await connection.QueryFirstOrDefaultAsync<string>(
+            "SELECT indexdef FROM pg_indexes WHERE schemaname = 'messaging' AND indexname = @IndexName",
+            new { IndexName = $"idx_{table}_Content_trgm" }
+        );
+
+        indexDef.Should().NotBeNull();
+        indexDef.Should().Contain("gin").And.Contain("gin_trgm_ops");
+    }
+
+    [Theory]
+    [InlineData("published")]
+    [InlineData("received")]
     public async Task should_terminalize_poison_retry_row_when_content_cannot_deserialize(string tableName)
     {
         // given

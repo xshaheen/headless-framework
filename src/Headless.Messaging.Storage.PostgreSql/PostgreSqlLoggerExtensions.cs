@@ -55,4 +55,20 @@ internal static partial class PostgreSqlLoggerExtensions
         string table,
         Exception exception
     );
+
+    [LoggerMessage(
+        EventId = 6,
+        EventName = "TrgmExtensionUnavailable",
+        Level = LogLevel.Warning,
+        Message = "Could not ensure the pg_trgm extension (SqlState {SqlState}: {Reason}). Dashboard content (ILIKE) search will be unavailable until a DBA installs pg_trgm. Messaging write/retry paths are unaffected."
+    )]
+    public static partial void LogTrgmExtensionUnavailable(this ILogger logger, string? sqlState, string reason);
+
+    [LoggerMessage(
+        EventId = 7,
+        EventName = "TrgmContentIndexSkipped",
+        Level = LogLevel.Information,
+        Message = "pg_trgm is not installed; skipping the dashboard content trigram indexes. Install pg_trgm to enable dashboard content search. Messaging write/retry paths are unaffected."
+    )]
+    public static partial void LogTrgmContentIndexSkipped(this ILogger logger);
 }
