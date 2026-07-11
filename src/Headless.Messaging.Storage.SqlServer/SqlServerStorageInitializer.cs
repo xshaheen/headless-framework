@@ -117,6 +117,17 @@ internal sealed class SqlServerStorageInitializer(
             END CATCH;
 
             BEGIN TRY
+                IF TYPE_ID(N'{schema}.HeadlessMessagingPoisonMessageList') IS NULL
+                    CREATE TYPE [{schema}].[HeadlessMessagingPoisonMessageList] AS TABLE (
+                        [Id] [uniqueidentifier] NOT NULL PRIMARY KEY,
+                        [ExceptionInfo] [nvarchar](max) NOT NULL
+                    );
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() <> 2714 THROW;
+            END CATCH;
+
+            BEGIN TRY
                 IF OBJECT_ID(N'{GetReceivedTableName()}',N'U') IS NULL
                 BEGIN
                     CREATE TABLE {GetReceivedTableName()}(

@@ -218,6 +218,7 @@ services.AddHeadlessMessaging(setup =>
 - **Do NOT use raw transport client libraries** (e.g., `RabbitMQ.Client`, `Confluent.Kafka`) directly -- always use the `Headless.Messaging` abstraction layer.
 - **Ordering depends on transport**: Kafka orders by partition key. Azure Service Bus orders by session. RabbitMQ has no ordering with multiple consumers. Set `ConsumerThreadCount = 1` for strict ordering.
 - **RabbitMQ credentials**: The framework rejects default `guest`/`guest` credentials. Always configure explicit username/password.
+- **AWS SQS redrive is external**: Configure a dead-letter queue and redrive policy with a bounded receive count. Headless releases malformed SNS envelopes for retry but does not provision redrive infrastructure.
 - **Message-name mapping**: Map message types to logical message names via `setup.ForMessage<TMessage>(x => x.MessageName("message.name"))` (primary) or conventions. `IMessagingBuilder.WithMessageNameMapping<TMessage>("message.name")` remains available inside the `AddHeadlessMessaging` callback for standalone/publisher-only overrides.
 - **Fail-fast defaults**: Duplicate consumer or runtime registrations are rejected by default. Anonymous runtime delegates must provide `HandlerId`.
 - **Telemetry parity**: Existing diagnostic listener and metric names stay stable across direct publish, outbox publish, and runtime subscriptions.
@@ -479,6 +480,7 @@ services.AddHeadlessMessaging(setup =>
 - Retry configuration lives under `RetryPolicy`, publish/receive retry processors, and storage cleanup options. `RetryBatchSize` (default 200, `> 0`) caps the retry-pickup batch and `SchedulerBatchSize` (default 1,000, `> 0`) caps the delayed/queued scheduler batch.
 - `UseStorageLock` coordinates retry processors through a messaging-keyed distributed lock provider.
 - `DeadNodeReconcileInterval` (default 1 minute, `> 0`) sets the always-on dead-owner recovery reconcile cadence (see [Dead-owner recovery](#dead-owner-recovery)). Independent of `UseStorageLock`.
+- `ShutdownTimeout` (default 30 seconds, `> 0`, `<= 5m`) is one end-to-end messaging shutdown bound shared by the consumer-register listener drain, concurrent consumer-client disposal, provider-specific in-flight drains, and the dispatcher loop drain. Cleanup still running when the deadline expires continues fault-observed in the background.
 - Register middleware through `MessagingBuilder.AddBusPublishMiddleware<T>()`, `AddBusConsumeMiddleware<T>()`, `AddPublishMiddlewareFor<TMiddleware,TMessage>()`, and `AddConsumeMiddlewareFor<TMiddleware,TMessage>(groupName)`.
 - Runtime subscriptions attach handlers after startup through `IRuntimeSubscriber`.
 
@@ -1113,6 +1115,8 @@ Provides AWS SNS bus transport and AWS SQS queue transport.
 
 `MessageGroupId(...)` is producer-side only because it is stamped while publishing. The provider maps it to native FIFO `MessageGroupId`; it is not a custom message attribute. Values longer than 128 characters are rejected.
 
+Malformed SNS envelopes are released with a 3-second visibility timeout. Headless does not provision a dead-letter queue or redrive policy; configure SQS redrive externally to bound repeated malformed deliveries.
+
 ### Installation
 
 ```bash
@@ -1280,7 +1284,7 @@ Provides Kafka queue-intent transport for partitioned, consumer-group processing
 
 ### Design Notes
 
-Kafka is queue-intent only in this package. `PartitionBy(...)` maps to the Kafka key. The framework does not impose a Kafka key length cap; broker/client configuration owns practical limits. Delivery remains at-least-once; consumers must dedupe by business key or message id. When consumer concurrency is greater than one, successful handlers can finish out of order, but Kafka commits advance only through the contiguous completed offset watermark per partition; a completed high offset does not commit past lower in-flight offsets.
+Kafka is queue-intent only in this package. `PartitionBy(...)` maps to the Kafka key. The framework does not impose a Kafka key length cap; broker/client configuration owns practical limits. Delivery remains at-least-once; consumers must dedupe by business key or message id. A publish succeeds only when Kafka reports `Persisted`; `PossiblyPersisted` is retried and can therefore produce duplicates. When consumer concurrency is greater than one, successful handlers can finish out of order, but Kafka commits advance only through the contiguous completed offset watermark per partition; a completed high offset does not commit past lower in-flight offsets. Rebalances invalidate tracked offsets for revoked or lost partitions so late handlers cannot commit or seek partitions now owned by another consumer.
 
 ### Installation
 
@@ -1333,6 +1337,8 @@ Provides a NATS JetStream transport for Headless messaging so applications can p
 `SubjectShard(...)` appends one safe subject token to the logical message name. It rejects `.`, `*`, `>`, whitespace, and control characters so payload values cannot change the subject hierarchy or wildcard behavior.
 
 Shard symmetry is required: when a message uses `SubjectShard(...)` on the producer side, every consumer registered for that message must call `.UseNats(c => c.Sharded())` on its consumer registration. This is validated at startup and throws `InvalidOperationException` if violated. The reason: NATS delivers zero messages with no error when a FilterSubject does not match any shard subject — the asymmetry causes silent data loss that is otherwise very difficult to diagnose.
+
+Connection-specific failures (`NatsConnectionFailedException`, `NatsJSConnectionException`, or a `NatsException` wrapping `SocketException`/`IOException`) terminate the listener instead of retrying in place, so the supervising consumer register's health watchdog can replace the failed client. JetStream protocol, timeout, API, and other consumer errors retry per-subject with backoff. During host shutdown, NATS bounds its in-flight handler drain by the remaining shared `MessagingOptions.ShutdownTimeout` budget instead of starting an independent 30-second drain.
 
 ### Installation
 
@@ -1414,7 +1420,7 @@ Provides RabbitMQ exchange and queue transport support.
 
 ### Design Notes
 
-RabbitMQ currently exposes consumer-side QoS only in this cluster. Publish routing still follows the logical message name because subscription topology binds queues by logical message name.
+RabbitMQ currently exposes consumer-side QoS only in this cluster. Publish routing still follows the logical message name because subscription topology binds queues by logical message name. When `PublishConfirms` is enabled, publish completion awaits the broker acknowledgement or negative acknowledgement.
 
 ### Installation
 

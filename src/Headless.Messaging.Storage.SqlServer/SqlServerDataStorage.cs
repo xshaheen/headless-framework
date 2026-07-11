@@ -1268,6 +1268,8 @@ internal sealed class SqlServerDataStorage(
         ];
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
         var poisonMessages = new List<PoisonMessage>();
         var result = await connection
@@ -1318,20 +1320,17 @@ internal sealed class SqlServerDataStorage(
 
                     return messages;
                 },
+                transaction: transaction,
                 commandTimeout: messagingOptions.Value.CommandTimeout,
                 sqlParams: sqlParams,
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
 
-        await _MarkPoisonMessagesTerminalAsync(
-                connection,
-                transaction: null,
-                tableName,
-                poisonMessages,
-                cancellationToken
-            )
+        await _MarkPoisonMessagesTerminalAsync(connection, transaction, tableName, poisonMessages, cancellationToken)
             .ConfigureAwait(false);
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
         return result;
     }
@@ -1354,23 +1353,45 @@ internal sealed class SqlServerDataStorage(
             .UtcDateTime.AddSeconds(messagingOptions.Value.FailedMessageExpiredAfter);
         var isReceivedTable = string.Equals(tableName, _receivedTable, StringComparison.Ordinal);
         var sql = isReceivedTable
-            ? $"UPDATE {tableName} SET StatusName=@StatusName, NextRetryAt=NULL, LockedUntil=NULL, Owner=NULL, ExpiresAt=@ExpiresAt, ExceptionInfo=@ExceptionInfo WHERE Id=@Id AND {_TerminalRowGuardSimple};"
-            : $"UPDATE {tableName} SET StatusName=@StatusName, NextRetryAt=NULL, LockedUntil=NULL, Owner=NULL, ExpiresAt=@ExpiresAt WHERE Id=@Id AND {_TerminalRowGuardSimple};";
+            ? $"""
+                UPDATE target
+                SET StatusName=@StatusName, NextRetryAt=NULL, LockedUntil=NULL, Owner=NULL,
+                    ExpiresAt=@ExpiresAt, ExceptionInfo=poison.ExceptionInfo
+                FROM {tableName} AS target
+                INNER JOIN @PoisonMessages AS poison ON target.Id=poison.Id
+                WHERE {_TerminalRowGuardSimple};
+                """
+            : $"""
+                UPDATE {tableName}
+                SET StatusName=@StatusName, NextRetryAt=NULL, LockedUntil=NULL, Owner=NULL, ExpiresAt=@ExpiresAt
+                WHERE Id IN (SELECT Id FROM @Ids) AND {_TerminalRowGuardSimple};
+                """;
+        object[] sqlParams =
+        [
+            new SqlParameter("@StatusName", nameof(StatusName.Failed)),
+            new SqlParameter("@ExpiresAt", SqlDbType.DateTime2) { Value = expiresAt },
+            isReceivedTable
+                ? _BuildPoisonMessageListTvpParameter(poisonMessages)
+                : _BuildIdListTvpParameter(poisonMessages.Select(message => message.StorageId).ToArray()),
+        ];
 
-        foreach (var poisonMessage in poisonMessages)
+        // One savepoint isolates the batched terminal mark from the shared claim transaction. If it fails,
+        // poison marking is skipped but healthy-row claims still commit; failed poison rows remain leased.
+        const string savepointName = "headless_poison_mark_batch";
+        if (transaction is not null)
         {
-            object[] sqlParams =
-            [
-                new SqlParameter("@Id", poisonMessage.StorageId),
-                new SqlParameter("@StatusName", nameof(StatusName.Failed)),
-                new SqlParameter("@ExpiresAt", SqlDbType.DateTime2) { Value = expiresAt },
-            ];
+            await connection
+                .ExecuteNonQueryAsync(
+                    $"SAVE TRANSACTION {savepointName};",
+                    transaction: transaction,
+                    commandTimeout: messagingOptions.Value.CommandTimeout,
+                    cancellationToken: cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
 
-            if (isReceivedTable)
-            {
-                sqlParams = [.. sqlParams, new SqlParameter("@ExceptionInfo", poisonMessage.ExceptionInfo)];
-            }
-
+        try
+        {
             await connection
                 .ExecuteNonQueryAsync(
                     sql,
@@ -1381,6 +1402,42 @@ internal sealed class SqlServerDataStorage(
                 )
                 .ConfigureAwait(false);
         }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            foreach (var poisonMessage in poisonMessages)
+            {
+                logger.LogPoisonMessageTerminalMarkFailed(poisonMessage.StorageId, tableName, ex);
+            }
+
+            if (transaction is not null)
+            {
+                await connection
+                    .ExecuteNonQueryAsync(
+                        $"ROLLBACK TRANSACTION {savepointName};",
+                        transaction: transaction,
+                        commandTimeout: messagingOptions.Value.CommandTimeout,
+                        cancellationToken: cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+        }
+    }
+
+    private SqlParameter _BuildPoisonMessageListTvpParameter(IReadOnlyList<PoisonMessage> poisonMessages)
+    {
+        var messagesTable = new DataTable();
+        messagesTable.Columns.Add("Id", typeof(Guid));
+        messagesTable.Columns.Add("ExceptionInfo", typeof(string));
+        foreach (var poisonMessage in poisonMessages)
+        {
+            messagesTable.Rows.Add(poisonMessage.StorageId, poisonMessage.ExceptionInfo);
+        }
+
+        return new SqlParameter("@PoisonMessages", SqlDbType.Structured)
+        {
+            TypeName = $"[{options.Value.Schema}].[HeadlessMessagingPoisonMessageList]",
+            Value = messagesTable,
+        };
     }
 
     private async ValueTask<int> _ReclaimDeadOwnersAsync(

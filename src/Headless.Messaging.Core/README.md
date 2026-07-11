@@ -357,6 +357,7 @@ builder.Services.AddHeadlessMessaging(setup =>
     setup.Options.TransportPublishTimeout = TimeSpan.FromSeconds(10);
     setup.Options.CommandTimeout = TimeSpan.FromSeconds(30);
     setup.Options.OutboxFlushTimeout = TimeSpan.FromSeconds(30);
+    setup.Options.ShutdownTimeout = TimeSpan.FromSeconds(30);
     setup.Options.RetryPolicy.RetryStrategy = new RetryStrategyOptions
     {
         MaxRetryAttempts = 2,
@@ -396,6 +397,7 @@ Top-level messaging timeouts that influence retry behavior:
 | `TransportPublishTimeout` | `TimeSpan` | `10s` | Linked with host shutdown and passed to transport publish calls. If the broker client honors cancellation, stuck publishes fail into the retry policy instead of outliving shutdown. |
 | `CommandTimeout` | `TimeSpan` | `30s` | Applied to SQL-backed storage commands, including terminal writes that deliberately use `CancellationToken.None`. |
 | `OutboxFlushTimeout` | `TimeSpan` | `30s` | Bounds the post-commit drain that flushes buffered outbox messages to the transport. The drain runs with `CancellationToken.None`, so an unresponsive broker would otherwise hold the request thread, DI scope, and DB connection indefinitely. Undispatched messages stay durable and are recovered by the relay sweep. `> 0`, `<= 5m`. |
+| `ShutdownTimeout` | `TimeSpan` | `30s` | End-to-end messaging shutdown bound shared by the consumer-register listener drain, concurrent consumer-client disposal, provider-specific in-flight drains, and the dispatcher loop drain. Cleanup still running when the deadline expires continues fault-observed in the background. `> 0`, `<= 5m`. |
 | `DeadNodeReconcileInterval` | `TimeSpan` | `1m` | Cadence of the always-on dead-owner recovery reconcile backstop. `> 0` (no upper bound — the per-row `LockedUntil` floor owns correctness). Independent of `UseStorageLock`. |
 
 Persisted retries use two independent timestamps: `NextRetryAt` controls when a row is due, and `LockedUntil` controls whether an active attempt still owns the row. Retry pickup filters on both. Retry state writes clear `LockedUntil`; counter advances use an optimistic `Retries == originalRetries` predicate so concurrent replicas cannot overwrite each other's retry budget.

@@ -601,30 +601,16 @@ internal sealed partial class InMemoryDataStorage(
             {
                 // Mirror the exception path's terminal-row guard: a Succeeded/Failed entry with no
                 // scheduled retry is left alone so a redelivery cannot overwrite a previously-
-                // terminal row. Surface the existing row as a snapshot to the caller so the
-                // dispatcher continues to receive a MediumMessage value.
+                // terminal row. Return a fresh unstored candidate whose synthetic id cannot lease
+                // or execute that terminal row.
                 if ((existing.StatusName is StatusName.Succeeded or StatusName.Failed) && existing.NextRetryAt is null)
                 {
                     return ValueTask.FromResult(
-                        new MediumMessage
-                        {
-                            StorageId = existing.StorageId,
-                            Origin = existing.Origin,
-                            Content = existing.Content,
-                            IntentType = existing.IntentType,
-                            Added = existing.Added,
-                            ExpiresAt = existing.ExpiresAt,
-                            NextRetryAt = existing.NextRetryAt,
-                            LockedUntil = existing.LockedUntil,
-                            Owner = existing.Owner,
-                            Retries = existing.Retries,
-                            InlineAttempts = existing.InlineAttempts,
-                            ExceptionInfo = existing.ExceptionInfo,
-                        }
+                        _CreateUnstoredReceivedMessage(message, serialized, added, initialNextRetryAt)
                     );
                 }
 
-                // Non-terminal existing row: refresh in place with the latest payload + reset to
+                // Non-terminal, unleased existing row: refresh in place with the latest payload + reset to
                 // the freshly-stored Scheduled state, mirroring the SQL providers' MERGE WHEN
                 // MATCHED UPDATE branch. Name/Group/Version are init-only on MemoryMessage; the
                 // identity is keyed on (Version, MessageId, Group) so those values are pinned at
@@ -640,38 +626,30 @@ internal sealed partial class InMemoryDataStorage(
                 // the row in subtle ways otherwise.
                 var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
                 var leaseActive = existing.LockedUntil is not null && existing.LockedUntil > nowUtc;
-                if (!leaseActive)
+                if (leaseActive)
                 {
-                    existing.Origin = message.Origin;
-                    existing.Content = serialized;
-                    existing.IntentType = message.IntentType;
-                    // Redelivery refreshes the envelope but cannot replenish durable retry budgets.
-                    // The existing counters remain authoritative across lease expiry and restart.
-                    existing.Added = added;
-                    existing.ExpiresAt = null;
-                    existing.NextRetryAt = initialNextRetryAt;
-                    existing.LockedUntil = null;
-                    existing.Owner = null;
-                    existing.StatusName = StatusName.Scheduled;
-                    existing.ExceptionInfo = null;
+                    // Match SQL's guard-blocked upsert contract: return the fresh, unpersisted candidate.
+                    // Its synthetic id makes the executor's follow-up lease fail, while a null LockedUntil
+                    // prevents the atomic-pickup fast path from treating another dispatcher's lease as ours.
+                    return ValueTask.FromResult(
+                        _CreateUnstoredReceivedMessage(message, serialized, added, initialNextRetryAt)
+                    );
                 }
 
-                return ValueTask.FromResult(
-                    new MediumMessage
-                    {
-                        StorageId = existing.StorageId,
-                        Origin = existing.Origin,
-                        Content = existing.Content,
-                        IntentType = existing.IntentType,
-                        Added = existing.Added,
-                        ExpiresAt = existing.ExpiresAt,
-                        NextRetryAt = existing.NextRetryAt,
-                        LockedUntil = existing.LockedUntil,
-                        Owner = existing.Owner,
-                        Retries = existing.Retries,
-                        InlineAttempts = existing.InlineAttempts,
-                    }
-                );
+                existing.Origin = message.Origin;
+                existing.Content = serialized;
+                existing.IntentType = message.IntentType;
+                // Redelivery refreshes the envelope but cannot replenish durable retry budgets.
+                // The existing counters remain authoritative across lease expiry and restart.
+                existing.Added = added;
+                existing.ExpiresAt = null;
+                existing.NextRetryAt = initialNextRetryAt;
+                existing.LockedUntil = null;
+                existing.Owner = null;
+                existing.StatusName = StatusName.Scheduled;
+                existing.ExceptionInfo = null;
+
+                return ValueTask.FromResult(_ToSnapshot(existing));
             }
 
             var inserted = _InsertNewReceivedRow(name, group, message, serialized, added, initialNextRetryAt, version);
@@ -679,6 +657,28 @@ internal sealed partial class InMemoryDataStorage(
             return ValueTask.FromResult(inserted);
         }
     }
+
+    private MediumMessage _CreateUnstoredReceivedMessage(
+        MediumMessage message,
+        string serialized,
+        DateTime added,
+        DateTime initialNextRetryAt,
+        Guid? storageId = null
+    ) =>
+        new()
+        {
+            StorageId = storageId ?? guidGenerator.Create(),
+            Origin = message.Origin,
+            Content = serialized,
+            IntentType = message.IntentType,
+            Added = added,
+            ExpiresAt = null,
+            NextRetryAt = initialNextRetryAt,
+            LockedUntil = null,
+            Owner = null,
+            Retries = 0,
+            InlineAttempts = 0,
+        };
 
     public ValueTask<MediumMessage> StoreReceivedMessageAsync(
         string name,
@@ -709,20 +709,7 @@ internal sealed partial class InMemoryDataStorage(
         string version
     )
     {
-        var mdMessage = new MediumMessage
-        {
-            StorageId = guidGenerator.Create(),
-            Origin = message.Origin,
-            Content = serialized,
-            IntentType = message.IntentType,
-            Added = added,
-            ExpiresAt = null,
-            NextRetryAt = initialNextRetryAt,
-            LockedUntil = null,
-            Owner = null,
-            Retries = 0,
-            InlineAttempts = 0,
-        };
+        var mdMessage = _CreateUnstoredReceivedMessage(message, serialized, added, initialNextRetryAt);
 
         ReceivedMessages[mdMessage.StorageId] = new MemoryMessage
         {

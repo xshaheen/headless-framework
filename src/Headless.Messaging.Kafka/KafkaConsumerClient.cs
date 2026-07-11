@@ -22,6 +22,8 @@ internal sealed class KafkaConsumerClient : IConsumerClient
     private readonly Func<ConsumerConfig, IConsumer<string, byte[]>> _consumerFactory;
     private readonly Func<AdminClientConfig, IAdminClient> _adminClientFactory;
     private readonly KafkaOffsetCommitTracker? _offsetCommitTracker;
+    private readonly HashSet<TopicPartition> _ownedPartitions = [];
+    private bool _hasPartitionAssignment;
 
     // volatile is required: Connect performs double-checked locking on this field, and
     // CommitAsync/RejectAsync read it without taking _lock. Without volatile a reader could
@@ -237,6 +239,11 @@ internal sealed class KafkaConsumerClient : IConsumerClient
                 return ValueTask.CompletedTask;
             }
 
+            if (!_OwnsPartition(delivery.ConsumerResult.TopicPartition))
+            {
+                return ValueTask.CompletedTask;
+            }
+
             if (_offsetCommitTracker is null)
             {
                 consumerClient.Commit(delivery.ConsumerResult);
@@ -275,9 +282,17 @@ internal sealed class KafkaConsumerClient : IConsumerClient
                 return ValueTask.CompletedTask;
             }
 
+            if (!_OwnsPartition(delivery.ConsumerResult.TopicPartition))
+            {
+                return ValueTask.CompletedTask;
+            }
+
             if (_offsetCommitTracker is not null && delivery.IsTracked)
             {
-                _offsetCommitTracker.MarkRejected(delivery);
+                if (!_offsetCommitTracker.MarkRejected(delivery))
+                {
+                    return ValueTask.CompletedTask;
+                }
             }
 
             consumerClient.Seek(delivery.ConsumerResult.TopicPartitionOffset);
@@ -447,7 +462,55 @@ internal sealed class KafkaConsumerClient : IConsumerClient
 
     private IConsumer<string, byte[]> _BuildConsumer(ConsumerConfig config)
     {
-        return new ConsumerBuilder<string, byte[]>(config).SetErrorHandler(_ConsumerClientOnConsumeError).Build();
+        return new ConsumerBuilder<string, byte[]>(config)
+            .SetErrorHandler(_ConsumerClientOnConsumeError)
+            .SetPartitionsAssignedHandler((_, partitions) => PartitionsAssigned(partitions))
+            .SetPartitionsRevokedHandler((_, partitions) => PartitionsRevoked(partitions))
+            .SetPartitionsLostHandler((_, partitions) => PartitionsLost(partitions))
+            .Build();
+    }
+
+    internal void PartitionsAssigned(IEnumerable<TopicPartition> partitions)
+    {
+        lock (_lock)
+        {
+            _hasPartitionAssignment = true;
+
+            foreach (var partition in partitions)
+            {
+                _ownedPartitions.Add(partition);
+                _offsetCommitTracker?.Reset(partition);
+            }
+        }
+    }
+
+    internal void PartitionsRevoked(IEnumerable<TopicPartitionOffset> partitions)
+    {
+        _PartitionsRemoved(partitions.Select(x => x.TopicPartition));
+    }
+
+    internal void PartitionsLost(IEnumerable<TopicPartitionOffset> partitions)
+    {
+        _PartitionsRemoved(partitions.Select(x => x.TopicPartition));
+    }
+
+    private void _PartitionsRemoved(IEnumerable<TopicPartition> partitions)
+    {
+        lock (_lock)
+        {
+            _hasPartitionAssignment = true;
+
+            foreach (var partition in partitions)
+            {
+                _ownedPartitions.Remove(partition);
+                _offsetCommitTracker?.Reset(partition);
+            }
+        }
+    }
+
+    private bool _OwnsPartition(TopicPartition partition)
+    {
+        return !_hasPartitionAssignment || _ownedPartitions.Contains(partition);
     }
 
     private void _ObserveBackgroundHandler(Task task)
@@ -566,6 +629,18 @@ internal sealed class KafkaConsumerClient : IConsumerClient
             return new KafkaDelivery(consumerResult, state.Generation);
         }
 
+        public void Reset(TopicPartition partition)
+        {
+            if (!_partitions.TryGetValue(partition, out var state))
+            {
+                return;
+            }
+
+            state.Generation++;
+            state.NextCommitOffset = null;
+            state.CompletedOffsets.Clear();
+        }
+
         public List<TopicPartitionOffset> MarkCommitted(KafkaDelivery delivery)
         {
             var consumerResult = delivery.ConsumerResult;
@@ -605,7 +680,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
             return [new TopicPartitionOffset(consumerResult.TopicPartition, new Offset(nextCommitOffset))];
         }
 
-        public void MarkRejected(KafkaDelivery delivery)
+        public bool MarkRejected(KafkaDelivery delivery)
         {
             var consumerResult = delivery.ConsumerResult;
 
@@ -614,13 +689,15 @@ internal sealed class KafkaConsumerClient : IConsumerClient
                 || state.Generation != delivery.Generation
             )
             {
-                return;
+                return false;
             }
 
             var offset = consumerResult.TopicPartitionOffset.Offset.Value;
             state.Generation++;
             state.NextCommitOffset = offset >= 0 ? offset : null;
             state.CompletedOffsets.Clear();
+
+            return true;
         }
 
         private sealed class PartitionCommitState

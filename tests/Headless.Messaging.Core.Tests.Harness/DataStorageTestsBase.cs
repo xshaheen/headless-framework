@@ -952,6 +952,58 @@ public abstract class DataStorageTestsBase : TestBase
             .Contain(m => m.StorageId == storedMessage.StorageId);
     }
 
+    public virtual async Task should_return_unstored_snapshot_when_redelivery_hits_active_receive_lease()
+    {
+        var storage = GetStorage();
+        var message = CreateMessage();
+        var storedMessage = await storage.StoreReceivedMessageAsync(
+            "active-lease-redelivery",
+            "test-group",
+            message,
+            AbortToken
+        );
+        var now = _Now();
+
+        await storage.ChangeReceiveStateAsync(
+            storedMessage,
+            StatusName.Failed,
+            nextRetryAt: now.AddSeconds(-1),
+            cancellationToken: AbortToken
+        );
+        var leased = await storage.LeaseReceiveAsync(storedMessage, now.AddMinutes(5), AbortToken);
+        var beforeRedelivery = Capabilities.SupportsMonitoringApi
+            ? await storage.GetMonitoringApi().GetReceivedMessageAsync(storedMessage.StorageId, AbortToken)
+            : null;
+
+        var redelivery = await storage.StoreReceivedMessageAsync(
+            "active-lease-redelivery",
+            "test-group",
+            message,
+            AbortToken
+        );
+
+        leased.Should().BeTrue();
+        redelivery.StorageId.Should().NotBe(storedMessage.StorageId);
+        redelivery.LockedUntil.Should().BeNull();
+        redelivery.Owner.Should().BeNull();
+        (await storage.LeaseReceiveAsync(redelivery, now.AddMinutes(5), AbortToken))
+            .Should()
+            .BeFalse("the guard-blocked upsert returned an unpersisted candidate");
+
+        if (beforeRedelivery is not null)
+        {
+            var afterRedelivery = await storage
+                .GetMonitoringApi()
+                .GetReceivedMessageAsync(storedMessage.StorageId, AbortToken);
+            afterRedelivery.Should().NotBeNull();
+            afterRedelivery!.Content.Should().Be(beforeRedelivery.Content);
+            afterRedelivery.LockedUntil.Should().Be(beforeRedelivery.LockedUntil);
+            afterRedelivery.Owner.Should().Be(beforeRedelivery.Owner);
+            afterRedelivery.Retries.Should().Be(beforeRedelivery.Retries);
+            afterRedelivery.ExceptionInfo.Should().Be(beforeRedelivery.ExceptionInfo);
+        }
+    }
+
     public virtual async Task should_reclaim_published_retry_row_owned_by_dead_node()
     {
         var storage = GetStorage();
