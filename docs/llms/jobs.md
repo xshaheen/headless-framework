@@ -119,7 +119,7 @@ Mark job methods with `[JobFunction("name")]` (or `[JobFunction("name", cronExpr
 - Set `OnNodeDeath = NodeDeathPolicy.MarkFailed` or `Skip` on non-idempotent jobs — default `Retry` will re-run the job after a node crash.
 - Do NOT install a Jobs-specific cache package. Jobs cron-expression caching reuses the host's `ICache` (`Headless.Caching.InMemory`, `.Redis`, or `.Hybrid`). Without a registered `ICache`, cron expressions are read directly from the database.
 - Atomic enqueue: wrap `timeJobManager.AddAsync` / `cronJobManager.AddAsync` inside `db.ExecuteCoordinatedTransactionAsync(...)` to commit domain writes and the job row as one unit. Requires a `Headless.CommitCoordination` provider (`AddPostgreSqlCommitCoordination()` / `AddSqlServerCommitCoordination()`) — a different subsystem from `AddHeadlessCoordination`. The coordinated path throws on any failure; wrap in `try/catch`.
-- Coordinated enqueue capture is synchronous: the `AsyncLocal` scope is captured when `AddAsync` is entered. Do not put `AddAsync` behind an `await` that executes before it — the scope is lost and the enqueue silently falls back to direct insert.
+- Establish commit coordination synchronously before entering asynchronous work. The provided `ExecuteCoordinatedTransactionAsync` helpers do this correctly; once established, the scope flows across awaits inside the operation, so domain writes and message publishes may be awaited before `AddAsync`.
 - Use `[JobsConstructor]` (`JobsConstructorAttribute`) on the constructor the source generator should use when a class has multiple constructors.
 - For testing, call `options.DisableBackgroundServices()` to suppress background scheduler execution.
 - To use `JobsStartMode.Manual`, set `scheduler.StartMode = JobsStartMode.Manual` inside `ConfigureScheduler`.
@@ -210,7 +210,7 @@ await db.ExecuteCoordinatedTransactionAsync(
 ```
 
 **Footguns:**
-- Coordinated scope capture is synchronous at the point `AddAsync` is entered. Never put `AddAsync` behind an `await` that executes before it — the `AsyncLocal` scope is lost and the enqueue silently falls back to direct insert that auto-commits even if the outer transaction rolls back.
+- The ambient scope must be established synchronously; do not create a custom async factory that sets `ICurrentCommitCoordinator`. Use `ExecuteCoordinatedTransactionAsync` or a synchronous enlistment API. After enlistment, normal awaits inside the coordinated operation preserve the scope.
 - Coordinated enqueues in one scope must be sequential — the scope's DB connection/transaction is not thread-safe.
 - `AddAsync` / `AddBatchAsync` **throw** on failure (validation, dead/completed transaction, mis-wire). `Update` / `Delete` return `JobResult<T>` and do not throw.
 - A returned entity on the coordinated path means the row was **enlisted** (commits with the transaction), not that dispatch ran. The fallback poll sweep (`FallbackIntervalChecker`, default 30s) recovers a missed post-commit dispatch.
