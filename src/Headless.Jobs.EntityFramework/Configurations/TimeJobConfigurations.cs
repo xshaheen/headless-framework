@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Headless.Jobs.Configurations;
 
-public class TimeJobConfigurations<TTimeJob>(string schema = Constants.DefaultSchema)
+public class TimeJobConfigurations<TTimeJob>(string schema = JobDbConstants.DefaultSchema)
     : IEntityTypeConfiguration<TTimeJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
 {

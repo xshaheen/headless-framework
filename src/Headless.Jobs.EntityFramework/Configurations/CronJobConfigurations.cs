@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Headless.Jobs.Configurations;
 
-public class CronJobConfigurations<TCronJob>(string schema = Constants.DefaultSchema)
+public class CronJobConfigurations<TCronJob>(string schema = JobDbConstants.DefaultSchema)
     : IEntityTypeConfiguration<TCronJob>
     where TCronJob : CronJobEntity, new()
 {
