@@ -248,10 +248,9 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
     [Theory]
     [InlineData("Published")]
     [InlineData("Received")]
-    public async Task should_replace_standalone_status_index_with_status_added_composite(string table)
+    public async Task should_create_status_added_composite_index(string table)
     {
-        // #508 — ([StatusName],[Added]) serves the dashboard hourly-timeline query (StatusName seek +
-        // Added range scan) and subsumes the earlier standalone [StatusName] index (#8), which must be gone.
+        // #508 — the initializer creates the final ([StatusName],[Added]) dashboard index directly.
         const string schema = "status_added_index_test";
         var initializer = _CreateInitializer(schema, useStorageLock: false);
 
@@ -285,27 +284,6 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         ).ToList();
 
         compositeKeyColumns.Should().BeEquivalentTo(["StatusName", "Added"], opts => opts.WithStrictOrdering());
-
-        var standaloneCount = await connection.QueryFirstOrDefaultAsync<int>(
-            new CommandDefinition(
-                """
-                SELECT COUNT(1)
-                FROM sys.indexes i
-                INNER JOIN sys.tables t ON i.object_id = t.object_id
-                INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
-                WHERE s.name = @Schema AND t.name = @Table AND i.name = @IndexName
-                """,
-                new
-                {
-                    Schema = schema,
-                    Table = table,
-                    IndexName = $"IX_{schema}_{table}_StatusName",
-                },
-                cancellationToken: AbortToken
-            )
-        );
-
-        standaloneCount.Should().Be(0);
 
         // cleanup
         await connection.ExecuteAsync(

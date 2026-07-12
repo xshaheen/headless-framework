@@ -77,7 +77,7 @@ up automatically on the next startup.
   - `{schema}.published` - Published messages
   - `{schema}.received` - Received messages
 - Uses PostgreSQL `UUID` primary keys for message row IDs
-- Creates indexes for message queries (including `("StatusName","Added")` for dashboard timelines and a partial `("Version","ExpiresAt") WHERE "StatusName" = 'Queued'` index for the delayed scheduler)
+- Creates the final index shape directly (including `("StatusName","Added")` for dashboard timelines and a partial `("Version","ExpiresAt") WHERE "StatusName" = 'Queued'` index for the delayed scheduler); schema initialization does not alter legacy columns or drop superseded indexes
 - Best-effort `CREATE EXTENSION pg_trgm` for dashboard content search; trigram indexes are skipped when the extension is unavailable
 - Stores `IntentType` on published and received rows without a database default; runtime writes must provide the intent explicitly
 - Periodically cleans up expired messages

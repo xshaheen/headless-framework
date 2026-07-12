@@ -424,13 +424,10 @@ internal sealed class PostgreSqlStorageInitializer(
             -- take an AccessExclusiveLock and block all writers to the hot retry-pickup path during
             -- every replica boot.
             CREATE INDEX IF NOT EXISTS "idx_received_delayed" ON {GetReceivedTableName()} ("StatusName","ExpiresAt") WHERE "StatusName" = 'Delayed';
-            -- #508 — ("StatusName","Added") composite serves BOTH the dashboard hourly-timeline query
+            -- #508 — ("StatusName","Added") serves BOTH the dashboard hourly-timeline query
             -- (WHERE "StatusName"=$1 AND "Added" BETWEEN … — a StatusName seek + Added range scan) and the
-            -- per-status COUNTs in GetStatisticsAsync via its "StatusName" prefix. It strictly subsumes the
-            -- earlier standalone "StatusName" index (#8), which is dropped to avoid a redundant, write-
-            -- amplifying second index. The existing composite indexes lead with ExpiresAt/Version and so
-            -- serve neither predicate.
-            DROP INDEX IF EXISTS "{schema}"."idx_received_StatusName";
+            -- per-status COUNTs in GetStatisticsAsync via its "StatusName" prefix. The initializer creates
+            -- the final schema directly; it does not carry migration DDL for superseded index shapes.
             CREATE INDEX IF NOT EXISTS "idx_received_StatusName_Added" ON {GetReceivedTableName()} ("StatusName","Added");
 
             CREATE TABLE IF NOT EXISTS {GetPublishedTableName()}(
@@ -450,9 +447,6 @@ internal sealed class PostgreSqlStorageInitializer(
                 "MessageId" VARCHAR(200) NOT NULL
             );
 
-            ALTER TABLE {GetReceivedTableName()} ADD COLUMN IF NOT EXISTS "InlineAttempts" INT NOT NULL DEFAULT 0;
-            ALTER TABLE {GetPublishedTableName()} ADD COLUMN IF NOT EXISTS "InlineAttempts" INT NOT NULL DEFAULT 0;
-
             CREATE INDEX IF NOT EXISTS "idx_published_ExpiresAt_StatusName" ON {GetPublishedTableName()}("ExpiresAt","StatusName");
             CREATE INDEX IF NOT EXISTS "idx_published_Version_ExpiresAt_StatusName" ON {GetPublishedTableName()} ("Version","ExpiresAt","StatusName");
             -- #8 — see the matching comment on the received-table block above; the partial
@@ -465,9 +459,7 @@ internal sealed class PostgreSqlStorageInitializer(
             -- bitmap-OR with the Delayed partial index above instead of sequentially scanning a large
             -- Queued backlog (e.g. accumulated during broker downtime).
             CREATE INDEX IF NOT EXISTS "idx_published_Version_ExpiresAt_Queued" ON {GetPublishedTableName()} ("Version","ExpiresAt") WHERE "StatusName" = 'Queued';
-            -- #508 — see the received-table note above; ("StatusName","Added") composite replaces the
-            -- standalone "StatusName" index for the dashboard hourly-timeline query and statistics COUNTs.
-            DROP INDEX IF EXISTS "{schema}"."idx_published_StatusName";
+            -- #508 — see the received-table note above; create the final dashboard timeline/statistics index.
             CREATE INDEX IF NOT EXISTS "idx_published_StatusName_Added" ON {GetPublishedTableName()} ("StatusName","Added");
 
             """
