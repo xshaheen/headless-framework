@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging.Configuration;
 using Headless.Messaging.Exceptions;
 using Headless.Messaging.RabbitMq;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute.ExceptionExtensions;
 using RabbitMQ.Client;
@@ -20,7 +22,7 @@ public sealed class RabbitMqConsumerClientFactoryTests : TestBase
         var channel = Substitute.For<IChannel>();
 
         pool.Exchange.Returns("test.exchange");
-        pool.GetConnectionAsync().Returns(connection);
+        pool.GetConnectionAsync(Arg.Any<CancellationToken>()).Returns(connection);
         connection.CreateChannelAsync(Arg.Any<CreateChannelOptions?>(), Arg.Any<CancellationToken>()).Returns(channel);
 
         var options = Options.Create(
@@ -50,7 +52,8 @@ public sealed class RabbitMqConsumerClientFactoryTests : TestBase
         // given
         var pool = Substitute.For<IConnectionChannelPool>();
         pool.Exchange.Returns("test.exchange");
-        pool.GetConnectionAsync().ThrowsAsync(new InvalidOperationException("Connection failed"));
+        pool.GetConnectionAsync(Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("Connection failed"));
 
         var options = Options.Create(
             new RabbitMqMessagingOptions
@@ -79,7 +82,7 @@ public sealed class RabbitMqConsumerClientFactoryTests : TestBase
         var pool = Substitute.For<IConnectionChannelPool>();
         var innerException = new TimeoutException("Connection timed out");
         pool.Exchange.Returns("test.exchange");
-        pool.GetConnectionAsync().ThrowsAsync(innerException);
+        pool.GetConnectionAsync(Arg.Any<CancellationToken>()).ThrowsAsync(innerException);
 
         var options = Options.Create(
             new RabbitMqMessagingOptions
@@ -111,7 +114,7 @@ public sealed class RabbitMqConsumerClientFactoryTests : TestBase
         var channel = Substitute.For<IChannel>();
 
         pool.Exchange.Returns("test.exchange");
-        pool.GetConnectionAsync().Returns(connection);
+        pool.GetConnectionAsync(Arg.Any<CancellationToken>()).Returns(connection);
         connection.CreateChannelAsync(Arg.Any<CreateChannelOptions?>(), Arg.Any<CancellationToken>()).Returns(channel);
 
         var options = Options.Create(
@@ -131,6 +134,92 @@ public sealed class RabbitMqConsumerClientFactoryTests : TestBase
         await factory.CreateAsync("test-group", 5);
 
         // then - verify connection was retrieved during factory.CreateAsync
-        await pool.Received(1).GetConnectionAsync();
+        await pool.Received(1).GetConnectionAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_propagate_exact_token_to_connection_setup()
+    {
+        var pool = Substitute.For<IConnectionChannelPool>();
+        var connection = Substitute.For<IConnection>();
+        var channel = Substitute.For<IChannel>();
+        pool.Exchange.Returns("test.exchange");
+        pool.GetConnectionAsync(Arg.Any<CancellationToken>()).Returns(connection);
+        connection.CreateChannelAsync(Arg.Any<CreateChannelOptions?>(), Arg.Any<CancellationToken>()).Returns(channel);
+        var factory = new RabbitMqConsumerClientFactory(
+            Options.Create(
+                new RabbitMqMessagingOptions
+                {
+                    HostName = "localhost",
+                    UserName = "guest",
+                    Password = "guest",
+                }
+            ),
+            pool,
+            Substitute.For<IServiceProvider>()
+        );
+        using var cts = new CancellationTokenSource();
+
+        await factory.CreateAsync("test-group", 1, cts.Token);
+
+        await pool.Received(1).GetConnectionAsync(cts.Token);
+    }
+
+    [Fact]
+    public async Task should_not_wrap_connection_cancellation()
+    {
+        var pool = Substitute.For<IConnectionChannelPool>();
+        pool.Exchange.Returns("test.exchange");
+        pool.GetConnectionAsync(Arg.Any<CancellationToken>())
+            .Returns(call => Task.FromCanceled<IConnection>(call.Arg<CancellationToken>()));
+        var factory = new RabbitMqConsumerClientFactory(
+            Options.Create(
+                new RabbitMqMessagingOptions
+                {
+                    HostName = "localhost",
+                    UserName = "guest",
+                    Password = "guest",
+                }
+            ),
+            pool,
+            Substitute.For<IServiceProvider>()
+        );
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        var act = async () => await factory.CreateAsync("test-group", 1, cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task unavailable_broker_startup_should_finish_within_host_shutdown_timeout()
+    {
+        var rabbitOptions = Options.Create(
+            new RabbitMqMessagingOptions
+            {
+                HostName = "unavailable",
+                UserName = "guest",
+                Password = "guest",
+            }
+        );
+        await using var pool = new ConnectionChannelPool(
+            NullLogger<ConnectionChannelPool>.Instance,
+            Options.Create(new MessagingOptions { Version = "v1" }),
+            rabbitOptions,
+            async cancellationToken =>
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                return null!;
+            }
+        );
+        var factory = new RabbitMqConsumerClientFactory(rabbitOptions, pool, Substitute.For<IServiceProvider>());
+        var hostShutdownTimeout = TimeSpan.FromSeconds(1);
+        using var hostCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
+
+        var startup = factory.CreateAsync("test-group", 1, hostCts.Token);
+        var act = async () => await startup.WaitAsync(hostShutdownTimeout, AbortToken);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
     }
 }

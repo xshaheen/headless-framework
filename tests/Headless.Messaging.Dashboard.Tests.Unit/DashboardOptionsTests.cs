@@ -161,8 +161,7 @@ public sealed class DashboardOptionsTests : TestBase
     public void Validate_should_throw_for_Basic_without_credentials()
     {
         // given
-        var builder = new MessagingDashboardOptionsBuilder();
-        builder.Auth.Mode = AuthMode.Basic;
+        var builder = new MessagingDashboardOptionsBuilder().WithBasicAuth("admin", "password");
         builder.Auth.BasicCredentials = null;
 
         // when
@@ -176,8 +175,7 @@ public sealed class DashboardOptionsTests : TestBase
     public void Validate_should_throw_for_ApiKey_without_key()
     {
         // given
-        var builder = new MessagingDashboardOptionsBuilder();
-        builder.Auth.Mode = AuthMode.ApiKey;
+        var builder = new MessagingDashboardOptionsBuilder().WithApiKey("temp-key");
         builder.Auth.ApiKey = null;
 
         // when
@@ -191,8 +189,7 @@ public sealed class DashboardOptionsTests : TestBase
     public void Validate_should_throw_for_Custom_without_validator()
     {
         // given
-        var builder = new MessagingDashboardOptionsBuilder();
-        builder.Auth.Mode = AuthMode.Custom;
+        var builder = new MessagingDashboardOptionsBuilder().WithCustomAuth((_, _) => true);
         builder.Auth.CustomValidator = null;
 
         // when
@@ -200,6 +197,32 @@ public sealed class DashboardOptionsTests : TestBase
 
         // then
         act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void Validate_should_throw_when_no_auth_mode_configured()
+    {
+        // given — a builder where no WithXxx auth method (not even WithNoAuth) was ever called
+        var builder = new MessagingDashboardOptionsBuilder();
+
+        // when
+        var act = () => builder.Validate();
+
+        // then
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void Validate_should_pass_when_explicitly_opting_out_with_WithNoAuth()
+    {
+        // given
+        var builder = new MessagingDashboardOptionsBuilder().WithNoAuth();
+
+        // when
+        var act = () => builder.Validate();
+
+        // then
+        act.Should().NotThrow();
     }
 
     [Fact]

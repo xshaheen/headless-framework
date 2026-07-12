@@ -496,8 +496,11 @@ public sealed class EndToEndTests : TestBase
 
     private sealed class UnusedConsumerClientFactory : IConsumerClientFactory
     {
-        public Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent) =>
-            throw new InvalidOperationException("The queue-only transport harness test registers no consumers.");
+        public Task<IConsumerClient> CreateAsync(
+            string groupName,
+            byte groupConcurrent,
+            CancellationToken cancellationToken = default
+        ) => throw new InvalidOperationException("The queue-only transport harness test registers no consumers.");
     }
 
     // ─── Test 7: AddMessagingTestHarness registers into existing container ───

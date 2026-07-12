@@ -106,4 +106,4 @@ await db.ExecuteCoordinatedTransactionAsync(
 
 The coordinated path needs **two** separate registrations: `AddHeadlessCoordination(...)` (the `Headless.Coordination` distributed-lock/membership subsystem for the operational store) AND `Add{Provider}CommitCoordination()` (the `Headless.CommitCoordination` transactional scope subsystem). Similar names, different systems.
 
-`AddAsync` / `AddBatchAsync` **throw** on failure; wrap in `try/catch`. The scope capture is synchronous — do not `await` before calling `AddAsync` inside a coordinated scope or the scope is lost.
+`AddAsync` / `AddBatchAsync` **throw** on failure; wrap in `try/catch`. Establish the coordinated scope synchronously (the provided `ExecuteCoordinatedTransactionAsync` helpers do this correctly). Once established, the scope flows across awaits inside the operation, so domain writes and message publishes may be awaited before the job enqueue.

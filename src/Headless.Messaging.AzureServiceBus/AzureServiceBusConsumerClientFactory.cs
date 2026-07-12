@@ -13,12 +13,21 @@ internal sealed class AzureServiceBusConsumerClientFactory(
     IServiceProvider serviceProvider
 ) : IIntentAwareConsumerClientFactory
 {
-    public Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent)
+    public Task<IConsumerClient> CreateAsync(
+        string groupName,
+        byte groupConcurrent,
+        CancellationToken cancellationToken = default
+    )
     {
-        return CreateAsync(groupName, groupConcurrent, IntentType.Bus);
+        return CreateAsync(groupName, groupConcurrent, IntentType.Bus, cancellationToken);
     }
 
-    public async Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent, IntentType intentType)
+    public async Task<IConsumerClient> CreateAsync(
+        string groupName,
+        byte groupConcurrent,
+        IntentType intentType,
+        CancellationToken cancellationToken = default
+    )
     {
         // Bus groups are Azure subscriptions. Queue groups are framework-local
         // handler selectors; their broker entity names are validated on SubscribeAsync.
@@ -27,9 +36,11 @@ internal sealed class AzureServiceBusConsumerClientFactory(
             AzureServiceBusConsumerClient.CheckValidSubscriptionName(groupName);
         }
 
+        AzureServiceBusConsumerClient? client = null;
+
         try
         {
-            var client = new AzureServiceBusConsumerClient(
+            client = new AzureServiceBusConsumerClient(
                 loggerFactory.CreateLogger<AzureServiceBusConsumerClient>(),
                 groupName,
                 groupConcurrent,
@@ -38,12 +49,26 @@ internal sealed class AzureServiceBusConsumerClientFactory(
                 intentType
             );
 
-            await client.ConnectAsync().ConfigureAwait(false);
+            await client.ConnectAsync(cancellationToken).ConfigureAwait(false);
 
             return client;
         }
-        catch (Exception e)
+        catch (OperationCanceledException)
         {
+            if (client is not null)
+            {
+                await client.DisposeAsync().ConfigureAwait(false);
+            }
+
+            throw;
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            if (client is not null)
+            {
+                await client.DisposeAsync().ConfigureAwait(false);
+            }
+
             throw new BrokerConnectionException(e);
         }
     }

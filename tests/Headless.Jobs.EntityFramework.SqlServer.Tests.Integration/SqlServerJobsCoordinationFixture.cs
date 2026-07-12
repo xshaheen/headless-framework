@@ -3,6 +3,8 @@
 using System.Data.Common;
 using Headless.CommitCoordination;
 using Headless.Coordination;
+using Headless.Messaging;
+using Headless.Messaging.Configuration;
 using Headless.Testing.Testcontainers;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -37,6 +39,12 @@ public sealed class SqlServerJobsCoordinationFixture
         + "DROP TABLE IF EXISTS [jobs].[TimeJobs];"
         + "DROP TABLE IF EXISTS [jobs].[CronJobs];"
         + "IF EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'jobs') DROP SCHEMA [jobs];"
+        + "DROP TABLE IF EXISTS [messaging].[Published];"
+        + "DROP TABLE IF EXISTS [messaging].[Received];"
+        + "IF TYPE_ID(N'messaging.HeadlessMessagingIdList') IS NOT NULL DROP TYPE [messaging].[HeadlessMessagingIdList];"
+        + "IF TYPE_ID(N'messaging.HeadlessMessagingOwnerList') IS NOT NULL DROP TYPE [messaging].[HeadlessMessagingOwnerList];"
+        + "IF TYPE_ID(N'messaging.HeadlessMessagingPoisonMessageList') IS NOT NULL DROP TYPE [messaging].[HeadlessMessagingPoisonMessageList];"
+        + "IF EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'messaging') DROP SCHEMA [messaging];"
         + "DROP TABLE IF EXISTS [coordination_liveness];"
         + "DROP TABLE IF EXISTS [coordination_descriptor];"
         + "DROP TABLE IF EXISTS [coordination_node_generation];";
@@ -51,6 +59,8 @@ public sealed class SqlServerJobsCoordinationFixture
     public DbConnection CreateConnection() => new SqlConnection(ConnectionString);
 
     public void ConfigureCommitCoordination(IServiceCollection services) => services.AddSqlServerCommitCoordination();
+
+    public void ConfigureMessagingStorage(MessagingSetupBuilder setup) => setup.UseSqlServer(ConnectionString);
 
     public async Task RunCoordinatedTransactionAsync(
         IServiceProvider services,

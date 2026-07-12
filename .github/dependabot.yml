@@ -21,6 +21,11 @@ updates:
         update-types:
           - "minor"
           - "patch"
+    # Mirror the local 7-day supply-chain quarantine: don't open PRs for versions published <7 days ago
+    # (majors soak 14 days), so a compromised fresh release isn't auto-proposed before it's flagged.
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
     schedule:
       interval: "weekly"
       day: "tuesday"
@@ -36,6 +41,8 @@ updates:
       prefix: "build"
       include: "scope"
     open-pull-requests-limit: 2
+    cooldown:
+      default-days: 7
     schedule:
       interval: "weekly"
       day: "tuesday"
@@ -51,6 +58,8 @@ updates:
       prefix: "build"
       include: "scope"
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
     schedule:
       interval: "weekly"
       day: "tuesday"
@@ -73,6 +82,8 @@ updates:
         update-types:
           - "minor"
           - "patch"
+    cooldown:
+      default-days: 7
     schedule:
       interval: "weekly"
       day: "tuesday"
@@ -105,6 +116,9 @@ updates:
         applies-to: "security-updates"
         patterns:
           - "*"
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
     schedule:
       interval: "weekly"
       day: "tuesday"

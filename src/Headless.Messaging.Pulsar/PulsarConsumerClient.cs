@@ -39,21 +39,52 @@ internal sealed class PulsarConsumerClient(
         var serviceName = Assembly.GetEntryAssembly()?.GetName().Name!.ToLowerInvariant();
 
         // Pulsar.Client's SubscribeAsync lacks CancellationToken — use WaitAsync as a
-        // timeout guard that also honors the caller's token. Plan to migrate to DotPulsar
-        // (apache/pulsar-dotnet) when producer batching ships:
-        // https://github.com/apache/pulsar-dotpulsar/issues/7
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        cts.CancelAfter(TimeSpan.FromSeconds(30));
-        _consumerClient = await client
+        // timeout guard. Plan to migrate to DotPulsar (apache/pulsar-dotnet) when producer
+        // batching ships: https://github.com/apache/pulsar-dotpulsar/issues/7
+        var cts = TimeSpan.FromSeconds(30).ToCancellationTokenSource(cancellationToken);
+        var subscribeTask = client
             .NewConsumer()
             .Topics(topics)
             .SubscriptionName(GetSubscriptionName(groupName, intentType))
             .ConsumerName(serviceName)
             .SubscriptionType(SubscriptionType.Shared)
-            .SubscribeAsync()
-            .WaitAsync(cts.Token)
-            .ConfigureAwait(false);
+            .SubscribeAsync();
+
+        try
+        {
+            _consumerClient = await subscribeTask.WaitAsync(cts.Token).ConfigureAwait(false);
+            cts.Dispose();
+        }
+        catch
+        {
+#pragma warning disable CA2025 // The cleanup task owns both the SDK task and linked CTS until completion.
+            _DisposeWhenCompletedAsync(subscribeTask, cts).Forget();
+#pragma warning restore CA2025
+            throw;
+        }
+
         _ready.TrySetResult();
+    }
+
+    private static async Task _DisposeWhenCompletedAsync(
+        Task<IConsumer<byte[]>> consumerTask,
+        CancellationTokenSource cancellationTokenSource
+    )
+    {
+        try
+        {
+#pragma warning disable VSTHRD003 // Cleanup intentionally observes an SDK task started by SubscribeAsync.
+            var consumer = await consumerTask.ConfigureAwait(false);
+#pragma warning restore VSTHRD003
+            await consumer.DisposeAsync().ConfigureAwait(false);
+        }
+#pragma warning disable ERP022 // Best-effort cleanup for an SDK operation abandoned by caller cancellation.
+        catch { }
+#pragma warning restore ERP022
+        finally
+        {
+            cancellationTokenSource.Dispose();
+        }
     }
 
     internal static string GetSubscriptionName(string groupName, IntentType intentType)

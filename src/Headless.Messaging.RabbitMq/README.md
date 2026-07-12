@@ -14,6 +14,7 @@ Enables Headless bus and queue delivery over RabbitMQ using a topic exchange, qu
 - **Clustering**: Comma-separated broker host names for RabbitMQ cluster connectivity
 - **Queue Arguments**: Queue TTL, queue mode, and queue type are exposed through `RabbitMqMessagingOptions.QueueArguments`
 - **Consumer QoS**: Global and per-consumer prefetch configuration
+- **Host-Cancellable Startup**: Cancellation flows through connection, channel, exchange, queue, and binding operations.
 
 ## Installation
 

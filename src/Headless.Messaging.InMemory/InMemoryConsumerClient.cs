@@ -71,6 +71,7 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     public ValueTask SubscribeAsync(IEnumerable<string> messageNames, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNull(messageNames);
+        cancellationToken.ThrowIfCancellationRequested();
         _queue.Subscribe(_intentType, _groupId, messageNames);
         _ready.TrySetResult();
 

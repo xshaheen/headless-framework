@@ -16,6 +16,23 @@ namespace Tests;
 public sealed class RedisConsumerClientFactoryTests : TestBase
 {
     [Fact]
+    public async Task should_preserve_factory_cancellation()
+    {
+        var factory = new RedisConsumerClientFactory(
+            Options.Create(new RedisMessagingOptions { Configuration = ConfigurationOptions.Parse("localhost:6379") }),
+            Options.Create(new MessagingOptions()),
+            Substitute.For<IRedisStreamManager>(),
+            LoggerFactory.CreateLogger<RedisConsumerClient>()
+        );
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        var act = async () => await factory.CreateAsync("test-group", 1, cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
     public async Task should_create_consumer_client_with_specified_group()
     {
         // given

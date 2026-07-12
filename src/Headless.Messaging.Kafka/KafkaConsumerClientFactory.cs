@@ -20,13 +20,24 @@ internal sealed class KafkaConsumerClientFactory(
     IConsumerRegistry? consumerRegistry = null
 ) : IIntentAwareConsumerClientFactory
 {
-    public Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent)
+    public Task<IConsumerClient> CreateAsync(
+        string groupName,
+        byte groupConcurrent,
+        CancellationToken cancellationToken = default
+    )
     {
-        return CreateAsync(groupName, groupConcurrent, IntentType.Queue);
+        return CreateAsync(groupName, groupConcurrent, IntentType.Queue, cancellationToken);
     }
 
-    public Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent, IntentType intentType)
+    public Task<IConsumerClient> CreateAsync(
+        string groupName,
+        byte groupConcurrent,
+        IntentType intentType,
+        CancellationToken cancellationToken = default
+    )
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         if (intentType == IntentType.Bus)
         {
             throw new NotSupportedException(
@@ -44,7 +55,7 @@ internal sealed class KafkaConsumerClientFactory(
                 new KafkaConsumerClient(groupName, groupConcurrent, kafkaOptions, serviceProvider, config)
             );
         }
-        catch (Exception e)
+        catch (Exception e) when (e is not OperationCanceledException)
         {
             throw new BrokerConnectionException(e);
         }

@@ -33,8 +33,11 @@ public static class SetupJobsDashboard
     /// </remarks>
     /// <param name="jobsConfiguration">The jobs options builder.</param>
     /// <param name="configureDashboard">
-    /// Optional callback to configure the dashboard. When <see langword="null"/>, the dashboard is
-    /// served at <c>/jobs/dashboard</c> with CORS open to all origins and no authentication.
+    /// Callback to configure the dashboard. Authentication must be configured explicitly — via
+    /// <see cref="DashboardOptionsBuilder.WithBasicAuth"/>, <see cref="DashboardOptionsBuilder.WithApiKey"/>,
+    /// <see cref="DashboardOptionsBuilder.WithHostAuthentication"/>, <see cref="DashboardOptionsBuilder.WithCustomAuth"/>,
+    /// or explicitly opted out with <see cref="DashboardOptionsBuilder.WithNoAuth"/> — otherwise the host fails
+    /// to start. The dashboard is served at <c>/jobs/dashboard</c> with no CORS policy (same-origin only) by default.
     /// </param>
     public static JobsOptionsBuilder<TTimeJob, TCronJob> AddDashboard<TTimeJob, TCronJob>(
         this JobsOptionsBuilder<TTimeJob, TCronJob> jobsConfiguration,
@@ -43,10 +46,10 @@ public static class SetupJobsDashboard
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
         where TCronJob : CronJobEntity, new()
     {
-        var dashboardConfig = new DashboardOptionsBuilder
-        {
-            CorsPolicyBuilder = cors => cors.SetIsOriginAllowed(_ => true).AllowAnyHeader().AllowCredentials(),
-        };
+        // No CORS policy by default: the dashboard SPA is served from the same origin as its API, so no
+        // cross-origin access is required. Consumers serving the SPA cross-origin opt in explicitly via
+        // DashboardOptionsBuilder.SetCorsOrigins / SetCorsPolicy.
+        var dashboardConfig = new DashboardOptionsBuilder();
 
         configureDashboard?.Invoke(dashboardConfig);
 

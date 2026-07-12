@@ -124,6 +124,60 @@ internal static class RedisCacheEntryFrame
     }
 
     /// <summary>
+    /// Encodes a framed entry as a two-segment <see cref="ReadOnlySequence{T}"/> — the header/section prefix in
+    /// its own buffer, the caller's <paramref name="payload"/> spliced in as the second segment with NO copy
+    /// (#580 zero-concat writes). The frame layout has no value-length field (the value segment is implicitly
+    /// "to the end"), so the wire bytes are identical to the single-buffer <c>Encode</c> overloads'. The caller
+    /// owns the payload buffer and must keep it alive until the sequence is fully consumed — for a SE.Redis
+    /// write command that means until the command's await completes, since the sequence is read when the socket
+    /// write fires. A null value has no payload; encode it through the <see cref="RedisValue"/> overload instead.
+    /// </summary>
+    public static ReadOnlySequence<byte> EncodeSpliced(
+        ReadOnlyMemory<byte> payload,
+        DateTime? logicalExpiresAt,
+        DateTime? physicalExpiresAt,
+        TimeSpan? slidingExpiration,
+        DateTime? eagerRefreshAt = null,
+        string? etag = null,
+        DateTime? lastModifiedAt = null,
+        IReadOnlyCollection<string>? tags = null,
+        DateTime? createdAt = null
+    )
+    {
+        // valueLength: 0 sizes the buffer to exactly the header + optional-sections prefix.
+        var header = _BuildFrame(
+            0,
+            isNull: false,
+            logicalExpiresAt,
+            physicalExpiresAt,
+            slidingExpiration,
+            eagerRefreshAt,
+            etag,
+            lastModifiedAt,
+            tags,
+            createdAt,
+            out _
+        );
+
+        var first = new MemorySegment(header);
+        var last = first.Append(payload);
+
+        return new ReadOnlySequence<byte>(first, 0, last, payload.Length);
+    }
+
+    private sealed class MemorySegment : ReadOnlySequenceSegment<byte>
+    {
+        public MemorySegment(ReadOnlyMemory<byte> memory) => Memory = memory;
+
+        public MemorySegment Append(ReadOnlyMemory<byte> memory)
+        {
+            var next = new MemorySegment(memory) { RunningIndex = RunningIndex + Memory.Length };
+            Next = next;
+            return next;
+        }
+    }
+
+    /// <summary>
     /// Builds the framed buffer sized <c>payloadOffset + valueLength</c> with the full header and every present
     /// optional section written, leaving the value segment (from <paramref name="payloadOffset"/> to the end)
     /// uninitialized for the caller to fill. This is the payload-agnostic core shared by both <c>Encode</c>
@@ -308,21 +362,35 @@ internal static class RedisCacheEntryFrame
             return DecodedFrame.Unframed;
         }
 
-        var bytes = _ToBytes(value);
+        return DecodeMemory(_ToBytes(value));
+    }
 
-        if (bytes.Length < HeaderLength || bytes[0] != Magic)
+    /// <summary>
+    /// Decodes a frame directly from caller-owned contiguous bytes (e.g. a pooled <c>Lease&lt;byte&gt;</c> from
+    /// <c>StringGetLeaseAsync</c>) without materializing a <see cref="RedisValue"/> <c>byte[]</c>. The returned
+    /// <see cref="DecodedFrame.ValueSegment"/> is a slice of <paramref name="bytes"/> — its lifetime is the
+    /// caller's buffer lifetime, so pooled callers must not return the buffer to the pool while the segment is
+    /// still consumed. Named distinctly from <see cref="Decode(RedisValue)"/> because <c>byte[]</c> converts
+    /// implicitly to both <see cref="RedisValue"/> and <see cref="ReadOnlyMemory{T}"/>, so a shared name would
+    /// make every <c>byte[]</c> call site ambiguous (CS0121) and force an explicit cast.
+    /// </summary>
+    public static DecodedFrame DecodeMemory(ReadOnlyMemory<byte> bytes)
+    {
+        var span = bytes.Span;
+
+        if (span.Length < HeaderLength || span[0] != Magic)
         {
             return DecodedFrame.Unframed;
         }
 
         // Any other version (including the retired v1) reads as unframed legacy bytes: the value segment
         // layout is unknown, so the safe interpretation is a decode miss rather than a partial parse.
-        if (bytes[1] != Version)
+        if (span[1] != Version)
         {
             return DecodedFrame.Unframed;
         }
 
-        var flags = bytes[2];
+        var flags = span[2];
 
         var hasLogical = (flags & HasLogicalExpiresAtFlag) is not 0;
         var hasPhysical = (flags & HasPhysicalExpiresAtFlag) is not 0;
@@ -332,41 +400,41 @@ internal static class RedisCacheEntryFrame
         var hasLastModified = (flags & HasLastModifiedAtFlag) is not 0;
         var hasTags = (flags & HasTagsFlag) is not 0;
 
-        var logicalMs = hasLogical ? BinaryPrimitives.ReadInt64LittleEndian(bytes.AsSpan(3, sizeof(long))) : 0L;
-        var physicalMs = hasPhysical ? BinaryPrimitives.ReadInt64LittleEndian(bytes.AsSpan(11, sizeof(long))) : 0L;
+        var logicalMs = hasLogical ? BinaryPrimitives.ReadInt64LittleEndian(span.Slice(3, sizeof(long))) : 0L;
+        var physicalMs = hasPhysical ? BinaryPrimitives.ReadInt64LittleEndian(span.Slice(11, sizeof(long))) : 0L;
 
         // CreatedAt occupies a fixed v3 slot in the header (always present, gated by version not a flag). The
         // HeaderLength guard above already proved these bytes exist. The absent-sentinel decodes back to null.
-        var createdAtMs = BinaryPrimitives.ReadInt64LittleEndian(bytes.AsSpan(_CreatedAtOffset, sizeof(long)));
+        var createdAtMs = BinaryPrimitives.ReadInt64LittleEndian(span.Slice(_CreatedAtOffset, sizeof(long)));
         var hasCreatedAt = createdAtMs != CreatedAtAbsentSentinel;
 
         var offset = HeaderLength;
 
-        if (!_TryReadInt64(bytes, hasSliding, ref offset, out var slidingMs))
+        if (!_TryReadInt64(span, hasSliding, ref offset, out var slidingMs))
         {
             return DecodedFrame.Unframed;
         }
 
-        if (!_TryReadInt64(bytes, hasEagerRefresh, ref offset, out var eagerRefreshMs))
+        if (!_TryReadInt64(span, hasEagerRefresh, ref offset, out var eagerRefreshMs))
         {
             return DecodedFrame.Unframed;
         }
 
-        if (!_TryReadInt64(bytes, hasLastModified, ref offset, out var lastModifiedMs))
+        if (!_TryReadInt64(span, hasLastModified, ref offset, out var lastModifiedMs))
         {
             return DecodedFrame.Unframed;
         }
 
         string? etag = null;
 
-        if (hasETag && !_TryReadString(bytes, ref offset, out etag))
+        if (hasETag && !_TryReadString(span, ref offset, out etag))
         {
             return DecodedFrame.Unframed;
         }
 
         string[]? decodedTags = null;
 
-        if (hasTags && !_TryReadTags(bytes, ref offset, out decodedTags))
+        if (hasTags && !_TryReadTags(span, ref offset, out decodedTags))
         {
             return DecodedFrame.Unframed;
         }
@@ -394,7 +462,7 @@ internal static class RedisCacheEntryFrame
             LastModifiedAt: hasLastModified ? _FromUnixTimeMilliseconds(lastModifiedMs) : null,
             Tags: decodedTags is { Length: > 0 } ? decodedTags : null,
             CreatedAt: hasCreatedAt ? _FromUnixTimeMilliseconds(createdAtMs) : null,
-            ValueSegment: bytes.AsMemory(offset)
+            ValueSegment: bytes[offset..]
         );
     }
 
@@ -516,7 +584,7 @@ internal static class RedisCacheEntryFrame
         }
     }
 
-    private static bool _TryReadInt64(byte[] bytes, bool present, ref int offset, out long value)
+    private static bool _TryReadInt64(ReadOnlySpan<byte> bytes, bool present, ref int offset, out long value)
     {
         value = 0L;
 
@@ -530,12 +598,12 @@ internal static class RedisCacheEntryFrame
             return false;
         }
 
-        value = BinaryPrimitives.ReadInt64LittleEndian(bytes.AsSpan(offset, sizeof(long)));
+        value = BinaryPrimitives.ReadInt64LittleEndian(bytes.Slice(offset, sizeof(long)));
         offset += sizeof(long);
         return true;
     }
 
-    private static bool _TryReadString(byte[] bytes, ref int offset, out string? value)
+    private static bool _TryReadString(ReadOnlySpan<byte> bytes, ref int offset, out string? value)
     {
         value = null;
 
@@ -544,7 +612,7 @@ internal static class RedisCacheEntryFrame
             return false;
         }
 
-        int length = BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(offset, sizeof(ushort)));
+        int length = BinaryPrimitives.ReadUInt16LittleEndian(bytes.Slice(offset, sizeof(ushort)));
         offset += sizeof(ushort);
 
         if (bytes.Length < offset + length)
@@ -552,12 +620,12 @@ internal static class RedisCacheEntryFrame
             return false;
         }
 
-        value = Encoding.UTF8.GetString(bytes.AsSpan(offset, length));
+        value = Encoding.UTF8.GetString(bytes.Slice(offset, length));
         offset += length;
         return true;
     }
 
-    private static bool _TryReadTags(byte[] bytes, ref int offset, out string[]? tags)
+    private static bool _TryReadTags(ReadOnlySpan<byte> bytes, ref int offset, out string[]? tags)
     {
         tags = null;
 
@@ -566,7 +634,7 @@ internal static class RedisCacheEntryFrame
             return false;
         }
 
-        int count = BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(offset, sizeof(ushort)));
+        int count = BinaryPrimitives.ReadUInt16LittleEndian(bytes.Slice(offset, sizeof(ushort)));
         offset += sizeof(ushort);
 
         var decoded = new string[count];

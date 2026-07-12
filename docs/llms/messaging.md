@@ -207,7 +207,7 @@ services.AddHeadlessMessaging(setup =>
 - **Use `InMemory` + `InMemoryStorage` only for dev/testing**, never in production. Data is lost on restart.
 - **Add `Messaging.OpenTelemetry`** for tracing in any production deployment.
 - **Add `Messaging.Testing`** in test projects for integration testing with awaitable assertions. Use `AddMessagingTestHarness()` to decorate an existing host's DI container (WebApplicationFactory, IHost), or `MessagingTestHarness.CreateAsync()` for standalone harness.
-- **Add `Messaging.Dashboard`** when monitoring UI is needed; it defaults to no authentication and exposes operational message actions, so configure `WithBasicAuth`, `WithApiKey`, `WithHostAuthentication`, or `WithCustomAuth` plus explicit CORS before production exposure.
+- **Add `Messaging.Dashboard`** when monitoring UI is needed; it exposes operational message actions and requires an explicit authentication choice (the host fails to start otherwise), so configure `WithBasicAuth`, `WithApiKey`, `WithHostAuthentication`, or `WithCustomAuth` — and `SetCorsOrigins` if the SPA is served cross-origin — before production exposure.
 - **Messages are type-safe**: Define message types as classes/records. Register explicit consumers implementing `IConsume<TMessage>` with `setup.ForMessage<TMessage>(...)`. Use `setup.ForMessagesFromAssemblyContaining<TMarker>()` or `setup.ForMessagesFromAssembly(assembly)` inside `AddHeadlessMessaging(...)` for assembly scanning. Use the scan callback overloads to set per-consumer queue/bus intent, group, concurrency, handler id, circuit-breaker override, or `Skip()`; keep message-name overrides on explicit `ForMessage<TMessage>(...)` registrations.
 - **Library-owned consumers can register out of order**: `IServiceCollection.ForMessage<TMessage>(...)` can run before or after `AddHeadlessMessaging(...)` during service configuration — both entry points share one found-or-created `ConsumerRegistry`. `MessageName(...)` mappings are registered eagerly, so a publish that races ahead of startup (e.g. an `IHostedService` publishing in `StartAsync`) still resolves the explicit name rather than the convention fallback. Consumer metadata still drains before startup topology reads, so package setup methods do not need to force an app-level call order.
 - **Runtime handlers are first-class**: Use `IRuntimeSubscriber` for ephemeral broker-attached delegates. They share scoped DI, middleware, diagnostics, retry, and correlation semantics with class handlers.
@@ -223,6 +223,7 @@ services.AddHeadlessMessaging(setup =>
 - **Fail-fast defaults**: Duplicate consumer or runtime registrations are rejected by default. Anonymous runtime delegates must provide `HandlerId`.
 - **Telemetry parity**: Existing diagnostic listener and metric names stay stable across direct publish, outbox publish, and runtime subscriptions.
 - **Consumer lifecycle semantics**: `IConsumerLifecycle` runs per delivery on the scoped consumer instance. Do not treat it as application startup or shutdown.
+- **Consumer startup is host-cancellable**: consumer factory creation, metadata provisioning, and subscription receive the host-stopping token. Provider implementations preserve `OperationCanceledException`; do not wrap shutdown cancellation as a broker failure.
 - **Core handles outbox automatically** when paired with EF Core -- messages are stored in database before being dispatched to transport.
 - **Atomic outbox is on by default on the EF storage path** (`setup.UseEntityFramework<TContext>()`): a publish inside a coordinated transaction is atomic with the DB write, zero consumer wiring — do not hand-wire commit coordination for it. Opt out with `setup.UseEntityFramework<TContext>(o => o.EnableTransactionalOutbox = false)` (the opt-out travels with the EF storage choice). Raw-ADO paths (`UsePostgreSql`/`UseSqlServer` by connection string) stay explicit opt-in: wire `AddPostgreSqlCommitCoordination()`/`AddSqlServerCommitCoordination()` plus the coordinated-transaction helpers.
 - **Mis-wire fails loud at startup**: if the outbox is enabled but the commit interceptor is not firing, `CommitInterceptorStartupGate<TContext>` logs a warning by default; set `CommitProbeMode.Strict` (via `services.Configure<CommitInterceptorProbeOptions>(o => o.Mode = CommitProbeMode.Strict)`) to fail startup instead of shipping a silently non-transactional outbox.
@@ -442,10 +443,13 @@ Wires messaging into dependency injection: registration, publishing, dispatch, m
 - Strict publish tenancy via `RequireTenantOnPublish()`.
 - Storage-backed retry/outbox and cleanup processors.
 - Circuit breaker monitor/control APIs.
+- Host-cancellable consumer factory creation, metadata provisioning, and subscription.
 
 ### Design Notes
 
 Core owns logical metadata and provider-independent correctness. Provider packages own broker-specific values and limits. `CorrelationFrom(...)` is a universal logical knob; partition keys, routing keys, subject shards, and message group ids are provider hatches because their semantics differ.
+
+The public consumer startup contracts accept trailing optional cancellation tokens: both `IConsumerClientFactory.CreateAsync(...)` overload shapes, `IConsumerClient.FetchMessageNamesAsync(...)`, and `IConsumerClient.SubscribeAsync(...)`. Core passes the host-stopping token to metadata startup and a linked group token to worker creation and subscription. Implementations must let `OperationCanceledException` escape unchanged.
 
 The blessed cross-package SPI (the contracts that storage providers, transports, and dashboards resolve or implement) lives in the public `Headless.Messaging.Runtime` namespace: `IProcessingServer` (implement to attach a long-running unit to the bootstrap sequence) and `IConsumerServiceSelector` / `MethodMatcherCache` (inspect the resolved consumer topology). The `TransportNaming` (`WildcardToRegex`, `Normalize`) and `RuntimeTypeInspection` (`IsComplexType`, `DeclaresFieldOfType`) helpers in the same namespace are `internal` and shared with the first-party transports via `InternalsVisibleTo` — they are not part of the NuGet contract. These types were previously exposed under `Headless.Messaging.Internal`; that namespace now holds only genuine implementation detail. The monitoring status is a typed enum — `StatusName` (in `Headless.Messaging.Monitoring`, next to `MessageView`/`MessageQuery`) — so `MessageView.StatusName` and the `MessageQuery.StatusName` filter are compile-time safe. Storage providers persist and compare the enum member names verbatim as strings, so the SQL column contract is unchanged, and the dashboard serializes the status by name to keep the SPA wire shape stable.
 
@@ -988,11 +992,11 @@ builder.Services.AddHeadlessMessaging(setup =>
 
 ### Configuration
 
-Configured through `MessagingDashboardOptionsBuilder` inside `UseDashboard(...)`. Authentication is opt-in — with `WithNoAuth()` (the default) the dashboard is public, so configure authentication and CORS before production exposure.
+Configured through `MessagingDashboardOptionsBuilder` inside `UseDashboard(...)`. Authentication must be chosen explicitly — if no `WithXxx` auth method (including `WithNoAuth()`) is called, the host fails to start. No CORS policy is applied by default (same-origin only); use `SetCorsOrigins(...)` for the cross-origin SPA case.
 
 | Method | Default | Description |
 | --- | --- | --- |
-| `WithNoAuth()` | (default) | Public dashboard, no authentication; development or trusted-network use only. |
+| `WithNoAuth()` | (no default — auth is required) | Explicitly opt out of authentication; development or trusted-network use only. |
 | `WithBasicAuth(username, password)` | — | HTTP Basic authentication. |
 | `WithApiKey(apiKey)` | — | API-key authentication. |
 | `WithHostAuthentication(policy?)` | — | Reuse the host app's auth, with an optional authorization policy. |
@@ -1110,6 +1114,7 @@ Provides AWS SNS bus transport and AWS SQS queue transport.
 - SQS queues for queue delivery.
 - FIFO topic/queue support.
 - Producer hatch: `UseAws(aws => aws.MessageGroupId(message => ...))`.
+- Consumer startup honors host cancellation through SNS/SQS provisioning and subscription.
 
 ### Design Notes
 
@@ -1163,6 +1168,7 @@ Provides Azure Service Bus topic and queue transports.
 - Topic and queue transport support.
 - Session-aware processing.
 - Producer hatch: `UseAzureServiceBus(asb => asb.PartitionKey(message => ...))`.
+- Consumer startup honors host cancellation through client, topology, and processor setup.
 
 ### Design Notes
 
@@ -1209,6 +1215,7 @@ Provides in-process bus and queue transport for local development and tests.
 - `setup.UseInMemory()`.
 - In-process bus and queue delivery.
 - No external broker.
+- Consumer startup implements the same host-cancellable contract as broker-backed providers.
 
 ### Installation
 
@@ -1281,6 +1288,7 @@ Provides Kafka queue-intent transport for partitioned, consumer-group processing
 - Kafka topic auto-creation support.
 - Producer hatch: `UseKafka(kafka => kafka.PartitionBy(message => ...))`.
 - Consumer hatch: `consumer.UseKafka(kafka => kafka.IsolationLevel(IsolationLevel.ReadCommitted))`.
+- Consumer startup honors host cancellation while creating topics and subscriptions.
 
 ### Design Notes
 
@@ -1331,6 +1339,7 @@ Provides a NATS JetStream transport for Headless messaging so applications can p
 - Stream auto-creation and durable consumers.
 - Producer hatch: `UseNats(nats => nats.SubjectShard(message => ...))`.
 - Consumer hatch: `consumer.UseNats(nats => nats.Sharded())`.
+- Consumer startup honors host cancellation while connecting and provisioning JetStream topology, while preserving configured topology timeouts.
 
 ### Design Notes
 
@@ -1338,7 +1347,7 @@ Provides a NATS JetStream transport for Headless messaging so applications can p
 
 Shard symmetry is required: when a message uses `SubjectShard(...)` on the producer side, every consumer registered for that message must call `.UseNats(c => c.Sharded())` on its consumer registration. This is validated at startup and throws `InvalidOperationException` if violated. The reason: NATS delivers zero messages with no error when a FilterSubject does not match any shard subject — the asymmetry causes silent data loss that is otherwise very difficult to diagnose.
 
-Connection-specific failures (`NatsConnectionFailedException`, `NatsJSConnectionException`, or a `NatsException` wrapping `SocketException`/`IOException`) terminate the listener instead of retrying in place, so the supervising consumer register's health watchdog can replace the failed client. JetStream protocol, timeout, API, and other consumer errors retry per-subject with backoff. During host shutdown, NATS bounds its in-flight handler drain by the remaining shared `MessagingOptions.ShutdownTimeout` budget instead of starting an independent 30-second drain.
+Connection-specific failures (`NatsConnectionFailedException`, `NatsJSConnectionException`, or a `NatsException` wrapping `SocketException`/`IOException`) terminate the listener instead of retrying in place, so the supervising consumer register's health watchdog can replace the failed client. JetStream protocol, timeout, API, and other consumer errors retry per-subject with backoff. As a backstop, a run of `NatsMessagingOptions.MaxConsecutiveConsumeFailures` (default `10`) consecutive consume-loop failures of any exception type also terminates the listener for a supervised restart — bounding in-place spinning when a permanently dead connection surfaces an error that is not one of the classified connection-failure types (consumer connections set `MaxReconnectRetry = 0` and never reconnect on their own). The streak resets on any forward progress (a successful consumer bind or fetch). Consumer connection faults are owned by the health watchdog, not the per-message circuit breaker, which never observes connection-level failures. `NatsMessagingOptions.ConnectionPoolSize` defaults to `1` — a single connection multiplexes all publishers, so raise it only as a throughput knob. During host shutdown, NATS bounds its in-flight handler drain by the remaining shared `MessagingOptions.ShutdownTimeout` budget instead of starting an independent 30-second drain.
 
 ### Installation
 
@@ -1381,6 +1390,7 @@ Provides Apache Pulsar transport support.
 - `setup.UsePulsar(...)`.
 - Pulsar bus and queue transport support.
 - TLS-related options through provider configuration.
+- Consumer startup honors host cancellation while acquiring the client and subscribing, while preserving configured timeouts.
 
 ### Installation
 
@@ -1417,6 +1427,7 @@ Provides RabbitMQ exchange and queue transport support.
 - `setup.UseRabbitMq(...)`.
 - Bus exchange and queue delivery.
 - Consumer hatch: `consumer.UseRabbitMq(rabbit => rabbit.PrefetchCount(...))`.
+- Consumer startup threads host cancellation through connection, channel, exchange, queue, and binding operations.
 
 ### Design Notes
 
@@ -1467,6 +1478,7 @@ Provides Redis-backed messaging transport options.
 - `setup.UseRedis(...)`.
 - Redis pub/sub bus transport.
 - Redis transport support for messaging scenarios that can accept Redis delivery semantics.
+- Streams and Pub/Sub consumer startup honor host cancellation through connection, provisioning, and subscription.
 
 ### Installation
 
@@ -1521,6 +1533,10 @@ setup.UsePostgreSql(builder.Configuration.GetConnectionString("Messaging")!);
 
 Configure connection string, schema, table names, and provider-specific storage options through `PostgreSqlOptions`.
 
+- **`DdlCommandTimeout`** (`TimeSpan?`, default `null`): timeout budget for schema-init DDL — the `CREATE INDEX CONCURRENTLY` / `DROP INDEX CONCURRENTLY` builds, the `CREATE EXTENSION` probe, and the advisory-lock waits that gate them. Decoupled from the OLTP `MessagingOptions.CommandTimeout` (~30s) because these can run for minutes-to-hours on a large table; a premature kill leaves a `CONCURRENTLY` index `INVALID` for the next boot to repair. Default `null` (and `TimeSpan.Zero`) mean **no timeout** (wait indefinitely). A negative value is rejected at validation time.
+- **`pg_trgm` on managed PostgreSQL**: dashboard content (ILIKE) search uses GIN trigram indexes that need the `pg_trgm` extension. The initializer runs `CREATE EXTENSION IF NOT EXISTS pg_trgm` best-effort **outside** the schema transaction. On managed PostgreSQL (AWS RDS, Azure, Neon, Supabase) the app role usually lacks `CREATE EXTENSION`; it logs a warning, **skips the trigram content indexes**, and continues — write/retry paths are unaffected, only dashboard content search is disabled until a DBA pre-installs `pg_trgm`. (Previously `CREATE EXTENSION` ran as the first statement of the schema transaction, so a permission error rolled back the entire schema batch and left messaging dead at startup.)
+- **Bootstrap indexes**: fresh schemas directly create `("StatusName","Added")` indexes for dashboard timelines/statistics and a partial `("Version","ExpiresAt") WHERE "StatusName" = 'Queued'` index for delayed-message scheduling. The initializer is schema bootstrap, not a migration runner, so it does not alter legacy columns or drop superseded indexes.
+
 ### Dependencies
 
 Npgsql, EF Core provider packages, `Headless.Messaging.Core`.
@@ -1557,6 +1573,8 @@ setup.UseSqlServer(builder.Configuration.GetConnectionString("Messaging")!);
 ### Configuration
 
 Configure connection string, schema, table names, and provider-specific storage options through `SqlServerOptions`.
+
+Fresh schemas directly create `([StatusName],[Added])` indexes for dashboard timelines/statistics. The initializer creates the final schema shape and does not carry legacy migration DDL.
 
 ### Dependencies
 

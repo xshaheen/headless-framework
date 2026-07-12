@@ -35,6 +35,7 @@ internal sealed class RedisPubSubConsumerClient(
         CancellationToken cancellationToken = default
     )
     {
+        cancellationToken.ThrowIfCancellationRequested();
         return ValueTask.FromResult<ICollection<string>>([.. Argument.IsNotNull(messageNames)]);
     }
 
@@ -60,7 +61,19 @@ internal sealed class RedisPubSubConsumerClient(
                 continue;
             }
 
-            var queue = await subscriber.SubscribeAsync(RedisChannel.Literal(messageName)).ConfigureAwait(false);
+            var subscribeTask = subscriber.SubscribeAsync(RedisChannel.Literal(messageName));
+            ChannelMessageQueue queue;
+
+            try
+            {
+                queue = await subscribeTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                _UnsubscribeWhenCompletedAsync(subscribeTask).Forget();
+                throw;
+            }
+
             queue.OnMessage(_DispatchWithConcurrencyAsync);
             _subscriptions.Add(messageName, queue);
         }
@@ -78,6 +91,20 @@ internal sealed class RedisPubSubConsumerClient(
     public ValueTask WaitUntilReadyAsync(CancellationToken cancellationToken = default)
     {
         return new ValueTask(_ready.Task.WaitAsync(cancellationToken));
+    }
+
+    private static async Task _UnsubscribeWhenCompletedAsync(Task<ChannelMessageQueue> subscribeTask)
+    {
+        try
+        {
+#pragma warning disable VSTHRD003 // Cleanup intentionally observes an SDK task started by SubscribeAsync.
+            var queue = await subscribeTask.ConfigureAwait(false);
+#pragma warning restore VSTHRD003
+            await queue.UnsubscribeAsync().ConfigureAwait(false);
+        }
+#pragma warning disable ERP022 // Best-effort cleanup for an SDK operation abandoned by caller cancellation.
+        catch { }
+#pragma warning restore ERP022
     }
 
     public ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default)

@@ -29,7 +29,10 @@ internal sealed class RedisStreamManager(
         //The object returned from GetDatabase is a cheap pass - thru object, and does not need to be stored
         var database = _redis!.GetDatabase();
 
-        await database.TryGetOrCreateStreamConsumerGroupAsync(stream, consumerGroup).ConfigureAwait(false);
+        await database
+            .TryGetOrCreateStreamConsumerGroupAsync(stream, consumerGroup)
+            .WaitAsync(cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async Task PublishAsync(

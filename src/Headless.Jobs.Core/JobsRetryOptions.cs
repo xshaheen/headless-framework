@@ -21,9 +21,10 @@ public sealed class JobsRetryOptions
     public static Func<RetryPredicateArguments<object>, ValueTask<bool>> DefaultShouldHandle { get; } =
         static args =>
             ValueTask.FromResult(
-                args.Outcome.Exception is { } exception
-                    && exception is not OperationCanceledException
-                    && exception is not TerminateExecutionException
+                args.Outcome.Exception
+                    is not null
+                        and not OperationCanceledException
+                        and not TerminateExecutionException
             );
 
     /// <summary>

@@ -15,6 +15,18 @@ public sealed class KafkaConsumerClientFactoryTests : TestBase
     );
 
     [Fact]
+    public async Task should_preserve_factory_cancellation()
+    {
+        var factory = new KafkaConsumerClientFactory(_options, new ServiceCollection().BuildServiceProvider());
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        var act = async () => await factory.CreateAsync("test-group", 1, cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
     public async Task should_create_consumer_client_with_correct_group_name()
     {
         // given

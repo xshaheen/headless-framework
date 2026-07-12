@@ -90,6 +90,14 @@ public sealed class NatsPostgreSqlMessagingIntegrationTests(NatsPostgreSqlFixtur
         base.should_publish_callback_response_for_queue_request();
 
     [Fact]
+    public override Task should_publish_typed_null_callback_response() =>
+        base.should_publish_typed_null_callback_response();
+
+    [Fact]
+    public override Task should_publish_headers_only_callback_response() =>
+        base.should_publish_headers_only_callback_response();
+
+    [Fact]
     public override Task should_rewrite_callback_when_response_is_set() =>
         base.should_rewrite_callback_when_response_is_set();
 

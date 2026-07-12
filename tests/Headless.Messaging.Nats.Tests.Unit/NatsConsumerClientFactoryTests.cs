@@ -44,6 +44,18 @@ public sealed class NatsConsumerClientFactoryTests : TestBase
     }
 
     [Fact]
+    public async Task should_preserve_factory_cancellation()
+    {
+        var factory = new NatsConsumerClientFactory(_options, _serviceProvider);
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        var act = async () => await factory.CreateAsync("test-group", 1, cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
     public void should_implement_consumer_client_factory_interface()
     {
         var factory = new NatsConsumerClientFactory(_options, _serviceProvider);

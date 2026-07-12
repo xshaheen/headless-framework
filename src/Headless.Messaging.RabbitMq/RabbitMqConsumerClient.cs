@@ -69,7 +69,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
     {
         Argument.IsNotNull(messageNames);
 
-        await ConnectAsync().ConfigureAwait(false);
+        await ConnectAsync(cancellationToken).ConfigureAwait(false);
 
         foreach (var messageName in messageNames)
         {
@@ -77,7 +77,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
             var queueName = _GetQueueName(messageName);
             if (!_queueNames.Contains(queueName, StringComparer.Ordinal))
             {
-                await _DeclareQueueAsync(queueName).ConfigureAwait(false);
+                await _DeclareQueueAsync(queueName, cancellationToken).ConfigureAwait(false);
                 _queueNames.Add(queueName);
             }
 
@@ -89,7 +89,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
 
     public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
-        await ConnectAsync().ConfigureAwait(false);
+        await ConnectAsync(cancellationToken).ConfigureAwait(false);
 
         if (_consumerConfig?.PrefetchCount is { } configuredPrefetch)
         {
@@ -245,11 +245,11 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         //_connection?.Dispose();
     }
 
-    public async Task ConnectAsync()
+    public async Task ConnectAsync(CancellationToken cancellationToken = default)
     {
-        var connection = await _connectionChannelPool.GetConnectionAsync().ConfigureAwait(false);
+        var connection = await _connectionChannelPool.GetConnectionAsync(cancellationToken).ConfigureAwait(false);
 
-        await _semaphore.WaitAsync().ConfigureAwait(false);
+        await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             if (_channel?.IsClosed == false)
@@ -257,19 +257,26 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
                 return;
             }
 
-            var channel = await connection.CreateChannelAsync().ConfigureAwait(false);
+            var channel = await connection
+                .CreateChannelAsync(cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
 
             try
             {
                 await channel
-                    .ExchangeDeclareAsync(_exchangeName, RabbitMqMessagingOptions.ExchangeType, durable: true)
+                    .ExchangeDeclareAsync(
+                        _exchangeName,
+                        RabbitMqMessagingOptions.ExchangeType,
+                        durable: true,
+                        cancellationToken: cancellationToken
+                    )
                     .ConfigureAwait(false);
 
                 _channel = channel;
 
                 if (_intentType == IntentType.Bus && !_queueNames.Contains(_groupName, StringComparer.Ordinal))
                 {
-                    await _DeclareQueueAsync(_groupName).ConfigureAwait(false);
+                    await _DeclareQueueAsync(_groupName, cancellationToken).ConfigureAwait(false);
                     _queueNames.Add(_groupName);
                 }
             }
@@ -310,7 +317,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         return intentType == IntentType.Queue ? messageName : groupName;
     }
 
-    private async Task _DeclareQueueAsync(string queueName)
+    private async Task _DeclareQueueAsync(string queueName, CancellationToken cancellationToken)
     {
         var arguments = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
@@ -333,7 +340,8 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
                 _rabbitMqOptions.QueueOptions.Durable,
                 _rabbitMqOptions.QueueOptions.Exclusive,
                 _rabbitMqOptions.QueueOptions.AutoDelete,
-                arguments
+                arguments,
+                cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
     }

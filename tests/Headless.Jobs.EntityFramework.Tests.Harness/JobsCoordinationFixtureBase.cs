@@ -5,6 +5,9 @@ using Headless.Coordination;
 using Headless.Jobs;
 using Headless.Jobs.DbContextFactory;
 using Headless.Jobs.Enums;
+using Headless.Messaging;
+using Headless.Messaging.Configuration;
+using Headless.Messaging.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -55,6 +58,9 @@ public interface IJobsCoordinationFixture
 
     /// <summary>Registers this backend's commit-coordination provider (e.g. <c>services.AddPostgreSqlCommitCoordination()</c>).</summary>
     void ConfigureCommitCoordination(IServiceCollection services);
+
+    /// <summary>Wires this backend's relational messaging storage against <see cref="ConnectionString" />.</summary>
+    void ConfigureMessagingStorage(MessagingSetupBuilder setup);
 
     /// <summary>
     /// Opens a provider connection, begins a commit-coordinated transaction, enlists it, and runs
@@ -147,7 +153,11 @@ public static class JobsCoordinationFixtureExtensions
     /// A test time-job function is registered before the host's startup <c>Build()</c> so <c>AddAsync</c> validation
     /// passes (empty cron expression so the startup seeder ignores it).
     /// </summary>
-    public static IHost BuildCoordinatedEnqueueHost(this IJobsCoordinationFixture fixture, string nodeId)
+    public static IHost BuildCoordinatedEnqueueHost(
+        this IJobsCoordinationFixture fixture,
+        string nodeId,
+        bool includeMessaging = false
+    )
     {
         JobFunctionProvider.RegisterFunctions(
             new Dictionary<string, JobFunctionRegistration>(StringComparer.Ordinal)
@@ -186,6 +196,15 @@ public static class JobsCoordinationFixtureExtensions
                 ef.UseJobsDbContext<JobsDbContext>(fixture.ConfigureStore, schema: "jobs")
             );
         });
+
+        if (includeMessaging)
+        {
+            builder.Services.AddHeadlessMessaging(setup =>
+            {
+                setup.UseInMemory();
+                fixture.ConfigureMessagingStorage(setup);
+            });
+        }
 
         // AddCommitCoordination wins over the Jobs null-coordinator fallback (AddSingleton over TryAddSingleton),
         // so ICurrentCommitCoordinator resolves to the real scope stack that EnlistCommitCoordination pushes onto.
@@ -237,6 +256,17 @@ public static class JobsCoordinationFixtureExtensions
         this IJobsCoordinationFixture fixture,
         CancellationToken cancellationToken
     ) => _CountAsync(fixture, $"SELECT COUNT(*) FROM {fixture.QualifiedCronJobsTable};", cancellationToken);
+
+    /// <summary>Counts published outbox rows on an independent connection (observes committed state only).</summary>
+    public static Task<int> CountPublishedMessagesAsync(
+        this IJobsCoordinationFixture fixture,
+        IServiceProvider services,
+        CancellationToken cancellationToken
+    )
+    {
+        var table = services.GetRequiredService<IStorageInitializer>().GetPublishedTableName();
+        return _CountAsync(fixture, $"SELECT COUNT(*) FROM {table};", cancellationToken);
+    }
 
     private static async Task<int> _CountAsync(
         IJobsCoordinationFixture fixture,

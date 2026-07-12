@@ -30,6 +30,24 @@ public sealed class PostgreSqlOptions : PostgreSqlEntityFrameworkMessagingOption
     public NpgsqlDataSource? DataSource { get; set; }
 
     /// <summary>
+    /// Gets or sets the command timeout applied to schema-initialization DDL — the
+    /// <c>CREATE INDEX CONCURRENTLY</c> / <c>DROP INDEX CONCURRENTLY</c> builds, the
+    /// <c>CREATE EXTENSION</c> probe, and the advisory-lock waits that gate them.
+    /// <para>
+    /// These operations can legitimately run for minutes-to-hours on a large table, far longer than
+    /// the OLTP <c>MessagingOptions.CommandTimeout</c> (~30s) used for query/write paths. On timeout
+    /// PostgreSQL marks a <c>CONCURRENTLY</c> index <c>INVALID</c> and the next boot must repair it, so
+    /// this value is deliberately decoupled from the OLTP budget.
+    /// </para>
+    /// <para>
+    /// Default <see langword="null" /> means <b>no timeout</b> (wait indefinitely): the DDL runs with an
+    /// Npgsql <c>CommandTimeout</c> of <c>0</c>. Set a finite value to cap startup DDL. <see cref="TimeSpan.Zero"/>
+    /// is also treated as "no timeout". A negative value is rejected at validation time.
+    /// </para>
+    /// </summary>
+    public TimeSpan? DdlCommandTimeout { get; set; }
+
+    /// <summary>
     /// Creates an Npgsql connection from the configured data source.
     /// </summary>
     internal NpgsqlConnection CreateConnection()
@@ -63,6 +81,12 @@ internal sealed class PostgreSqlOptionsValidator : AbstractValidator<PostgreSqlO
             );
 
         RuleFor(x => x.OwnerColumnMaxLength).GreaterThanOrEqualTo(DataStorageConstants.MinimumOwnerColumnMaxLength);
+
+        // A negative DDL timeout is meaningless; null/Zero already express "no timeout".
+        RuleFor(x => x.DdlCommandTimeout!.Value)
+            .GreaterThanOrEqualTo(TimeSpan.Zero)
+            .When(x => x.DdlCommandTimeout is not null)
+            .WithMessage("DdlCommandTimeout must be greater than or equal to zero (zero or null means no timeout).");
     }
 }
 
