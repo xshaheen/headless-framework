@@ -20,10 +20,23 @@ public sealed class NatsMessagingOptions
     public string Servers { get; set; } = "nats://127.0.0.1:4222";
 
     /// <summary>
-    /// The number of <c>NatsConnection</c> instances in the shared connection pool. Connections
-    /// are selected round-robin; each connection multiplexes many subscribers. Defaults to <c>10</c>.
+    /// The number of <c>NatsConnection</c> instances in the shared publish connection pool. Connections
+    /// are selected round-robin; each connection is a single TCP socket that already multiplexes many
+    /// publishers and subscribers, so <c>1</c> is sufficient for the vast majority of workloads and is the
+    /// default. Raise this only as a throughput knob when a single connection's command writer becomes the
+    /// publish bottleneck under very high send rates; opening extra sockets otherwise just wastes resources.
     /// </summary>
-    public int ConnectionPoolSize { get; set; } = 10;
+    public int ConnectionPoolSize { get; set; } = 1;
+
+    /// <summary>
+    /// The number of consecutive consume-loop failures (JetStream consumer create/update or message fetch)
+    /// tolerated on a single subject listener before it is terminated for a supervised restart with a fresh
+    /// connection. The counter resets to zero on any forward progress (a successful consumer bind or fetch).
+    /// This bounds in-place spinning when a connection is permanently dead but the surfaced error is not one
+    /// of the classified connection-failure types (<c>MaxReconnectRetry = 0</c> means the client never
+    /// reconnects on its own). Defaults to <c>10</c>.
+    /// </summary>
+    public int MaxConsecutiveConsumeFailures { get; set; } = 10;
 
     /// <summary>
     /// When <see langword="true"/> (default), consumer clients auto-create JetStream streams on first
@@ -98,6 +111,7 @@ internal sealed class NatsMessagingOptionsValidator : AbstractValidator<NatsMess
     {
         RuleFor(x => x.Servers).NotEmpty();
         RuleFor(x => x.ConnectionPoolSize).GreaterThan(0);
+        RuleFor(x => x.MaxConsecutiveConsumeFailures).GreaterThan(0);
         RuleFor(x => x.StreamCreateTimeout).GreaterThan(TimeSpan.Zero);
     }
 }

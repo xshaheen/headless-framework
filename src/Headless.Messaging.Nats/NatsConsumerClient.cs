@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Net.Sockets;
 using Headless.Checks;
+using Headless.Messaging.Exceptions;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Runtime;
 using Headless.Messaging.Transport;
@@ -60,8 +62,10 @@ internal sealed class NatsConsumerClient(
 
     public async Task ConnectAsync(CancellationToken cancellationToken = default)
     {
-        // Consumer connections disable reconnect so failures propagate to the
-        // circuit breaker instead of being silently retried by the NATS client.
+        // Consumer connections disable client-side reconnect (MaxReconnectRetry = 0): a genuine connection
+        // failure surfaces out of the consume loop and terminates the listener, so the consumer register's
+        // health watchdog rebuilds it on a fresh connection instead of the NATS client silently retrying on a
+        // possibly-stale socket. The circuit breaker is per-message and never observes connection-level faults.
         var opts = _natsOptions.BuildNatsOpts() with
         {
             MaxReconnectRetry = 0,
@@ -343,6 +347,38 @@ internal sealed class NatsConsumerClient(
         var retryDelay = TimeSpan.FromSeconds(1);
         var nextOpts = timeout > TimeSpan.Zero ? new NatsJSNextOpts { Expires = timeout } : null;
         var readyReported = false;
+        var maxConsecutiveFailures = _natsOptions.MaxConsecutiveConsumeFailures;
+        var consecutiveFailures = 0;
+
+        // Escalates a run of consecutive consume-loop failures into a supervised restart. The counter resets
+        // on any forward progress (a successful consumer bind or fetch), so only a genuinely stuck loop — e.g.
+        // a dead, non-reconnecting connection whose error is not one of the classified connection-failure
+        // types — ever trips it. Surfaces a BrokerConnectionException (which the consumer register treats as a
+        // terminal broker fault), faulting startupReady and logging the ConnectError itself so both the
+        // inner-loop and outer-loop call sites terminate identically.
+        void RecordConsumeFailureOrThrow(Exception failure)
+        {
+            if (++consecutiveFailures < maxConsecutiveFailures)
+            {
+                return;
+            }
+
+            var terminal = new BrokerConnectionException(failure);
+
+            startupReady.TrySetException(terminal);
+            OnLogCallback?.Invoke(
+                new LogMessageEventArgs
+                {
+                    LogType = MqLogType.ConnectError,
+                    Reason = string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"NATS consume loop for stream '{streamName}' failed {consecutiveFailures} times consecutively, terminating listener for supervised restart: {failure}"
+                    ),
+                }
+            );
+
+            throw terminal;
+        }
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -353,6 +389,10 @@ internal sealed class NatsConsumerClient(
                     : await _jsContext!
                         .CreateOrUpdateConsumerAsync(streamName, consumerConfig, cancellationToken)
                         .ConfigureAwait(false);
+
+                // Binding the consumer is forward progress: clear any failure streak so a single later
+                // fetch blip cannot inherit an almost-tripped counter and force a spurious restart.
+                consecutiveFailures = 0;
 
                 if (!readyReported)
                 {
@@ -387,6 +427,8 @@ internal sealed class NatsConsumerClient(
                     }
                     catch (NatsJSApiException ex)
                     {
+                        RecordConsumeFailureOrThrow(ex);
+
                         OnLogCallback?.Invoke(
                             new LogMessageEventArgs
                             {
@@ -407,6 +449,8 @@ internal sealed class NatsConsumerClient(
                     }
                     catch (Exception ex)
                     {
+                        RecordConsumeFailureOrThrow(ex);
+
                         OnLogCallback?.Invoke(
                             new LogMessageEventArgs
                             {
@@ -420,12 +464,15 @@ internal sealed class NatsConsumerClient(
                         continue;
                     }
 
+                    // A returned fetch (a message or an Expires heartbeat) proves the connection is alive.
+                    consecutiveFailures = 0;
+                    retryDelay = TimeSpan.FromSeconds(1);
+
                     if (msg is null)
                     {
                         continue;
                     }
 
-                    retryDelay = TimeSpan.FromSeconds(1);
                     await _DispatchMessageAsync(msg, cancellationToken).ConfigureAwait(false);
                 }
             }
@@ -433,6 +480,14 @@ internal sealed class NatsConsumerClient(
             {
                 startupReady.TrySetCanceled(cancellationToken);
                 break;
+            }
+            catch (BrokerConnectionException)
+            {
+                // Raised by the consecutive-failure cap, which already faulted startupReady and logged the
+                // ConnectError. The NATS SDK never throws this framework type, so catching it here uniquely
+                // matches the cap signal; propagate so the listener terminates and the consumer register
+                // rebuilds this client on a fresh connection.
+                throw;
             }
             catch (Exception ex) when (_IsConnectionFailure(ex))
             {
@@ -450,6 +505,8 @@ internal sealed class NatsConsumerClient(
             }
             catch (Exception ex)
             {
+                RecordConsumeFailureOrThrow(ex);
+
                 OnLogCallback?.Invoke(
                     new LogMessageEventArgs
                     {
