@@ -1,11 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Coordination;
+using Headless.Jobs.DbContextFactory;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
 using Headless.Testing.Tests;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
@@ -171,6 +173,135 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
         }
     }
 
+    public virtual async Task direct_cron_claim_applies_the_full_acquire_predicate_matrix()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("direct-matrix-a");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            const string currentOwner = "direct-matrix-a@1";
+
+            var now = DateTime.UtcNow;
+            var executionTime = now.AddMinutes(1);
+            var expired = now.AddMinutes(-1);
+            var live = now.AddMinutes(5);
+            var cases = new[]
+            {
+                new DirectCronClaimCase("idle_unleased", JobStatus.Idle, null, NodeDeathPolicy.Retry, null, true),
+                new DirectCronClaimCase(
+                    "queued_unleased",
+                    JobStatus.Queued,
+                    "old@1",
+                    NodeDeathPolicy.Retry,
+                    null,
+                    true
+                ),
+                new DirectCronClaimCase(
+                    "expired_retry",
+                    JobStatus.Queued,
+                    "old@2",
+                    NodeDeathPolicy.Retry,
+                    expired,
+                    true
+                ),
+                new DirectCronClaimCase(
+                    "same_owner_live",
+                    JobStatus.Queued,
+                    currentOwner,
+                    NodeDeathPolicy.Skip,
+                    live,
+                    true
+                ),
+                new DirectCronClaimCase(
+                    "foreign_live",
+                    JobStatus.Queued,
+                    "foreign@1",
+                    NodeDeathPolicy.Retry,
+                    live,
+                    false
+                ),
+                new DirectCronClaimCase(
+                    "expired_mark_failed",
+                    JobStatus.Queued,
+                    "old@3",
+                    NodeDeathPolicy.MarkFailed,
+                    expired,
+                    false
+                ),
+                new DirectCronClaimCase(
+                    "expired_skip",
+                    JobStatus.Queued,
+                    "old@4",
+                    NodeDeathPolicy.Skip,
+                    expired,
+                    false
+                ),
+                new DirectCronClaimCase(
+                    "in_progress_unleased",
+                    JobStatus.InProgress,
+                    null,
+                    NodeDeathPolicy.Retry,
+                    null,
+                    false
+                ),
+            };
+
+            var contexts = new List<JobManagerDispatchContext>();
+            var expectedIds = new HashSet<Guid>();
+            foreach (var testCase in cases)
+            {
+                var cronId = Guid.NewGuid();
+                var occurrenceId = Guid.NewGuid();
+                await fixture.SeedCronJobAsync(cronId, testCase.Function, "* * * * *", testCase.Policy, ct);
+                await fixture.SeedCronOccurrenceAsync(
+                    occurrenceId,
+                    cronId,
+                    (int)testCase.Status,
+                    testCase.OwnerId,
+                    testCase.Policy,
+                    testCase.LockedUntil,
+                    executionTime,
+                    ct
+                );
+
+                contexts.Add(
+                    new JobManagerDispatchContext(cronId)
+                    {
+                        FunctionName = testCase.Function,
+                        Expression = "* * * * *",
+                        OnNodeDeath = testCase.Policy,
+                        NextCronOccurrence = new NextCronOccurrence(occurrenceId, now.AddMinutes(-5)),
+                    }
+                );
+
+                if (testCase.ShouldClaim)
+                {
+                    expectedIds.Add(occurrenceId);
+                }
+            }
+
+            var claims = await persistence
+                .QueueCronJobOccurrencesAsync((executionTime, contexts.ToArray()), ct)
+                .ToArrayAsync(ct);
+
+            claims.Select(x => x.Id).Should().BeEquivalentTo(expectedIds);
+            foreach (var claim in claims)
+            {
+                claim.OwnerId.Should().Be(currentOwner);
+                claim.LockedUntil.Should().BeAfter(now);
+            }
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
     public virtual async Task expired_fallback_cron_claim_requires_retry_policy()
     {
         var ct = AbortToken;
@@ -203,6 +334,87 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
             var claims = await persistence.QueueTimedOutCronJobOccurrencesAsync(ct).ToArrayAsync(ct);
 
             claims.Should().ContainSingle().Which.OnNodeDeath.Should().Be(NodeDeathPolicy.Retry);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    public virtual async Task many_synchronized_workers_claim_each_fallback_cron_occurrence_once()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("fallback-contention-a");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var cronId = Guid.NewGuid();
+            await fixture.SeedCronJobAsync(cronId, "fallback-contention", "* * * * *", NodeDeathPolicy.Retry, ct);
+            var executionTime = DateTime.UtcNow.AddMinutes(-2);
+            foreach (var index in Enumerable.Range(0, 100))
+            {
+                await fixture.SeedCronOccurrenceAsync(
+                    Guid.NewGuid(),
+                    cronId,
+                    (int)JobStatus.Idle,
+                    null,
+                    NodeDeathPolicy.Retry,
+                    null,
+                    executionTime.AddMilliseconds(index),
+                    ct
+                );
+            }
+
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var workers = Enumerable.Range(0, 100).Select(_ => _ClaimFallbackCronAsync(persistence, gate.Task, ct));
+            var claimsTask = Task.WhenAll(workers);
+
+            gate.SetResult();
+            var claims = (await claimsTask).SelectMany(x => x).ToArray();
+
+            claims.Select(x => x.Id).Should().OnlyHaveUniqueItems();
+            claims.Should().HaveCount(100);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    public virtual async Task incompatible_native_model_falls_back_to_ef_cas_through_production_registration()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildMappedHost<FilteredJobsDbContext>("cas-filter-a", "jobs");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync<FilteredJobsDbContext>(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            var visible = new TimeJobEntity
+            {
+                Id = Guid.NewGuid(),
+                Function = "visible",
+                ExecutionTime = DateTime.UtcNow.AddMinutes(-2),
+            };
+            var hidden = new TimeJobEntity
+            {
+                Id = Guid.NewGuid(),
+                Function = FilteredJobsDbContext.HiddenFunction,
+                ExecutionTime = DateTime.UtcNow.AddMinutes(-1),
+            };
+            await persistence.AddTimeJobsAsync([visible, hidden], ct);
+
+            var claims = await persistence.QueueTimedOutTimeJobsAsync(ct).ToArrayAsync(ct);
+
+            claims.Should().ContainSingle().Which.Id.Should().Be(visible.Id);
+            (await fixture.ReadTimeJobDetailAsync(visible.Id, ct)).OwnerId.Should().NotBeNullOrWhiteSpace();
+            (await fixture.ReadTimeJobDetailAsync(hidden.Id, ct)).OwnerId.Should().BeNull();
         }
         finally
         {
@@ -292,6 +504,27 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
         private int _reads;
 
         public override DateTimeOffset GetUtcNow() => Interlocked.Increment(ref _reads) == 1 ? startedAt : committedAt;
+    }
+
+    private sealed record DirectCronClaimCase(
+        string Function,
+        JobStatus Status,
+        string? OwnerId,
+        NodeDeathPolicy Policy,
+        DateTime? LockedUntil,
+        bool ShouldClaim
+    );
+
+    private sealed class FilteredJobsDbContext(DbContextOptions<FilteredJobsDbContext> options)
+        : JobsDbContext<TimeJobEntity, CronJobEntity>(options)
+    {
+        public const string HiddenFunction = "hidden-by-filter";
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+            modelBuilder.Entity<TimeJobEntity>().HasQueryFilter(x => x.Function != HiddenFunction);
+        }
     }
 
     private static TimeJobEntity _CreateJobTree(DateTime executionTime)

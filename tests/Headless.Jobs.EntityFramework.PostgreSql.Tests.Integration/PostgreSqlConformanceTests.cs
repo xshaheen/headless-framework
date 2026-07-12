@@ -106,8 +106,20 @@ public sealed class PostgreSqlClaimConformanceTests(PostgreSqlJobsCoordinationFi
         base.expired_existing_cron_claim_requires_retry_policy();
 
     [Fact]
+    public override Task direct_cron_claim_applies_the_full_acquire_predicate_matrix() =>
+        base.direct_cron_claim_applies_the_full_acquire_predicate_matrix();
+
+    [Fact]
     public override Task expired_fallback_cron_claim_requires_retry_policy() =>
         base.expired_fallback_cron_claim_requires_retry_policy();
+
+    [Fact]
+    public override Task many_synchronized_workers_claim_each_fallback_cron_occurrence_once() =>
+        base.many_synchronized_workers_claim_each_fallback_cron_occurrence_once();
+
+    [Fact]
+    public override Task incompatible_native_model_falls_back_to_ef_cas_through_production_registration() =>
+        base.incompatible_native_model_falls_back_to_ef_cas_through_production_registration();
 
     [Fact]
     public override Task concurrent_missing_cron_occurrence_creation_is_deduplicated() =>

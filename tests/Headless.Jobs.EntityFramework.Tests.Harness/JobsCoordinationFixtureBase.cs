@@ -102,8 +102,9 @@ public static class JobsCoordinationFixtureExtensions
         string nodeId,
         MembershipLostBehavior lostBehavior = MembershipLostBehavior.StopMembershipOnly,
         TimeProvider? timeProvider = null,
-        TimeSpan? leaseDuration = null
-    ) => _BuildHost<JobsDbContext>(fixture, nodeId, "jobs", lostBehavior, timeProvider, leaseDuration);
+        TimeSpan? leaseDuration = null,
+        bool useNativeClaims = true
+    ) => _BuildHost<JobsDbContext>(fixture, nodeId, "jobs", lostBehavior, timeProvider, leaseDuration, useNativeClaims);
 
     /// <summary>Builds a host with a custom Jobs DbContext so provider SQL can be verified against renamed mappings.</summary>
     public static IHost BuildMappedHost<TDbContext>(this IJobsCoordinationFixture fixture, string nodeId, string schema)
@@ -116,7 +117,8 @@ public static class JobsCoordinationFixtureExtensions
         string schema,
         MembershipLostBehavior lostBehavior,
         TimeProvider? timeProvider,
-        TimeSpan? leaseDuration = null
+        TimeSpan? leaseDuration = null,
+        bool useNativeClaims = true
     )
         where TDbContext : JobsDbContext<TimeJobEntity, CronJobEntity>
     {
@@ -152,7 +154,10 @@ public static class JobsCoordinationFixtureExtensions
             options.UseEntityFramework(ef =>
             {
                 ef.UseJobsDbContext<TDbContext>(fixture.ConfigureStore, schema);
-                fixture.ConfigureClaims(ef);
+                if (useNativeClaims)
+                {
+                    fixture.ConfigureClaims(ef);
+                }
             });
         });
 
