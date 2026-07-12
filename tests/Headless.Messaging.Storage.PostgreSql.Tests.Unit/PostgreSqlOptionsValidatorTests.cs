@@ -121,4 +121,59 @@ public sealed class PostgreSqlOptionsValidatorTests : TestBase
         result.IsValid.Should().BeFalse();
         result.Errors.Should().Contain(e => e.PropertyName == nameof(PostgreSqlOptions.OwnerColumnMaxLength));
     }
+
+    [Fact]
+    public void should_succeed_when_ddl_command_timeout_is_null()
+    {
+        // given — null (the default) means "no timeout" and is always valid.
+        var options = new PostgreSqlOptions
+        {
+            ConnectionString = "Host=localhost;Database=test",
+            DdlCommandTimeout = null,
+        };
+
+        // when
+        var result = _sut.Validate(options);
+
+        // then
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(0)] // zero also means "no timeout"
+    [InlineData(30)]
+    [InlineData(1800)]
+    public void should_succeed_when_ddl_command_timeout_is_zero_or_positive(int seconds)
+    {
+        // given
+        var options = new PostgreSqlOptions
+        {
+            ConnectionString = "Host=localhost;Database=test",
+            DdlCommandTimeout = TimeSpan.FromSeconds(seconds),
+        };
+
+        // when
+        var result = _sut.Validate(options);
+
+        // then
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void should_fail_when_ddl_command_timeout_is_negative()
+    {
+        // given
+        var options = new PostgreSqlOptions
+        {
+            ConnectionString = "Host=localhost;Database=test",
+            DdlCommandTimeout = TimeSpan.FromSeconds(-1),
+        };
+
+        // when
+        var result = _sut.Validate(options);
+
+        // then
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName.Contains(nameof(PostgreSqlOptions.DdlCommandTimeout)));
+    }
 }

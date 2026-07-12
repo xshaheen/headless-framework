@@ -1533,6 +1533,10 @@ setup.UsePostgreSql(builder.Configuration.GetConnectionString("Messaging")!);
 
 Configure connection string, schema, table names, and provider-specific storage options through `PostgreSqlOptions`.
 
+- **`DdlCommandTimeout`** (`TimeSpan?`, default `null`): timeout budget for schema-init DDL — the `CREATE INDEX CONCURRENTLY` / `DROP INDEX CONCURRENTLY` builds, the `CREATE EXTENSION` probe, and the advisory-lock waits that gate them. Decoupled from the OLTP `MessagingOptions.CommandTimeout` (~30s) because these can run for minutes-to-hours on a large table; a premature kill leaves a `CONCURRENTLY` index `INVALID` for the next boot to repair. Default `null` (and `TimeSpan.Zero`) mean **no timeout** (wait indefinitely). A negative value is rejected at validation time.
+- **`pg_trgm` on managed PostgreSQL**: dashboard content (ILIKE) search uses GIN trigram indexes that need the `pg_trgm` extension. The initializer runs `CREATE EXTENSION IF NOT EXISTS pg_trgm` best-effort **outside** the schema transaction. On managed PostgreSQL (AWS RDS, Azure, Neon, Supabase) the app role usually lacks `CREATE EXTENSION`; it logs a warning, **skips the trigram content indexes**, and continues — write/retry paths are unaffected, only dashboard content search is disabled until a DBA pre-installs `pg_trgm`. (Previously `CREATE EXTENSION` ran as the first statement of the schema transaction, so a permission error rolled back the entire schema batch and left messaging dead at startup.)
+- **Bootstrap indexes**: fresh schemas directly create `("StatusName","Added")` indexes for dashboard timelines/statistics and a partial `("Version","ExpiresAt") WHERE "StatusName" = 'Queued'` index for delayed-message scheduling. The initializer is schema bootstrap, not a migration runner, so it does not alter legacy columns or drop superseded indexes.
+
 ### Dependencies
 
 Npgsql, EF Core provider packages, `Headless.Messaging.Core`.
@@ -1569,6 +1573,8 @@ setup.UseSqlServer(builder.Configuration.GetConnectionString("Messaging")!);
 ### Configuration
 
 Configure connection string, schema, table names, and provider-specific storage options through `SqlServerOptions`.
+
+Fresh schemas directly create `([StatusName],[Added])` indexes for dashboard timelines/statistics. The initializer creates the final schema shape and does not carry legacy migration DDL.
 
 ### Dependencies
 
