@@ -994,6 +994,7 @@
           "Headless.Coordination.Core": "[1.0.0, )",
           "Headless.Jobs.Core": "[1.0.0, )",
           "Headless.Jobs.EntityFramework": "[1.0.0, )",
+          "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Core": "[1.0.0, )",
           "Headless.Messaging.InMemory": "[1.0.0, )",
           "Headless.Testing": "[1.0.0, )",
