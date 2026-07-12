@@ -17,6 +17,7 @@ public static class SetupSqlServerJobsEntityFramework
         /// <summary>
         /// Uses SQL Server atomic, read-past claims for the Jobs Entity Framework persistence provider.
         /// </summary>
+        /// <exception cref="ArgumentNullException"><paramref name="builder"/> is <see langword="null"/>.</exception>
         public JobsEfCoreOptionBuilder<TTimeJob, TCronJob> UseSqlServerClaims()
         {
             Argument.IsNotNull(builder);

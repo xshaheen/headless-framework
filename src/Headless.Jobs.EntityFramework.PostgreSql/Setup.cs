@@ -17,6 +17,7 @@ public static class SetupPostgreSqlJobsEntityFramework
         /// <summary>
         /// Uses PostgreSQL atomic, skip-locked claims for the Jobs Entity Framework persistence provider.
         /// </summary>
+        /// <exception cref="ArgumentNullException"><paramref name="builder"/> is <see langword="null"/>.</exception>
         public JobsEfCoreOptionBuilder<TTimeJob, TCronJob> UsePostgreSqlClaims()
         {
             Argument.IsNotNull(builder);
