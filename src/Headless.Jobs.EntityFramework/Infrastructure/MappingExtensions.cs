@@ -10,6 +10,18 @@ namespace Headless.Jobs.Infrastructure;
 
 internal static class MappingExtensions
 {
+    internal static TCronJob ProjectCronJob<TCronJob>(JobManagerDispatchContext item, string owner)
+        where TCronJob : CronJobEntity, new() =>
+        new()
+        {
+            Id = item.Id,
+            Function = item.FunctionName,
+            InitIdentifier = owner,
+            Expression = item.Expression,
+            Retries = item.Retries,
+            RetryIntervals = item.RetryIntervals,
+        };
+
     public static Expression<Func<TCronJob, CronJobEntity>> ForCronJobExpressions<TCronJob>()
         where TCronJob : CronJobEntity, new() =>
         e => new CronJobEntity

@@ -3,6 +3,8 @@
 using System.Data.Common;
 using Headless.CommitCoordination;
 using Headless.Coordination;
+using Headless.Jobs;
+using Headless.Jobs.Entities;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Testing.Testcontainers;
@@ -55,6 +57,9 @@ public sealed class SqlServerJobsCoordinationFixture
     public void ConfigureCoordination(HeadlessCoordinationSetupBuilder setup) => setup.UseSqlServer(ConnectionString);
 
     public void ConfigureStore(DbContextOptionsBuilder db) => db.UseSqlServer(ConnectionString);
+
+    public void ConfigureClaims(JobsEfCoreOptionBuilder<TimeJobEntity, CronJobEntity> builder) =>
+        builder.UseSqlServerClaims();
 
     public DbConnection CreateConnection() => new SqlConnection(ConnectionString);
 
