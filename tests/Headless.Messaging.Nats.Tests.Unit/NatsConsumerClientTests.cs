@@ -1087,7 +1087,7 @@ public sealed class NatsConsumerClientTests : TestBase
                 }
             },
         };
-        await client.SubscribeAsync(["orders"]);
+        await client.SubscribeAsync(["orders"], AbortToken);
         using var cts = new CancellationTokenSource();
 
         var listening = client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token).AsTask();
@@ -1111,7 +1111,7 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task ListeningAsync_should_reset_consecutive_failure_count_after_a_successful_fetch()
+    public async Task ListeningAsync_should_reset_failure_count_and_backoff_after_a_successful_fetch()
     {
         // given — fail, succeed, fail: with a reset on the successful heartbeat the streak never reaches the
         // cap of 2, so the listener must keep running instead of terminating.
@@ -1180,7 +1180,7 @@ public sealed class NatsConsumerClientTests : TestBase
                 }
             },
         };
-        await client.SubscribeAsync(["orders"]);
+        await client.SubscribeAsync(["orders"], AbortToken);
         using var cts = new CancellationTokenSource();
 
         var listening = client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token).AsTask();
@@ -1190,9 +1190,10 @@ public sealed class NatsConsumerClientTests : TestBase
             await firstFailureLogged.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
             timeProvider.Advance(TimeSpan.FromSeconds(5));
             await secondFailureLogged.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
-            timeProvider.Advance(TimeSpan.FromSeconds(5));
+            timeProvider.Advance(TimeSpan.FromSeconds(2));
 
-            // then — the loop reached the idle 4th fetch, so the reset prevented the cap from tripping
+            // then — the loop reached the idle 4th fetch after only the initial backoff, proving both the
+            // failure streak and the retry delay reset on the heartbeat
             await idled.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
             prematureTermination.Task.IsCompleted.Should().BeFalse("the streak reset on the heartbeat fetch");
             listening.IsCompleted.Should().BeFalse();
@@ -1200,6 +1201,67 @@ public sealed class NatsConsumerClientTests : TestBase
         finally
         {
             await _StopListeningAsync(listening, cts);
+        }
+    }
+
+    [Fact]
+    public async Task ListeningAsync_should_terminate_after_max_consecutive_consumer_bind_failures()
+    {
+        var timeProvider = new FakeTimeProvider();
+        var options = MsOptions.Options.Create(
+            new NatsMessagingOptions { Servers = "nats://localhost:4222", MaxConsecutiveConsumeFailures = 2 }
+        );
+        var firstFailureLogged = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var terminationLogged = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var bindFailure = new InvalidOperationException("bind failed");
+
+        await using var client = new NatsConsumerClient(
+            "test-group",
+            1,
+            options,
+            _serviceProvider,
+            (_, _, _) => Task.FromException<INatsJSConsumer>(bindFailure),
+            timeProvider: timeProvider
+        )
+        {
+            OnLogCallback = args =>
+            {
+                if (
+                    args.LogType == MqLogType.ExceptionReceived
+                    && args.Reason?.Contains("bind failed", StringComparison.Ordinal) == true
+                )
+                {
+                    firstFailureLogged.TrySetResult();
+                }
+
+                if (
+                    args.LogType == MqLogType.ConnectError
+                    && args.Reason?.Contains("consecutively", StringComparison.Ordinal) == true
+                )
+                {
+                    terminationLogged.TrySetResult();
+                }
+            },
+        };
+        await client.SubscribeAsync(["orders"], AbortToken);
+        using var cts = new CancellationTokenSource();
+
+        var listening = client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token).AsTask();
+        try
+        {
+            await firstFailureLogged.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+            timeProvider.Advance(TimeSpan.FromSeconds(2));
+            await terminationLogged.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+
+            var act = async () => await listening.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+            await act.Should()
+                .ThrowAsync<BrokerConnectionException>()
+                .WithInnerException<BrokerConnectionException, InvalidOperationException>();
+            listening.IsCompleted.Should().BeTrue("the startup failure must fault the listener");
+        }
+        finally
+        {
+            await _StopListeningIgnoringOutcomeAsync(listening, cts);
         }
     }
 

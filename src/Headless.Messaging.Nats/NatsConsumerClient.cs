@@ -466,13 +466,13 @@ internal sealed class NatsConsumerClient(
 
                     // A returned fetch (a message or an Expires heartbeat) proves the connection is alive.
                     consecutiveFailures = 0;
+                    retryDelay = TimeSpan.FromSeconds(1);
 
                     if (msg is null)
                     {
                         continue;
                     }
 
-                    retryDelay = TimeSpan.FromSeconds(1);
                     await _DispatchMessageAsync(msg, cancellationToken).ConfigureAwait(false);
                 }
             }
