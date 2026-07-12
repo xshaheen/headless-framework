@@ -7,6 +7,10 @@ namespace Headless.Jobs.Enums;
 /// Set on <c>TimeJobEntity.RunCondition</c> when building chained job trees via
 /// <c>FluentChainJobBuilder</c>.
 /// </summary>
+/// <remarks>
+/// New members may be added in future versions; consumers assign this enum rather than
+/// <see langword="switch"/>-ing on incoming values, so existing members and their explicit values remain stable.
+/// </remarks>
 [PublicAPI]
 public enum RunCondition
 {

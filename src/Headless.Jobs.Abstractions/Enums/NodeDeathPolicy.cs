@@ -7,6 +7,10 @@ namespace Headless.Jobs.Enums;
 /// dies. Applied by the dead-node sweep (terminal transitions) and by the claim predicate's lease-expiry arm
 /// (only <see cref="Retry"/> rows are speculatively re-claimable once their lease expires).
 /// </summary>
+/// <remarks>
+/// New members may be added in future versions; consumers assign this enum rather than
+/// <see langword="switch"/>-ing on incoming values, so existing members and their explicit values remain stable.
+/// </remarks>
 [PublicAPI]
 public enum NodeDeathPolicy
 {

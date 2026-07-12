@@ -5,6 +5,10 @@ namespace Headless.Jobs.Enums;
 /// <summary>
 /// Discriminates the two schedulable row types that flow through the Jobs execution pipeline.
 /// </summary>
+/// <remarks>
+/// New members may be added in future versions; consumers that <see langword="switch"/> on this enum
+/// should include a default arm.
+/// </remarks>
 [PublicAPI]
 public enum JobType
 {
