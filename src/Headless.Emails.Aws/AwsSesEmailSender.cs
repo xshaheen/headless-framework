@@ -94,9 +94,12 @@ internal sealed class AwsSesEmailSender(IAmazonSimpleEmailServiceV2 ses, ILogger
         {
             response = await ses.SendEmailAsync(request, cancellationToken).ConfigureAwait(false);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            // Caller cancellation is not a delivery failure — it propagates per the IEmailSender contract.
+            // Only the caller's own cancellation propagates per the IEmailSender contract. A non-caller
+            // cancellation — for example an AWS SDK internal HttpClient timeout surfacing as a
+            // TaskCanceledException while the caller's token is NOT cancelled — is a delivery failure and
+            // falls through to the general handler below.
             throw;
         }
         catch (AmazonSimpleEmailServiceV2Exception ex)
