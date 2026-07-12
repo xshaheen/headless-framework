@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Headless.Dashboard.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Cors.Infrastructure;
@@ -20,6 +21,10 @@ public sealed class DashboardOptionsBuilder
     // Clean authentication system
     internal AuthConfig Auth { get; set; } = new();
 
+    // Tracks whether an authentication mode was explicitly chosen. The dashboard fails closed at startup
+    // (see Validate) when this is false, so it cannot ship publicly by omission.
+    internal bool AuthConfigured { get; private set; }
+
     /// <summary>Optional custom middleware inserted into the dashboard pipeline.</summary>
     public Action<IApplicationBuilder>? CustomMiddleware { get; set; }
 
@@ -36,13 +41,27 @@ public sealed class DashboardOptionsBuilder
     internal JsonSerializerOptions? DashboardJsonOptions { get; set; }
 
     /// <summary>
-    /// Overrides the CORS policy applied to the dashboard endpoints. The default allows all origins
-    /// with any header and credentials.
+    /// Overrides the CORS policy applied to the dashboard endpoints. By default no CORS policy is applied:
+    /// the dashboard SPA is served from the same origin as its API, so no cross-origin access is required.
+    /// Prefer <see cref="SetCorsOrigins"/> for the common cross-origin case.
     /// </summary>
     /// <param name="corsPolicyBuilder">Callback to configure the CORS policy.</param>
     public DashboardOptionsBuilder SetCorsPolicy(Action<CorsPolicyBuilder> corsPolicyBuilder)
     {
         CorsPolicyBuilder = corsPolicyBuilder;
+        return this;
+    }
+
+    /// <summary>
+    /// Restricts cross-origin access to the given origins with a credentialed policy. Use this when the
+    /// dashboard SPA is served from a different origin than its API (see <see cref="SetBackendDomain"/>);
+    /// when they share an origin (the default) no CORS configuration is needed.
+    /// </summary>
+    /// <param name="origins">The exact allowed origins, e.g. <c>https://admin.example.com</c>. Must not be empty.</param>
+    public DashboardOptionsBuilder SetCorsOrigins(params string[] origins)
+    {
+        Argument.IsNotNullOrEmpty(origins);
+        CorsPolicyBuilder = cors => cors.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod().AllowCredentials();
         return this;
     }
 
@@ -75,6 +94,7 @@ public sealed class DashboardOptionsBuilder
     public DashboardOptionsBuilder WithNoAuth()
     {
         Auth.Mode = AuthMode.None;
+        AuthConfigured = true;
         return this;
     }
 
@@ -88,6 +108,7 @@ public sealed class DashboardOptionsBuilder
     {
         Auth.Mode = AuthMode.Basic;
         Auth.BasicCredentials = $"{username}:{password}".ToBase64();
+        AuthConfigured = true;
         return this;
     }
 
@@ -100,6 +121,7 @@ public sealed class DashboardOptionsBuilder
     {
         Auth.Mode = AuthMode.ApiKey;
         Auth.ApiKey = apiKey;
+        AuthConfigured = true;
         return this;
     }
 
@@ -116,6 +138,7 @@ public sealed class DashboardOptionsBuilder
     {
         Auth.Mode = AuthMode.Host;
         Auth.HostAuthorizationPolicy = policy;
+        AuthConfigured = true;
         return this;
     }
 
@@ -129,6 +152,7 @@ public sealed class DashboardOptionsBuilder
     {
         Auth.Mode = AuthMode.Custom;
         Auth.CustomValidator = validator;
+        AuthConfigured = true;
         return this;
     }
 
@@ -160,6 +184,15 @@ public sealed class DashboardOptionsBuilder
     /// <summary>Validate the authentication configuration</summary>
     internal void Validate()
     {
+        if (!AuthConfigured)
+        {
+            throw new InvalidOperationException(
+                "Dashboard authentication was not configured. Secure the dashboard with WithBasicAuth, WithApiKey, "
+                    + "WithHostAuthentication, or WithCustomAuth, or call WithNoAuth() to explicitly run it "
+                    + "unauthenticated (development or trusted-network use only)."
+            );
+        }
+
         Auth.Validate();
     }
 }

@@ -1,10 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Primitives;
+using Headless.Testing.Tests;
 
 namespace Tests.Primitives;
 
-public sealed class AsyncEventTests
+public sealed class AsyncEventTests : TestBase
 {
     private sealed class TestEventArgs : EventArgs;
 
@@ -34,7 +35,9 @@ public sealed class AsyncEventTests
         using var _3 = asyncEvent.AddHandler(lastHandler);
 
         // when
-        var exception = await Record.ExceptionAsync(() => asyncEvent.InvokeAsync(this, new TestEventArgs()));
+        var exception = await Record.ExceptionAsync(() =>
+            asyncEvent.InvokeAsync(this, new TestEventArgs(), AbortToken)
+        );
 
         // then - the fault still surfaces, but every handler was invoked (no orphaned or skipped handlers)
         exception.Should().BeOfType<InvalidOperationException>();
@@ -55,7 +58,9 @@ public sealed class AsyncEventTests
         using var _2 = asyncEvent.AddHandler(throwTwo);
 
         // when
-        var exception = await Record.ExceptionAsync(() => asyncEvent.InvokeAsync(this, new TestEventArgs()));
+        var exception = await Record.ExceptionAsync(() =>
+            asyncEvent.InvokeAsync(this, new TestEventArgs(), AbortToken)
+        );
 
         // then - both faults surface together (flattened), not just the first
         exception.Should().BeOfType<AggregateException>();

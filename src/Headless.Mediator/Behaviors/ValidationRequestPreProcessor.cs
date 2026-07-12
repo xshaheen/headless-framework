@@ -13,10 +13,10 @@ namespace Headless.Mediator.Behaviors;
 /// </summary>
 /// <remarks>
 /// The pre-processor is transport-agnostic and throws <see cref="ValidationException" /> when
-/// any registered <see cref="IValidator{T}" /> returns one or more failures.
+/// any registered <see cref="IValidator{T}" /> returns one or more failures. Registered as an open-generic
+/// pipeline behavior by <see cref="Headless.Mediator.SetupMediator"/>; not intended for direct consumer use.
 /// </remarks>
-[PublicAPI]
-public sealed class ValidationRequestPreProcessor<TMessage, TResponse>(
+internal sealed class ValidationRequestPreProcessor<TMessage, TResponse>(
     IEnumerable<IValidator<TMessage>> validators,
     ILogger<ValidationRequestPreProcessor<TMessage, TResponse>> logger
 ) : MessagePreProcessor<TMessage, TResponse>

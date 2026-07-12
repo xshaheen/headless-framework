@@ -10,4 +10,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Payments.Paymob.CashIn.Tests.Unit" />
+  </ItemGroup>
 </Project>

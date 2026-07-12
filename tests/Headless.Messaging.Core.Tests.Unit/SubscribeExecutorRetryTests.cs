@@ -740,7 +740,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
 
         await executor.ExecuteAsync(message, _EmptyScope, _CreateDescriptor(), CancellationToken.None);
 
-        await invoker.DidNotReceiveWithAnyArgs().InvokeAsync(default!, default);
+        await invoker.DidNotReceiveWithAnyArgs().InvokeAsync(default!, AbortToken);
         message.Retries.Should().Be(1);
         message.InlineAttempts.Should().Be(0);
         await storage
@@ -774,10 +774,10 @@ public sealed class SubscribeExecutorRetryTests : TestBase
 
         result.Succeeded.Should().BeTrue();
         message.InlineAttempts.Should().Be(0);
-        await invoker.DidNotReceiveWithAnyArgs().InvokeAsync(default!, default);
+        await invoker.DidNotReceiveWithAnyArgs().InvokeAsync(default!, AbortToken);
         await storage
             .DidNotReceiveWithAnyArgs()
-            .ChangeReceiveRetryStateAsync(default!, default, default, default, default, default, default);
+            .ChangeReceiveRetryStateAsync(default!, default, default, default, default, default, AbortToken);
     }
 
     [Fact]
@@ -804,8 +804,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
             );
-        await storage.DidNotReceiveWithAnyArgs().LeaseReceiveAsync(default!, default, default);
-        await storage.DidNotReceiveWithAnyArgs().ReserveReceiveAttemptAsync(default!, default, default);
+        await storage.DidNotReceiveWithAnyArgs().LeaseReceiveAsync(default!, default, AbortToken);
+        await storage.DidNotReceiveWithAnyArgs().ReserveReceiveAttemptAsync(default!, default, AbortToken);
     }
 
     private sealed class ScopedMarker;

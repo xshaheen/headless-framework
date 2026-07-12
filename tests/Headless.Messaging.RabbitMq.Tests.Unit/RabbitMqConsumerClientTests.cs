@@ -42,8 +42,10 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         _serviceProvider = new ServiceCollection().BuildServiceProvider();
 
         _pool.Exchange.Returns("test.exchange");
-        _pool.GetConnectionAsync().Returns(_connection);
-        _connection.CreateChannelAsync(Arg.Any<CreateChannelOptions?>()).Returns(_channel);
+        _pool.GetConnectionAsync(Arg.Any<CancellationToken>()).Returns(_connection);
+        _connection
+            .CreateChannelAsync(Arg.Any<CreateChannelOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(_channel);
     }
 
     [Fact]
@@ -170,7 +172,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         var topics = new[] { "topic1", "topic2", "topic3" };
 
         // when
-        await client.SubscribeAsync(topics);
+        await client.SubscribeAsync(topics, AbortToken);
 
         // then
         await _channel
@@ -182,6 +184,52 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         await _channel
             .Received(1)
             .QueueBindAsync("test-group", "test.exchange", "topic3", null, false, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_propagate_exact_token_through_connection_channel_exchange_queue_and_binding()
+    {
+        await using var client = new RabbitMqConsumerClient(
+            "test-group",
+            1,
+            _pool,
+            _options,
+            _serviceProvider,
+            intentType: IntentType.Queue
+        );
+        using var cts = new CancellationTokenSource();
+
+        await client.SubscribeAsync(["orders.created"], cts.Token);
+
+        await _pool.Received(1).GetConnectionAsync(cts.Token);
+        await _connection.Received(1).CreateChannelAsync(Arg.Any<CreateChannelOptions?>(), cts.Token);
+        await _channel
+            .Received(1)
+            .ExchangeDeclareAsync(
+                "test.exchange",
+                RabbitMqMessagingOptions.ExchangeType,
+                true,
+                false,
+                null,
+                false,
+                false,
+                cts.Token
+            );
+        await _channel
+            .Received(1)
+            .QueueDeclareAsync(
+                "orders.created",
+                true,
+                false,
+                false,
+                Arg.Any<IDictionary<string, object?>>(),
+                false,
+                false,
+                cts.Token
+            );
+        await _channel
+            .Received(1)
+            .QueueBindAsync("orders.created", "test.exchange", "orders.created", null, false, cts.Token);
     }
 
     [Fact]

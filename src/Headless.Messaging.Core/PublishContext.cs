@@ -124,16 +124,16 @@ public abstract class PublishContext
     {
         if (IsCompleted)
         {
-            throw new InvalidOperationException("PublishingContext is read-only after next() returned (R10).");
+            throw new InvalidOperationException("PublishContext is read-only after next() returned (R10).");
         }
     }
 }
 
 /// <summary>Strongly-typed publish context for middleware registered against a specific message type.</summary>
 /// <typeparam name="TMessage">The message type being published.</typeparam>
-/// <remarks>Initializes a new instance of the <see cref="PublishingContext{TMessage}"/> class.</remarks>
+/// <remarks>Initializes a new instance of the <see cref="PublishContext{TMessage}"/> class.</remarks>
 [PublicAPI]
-public sealed class PublishingContext<TMessage>(
+public sealed class PublishContext<TMessage>(
     TMessage? content,
     IntentType intentType,
     MessageOptions? options,

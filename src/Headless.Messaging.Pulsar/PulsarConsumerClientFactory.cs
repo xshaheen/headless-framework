@@ -28,16 +28,25 @@ internal sealed class PulsarConsumerClientFactory : IIntentAwareConsumerClientFa
         }
     }
 
-    public Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent)
+    public Task<IConsumerClient> CreateAsync(
+        string groupName,
+        byte groupConcurrent,
+        CancellationToken cancellationToken = default
+    )
     {
-        return CreateAsync(groupName, groupConcurrent, IntentType.Bus);
+        return CreateAsync(groupName, groupConcurrent, IntentType.Bus, cancellationToken);
     }
 
-    public async Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent, IntentType intentType)
+    public async Task<IConsumerClient> CreateAsync(
+        string groupName,
+        byte groupConcurrent,
+        IntentType intentType,
+        CancellationToken cancellationToken = default
+    )
     {
         try
         {
-            var client = await _connection.RentClientAsync().ConfigureAwait(false);
+            var client = await _connection.RentClientAsync(cancellationToken).ConfigureAwait(false);
             var consumerClient = new PulsarConsumerClient(
                 _pulsarOptions,
                 client,
@@ -47,7 +56,7 @@ internal sealed class PulsarConsumerClientFactory : IIntentAwareConsumerClientFa
             );
             return consumerClient;
         }
-        catch (Exception e)
+        catch (Exception e) when (e is not OperationCanceledException)
         {
             throw new BrokerConnectionException(e);
         }

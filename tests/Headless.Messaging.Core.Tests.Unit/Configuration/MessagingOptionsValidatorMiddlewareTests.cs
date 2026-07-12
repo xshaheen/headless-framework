@@ -46,8 +46,8 @@ public sealed class MessagingOptionsValidatorMiddlewareTests : TestBase
                 MiddlewareDirection.Publish,
                 MiddlewareScope.Bus,
                 typeof(TypedBusPublishMiddleware),
-                typeof(IPublishMiddleware<PublishingContext<OrderPlaced>>),
-                typeof(PublishingContext<OrderPlaced>),
+                typeof(IPublishMiddleware<PublishContext<OrderPlaced>>),
+                typeof(PublishContext<OrderPlaced>),
                 MessageType: null,
                 GroupName: null
             )
@@ -120,9 +120,9 @@ public sealed class MessagingOptionsValidatorMiddlewareTests : TestBase
         public ValueTask InvokeAsync(ConsumeContext<OrderPlaced> context, Func<ValueTask> next) => next();
     }
 
-    private sealed class TypedBusPublishMiddleware : IPublishMiddleware<PublishingContext<OrderPlaced>>
+    private sealed class TypedBusPublishMiddleware : IPublishMiddleware<PublishContext<OrderPlaced>>
     {
-        public ValueTask InvokeAsync(PublishingContext<OrderPlaced> context, Func<ValueTask> next) => next();
+        public ValueTask InvokeAsync(PublishContext<OrderPlaced> context, Func<ValueTask> next) => next();
     }
 
     private sealed class ObjectBusConsumeMiddleware : IConsumeMiddleware<ConsumeContext>

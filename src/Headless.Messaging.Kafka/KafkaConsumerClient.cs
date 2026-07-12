@@ -61,7 +61,10 @@ internal sealed class KafkaConsumerClient : IConsumerClient
 
     public BrokerAddress BrokerAddress => new("kafka", BrokerAddressDisplay.FormatMany(_kafkaOptions.Servers));
 
-    public async ValueTask<ICollection<string>> FetchMessageNamesAsync(IEnumerable<string> messageNames)
+    public async ValueTask<ICollection<string>> FetchMessageNamesAsync(
+        IEnumerable<string> messageNames,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotNull(messageNames);
 
@@ -109,11 +112,12 @@ internal sealed class KafkaConsumerClient : IConsumerClient
                             ReplicationFactor = _kafkaOptions.TopicOptions.ReplicationFactor,
                         })
                     )
+                    .WaitAsync(cancellationToken)
                     .ConfigureAwait(false);
             }
 #pragma warning disable ERP022
             catch (CreateTopicsException e) when (e.Message.Contains("already exists", StringComparison.Ordinal)) { }
-            catch (Exception e)
+            catch (Exception e) when (e is not OperationCanceledException)
             {
                 var logArgs = new LogMessageEventArgs
                 {
@@ -128,9 +132,10 @@ internal sealed class KafkaConsumerClient : IConsumerClient
         return normalizedTopics;
     }
 
-    public ValueTask SubscribeAsync(IEnumerable<string> topics)
+    public ValueTask SubscribeAsync(IEnumerable<string> topics, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNull(topics);
+        cancellationToken.ThrowIfCancellationRequested();
 
         Connect();
 
@@ -222,7 +227,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
         return new ValueTask(_ready.Task.WaitAsync(cancellationToken));
     }
 
-    public ValueTask CommitAsync(object? sender)
+    public ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default)
     {
         // ReSharper disable once InconsistentlySynchronizedField -- volatile read; null-check fast path.
         if (!_TryGetDelivery(sender, out var delivery))
@@ -265,7 +270,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
         return ValueTask.CompletedTask;
     }
 
-    public ValueTask RejectAsync(object? sender)
+    public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
     {
         // ReSharper disable once InconsistentlySynchronizedField -- volatile read; null-check fast path.
         if (!_TryGetDelivery(sender, out var delivery))

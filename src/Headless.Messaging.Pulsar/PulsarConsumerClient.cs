@@ -32,7 +32,7 @@ internal sealed class PulsarConsumerClient(
 
     public BrokerAddress BrokerAddress => new("pulsar", BrokerAddressDisplay.Format(_pulsarOptions.ServiceUrl));
 
-    public async ValueTask SubscribeAsync(IEnumerable<string> topics)
+    public async ValueTask SubscribeAsync(IEnumerable<string> topics, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNull(topics);
 
@@ -41,17 +41,50 @@ internal sealed class PulsarConsumerClient(
         // Pulsar.Client's SubscribeAsync lacks CancellationToken — use WaitAsync as a
         // timeout guard. Plan to migrate to DotPulsar (apache/pulsar-dotnet) when producer
         // batching ships: https://github.com/apache/pulsar-dotpulsar/issues/7
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-        _consumerClient = await client
+        var cts = TimeSpan.FromSeconds(30).ToCancellationTokenSource(cancellationToken);
+        var subscribeTask = client
             .NewConsumer()
             .Topics(topics)
             .SubscriptionName(GetSubscriptionName(groupName, intentType))
             .ConsumerName(serviceName)
             .SubscriptionType(SubscriptionType.Shared)
-            .SubscribeAsync()
-            .WaitAsync(cts.Token)
-            .ConfigureAwait(false);
+            .SubscribeAsync();
+
+        try
+        {
+            _consumerClient = await subscribeTask.WaitAsync(cts.Token).ConfigureAwait(false);
+            cts.Dispose();
+        }
+        catch
+        {
+#pragma warning disable CA2025 // The cleanup task owns both the SDK task and linked CTS until completion.
+            _DisposeWhenCompletedAsync(subscribeTask, cts).Forget();
+#pragma warning restore CA2025
+            throw;
+        }
+
         _ready.TrySetResult();
+    }
+
+    private static async Task _DisposeWhenCompletedAsync(
+        Task<IConsumer<byte[]>> consumerTask,
+        CancellationTokenSource cancellationTokenSource
+    )
+    {
+        try
+        {
+#pragma warning disable VSTHRD003 // Cleanup intentionally observes an SDK task started by SubscribeAsync.
+            var consumer = await consumerTask.ConfigureAwait(false);
+#pragma warning restore VSTHRD003
+            await consumer.DisposeAsync().ConfigureAwait(false);
+        }
+#pragma warning disable ERP022 // Best-effort cleanup for an SDK operation abandoned by caller cancellation.
+        catch { }
+#pragma warning restore ERP022
+        finally
+        {
+            cancellationTokenSource.Dispose();
+        }
     }
 
     internal static string GetSubscriptionName(string groupName, IntentType intentType)
@@ -142,7 +175,8 @@ internal sealed class PulsarConsumerClient(
                         }
                     );
 
-                    await RejectAsync(currentMessage.MessageId).ConfigureAwait(false);
+                    // Settlement is must-complete: nack the malformed message regardless of shutdown.
+                    await RejectAsync(currentMessage.MessageId, CancellationToken.None).ConfigureAwait(false);
                     return;
                 }
 
@@ -151,12 +185,12 @@ internal sealed class PulsarConsumerClient(
         }
     }
 
-    public async ValueTask CommitAsync(object? sender)
+    public async ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default)
     {
         await _consumerClient!.AcknowledgeAsync((MessageId)sender!).ConfigureAwait(false);
     }
 
-    public async ValueTask RejectAsync(object? sender)
+    public async ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
     {
         if (sender is MessageId id)
         {

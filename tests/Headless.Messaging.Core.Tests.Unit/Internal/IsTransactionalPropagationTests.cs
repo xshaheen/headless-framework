@@ -20,7 +20,7 @@ using Microsoft.Extensions.Options;
 namespace Tests.Internal;
 
 /// <summary>
-/// Tests for F9 — <see cref="PublishingContext{TMessage}.IsTransactional"/>: surfaces the transactional
+/// Tests for F9 — <see cref="PublishContext{TMessage}.IsTransactional"/>: surfaces the transactional
 /// boundary as a typed contract so post-success middleware can detect when a publish is enlisted on an
 /// ambient commit coordinator whose relational commit drives outbox dispatch post-commit.
 /// </summary>
@@ -199,9 +199,9 @@ public sealed class IsTransactionalPropagationTests : TestBase
     }
 
     private sealed class IsTransactionalCapturingMiddleware(TransactionalCapture capture)
-        : IPublishMiddleware<PublishingContext<TestMessage>>
+        : IPublishMiddleware<PublishContext<TestMessage>>
     {
-        public async ValueTask InvokeAsync(PublishingContext<TestMessage> context, Func<ValueTask> next)
+        public async ValueTask InvokeAsync(PublishContext<TestMessage> context, Func<ValueTask> next)
         {
             await next().ConfigureAwait(false);
             capture.Captured = context.IsTransactional;

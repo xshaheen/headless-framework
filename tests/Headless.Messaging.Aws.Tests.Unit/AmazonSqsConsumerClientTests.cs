@@ -120,11 +120,34 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         _SetPrivateFields(client, sqsClient, string.Empty);
 
         // when
-        await client.SubscribeAsync(["https://sqs.local/orders"]);
+        await client.SubscribeAsync(["https://sqs.local/orders"], AbortToken);
 
         // then
         await sqsClient.DidNotReceive().CreateQueueAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
         await sqsClient.DidNotReceive().CreateQueueAsync(Arg.Any<CreateQueueRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task queue_intent_fetch_should_propagate_exact_token()
+    {
+        var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
+        await using var client = new AmazonSqsConsumerClient(
+            "test-group",
+            1,
+            _CreateOptions(),
+            logger,
+            IntentType.Queue
+        );
+        var sqsClient = Substitute.For<IAmazonSQS>();
+        sqsClient
+            .CreateQueueAsync(Arg.Any<CreateQueueRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new CreateQueueResponse { QueueUrl = "https://sqs.local/orders" });
+        _SetPrivateFields(client, sqsClient, string.Empty);
+        using var cts = new CancellationTokenSource();
+
+        await client.FetchMessageNamesAsync(["orders"], cts.Token);
+
+        await sqsClient.Received(1).CreateQueueAsync(Arg.Any<CreateQueueRequest>(), cts.Token);
     }
 
     [Fact]
@@ -520,7 +543,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         const string receiptHandle = "test-receipt-handle-123";
 
         // when
-        await client.CommitAsync(receiptHandle);
+        await client.CommitAsync(receiptHandle, AbortToken);
 
         // then
         await sqsClient
@@ -541,7 +564,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         const string receiptHandle = "test-receipt-handle-456";
 
         // when
-        await client.RejectAsync(receiptHandle);
+        await client.RejectAsync(receiptHandle, AbortToken);
 
         // then - verify visibility timeout is changed to 3 seconds for retry
         await sqsClient
@@ -778,7 +801,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         _SetPrivateFields(client, sqsClient, "http://test-queue");
 
         // when
-        await client.CommitAsync("invalid-receipt");
+        await client.CommitAsync("invalid-receipt", AbortToken);
 
         // then
         logCallbackInvoked.Should().BeTrue();
@@ -813,7 +836,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         _SetPrivateFields(client, sqsClient, "http://test-queue");
 
         // when
-        await client.RejectAsync("expired-receipt");
+        await client.RejectAsync("expired-receipt", AbortToken);
 
         // then
         logCallbackInvoked.Should().BeTrue();

@@ -18,6 +18,10 @@ namespace Headless.Messaging;
 /// column. The underlying values are part of the on-disk contract — <see cref="Bus"/> is always <c>0</c>
 /// and <see cref="Queue"/> is always <c>1</c>.
 /// </para>
+/// <para>
+/// Additional members may be added in future versions, so consumers that switch on this enum should
+/// include a default branch to handle values they do not recognize.
+/// </para>
 /// </remarks>
 [PublicAPI]
 #pragma warning disable CA1028 // Enum Storage should be Int32

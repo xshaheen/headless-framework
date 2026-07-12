@@ -10,4 +10,5 @@ namespace Headless.Imaging;
 /// members (for example <c>AddImageSharpContributors</c>).
 /// </summary>
 /// <param name="Services">The service collection being configured.</param>
+[PublicAPI]
 public readonly record struct AddImagingBuilder(IServiceCollection Services);

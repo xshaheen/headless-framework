@@ -789,7 +789,7 @@ public sealed class DispatcherTests : TestBase
             cancellationToken: AbortToken
         );
 
-        var dispose = dispatcher.DisposeAsync(TimeSpan.FromSeconds(2)).AsTask();
+        var dispose = dispatcher.DisposeAsync(TimeSpan.FromSeconds(2), AbortToken).AsTask();
         await flushStarted.Task.WaitAsync(AbortToken);
         dispose.IsCompleted.Should().BeFalse();
 
@@ -797,7 +797,7 @@ public sealed class DispatcherTests : TestBase
         await dispose.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
 
         releaseFlush.TrySetResult();
-        await dispatcher.DisposeAsync(TimeSpan.FromSeconds(2));
+        await dispatcher.DisposeAsync(TimeSpan.FromSeconds(2), AbortToken);
     }
 
     [Fact]
@@ -892,7 +892,7 @@ public sealed class DispatcherTests : TestBase
 
         // First dispose: the handler ignores cancellation, so completion must come from the
         // ShutdownTimeout branch (_CompleteTimedOutShutdownAsync), never from the handler.
-        var firstDispose = dispatcher.DisposeAsync(TimeSpan.FromSeconds(2)).AsTask();
+        var firstDispose = dispatcher.DisposeAsync(TimeSpan.FromSeconds(2), AbortToken).AsTask();
         for (var i = 0; i < 100 && !firstDispose.IsCompleted; i++)
         {
             timeProvider.Advance(TimeSpan.FromSeconds(1));
@@ -915,7 +915,7 @@ public sealed class DispatcherTests : TestBase
 
         // A reentrant dispose uses only the caller's remaining shared budget, not the full configured
         // ShutdownTimeout again. Eventual cleanup remains fault-observed after this join times out.
-        var secondDispose = dispatcher.DisposeAsync(TimeSpan.FromSeconds(1)).AsTask();
+        var secondDispose = dispatcher.DisposeAsync(TimeSpan.FromSeconds(1), AbortToken).AsTask();
         secondDispose.IsCompleted.Should().BeFalse("eventual cleanup still owns the in-flight handler");
         timeProvider.Advance(TimeSpan.FromSeconds(1));
         await secondDispose.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);

@@ -100,9 +100,10 @@ public sealed class NatsMessageConfigBuilder<TMessage>
     /// </summary>
     /// <param name="selector">
     /// A delegate that derives the shard token from the message instance.
-    /// The token must be a single safe NATS subject token: it cannot contain <c>.</c>, <c>*</c>,
-    /// <c>&gt;</c>, whitespace, or control characters. Invalid values are silently ignored at
-    /// publish time and the base subject is used instead (a warning is logged).
+    /// The token must be a single safe NATS subject token: it must be non-empty, at most 256 characters,
+    /// and cannot contain <c>.</c>, <c>*</c>, <c>&gt;</c>, whitespace, or control characters. A non-null
+    /// token that violates any of these rules causes an <see cref="InvalidOperationException"/> to be
+    /// thrown at publish time rather than being silently dropped.
     /// Return <see langword="null"/> to skip sharding for this message.
     /// </param>
     /// <returns>The same builder for chaining.</returns>

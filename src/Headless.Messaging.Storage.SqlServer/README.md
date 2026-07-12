@@ -9,7 +9,7 @@ Provides durable, transactional message storage using SQL Server with automatic 
 ## Key Features
 
 - **Transactional Outbox**: ACID-compliant message publishing with database changes
-- **Schema Bootstrap**: Automatic table and index creation, including durable bus/queue intent columns
+- **Schema Bootstrap**: Creates the final table and index shape directly, including durable bus/queue intent columns and `([StatusName],[Added])` dashboard indexes; it does not carry legacy migration DDL
 - **GUID Row IDs**: Message storage identifiers come from the `SqlServer` keyed `IGuidGenerator` and are persisted as SQL Server `uniqueidentifier` columns
 - **Intent-Aware Identity**: Received-message de-duplication includes version, message ID, group, and bus/queue intent
 - **Archival**: Automatic cleanup of old messages

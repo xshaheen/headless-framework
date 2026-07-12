@@ -214,7 +214,7 @@ public static class JobsCancellationTokenManager
 /// Carries the cancellation token source and scheduling metadata for a running job entry in
 /// <c>JobsCancellationTokenManager</c>.
 /// </summary>
-public class JobsCancellationTokenDetails
+internal sealed class JobsCancellationTokenDetails
 {
     /// <summary>The registered function name of the running job.</summary>
     public required string FunctionName { get; set; }
@@ -238,7 +238,7 @@ public class JobsCancellationTokenDetails
 /// <summary>
 /// Thread-safe HashSet implementation for concurrent operations
 /// </summary>
-public sealed class ConcurrentHashSet<T> : IDisposable
+internal sealed class ConcurrentHashSet<T> : IDisposable
 {
     private readonly HashSet<T> _set = [];
     private readonly ReaderWriterLockSlim _lock = new();

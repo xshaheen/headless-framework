@@ -13,7 +13,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Jobs.Customizer;
 
-public static class ServiceBuilder
+internal static class ServiceBuilder
 {
     internal static void UseApplicationDbContext<TContext, TTimeJob, TCronJob>(
         JobsEfCoreOptionBuilder<TTimeJob, TCronJob> builder,

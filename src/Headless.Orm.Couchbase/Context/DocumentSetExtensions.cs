@@ -13,6 +13,7 @@ namespace Headless.Couchbase.Context;
 /// (get, exists, upsert, insert, replace, remove, lock, touch, sub-document, scan) using the entity's
 /// string-keyed document ID derived from <c>IEntity.GetKey()</c>.
 /// </summary>
+[PublicAPI]
 public static class DocumentSetExtensions
 {
     #region KeyValue Collection Operations

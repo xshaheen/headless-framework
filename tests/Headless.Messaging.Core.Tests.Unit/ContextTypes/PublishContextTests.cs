@@ -11,7 +11,7 @@ public sealed class PublishContextTests : TestBase
     public void should_allow_options_and_delay_mutation_before_completion()
     {
         // given
-        var context = new PublishingContext<OrderPlaced>(
+        var context = new PublishContext<OrderPlaced>(
             new OrderPlaced("order-1"),
             IntentType.Bus,
             new PublishOptions { CorrelationId = "corr-1" },
@@ -35,7 +35,7 @@ public sealed class PublishContextTests : TestBase
     public void should_reject_options_and_delay_mutation_after_completion()
     {
         // given
-        var context = new PublishingContext<OrderPlaced>(
+        var context = new PublishContext<OrderPlaced>(
             new OrderPlaced("order-1"),
             IntentType.Bus,
             new PublishOptions { TenantId = "tenant-1" },
@@ -60,7 +60,7 @@ public sealed class PublishContextTests : TestBase
         // given
         using var first = new CancellationTokenSource();
         using var second = new CancellationTokenSource();
-        var context = new PublishingContext<OrderPlaced>(
+        var context = new PublishContext<OrderPlaced>(
             new OrderPlaced("order-1"),
             IntentType.Bus,
             options: null,
@@ -93,7 +93,7 @@ public sealed class PublishContextTests : TestBase
         };
 
         // when
-        var context = new PublishingContext<OrderPlaced>(
+        var context = new PublishContext<OrderPlaced>(
             new OrderPlaced("order-1"),
             IntentType.Bus,
             options,
@@ -121,7 +121,7 @@ public sealed class PublishContextTests : TestBase
         var options = new PublishOptions { Headers = headers };
 
         // when
-        var context = new PublishingContext<OrderPlaced>(
+        var context = new PublishContext<OrderPlaced>(
             new OrderPlaced("order-1"),
             IntentType.Bus,
             options,

@@ -2,8 +2,6 @@
 
 using Azure.Storage.Blobs;
 using Headless.Checks;
-using Headless.Tus.Options;
-using Headless.Tus.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;

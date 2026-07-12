@@ -295,7 +295,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
     {
         _EnsureInitialized();
         var storage = GetStorage();
-        var message = await storage.StoreMessageAsync("inline-cas", CreateMessage(), AbortToken);
+        var message = await storage.StoreMessageAsync("inline-cas", CreateMessage(), cancellationToken: AbortToken);
         (await storage.LeasePublishAsync(message, DateTime.UtcNow.AddMinutes(1), AbortToken)).Should().BeTrue();
         message.InlineAttempts = 1;
 
@@ -329,7 +329,11 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
     {
         _EnsureInitialized();
         var storage = GetStorage();
-        var message = await storage.StoreMessageAsync("inline-transition-cas", CreateMessage(), AbortToken);
+        var message = await storage.StoreMessageAsync(
+            "inline-transition-cas",
+            CreateMessage(),
+            cancellationToken: AbortToken
+        );
         (await storage.LeasePublishAsync(message, DateTime.UtcNow.AddMinutes(1), AbortToken)).Should().BeTrue();
         message.InlineAttempts = 1;
         (await storage.ReservePublishAttemptAsync(message, originalInlineAttempts: 0, AbortToken)).Should().BeTrue();
@@ -382,7 +386,11 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
     {
         _EnsureInitialized();
         var storage = GetStorage();
-        var message = await storage.StoreMessageAsync("expired-reservation", CreateMessage(), AbortToken);
+        var message = await storage.StoreMessageAsync(
+            "expired-reservation",
+            CreateMessage(),
+            cancellationToken: AbortToken
+        );
         var lease = TimeSpan.FromSeconds(10);
         (await storage.LeasePublishAsync(message, _fakeTimeProvider!.GetUtcNow().UtcDateTime.Add(lease), AbortToken))
             .Should()
@@ -420,7 +428,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
         _EnsureInitialized();
         var storage = GetStorage();
         NodeMembership.SetIdentity("owner-a");
-        var message = await storage.StoreMessageAsync("stale-success", CreateMessage(), AbortToken);
+        var message = await storage.StoreMessageAsync("stale-success", CreateMessage(), cancellationToken: AbortToken);
         var lease = TimeSpan.FromSeconds(10);
         (await storage.LeasePublishAsync(message, _fakeTimeProvider!.GetUtcNow().UtcDateTime.Add(lease), AbortToken))
             .Should()

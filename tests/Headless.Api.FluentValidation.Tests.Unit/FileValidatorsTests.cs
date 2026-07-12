@@ -385,7 +385,7 @@ public sealed class FileValidatorsTests : TestBase
         var result = validator.TestValidate(model);
 
         // then
-        result.Errors.Should().ContainSingle().Which.ErrorCode.Should().Be("file:not_empty");
+        result.Errors.Should().ContainSingle().Which.ErrorCode.Should().Be("g:file_not_empty");
     }
 
     #endregion

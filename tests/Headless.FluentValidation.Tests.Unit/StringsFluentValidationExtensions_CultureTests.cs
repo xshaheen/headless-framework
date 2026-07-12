@@ -84,7 +84,7 @@ public sealed class StringsFluentValidationExtensionsCultureTests
 
         var result = validator.TestValidate(model);
 
-        result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("strings:invalid_culture");
+        result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("g:invalid_culture");
     }
 
     #endregion

@@ -35,6 +35,18 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
     private readonly DashboardOptionsBuilder _dashboardOptions = Argument.IsNotNull(dashboardOptions);
     private readonly TimeProvider _timeProvider = Argument.IsNotNull(timeProvider);
 
+    // Graph endpoints materialize one entry per day across [pastDays, futureDays], so an unclamped span
+    // could drive multi-million-object allocation independent of stored row count. Clamp the request-supplied
+    // offsets to a bounded window (±1 year) before computing the range.
+    private const int _MaxGraphRangeDays = 366;
+
+    private static int _ClampGraphDays(int days) => Math.Clamp(days, -_MaxGraphRangeDays, _MaxGraphRangeDays);
+
+    // Inverted ranges (pastDays > futureDays) would otherwise pass a negative count to Enumerable.Range and
+    // throw; clamp the count to 0 so a nonsensical range yields an empty series instead of a 500.
+    private static int _GraphDayCount(DateTime startDate, DateTime endDate) =>
+        Math.Max(0, (endDate - startDate).Days + 1);
+
     public async Task<TTimeJob[]> GetTimeJobsAsync(CancellationToken cancellationToken = default)
     {
         return await _persistenceProvider.GetTimeJobsAsync(predicate: null, cancellationToken).ConfigureAwait(false);
@@ -80,8 +92,8 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
     )
     {
         var today = _timeProvider.GetUtcNow().UtcDateTime.Date;
-        var startDate = today.AddDays(pastDays);
-        var endDate = today.AddDays(futureDays);
+        var startDate = today.AddDays(_ClampGraphDays(pastDays));
+        var endDate = today.AddDays(_ClampGraphDays(futureDays));
 
         var timeJobs = await _persistenceProvider
             .GetTimeJobsAsync(
@@ -108,7 +120,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
 
         // Build the final result: one entry per date, with all statuses filled
         var allDates = Enumerable
-            .Range(0, (endDate - startDate).Days + 1)
+            .Range(0, _GraphDayCount(startDate, endDate))
             .Select(offset => startDate.AddDays(offset))
             .ToList();
 
@@ -138,8 +150,8 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
     )
     {
         var today = _timeProvider.GetUtcNow().UtcDateTime.Date;
-        var startDate = today.AddDays(pastDays);
-        var endDate = today.AddDays(futureDays);
+        var startDate = today.AddDays(_ClampGraphDays(pastDays));
+        var endDate = today.AddDays(_ClampGraphDays(futureDays));
 
         var cronJobOccurrences = await _persistenceProvider
             .GetAllCronJobOccurrencesAsync(
@@ -161,7 +173,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
             .ToList();
 
         var allDates = Enumerable
-            .Range(0, (endDate - startDate).Days + 1)
+            .Range(0, _GraphDayCount(startDate, endDate))
             .Select(offset => startDate.AddDays(offset))
             .ToList();
 
@@ -212,8 +224,8 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
     )
     {
         var today = _timeProvider.GetUtcNow().UtcDateTime.Date;
-        var startDate = today.AddDays(pastDays);
-        var endDate = today.AddDays(futureDays);
+        var startDate = today.AddDays(_ClampGraphDays(pastDays));
+        var endDate = today.AddDays(_ClampGraphDays(futureDays));
 
         var cronJobOccurrences = await _persistenceProvider
             .GetAllCronJobOccurrencesAsync(
@@ -235,7 +247,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
             .ToList();
 
         var allDates = Enumerable
-            .Range(0, (endDate - startDate).Days + 1)
+            .Range(0, _GraphDayCount(startDate, endDate))
             .Select(offset => startDate.AddDays(offset))
             .ToList();
 
@@ -577,7 +589,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
         var startDate = completeData[0].Date;
         var endDate = completeData[^1].Date;
         var allDates = Enumerable
-            .Range(0, (endDate - startDate).Days + 1)
+            .Range(0, _GraphDayCount(startDate, endDate))
             .Select(offset => startDate.AddDays(offset))
             .ToList();
 

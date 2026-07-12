@@ -10,6 +10,8 @@ using Headless.Jobs.Enums;
 using Headless.Jobs.Infrastructure;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
+using Headless.Messaging;
+using Headless.Messaging.Configuration;
 using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -423,6 +425,8 @@ internal sealed class SqlServerNativeClaimsFixture(string connectionString) : IJ
     public DbConnection CreateConnection() => new SqlConnection(ConnectionString);
 
     public void ConfigureCommitCoordination(IServiceCollection services) => services.AddSqlServerCommitCoordination();
+
+    public void ConfigureMessagingStorage(MessagingSetupBuilder setup) => setup.UseSqlServer(ConnectionString);
 
     public Task RunCoordinatedTransactionAsync(
         IServiceProvider services,

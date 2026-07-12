@@ -9,10 +9,12 @@ using Polly.Timeout;
 namespace Headless.Sms;
 
 /// <summary>
-/// Maps transport-level signals to a <see cref="SmsFailureKind"/> so providers classify failures consistently
-/// for retry and provider-routing decisions. Provider-specific signals (typed SDK exceptions, documented
-/// response contracts) are classified by each provider from its own contract — never inferred from generic
-/// HTTP semantics, which differ per backend.
+/// The single classifier that maps transport-level signals to a <see cref="SmsFailureKind"/> so providers
+/// classify failures consistently for retry and provider-routing decisions. It is Polly-aware (this package
+/// references Polly; <c>Headless.Sms.Abstractions</c> does not), so it lives here rather than on the
+/// contract type — providers pass its result to <c>SendSingleSmsResponse.FromException(exception, kind)</c>.
+/// Provider-specific signals (typed SDK exceptions, documented response contracts) are classified by each
+/// provider from its own contract — never inferred from generic HTTP semantics, which differ per backend.
 /// </summary>
 [PublicAPI]
 public static class SmsFailureKinds

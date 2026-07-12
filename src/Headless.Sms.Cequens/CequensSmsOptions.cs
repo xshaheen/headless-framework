@@ -11,6 +11,7 @@ namespace Headless.Sms.Cequens;
 /// 401 response. Supply <see cref="Token"/> to bypass dynamic token acquisition and use a static token
 /// instead (useful for testing or environments where outbound auth calls are restricted).
 /// </remarks>
+[PublicAPI]
 public sealed class CequensSmsOptions
 {
     /// <summary>The Cequens REST endpoint for sending a single SMS. Defaults to the Cequens production URL.</summary>

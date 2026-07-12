@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.ComponentModel;
 using Xunit.Sdk;
 using Xunit.v3;
 
@@ -12,7 +13,7 @@ namespace Headless.Testing.Retry;
 /// <see cref="DelayedMessageBus"/>; only the final attempt's result is forwarded.
 /// </summary>
 // This class is used when pre-enumeration is disabled, or when the theory data was not serializable.
-[PublicAPI]
+[EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class RetryDelayEnumeratedTestCase(
     int maxRetries,
     IXunitTestMethod testMethod,

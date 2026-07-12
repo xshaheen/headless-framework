@@ -184,12 +184,31 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
         try
         {
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
-            const string currentOwner = "direct-matrix-a@1";
 
             var now = DateTime.UtcNow;
             var executionTime = now.AddMinutes(1);
             var expired = now.AddMinutes(-1);
             var live = now.AddMinutes(5);
+            var ownerProbeCronId = Guid.NewGuid();
+            await fixture.SeedCronJobAsync(ownerProbeCronId, "owner_probe", "* * * * *", NodeDeathPolicy.Retry, ct);
+            var ownerProbe = await persistence
+                .QueueCronJobOccurrencesAsync(
+                    (
+                        executionTime,
+                        [
+                            new JobManagerDispatchContext(ownerProbeCronId)
+                            {
+                                FunctionName = "owner_probe",
+                                Expression = "* * * * *",
+                            },
+                        ]
+                    ),
+                    ct
+                )
+                .ToArrayAsync(ct);
+            var currentOwner = ownerProbe.Should().ContainSingle().Which.OwnerId;
+            currentOwner.Should().NotBeNullOrWhiteSpace();
+
             var cases = new[]
             {
                 new DirectCronClaimCase("idle_unleased", JobStatus.Idle, null, NodeDeathPolicy.Retry, null, true),

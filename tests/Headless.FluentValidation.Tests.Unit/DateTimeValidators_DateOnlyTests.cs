@@ -44,7 +44,7 @@ public sealed class DateTimeValidatorsDateOnlyTests
 
         if (expectError)
         {
-            result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("datetime:must_be_in_past");
+            result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("g:must_be_in_past");
         }
         else
         {
@@ -151,7 +151,7 @@ public sealed class DateTimeValidatorsDateOnlyTests
         // Born 2008-06-28: the 18th birthday is tomorrow, so the current age is 17.
         var result = validator.TestValidate(new Model(new DateOnly(2008, 6, 28)));
 
-        result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("datetime:minimum_age");
+        result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("g:minimum_age");
     }
 
     [Fact]
@@ -200,7 +200,7 @@ public sealed class DateTimeValidatorsDateOnlyTests
 
         var result = validator.TestValidate(new NullableModel(new DateOnly(2020, 1, 1)));
 
-        result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("datetime:minimum_age");
+        result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("g:minimum_age");
     }
 
     #endregion

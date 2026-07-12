@@ -11,7 +11,7 @@ namespace Headless.Messaging.Redis;
 /// A lazily-initialised, retrying Redis connection that establishes the <c>IConnectionMultiplexer</c>
 /// on first await. Up to five connection attempts are made with a two-second delay between retries.
 /// </summary>
-public class AsyncLazyRedisConnection(
+internal sealed class AsyncLazyRedisConnection(
     RedisMessagingOptions redisOptions,
     ILogger<AsyncLazyRedisConnection> logger,
     TimeProvider? timeProvider = null,
@@ -91,7 +91,7 @@ public class AsyncLazyRedisConnection(
 /// <summary>
 /// Wraps an established <c>IConnectionMultiplexer</c> with a capacity counter and owns its lifetime.
 /// </summary>
-public sealed class RedisConnection(IConnectionMultiplexer connection) : IDisposable
+internal sealed class RedisConnection(IConnectionMultiplexer connection) : IDisposable
 {
     private bool _isDisposed;
 

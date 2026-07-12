@@ -1,6 +1,6 @@
 using Headless.Coordination;
+using Headless.Jobs;
 using Headless.Jobs.DbContextFactory;
-using Headless.Jobs.DependencyInjection;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Interfaces.Managers;
 using Microsoft.EntityFrameworkCore;

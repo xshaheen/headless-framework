@@ -37,7 +37,7 @@ public static class MessagingDashboardEndpoints
             .WithName("Messaging_GetAuthInfo")
             .WithSummary("Get authentication configuration")
             .WithTags("Messaging Dashboard")
-            .RequireCors("Messaging_Dashboard_CORS")
+            .RequireCors("HeadlessMessagingDashboardCORS")
             .AllowAnonymous();
 
         endpoints
@@ -45,7 +45,7 @@ public static class MessagingDashboardEndpoints
             .WithName("Messaging_ValidateAuth")
             .WithSummary("Validate authentication credentials")
             .WithTags("Messaging Dashboard")
-            .RequireCors("Messaging_Dashboard_CORS")
+            .RequireCors("HeadlessMessagingDashboardCORS")
             .AllowAnonymous();
 
         // Always-anonymous endpoints
@@ -54,7 +54,7 @@ public static class MessagingDashboardEndpoints
             .WithName("Messaging_Health")
             .WithSummary("Health check endpoint")
             .WithTags("Messaging Dashboard")
-            .RequireCors("Messaging_Dashboard_CORS")
+            .RequireCors("HeadlessMessagingDashboardCORS")
             .AllowAnonymous();
 
         endpoints
@@ -62,14 +62,14 @@ public static class MessagingDashboardEndpoints
             .WithName("Messaging_PingServices")
             .WithSummary("Ping a registered node to measure latency")
             .WithTags("Messaging Dashboard")
-            .RequireCors("Messaging_Dashboard_CORS")
+            .RequireCors("HeadlessMessagingDashboardCORS")
             .AllowAnonymous();
 
         // Protected API group with gateway proxy filter
         var apiGroup = endpoints
             .MapGroup("/api")
             .WithTags("Messaging Dashboard")
-            .RequireCors("Messaging_Dashboard_CORS")
+            .RequireCors("HeadlessMessagingDashboardCORS")
             .AddEndpointFilter<GatewayProxyEndpointFilter>();
 
         // Apply host auth if configured
@@ -817,7 +817,7 @@ internal sealed class WarpResult
 
     public required List<SubInfo> Values { get; set; }
 
-    public sealed class SubInfo
+    internal sealed class SubInfo
     {
         public required string MessageName { get; set; }
 

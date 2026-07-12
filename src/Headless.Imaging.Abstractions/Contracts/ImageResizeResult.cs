@@ -78,6 +78,7 @@ public sealed class ImageStreamResizeResult : ImageProcessResult<ImageResizeCont
 
 /// <summary>Carries the output of a resize operation together with its metadata.</summary>
 /// <typeparam name="TContent">The type that holds the image bytes, typically <see cref="Stream"/>.</typeparam>
+[PublicAPI]
 public sealed class ImageResizeContent<TContent>
 {
     /// <summary>Gets the resized image content. For stream-based results this is a readable, seekable stream.</summary>

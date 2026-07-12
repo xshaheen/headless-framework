@@ -14,6 +14,7 @@ namespace Headless.Payments.Paymob.CashIn;
 /// proactively based on <c>TokenRefreshBuffer</c> in <c>PaymobCashInOptions</c>; concurrent callers are
 /// serialised through a semaphore so that only one refresh request is in flight at a time.
 /// </remarks>
+[PublicAPI]
 public interface IPaymobCashInAuthenticator
 {
     /// <summary>Exchanges the configured API key for a new authentication token unconditionally.</summary>

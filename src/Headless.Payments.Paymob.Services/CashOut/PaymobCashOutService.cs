@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Net;
 using Headless.Payments.Paymob.CashOut;
 using Headless.Payments.Paymob.CashOut.Internals;
 using Headless.Payments.Paymob.CashOut.Models;
@@ -28,6 +29,7 @@ namespace Headless.Payments.Paymob.Services.CashOut;
 /// ID and status.
 /// </para>
 /// </remarks>
+[PublicAPI]
 public interface ICashOutService
 {
     /// <summary>Disburses funds to a Vodafone Cash mobile wallet.</summary>
@@ -91,7 +93,7 @@ public interface ICashOutService
     );
 }
 
-public sealed class PaymobCashOutService(IPaymobCashOutBroker broker, ILogger<PaymobCashOutService> logger)
+internal sealed class PaymobCashOutService(IPaymobCashOutBroker broker, ILogger<PaymobCashOutService> logger)
     : ICashOutService
 {
     public async Task<CashOutResult<CashOutResponse>> DisburseAsync(
@@ -212,7 +214,7 @@ public sealed class PaymobCashOutService(IPaymobCashOutBroker broker, ILogger<Pa
         }
         catch (PaymobCashOutException e)
         {
-            logger.LogFailedToStartCashOut(e, e.Body);
+            logger.LogFailedToStartCashOut(e, e.StatusCode);
             return CashOutResult.Failure<CashOutTransaction>(
                 PaymobMessageDescriptor.CashOut.ProviderConnectionFailed(),
                 response: null
@@ -311,13 +313,19 @@ internal static partial class PaymobCashOutLoggerExtensions
     )]
     public static partial void LogUnexpectedAcceptCashOutResponse(this ILogger logger, CashOutTransaction? response);
 
+    // Logs the provider HTTP status (non-PII) instead of the raw response body, which may carry recipient
+    // PII / provider internal detail. The exception still carries the full message and stack.
     [LoggerMessage(
         EventId = 2,
         EventName = "FailedToStartCashOut",
         Level = LogLevel.Critical,
-        Message = "Failed to start cash out {Response}"
+        Message = "Failed to start cash out. Provider responded with status {StatusCode}"
     )]
-    public static partial void LogFailedToStartCashOut(this ILogger logger, Exception exception, string? response);
+    public static partial void LogFailedToStartCashOut(
+        this ILogger logger,
+        Exception exception,
+        HttpStatusCode statusCode
+    );
 
     [LoggerMessage(
         EventId = 3,

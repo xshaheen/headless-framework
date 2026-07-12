@@ -15,6 +15,7 @@ Enables bus fan-out through SNS topics and queue work delivery through SQS queue
 - **Malformed Message Handling**: Releases malformed SNS envelopes with a 3-second visibility timeout; an external SQS redrive policy controls eventual dead-letter delivery
 - **IAM Integration**: Automatic policy configuration
 - **FIFO Support**: Preserves `.fifo` suffixes and configures FIFO topics/queues when message names end with `.fifo`.
+- **Host-Cancellable Startup**: Consumer connection, topology provisioning, and subscription honor host shutdown.
 
 ## Design Notes
 

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
 using Headless.Jobs.Enums;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,6 +19,7 @@ namespace Headless.Jobs.Base;
 /// </remarks>
 /// <param name="jobFunctionContext">The base context supplied by the scheduler.</param>
 /// <param name="request">The deserialized request payload for this execution.</param>
+[PublicAPI]
 [method: SetsRequiredMembers]
 public class JobFunctionContext<TRequest>(JobFunctionContext jobFunctionContext, TRequest request)
     : JobFunctionContext(jobFunctionContext)
@@ -30,6 +32,7 @@ public class JobFunctionContext<TRequest>(JobFunctionContext jobFunctionContext,
 /// Runtime context passed to a job function method by the scheduler. Exposes scheduling metadata and
 /// provides hooks for cooperative cancellation and cron-skip control.
 /// </summary>
+[PublicAPI]
 public class JobFunctionContext
 {
     /// <summary>Initializes a new context; the scheduler populates its members via an object initializer.</summary>
@@ -59,8 +62,10 @@ public class JobFunctionContext
 
     /// <summary>
     /// Delegate invoked by <see cref="RequestCancellation"/> to signal the scheduler that this execution
-    /// should be cancelled cooperatively.
+    /// should be cancelled cooperatively. Wired by the scheduler; not intended to be set by consumers —
+    /// call <see cref="RequestCancellation"/> instead.
     /// </summary>
+    [EditorBrowsable(EditorBrowsableState.Never)]
     public required Action RequestCancelOperationAction { get; init; }
 
     /// <summary>Unique identifier of the job row (time job or cron occurrence) being executed.</summary>
@@ -103,12 +108,16 @@ public class JobFunctionContext
 /// <summary>
 /// Cron-specific runtime operations available to a job function during execution.
 /// </summary>
+[PublicAPI]
 public class CronOccurrenceOperations
 {
     /// <summary>
     /// Delegate invoked by <see cref="SkipIfAlreadyRunning"/> to mark the current occurrence as
     /// skipped when another occurrence of the same cron job is already executing on this node.
+    /// Wired by the scheduler; not intended to be set by consumers — call
+    /// <see cref="SkipIfAlreadyRunning"/> instead.
     /// </summary>
+    [EditorBrowsable(EditorBrowsableState.Never)]
     public required Action SkipIfAlreadyRunningAction { get; init; }
 
     /// <summary>

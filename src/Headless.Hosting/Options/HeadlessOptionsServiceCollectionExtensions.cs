@@ -10,7 +10,7 @@ using Microsoft.Extensions.Options;
 namespace Microsoft.Extensions.DependencyInjection;
 
 [PublicAPI]
-public static class OptionsServiceCollectionExtensions
+public static class HeadlessOptionsServiceCollectionExtensions
 {
     extension(IServiceCollection services)
     {
@@ -52,31 +52,6 @@ public static class OptionsServiceCollectionExtensions
         /*
          * These methods add the option with a validation and return the OptionsBuilder
          */
-
-        /// <summary>Registers named options and optionally applies custom validation.</summary>
-        /// <typeparam name="TOption">The type of the options.</typeparam>
-        /// <param name="optionName">The name of the options instance.</param>
-        /// <param name="validation">The validation function.</param>
-        /// <returns>The created options' builder.</returns>
-        /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
-        public OptionsBuilder<TOption> AddOptions<TOption>(
-            string? optionName = null,
-            Func<TOption, bool>? validation = null
-        )
-            where TOption : class
-        {
-            Argument.IsNotNull(services);
-            optionName ??= Options.Options.DefaultName;
-            var builder = services.AddOptions<TOption>(optionName);
-
-            if (validation is not null)
-            {
-                builder.Validate(validation);
-                builder.ValidateOnStart();
-            }
-
-            return builder;
-        }
 
         /// <summary>Registers named options, adds FluentValidation validation, and optionally applies custom validation.</summary>
         /// <typeparam name="TOptions">The type of the options.</typeparam>

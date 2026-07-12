@@ -11,7 +11,7 @@ namespace Headless.DistributedLocks;
 /// <see cref="TimeProvider"/> timestamp are defined as regular methods to avoid allocating a
 /// <see cref="TimeSpan"/> before the log-level guard.
 /// </summary>
-public static partial class RegularLockLoggerExtensions
+internal static partial class RegularLockLoggerExtensions
 {
     /// <summary>
     /// Logs a transient storage error during an acquire attempt, computing elapsed time from the

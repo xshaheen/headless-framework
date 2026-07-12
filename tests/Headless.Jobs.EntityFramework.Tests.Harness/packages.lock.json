@@ -765,6 +765,59 @@
           "Microsoft.EntityFrameworkCore.Relational": "[10.0.9, )"
         }
       },
+      "headless.messaging.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )"
+        }
+      },
+      "headless.messaging.bus.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Messaging.Abstractions": "[1.0.0, )"
+        }
+      },
+      "headless.messaging.core": {
+        "type": "Project",
+        "dependencies": {
+          "FastExpressionCompiler": "[5.4.1, )",
+          "Headless.CommitCoordination.Abstractions": "[1.0.0, )",
+          "Headless.Coordination.Abstractions": "[1.0.0, )",
+          "Headless.Coordination.Core": "[1.0.0, )",
+          "Headless.Core": "[1.0.0, )",
+          "Headless.DistributedLocks.Abstractions": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.Messaging.Abstractions": "[1.0.0, )",
+          "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
+          "Headless.Messaging.Queue.Abstractions": "[1.0.0, )",
+          "Headless.MultiTenancy": "[1.0.0, )",
+          "Microsoft.Extensions.Options": "[10.0.9, )",
+          "Polly.Core": "[8.7.0, )"
+        }
+      },
+      "headless.messaging.inmemory": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
+          "Headless.Messaging.Core": "[1.0.0, )",
+          "Headless.Messaging.Queue.Abstractions": "[1.0.0, )"
+        }
+      },
+      "headless.messaging.queue.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Messaging.Abstractions": "[1.0.0, )"
+        }
+      },
+      "headless.multitenancy": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.9, )",
+          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.9, )"
+        }
+      },
       "headless.primitives": {
         "type": "Project",
         "dependencies": {
@@ -824,6 +877,12 @@
         "requested": "[8.4.2, )",
         "resolved": "8.4.2",
         "contentHash": "2hmtrrU18x6NL3mbuAqwy0KpnoEEJOuK6sH5RKQfD/jHijn2pqvqBUC7WGy9dgNBL9BDA7eOC0kirsNPMp2f4Q=="
+      },
+      "FastExpressionCompiler": {
+        "type": "CentralTransitive",
+        "requested": "[5.4.1, )",
+        "resolved": "5.4.1",
+        "contentHash": "nqMykMspK5cQd35Y8ulQzAujxCcCwZVUne32pC5xNpXqrbPCuKOPMWkKHJ3LveAZPm6dsVvump0TJ1SZ9RzfTQ=="
       },
       "FlexLabs.EntityFrameworkCore.Upsert": {
         "type": "CentralTransitive",

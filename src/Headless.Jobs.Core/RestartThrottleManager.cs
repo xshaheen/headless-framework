@@ -2,7 +2,7 @@
 
 namespace Headless.Jobs;
 
-public sealed class RestartThrottleManager : IDisposable
+internal sealed class RestartThrottleManager : IDisposable
 {
     private readonly Action _onRestartTriggered;
     private readonly TimeProvider _timeProvider;

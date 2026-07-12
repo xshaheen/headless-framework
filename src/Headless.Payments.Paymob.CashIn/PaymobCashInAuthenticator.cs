@@ -9,7 +9,7 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Payments.Paymob.CashIn;
 
-public sealed class PaymobCashInAuthenticator : IPaymobCashInAuthenticator, IDisposable
+internal sealed class PaymobCashInAuthenticator : IPaymobCashInAuthenticator, IDisposable
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly TimeProvider _timeProvider;

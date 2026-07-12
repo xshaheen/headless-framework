@@ -2,7 +2,7 @@
 
 namespace Headless.Jobs;
 
-public static class Constants
+internal static class JobDbConstants
 {
     public const string DefaultSchema = "jobs";
 }

@@ -581,7 +581,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         sut.GetState(IntentType.Queue, _Group).Should().Be(CircuitBreakerState.Open);
         sut.GetSnapshot(IntentType.Queue, _Group).Should().NotBeNull();
 
-        var reset = await sut.ResetAsync(IntentType.Queue, _Group);
+        var reset = await sut.ResetAsync(IntentType.Queue, _Group, AbortToken);
         reset.Should().BeTrue();
         sut.IsOpen(IntentType.Queue, _Group).Should().BeFalse();
     }
@@ -791,7 +791,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         await using var sut = _Create();
 
         // when
-        var result = await sut.ResetAsync("unknown.group");
+        var result = await sut.ResetAsync("unknown.group", AbortToken);
 
         // then
         result.Should().BeFalse();
@@ -811,7 +811,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         sut.GetState(_Group).Should().Be(CircuitBreakerState.Closed);
 
         // when
-        var result = await sut.ResetAsync(_Group);
+        var result = await sut.ResetAsync(_Group, AbortToken);
 
         // then
         result.Should().BeFalse();
@@ -832,7 +832,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         sut.GetState(_Group).Should().Be(CircuitBreakerState.Open);
 
         // when
-        var result = await sut.ResetAsync(_Group);
+        var result = await sut.ResetAsync(_Group, AbortToken);
 
         // then
         result.Should().BeTrue();
@@ -873,7 +873,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         sut.GetSnapshot(_Group)!.EscalationLevel.Should().BeGreaterThan(1);
 
         // when — manual reset
-        var result = await sut.ResetAsync(_Group);
+        var result = await sut.ResetAsync(_Group, AbortToken);
 
         // then
         result.Should().BeTrue();
@@ -903,7 +903,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         resumeCalledOnReset = false;
 
         // when
-        await sut.ResetAsync(_Group);
+        await sut.ResetAsync(_Group, AbortToken);
 
         // then
         resumeCalledOnReset.Should().BeTrue();
@@ -930,6 +930,25 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         // when & then
         var act = async () => await sut.ResetAsync(longName);
         await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public async Task reset_throws_and_leaves_state_untouched_when_token_already_canceled()
+    {
+        // given — trip circuit to Open
+        await using var sut = _Create(failureThreshold: 1);
+        await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
+        sut.GetState(_Group).Should().Be(CircuitBreakerState.Open);
+
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        // when & then — must-complete transition honors the token only before it begins
+        var act = async () => await sut.ResetAsync(_Group, cts.Token);
+        await act.Should().ThrowAsync<OperationCanceledException>();
+
+        // state must not be half-applied — the circuit stays Open
+        sut.GetState(_Group).Should().Be(CircuitBreakerState.Open);
     }
 
     // -------------------------------------------------------------------------
@@ -1204,7 +1223,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         sut.GetState(_Group).Should().Be(CircuitBreakerState.Closed);
 
         // when
-        var result = await sut.ForceOpenAsync(_Group);
+        var result = await sut.ForceOpenAsync(_Group, AbortToken);
 
         // then
         result.Should().BeTrue();
@@ -1234,7 +1253,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         sut.GetState(_Group).Should().Be(CircuitBreakerState.HalfOpen);
 
         // when
-        var result = await sut.ForceOpenAsync(_Group);
+        var result = await sut.ForceOpenAsync(_Group, AbortToken);
 
         // then
         result.Should().BeTrue();
@@ -1256,7 +1275,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         sut.GetState(_Group).Should().Be(CircuitBreakerState.Open);
 
         // when
-        var result = await sut.ForceOpenAsync(_Group);
+        var result = await sut.ForceOpenAsync(_Group, AbortToken);
 
         // then
         result.Should().BeFalse();
@@ -1277,7 +1296,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         snapshotBefore!.EscalationLevel.Should().Be(0);
 
         // when
-        await sut.ForceOpenAsync(_Group);
+        await sut.ForceOpenAsync(_Group, AbortToken);
 
         // then — escalation should not have been incremented
         var snapshotAfter = sut.GetSnapshot(_Group);
@@ -1291,7 +1310,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         await using var sut = _Create();
 
         // when
-        var result = await sut.ForceOpenAsync("unknown.group");
+        var result = await sut.ForceOpenAsync("unknown.group", AbortToken);
 
         // then
         result.Should().BeFalse();
@@ -1318,6 +1337,29 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         // when & then
         var act = async () => await sut.ForceOpenAsync(longName);
         await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public async Task force_open_throws_and_leaves_state_untouched_when_token_already_canceled()
+    {
+        // given — a registered, Closed circuit
+        await using var sut = _Create();
+        sut.RegisterGroupCallbacks(
+            _Group,
+            onPause: () => ValueTask.CompletedTask,
+            onResume: () => ValueTask.CompletedTask
+        );
+        sut.GetState(_Group).Should().Be(CircuitBreakerState.Closed);
+
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        // when & then — must-complete transition honors the token only before it begins
+        var act = async () => await sut.ForceOpenAsync(_Group, cts.Token);
+        await act.Should().ThrowAsync<OperationCanceledException>();
+
+        // state must not be half-applied — the circuit stays Closed
+        sut.GetState(_Group).Should().Be(CircuitBreakerState.Closed);
     }
 
     // -------------------------------------------------------------------------

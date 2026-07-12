@@ -2,6 +2,8 @@
 
 using Headless.Jobs.Entities;
 using Headless.Jobs.Interfaces.Managers;
+using Headless.Messaging;
+using Headless.Messaging.Persistence;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -20,6 +22,7 @@ namespace Tests;
 /// <item>AE4 — no coordinator → <c>AddAsync</c> inserts directly.</item>
 /// <item>R5 — <c>AddBatchAsync</c> commits / rolls back atomically with the caller's transaction.</item>
 /// <item>R6 — cron <c>AddAsync</c> commits / rolls back atomically.</item>
+/// <item>Capstone — domain write + outbox publish + job enqueue commit or roll back as one unit.</item>
 /// </list>
 /// Each leaf derives a sealed class with <c>[Collection&lt;TFixture&gt;]</c> and re-declares the methods with
 /// <c>[Fact]</c> so the runner discovers them per provider.
@@ -37,6 +40,76 @@ namespace Tests;
 public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fixture) : TestBase
     where TFixture : class, IJobsCoordinationFixture
 {
+    private sealed record CapstoneMessage(Guid JobId);
+
+    public virtual async Task domain_message_and_job_commit_atomically()
+    {
+        var ct = AbortToken;
+        using var host = await _StartHostAsync(ct, includeMessaging: true);
+
+        try
+        {
+            var manager = host.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
+            var publisher = host.Services.GetRequiredService<IOutboxBus>();
+            var job = _TimeJob();
+
+            await fixture.RunCoordinatedTransactionAsync(
+                host.Services,
+                async (connection, transaction, innerCt) =>
+                {
+                    await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, innerCt);
+                    await publisher.PublishAsync(new CapstoneMessage(job.Id), cancellationToken: innerCt);
+                    await manager.AddAsync(job, innerCt);
+                },
+                ct
+            );
+
+            (await fixture.CountProbeRowsAsync(ct)).Should().Be(1);
+            (await fixture.CountPublishedMessagesAsync(host.Services, ct)).Should().Be(1);
+            (await fixture.CountTimeJobsAsync(ct)).Should().Be(1);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    public virtual async Task rollback_discards_domain_message_and_job()
+    {
+        var ct = AbortToken;
+        using var host = await _StartHostAsync(ct, includeMessaging: true);
+
+        try
+        {
+            var manager = host.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
+            var publisher = host.Services.GetRequiredService<IOutboxBus>();
+            var job = _TimeJob();
+            var sentinel = new InvalidOperationException("force rollback");
+
+            var act = () =>
+                fixture.RunCoordinatedTransactionAsync(
+                    host.Services,
+                    async (connection, transaction, innerCt) =>
+                    {
+                        await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, innerCt);
+                        await publisher.PublishAsync(new CapstoneMessage(job.Id), cancellationToken: innerCt);
+                        await manager.AddAsync(job, innerCt);
+                        throw sentinel;
+                    },
+                    ct
+                );
+
+            (await act.Should().ThrowAsync<InvalidOperationException>()).Which.Should().BeSameAs(sentinel);
+            (await fixture.CountProbeRowsAsync(ct)).Should().Be(0);
+            (await fixture.CountPublishedMessagesAsync(host.Services, ct)).Should().Be(0);
+            (await fixture.CountTimeJobsAsync(ct)).Should().Be(0);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
     public virtual async Task domain_write_and_enqueue_commit_atomically()
     {
         var ct = AbortToken;
@@ -306,12 +379,18 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
         }
     }
 
-    private async Task<IHost> _StartHostAsync(CancellationToken cancellationToken)
+    private async Task<IHost> _StartHostAsync(CancellationToken cancellationToken, bool includeMessaging = false)
     {
         await fixture.ResetDatabaseAsync(cancellationToken);
-        var host = fixture.BuildCoordinatedEnqueueHost("node-a");
+        var host = fixture.BuildCoordinatedEnqueueHost("node-a", includeMessaging);
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, cancellationToken);
         await fixture.CreateProbeTableAsync(cancellationToken);
+
+        if (includeMessaging)
+        {
+            await host.Services.GetRequiredService<IStorageInitializer>().InitializeAsync(cancellationToken);
+        }
+
         await host.StartAsync(cancellationToken);
 
         return host;

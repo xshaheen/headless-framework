@@ -66,22 +66,10 @@ public sealed class SendSingleSmsResponseTests
     }
 
     [Fact]
-    public void should_build_a_classified_failure_from_a_transport_exception()
-    {
-        // when
-        var response = SendSingleSmsResponse.FromException(new HttpRequestException("boom"));
-
-        // then
-        response.Success.Should().BeFalse();
-        response.FailureError.Should().Be("boom");
-        response.FailureKind.Should().Be(SmsFailureKind.Transient);
-    }
-
-    [Fact]
     public void should_fall_back_to_the_exception_type_name_when_the_message_is_empty()
     {
         // when
-        var response = SendSingleSmsResponse.FromException(new InvalidOperationException(""));
+        var response = SendSingleSmsResponse.FromException(new InvalidOperationException(""), SmsFailureKind.Unknown);
 
         // then
         response.Success.Should().BeFalse();
@@ -102,16 +90,6 @@ public sealed class SendSingleSmsResponseTests
         response.Success.Should().BeFalse();
         response.FailureError.Should().Be("throttled");
         response.FailureKind.Should().Be(SmsFailureKind.RateLimited);
-    }
-
-    [Fact]
-    public void should_reject_a_null_exception()
-    {
-        // when
-        var act = () => SendSingleSmsResponse.FromException(null!);
-
-        // then
-        act.Should().Throw<ArgumentNullException>();
     }
 
     [Fact]

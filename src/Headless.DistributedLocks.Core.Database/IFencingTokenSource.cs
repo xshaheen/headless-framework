@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.ComponentModel;
 using System.Data.Common;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
@@ -17,6 +18,7 @@ namespace Headless.DistributedLocks;
 /// returned to the caller; if it throws, the provider releases the just-acquired lock and propagates.
 /// </remarks>
 [PublicAPI]
+[EditorBrowsable(EditorBrowsableState.Never)]
 public interface IFencingTokenSource
 {
     /// <summary>

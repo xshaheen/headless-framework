@@ -33,6 +33,17 @@ public sealed class InMemoryConsumerClientFactoryTests : TestBase
     }
 
     [Fact]
+    public async Task should_preserve_factory_cancellation()
+    {
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        var act = async () => await _factory.CreateAsync("test-group", 1, cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
     public async Task should_create_client_with_specified_group_name()
     {
         // given
@@ -111,8 +122,8 @@ public sealed class InMemoryConsumerClientFactoryTests : TestBase
         var client1 = await _factory.CreateAsync("group-1", 1);
         var client2 = await _factory.CreateAsync("group-2", 1);
 
-        await client1.SubscribeAsync(["shared-messageName"]);
-        await client2.SubscribeAsync(["shared-messageName"]);
+        await client1.SubscribeAsync(["shared-messageName"], AbortToken);
+        await client2.SubscribeAsync(["shared-messageName"], AbortToken);
 
         var messages1 = new List<object>();
         var messages2 = new List<object>();

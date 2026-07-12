@@ -4,6 +4,10 @@
 namespace Headless.Imaging;
 
 /// <summary>Specifies the algorithm used to fit an image into a target bounding box.</summary>
+/// <remarks>
+/// This value is consumer-observable via <see cref="ImageResizeArgs.Mode"/>. Additional members may be
+/// added in future versions; callers that switch on it should handle unrecognized values defensively.
+/// </remarks>
 [PublicAPI]
 public enum ImageResizeMode
 {

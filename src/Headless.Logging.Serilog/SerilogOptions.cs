@@ -52,7 +52,7 @@ public sealed class SerilogOptions
     /// Gets the maximum number of rolled log files to retain per severity level before the oldest
     /// is deleted. Defaults to 5. Pass <see langword="null"/> to retain files indefinitely.
     /// </summary>
-    public int RetainedFileCountLimit { get; init; } = 5;
+    public int? RetainedFileCountLimit { get; init; } = 5;
 
     /// <summary>
     /// Gets the maximum length in bytes of HTTP request headers captured in structured log

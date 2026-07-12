@@ -6,6 +6,7 @@
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Payments.Paymob.Services" />
+    <InternalsVisibleTo Include="Headless.Payments.Paymob.CashOut.Tests.Unit" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />

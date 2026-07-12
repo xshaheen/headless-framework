@@ -40,7 +40,7 @@ public sealed class ThrowingHeadlessMessageDispatcher : IHeadlessOutboxDispatche
 {
     public Task DispatchAsync(
         IReadOnlyList<IIntegrationEvent> integrationEvents,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken = default
     ) => throw new InvalidOperationException(_PublishFailureMessage);
 
     public void Dispatch(IReadOnlyList<IIntegrationEvent> integrationEvents) =>

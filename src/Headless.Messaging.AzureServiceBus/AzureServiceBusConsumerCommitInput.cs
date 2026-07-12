@@ -9,7 +9,7 @@ namespace Headless.Messaging.AzureServiceBus;
 /// Wraps either a <c>ProcessMessageEventArgs</c> (non-session) or a
 /// <c>ProcessSessionMessageEventArgs</c> (session-enabled) transparently.
 /// </summary>
-public class AzureServiceBusConsumerCommitInput
+internal sealed class AzureServiceBusConsumerCommitInput
 {
     /// <summary>Initialises the input from a non-session message processing context.</summary>
     public AzureServiceBusConsumerCommitInput(ProcessMessageEventArgs processMessageEventArgs)
@@ -29,21 +29,21 @@ public class AzureServiceBusConsumerCommitInput
     private ServiceBusReceivedMessage Message => ProcessMessageArgs?.Message ?? ProcessSessionMessageArgs!.Message;
 
     /// <summary>Settles the message as successfully processed and removes it from the broker.</summary>
-    public Task CompleteMessageAsync()
+    public Task CompleteMessageAsync(CancellationToken cancellationToken = default)
     {
         return ProcessMessageArgs != null
-            ? ProcessMessageArgs.CompleteMessageAsync(Message)
-            : ProcessSessionMessageArgs!.CompleteMessageAsync(Message);
+            ? ProcessMessageArgs.CompleteMessageAsync(Message, cancellationToken)
+            : ProcessSessionMessageArgs!.CompleteMessageAsync(Message, cancellationToken);
     }
 
     /// <summary>
     /// Returns the message to the broker for redelivery. The message's delivery count is incremented
     /// and it becomes available to other consumers after the lock expires.
     /// </summary>
-    public Task AbandonMessageAsync()
+    public Task AbandonMessageAsync(CancellationToken cancellationToken = default)
     {
         return ProcessMessageArgs != null
-            ? ProcessMessageArgs.AbandonMessageAsync(Message)
-            : ProcessSessionMessageArgs!.AbandonMessageAsync(Message);
+            ? ProcessMessageArgs.AbandonMessageAsync(Message, cancellationToken: cancellationToken)
+            : ProcessSessionMessageArgs!.AbandonMessageAsync(Message, cancellationToken: cancellationToken);
     }
 }

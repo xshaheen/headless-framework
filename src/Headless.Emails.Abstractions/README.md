@@ -14,7 +14,7 @@ Provides a provider-agnostic email sending API for switching email providers wit
 - `EmailRequestAddress` — sealed record wrapping email address + optional display name; supports implicit conversion from `string`
 - `EmailRequestDestination` — sealed record grouping `ToAddresses` (required), `CcAddresses`, `BccAddresses`
 - `EmailRequestAttachment` — sealed record: `Name` + `File` (`ReadOnlyMemory<byte>`) + optional `ContentType`
-- `SendSingleEmailResponse` — closed result type with `Success` bool and nullable `FailureError` string
+- `SendSingleEmailResponse` — closed result type with `Success` bool, nullable `ProviderMessageId` (the backend's message id on success), and nullable `FailureError` string (non-null on failure); built via `Succeeded`, `Failed` (rejects a null/empty reason), or `FromException`. Every provider/transport failure is reported through this response — only `OperationCanceledException` and argument validation propagate
 
 ## Installation
 

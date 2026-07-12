@@ -58,9 +58,12 @@ public static class SetupMessagingDashboard
                     }
                 );
 
-                // Set up routing and CORS
+                // Endpoints carry RequireCors metadata, so the CORS middleware must always run (an endpoint
+                // with CORS metadata and no middleware throws at request time). The registered policy is empty
+                // by default (same-origin only) and reflects the configured origins when
+                // SetCorsOrigins / SetCorsPolicy was used.
                 dashboardApp.UseRouting();
-                dashboardApp.UseCors("Messaging_Dashboard_CORS");
+                dashboardApp.UseCors("HeadlessMessagingDashboardCORS");
 
                 // Add authentication + authorization middleware
                 if (config.Auth.IsEnabled)

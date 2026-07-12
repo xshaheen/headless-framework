@@ -111,5 +111,5 @@ No options of its own. Each store's options are configured through its provider'
 - Registers `IBlobStorageProvider` as singleton (backed by the container's keyed `IBlobStorage` registrations).
 - Registers a called-once marker that rejects a second `AddHeadlessBlobs` call on the same service collection.
 - Default `Use{Provider}`: registers `IBlobStorage` as unkeyed singleton.
-- `AddNamed(... Use{Provider})`: registers `IBlobStorage` as keyed singleton (`name`). For AWS, Azure, and CloudflareR2 also registers `IPresignedUrlBlobStorage` as keyed singleton (`name`). For AWS, Azure, FileSystem, Redis, and SshNet also registers `IBlobContainerManager` (default + keyed `name`); CloudflareR2 registers none. For SshNet, also registers a keyed `SftpClientPool` singleton (`name`).
+- `AddNamed(... Use{Provider})`: registers `IBlobStorage` as keyed singleton (`name`). For AWS, Azure, and CloudflareR2 also registers `IPresignedUrlBlobStorage` as keyed singleton (`name`). For AWS, Azure, FileSystem, Redis, and SshNet also registers `IBlobContainerManager` (default + keyed `name`); CloudflareR2 registers none. For SshNet, also registers a keyed internal SFTP connection pool singleton (`name`).
 - There is no global (unkeyed) `IPresignedUrlBlobStorage` registration.

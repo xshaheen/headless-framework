@@ -9,6 +9,7 @@ using SixLabors.ImageSharp.Formats.Webp;
 namespace Headless.Imaging.ImageSharp;
 
 /// <summary>Options that control the ImageSharp-based image compressor contributor.</summary>
+[PublicAPI]
 public sealed class ImageSharpOptions
 {
     /// <summary>

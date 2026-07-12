@@ -5,6 +5,11 @@
     <PackageTags>headless;blobs;file-system;dotnet</PackageTags>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Blobs.FileSystem.Tests.Integration" />
+    <!-- MultiProviderIsolationTests asserts the resolved default store is FileSystemBlobStorage. -->
+    <InternalsVisibleTo Include="Headless.Blobs.Core.Tests.Integration" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\Headless.Blobs.Abstractions\Headless.Blobs.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Blobs.Core\Headless.Blobs.Core.csproj" />
     <ProjectReference Include="..\Headless.Core\Headless.Core.csproj" />

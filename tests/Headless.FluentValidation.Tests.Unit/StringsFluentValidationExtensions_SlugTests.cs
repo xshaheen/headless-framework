@@ -88,7 +88,7 @@ public sealed class StringsFluentValidationExtensionsSlugTests
 
         var result = validator.TestValidate(model);
 
-        result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("strings:invalid_slug");
+        result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("g:invalid_slug");
     }
 
     #endregion

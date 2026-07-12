@@ -228,6 +228,7 @@ jobs:
 
     permissions:
       contents: read
+      id-token: write # Request the GitHub OIDC token exchanged for a short-lived nuget.org key (Trusted Publishing).
 
     environment:
       name: "NuGet Release"
@@ -239,9 +240,19 @@ jobs:
         with:
           name: packages-results
 
+      # Exchange the workflow OIDC token for a temporary nuget.org API key (valid ~1h, one key per token).
+      # Requires a Trusted Publishing policy on nuget.org bound to this repo, the workflow file (ci.yml), and
+      # the "NuGet Release" environment, plus a NUGET_USER secret holding the nuget.org account (profile) name.
+      # No long-lived publishing secret is stored.
+      - name: "NuGet login (OIDC -> temporary API key)"
+        id: nuget-login
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1
+        with:
+          user: ${{ secrets.NUGET_USER }}
+
       - name: "Push Packages"
         env:
-          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+          NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
         run: |
           set -euo pipefail
           shopt -s nullglob

@@ -19,7 +19,7 @@ public sealed class SetupTests : TestBase
         services.AddLogging();
 
         // when
-        services.AddMessagingDashboardStandalone();
+        services.AddMessagingDashboardStandalone(dashboard => dashboard.WithNoAuth());
 
         // then
         var provider = services.BuildServiceProvider();
@@ -38,7 +38,7 @@ public sealed class SetupTests : TestBase
         services.AddLogging();
 
         // when
-        services.AddMessagingDashboardStandalone();
+        services.AddMessagingDashboardStandalone(dashboard => dashboard.WithNoAuth());
 
         // then
         var provider = services.BuildServiceProvider();
@@ -59,7 +59,7 @@ public sealed class SetupTests : TestBase
 
         // when
         services.AddMessagingDashboardStandalone(
-            option => option.SetBasePath("/custom-path"),
+            option => option.SetBasePath("/custom-path").WithNoAuth(),
             configureK8s => configureK8s.ShowOnlyExplicitVisibleNodes = false
         );
 
@@ -73,14 +73,15 @@ public sealed class SetupTests : TestBase
     }
 
     [Fact]
-    public void AddMessagingDashboardStandalone_should_work_with_null_options()
+    public void AddMessagingDashboardStandalone_should_work_with_null_k8s_options()
     {
         // given
         var services = new ServiceCollection();
         services.AddLogging();
 
-        // when
-        services.AddMessagingDashboardStandalone(null, null);
+        // when — a null configureK8s uses K8s defaults; the dashboard builder still must pick an auth
+        // mode (WithNoAuth here) because dashboard auth is mandatory (see MessagingDashboardOptionsBuilder.Validate).
+        services.AddMessagingDashboardStandalone(dashboard => dashboard.WithNoAuth(), null);
 
         // then
         var provider = services.BuildServiceProvider();
@@ -95,7 +96,7 @@ public sealed class SetupTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessagingDashboardStandalone();
+        services.AddMessagingDashboardStandalone(dashboard => dashboard.WithNoAuth());
 
         // then
         var provider = services.BuildServiceProvider();

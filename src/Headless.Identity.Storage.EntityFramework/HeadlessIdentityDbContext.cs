@@ -25,9 +25,6 @@ namespace Headless.EntityFramework;
 /// with <c>TUserPasskey</c> fixed to <see cref="IdentityUserPasskey{TKey}"/>. Use the nine-type-parameter
 /// variant when you need a custom passkey entity.
 /// </remarks>
-/// <remarks>
-/// Initializes a new instance of <see cref="HeadlessIdentityDbContext{TUser,TRole,TKey,TUserClaim,TUserRole,TUserLogin,TRoleClaim,TUserToken}"/>.
-/// </remarks>
 /// <param name="services">
 /// The Headless services bundle injected by the DI container; provides the runtime, current user,
 /// tenant context, and save-pipeline dependencies.

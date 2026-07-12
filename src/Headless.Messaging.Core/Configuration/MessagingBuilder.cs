@@ -14,7 +14,7 @@ namespace Headless.Messaging.Configuration;
 /// A marker service used internally to verify that the messaging service has been registered on a <see cref="IServiceCollection"/>.
 /// This service is registered when <c>AddHeadlessMessaging()</c> is called during dependency injection setup.
 /// </summary>
-public class MessagingMarkerService
+internal sealed class MessagingMarkerService
 {
     /// <summary>
     /// Gets or sets the name identifier for the messaging service.
@@ -56,7 +56,7 @@ public class MessagingMarkerService
 /// Initializes a new instance of the <see cref="MessageStorageMarkerService"/> class with the specified storage name.
 /// </remarks>
 /// <param name="name">The name identifier for the storage extension.</param>
-public class MessageStorageMarkerService(string name)
+internal sealed class MessageStorageMarkerService(string name)
 {
     /// <summary>
     /// Gets or sets the name identifier for the storage extension (e.g., "SqlServer", "PostgreSql", "MySql").
@@ -72,7 +72,7 @@ public class MessageStorageMarkerService(string name)
 /// Initializes a new instance of the <see cref="MessageQueueMarkerService"/> class with the specified message queue name.
 /// </remarks>
 /// <param name="name">The name identifier for the message transport extension.</param>
-public class MessageQueueMarkerService(string name)
+internal sealed class MessageQueueMarkerService(string name)
 {
     /// <summary>
     /// Gets or sets the name identifier for the message transport extension (e.g., "RabbitMQ", "Kafka", "AzureServiceBus").
@@ -153,9 +153,9 @@ public sealed class MessagingBuilder(IServiceCollection services, MessagingOptio
     /// <typeparam name="TMessage">The message type whose publish pipeline this middleware targets.</typeparam>
     /// <returns>A <see cref="MiddlewareRegistration"/> handle for chaining priority configuration.</returns>
     public MiddlewareRegistration AddPublishMiddlewareFor<TMiddleware, TMessage>()
-        where TMiddleware : class, IPublishMiddleware<PublishingContext<TMessage>>
+        where TMiddleware : class, IPublishMiddleware<PublishContext<TMessage>>
     {
-        var contextType = typeof(PublishingContext<TMessage>);
+        var contextType = typeof(PublishContext<TMessage>);
         var serviceType = typeof(IPublishMiddleware<>).MakeGenericType(contextType);
 
         return _AddMiddleware<TMiddleware>(

@@ -7,12 +7,22 @@ namespace Tests;
 public sealed class SendSingleEmailResponseTests
 {
     [Fact]
-    public void succeeded_should_have_no_failure_error()
+    public void succeeded_should_have_no_failure_error_or_provider_message_id()
     {
         var response = SendSingleEmailResponse.Succeeded();
 
         response.Success.Should().BeTrue();
         response.FailureError.Should().BeNull();
+        response.ProviderMessageId.Should().BeNull();
+    }
+
+    [Fact]
+    public void succeeded_should_carry_the_provider_message_id()
+    {
+        var response = SendSingleEmailResponse.Succeeded("msg-123");
+
+        response.Success.Should().BeTrue();
+        response.ProviderMessageId.Should().Be("msg-123");
     }
 
     [Fact]
@@ -22,6 +32,42 @@ public sealed class SendSingleEmailResponseTests
 
         response.Success.Should().BeFalse();
         response.FailureError.Should().Be("boom");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public void failed_should_reject_a_null_or_empty_failure_error(string? failureError)
+    {
+        var act = () => SendSingleEmailResponse.Failed(failureError!);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void from_exception_should_surface_the_exception_message()
+    {
+        var response = SendSingleEmailResponse.FromException(new InvalidOperationException("smtp down"));
+
+        response.Success.Should().BeFalse();
+        response.FailureError.Should().Be("smtp down");
+    }
+
+    [Fact]
+    public void from_exception_should_fall_back_to_the_type_name_when_the_message_is_empty()
+    {
+        var response = SendSingleEmailResponse.FromException(new InvalidOperationException(""));
+
+        response.Success.Should().BeFalse();
+        response.FailureError.Should().Be(nameof(InvalidOperationException));
+    }
+
+    [Fact]
+    public void from_exception_should_reject_a_null_exception()
+    {
+        var act = () => SendSingleEmailResponse.FromException(null!);
+
+        act.Should().Throw<ArgumentNullException>();
     }
 }
 

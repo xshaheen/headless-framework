@@ -1,7 +1,7 @@
 using Headless.Constants;
 using Headless.Imaging;
 using Headless.Imaging.ImageSharp;
-using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Tests;
@@ -16,9 +16,10 @@ public sealed class ImageSharpImageCompressorContributorTests
         var optionsMock = Substitute.For<IOptions<ImageSharpOptions>>();
         optionsMock.Value.Returns(options);
 
-        var loggerMock = Substitute.For<ILogger<ImageSharpImageCompressorContributor>>();
-
-        _compressorContributor = new ImageSharpImageCompressorContributor(optionsMock, loggerMock);
+        _compressorContributor = new ImageSharpImageCompressorContributor(
+            optionsMock,
+            NullLogger<ImageSharpImageCompressorContributor>.Instance
+        );
     }
 
     [Fact]

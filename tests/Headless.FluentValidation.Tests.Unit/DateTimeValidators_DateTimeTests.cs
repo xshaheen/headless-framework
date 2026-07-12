@@ -117,7 +117,7 @@ public sealed class DateTimeValidatorsDateTimeTests
     {
         var result = _ValidateInThePast(new DateTime(2030, 1, 1, 0, 0, 0, DateTimeKind.Utc));
 
-        result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("datetime:must_be_in_past");
+        result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("g:must_be_in_past");
     }
 
     [Fact]

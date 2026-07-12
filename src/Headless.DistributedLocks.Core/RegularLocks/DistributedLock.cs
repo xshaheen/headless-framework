@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.ComponentModel;
 using System.Diagnostics;
 using Headless.Abstractions;
 using Headless.Checks;
@@ -40,7 +41,13 @@ namespace Headless.DistributedLocks;
 /// <c>LockReleasedConsumer</c> can fan release signals out to multiple providers without coupling
 /// to concrete types.
 /// </para>
+/// <para>
+/// This concrete type is DI-only plumbing: resolve <see cref="IDistributedLock"/> instead of constructing it.
+/// It stays public solely so tests can build a real provider over an in-memory storage backend, and is hidden
+/// from IntelliSense via <see cref="EditorBrowsableAttribute"/>.
+/// </para>
 /// </remarks>
+[EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class DistributedLock(
     IDistributedLockStorage storage,
     IOutboxBus? outboxBus,

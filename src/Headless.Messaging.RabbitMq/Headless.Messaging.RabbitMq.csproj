@@ -5,6 +5,11 @@
     <PackageTags>headless;messaging;rabbitmq;dotnet</PackageTags>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Messaging.RabbitMq.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Messaging.RabbitMq.Tests.Integration" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="RabbitMQ.Client" />
   </ItemGroup>
   <ItemGroup>

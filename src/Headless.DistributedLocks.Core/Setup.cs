@@ -31,10 +31,7 @@ public static class SetupDistributedLocks
         /// Delegate that configures the setup builder, including selecting and configuring the
         /// backend provider via a <c>Use*</c> extension method.
         /// </param>
-        /// <returns>
-        /// A <see cref="HeadlessDistributedLocksBuilder"/> exposing the underlying
-        /// <see cref="IServiceCollection"/> for further chaining.
-        /// </returns>
+        /// <returns>The same <see cref="IServiceCollection"/> for chaining.</returns>
         /// <exception cref="ArgumentNullException">
         /// Thrown when <paramref name="configure"/> is <see langword="null"/>.
         /// </exception>
@@ -42,9 +39,7 @@ public static class SetupDistributedLocks
         /// Thrown when zero or more than one provider is configured, or when
         /// <c>AddHeadlessDistributedLocks</c> is called more than once for the same provider.
         /// </exception>
-        public HeadlessDistributedLocksBuilder AddHeadlessDistributedLocks(
-            Action<HeadlessDistributedLocksSetupBuilder> configure
-        )
+        public IServiceCollection AddHeadlessDistributedLocks(Action<HeadlessDistributedLocksSetupBuilder> configure)
         {
             Argument.IsNotNull(configure);
 
@@ -55,7 +50,7 @@ public static class SetupDistributedLocks
         }
     }
 
-    private static HeadlessDistributedLocksBuilder _AddDistributedLocksCore(
+    private static IServiceCollection _AddDistributedLocksCore(
         IServiceCollection services,
         HeadlessDistributedLocksSetupBuilder setup
     )
@@ -73,7 +68,7 @@ public static class SetupDistributedLocks
             extension.AddServices(services);
         }
 
-        return new HeadlessDistributedLocksBuilder(services);
+        return services;
     }
 
     private static void _GuardSingleDistributedLocksProvider(

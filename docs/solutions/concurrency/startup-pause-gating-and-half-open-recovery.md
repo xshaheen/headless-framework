@@ -44,9 +44,9 @@ New clients added to a paused group now await `PauseAsync()` before continuing s
 
 ```csharp
 // ConsumerRegister
-var innerClient = await _consumerClientFactory.CreateAsync(groupName, limit);
+var innerClient = await _consumerClientFactory.CreateAsync(groupName, limit, groupCts.Token);
 await handle.AddClientAsync(innerClient);
-await innerClient.SubscribeAsync(topics);
+await innerClient.SubscribeAsync(messageNames, groupCts.Token);
 await innerClient.ListeningAsync(_pollingDelay, groupCts.Token);
 ```
 

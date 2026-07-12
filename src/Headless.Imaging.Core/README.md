@@ -8,8 +8,8 @@ Provides the `IImageResizer` and `IImageCompressor` implementations that dispatc
 
 ## Key Features
 
-- `ImageResizer` — iterates `IImageResizerContributor` registrations (in reverse order) until one succeeds
-- `ImageCompressor` — iterates `IImageCompressorContributor` registrations (in reverse order) until one succeeds
+- `IImageResizer` — resize entry point resolved from DI; the internal default implementation iterates `IImageResizerContributor` registrations (in reverse order) until one succeeds
+- `IImageCompressor` — compress entry point resolved from DI; the internal default implementation iterates `IImageCompressorContributor` registrations (in reverse order) until one succeeds
 - `IImageResizerContributor` — contributor interface: `TryResizeAsync(Stream, ImageResizeArgs, CancellationToken)`
 - `IImageCompressorContributor` — contributor interface: `TryCompressAsync(Stream, ImageCompressArgs, CancellationToken)`
 - `ImagingOptions` — `DefaultResizeMode` applied when args carry `ImageResizeMode.Default`
@@ -66,5 +66,5 @@ services.AddImaging((options, sp) => options.DefaultResizeMode = ImageResizeMode
 
 ## Side Effects
 
-- Registers `IImageResizer` as singleton (`ImageResizer`)
-- Registers `IImageCompressor` as singleton (`ImageCompressor`)
+- Registers `IImageResizer` as singleton (internal default implementation)
+- Registers `IImageCompressor` as singleton (internal default implementation)

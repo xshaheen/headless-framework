@@ -128,6 +128,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var lockedUntil = now.Add(_leaseDuration);
         TimeJobEntity[] claimed;
+        Guid[] wonIds;
 
         await using (
             var claimTransaction = await JobsClaimTransaction<TDbContext>.CreateAsync(
@@ -151,7 +152,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                                 OR (root.{mapping.LockedUntil} <= @now AND root.{mapping.OnNodeDeath} = @retry))))
                 ORDER BY root.{mapping.ExecutionTime}, root.{mapping.Id}
                 """;
-            var wonIds = await _ClaimRootsAsync(
+            wonIds = await _ClaimRootsAsync(
                     dbContext,
                     transaction,
                     mapping,
@@ -178,7 +179,18 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                     cancellationToken
                 )
                 .ConfigureAwait(false);
+            await claimTransaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
 
+        if (wonIds.Length == 0)
+        {
+            claimed = [];
+        }
+        else
+        {
+            await using var dbContext = await dbContextFactory
+                .CreateDbContextAsync(cancellationToken)
+                .ConfigureAwait(false);
             claimed = await dbContext
                 .Set<TTimeJob>()
                 .AsNoTracking()
@@ -187,7 +199,6 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 .Select(MappingExtensions.ForQueueTimeJobs<TTimeJob>())
                 .ToArrayAsync(cancellationToken)
                 .ConfigureAwait(false);
-            await claimTransaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
 
         foreach (var timeJob in claimed)
@@ -305,6 +316,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var lockedUntil = now.Add(_leaseDuration);
         CronJobOccurrenceEntity<TCronJob>[] claimed;
+        Guid[] wonIds;
 
         await using (
             var claimTransaction = await JobsClaimTransaction<TDbContext>.CreateAsync(
@@ -317,7 +329,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             var transaction = claimTransaction.Transaction;
             var mapping = CronOccurrenceRelationalMapping.Create<TDbContext, TCronJob>(dbContext);
             var readPastHints = await _GetReadPastHintsAsync(cancellationToken).ConfigureAwait(false);
-            var wonIds = await _ClaimFallbackCronOccurrencesAsync(
+            wonIds = await _ClaimFallbackCronOccurrencesAsync(
                     dbContext,
                     transaction,
                     mapping,
@@ -328,7 +340,18 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                     cancellationToken
                 )
                 .ConfigureAwait(false);
+            await claimTransaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
 
+        if (wonIds.Length == 0)
+        {
+            claimed = [];
+        }
+        else
+        {
+            await using var dbContext = await dbContextFactory
+                .CreateDbContextAsync(cancellationToken)
+                .ConfigureAwait(false);
             claimed = await dbContext
                 .Set<CronJobOccurrenceEntity<TCronJob>>()
                 .AsNoTracking()
@@ -337,7 +360,6 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 .Select(MappingExtensions.ForQueueCronJobOccurrence<CronJobOccurrenceEntity<TCronJob>, TCronJob>())
                 .ToArrayAsync(cancellationToken)
                 .ConfigureAwait(false);
-            await claimTransaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
 
         foreach (var occurrence in claimed)

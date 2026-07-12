@@ -11,7 +11,7 @@ Provides text extraction from common document formats for full-text search index
 - `PdfMediaFileTextProvider` — PDF text extraction via PdfPig; handles non-seekable streams transparently by buffering to `MemoryStream`
 - `WordDocumentMediaFileTextProvider` — DOCX body text extraction via Open XML (paragraphs from `MainDocumentPart`)
 - `PresentationDocumentMediaFileTextProvider` — PPTX slide text extraction via Open XML (all text frames across all slides)
-- `MediaFileTextProviderResolver` — `IMediaFileTextProviderResolver` that dispatches to the three providers by extension or MIME type
+- `IMediaFileTextProviderResolver` — resolver (internal default implementation) that dispatches to the three providers by extension or MIME type
 - `SetupMediaIndexing.AddMediaIndexing()` — registers the three providers plus the resolver in one call
 - Stream-based API — providers do not dispose the caller's stream
 

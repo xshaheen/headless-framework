@@ -20,6 +20,7 @@ namespace Headless.EntityFramework;
 /// processor type more than once removes the prior registration and inserts the new one at its effective
 /// priority.
 /// </remarks>
+[PublicAPI]
 public sealed class HeadlessDbContextOptions
 {
     private static readonly Type[] _TerminalProcessorOrder =
@@ -30,6 +31,10 @@ public sealed class HeadlessDbContextOptions
 
     private readonly List<SaveEntryProcessorRegistration> _saveEntryProcessors = [];
 
+    /// <summary>
+    /// Initializes the options with the framework's default save-entry processor chain (entity, audit,
+    /// local-event, and message-collector processors) in their canonical order.
+    /// </summary>
     public HeadlessDbContextOptions()
     {
         AddSaveEntryProcessor<HeadlessEntitySaveEntryProcessor>(ServiceLifetime.Singleton);

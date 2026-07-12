@@ -5,6 +5,9 @@
     <PackageTags>headless;imaging;imagesharp;dotnet</PackageTags>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Imaging.ImageSharp.Tests.Unit" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\Headless.Imaging.Core\Headless.Imaging.Core.csproj" />
   </ItemGroup>
   <ItemGroup>

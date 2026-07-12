@@ -39,7 +39,7 @@ namespace Headless.Blobs.Redis;
 /// <see cref="RedisBlobStorageOptions.MaxBlobSizeBytes"/> throw <see cref="ArgumentException"/>.
 /// </para>
 /// </remarks>
-public sealed class RedisBlobStorage : IBlobStorage
+internal sealed class RedisBlobStorage : IBlobStorage
 {
     private readonly ILogger _logger;
     private readonly ISerializer _serializer;

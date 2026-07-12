@@ -9,10 +9,10 @@ using Microsoft.Extensions.Logging;
 namespace Headless.Mediator.Behaviors;
 
 /// <summary>
-/// Logs Mediator requests that take longer than the configured critical threshold.
+/// Logs Mediator requests that take longer than the configured critical threshold. Registered as an
+/// open-generic pipeline behavior by <see cref="Headless.Mediator.SetupMediator"/>; not intended for direct consumer use.
 /// </summary>
-[PublicAPI]
-public sealed class CriticalRequestLoggingBehavior<TMessage, TResponse>(
+internal sealed class CriticalRequestLoggingBehavior<TMessage, TResponse>(
     ICurrentUser currentUser,
     ILogger<CriticalRequestLoggingBehavior<TMessage, TResponse>> logger
 ) : IPipelineBehavior<TMessage, TResponse>

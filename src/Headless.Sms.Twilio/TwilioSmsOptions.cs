@@ -15,6 +15,7 @@ namespace Headless.Sms.Twilio;
 /// against the Twilio REST API.
 /// </para>
 /// </remarks>
+[PublicAPI]
 public sealed class TwilioSmsOptions
 {
     /// <summary>The Twilio Account SID, used as the API username. Found in the Twilio Console dashboard.</summary>

@@ -12,8 +12,14 @@ public interface IConsumerClientFactory
     /// </summary>
     /// <param name="groupName">The name of the message group.</param>
     /// <param name="groupConcurrent">The maximum number of concurrent messages to consume.</param>
+    /// <param name="cancellationToken">Token to cancel consumer creation.</param>
     /// <returns>A task that represents the asynchronous operation. The task result contains the created <see cref="IConsumerClient"/> instance.</returns>
-    Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent);
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> is canceled.</exception>
+    Task<IConsumerClient> CreateAsync(
+        string groupName,
+        byte groupConcurrent,
+        CancellationToken cancellationToken = default
+    );
 }
 
 /// <summary>
@@ -27,6 +33,13 @@ public interface IIntentAwareConsumerClientFactory : IConsumerClientFactory
     /// <param name="groupName">The name of the message group.</param>
     /// <param name="groupConcurrent">The maximum number of concurrent messages to consume.</param>
     /// <param name="intentType">The bus or queue intent this consumer client should consume.</param>
+    /// <param name="cancellationToken">Token to cancel consumer creation.</param>
     /// <returns>A task that represents the asynchronous operation. The task result contains the created <see cref="IConsumerClient"/> instance.</returns>
-    Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent, IntentType intentType);
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> is canceled.</exception>
+    Task<IConsumerClient> CreateAsync(
+        string groupName,
+        byte groupConcurrent,
+        IntentType intentType,
+        CancellationToken cancellationToken = default
+    );
 }

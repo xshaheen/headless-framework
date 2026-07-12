@@ -83,7 +83,7 @@ public sealed class SafeTextValidatorsNoScriptsTests
 
         var result = validator.TestValidate(model);
 
-        result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("strings:contains_scripts");
+        result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("g:contains_scripts");
     }
 
     #endregion

@@ -5,6 +5,9 @@
     <PackageTags>headless;blobs;redis;dotnet</PackageTags>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Blobs.Redis.Tests.Integration" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Polly.Core" />
     <PackageReference Include="StackExchange.Redis" />
   </ItemGroup>

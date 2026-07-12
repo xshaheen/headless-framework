@@ -26,14 +26,16 @@ internal static class RedisMessage
 
         var streamDict = streamEntry.Values.ToDictionary(c => c.Name, c => c.Value);
 
+        var entryId = streamEntry.Id.ToString();
+
         if (!streamDict.TryGetValue(_Headers, out var headersRaw) || headersRaw.IsNullOrEmpty)
         {
-            throw new RedisConsumeMissingHeadersException(streamEntry);
+            throw new RedisConsumeMissingHeadersException(entryId);
         }
 
         if (!streamDict.TryGetValue(_Body, out var bodyRaw))
         {
-            throw new RedisConsumeMissingBodyException(streamEntry);
+            throw new RedisConsumeMissingBodyException(entryId);
         }
 
         try
@@ -42,7 +44,7 @@ internal static class RedisMessage
         }
         catch (Exception ex)
         {
-            throw new RedisConsumeInvalidHeadersException(streamEntry, ex);
+            throw new RedisConsumeInvalidHeadersException(entryId, ex);
         }
 
         if (!bodyRaw.IsNullOrEmpty)
@@ -53,7 +55,7 @@ internal static class RedisMessage
             }
             catch (Exception ex)
             {
-                throw new RedisConsumeInvalidBodyException(streamEntry, ex);
+                throw new RedisConsumeInvalidBodyException(entryId, ex);
             }
         }
         else

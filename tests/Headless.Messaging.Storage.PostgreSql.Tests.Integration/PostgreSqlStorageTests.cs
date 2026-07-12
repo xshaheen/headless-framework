@@ -397,6 +397,128 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     [Theory]
     [InlineData("published")]
     [InlineData("received")]
+    public async Task should_create_status_name_added_composite_index(string table)
+    {
+        // #508 — the initializer creates the final ("StatusName","Added") dashboard index directly.
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+
+        var indexDef = await connection.QueryFirstOrDefaultAsync<string>(
+            "SELECT indexdef FROM pg_indexes WHERE schemaname = 'messaging' AND indexname = @IndexName",
+            new { IndexName = $"idx_{table}_StatusName_Added" }
+        );
+
+        indexDef.Should().NotBeNull().And.Contain("\"StatusName\", \"Added\"");
+    }
+
+    [Fact]
+    public async Task should_create_queued_partial_index_on_published()
+    {
+        // #509 — partial index for the Queued branch of the delayed scheduler's OR predicate.
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+
+        var indexDef = await connection.QueryFirstOrDefaultAsync<string>(
+            "SELECT indexdef FROM pg_indexes WHERE schemaname = 'messaging' AND indexname = 'idx_published_Version_ExpiresAt_Queued'"
+        );
+
+        indexDef.Should().NotBeNull();
+        indexDef.Should().Contain("\"Version\", \"ExpiresAt\"");
+        indexDef.Should().Contain("WHERE").And.Contain("Queued");
+    }
+
+    [Theory]
+    [InlineData("published")]
+    [InlineData("received")]
+    public async Task should_create_content_trgm_gin_index_when_pg_trgm_available(string table)
+    {
+        // #507 — the container role can CREATE EXTENSION pg_trgm, so the trigram content indexes are
+        // created (happy path). This also proves moving CREATE EXTENSION out of the transaction did not
+        // regress trigram-index creation. Managed-PG graceful degradation is covered by the try/catch +
+        // pg_extension probe in _TryEnsureTrgmExtensionAsync (needs a privilege-restricted role to exercise).
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+
+        var indexDef = await connection.QueryFirstOrDefaultAsync<string>(
+            "SELECT indexdef FROM pg_indexes WHERE schemaname = 'messaging' AND indexname = @IndexName",
+            new { IndexName = $"idx_{table}_Content_trgm" }
+        );
+
+        indexDef.Should().NotBeNull();
+        indexDef.Should().Contain("gin").And.Contain("gin_trgm_ops");
+    }
+
+    [Fact]
+    public async Task should_initialize_core_schema_when_restricted_role_cannot_create_pg_trgm()
+    {
+        await RestrictedPostgreSqlDatabase.ExecuteAsync(
+            fixture.ConnectionString,
+            preinstallTrgm: false,
+            async connectionString =>
+            {
+                var initializer = _CreateInitializer(connectionString);
+
+                await initializer.InitializeAsync(AbortToken);
+
+                await using var connection = new NpgsqlConnection(connectionString);
+                await connection.OpenAsync(AbortToken);
+                var tables = await connection.ExecuteScalarAsync<int>(
+                    new CommandDefinition(
+                        "SELECT COUNT(1) FROM information_schema.tables WHERE table_schema = 'messaging' AND table_name IN ('published', 'received')",
+                        cancellationToken: AbortToken
+                    )
+                );
+                var coreIndexes = await connection.ExecuteScalarAsync<int>(
+                    new CommandDefinition(
+                        "SELECT COUNT(1) FROM pg_indexes WHERE schemaname = 'messaging' AND indexname IN ('idx_published_StatusName_Added', 'idx_received_StatusName_Added')",
+                        cancellationToken: AbortToken
+                    )
+                );
+                var trgmIndexes = await connection.ExecuteScalarAsync<int>(
+                    new CommandDefinition(
+                        "SELECT COUNT(1) FROM pg_indexes WHERE schemaname = 'messaging' AND indexname LIKE 'idx_%_Content_trgm'",
+                        cancellationToken: AbortToken
+                    )
+                );
+
+                tables.Should().Be(2);
+                coreIndexes.Should().Be(2);
+                trgmIndexes.Should().Be(0);
+            },
+            AbortToken
+        );
+    }
+
+    [Fact]
+    public async Task should_create_trgm_indexes_for_restricted_role_when_extension_is_preinstalled()
+    {
+        await RestrictedPostgreSqlDatabase.ExecuteAsync(
+            fixture.ConnectionString,
+            preinstallTrgm: true,
+            async connectionString =>
+            {
+                var initializer = _CreateInitializer(connectionString);
+
+                await initializer.InitializeAsync(AbortToken);
+
+                await using var connection = new NpgsqlConnection(connectionString);
+                await connection.OpenAsync(AbortToken);
+                var trgmIndexes = await connection.ExecuteScalarAsync<int>(
+                    new CommandDefinition(
+                        "SELECT COUNT(1) FROM pg_indexes WHERE schemaname = 'messaging' AND indexname IN ('idx_published_Content_trgm', 'idx_received_Content_trgm')",
+                        cancellationToken: AbortToken
+                    )
+                );
+
+                trgmIndexes.Should().Be(2);
+            },
+            AbortToken
+        );
+    }
+
+    [Theory]
+    [InlineData("published")]
+    [InlineData("received")]
     public async Task should_terminalize_poison_retry_row_when_content_cannot_deserialize(string tableName)
     {
         // given
@@ -715,6 +837,15 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
                 because: "the retry-pickup query must use the partial index ({0}) to avoid sequential scans",
                 nextRetryIndex
             );
+    }
+
+    private PostgreSqlStorageInitializer _CreateInitializer(string connectionString)
+    {
+        return new PostgreSqlStorageInitializer(
+            NullLogger<PostgreSqlStorageInitializer>.Instance,
+            Options.Create(new PostgreSqlOptions { ConnectionString = connectionString }),
+            Options.Create(new MessagingOptions())
+        );
     }
 
     private static List<string> _CollectNodeTypes(string explainJson)

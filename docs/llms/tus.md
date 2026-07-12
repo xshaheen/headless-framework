@@ -57,7 +57,6 @@ A complete resumable-upload backend (Azurite for local development: `docker run 
 
 ```csharp
 using Headless.Tus;
-using Headless.Tus.Services;
 using Microsoft.Extensions.Azure;
 using tusdotnet;
 using tusdotnet.Models;
@@ -166,7 +165,7 @@ Two gaps every tus deployment hits regardless of store: browsers hide tus respon
 
 - `TusCorsDefaults` — the tus 1.0.0 CORS surface as constants: `ExposedHeaders`, `AllowedHeaders`, `AllowedMethods` (includes the PATCH/DELETE that default CORS configs miss)
 - `CorsPolicyBuilder.WithTusHeaders()` — applies all three in one call; origins/credentials stay the caller's decision
-- `TusExpiredUploadsCleanupService` + `AddTusExpiredUploadsCleanup(...)` — background job calling `ITusExpirationStore.RemoveExpiredFilesAsync` on an interval
+- `AddTusExpiredUploadsCleanup(...)` — registers an internal background hosted service calling `ITusExpirationStore.RemoveExpiredFilesAsync` on an interval (tuned via the public `TusExpiredUploadsCleanupOptions`)
 
 ### Design Notes
 
@@ -207,7 +206,7 @@ builder.Services.AddTusExpiredUploadsCleanup(); // requires an ITusExpirationSto
 
 ### Side Effects
 
-- `AddTusExpiredUploadsCleanup` registers a hosted service (`TusExpiredUploadsCleanupService`) and `TimeProvider.System` (TryAdd).
+- `AddTusExpiredUploadsCleanup` registers an internal hosted service and `TimeProvider.System` (TryAdd).
 - `TusCorsDefaults` / `WithTusHeaders` are pure helpers — no registrations.
 
 ---
@@ -255,8 +254,7 @@ dotnet add package Headless.Tus.Azure
 
 ```csharp
 using Azure.Storage.Blobs;
-using Headless.Tus.Options;
-using Headless.Tus.Services;
+using Headless.Tus;
 using tusdotnet.Models;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -309,7 +307,7 @@ With custom HTTP headers per upload:
 
 ```csharp
 using Azure.Storage.Blobs.Models;
-using Headless.Tus.Services;
+using Headless.Tus;
 
 public sealed class MyHeadersProvider : ITusAzureBlobHttpHeadersProvider
 {

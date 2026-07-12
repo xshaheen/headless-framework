@@ -18,9 +18,13 @@ namespace Headless.Emails.Aws;
 /// When the request contains no attachments the structured SES API path is used
 /// (<c>SendEmailRequest</c> with a <c>Simple</c> content block). When attachments are
 /// present the message is serialized to a raw MIME stream and sent via the <c>Raw</c>
-/// content path. Non-2xx responses that do not throw are surfaced as a failed
-/// <see cref="SendSingleEmailResponse"/> with a generic error message; PII (addresses)
-/// is deliberately excluded from log output.
+/// content path. Every SES-side rejection — surfaced by the SDK as a typed
+/// <see cref="AmazonSimpleEmailServiceV2Exception"/> (message rejected, account suspended, throttled,
+/// quota exceeded, …) — plus any transport fault is returned as a failed
+/// <see cref="SendSingleEmailResponse"/>; only <see cref="OperationCanceledException"/> and argument
+/// validation propagate. The failed response surfaces the provider's raw error message, but log output
+/// deliberately excludes PII (addresses) and the exception message (which can embed a rejected address),
+/// recording only the SES error code, HTTP status, and request id.
 /// </remarks>
 internal sealed class AwsSesEmailSender(IAmazonSimpleEmailServiceV2 ses, ILogger<AwsSesEmailSender> logger)
     : IEmailSender
@@ -33,32 +37,14 @@ internal sealed class AwsSesEmailSender(IAmazonSimpleEmailServiceV2 ses, ILogger
     /// <param name="request">The email message to send.</param>
     /// <param name="cancellationToken">Token used to cancel the send operation.</param>
     /// <returns>
-    /// A successful response when SES returns a 2xx status code; a failed response
-    /// for non-2xx results that do not map to a thrown exception.
+    /// A successful response carrying the SES message id when SES accepts the message; a failed response
+    /// (surfacing the provider's error message) for a SES rejection, transport fault, or non-2xx status.
     /// </returns>
-    /// <exception cref="Amazon.SimpleEmailV2.Model.MessageRejectedException">
-    /// Thrown when SES rejects the message (for example a missing verified sender).
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the request has neither an HTML nor a text body (via <see cref="SendSingleEmailRequest.EnsureHasBody"/>).
     /// </exception>
-    /// <exception cref="Amazon.SimpleEmailV2.Model.BadRequestException">
-    /// Thrown when the request is malformed.
-    /// </exception>
-    /// <exception cref="Amazon.SimpleEmailV2.Model.NotFoundException">
-    /// Thrown when a referenced resource (for example a configuration set) does not exist.
-    /// </exception>
-    /// <exception cref="Amazon.SimpleEmailV2.Model.AccountSuspendedException">
-    /// Thrown when the AWS account's email sending capability has been suspended.
-    /// </exception>
-    /// <exception cref="Amazon.SimpleEmailV2.Model.MailFromDomainNotVerifiedException">
-    /// Thrown when the MAIL FROM domain has not been verified with SES.
-    /// </exception>
-    /// <exception cref="Amazon.SimpleEmailV2.Model.LimitExceededException">
-    /// Thrown when the SES sending quota is exceeded.
-    /// </exception>
-    /// <exception cref="Amazon.SimpleEmailV2.Model.TooManyRequestsException">
-    /// Thrown when requests are throttled by SES.
-    /// </exception>
-    /// <exception cref="Amazon.SimpleEmailV2.Model.SendingPausedException">
-    /// Thrown when email sending has been paused for the account or configuration set.
+    /// <exception cref="OperationCanceledException">
+    /// Thrown when <paramref name="cancellationToken"/> is cancelled during the send.
     /// </exception>
     public async ValueTask<SendSingleEmailResponse> SendAsync(
         SendSingleEmailRequest request,
@@ -102,15 +88,42 @@ internal sealed class AwsSesEmailSender(IAmazonSimpleEmailServiceV2 ses, ILogger
         CancellationToken cancellationToken
     )
     {
-        // The SES SDK throws strongly-typed exceptions (MessageRejectedException, BadRequestException,
-        // NotFoundException, AccountSuspendedException, MailFromDomainNotVerifiedException,
-        // LimitExceededException, TooManyRequestsException, SendingPausedException) for error
-        // responses; those propagate to the caller as documented on SendAsync.
-        var response = await ses.SendEmailAsync(request, cancellationToken).ConfigureAwait(false);
+        SendEmailResponse response;
+
+        try
+        {
+            response = await ses.SendEmailAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Only the caller's own cancellation propagates per the IEmailSender contract. A non-caller
+            // cancellation — for example an AWS SDK internal HttpClient timeout surfacing as a
+            // TaskCanceledException while the caller's token is NOT cancelled — is a delivery failure and
+            // falls through to the general handler below.
+            throw;
+        }
+        catch (AmazonSimpleEmailServiceV2Exception ex)
+        {
+            // The SES SDK signals every service-side rejection as a typed exception. Return it as a failed
+            // response (contract: never throw for a provider error). Log only non-PII tracking fields — the
+            // exception message can embed the rejected recipient address, so it is surfaced to the caller in
+            // the response but never written to a log sink.
+            logger.LogSesRejectedEmail(ex.ErrorCode, (int)ex.StatusCode, ex.RequestId);
+
+            return SendSingleEmailResponse.FromException(ex);
+        }
+        catch (Exception ex)
+        {
+            // Transport/SDK faults (connection reset, DNS, serialization) also become a failed response.
+            // Log the exception type only — its message may carry request detail we do not want in logs.
+            logger.LogSesSendFailed(ex.GetType().Name);
+
+            return SendSingleEmailResponse.FromException(ex);
+        }
 
         if (response.HttpStatusCode.IsSuccessStatusCode())
         {
-            return SendSingleEmailResponse.Succeeded();
+            return SendSingleEmailResponse.Succeeded(response.MessageId);
         }
 
         // Log only the non-PII tracking fields from the AWS response, not the whole
@@ -176,4 +189,25 @@ internal static partial class AwsSesEmailSenderLoggerExtensions
         string? requestId,
         string? messageId
     );
+
+    [LoggerMessage(
+        EventId = 2,
+        EventName = "SesRejectedEmail",
+        Level = LogLevel.Error,
+        Message = "Amazon SES rejected the email send. ErrorCode={ErrorCode}, HttpStatusCode={HttpStatusCode}, RequestId={RequestId}"
+    )]
+    public static partial void LogSesRejectedEmail(
+        this ILogger logger,
+        string? errorCode,
+        int httpStatusCode,
+        string? requestId
+    );
+
+    [LoggerMessage(
+        EventId = 3,
+        EventName = "SesSendFailed",
+        Level = LogLevel.Error,
+        Message = "Failed to send email via Amazon SES. ExceptionType={ExceptionType}"
+    )]
+    public static partial void LogSesSendFailed(this ILogger logger, string exceptionType);
 }

@@ -5,35 +5,40 @@ namespace Headless.Jobs.Enums;
 /// <summary>
 /// Lifecycle state of a job row (time job or cron occurrence).
 /// </summary>
+/// <remarks>
+/// New members may be added in future versions; consumers that <see langword="switch"/> on this enum
+/// should include a default arm.
+/// </remarks>
+[PublicAPI]
 public enum JobStatus
 {
     /// <summary>The job has been persisted but has not yet been picked up for execution.</summary>
-    Idle,
+    Idle = 0,
 
     /// <summary>The job has been selected by the scheduler and is waiting for a worker thread.</summary>
-    Queued,
+    Queued = 1,
 
     /// <summary>A worker thread is currently executing the job function.</summary>
-    InProgress,
+    InProgress = 2,
 
     /// <summary>The job function completed without error.</summary>
-    Succeeded,
+    Succeeded = 3,
 
     /// <summary>
     /// The job completed successfully but its execution time was already in the past at dispatch time
     /// (picked up from the stale-job backlog).
     /// </summary>
-    DueDone,
+    DueDone = 4,
 
     /// <summary>The job function threw an unhandled exception and exhausted its retry budget.</summary>
-    Failed,
+    Failed = 5,
 
     /// <summary>Execution was cancelled cooperatively via <c>JobFunctionContext.RequestCancellation</c> or an external cancel signal.</summary>
-    Cancelled,
+    Cancelled = 6,
 
     /// <summary>
     /// Execution was intentionally skipped — for example via <c>CronOccurrenceOperations.SkipIfAlreadyRunning</c>
     /// or by throwing <c>TerminateExecutionException</c> with this status.
     /// </summary>
-    Skipped,
+    Skipped = 7,
 }

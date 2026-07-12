@@ -5,24 +5,28 @@ using MsgHeaders = Headless.Messaging.Headers;
 namespace Headless.Messaging.Testing;
 
 /// <summary>Identifies which observable collection a recorded message belongs to.</summary>
+/// <remarks>
+/// Additional members may be added in future versions, so consumers that switch on this enum should
+/// include a default branch to handle values they do not recognize.
+/// </remarks>
 [PublicAPI]
 public enum MessageObservationType
 {
     /// <summary>Message was published.</summary>
-    Published,
+    Published = 0,
 
     /// <summary>Message was consumed successfully.</summary>
-    Consumed,
+    Consumed = 1,
 
     /// <summary>Message processing faulted.</summary>
-    Faulted,
+    Faulted = 2,
 
     /// <summary>
     /// Retry budget was exhausted and the framework invoked <c>RetryPolicy.OnExhausted</c>.
     /// Recorded BEFORE the user-supplied callback runs, so a hanging or throwing callback
     /// cannot lose the observation.
     /// </summary>
-    Exhausted,
+    Exhausted = 3,
 }
 
 /// <summary>A message captured by the test harness.</summary>

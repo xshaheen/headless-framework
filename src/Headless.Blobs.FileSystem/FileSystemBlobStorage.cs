@@ -32,7 +32,7 @@ namespace Headless.Blobs.FileSystem;
 /// creates the intermediate path directories inherent to writing a blob.
 /// </para>
 /// </remarks>
-public sealed class FileSystemBlobStorage : IBlobStorage
+internal sealed class FileSystemBlobStorage : IBlobStorage
 {
     private readonly string _basePath;
     private readonly IJsonSerializer _serializer;

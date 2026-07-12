@@ -9,6 +9,10 @@ namespace Headless.Messaging.Monitoring;
 /// written to (and read from) the storage <c>StatusName</c> column and surfaced on the monitoring API,
 /// so renaming a member is a storage- and wire-breaking change.
 /// </summary>
+/// <remarks>
+/// Additional members may be added in future versions, so consumers that switch on this enum should
+/// include a default branch to handle values they do not recognize.
+/// </remarks>
 [PublicAPI]
 public enum StatusName
 {

@@ -12,8 +12,7 @@ namespace Headless.Media.Indexing;
 /// <param name="pdfProvider">The PDF text provider.</param>
 /// <param name="wordProvider">The Word (.docx) text provider.</param>
 /// <param name="presentationProvider">The PowerPoint (.pptx) text provider.</param>
-[PublicAPI]
-public sealed class MediaFileTextProviderResolver(
+internal sealed class MediaFileTextProviderResolver(
     PdfMediaFileTextProvider pdfProvider,
     WordDocumentMediaFileTextProvider wordProvider,
     PresentationDocumentMediaFileTextProvider presentationProvider

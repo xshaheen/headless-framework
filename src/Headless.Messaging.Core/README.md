@@ -20,9 +20,12 @@ Provides the foundational runtime for reliable distributed messaging with transa
 - **Type-Safe Dispatch**: Reflection-free consumer invocation via compile-time generated code
 - **Extension System**: Pluggable storage and transport providers, with exactly one storage provider required
 - **Bootstrapper**: Hosted service for startup and shutdown coordination
+- **Host-Cancellable Consumer Startup**: Factory creation, metadata provisioning, and subscription receive the host-stopping token without converting cancellation into broker failures
 - **Circuit Breaker**: Per-consumer-group circuit breaker (Closed → Open → HalfOpen) with exponential open-duration escalation
 - **Adaptive Retry Backpressure**: Retry processor backs off polling when circuit-open rate exceeds threshold
 - **Distributed Lock Integration**: Optional `IDistributedLock`-backed mutual exclusion for multi-replica retry pickup (`UseStorageLock`)
+
+Consumer providers implement trailing optional cancellation tokens on both `IConsumerClientFactory.CreateAsync(...)` contract shapes and on `IConsumerClient.FetchMessageNamesAsync(...)` / `SubscribeAsync(...)`. Core passes the host-stopping token through metadata startup and a linked group token through worker creation and subscription. Providers preserve `OperationCanceledException` so shutdown is not reported as a broker connection failure.
 
 ## Installation
 
@@ -265,9 +268,9 @@ public sealed class LoggingConsumeMiddleware(ILogger<LoggingConsumeMiddleware> l
     }
 }
 
-public sealed class CorrelationPublishMiddleware : IPublishMiddleware<PublishingContext<OrderPlaced>>
+public sealed class CorrelationPublishMiddleware : IPublishMiddleware<PublishContext<OrderPlaced>>
 {
-    public ValueTask InvokeAsync(PublishingContext<OrderPlaced> context, Func<ValueTask> next)
+    public ValueTask InvokeAsync(PublishContext<OrderPlaced> context, Func<ValueTask> next)
     {
         context.Options = (context.Options ?? new PublishOptions()) with
         {
@@ -289,7 +292,7 @@ Registration scopes:
 - `AddConsumeMiddlewareFor<TMiddleware, TMessage>(group)`: typed consume middleware for one message type and consumer group.
 - `.WithPriority(int)`: lower values run first; ties use registration order. Framework tenant propagation middleware uses priority `-1000`, so user middleware defaults (`0`) run after tenant restoration/stamping.
 
-Middleware can short-circuit by returning without calling `next`. Use ordinary `try/catch` around `await next()` for compensation and error policy. The framework still guards two runtime invariants: post-success middleware failures are logged and suppressed only after the inner ring completed, and cancellation matching `context.CancellationToken` is never silently swallowed. `PublishingContext<T>.Options` and `DelayTime` are mutable before `await next()` and throw after `next()` returns; reads, including `IsTransactional`, remain valid.
+Middleware can short-circuit by returning without calling `next`. Use ordinary `try/catch` around `await next()` for compensation and error policy. The framework still guards two runtime invariants: post-success middleware failures are logged and suppressed only after the inner ring completed, and cancellation matching `context.CancellationToken` is never silently swallowed. `PublishContext<T>.Options` and `DelayTime` are mutable before `await next()` and throw after `next()` returns; reads, including `IsTransactional`, remain valid.
 
 ### Multi-Tenancy Propagation
 

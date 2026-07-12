@@ -17,7 +17,7 @@ namespace Headless.Messaging.RabbitMq;
 /// Channels are rented for publish operations and returned after use. The pool size is fixed at
 /// 15 slots by default. Renting blocks when all slots are occupied until a channel is returned.
 /// </remarks>
-public interface IConnectionChannelPool
+internal interface IConnectionChannelPool
 {
     /// <summary>Gets the broker host address in <c>host:port</c> form.</summary>
     string HostAddress { get; }
@@ -29,7 +29,8 @@ public interface IConnectionChannelPool
     string Exchange { get; }
 
     /// <summary>Returns the shared, lazily-established AMQP connection, opening it if necessary.</summary>
-    Task<IConnection> GetConnectionAsync();
+    /// <param name="cancellationToken">Token to cancel connection setup.</param>
+    Task<IConnection> GetConnectionAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Rents an AMQP channel from the pool, blocking until a slot is available.
@@ -58,12 +59,12 @@ public interface IConnectionChannelPool
 }
 
 /// <summary>Default implementation of <see cref="IConnectionChannelPool"/>.</summary>
-public sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable, IAsyncDisposable
+internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable, IAsyncDisposable
 {
     private const int _DefaultPoolSize = 15;
     private readonly SemaphoreSlim _connectionLock = new(1, 1);
 
-    private readonly Func<Task<IConnection>> _connectionActivator;
+    private readonly Func<CancellationToken, Task<IConnection>> _connectionActivator;
     private readonly bool _isPublishConfirms;
     private readonly ILogger<ConnectionChannelPool> _logger;
     private readonly ConcurrentQueue<IChannel> _pool;
@@ -78,6 +79,14 @@ public sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable,
         IOptions<MessagingOptions> messagingAccessorOptionsAccessor,
         IOptions<RabbitMqMessagingOptions> optionsAccessor
     )
+        : this(logger, messagingAccessorOptionsAccessor, optionsAccessor, null) { }
+
+    internal ConnectionChannelPool(
+        ILogger<ConnectionChannelPool> logger,
+        IOptions<MessagingOptions> messagingAccessorOptionsAccessor,
+        IOptions<RabbitMqMessagingOptions> optionsAccessor,
+        Func<CancellationToken, Task<IConnection>>? connectionActivator
+    )
     {
         _logger = logger;
         _maxSize = _DefaultPoolSize;
@@ -87,7 +96,7 @@ public sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable,
         var messagingOptions = messagingAccessorOptionsAccessor.Value;
         var options = optionsAccessor.Value;
 
-        _connectionActivator = _CreateConnection(options);
+        _connectionActivator = connectionActivator ?? _CreateConnection(options);
         _isPublishConfirms = options.PublishConfirms;
 
         HostAddress = string.Create(CultureInfo.InvariantCulture, $"{options.HostName}:{options.Port}");
@@ -143,14 +152,14 @@ public sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable,
 
     public string Exchange { get; }
 
-    public async Task<IConnection> GetConnectionAsync()
+    public async Task<IConnection> GetConnectionAsync(CancellationToken cancellationToken = default)
     {
         if (_connection is { IsOpen: true })
         {
             return _connection;
         }
 
-        await _connectionLock.WaitAsync().ConfigureAwait(false);
+        await _connectionLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             if (_connection is { IsOpen: true })
@@ -159,7 +168,7 @@ public sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable,
             }
 
             _connection?.Dispose();
-            _connection = await _connectionActivator().ConfigureAwait(false);
+            _connection = await _connectionActivator(cancellationToken).ConfigureAwait(false);
             return _connection;
         }
         finally
@@ -200,7 +209,7 @@ public sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable,
         _connectionLock.Dispose();
     }
 
-    private static Func<Task<IConnection>> _CreateConnection(RabbitMqMessagingOptions options)
+    private static Func<CancellationToken, Task<IConnection>> _CreateConnection(RabbitMqMessagingOptions options)
     {
         var factory = new ConnectionFactory
         {
@@ -219,12 +228,12 @@ public sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable,
             {
                 endpoint.Ssl = factory.Ssl;
             }
-            return () => factory.CreateConnectionAsync(endpoints);
+            return cancellationToken => factory.CreateConnectionAsync(endpoints, cancellationToken);
         }
 
         factory.HostName = options.HostName;
         options.ConnectionFactoryOptions?.Invoke(factory);
-        return () => factory.CreateConnectionAsync();
+        return cancellationToken => factory.CreateConnectionAsync(cancellationToken);
     }
 
     private async Task<IChannel> _CreateChannelAsync(CancellationToken cancellationToken)
@@ -242,7 +251,7 @@ public sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable,
 
         try
         {
-            var connection = await GetConnectionAsync().ConfigureAwait(false);
+            var connection = await GetConnectionAsync(cancellationToken).ConfigureAwait(false);
             model = await connection
                 .CreateChannelAsync(BuildChannelOptions(_isPublishConfirms), cancellationToken)
                 .ConfigureAwait(false);

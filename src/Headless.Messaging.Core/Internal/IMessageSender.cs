@@ -135,7 +135,9 @@ internal sealed class MessageSender : IMessageSender
             return MessagingRetryAttempt.Completed(OperateResult.Success);
         }
 
-        var transportMsg = await _serializer.SerializeToTransportMessageAsync(message.Origin).ConfigureAwait(false);
+        var transportMsg = await _serializer
+            .SerializeToTransportMessageAsync(message.Origin, cancellationToken)
+            .ConfigureAwait(false);
         var selected = await _ResolveTransportAsync(message).ConfigureAwait(false);
         if (selected.Result is { } failure)
         {

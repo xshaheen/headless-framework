@@ -4,7 +4,6 @@ using System.Data.Common;
 using Headless.Abstractions;
 using Headless.CommitCoordination;
 using Headless.Jobs;
-using Headless.Jobs.DependencyInjection;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;

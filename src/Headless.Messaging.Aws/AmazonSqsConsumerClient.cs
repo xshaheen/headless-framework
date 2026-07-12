@@ -43,11 +43,12 @@ internal sealed class AmazonSqsConsumerClient(
 
     public BrokerAddress BrokerAddress => new("aws_sqs", _queueUrl);
 
-    public async ValueTask<ICollection<string>> FetchMessageNamesAsync(IEnumerable<string> messageNames)
+    public async ValueTask<ICollection<string>> FetchMessageNamesAsync(
+        IEnumerable<string> messageNames,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotNull(messageNames);
-
-        var cancellationToken = CancellationToken.None;
 
         if (intentType == IntentType.Queue)
         {
@@ -88,11 +89,9 @@ internal sealed class AmazonSqsConsumerClient(
         return topicArns;
     }
 
-    public async ValueTask SubscribeAsync(IEnumerable<string> topics)
+    public async ValueTask SubscribeAsync(IEnumerable<string> topics, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNull(topics);
-
-        var cancellationToken = CancellationToken.None;
 
         if (intentType == IntentType.Queue)
         {
@@ -275,13 +274,15 @@ internal sealed class AmazonSqsConsumerClient(
         );
     }
 
-    public async ValueTask CommitAsync(object? sender)
+    public async ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default)
     {
         var inflight = _GetInflightMessage(sender);
 
         try
         {
-            await _sqsClient!.DeleteMessageAsync(inflight.QueueUrl, inflight.ReceiptHandle).ConfigureAwait(false);
+            await _sqsClient!
+                .DeleteMessageAsync(inflight.QueueUrl, inflight.ReceiptHandle, cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (ReceiptHandleIsInvalidException ex)
         {
@@ -289,14 +290,14 @@ internal sealed class AmazonSqsConsumerClient(
         }
     }
 
-    public async ValueTask RejectAsync(object? sender)
+    public async ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
     {
         var inflight = _GetInflightMessage(sender);
 
         try
         {
             await _sqsClient!
-                .ChangeMessageVisibilityAsync(inflight.QueueUrl, inflight.ReceiptHandle, 3)
+                .ChangeMessageVisibilityAsync(inflight.QueueUrl, inflight.ReceiptHandle, 3, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (MessageNotInflightException ex)
@@ -456,7 +457,10 @@ internal sealed class AmazonSqsConsumerClient(
     {
         await _ConnectAsync(initSns: false, initSqs: true, cancellationToken: cancellationToken).ConfigureAwait(false);
 
-        var queueAttributes = await _sqsClient!.GetAttributesAsync(_queueUrl).ConfigureAwait(false);
+        var queueAttributes = await _sqsClient!
+            .GetAttributesAsync(_queueUrl)
+            .WaitAsync(cancellationToken)
+            .ConfigureAwait(false);
 
         var sqsQueueArn = queueAttributes["QueueArn"];
 
@@ -475,12 +479,18 @@ internal sealed class AmazonSqsConsumerClient(
         policy.AddSqsPermissions(topicArnsToAllow, sqsQueueArn);
 
         var setAttributes = new Dictionary<string, string>(StringComparer.Ordinal) { { "Policy", policy.ToJson() } };
-        await _sqsClient.SetAttributesAsync(_queueUrl, setAttributes).ConfigureAwait(false);
+        await _sqsClient
+            .SetAttributesAsync(_queueUrl, setAttributes)
+            .WaitAsync(cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private async Task _SubscribeToTopics(IEnumerable<string> topics, CancellationToken cancellationToken)
     {
-        var queueAttributes = await _sqsClient!.GetAttributesAsync(_queueUrl).ConfigureAwait(false);
+        var queueAttributes = await _sqsClient!
+            .GetAttributesAsync(_queueUrl)
+            .WaitAsync(cancellationToken)
+            .ConfigureAwait(false);
 
         var sqsQueueArn = queueAttributes["QueueArn"];
         foreach (var topicArn in topics)

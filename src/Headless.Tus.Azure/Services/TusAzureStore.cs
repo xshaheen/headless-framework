@@ -8,14 +8,14 @@ using FluentValidation;
 using Headless.Checks;
 using Headless.Tus.Internal;
 using Headless.Tus.Models;
-using Headless.Tus.Options;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using tusdotnet.Interfaces;
 using tusdotnet.Models;
 using tusdotnet.Stores.FileIdProviders;
 
-namespace Headless.Tus.Services;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Tus;
 
 /// <summary>
 /// TUS resumable-upload store backed by Azure Block Blob Storage.

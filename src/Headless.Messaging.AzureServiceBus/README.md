@@ -13,6 +13,7 @@ Enables enterprise messaging using Azure Service Bus with topics, subscriptions,
 - **Auto-Provisioning**: Automatic topic and subscription creation
 - **Advanced Routing**: Message routing rules and filters
 - **Enterprise Features**: Transactions, duplicate detection, dead-lettering
+- **Host-Cancellable Startup**: Client, topology, and processor setup honor host shutdown.
 
 ## Installation
 

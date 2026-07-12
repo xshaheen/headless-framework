@@ -31,7 +31,7 @@ public sealed class JsonUtf8SerializerTests : TestBase
         var message = new Message(headers, new TestPayload { Name = "Test", Value = 42 });
 
         // when
-        var transport = await _serializer.SerializeToTransportMessageAsync(message);
+        var transport = await _serializer.SerializeToTransportMessageAsync(message, AbortToken);
 
         // then
         transport.Headers.Should().BeSameAs(headers);
@@ -57,7 +57,7 @@ public sealed class JsonUtf8SerializerTests : TestBase
         var transport = new TransportMessage(headers, json);
 
         // when
-        var message = await _serializer.DeserializeAsync(transport, typeof(TestPayload));
+        var message = await _serializer.DeserializeAsync(transport, typeof(TestPayload), AbortToken);
 
         // then
         message.Headers.Should().BeSameAs(headers);
@@ -75,7 +75,7 @@ public sealed class JsonUtf8SerializerTests : TestBase
         var message = new Message(headers, value: null);
 
         // when
-        var transport = await _serializer.SerializeToTransportMessageAsync(message);
+        var transport = await _serializer.SerializeToTransportMessageAsync(message, AbortToken);
 
         // then
         transport.Headers.Should().BeSameAs(headers);
@@ -90,7 +90,7 @@ public sealed class JsonUtf8SerializerTests : TestBase
         var transport = new TransportMessage(headers, ReadOnlyMemory<byte>.Empty);
 
         // when
-        var message = await _serializer.DeserializeAsync(transport, typeof(TestPayload));
+        var message = await _serializer.DeserializeAsync(transport, typeof(TestPayload), AbortToken);
 
         // then
         message.Headers.Should().BeSameAs(headers);
@@ -106,7 +106,7 @@ public sealed class JsonUtf8SerializerTests : TestBase
         var transport = new TransportMessage(headers, json);
 
         // when
-        var message = await _serializer.DeserializeAsync(transport, valueType: null);
+        var message = await _serializer.DeserializeAsync(transport, valueType: null, cancellationToken: AbortToken);
 
         // then
         message.Value.Should().BeNull();
@@ -126,8 +126,8 @@ public sealed class JsonUtf8SerializerTests : TestBase
         var message = new Message(headers, new TestPayload { Name = "RoundTrip" });
 
         // when - serialize then deserialize
-        var transport = await _serializer.SerializeToTransportMessageAsync(message);
-        var deserializedMessage = await _serializer.DeserializeAsync(transport, typeof(TestPayload));
+        var transport = await _serializer.SerializeToTransportMessageAsync(message, AbortToken);
+        var deserializedMessage = await _serializer.DeserializeAsync(transport, typeof(TestPayload), AbortToken);
 
         // then - headers should be preserved
         deserializedMessage.Headers.Should().ContainKey("headless-msg-id").WhoseValue.Should().Be("preserve-test");
@@ -147,10 +147,10 @@ public sealed class JsonUtf8SerializerTests : TestBase
         var payload = new CompatibilityPayload { PublicApiName = "wire-contract", RetryCount = 3 };
 
         // when
-        var transport = await serializer.SerializeToTransportMessageAsync(new Message(headers, payload));
+        var transport = await serializer.SerializeToTransportMessageAsync(new Message(headers, payload), AbortToken);
         var json = Encoding.UTF8.GetString(transport.Body.Span);
         var inbound = new TransportMessage(headers, """{"public_api_name":"from-wire","retry_count":4}"""u8.ToArray());
-        var deserialized = await serializer.DeserializeAsync(inbound, typeof(CompatibilityPayload));
+        var deserialized = await serializer.DeserializeAsync(inbound, typeof(CompatibilityPayload), AbortToken);
 
         // then
         json.Should().Contain("\"public_api_name\"").And.Contain("\"retry_count\"");
@@ -257,8 +257,8 @@ public sealed class JsonUtf8SerializerTests : TestBase
         var message = new Message(headers, complexPayload);
 
         // when
-        var transport = await _serializer.SerializeToTransportMessageAsync(message);
-        var deserialized = await _serializer.DeserializeAsync(transport, typeof(ComplexPayload));
+        var transport = await _serializer.SerializeToTransportMessageAsync(message, AbortToken);
+        var deserialized = await _serializer.DeserializeAsync(transport, typeof(ComplexPayload), AbortToken);
 
         // then
         deserialized.Value.Should().NotBeNull();
@@ -290,7 +290,7 @@ public sealed class JsonUtf8SerializerTests : TestBase
         var transport = new TransportMessage(headers, json);
 
         // when
-        var message = await _serializer.DeserializeAsync(transport, typeof(TestPayload));
+        var message = await _serializer.DeserializeAsync(transport, typeof(TestPayload), AbortToken);
 
         // then - unknown members must be skipped, not rejected (rolling-deploy wire compatibility)
         var payload = message.Value.Should().BeOfType<TestPayload>().Which;

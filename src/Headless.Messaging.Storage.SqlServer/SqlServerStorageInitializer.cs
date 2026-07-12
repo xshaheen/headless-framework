@@ -187,11 +187,13 @@ internal sealed class SqlServerStorageInitializer(
                 IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
             END CATCH;
 
-            -- #8 — standalone StatusName index so GetStatisticsAsync per-status COUNT_BIGs do an index
-            -- scan instead of a full scan on large tables (composite indexes lead with ExpiresAt/Version).
+            -- #508 — ([StatusName],[Added]) serves BOTH the dashboard hourly-timeline query
+            -- (WHERE StatusName=@p AND Added BETWEEN … — a StatusName seek + Added range scan) and the
+            -- per-status COUNT_BIGs in GetStatisticsAsync via its [StatusName] prefix. The initializer
+            -- creates the final schema directly; it does not carry migration DDL for superseded indexes.
             BEGIN TRY
-                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_StatusName' AND object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
-                    CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_StatusName] ON {GetReceivedTableName()} ([StatusName] ASC);
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_StatusName_Added' AND object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
+                    CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_StatusName_Added] ON {GetReceivedTableName()} ([StatusName] ASC, [Added] ASC);
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
@@ -203,22 +205,6 @@ internal sealed class SqlServerStorageInitializer(
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
-            END CATCH;
-
-            BEGIN TRY
-                IF COL_LENGTH(N'{GetReceivedTableName()}', N'InlineAttempts') IS NULL
-                    ALTER TABLE {GetReceivedTableName()} ADD [InlineAttempts] [int] NOT NULL CONSTRAINT [DF_{receivedPrefix}_InlineAttempts] DEFAULT 0;
-            END TRY
-            BEGIN CATCH
-                IF ERROR_NUMBER() NOT IN (1913, 2714, 2705) THROW;
-            END CATCH;
-
-            BEGIN TRY
-                IF COL_LENGTH(N'{GetReceivedTableName()}', N'Owner') IS NULL
-                    ALTER TABLE {GetReceivedTableName()} ADD [Owner] [nvarchar]({options.Value.OwnerColumnMaxLength}) NULL;
-            END TRY
-            BEGIN CATCH
-                IF ERROR_NUMBER() NOT IN (1913, 2714, 2705) THROW;
             END CATCH;
 
             BEGIN TRY
@@ -272,10 +258,10 @@ internal sealed class SqlServerStorageInitializer(
                 IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
             END CATCH;
 
-            -- #8 — see the received-table note above; standalone StatusName index for dashboard statistics.
+            -- #508 — see the received-table note above; create the final dashboard timeline/statistics index.
             BEGIN TRY
-                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{publishedPrefix}_StatusName' AND object_id = OBJECT_ID(N'{GetPublishedTableName()}'))
-                    CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_StatusName] ON {GetPublishedTableName()} ([StatusName] ASC);
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{publishedPrefix}_StatusName_Added' AND object_id = OBJECT_ID(N'{GetPublishedTableName()}'))
+                    CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_StatusName_Added] ON {GetPublishedTableName()} ([StatusName] ASC, [Added] ASC);
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
@@ -287,22 +273,6 @@ internal sealed class SqlServerStorageInitializer(
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
-            END CATCH;
-
-            BEGIN TRY
-                IF COL_LENGTH(N'{GetPublishedTableName()}', N'InlineAttempts') IS NULL
-                    ALTER TABLE {GetPublishedTableName()} ADD [InlineAttempts] [int] NOT NULL CONSTRAINT [DF_{publishedPrefix}_InlineAttempts] DEFAULT 0;
-            END TRY
-            BEGIN CATCH
-                IF ERROR_NUMBER() NOT IN (1913, 2714, 2705) THROW;
-            END CATCH;
-
-            BEGIN TRY
-                IF COL_LENGTH(N'{GetPublishedTableName()}', N'Owner') IS NULL
-                    ALTER TABLE {GetPublishedTableName()} ADD [Owner] [nvarchar]({options.Value.OwnerColumnMaxLength}) NULL;
-            END TRY
-            BEGIN CATCH
-                IF ERROR_NUMBER() NOT IN (1913, 2714, 2705) THROW;
             END CATCH;
 
             BEGIN TRY

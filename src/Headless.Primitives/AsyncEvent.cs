@@ -11,6 +11,7 @@ namespace Headless.Primitives;
 /// and provides the option to invoke handlers in parallel.
 /// It also implements the IObservable interface, allowing observers to subscribe to the event.
 /// </remarks>
+[PublicAPI]
 public interface IAsyncEvent<TEvent> : IObservable<TEvent>
     where TEvent : EventArgs
 {
@@ -40,13 +41,15 @@ public interface IAsyncEvent<TEvent> : IObservable<TEvent>
     /// <summary>Invokes all registered event handlers asynchronously over a snapshot of the invocation list.</summary>
     /// <param name="sender">The source of the event.</param>
     /// <param name="eventArgs">The event data.</param>
+    /// <param name="cancellationToken">A token to observe while waiting for the handlers to complete.</param>
     /// <returns>A <see cref="Task"/> that completes once every handler has run.</returns>
     /// <remarks>
     /// When <see cref="ParallelInvoke"/> is <see langword="true"/>, handlers run concurrently and any failures are
     /// surfaced together; when <see langword="false"/>, handlers run sequentially and the first handler exception
-    /// stops the remaining handlers and propagates to the caller.
+    /// stops the remaining handlers and propagates to the caller. Cancellation is observed before dispatch and,
+    /// in the sequential case, between handlers; individual handler delegates do not receive the token.
     /// </remarks>
-    Task InvokeAsync(object sender, TEvent eventArgs);
+    Task InvokeAsync(object sender, TEvent eventArgs, CancellationToken cancellationToken = default);
 
     /// <summary>Clear the event handlers.</summary>
     void ClearHandlers();
@@ -60,6 +63,7 @@ public interface IAsyncEvent<TEvent> : IObservable<TEvent>
 /// and provides the option to invoke handlers in parallel. It also implements the IObservable interface,
 /// allowing observers to subscribe to the event.
 /// </remarks>
+[PublicAPI]
 public sealed class AsyncEvent<TEvent>(bool parallelInvoke = false) : IAsyncEvent<TEvent>
     where TEvent : EventArgs
 {
@@ -110,8 +114,10 @@ public sealed class AsyncEvent<TEvent>(bool parallelInvoke = false) : IAsyncEven
     }
 
     /// <inheritdoc />
-    public async Task InvokeAsync(object sender, TEvent eventArgs)
+    public async Task InvokeAsync(object sender, TEvent eventArgs, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         List<Func<object, TEvent, Task>> tmpInvocationList;
 
         lock (_lockObject)
@@ -144,6 +150,7 @@ public sealed class AsyncEvent<TEvent>(bool parallelInvoke = false) : IAsyncEven
         {
             foreach (var callback in tmpInvocationList)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 await callback(sender, eventArgs).ConfigureAwait(false);
             }
         }
