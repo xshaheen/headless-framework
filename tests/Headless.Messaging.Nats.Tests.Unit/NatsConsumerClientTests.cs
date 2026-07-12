@@ -1090,19 +1090,24 @@ public sealed class NatsConsumerClientTests : TestBase
         await client.SubscribeAsync(["orders"]);
         using var cts = new CancellationTokenSource();
 
-        // when
         var listening = client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token).AsTask();
-        var assertion = listening.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+        try
+        {
+            // when
+            await firstFailureLogged.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+            timeProvider.Advance(TimeSpan.FromSeconds(5)); // release the backoff so the second fetch runs
+            await terminationLogged.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
 
-        await firstFailureLogged.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
-        timeProvider.Advance(TimeSpan.FromSeconds(5)); // release the backoff so the second fetch runs
-
-        // then — the second consecutive failure escalates to a supervised-restart termination
-        await terminationLogged.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
-        var act = async () => await assertion;
-        await act.Should()
-            .ThrowAsync<BrokerConnectionException>()
-            .WithInnerException<BrokerConnectionException, InvalidOperationException>();
+            // then — the second consecutive failure escalates to a supervised-restart termination
+            var act = async () => await listening.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+            await act.Should()
+                .ThrowAsync<BrokerConnectionException>()
+                .WithInnerException<BrokerConnectionException, InvalidOperationException>();
+        }
+        finally
+        {
+            await _StopListeningIgnoringOutcomeAsync(listening, cts);
+        }
     }
 
     [Fact]
@@ -1139,7 +1144,7 @@ public sealed class NatsConsumerClientTests : TestBase
                     3 => ValueTask.FromException<INatsJSMsg<ReadOnlyMemory<byte>>?>(
                         new InvalidOperationException("boom-2")
                     ),
-                    _ => _Idle(call.Arg<CancellationToken>(), idled),
+                    _ => _Idle(idled, call.Arg<CancellationToken>()),
                 }
             );
 
@@ -1199,8 +1204,8 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     private static ValueTask<INatsJSMsg<ReadOnlyMemory<byte>>?> _Idle(
-        CancellationToken cancellationToken,
-        TaskCompletionSource idled
+        TaskCompletionSource idled,
+        CancellationToken cancellationToken
     )
     {
         idled.TrySetResult();
@@ -1248,5 +1253,18 @@ public sealed class NatsConsumerClientTests : TestBase
         {
             // Normal shutdown.
         }
+    }
+
+    // Awaits the listening task within the using scope (so the resource-lifetime analyzer is satisfied) but
+    // observes any fault instead of re-throwing — used when the test has already asserted the terminal fault.
+    private static async Task _StopListeningIgnoringOutcomeAsync(Task listeningTask, CancellationTokenSource cts)
+    {
+        await cts.CancelAsync();
+        await listeningTask.ContinueWith(
+            static _ => { },
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default
+        );
     }
 }
