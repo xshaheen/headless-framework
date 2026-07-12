@@ -23,10 +23,11 @@ public interface ICouchbaseClustersProvider : IAsyncDisposable
     /// </summary>
     /// <param name="clusterKey">The logical cluster identifier.</param>
     /// <param name="cancellationToken">
-    /// A token to observe while waiting for the task to complete. Because clusters are created once and
-    /// cached, the token governs the connection attempt that first materializes the cluster for a given
-    /// <paramref name="clusterKey"/>; callers that receive an already-cached cluster complete synchronously
-    /// and do not observe the token.
+    /// A token that bounds only <em>this</em> caller's wait for the cluster. The underlying connection is a
+    /// process-shared, must-complete operation that always runs on <see cref="CancellationToken.None"/>, so
+    /// cancelling this token abandons the caller's own wait without aborting — or permanently poisoning — the
+    /// shared connection that other callers are awaiting. A connection attempt that fails is evicted so the
+    /// next caller retries; callers that receive an already-connected cluster complete synchronously.
     /// </param>
     /// <returns>A tuple of the connected cluster and its transaction manager.</returns>
     ValueTask<GetClusterResult> GetClusterAsync(string clusterKey, CancellationToken cancellationToken = default);
@@ -38,8 +39,11 @@ public interface ICouchbaseClustersProvider : IAsyncDisposable
 /// </summary>
 /// <remarks>
 /// Cluster connections are initialized lazily and cached in a process-level static dictionary. This
-/// means a single physical cluster is shared across all DI scopes within the process. Disposal
-/// iterates all connected clusters and disposes them in sequence.
+/// means a single physical cluster is shared across all DI scopes within the process. The shared connect
+/// runs to completion on <see cref="CancellationToken.None"/> so that no single caller's cancellation can
+/// abort or poison the connection others depend on; a connect that faults or is cancelled is evicted from
+/// the cache so the next caller re-creates it. Disposal iterates all connected clusters and disposes them
+/// in sequence.
 /// </remarks>
 [PublicAPI]
 public sealed class CouchbaseClustersProvider(
@@ -61,29 +65,50 @@ public sealed class CouchbaseClustersProvider(
     {
         Argument.IsNotEmpty(clusterKey);
 
-        // The token is captured by the first caller that populates the cache entry for this key; once the
-        // cluster is cached the factory does not run again, so later callers reuse the connection regardless
-        // of their own token. (The process-wide cache lifecycle is tracked separately and out of scope here.)
-        return await _Clusters
-            .GetOrAdd(
-                clusterKey,
-                static (clusterKey, state) => state.@this._CreateLazyClusterAsync(clusterKey, state.cancellationToken),
-                (@this: this, cancellationToken)
-            )
-            .ConfigureAwait(false);
+        var lazy = _Clusters.GetOrAdd(
+            clusterKey,
+            static (clusterKey, @this) => @this._CreateLazyCluster(clusterKey),
+            this
+        );
+
+        try
+        {
+            // The shared connect (see _CreateLazyCluster) is must-complete and runs on CancellationToken.None;
+            // the caller's token bounds only *this* wait via WaitAsync, so a caller can abandon their own wait
+            // without cancelling — or, under AsyncLazyFlags.None, permanently poisoning — the shared task that
+            // other callers are still awaiting.
+            return await lazy.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // AsyncLazy caches failures (AsyncLazyFlags.None), so a faulted/cancelled shared connect would be
+            // replayed for every future caller. Evict it — only when the *shared* task itself ended badly, not
+            // when this caller merely cancelled their own wait — so the next caller re-creates it. TryRemove of
+            // the exact key/value pair removes only if this AsyncLazy is still cached, avoiding a race with a
+            // healthy replacement another caller may have already installed.
+            if (lazy.Task.IsFaulted || lazy.Task.IsCanceled)
+            {
+                _Clusters.TryRemove(new KeyValuePair<string, AsyncLazy<GetClusterResult>>(clusterKey, lazy));
+            }
+
+            throw;
+        }
     }
 
-    private AsyncLazy<GetClusterResult> _CreateLazyClusterAsync(string clusterKey, CancellationToken cancellationToken)
+    private AsyncLazy<GetClusterResult> _CreateLazyCluster(string clusterKey)
     {
+        // The connection is a process-shared resource cached and reused by every caller, so the factory runs
+        // on CancellationToken.None: one caller cancelling their GetClusterAsync wait must never abort — or,
+        // because AsyncLazy caches failures, permanently poison — the connection the others depend on.
         return new(async () =>
         {
             var clusterOptions = await clusterOptionsProvider
-                .GetAsync(clusterKey, cancellationToken)
+                .GetAsync(clusterKey, CancellationToken.None)
                 .ConfigureAwait(false);
-            var cluster = await Cluster.ConnectAsync(clusterOptions, cancellationToken).ConfigureAwait(false);
+            var cluster = await Cluster.ConnectAsync(clusterOptions, CancellationToken.None).ConfigureAwait(false);
 
             var transactionConfig = await transactionConfigProvider
-                .GetAsync(clusterKey, cancellationToken)
+                .GetAsync(clusterKey, CancellationToken.None)
                 .ConfigureAwait(false);
             var transactions = Transactions.Create(cluster, transactionConfig);
 
