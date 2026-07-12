@@ -3,6 +3,8 @@
 using System.Data.Common;
 using Headless.CommitCoordination;
 using Headless.Coordination;
+using Headless.Messaging;
+using Headless.Messaging.Configuration;
 using Headless.Testing.Testcontainers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -35,6 +37,7 @@ public sealed class PostgreSqlJobsCoordinationFixture
 
     public string ResetSql =>
         "DROP SCHEMA IF EXISTS jobs CASCADE;"
+        + "DROP SCHEMA IF EXISTS messaging CASCADE;"
         + "DROP TABLE IF EXISTS coordination_liveness, coordination_descriptor, coordination_node_generation CASCADE;";
 
     protected override PostgreSqlBuilder Configure()
@@ -54,6 +57,8 @@ public sealed class PostgreSqlJobsCoordinationFixture
     public DbConnection CreateConnection() => new NpgsqlConnection(ConnectionString);
 
     public void ConfigureCommitCoordination(IServiceCollection services) => services.AddPostgreSqlCommitCoordination();
+
+    public void ConfigureMessagingStorage(MessagingSetupBuilder setup) => setup.UsePostgreSql(ConnectionString);
 
     public async Task RunCoordinatedTransactionAsync(
         IServiceProvider services,

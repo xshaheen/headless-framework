@@ -568,8 +568,7 @@ internal sealed class JobsExecutionTaskHandler
         {
             handlerCts.Dispose();
         }
-#pragma warning restore ERP022
-#pragma warning restore VSTHRD003
+#pragma warning restore ERP022, VSTHRD003
     }
 
     private async Task _InvokeOnExhaustedAsync(
@@ -651,8 +650,7 @@ internal sealed class JobsExecutionTaskHandler
             callbackCts.Dispose();
             await scope.DisposeAsync().ConfigureAwait(false);
         }
-#pragma warning restore ERP022
-#pragma warning restore VSTHRD003
+#pragma warning restore ERP022, VSTHRD003
     }
 
     private async Task _RenewLeaseLoopAsync(

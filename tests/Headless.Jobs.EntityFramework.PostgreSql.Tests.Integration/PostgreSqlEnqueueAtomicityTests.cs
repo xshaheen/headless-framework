@@ -8,6 +8,12 @@ public sealed class PostgreSqlEnqueueAtomicityTests(PostgreSqlJobsCoordinationFi
     : JobsEnqueueAtomicityConformanceTests<PostgreSqlJobsCoordinationFixture>(fixture)
 {
     [Fact]
+    public override Task domain_message_and_job_commit_atomically() => base.domain_message_and_job_commit_atomically();
+
+    [Fact]
+    public override Task rollback_discards_domain_message_and_job() => base.rollback_discards_domain_message_and_job();
+
+    [Fact]
     public override Task domain_write_and_enqueue_commit_atomically() =>
         base.domain_write_and_enqueue_commit_atomically();
 

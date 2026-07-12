@@ -67,11 +67,11 @@ public sealed class HealthEndpointTests : TestBase
 
         builder.Services.AddRouting();
         builder.Services.AddAuthorization();
-        builder.Services.AddCors(o => o.AddPolicy("Messaging_Dashboard_CORS", p => p.AllowAnyOrigin()));
+        builder.Services.AddCors(o => o.AddPolicy("HeadlessMessagingDashboardCORS", p => p.AllowAnyOrigin()));
 
         var app = builder.Build();
         app.UseRouting();
-        app.UseCors("Messaging_Dashboard_CORS");
+        app.UseCors("HeadlessMessagingDashboardCORS");
         app.MapMessagingDashboardEndpoints(config);
 
         return app;

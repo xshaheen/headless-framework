@@ -58,13 +58,13 @@ internal static class ServiceCollectionExtensions
 
         services.AddAuthorization();
 
+        // Always register the named policy so the CORS middleware (UseCors, unconditional in the pipeline)
+        // can resolve it: the dashboard endpoints carry RequireCors metadata, and an endpoint with CORS
+        // metadata whose middleware never ran throws at request time. When the consumer configured no policy,
+        // register an empty one (no origins) -> same-origin only.
         services.AddCors(options =>
-        {
-            if (config.CorsPolicyBuilder is not null)
-            {
-                options.AddPolicy("Jobs_Dashboard_CORS", config.CorsPolicyBuilder);
-            }
-        });
+            options.AddPolicy("HeadlessJobsDashboardCORS", config.CorsPolicyBuilder ?? (static _ => { }))
+        );
     }
 
     internal static void UseDashboardWithEndpoints<TTimeJob, TCronJob>(
@@ -111,9 +111,12 @@ internal static class ServiceCollectionExtensions
                     }
                 );
 
-                // Set up routing and CORS
+                // Endpoints carry RequireCors metadata, so the CORS middleware must always run (an endpoint
+                // with CORS metadata and no middleware throws at request time). The registered policy is empty
+                // by default (same-origin only) and reflects the configured origins when
+                // SetCorsOrigins / SetCorsPolicy was used.
                 dashboardApp.UseRouting();
-                dashboardApp.UseCors("Jobs_Dashboard_CORS");
+                dashboardApp.UseCors("HeadlessJobsDashboardCORS");
 
                 // Add authentication + authorization middleware
                 if (config.Auth.IsEnabled)

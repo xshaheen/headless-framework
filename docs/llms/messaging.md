@@ -207,7 +207,7 @@ services.AddHeadlessMessaging(setup =>
 - **Use `InMemory` + `InMemoryStorage` only for dev/testing**, never in production. Data is lost on restart.
 - **Add `Messaging.OpenTelemetry`** for tracing in any production deployment.
 - **Add `Messaging.Testing`** in test projects for integration testing with awaitable assertions. Use `AddMessagingTestHarness()` to decorate an existing host's DI container (WebApplicationFactory, IHost), or `MessagingTestHarness.CreateAsync()` for standalone harness.
-- **Add `Messaging.Dashboard`** when monitoring UI is needed; it defaults to no authentication and exposes operational message actions, so configure `WithBasicAuth`, `WithApiKey`, `WithHostAuthentication`, or `WithCustomAuth` plus explicit CORS before production exposure.
+- **Add `Messaging.Dashboard`** when monitoring UI is needed; it exposes operational message actions and requires an explicit authentication choice (the host fails to start otherwise), so configure `WithBasicAuth`, `WithApiKey`, `WithHostAuthentication`, or `WithCustomAuth` — and `SetCorsOrigins` if the SPA is served cross-origin — before production exposure.
 - **Messages are type-safe**: Define message types as classes/records. Register explicit consumers implementing `IConsume<TMessage>` with `setup.ForMessage<TMessage>(...)`. Use `setup.ForMessagesFromAssemblyContaining<TMarker>()` or `setup.ForMessagesFromAssembly(assembly)` inside `AddHeadlessMessaging(...)` for assembly scanning. Use the scan callback overloads to set per-consumer queue/bus intent, group, concurrency, handler id, circuit-breaker override, or `Skip()`; keep message-name overrides on explicit `ForMessage<TMessage>(...)` registrations.
 - **Library-owned consumers can register out of order**: `IServiceCollection.ForMessage<TMessage>(...)` can run before or after `AddHeadlessMessaging(...)` during service configuration — both entry points share one found-or-created `ConsumerRegistry`. `MessageName(...)` mappings are registered eagerly, so a publish that races ahead of startup (e.g. an `IHostedService` publishing in `StartAsync`) still resolves the explicit name rather than the convention fallback. Consumer metadata still drains before startup topology reads, so package setup methods do not need to force an app-level call order.
 - **Runtime handlers are first-class**: Use `IRuntimeSubscriber` for ephemeral broker-attached delegates. They share scoped DI, middleware, diagnostics, retry, and correlation semantics with class handlers.
@@ -992,11 +992,11 @@ builder.Services.AddHeadlessMessaging(setup =>
 
 ### Configuration
 
-Configured through `MessagingDashboardOptionsBuilder` inside `UseDashboard(...)`. Authentication is opt-in — with `WithNoAuth()` (the default) the dashboard is public, so configure authentication and CORS before production exposure.
+Configured through `MessagingDashboardOptionsBuilder` inside `UseDashboard(...)`. Authentication must be chosen explicitly — if no `WithXxx` auth method (including `WithNoAuth()`) is called, the host fails to start. No CORS policy is applied by default (same-origin only); use `SetCorsOrigins(...)` for the cross-origin SPA case.
 
 | Method | Default | Description |
 | --- | --- | --- |
-| `WithNoAuth()` | (default) | Public dashboard, no authentication; development or trusted-network use only. |
+| `WithNoAuth()` | (no default — auth is required) | Explicitly opt out of authentication; development or trusted-network use only. |
 | `WithBasicAuth(username, password)` | — | HTTP Basic authentication. |
 | `WithApiKey(apiKey)` | — | API-key authentication. |
 | `WithHostAuthentication(policy?)` | — | Reuse the host app's auth, with an optional authorization policy. |
