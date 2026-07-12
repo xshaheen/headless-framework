@@ -112,4 +112,8 @@ public sealed class SqlServerClaimConformanceTests(SqlServerJobsCoordinationFixt
     [Fact]
     public override Task concurrent_missing_cron_occurrence_creation_is_deduplicated() =>
         base.concurrent_missing_cron_occurrence_creation_is_deduplicated();
+
+    [Fact]
+    public override Task long_cron_claim_transaction_publishes_a_fresh_lease() =>
+        base.long_cron_claim_transaction_publishes_a_fresh_lease();
 }

@@ -253,6 +253,29 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                 }
             }
 
+            if (claimed.Count > 0)
+            {
+                var publishedAt = timeProvider.GetUtcNow().UtcDateTime;
+                var publishedLockedUntil = publishedAt.Add(_leaseDuration);
+                await _RefreshCronOccurrenceLeasesAsync(
+                        dbContext,
+                        transaction,
+                        mapping,
+                        claimed.Select(x => x.Id).ToArray(),
+                        owner,
+                        publishedAt,
+                        publishedLockedUntil,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                foreach (var occurrence in claimed)
+                {
+                    occurrence.UpdatedAt = publishedAt;
+                    occurrence.LockedUntil = publishedLockedUntil;
+                }
+            }
+
             await claimTransaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
 
@@ -315,6 +338,36 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             occurrence.Status = JobStatus.Queued;
             yield return occurrence;
         }
+    }
+
+    private static async Task _RefreshCronOccurrenceLeasesAsync(
+        TDbContext dbContext,
+        IDbContextTransaction transaction,
+        CronOccurrenceRelationalMapping mapping,
+        Guid[] occurrenceIds,
+        string owner,
+        DateTime publishedAt,
+        DateTime publishedLockedUntil,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var command = _CreateCommand(dbContext, transaction);
+#pragma warning disable CA2100
+        command.CommandText = $"""
+            UPDATE {mapping.Table}
+            SET {mapping.LockedUntil} = @lockedUntil,
+                {mapping.UpdatedAt} = @publishedAt
+            WHERE {mapping.Id} = ANY(@occurrenceIds)
+              AND {mapping.OwnerId} = @owner;
+            """;
+#pragma warning restore CA2100
+        command.Parameters.Add(new NpgsqlParameter("lockedUntil", publishedLockedUntil));
+        command.Parameters.Add(new NpgsqlParameter("publishedAt", publishedAt));
+        command.Parameters.Add(
+            new NpgsqlParameter("occurrenceIds", NpgsqlDbType.Array | NpgsqlDbType.Uuid) { Value = occurrenceIds }
+        );
+        command.Parameters.Add(new NpgsqlParameter("owner", owner));
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<CronJobOccurrenceEntity<TCronJob>?> _InsertCronOccurrenceAsync(

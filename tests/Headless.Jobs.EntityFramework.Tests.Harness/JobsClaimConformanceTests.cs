@@ -244,6 +244,56 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
         }
     }
 
+    public virtual async Task long_cron_claim_transaction_publishes_a_fresh_lease()
+    {
+        var ct = AbortToken;
+        var leaseDuration = TimeSpan.FromSeconds(2);
+        var transactionStartedAt = new DateTimeOffset(2026, 7, 12, 12, 0, 0, TimeSpan.Zero);
+        var committedAt = transactionStartedAt.Add(leaseDuration).AddMilliseconds(500);
+        var timeProvider = new TransactionElapsedTimeProvider(transactionStartedAt, committedAt);
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("long-claim-a", timeProvider: timeProvider, leaseDuration: leaseDuration);
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var cronId = Guid.NewGuid();
+            var executionTime = transactionStartedAt.UtcDateTime.AddMinutes(1);
+            await fixture.SeedCronJobAsync(cronId, "long-claim", "* * * * *", NodeDeathPolicy.Retry, ct);
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            var context = new JobManagerDispatchContext(cronId)
+            {
+                FunctionName = "long-claim",
+                Expression = "* * * * *",
+                OnNodeDeath = NodeDeathPolicy.Retry,
+            };
+
+            var claimed = await persistence
+                .QueueCronJobOccurrencesAsync((executionTime, [context]), ct)
+                .ToArrayAsync(ct);
+
+            claimed.Should().ContainSingle();
+            claimed[0].LockedUntil.Should().BeAfter(committedAt.UtcDateTime);
+            claimed[0].LockedUntil.Should().Be(claimed[0].UpdatedAt.Add(leaseDuration));
+
+            var persisted = await fixture.ReadCronOccurrenceClaimAsync(claimed[0].Id, ct);
+            persisted.LockedUntil.Should().Be(claimed[0].LockedUntil);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    private sealed class TransactionElapsedTimeProvider(DateTimeOffset startedAt, DateTimeOffset committedAt)
+        : TimeProvider
+    {
+        private int _reads;
+
+        public override DateTimeOffset GetUtcNow() => Interlocked.Increment(ref _reads) == 1 ? startedAt : committedAt;
+    }
+
     private static TimeJobEntity _CreateJobTree(DateTime executionTime)
     {
         var grandchild = new TimeJobEntity

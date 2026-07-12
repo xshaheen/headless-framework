@@ -3,6 +3,7 @@
 using System.Data;
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
@@ -258,6 +259,29 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 }
             }
 
+            if (claimed.Count > 0)
+            {
+                var publishedAt = timeProvider.GetUtcNow().UtcDateTime;
+                var publishedLockedUntil = publishedAt.Add(_leaseDuration);
+                await _RefreshCronOccurrenceLeasesAsync(
+                        dbContext,
+                        transaction,
+                        mapping,
+                        claimed.Select(x => x.Id).ToArray(),
+                        owner,
+                        publishedAt,
+                        publishedLockedUntil,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                foreach (var occurrence in claimed)
+                {
+                    occurrence.UpdatedAt = publishedAt;
+                    occurrence.LockedUntil = publishedLockedUntil;
+                }
+            }
+
             await claimTransaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
 
@@ -323,6 +347,36 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             occurrence.Status = JobStatus.Queued;
             yield return occurrence;
         }
+    }
+
+    private static async Task _RefreshCronOccurrenceLeasesAsync(
+        TDbContext dbContext,
+        IDbContextTransaction transaction,
+        CronOccurrenceRelationalMapping mapping,
+        Guid[] occurrenceIds,
+        string owner,
+        DateTime publishedAt,
+        DateTime publishedLockedUntil,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var command = _CreateCommand(dbContext, transaction);
+#pragma warning disable CA2100
+        command.CommandText = $"""
+            UPDATE occurrence
+            SET {mapping.LockedUntil} = @lockedUntil,
+                {mapping.UpdatedAt} = @publishedAt
+            FROM {mapping.Table} AS occurrence
+            INNER JOIN OPENJSON(@occurrenceIds) AS claimed
+                ON occurrence.{mapping.Id} = TRY_CONVERT(uniqueidentifier, claimed.[value])
+            WHERE occurrence.{mapping.OwnerId} = @owner;
+            """;
+#pragma warning restore CA2100
+        command.Parameters.Add(_DateTimeParameter("lockedUntil", publishedLockedUntil));
+        command.Parameters.Add(_DateTimeParameter("publishedAt", publishedAt));
+        command.Parameters.Add(new SqlParameter("occurrenceIds", JsonSerializer.Serialize(occurrenceIds)));
+        command.Parameters.Add(new SqlParameter("owner", owner));
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<CronJobOccurrenceEntity<TCronJob>?> _InsertCronOccurrenceAsync(

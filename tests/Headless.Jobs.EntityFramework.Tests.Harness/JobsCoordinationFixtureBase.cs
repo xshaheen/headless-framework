@@ -101,8 +101,9 @@ public static class JobsCoordinationFixtureExtensions
         this IJobsCoordinationFixture fixture,
         string nodeId,
         MembershipLostBehavior lostBehavior = MembershipLostBehavior.StopMembershipOnly,
-        TimeProvider? timeProvider = null
-    ) => _BuildHost<JobsDbContext>(fixture, nodeId, "jobs", lostBehavior, timeProvider);
+        TimeProvider? timeProvider = null,
+        TimeSpan? leaseDuration = null
+    ) => _BuildHost<JobsDbContext>(fixture, nodeId, "jobs", lostBehavior, timeProvider, leaseDuration);
 
     /// <summary>Builds a host with a custom Jobs DbContext so provider SQL can be verified against renamed mappings.</summary>
     public static IHost BuildMappedHost<TDbContext>(this IJobsCoordinationFixture fixture, string nodeId, string schema)
@@ -114,7 +115,8 @@ public static class JobsCoordinationFixtureExtensions
         string nodeId,
         string schema,
         MembershipLostBehavior lostBehavior,
-        TimeProvider? timeProvider
+        TimeProvider? timeProvider,
+        TimeSpan? leaseDuration = null
     )
         where TDbContext : JobsDbContext<TimeJobEntity, CronJobEntity>
     {
@@ -143,6 +145,10 @@ public static class JobsCoordinationFixtureExtensions
             // The scheduler is disabled so it never races the tests' direct persistence calls. Dead-node recovery
             // is driven by the MembershipRecoveryBridge + coordination heartbeat, both of which still run.
             options.DisableBackgroundServices();
+            if (leaseDuration is not null)
+            {
+                options.ConfigureScheduler(scheduler => scheduler.LeaseDuration = leaseDuration.Value);
+            }
             options.UseEntityFramework(ef =>
             {
                 ef.UseJobsDbContext<TDbContext>(fixture.ConfigureStore, schema);
