@@ -526,6 +526,11 @@ internal sealed class CircuitBreakerStateManager(
         Argument.IsNotNull(groupName);
         Argument.IsLessThanOrEqualTo(groupName.Length, 256);
 
+        // Must-complete transition: this resumes ALL consumption for the group, and aborting mid-flip
+        // could leave the breaker in a torn (half-applied) state. Honor the token only here, before the
+        // transition begins — it is never raced against the state mutation or the resume callback.
+        cancellationToken.ThrowIfCancellationRequested();
+
         if (!_groups.TryGetValue(groupName, out var state))
         {
             return false;
@@ -585,6 +590,11 @@ internal sealed class CircuitBreakerStateManager(
     {
         Argument.IsNotNull(groupName);
         Argument.IsLessThanOrEqualTo(groupName.Length, 256);
+
+        // Must-complete transition: this halts ALL consumption for the group, and aborting mid-flip
+        // could leave the breaker in a torn (half-applied) state. Honor the token only here, before the
+        // transition begins — it is never raced against the state mutation or the pause callback.
+        cancellationToken.ThrowIfCancellationRequested();
 
         if (!_groups.TryGetValue(groupName, out var state))
         {

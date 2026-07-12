@@ -140,7 +140,11 @@ public interface ICircuitBreakerMonitor
     /// if the circuit was previously Open or HalfOpen. This is the operator/agent manual recovery path.
     /// </summary>
     /// <param name="groupName">The consumer group name.</param>
-    /// <param name="cancellationToken">A token to observe while awaiting the resume callback.</param>
+    /// <param name="cancellationToken">
+    /// Observed only before the state transition begins. Once the reset starts it is must-complete —
+    /// the token is not observed mid-transition or while awaiting the resume callback, to avoid leaving
+    /// the breaker in a torn (half-applied) state.
+    /// </param>
     /// <returns>
     /// <see langword="true"/> if a reset was performed (the group was found and was Open or HalfOpen);
     /// <see langword="false"/> if the group was not found or was already Closed.
@@ -159,7 +163,11 @@ public interface ICircuitBreakerMonitor
     /// </summary>
     /// <param name="intentType">The delivery intent (<see cref="IntentType.Bus"/> or <see cref="IntentType.Queue"/>).</param>
     /// <param name="groupName">The consumer group name.</param>
-    /// <param name="cancellationToken">A token to observe while awaiting the resume callback.</param>
+    /// <param name="cancellationToken">
+    /// Observed only before the state transition begins. Once the reset starts it is must-complete —
+    /// the token is not observed mid-transition or while awaiting the resume callback, to avoid leaving
+    /// the breaker in a torn (half-applied) state.
+    /// </param>
     /// <returns>
     /// <see langword="true"/> if a reset was performed; <see langword="false"/> if the group was not found or was already Closed.
     /// </returns>
@@ -171,7 +179,11 @@ public interface ICircuitBreakerMonitor
     /// increment escalation level (forced opens bypass natural failure counting).
     /// </summary>
     /// <param name="groupName">The consumer group name.</param>
-    /// <param name="cancellationToken">A token to observe while awaiting the pause callback.</param>
+    /// <param name="cancellationToken">
+    /// Observed only before the state transition begins. Once the force-open starts it is must-complete —
+    /// the token is not observed mid-transition or while awaiting the pause callback, to avoid leaving
+    /// the breaker in a torn (half-applied) state.
+    /// </param>
     /// <returns>
     /// <see langword="true"/> if the circuit was force-opened (group was found and was Closed or HalfOpen);
     /// <see langword="false"/> if the group was not found or was already Open.
@@ -191,7 +203,11 @@ public interface ICircuitBreakerMonitor
     /// </summary>
     /// <param name="intentType">The delivery intent (<see cref="IntentType.Bus"/> or <see cref="IntentType.Queue"/>).</param>
     /// <param name="groupName">The consumer group name.</param>
-    /// <param name="cancellationToken">A token to observe while awaiting the pause callback.</param>
+    /// <param name="cancellationToken">
+    /// Observed only before the state transition begins. Once the force-open starts it is must-complete —
+    /// the token is not observed mid-transition or while awaiting the pause callback, to avoid leaving
+    /// the breaker in a torn (half-applied) state.
+    /// </param>
     /// <returns>
     /// <see langword="true"/> if the circuit was force-opened; <see langword="false"/> if the group was not found or was already Open.
     /// </returns>

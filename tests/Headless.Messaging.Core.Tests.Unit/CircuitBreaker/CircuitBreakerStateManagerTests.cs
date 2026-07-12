@@ -932,6 +932,25 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
     }
 
+    [Fact]
+    public async Task reset_throws_and_leaves_state_untouched_when_token_already_canceled()
+    {
+        // given — trip circuit to Open
+        await using var sut = _Create(failureThreshold: 1);
+        await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
+        sut.GetState(_Group).Should().Be(CircuitBreakerState.Open);
+
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        // when & then — must-complete transition honors the token only before it begins
+        var act = async () => await sut.ResetAsync(_Group, cts.Token);
+        await act.Should().ThrowAsync<OperationCanceledException>();
+
+        // state must not be half-applied — the circuit stays Open
+        sut.GetState(_Group).Should().Be(CircuitBreakerState.Open);
+    }
+
     // -------------------------------------------------------------------------
     // GetSnapshot tests
     // -------------------------------------------------------------------------
@@ -1318,6 +1337,29 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         // when & then
         var act = async () => await sut.ForceOpenAsync(longName);
         await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public async Task force_open_throws_and_leaves_state_untouched_when_token_already_canceled()
+    {
+        // given — a registered, Closed circuit
+        await using var sut = _Create();
+        sut.RegisterGroupCallbacks(
+            _Group,
+            onPause: () => ValueTask.CompletedTask,
+            onResume: () => ValueTask.CompletedTask
+        );
+        sut.GetState(_Group).Should().Be(CircuitBreakerState.Closed);
+
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        // when & then — must-complete transition honors the token only before it begins
+        var act = async () => await sut.ForceOpenAsync(_Group, cts.Token);
+        await act.Should().ThrowAsync<OperationCanceledException>();
+
+        // state must not be half-applied — the circuit stays Closed
+        sut.GetState(_Group).Should().Be(CircuitBreakerState.Closed);
     }
 
     // -------------------------------------------------------------------------
