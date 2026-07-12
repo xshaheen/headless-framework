@@ -138,10 +138,47 @@ public static class ServiceBuilder
             );
         }
 
-        services.AddSingleton(
-            claimStrategyServiceType,
-            provider => ActivatorUtilities.CreateInstance(provider, claimStrategyImplementationType)
-        );
+        if (
+            claimStrategyImplementationType.IsGenericType
+            && claimStrategyImplementationType.GetGenericTypeDefinition() == typeof(EfCoreCasJobsClaimStrategy<,,>)
+        )
+        {
+            services.AddSingleton(
+                claimStrategyServiceType,
+                provider => ActivatorUtilities.CreateInstance(provider, claimStrategyImplementationType)
+            );
+        }
+        else
+        {
+            services.AddSingleton(
+                claimStrategyImplementationType,
+                provider => ActivatorUtilities.CreateInstance(provider, claimStrategyImplementationType)
+            );
+            services.AddSingleton(
+                claimStrategyServiceType,
+                provider =>
+                {
+                    var nativeStrategy = provider.GetRequiredService(claimStrategyImplementationType);
+                    var casStrategyType = typeof(EfCoreCasJobsClaimStrategy<,,>).MakeGenericType(
+                        typeof(TContext),
+                        typeof(TTimeJob),
+                        typeof(TCronJob)
+                    );
+                    var casStrategy = ActivatorUtilities.CreateInstance(provider, casStrategyType);
+                    var compatibleStrategyType = typeof(CompatibleJobsClaimStrategy<,,>).MakeGenericType(
+                        typeof(TContext),
+                        typeof(TTimeJob),
+                        typeof(TCronJob)
+                    );
+                    return ActivatorUtilities.CreateInstance(
+                        provider,
+                        compatibleStrategyType,
+                        nativeStrategy,
+                        casStrategy
+                    );
+                }
+            );
+        }
 
         // ICache is resolved with GetService (optional): cron-expression caching is enabled only when the host
         // application registers a default Headless.Caching provider; otherwise Jobs reads cron expressions from the DB.

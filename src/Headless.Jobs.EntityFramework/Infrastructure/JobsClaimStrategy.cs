@@ -6,6 +6,9 @@ using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Headless.Jobs.Infrastructure;
 
@@ -31,6 +34,145 @@ internal interface IJobsClaimStrategy<TTimeJob, TCronJob>
     IAsyncEnumerable<CronJobOccurrenceEntity<TCronJob>> ClaimTimedOutCronJobOccurrencesAsync(
         CancellationToken cancellationToken
     );
+}
+
+internal sealed partial class CompatibleJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>(
+    IDbContextFactory<TDbContext> dbContextFactory,
+    IJobsClaimStrategy<TTimeJob, TCronJob> nativeStrategy,
+    IJobsClaimStrategy<TTimeJob, TCronJob> casStrategy,
+    ILogger<CompatibleJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>>? logger = null
+) : IJobsClaimStrategy<TTimeJob, TCronJob>
+    where TDbContext : DbContext
+    where TTimeJob : TimeJobEntity<TTimeJob>, new()
+    where TCronJob : CronJobEntity, new()
+{
+    private readonly Lock _compatibilityLock = new();
+    private readonly ILogger _logger = logger is null
+        ? NullLogger<CompatibleJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>>.Instance
+        : logger;
+    private IJobsClaimStrategy<TTimeJob, TCronJob>? _selectedStrategy;
+
+    public async IAsyncEnumerable<TimeJobEntity> ClaimTimeJobsAsync(
+        TimeJobEntity[] timeJobs,
+        [EnumeratorCancellation] CancellationToken cancellationToken
+    )
+    {
+        var strategy = _GetStrategy();
+        await foreach (var job in strategy.ClaimTimeJobsAsync(timeJobs, cancellationToken).ConfigureAwait(false))
+        {
+            yield return job;
+        }
+    }
+
+    public async IAsyncEnumerable<TimeJobEntity> ClaimTimedOutTimeJobsAsync(
+        [EnumeratorCancellation] CancellationToken cancellationToken
+    )
+    {
+        var strategy = _GetStrategy();
+        await foreach (var job in strategy.ClaimTimedOutTimeJobsAsync(cancellationToken).ConfigureAwait(false))
+        {
+            yield return job;
+        }
+    }
+
+    public async IAsyncEnumerable<CronJobOccurrenceEntity<TCronJob>> ClaimCronJobOccurrencesAsync(
+        (DateTime Key, JobManagerDispatchContext[] Items) cronJobOccurrences,
+        [EnumeratorCancellation] CancellationToken cancellationToken
+    )
+    {
+        var strategy = _GetStrategy();
+        await foreach (
+            var occurrence in strategy
+                .ClaimCronJobOccurrencesAsync(cronJobOccurrences, cancellationToken)
+                .ConfigureAwait(false)
+        )
+        {
+            yield return occurrence;
+        }
+    }
+
+    public async IAsyncEnumerable<CronJobOccurrenceEntity<TCronJob>> ClaimTimedOutCronJobOccurrencesAsync(
+        [EnumeratorCancellation] CancellationToken cancellationToken
+    )
+    {
+        var strategy = _GetStrategy();
+        await foreach (
+            var occurrence in strategy.ClaimTimedOutCronJobOccurrencesAsync(cancellationToken).ConfigureAwait(false)
+        )
+        {
+            yield return occurrence;
+        }
+    }
+
+    private IJobsClaimStrategy<TTimeJob, TCronJob> _GetStrategy()
+    {
+        lock (_compatibilityLock)
+        {
+            if (_selectedStrategy is not null)
+            {
+                return _selectedStrategy;
+            }
+
+            using var dbContext = dbContextFactory.CreateDbContext();
+            var incompatibility = NativeJobsClaimCompatibility.FindIncompatibility<TTimeJob, TCronJob>(dbContext.Model);
+
+            if (incompatibility is null)
+            {
+                return _selectedStrategy = nativeStrategy;
+            }
+
+            LogCasFallback(_logger, typeof(TDbContext).Name, incompatibility);
+            return _selectedStrategy = casStrategy;
+        }
+    }
+
+    [LoggerMessage(
+        EventId = 20101,
+        Level = LogLevel.Warning,
+        Message = "Native Jobs claiming is incompatible with DbContext {DbContext}; using EF CAS claiming instead. Reason: {Reason}"
+    )]
+    private static partial void LogCasFallback(ILogger logger, string dbContext, string reason);
+}
+
+internal static class NativeJobsClaimCompatibility
+{
+    public static string? FindIncompatibility<TTimeJob, TCronJob>(IModel model)
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
+    {
+        Type[] jobTypes = [typeof(TTimeJob), typeof(TCronJob), typeof(CronJobOccurrenceEntity<TCronJob>)];
+        var entityTypes = jobTypes.Select(model.FindEntityType).Where(x => x is not null).Cast<IEntityType>().ToArray();
+
+        if (entityTypes.FirstOrDefault(x => x.GetDeclaredQueryFilters().Count > 0) is { } filtered)
+        {
+            return $"entity {filtered.DisplayName()} has a global query filter";
+        }
+
+        if (entityTypes.FirstOrDefault(x => x.GetDiscriminatorPropertyName() is not null) is { } discriminated)
+        {
+            return $"entity {discriminated.DisplayName()} uses discriminator-based inheritance";
+        }
+
+        foreach (var entityType in entityTypes)
+        {
+            var tableName = entityType.GetTableName();
+            if (tableName is null)
+            {
+                continue;
+            }
+
+            var schema = entityType.GetSchema();
+            var sharesTable = model
+                .GetEntityTypes()
+                .Any(other => other != entityType && other.GetTableName() == tableName && other.GetSchema() == schema);
+            if (sharesTable)
+            {
+                return $"entity {entityType.DisplayName()} shares table {schema ?? "<default>"}.{tableName}";
+            }
+        }
+
+        return null;
+    }
 }
 
 internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>(

@@ -9,6 +9,7 @@ using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests.Infrastructure;
 
@@ -36,7 +37,7 @@ public sealed class JobsClaimStrategyWiringTests
         provider
             .GetRequiredService<IJobsClaimStrategy<TimeJobEntity, CronJobEntity>>()
             .Should()
-            .BeOfType<FakeJobsClaimStrategy<TestJobsDbContext, TimeJobEntity, CronJobEntity>>();
+            .BeOfType<CompatibleJobsClaimStrategy<TestJobsDbContext, TimeJobEntity, CronJobEntity>>();
     }
 
     [Fact]
@@ -50,6 +51,45 @@ public sealed class JobsClaimStrategyWiringTests
         act.Should()
             .Throw<InvalidOperationException>()
             .WithMessage("*already configured*Select exactly one database claim strategy*");
+    }
+
+    [Fact]
+    public async Task filtered_jobs_model_uses_cas_strategy()
+    {
+        var native = new CountingJobsClaimStrategy<FilteredTimeJob, CronJobEntity>();
+        var cas = new CountingJobsClaimStrategy<FilteredTimeJob, CronJobEntity>();
+        var strategy = _CreateCompatibleStrategy<FilteredJobsDbContext, FilteredTimeJob>(native, cas);
+
+        await strategy.ClaimTimedOutTimeJobsAsync(TestContext.Current.CancellationToken).ToArrayAsync();
+
+        native.Calls.Should().Be(0);
+        cas.Calls.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task discriminator_sensitive_jobs_model_uses_cas_strategy()
+    {
+        var native = new CountingJobsClaimStrategy<DiscriminatedTimeJob, CronJobEntity>();
+        var cas = new CountingJobsClaimStrategy<DiscriminatedTimeJob, CronJobEntity>();
+        var strategy = _CreateCompatibleStrategy<DiscriminatedJobsDbContext, DiscriminatedTimeJob>(native, cas);
+
+        await strategy.ClaimTimedOutTimeJobsAsync(TestContext.Current.CancellationToken).ToArrayAsync();
+
+        native.Calls.Should().Be(0);
+        cas.Calls.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task unfiltered_jobs_model_uses_native_strategy()
+    {
+        var native = new CountingJobsClaimStrategy<TimeJobEntity, CronJobEntity>();
+        var cas = new CountingJobsClaimStrategy<TimeJobEntity, CronJobEntity>();
+        var strategy = _CreateCompatibleStrategy<PlainJobsDbContext, TimeJobEntity>(native, cas);
+
+        await strategy.ClaimTimedOutTimeJobsAsync(TestContext.Current.CancellationToken).ToArrayAsync();
+
+        native.Calls.Should().Be(1);
+        cas.Calls.Should().Be(0);
     }
 
     private static ServiceProvider _BuildProvider(JobsEfCoreOptionBuilder<TimeJobEntity, CronJobEntity> builder)
@@ -68,8 +108,106 @@ public sealed class JobsClaimStrategyWiringTests
         return services.BuildServiceProvider();
     }
 
+    private static CompatibleJobsClaimStrategy<TDbContext, TTimeJob, CronJobEntity> _CreateCompatibleStrategy<
+        TDbContext,
+        TTimeJob
+    >(IJobsClaimStrategy<TTimeJob, CronJobEntity> native, IJobsClaimStrategy<TTimeJob, CronJobEntity> cas)
+        where TDbContext : DbContext
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+    {
+        var options = new DbContextOptionsBuilder<TDbContext>().UseSqlite("Data Source=:memory:").Options;
+        var factory = new TestDbContextFactory<TDbContext>(options);
+        return new(
+            factory,
+            native,
+            cas,
+            NullLogger<CompatibleJobsClaimStrategy<TDbContext, TTimeJob, CronJobEntity>>.Instance
+        );
+    }
+
     private sealed class TestJobsDbContext(DbContextOptions<TestJobsDbContext> options)
         : JobsDbContext<TimeJobEntity, CronJobEntity>(options);
+
+    private sealed class FilteredJobsDbContext(DbContextOptions<FilteredJobsDbContext> options) : DbContext(options)
+    {
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            _ConfigureJobsModel<FilteredTimeJob>(modelBuilder);
+            modelBuilder.Entity<FilteredTimeJob>().HasQueryFilter(x => x.Function != "excluded");
+        }
+    }
+
+    private sealed class DiscriminatedJobsDbContext(DbContextOptions<DiscriminatedJobsDbContext> options)
+        : DbContext(options)
+    {
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            _ConfigureJobsModel<DiscriminatedTimeJob>(modelBuilder);
+            modelBuilder
+                .Entity<DiscriminatedTimeJob>()
+                .HasDiscriminator<string>("JobKind")
+                .HasValue<DiscriminatedTimeJob>("standard")
+                .HasValue<SpecialTimeJob>("special");
+        }
+    }
+
+    private sealed class PlainJobsDbContext(DbContextOptions<PlainJobsDbContext> options) : DbContext(options)
+    {
+        protected override void OnModelCreating(ModelBuilder modelBuilder) =>
+            _ConfigureJobsModel<TimeJobEntity>(modelBuilder);
+    }
+
+    private static void _ConfigureJobsModel<TTimeJob>(ModelBuilder modelBuilder)
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+    {
+        modelBuilder.Entity<TTimeJob>().HasKey(x => x.Id);
+        modelBuilder.Entity<CronJobEntity>().HasKey(x => x.Id);
+        modelBuilder.Entity<CronJobOccurrenceEntity<CronJobEntity>>().HasKey(x => x.Id);
+    }
+
+    private sealed class FilteredTimeJob : TimeJobEntity<FilteredTimeJob>;
+
+    private class DiscriminatedTimeJob : TimeJobEntity<DiscriminatedTimeJob>;
+
+    private sealed class SpecialTimeJob : DiscriminatedTimeJob;
+
+    private sealed class TestDbContextFactory<TDbContext>(DbContextOptions<TDbContext> options)
+        : IDbContextFactory<TDbContext>
+        where TDbContext : DbContext
+    {
+        public TDbContext CreateDbContext() => (TDbContext)Activator.CreateInstance(typeof(TDbContext), options)!;
+    }
+
+    private sealed class CountingJobsClaimStrategy<TTimeJob, TCronJob> : IJobsClaimStrategy<TTimeJob, TCronJob>
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
+    {
+        public int Calls { get; private set; }
+
+        public IAsyncEnumerable<TimeJobEntity> ClaimTimeJobsAsync(
+            TimeJobEntity[] timeJobs,
+            CancellationToken cancellationToken
+        ) => _Count<TimeJobEntity>();
+
+        public IAsyncEnumerable<TimeJobEntity> ClaimTimedOutTimeJobsAsync(CancellationToken cancellationToken) =>
+            _Count<TimeJobEntity>();
+
+        public IAsyncEnumerable<CronJobOccurrenceEntity<TCronJob>> ClaimCronJobOccurrencesAsync(
+            (DateTime Key, JobManagerDispatchContext[] Items) cronJobOccurrences,
+            CancellationToken cancellationToken
+        ) => _Count<CronJobOccurrenceEntity<TCronJob>>();
+
+        public IAsyncEnumerable<CronJobOccurrenceEntity<TCronJob>> ClaimTimedOutCronJobOccurrencesAsync(
+            CancellationToken cancellationToken
+        ) => _Count<CronJobOccurrenceEntity<TCronJob>>();
+
+        private async IAsyncEnumerable<T> _Count<T>()
+        {
+            Calls++;
+            await Task.CompletedTask.ConfigureAwait(false);
+            yield break;
+        }
+    }
 
     private class FakeJobsClaimStrategy<TDbContext, TTimeJob, TCronJob> : IJobsClaimStrategy<TTimeJob, TCronJob>
         where TDbContext : DbContext
