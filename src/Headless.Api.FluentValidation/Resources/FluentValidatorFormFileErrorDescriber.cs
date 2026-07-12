@@ -23,7 +23,10 @@ public static class FluentValidatorFormFileErrorDescriber
     /// <returns>An <see cref="ErrorDescriptor"/> with code <c>g:file_not_empty</c>.</returns>
     public static ErrorDescriptor FileNotEmpty()
     {
-        return new(code: "g:file_not_empty", description: FluentValidatorErrors.g_file_not_empty);
+        return new(
+            code: FluentValidatorFormFileErrorCodes.FileNotEmpty,
+            description: FluentValidatorErrors.g_file_not_empty
+        );
     }
 
     /// <summary>Returns the error descriptor for a file whose size is below the required minimum.</summary>
@@ -31,7 +34,7 @@ public static class FluentValidatorFormFileErrorDescriber
     public static ErrorDescriptor FileGreaterThanOrEqualToValidator()
     {
         return new(
-            code: "g:file_greater_than_or_equal_to",
+            code: FluentValidatorFormFileErrorCodes.FileGreaterThanOrEqualTo,
             description: FluentValidatorErrors.g_file_greater_than_or_equal_to
         );
     }
@@ -41,7 +44,7 @@ public static class FluentValidatorFormFileErrorDescriber
     public static ErrorDescriptor FileLessThanOrEqualToValidator()
     {
         return new(
-            code: "g:file_less_than_or_equal_to",
+            code: FluentValidatorFormFileErrorCodes.FileLessThanOrEqualTo,
             description: FluentValidatorErrors.g_file_less_than_or_equal_to
         );
     }
@@ -50,13 +53,19 @@ public static class FluentValidatorFormFileErrorDescriber
     /// <returns>An <see cref="ErrorDescriptor"/> with code <c>g:file_unexpected_signature</c>. Both content-type and signature failures share this code intentionally.</returns>
     public static ErrorDescriptor FileContentTypeValidator()
     {
-        return new(code: "g:file_unexpected_signature", description: FluentValidatorErrors.g_file_unexpected_signature);
+        return new(
+            code: FluentValidatorFormFileErrorCodes.FileUnexpectedSignature,
+            description: FluentValidatorErrors.g_file_unexpected_signature
+        );
     }
 
     /// <summary>Returns the error descriptor for a file whose binary signature does not match the expected format.</summary>
     /// <returns>An <see cref="ErrorDescriptor"/> with code <c>g:file_unexpected_signature</c>.</returns>
     public static ErrorDescriptor FileSignatureValidator()
     {
-        return new(code: "g:file_unexpected_signature", description: FluentValidatorErrors.g_file_unexpected_signature);
+        return new(
+            code: FluentValidatorFormFileErrorCodes.FileUnexpectedSignature,
+            description: FluentValidatorErrors.g_file_unexpected_signature
+        );
     }
 }
