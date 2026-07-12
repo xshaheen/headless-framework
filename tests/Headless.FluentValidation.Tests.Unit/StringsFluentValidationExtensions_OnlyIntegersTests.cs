@@ -99,7 +99,7 @@ public sealed class StringsFluentValidationExtensionsOnlyIntegersTests
 
         var result = validator.TestValidate(model);
 
-        result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("strings:only_numbers");
+        result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("g:only_numbers");
     }
 
     #endregion

@@ -13,9 +13,9 @@ consistent paging and error-descriptor shapes so every package models these the 
 
 - **Result pattern**: `ApiResult`, `ApiResult<T>`, `Result<TValue, TError>`, `Result<TError>`, the `ResultError`
   hierarchy, `ErrorDescriptor`, and `ApiResultError` — model expected failure without exceptions.
-- **Source-generated domain primitives**: `UserId`, `AccountId`, `Money`, `Month`, `PhoneNumber` (implement
+- **Source-generated domain primitives**: `UserId`, `AccountId`, `MoneyAmount`, `Month`, `PhoneNumber` (implement
   `IPrimitive<T>`, emitted by `Headless.Generator.Primitives` with equality, JSON, and TypeConverter support).
-- **Hand-written value objects**: `Currency`, `GeoCoordinate`, `FullGeoCoordinate`, `Range<T>`, `PreferredLocale`,
+- **Hand-written value objects**: `Money`, `GeoCoordinate`, `FullGeoCoordinate`, `Range<T>`, `PreferredLocale`,
   `TimeUnit` — validate on construction so an existing instance is always valid.
 - **Paging**: `IndexPage<T>`, `IndexPageRequest`, `ContinuationPage<T>`, `ContinuationPageRequest`, `PageMetadata`,
   `OrderBy`, `IHasOrderByRequest` / `IHasMultiOrderByRequest`.
@@ -58,16 +58,16 @@ public async Task<ApiResult<User>> GetUserAsync(Guid id, CancellationToken ct)
 }
 ```
 
-### Currency and Money
+### Money and MoneyAmount
 
 ```csharp
 using Headless.Primitives;
 
-var price = new Currency(100m, "USD");
+var price = new Money(100m, "USD");
 var withTax = price * 1.15m;                   // scalar scaling -> 115.00 USD (banker's rounding)
-var total = price + new Currency(20m, "USD");  // same-code addition; throws on code mismatch
+var total = price + new Money(20m, "USD");     // same-code addition; throws on code mismatch
 
-var amount = new Money(9.875m).GetRounded();   // 9.88 (MidpointRounding.ToEven)
+var amount = new MoneyAmount(9.875m).GetRounded();   // 9.88 (MidpointRounding.ToEven)
 ```
 
 ### Ordering and paging

@@ -5,7 +5,7 @@ using Headless.Urls;
 
 namespace Headless.Payments.Paymob.CashIn;
 
-public partial class PaymobCashInBroker
+internal partial class PaymobCashInBroker
 {
     /// <summary>Create order. Order is a logical container for a transaction(s).</summary>
     public async Task<CashInCreateOrderResponse> CreateOrderAsync(

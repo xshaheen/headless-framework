@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Coordination;
+using Headless.Jobs;
 using Headless.Jobs.Coordination;
-using Headless.Jobs.DependencyInjection;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Interfaces;
 using Microsoft.Extensions.DependencyInjection;

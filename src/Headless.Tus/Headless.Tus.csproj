@@ -10,6 +10,9 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Tus.Tests.Unit" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="tusdotnet" />
   </ItemGroup>
   <ItemGroup>

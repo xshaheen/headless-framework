@@ -13,7 +13,7 @@ namespace Headless.Messaging.AzureServiceBus;
 /// Exactly one of <c>serviceBusProcessor</c> or <c>serviceBusSessionProcessor</c> must be provided
 /// at construction. Passing neither throws <see cref="ArgumentNullException"/>.
 /// </remarks>
-public sealed class ServiceBusProcessorFacade : IAsyncDisposable
+internal sealed class ServiceBusProcessorFacade : IAsyncDisposable
 {
     private readonly ServiceBusProcessor? _serviceBusProcessor;
     private readonly ServiceBusSessionProcessor? _serviceBusSessionProcessor;

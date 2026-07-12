@@ -5,7 +5,7 @@ using Amazon.Auth.AccessControlPolicy;
 namespace Headless.Messaging.Aws;
 
 /// <summary>Extension methods for AWS IAM policy inspection and mutation used by the SQS/SNS transport.</summary>
-public static class AmazonPolicyExtensions
+internal static class AmazonPolicyExtensions
 {
     /// <summary>
     /// Determines whether the SQS queue policy already grants the specified SNS topic permission

@@ -177,7 +177,9 @@ public sealed class MessageSenderTests : TestBase
 
         var transportMessage = _CreateTransportMessage();
         var serializer = Substitute.For<ISerializer>();
-        serializer.SerializeToTransportMessageAsync(Arg.Any<Message>()).Returns(ValueTask.FromResult(transportMessage));
+        serializer
+            .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(transportMessage));
 
         var transport = Substitute.For<ITransport>();
         transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
@@ -232,7 +234,9 @@ public sealed class MessageSenderTests : TestBase
 
         var transportMessage = _CreateTransportMessage();
         var serializer = Substitute.For<ISerializer>();
-        serializer.SerializeToTransportMessageAsync(Arg.Any<Message>()).Returns(ValueTask.FromResult(transportMessage));
+        serializer
+            .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(transportMessage));
 
         var transport = Substitute.For<ITransport>();
         transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
@@ -295,7 +299,9 @@ public sealed class MessageSenderTests : TestBase
 
         var transportMessage = _CreateTransportMessage();
         var serializer = Substitute.For<ISerializer>();
-        serializer.SerializeToTransportMessageAsync(Arg.Any<Message>()).Returns(ValueTask.FromResult(transportMessage));
+        serializer
+            .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(transportMessage));
 
         var transport = Substitute.For<ITransport>();
         transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
@@ -357,7 +363,9 @@ public sealed class MessageSenderTests : TestBase
 
         var transportMessage = _CreateTransportMessage();
         var serializer = Substitute.For<ISerializer>();
-        serializer.SerializeToTransportMessageAsync(Arg.Any<Message>()).Returns(ValueTask.FromResult(transportMessage));
+        serializer
+            .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(transportMessage));
 
         var transport = Substitute.For<ITransport>();
         transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
@@ -426,7 +434,9 @@ public sealed class MessageSenderTests : TestBase
 
         var transportMessage = _CreateTransportMessage();
         var serializer = Substitute.For<ISerializer>();
-        serializer.SerializeToTransportMessageAsync(Arg.Any<Message>()).Returns(ValueTask.FromResult(transportMessage));
+        serializer
+            .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(transportMessage));
 
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
@@ -499,7 +509,9 @@ public sealed class MessageSenderTests : TestBase
 
         var transportMessage = _CreateTransportMessage();
         var serializer = Substitute.For<ISerializer>();
-        serializer.SerializeToTransportMessageAsync(Arg.Any<Message>()).Returns(ValueTask.FromResult(transportMessage));
+        serializer
+            .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(transportMessage));
 
         var transport = Substitute.For<ITransport>();
         transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
@@ -595,7 +607,9 @@ public sealed class MessageSenderTests : TestBase
 
         var transportMessage = _CreateTransportMessage();
         var serializer = Substitute.For<ISerializer>();
-        serializer.SerializeToTransportMessageAsync(Arg.Any<Message>()).Returns(ValueTask.FromResult(transportMessage));
+        serializer
+            .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(transportMessage));
 
         var transport = Substitute.For<ITransport>();
         transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
@@ -694,7 +708,9 @@ public sealed class MessageSenderTests : TestBase
 
         var transportMessage = _CreateTransportMessage();
         var serializer = Substitute.For<ISerializer>();
-        serializer.SerializeToTransportMessageAsync(Arg.Any<Message>()).Returns(ValueTask.FromResult(transportMessage));
+        serializer
+            .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(transportMessage));
 
         var busTransport = Substitute.For<IBusTransport>();
         busTransport.BrokerAddress.Returns(new BrokerAddress("bus", "localhost"));
@@ -751,7 +767,9 @@ public sealed class MessageSenderTests : TestBase
 
         var transportMessage = _CreateTransportMessage();
         var serializer = Substitute.For<ISerializer>();
-        serializer.SerializeToTransportMessageAsync(Arg.Any<Message>()).Returns(ValueTask.FromResult(transportMessage));
+        serializer
+            .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(transportMessage));
 
         var busTransport = Substitute.For<IBusTransport>();
         busTransport.BrokerAddress.Returns(new BrokerAddress("bus", "localhost"));
@@ -808,7 +826,7 @@ public sealed class MessageSenderTests : TestBase
 
         var serializer = Substitute.For<ISerializer>();
         serializer
-            .SerializeToTransportMessageAsync(Arg.Any<Message>())
+            .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(_CreateTransportMessage()));
 
         var sender = _CreateSenderWithTransports(storage, serializer, new MessagingOptions());
@@ -851,7 +869,7 @@ public sealed class MessageSenderTests : TestBase
 
         var serializer = Substitute.For<ISerializer>();
         serializer
-            .SerializeToTransportMessageAsync(Arg.Any<Message>())
+            .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(_CreateTransportMessage()));
 
         var queueTransport = Substitute.For<IQueueTransport>();
@@ -909,7 +927,7 @@ public sealed class MessageSenderTests : TestBase
 
         var serializer = Substitute.For<ISerializer>();
         serializer
-            .SerializeToTransportMessageAsync(Arg.Any<Message>())
+            .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(_CreateTransportMessage()));
 
         var busTransport = Substitute.For<IBusTransport>();
@@ -996,7 +1014,7 @@ public sealed class MessageSenderTests : TestBase
 
         await sender.SendAsync(message);
 
-        await transport.DidNotReceiveWithAnyArgs().SendAsync(default!, default);
+        await transport.DidNotReceiveWithAnyArgs().SendAsync(default!, AbortToken);
         message.Retries.Should().Be(1);
         message.InlineAttempts.Should().Be(0);
         await storage
@@ -1031,11 +1049,11 @@ public sealed class MessageSenderTests : TestBase
 
         result.Succeeded.Should().BeTrue();
         message.InlineAttempts.Should().Be(0);
-        await serializer.DidNotReceiveWithAnyArgs().SerializeToTransportMessageAsync(default!);
-        await transport.DidNotReceiveWithAnyArgs().SendAsync(default!, default);
+        await serializer.DidNotReceiveWithAnyArgs().SerializeToTransportMessageAsync(default!, AbortToken);
+        await transport.DidNotReceiveWithAnyArgs().SendAsync(default!, AbortToken);
         await storage
             .DidNotReceiveWithAnyArgs()
-            .ChangePublishRetryStateAsync(default!, default, default, default, default, default, default);
+            .ChangePublishRetryStateAsync(default!, default, default, default, default, default, AbortToken);
     }
 
     [Fact]
@@ -1045,7 +1063,9 @@ public sealed class MessageSenderTests : TestBase
         var storage = Substitute.For<IDataStorage>();
         var transportMessage = _CreateTransportMessage();
         var serializer = Substitute.For<ISerializer>();
-        serializer.SerializeToTransportMessageAsync(Arg.Any<Message>()).Returns(ValueTask.FromResult(transportMessage));
+        serializer
+            .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(transportMessage));
         var transport = Substitute.For<ITransport>();
         transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
         // Stub with the exact instance - an Arg.Any<TransportMessage> matcher makes NSubstitute
@@ -1067,7 +1087,7 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
             );
-        await storage.DidNotReceiveWithAnyArgs().LeasePublishAsync(default!, default, default);
-        await storage.DidNotReceiveWithAnyArgs().ReservePublishAttemptAsync(default!, default, default);
+        await storage.DidNotReceiveWithAnyArgs().LeasePublishAsync(default!, default, AbortToken);
+        await storage.DidNotReceiveWithAnyArgs().ReservePublishAttemptAsync(default!, default, AbortToken);
     }
 }

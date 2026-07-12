@@ -12,6 +12,7 @@ namespace Tests;
 
 public sealed class AwsSesEmailSenderTests : TestBase
 {
+    private const string _MessageId = "ses-message-id-1";
     private readonly IAmazonSimpleEmailServiceV2 _ses = Substitute.For<IAmazonSimpleEmailServiceV2>();
     private readonly AwsSesEmailSender _sender;
 
@@ -28,6 +29,7 @@ public sealed class AwsSesEmailSenderTests : TestBase
         var result = await _sender.SendAsync(_Request(), AbortToken);
 
         result.Success.Should().BeTrue();
+        result.ProviderMessageId.Should().Be(_MessageId);
         captured().Content.Simple.Should().NotBeNull();
         captured().Content.Raw.Should().BeNull();
     }
@@ -96,6 +98,44 @@ public sealed class AwsSesEmailSenderTests : TestBase
     }
 
     [Fact]
+    public async Task ses_typed_exception_should_return_failed_and_surface_the_provider_message()
+    {
+        _ses.SendEmailAsync(Arg.Any<SendEmailRequest>(), Arg.Any<CancellationToken>())
+            .Returns(
+                Task.FromException<SendEmailResponse>(new MessageRejectedException("Email address is not verified"))
+            );
+
+        var result = await _sender.SendAsync(_Request(), AbortToken);
+
+        result.Success.Should().BeFalse();
+        result.FailureError.Should().Be("Email address is not verified");
+        result.ProviderMessageId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task transport_exception_should_return_failed()
+    {
+        _ses.SendEmailAsync(Arg.Any<SendEmailRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<SendEmailResponse>(new HttpRequestException("connection reset")));
+
+        var result = await _sender.SendAsync(_Request(), AbortToken);
+
+        result.Success.Should().BeFalse();
+        result.FailureError.Should().Be("connection reset");
+    }
+
+    [Fact]
+    public async Task operation_canceled_should_propagate()
+    {
+        _ses.SendEmailAsync(Arg.Any<SendEmailRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<SendEmailResponse>(new OperationCanceledException()));
+
+        var act = async () => await _sender.SendAsync(_Request(), AbortToken);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
     public async Task missing_body_should_throw_before_calling_ses()
     {
         var request = _Request() with { MessageText = null, MessageHtml = null };
@@ -110,7 +150,7 @@ public sealed class AwsSesEmailSenderTests : TestBase
     {
         SendEmailRequest? captured = null;
         _ses.SendEmailAsync(Arg.Do<SendEmailRequest>(r => captured = r), Arg.Any<CancellationToken>())
-            .Returns(new SendEmailResponse { HttpStatusCode = status });
+            .Returns(new SendEmailResponse { HttpStatusCode = status, MessageId = _MessageId });
         return () => captured!;
     }
 

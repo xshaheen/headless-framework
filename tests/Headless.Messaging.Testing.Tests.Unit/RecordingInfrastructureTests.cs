@@ -446,7 +446,11 @@ public sealed class RecordingInfrastructureTests : TestBase
 
         public FakeSerializer(Exception exception) => _exception = exception;
 
-        public ValueTask<Message> DeserializeAsync(TransportMessage transportMessage, Type? valueType)
+        public ValueTask<Message> DeserializeAsync(
+            TransportMessage transportMessage,
+            Type? valueType,
+            CancellationToken cancellationToken = default
+        )
         {
             if (_exception != null)
             {
@@ -459,8 +463,10 @@ public sealed class RecordingInfrastructureTests : TestBase
         // Remaining members are not used by RecordingBusTransport
         public string Serialize(Message message) => throw new NotSupportedException();
 
-        public ValueTask<TransportMessage> SerializeToTransportMessageAsync(Message message) =>
-            throw new NotSupportedException();
+        public ValueTask<TransportMessage> SerializeToTransportMessageAsync(
+            Message message,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
 
         public Message Deserialize(string json) => throw new NotSupportedException();
 

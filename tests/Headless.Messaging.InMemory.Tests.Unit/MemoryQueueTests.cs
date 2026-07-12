@@ -47,7 +47,7 @@ public sealed class MemoryQueueTests : TestBase
         var messageNames = new[] { "messageName-1", "messageName-2" };
 
         // when
-        await _consumerClient.SubscribeAsync(messageNames);
+        await _consumerClient.SubscribeAsync(messageNames, AbortToken);
 
         // then - subscribe should complete without exception
         // The subscription is verified by being able to send messages
@@ -59,7 +59,7 @@ public sealed class MemoryQueueTests : TestBase
     {
         // given
         var messageNames = new[] { "test-messageName" };
-        await _consumerClient.SubscribeAsync(messageNames);
+        await _consumerClient.SubscribeAsync(messageNames, AbortToken);
 
         TransportMessage? receivedMessage = null;
         var tcs = new TaskCompletionSource();
@@ -119,7 +119,7 @@ public sealed class MemoryQueueTests : TestBase
     {
         // given
         var messageNames = new[] { "messageName-a", "messageName-b" };
-        await _consumerClient.SubscribeAsync(messageNames);
+        await _consumerClient.SubscribeAsync(messageNames, AbortToken);
 
         var receivedMessages = new List<TransportMessage>();
         var lockObj = new Lock();
@@ -176,7 +176,7 @@ public sealed class MemoryQueueTests : TestBase
     {
         // given
         var messageNames = new[] { "concurrent-messageName" };
-        await _consumerClient.SubscribeAsync(messageNames);
+        await _consumerClient.SubscribeAsync(messageNames, AbortToken);
 
         var receivedMessages = new List<TransportMessage>();
         var lockObj = new Lock();
@@ -242,8 +242,8 @@ public sealed class MemoryQueueTests : TestBase
         var client1 = new InMemoryConsumerClient(queue, "group-1", 1);
         var client2 = new InMemoryConsumerClient(queue, "group-2", 1);
 
-        await client1.SubscribeAsync(["shared-messageName"]);
-        await client2.SubscribeAsync(["shared-messageName"]);
+        await client1.SubscribeAsync(["shared-messageName"], AbortToken);
+        await client2.SubscribeAsync(["shared-messageName"], AbortToken);
 
         var messages1 = new List<TransportMessage>();
         var messages2 = new List<TransportMessage>();
@@ -310,7 +310,7 @@ public sealed class MemoryQueueTests : TestBase
     public async Task should_remove_consumer_on_unsubscribe()
     {
         // given
-        await _consumerClient.SubscribeAsync(["test-messageName"]);
+        await _consumerClient.SubscribeAsync(["test-messageName"], AbortToken);
 
         TransportMessage? receivedMessage = null;
         _consumerClient.OnMessageCallback = async (msg, sender) =>
@@ -351,10 +351,10 @@ public sealed class MemoryQueueTests : TestBase
     public async Task should_not_add_duplicate_group_to_topic()
     {
         // given
-        await _consumerClient.SubscribeAsync(["messageName-1"]);
+        await _consumerClient.SubscribeAsync(["messageName-1"], AbortToken);
 
         // when - subscribe same group to same messageName again
-        await _consumerClient.SubscribeAsync(["messageName-1"]);
+        await _consumerClient.SubscribeAsync(["messageName-1"], AbortToken);
 
         var receivedMessages = new List<TransportMessage>();
         var tcs = new TaskCompletionSource();
@@ -405,8 +405,8 @@ public sealed class MemoryQueueTests : TestBase
         var client1 = new InMemoryConsumerClient(queue, "drain-group-1", 1);
         var client2 = new InMemoryConsumerClient(queue, "drain-group-2", 1);
 
-        await client1.SubscribeAsync(["drain-messageName"]);
-        await client2.SubscribeAsync(["drain-messageName"]);
+        await client1.SubscribeAsync(["drain-messageName"], AbortToken);
+        await client2.SubscribeAsync(["drain-messageName"], AbortToken);
 
         // Enqueue messages (goes to both groups via Send)
         queue.SendBus(_CreateTestMessage("d1", "drain-messageName"));

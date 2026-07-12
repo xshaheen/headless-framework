@@ -8,7 +8,7 @@ namespace Microsoft.Extensions.Configuration;
 
 /// <summary><see cref="IConfiguration"/> extension methods.</summary>
 [PublicAPI]
-public static class ConfigurationExtensions
+public static class HeadlessConfigurationExtensions
 {
     extension(IConfiguration configuration)
     {

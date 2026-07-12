@@ -5,6 +5,10 @@
     <PackageTags>headless;messaging;kafka;dotnet</PackageTags>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Messaging.Kafka.Tests.Unit" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Confluent.Kafka" />
   </ItemGroup>
   <ItemGroup>

@@ -86,7 +86,7 @@ public sealed class NatsConsumerClientTests : TestBase
         await using var client = new NatsConsumerClient("test-group", 1, options, _serviceProvider);
         var messageNames = new[] { "topic1", "topic2", "topic3" };
 
-        var result = await client.FetchMessageNamesAsync(messageNames);
+        var result = await client.FetchMessageNamesAsync(messageNames, AbortToken);
         result.Should().BeEquivalentTo(messageNames);
     }
 
@@ -356,7 +356,7 @@ public sealed class NatsConsumerClientTests : TestBase
         await using var client = _CreateClient("test-group");
         var msg = Substitute.For<INatsJSMsg<ReadOnlyMemory<byte>>>();
 
-        await client.CommitAsync(msg);
+        await client.CommitAsync(msg, AbortToken);
 
         await msg.Received(1).AckAsync(cancellationToken: Arg.Any<CancellationToken>());
     }
@@ -367,7 +367,7 @@ public sealed class NatsConsumerClientTests : TestBase
         await using var client = _CreateClient("test-group");
         var msg = Substitute.For<INatsJSMsg<ReadOnlyMemory<byte>>>();
 
-        await client.RejectAsync(msg);
+        await client.RejectAsync(msg, AbortToken);
 
         await msg.Received(1).NakAsync(cancellationToken: Arg.Any<CancellationToken>());
     }
@@ -419,7 +419,7 @@ public sealed class NatsConsumerClientTests : TestBase
         msg.AckAsync(cancellationToken: Arg.Any<CancellationToken>())
             .Returns(x => throw new InvalidOperationException("ack failed"));
 
-        await client.CommitAsync(msg);
+        await client.CommitAsync(msg, AbortToken);
 
         loggedArgs.Should().NotBeNull();
         loggedArgs!.LogType.Should().Be(MqLogType.AsyncErrorEvent);
@@ -437,7 +437,7 @@ public sealed class NatsConsumerClientTests : TestBase
         msg.NakAsync(cancellationToken: Arg.Any<CancellationToken>())
             .Returns(x => throw new InvalidOperationException("nak failed"));
 
-        await client.RejectAsync(msg);
+        await client.RejectAsync(msg, AbortToken);
 
         loggedArgs.Should().NotBeNull();
         loggedArgs!.LogType.Should().Be(MqLogType.AsyncErrorEvent);
@@ -524,7 +524,7 @@ public sealed class NatsConsumerClientTests : TestBase
             }
         };
 
-        await client.SubscribeAsync(["orders.created"]);
+        await client.SubscribeAsync(["orders.created"], AbortToken);
 
         using var cts = new CancellationTokenSource();
 
@@ -571,7 +571,7 @@ public sealed class NatsConsumerClientTests : TestBase
             _serviceProvider,
             (_, _, _) => Task.FromResult(consumer)
         );
-        await client.SubscribeAsync(["orders.created", "orders.updated"]);
+        await client.SubscribeAsync(["orders.created", "orders.updated"], AbortToken);
         await client.PauseAsync(AbortToken);
 
         using var cts = new CancellationTokenSource();
@@ -631,7 +631,7 @@ public sealed class NatsConsumerClientTests : TestBase
             _serviceProvider,
             (_, _, _) => Task.FromResult(consumer)
         );
-        await client.SubscribeAsync(["orders.created"]);
+        await client.SubscribeAsync(["orders.created"], AbortToken);
 
         using var cts = new CancellationTokenSource();
 
@@ -700,7 +700,7 @@ public sealed class NatsConsumerClientTests : TestBase
                         : siblingConsumer
                 )
         );
-        await client.SubscribeAsync(["orders.created", "orders.updated"]);
+        await client.SubscribeAsync(["orders.created", "orders.updated"], AbortToken);
 
         var connectError = new TaskCompletionSource<LogMessageEventArgs>(
             TaskCreationOptions.RunContinuationsAsynchronously
@@ -792,7 +792,7 @@ public sealed class NatsConsumerClientTests : TestBase
                 }
             },
         };
-        await client.SubscribeAsync(["orders"]);
+        await client.SubscribeAsync(["orders"], AbortToken);
         using var cts = new CancellationTokenSource();
         var listening = client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token).AsTask();
 
@@ -872,7 +872,7 @@ public sealed class NatsConsumerClientTests : TestBase
             _serviceProvider,
             (_, _, _) => Task.FromResult(consumer)
         );
-        await client.SubscribeAsync(["orders.created"]);
+        await client.SubscribeAsync(["orders.created"], AbortToken);
 
         using var cts = new CancellationTokenSource();
 
@@ -973,7 +973,7 @@ public sealed class NatsConsumerClientTests : TestBase
             },
         };
 
-        await client.SubscribeAsync(["orders.created"]);
+        await client.SubscribeAsync(["orders.created"], AbortToken);
 
         using var cts = new CancellationTokenSource();
         var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token).AsTask();
@@ -1026,7 +1026,7 @@ public sealed class NatsConsumerClientTests : TestBase
                     .GetValue(client)!;
         inFlightHandlers.TryAdd(stuckHandler.Task, 0).Should().BeTrue();
 
-        var shutdown = ((IConsumerClient)client).ShutdownAsync(TimeSpan.FromSeconds(2)).AsTask();
+        var shutdown = ((IConsumerClient)client).ShutdownAsync(TimeSpan.FromSeconds(2), AbortToken).AsTask();
         shutdown.IsCompleted.Should().BeFalse();
 
         timeProvider.Advance(TimeSpan.FromSeconds(2));

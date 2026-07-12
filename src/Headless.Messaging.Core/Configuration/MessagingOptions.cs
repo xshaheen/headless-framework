@@ -541,7 +541,7 @@ internal sealed class MessagingOptionsValidator : AbstractValidator<MessagingOpt
         return contextType.IsGenericType
             && (
                 contextType.GetGenericTypeDefinition() == typeof(ConsumeContext<>)
-                || contextType.GetGenericTypeDefinition() == typeof(PublishingContext<>)
+                || contextType.GetGenericTypeDefinition() == typeof(PublishContext<>)
             );
     }
 }

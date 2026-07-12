@@ -4,8 +4,6 @@ using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using Headless.Testing.Tests;
 using Headless.Tus;
-using Headless.Tus.Options;
-using Headless.Tus.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;

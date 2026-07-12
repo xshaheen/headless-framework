@@ -2,6 +2,12 @@
 
 namespace Headless.Coordination;
 
+/// <summary>
+/// Shared, provider-agnostic options for Headless coordination: cluster identity, key prefixing, heartbeat and
+/// liveness thresholds, dead-record retention, and the behavior applied when the local node loses its membership.
+/// Bound via <c>AddHeadlessCoordination(setup =&gt; setup.Configure(...))</c>; provider packages layer their own
+/// options (connection string, schema) on top.
+/// </summary>
 [PublicAPI]
 public sealed class CoordinationOptions
 {

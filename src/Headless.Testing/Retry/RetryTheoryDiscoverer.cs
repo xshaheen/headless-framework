@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.ComponentModel;
 using Xunit;
 using Xunit.Internal;
 using Xunit.Sdk;
@@ -13,7 +14,7 @@ namespace Headless.Testing.Retry;
 /// <see cref="RetryDelayEnumeratedTestCase"/> when pre-enumeration is disabled or data
 /// is not serializable.
 /// </summary>
-[PublicAPI]
+[EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class RetryTheoryDiscoverer : TheoryDiscoverer
 {
     // This override is used when the theory data is serializable and the user has requested pre-enumeration.

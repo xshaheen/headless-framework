@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Xml;
 
@@ -10,6 +11,8 @@ namespace Headless.Generator.Primitives;
 /// <summary>
 /// Provides extension methods for XmlReader and XmlWriter to simplify reading and writing of certain data types.
 /// </summary>
+/// <remarks>This type is generator-output plumbing; it must stay public for emitted code but is not intended for direct use.</remarks>
+[EditorBrowsable(EditorBrowsableState.Never)]
 public static class XmlReaderExtensions
 {
     /// <summary>

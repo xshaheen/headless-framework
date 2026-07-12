@@ -167,12 +167,6 @@ public readonly struct Result<TValue, TError> : IEquatable<Result<TValue, TError
     /// <returns>A failed <see cref="Result{TValue, TError}"/>.</returns>
     public static Result<TValue, TError> Fail(TError error) => new(error);
 
-    /// <summary>Creates a successful result carrying <paramref name="value"/>. Use <see cref="Ok(TValue)"/> instead.</summary>
-    /// <param name="value">The success value.</param>
-    /// <returns>A successful <see cref="Result{TValue, TError}"/>.</returns>
-    [Obsolete("Use Ok() instead")]
-    public static Result<TValue, TError> Success(TValue value) => Ok(value);
-
     // Implicit conversions
 
     /// <summary>Implicitly wraps a value in a successful <see cref="Result{TValue, TError}"/>.</summary>

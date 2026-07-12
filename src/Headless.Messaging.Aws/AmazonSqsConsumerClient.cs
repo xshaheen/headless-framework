@@ -274,13 +274,15 @@ internal sealed class AmazonSqsConsumerClient(
         );
     }
 
-    public async ValueTask CommitAsync(object? sender)
+    public async ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default)
     {
         var inflight = _GetInflightMessage(sender);
 
         try
         {
-            await _sqsClient!.DeleteMessageAsync(inflight.QueueUrl, inflight.ReceiptHandle).ConfigureAwait(false);
+            await _sqsClient!
+                .DeleteMessageAsync(inflight.QueueUrl, inflight.ReceiptHandle, cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (ReceiptHandleIsInvalidException ex)
         {
@@ -288,14 +290,14 @@ internal sealed class AmazonSqsConsumerClient(
         }
     }
 
-    public async ValueTask RejectAsync(object? sender)
+    public async ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
     {
         var inflight = _GetInflightMessage(sender);
 
         try
         {
             await _sqsClient!
-                .ChangeMessageVisibilityAsync(inflight.QueueUrl, inflight.ReceiptHandle, 3)
+                .ChangeMessageVisibilityAsync(inflight.QueueUrl, inflight.ReceiptHandle, 3, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (MessageNotInflightException ex)

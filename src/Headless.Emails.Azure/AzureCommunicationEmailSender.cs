@@ -16,11 +16,14 @@ namespace Headless.Emails.Azure;
 /// <remarks>
 /// The send uses <see cref="WaitUntil.Completed"/>, so the call blocks until ACS reaches a terminal
 /// state. ACS can complete a send with a non-<c>Succeeded</c> status <em>without</em> throwing, so the
-/// outcome is mapped two ways: a thrown <see cref="RequestFailedException"/> and a completed-but-failed
-/// status both produce a failed <see cref="SendSingleEmailResponse"/>. Recipient and sender addresses are
-/// deliberately excluded from log output: a rejected request records the HTTP status, the ACS error code,
-/// and the <c>x-ms-request-id</c> correlation id; a completed-but-failed terminal status records the send
-/// status and operation id. Unrelated exceptions (for example cancellation) propagate. Transient
+/// outcome is mapped several ways: a thrown <see cref="RequestFailedException"/>, any other transport/SDK
+/// fault, and a completed-but-failed status all produce a failed <see cref="SendSingleEmailResponse"/> that
+/// surfaces the provider's error detail (the rejection message, or the terminal status). Only the caller's
+/// own cancellation propagates per the <see cref="IEmailSender"/> return-not-throw contract. The failed
+/// response may carry the provider's raw message (the calling app owns the recipient data), but log output
+/// deliberately excludes recipient and sender addresses: a rejected request records the HTTP status, the ACS
+/// error code, and the <c>x-ms-request-id</c> correlation id; a completed-but-failed terminal status records
+/// the send status and operation id; any other fault records only the exception type. Transient
 /// throttling/5xx responses are retried by the <c>Azure.Core</c> pipeline (honoring <c>Retry-After</c>);
 /// no custom retry is added. Because the call blocks until a terminal state and that pipeline backs off
 /// under throttling — ACS managed-domain limits are low (5/min) — a caller that needs a hard wall-clock
@@ -29,18 +32,20 @@ namespace Headless.Emails.Azure;
 internal sealed class AzureCommunicationEmailSender(EmailClient client, ILogger<AzureCommunicationEmailSender> logger)
     : IEmailSender
 {
-    private const string _FailureError = "Failed to send an email to the recipient.";
-
     /// <summary>
     /// Sends a single email via Azure Communication Services.
     /// </summary>
     /// <param name="request">The email message to send.</param>
     /// <param name="cancellationToken">Token used to cancel the send operation.</param>
     /// <returns>
-    /// A successful response when ACS completes the send with a <c>Succeeded</c> status; a failed
-    /// response when ACS rejects the request (<see cref="RequestFailedException"/>) or completes with a
-    /// non-<c>Succeeded</c> terminal status.
+    /// A successful response (carrying the ACS operation id as the provider message id) when ACS completes
+    /// the send with a <c>Succeeded</c> status; a failed response (surfacing the provider's error detail)
+    /// when ACS rejects the request (<see cref="RequestFailedException"/>), a transport/SDK fault occurs, or
+    /// the send completes with a non-<c>Succeeded</c> terminal status.
     /// </returns>
+    /// <exception cref="OperationCanceledException">
+    /// Thrown when <paramref name="cancellationToken"/> is cancelled by the caller during the send.
+    /// </exception>
     public async ValueTask<SendSingleEmailResponse> SendAsync(
         SendSingleEmailRequest request,
         CancellationToken cancellationToken = default
@@ -57,26 +62,49 @@ internal sealed class AzureCommunicationEmailSender(EmailClient client, ILogger<
         {
             operation = await client.SendAsync(WaitUntil.Completed, message, cancellationToken).ConfigureAwait(false);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Only the caller's own cancellation propagates per the IEmailSender contract; every other fault
+            // is returned as a failed response by the handlers below.
+            throw;
+        }
         catch (RequestFailedException ex)
         {
             // Log only non-PII tracking fields — recipient/sender addresses must not leak into log sinks.
             // x-ms-request-id is the ACS-side correlation handle for the rejected request (no operation id exists yet).
             logger.LogEmailSendRequestFailed(ex.Status, ex.ErrorCode, _TryGetRequestId(ex));
 
-            return SendSingleEmailResponse.Failed(_FailureError);
+            // Surface the provider's raw rejection reason to the caller (parity with the SES/Mailkit
+            // providers). The calling app owns the recipient data, so the message is not a leak in the
+            // response — only log sinks are kept PII-free (see the non-PII log above).
+            return SendSingleEmailResponse.FromException(ex);
+        }
+        catch (Exception ex)
+        {
+            // Transport/SDK faults (connection reset, DNS, serialization) also become a failed response per
+            // the IEmailSender return-not-throw contract. Log the exception type only — its message may
+            // carry connection detail we do not want in log sinks.
+            logger.LogEmailSendFailed(ex.GetType().Name);
+
+            return SendSingleEmailResponse.FromException(ex);
         }
 
         var result = operation.Value;
 
         if (result.Status == EmailSendStatus.Succeeded)
         {
-            return SendSingleEmailResponse.Succeeded();
+            // The ACS operation id is the correlation handle for the accepted message (used to query
+            // delivery status), so it is surfaced as the provider message id.
+            return SendSingleEmailResponse.Succeeded(operation.Id);
         }
 
-        // ACS reached a terminal non-Succeeded state (for example Failed/Canceled) without throwing.
+        // ACS reached a terminal non-Succeeded state (for example Failed/Canceled) without throwing. Surface
+        // the terminal status to the caller for parity with the exception paths; the status is not PII.
         logger.LogEmailCompletedWithFailureStatus(result.Status.ToString(), operation.Id);
 
-        return SendSingleEmailResponse.Failed(_FailureError);
+        return SendSingleEmailResponse.Failed(
+            $"Azure Communication Services completed the send with status '{result.Status}'."
+        );
     }
 
     // The ACS-side correlation id for a rejected request; null when the SDK did not attach a raw response.
@@ -116,4 +144,12 @@ internal static partial class AzureCommunicationEmailSenderLoggerExtensions
         string status,
         string operationId
     );
+
+    [LoggerMessage(
+        EventId = 3,
+        EventName = "EmailSendFailed",
+        Level = LogLevel.Error,
+        Message = "Failed to send email via Azure Communication Services. ExceptionType={ExceptionType}"
+    )]
+    public static partial void LogEmailSendFailed(this ILogger logger, string exceptionType);
 }

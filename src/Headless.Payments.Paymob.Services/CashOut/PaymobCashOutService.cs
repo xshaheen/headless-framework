@@ -29,6 +29,7 @@ namespace Headless.Payments.Paymob.Services.CashOut;
 /// ID and status.
 /// </para>
 /// </remarks>
+[PublicAPI]
 public interface ICashOutService
 {
     /// <summary>Disburses funds to a Vodafone Cash mobile wallet.</summary>
@@ -92,7 +93,7 @@ public interface ICashOutService
     );
 }
 
-public sealed class PaymobCashOutService(IPaymobCashOutBroker broker, ILogger<PaymobCashOutService> logger)
+internal sealed class PaymobCashOutService(IPaymobCashOutBroker broker, ILogger<PaymobCashOutService> logger)
     : ICashOutService
 {
     public async Task<CashOutResult<CashOutResponse>> DisburseAsync(

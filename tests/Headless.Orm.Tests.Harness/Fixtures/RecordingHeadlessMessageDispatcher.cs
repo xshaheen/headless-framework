@@ -55,7 +55,10 @@ public sealed class RecordingHeadlessMessageDispatcher : ILocalEventBus, IHeadle
         return ValueTask.CompletedTask;
     }
 
-    public Task DispatchAsync(IReadOnlyList<IIntegrationEvent> integrationEvents, CancellationToken cancellationToken)
+    public Task DispatchAsync(
+        IReadOnlyList<IIntegrationEvent> integrationEvents,
+        CancellationToken cancellationToken = default
+    )
     {
         _RecordDistributed(integrationEvents);
         return Task.CompletedTask;

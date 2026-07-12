@@ -31,8 +31,7 @@ namespace Headless.DistributedLocks.Redis;
 /// to the caller unless explicitly caught by this class.
 /// </para>
 /// </remarks>
-[PublicAPI]
-public sealed class RedisDistributedSemaphoreStorage(
+internal sealed class RedisDistributedSemaphoreStorage(
     IConnectionMultiplexer multiplexer,
     [FromKeyedServices(RedisDistributedLockServiceKeys.ScriptsLoader)] HeadlessRedisScriptsLoader scriptsLoader
 ) : IDistributedSemaphoreStorage

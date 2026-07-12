@@ -3,7 +3,8 @@
 using Azure.Storage.Blobs.Models;
 using Headless.Constants;
 
-namespace Headless.Tus.Services;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Tus;
 
 /// <summary>
 /// Provides Azure Blob HTTP headers (content type, cache control, etc.) for newly created upload blobs.

@@ -13,6 +13,7 @@ namespace Headless.Payments.Paymob.Services.CashIn;
 /// and 14% VAT on the total fee. Instantiate <c>PaymobCashInFeesCalculator</c> directly
 /// with custom parameters when the merchant's negotiated rates differ.
 /// </remarks>
+[PublicAPI]
 public interface IPaymobCashInFeesCalculator
 {
     /// <summary>Calculate the fess that the payment gateway will deduct from the <paramref name="amount"/>.</summary>
@@ -44,6 +45,12 @@ public interface IPaymobCashInFeesCalculator
     decimal CalcFeesForNet(decimal net);
 }
 
+/// <summary>
+/// Default <see cref="IPaymobCashInFeesCalculator"/> implementation using Paymob Accept's fee structure.
+/// Construct directly with custom parameters when the merchant's negotiated rates differ from the defaults
+/// (6 EGP fixed fee, 2.5% percentage fee, 14% VAT on the fee).
+/// </summary>
+[PublicAPI]
 public sealed class PaymobCashInFeesCalculator(
     decimal fixedFeesPerTransaction = 6,
     decimal percentageFeesPerTransaction = 0.025m,

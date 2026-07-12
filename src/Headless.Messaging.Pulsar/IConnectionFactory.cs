@@ -16,7 +16,7 @@ namespace Headless.Messaging.Pulsar;
 /// <see cref="CreateProducerAsync"/>. Producers are cached per topic; a failed producer task is
 /// evicted from the cache so the next call creates a fresh producer.
 /// </remarks>
-public interface IConnectionFactory
+internal interface IConnectionFactory
 {
     /// <summary>Gets the formatted Pulsar service URL used by this factory.</summary>
     string ServersAddress { get; }
@@ -37,7 +37,7 @@ public interface IConnectionFactory
 }
 
 /// <summary>Default implementation of <see cref="IConnectionFactory"/>.</summary>
-public sealed class ConnectionFactory : IConnectionFactory, IAsyncDisposable
+internal sealed class ConnectionFactory : IConnectionFactory, IAsyncDisposable
 {
     private readonly SemaphoreSlim _clientLock = new(1, 1);
     private PulsarClient? _client;

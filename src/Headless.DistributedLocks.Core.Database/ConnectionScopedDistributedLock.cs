@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Security.Cryptography;
 using Headless.Abstractions;
@@ -31,6 +32,7 @@ namespace Headless.DistributedLocks;
 /// <param name="fencingTokenSource">Optional source of monotonic fencing tokens for exclusive locks.</param>
 /// <param name="pollingFallback">Maximum delay between retry attempts; defaults to 100ms.</param>
 [PublicAPI]
+[EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class ConnectionScopedDistributedLock(
     IConnectionScopedLockStorage storage,
     IReleaseSignal releaseSignal,

@@ -10,6 +10,7 @@ namespace Headless.Sms.Vodafone;
 /// <see cref="Password"/>, and a per-request HMAC-SHA256 signature derived from <see cref="SecureHash"/>.
 /// The signature covers the account id, password, sender name, recipient MSISDN, and SMS text.
 /// </remarks>
+[PublicAPI]
 public sealed class VodafoneSmsOptions
 {
     /// <summary>The Vodafone Egypt SMS submission endpoint. Defaults to the Vodafone Egypt production URL.</summary>

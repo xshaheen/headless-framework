@@ -72,24 +72,26 @@ internal sealed class RedisConsumerClient(
         }
     }
 
-    public async ValueTask CommitAsync(object? sender)
+    public async ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default)
     {
         if (!_TryGetDelivery(sender, out var delivery))
         {
             return;
         }
 
-        await redis.Ack(delivery.Stream, delivery.Group, delivery.Id).ConfigureAwait(false);
+        await redis.Ack(delivery.Stream, delivery.Group, delivery.Id, cancellationToken).ConfigureAwait(false);
     }
 
-    public async ValueTask RejectAsync(object? sender)
+    public async ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
     {
         if (sender is not RedisConsumerDelivery delivery)
         {
             return;
         }
 
-        await redis.RequeueAndAck(delivery.Stream, delivery.Group, delivery.Id, delivery.Entries).ConfigureAwait(false);
+        await redis
+            .RequeueAndAck(delivery.Stream, delivery.Group, delivery.Id, delivery.Entries, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async ValueTask PauseAsync(CancellationToken cancellationToken = default) =>

@@ -6,7 +6,7 @@ using Headless.Payments.Paymob.CashIn.Models.Callback;
 
 namespace Headless.Payments.Paymob.CashIn;
 
-public partial class PaymobCashInBroker
+internal partial class PaymobCashInBroker
 {
     public bool Validate(CashInCallbackQueryParameters queryParameters)
     {

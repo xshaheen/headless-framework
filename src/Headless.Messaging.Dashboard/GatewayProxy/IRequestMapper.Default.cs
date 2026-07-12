@@ -6,7 +6,7 @@ using Microsoft.Extensions.Primitives;
 
 namespace Headless.Messaging.Dashboard.GatewayProxy;
 
-public class RequestMapper : IRequestMapper
+internal sealed class RequestMapper : IRequestMapper
 {
     private const string _SchemeDelimiter = "://";
     private readonly string[] _unsupportedHeaders = ["host", "cookie"];

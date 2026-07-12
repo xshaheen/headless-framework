@@ -29,6 +29,7 @@ namespace Headless.Payments.Paymob.CashOut;
 /// <c>HttpClient</c> is injected by the typed-client factory.
 /// </para>
 /// </remarks>
+[PublicAPI]
 public interface IPaymobCashOutBroker
 {
     /// <summary>
@@ -84,7 +85,7 @@ public interface IPaymobCashOutBroker
     );
 }
 
-public sealed class PaymobCashOutBroker(HttpClient httpClient, IPaymobCashOutAuthenticator authenticator)
+internal sealed class PaymobCashOutBroker(HttpClient httpClient, IPaymobCashOutAuthenticator authenticator)
     : IPaymobCashOutBroker
 {
     public async Task<CashOutTransaction> Disburse(

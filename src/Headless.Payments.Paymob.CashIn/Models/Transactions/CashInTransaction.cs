@@ -131,15 +131,19 @@ public sealed class CashInTransaction
     [JsonPropertyName("parent_transaction")]
     public object? ParentTransaction { get; init; }
 
+    /// <summary>Opaque Paymob passthrough value; shape is provider-defined and usually <see langword="null"/>.</summary>
     [JsonPropertyName("wallet_transaction_type")]
     public object? WalletTransactionType { get; init; }
 
+    /// <summary>Opaque Paymob passthrough value; shape is provider-defined and usually <see langword="null"/>.</summary>
     [JsonPropertyName("installment")]
     public object? Installment { get; init; }
 
+    /// <summary>Opaque Paymob passthrough value; shape is provider-defined and usually <see langword="null"/>.</summary>
     [JsonPropertyName("merchant_staff_tag")]
     public object? MerchantStaffTag { get; init; }
 
+    /// <summary>Opaque Paymob passthrough value; shape is provider-defined and usually <see langword="null"/>.</summary>
     [JsonPropertyName("other_endpoint_reference")]
     public object? OtherEndpointReference { get; init; }
 

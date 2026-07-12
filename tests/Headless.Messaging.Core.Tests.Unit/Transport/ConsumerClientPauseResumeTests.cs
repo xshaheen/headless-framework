@@ -147,9 +147,11 @@ public sealed class ConsumerClientPauseResumeTests
         public ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
             ValueTask.CompletedTask;
 
-        public ValueTask CommitAsync(object? sender) => ValueTask.CompletedTask;
+        public ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default) =>
+            ValueTask.CompletedTask;
 
-        public ValueTask RejectAsync(object? sender) => ValueTask.CompletedTask;
+        public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default) =>
+            ValueTask.CompletedTask;
 
         public ValueTask PauseAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
 

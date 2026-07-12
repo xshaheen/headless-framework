@@ -34,6 +34,7 @@ namespace Headless.Payments.Paymob.Services.CashIn;
 /// <c>IPaymobCashInBroker</c> and is itself scoped.
 /// </para>
 /// </remarks>
+[PublicAPI]
 public interface IPaymobCashInService
 {
     /// <summary>
@@ -126,7 +127,7 @@ public interface IPaymobCashInService
     );
 }
 
-public sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<PaymobCashInService> logger)
+internal sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<PaymobCashInService> logger)
     : IPaymobCashInService
 {
     public async Task<PaymobCardCashInResponse> StartAsync(

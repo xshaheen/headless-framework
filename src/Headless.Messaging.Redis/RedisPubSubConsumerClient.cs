@@ -107,13 +107,13 @@ internal sealed class RedisPubSubConsumerClient(
 #pragma warning restore ERP022
     }
 
-    public ValueTask CommitAsync(object? sender)
+    public ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default)
     {
         _ = sender;
         return ValueTask.CompletedTask;
     }
 
-    public ValueTask RejectAsync(object? sender)
+    public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
     {
         _ = sender;
         return ValueTask.CompletedTask;

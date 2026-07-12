@@ -291,16 +291,18 @@ public sealed record ProcessObservedOutput(ProcessObservedOutputType Type, strin
 }
 
 /// <summary>Identifies the kind of item produced by <see cref="ProcessExtensions.RunAsObservable(ProcessStartInfo)"/>.</summary>
+/// <remarks>Additional members may be added in future versions; consumers switching on this enum should include a default case.</remarks>
+[PublicAPI]
 public enum ProcessObservedOutputType
 {
     /// <summary>A line written to standard output.</summary>
-    StandardOutput,
+    StandardOutput = 0,
 
     /// <summary>A line written to standard error.</summary>
-    StandardError,
+    StandardError = 1,
 
     /// <summary>The process exit code, reported once the process terminates.</summary>
-    ExitCode,
+    ExitCode = 2,
 }
 
 #endregion
@@ -379,13 +381,15 @@ public sealed class ProcessOutputCollection : IReadOnlyList<ProcessOutput>
 }
 
 /// <summary>Identifies which standard stream a captured <see cref="ProcessOutput"/> line came from.</summary>
+/// <remarks>Additional members may be added in future versions; consumers switching on this enum should include a default case.</remarks>
+[PublicAPI]
 public enum ProcessOutputType
 {
     /// <summary>A line written to standard output.</summary>
-    StandardOutput,
+    StandardOutput = 0,
 
     /// <summary>A line written to standard error.</summary>
-    StandardError,
+    StandardError = 1,
 }
 
 #endregion

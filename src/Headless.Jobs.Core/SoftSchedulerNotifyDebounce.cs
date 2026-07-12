@@ -2,7 +2,7 @@
 
 namespace Headless.Jobs;
 
-public sealed class SoftSchedulerNotifyDebounce : IDisposable
+internal sealed class SoftSchedulerNotifyDebounce : IDisposable
 {
     private readonly Action<string> _notifyCoreAction;
     private readonly Timer _timer;

@@ -95,7 +95,7 @@ public sealed class NatsConsumerClientHarnessTests(NatsFixture fixture) : Consum
         await using var consumer = await GetConsumerClientAsync();
         var requestedTopics = new[] { $"{_topicPrefix}.topic-1", $"{_topicPrefix}.topic-2", $"{_topicPrefix}.topic-3" };
 
-        var result = await consumer.FetchMessageNamesAsync(requestedTopics);
+        var result = await consumer.FetchMessageNamesAsync(requestedTopics, AbortToken);
 
         result.Should().NotBeNull();
         result.Should().HaveCountGreaterThanOrEqualTo(0);

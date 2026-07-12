@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Api.Abstractions;
+using Headless.Api.Resources;
 using Microsoft.AspNetCore.Mvc;
 
 // ReSharper disable once CheckNamespace
@@ -84,7 +85,9 @@ public static class ApiResultMvcExtensions
                 creator.UnprocessableEntity(e.ToErrorDescriptorDictionary())
             ),
 
-            ForbiddenError e => new ObjectResult(creator.Forbidden(error: new ErrorDescriptor("g:forbidden", e.Reason)))
+            ForbiddenError e => new ObjectResult(
+                creator.Forbidden(error: new ErrorDescriptor(GeneralErrorCodes.Forbidden, e.Reason))
+            )
             {
                 StatusCode = 403,
             },

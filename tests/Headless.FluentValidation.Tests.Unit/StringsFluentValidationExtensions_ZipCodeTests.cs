@@ -87,7 +87,7 @@ public sealed class StringsFluentValidationExtensionsZipCodeTests
 
         var result = validator.TestValidate(model);
 
-        result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("strings:invalid_zip_code");
+        result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("g:invalid_zip_code");
     }
 
     #endregion

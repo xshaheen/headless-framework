@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.ComponentModel;
+
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
@@ -10,6 +12,7 @@ namespace Headless.DistributedLocks;
 /// </summary>
 /// <param name="mutexProvider">The connection-scoped mutex provider whose shared/exclusive storage backs this.</param>
 [PublicAPI]
+[EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class ConnectionScopedReadWriteLock(ConnectionScopedDistributedLock mutexProvider)
     : IDistributedReadWriteLock
 {

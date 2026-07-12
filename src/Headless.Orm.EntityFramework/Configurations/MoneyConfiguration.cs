@@ -8,13 +8,13 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 namespace Headless.EntityFramework.Configurations;
 
 [PublicAPI]
-public static class CurrencyConfiguration
+public static class MoneyConfiguration
 {
     extension<TEntity>(EntityTypeBuilder<TEntity> builder)
         where TEntity : class
     {
-        public void HasComplexCurrency(
-            Expression<Func<TEntity, Currency?>> propertyExpression,
+        public void HasComplexMoney(
+            Expression<Func<TEntity, Money?>> propertyExpression,
             string amountColumnName = "Amount",
             string codeColumnName = "Currency",
             int codeMaxLength = 3,
@@ -38,7 +38,7 @@ public static class CurrencyConfiguration
             );
         }
 
-        public void HasComplexCurrency(
+        public void HasComplexMoney(
             string propertyName,
             string amountColumnName = "Amount",
             string codeColumnName = "Currency",
@@ -50,12 +50,12 @@ public static class CurrencyConfiguration
                 propertyName,
                 b =>
                 {
-                    b.Property(nameof(Currency.CurrencyCode))
+                    b.Property(nameof(Money.CurrencyCode))
                         .IsRequired(isRequired)
                         .HasColumnName(codeColumnName)
                         .HasMaxLength(codeMaxLength);
 
-                    b.Property(nameof(Currency.Amount))
+                    b.Property(nameof(Money.Amount))
                         .HasPrecision(32, 10)
                         .IsRequired(isRequired)
                         .HasColumnName(amountColumnName);
@@ -63,8 +63,8 @@ public static class CurrencyConfiguration
             );
         }
 
-        public void OwnsCurrency(
-            Expression<Func<TEntity, Currency?>> propertyExpression,
+        public void OwnsMoney(
+            Expression<Func<TEntity, Money?>> propertyExpression,
             string amountColumnName = "Amount",
             string codeColumnName = "Currency",
             int codeMaxLength = 3,
@@ -88,7 +88,7 @@ public static class CurrencyConfiguration
             );
         }
 
-        public void OwnsCurrency(
+        public void OwnsMoney(
             Type entityType,
             string propertyName,
             string amountColumnName = "Amount",
@@ -102,12 +102,12 @@ public static class CurrencyConfiguration
                 propertyName,
                 b =>
                 {
-                    b.Property(nameof(Currency.CurrencyCode))
+                    b.Property(nameof(Money.CurrencyCode))
                         .IsRequired(isRequired)
                         .HasColumnName(codeColumnName)
                         .HasMaxLength(codeMaxLength);
 
-                    b.Property(nameof(Currency.Amount))
+                    b.Property(nameof(Money.Amount))
                         .HasPrecision(32, 10)
                         .IsRequired(isRequired)
                         .HasColumnName(amountColumnName);

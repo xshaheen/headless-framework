@@ -658,13 +658,13 @@ internal sealed class NatsConsumerClient(
         await onMessage(message, msg).ConfigureAwait(false);
     }
 
-    public async ValueTask CommitAsync(object? sender)
+    public async ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default)
     {
         try
         {
             if (sender is INatsJSMsg<ReadOnlyMemory<byte>> msg)
             {
-                await msg.AckAsync().ConfigureAwait(false);
+                await msg.AckAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
             }
         }
         catch (Exception ex)
@@ -679,13 +679,13 @@ internal sealed class NatsConsumerClient(
         }
     }
 
-    public async ValueTask RejectAsync(object? sender)
+    public async ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
     {
         try
         {
             if (sender is INatsJSMsg<ReadOnlyMemory<byte>> msg)
             {
-                await msg.NakAsync().ConfigureAwait(false);
+                await msg.NakAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
             }
         }
         catch (Exception ex)

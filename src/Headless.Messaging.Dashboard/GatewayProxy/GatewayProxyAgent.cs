@@ -16,7 +16,7 @@ namespace Headless.Messaging.Dashboard.GatewayProxy;
 /// a peer node that is different from the current node. Uses the configured
 /// <see cref="INodeDiscoveryProvider"/> to resolve the peer's address.
 /// </summary>
-public class GatewayProxyAgent(
+internal sealed class GatewayProxyAgent(
     ILoggerFactory loggerFactory,
     IRequestMapper requestMapper,
     IHttpClientFactory httpClientFactory,

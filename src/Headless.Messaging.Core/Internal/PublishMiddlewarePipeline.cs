@@ -66,7 +66,7 @@ internal sealed class PublishMiddlewarePipeline(
 
         await using var scope = _serviceProvider.CreateAsyncScope();
         var provider = scope.ServiceProvider;
-        var context = new PublishingContext<T>(
+        var context = new PublishContext<T>(
             content,
             intentType,
             options,

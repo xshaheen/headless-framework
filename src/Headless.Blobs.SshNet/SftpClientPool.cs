@@ -18,7 +18,7 @@ namespace Headless.Blobs.SshNet;
 /// Invalid or disconnected clients are disposed and replaced. Dispose the pool when the application shuts down
 /// to close all open SSH connections.
 /// </remarks>
-public sealed class SftpClientPool : IDisposable
+internal sealed class SftpClientPool : IDisposable
 {
     private readonly Channel<SftpClient> _idle;
     private readonly SemaphoreSlim _maxConnections;

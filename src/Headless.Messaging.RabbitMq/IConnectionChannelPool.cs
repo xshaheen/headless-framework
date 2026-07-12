@@ -17,7 +17,7 @@ namespace Headless.Messaging.RabbitMq;
 /// Channels are rented for publish operations and returned after use. The pool size is fixed at
 /// 15 slots by default. Renting blocks when all slots are occupied until a channel is returned.
 /// </remarks>
-public interface IConnectionChannelPool
+internal interface IConnectionChannelPool
 {
     /// <summary>Gets the broker host address in <c>host:port</c> form.</summary>
     string HostAddress { get; }
@@ -59,7 +59,7 @@ public interface IConnectionChannelPool
 }
 
 /// <summary>Default implementation of <see cref="IConnectionChannelPool"/>.</summary>
-public sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable, IAsyncDisposable
+internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable, IAsyncDisposable
 {
     private const int _DefaultPoolSize = 15;
     private readonly SemaphoreSlim _connectionLock = new(1, 1);

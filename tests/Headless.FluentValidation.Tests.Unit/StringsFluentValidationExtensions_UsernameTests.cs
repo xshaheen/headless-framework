@@ -87,7 +87,7 @@ public sealed class StringsFluentValidationExtensionsUsernameTests
 
         var result = validator.TestValidate(model);
 
-        result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("strings:invalid_username");
+        result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("g:invalid_username");
     }
 
     #endregion

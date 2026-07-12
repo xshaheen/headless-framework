@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.ComponentModel;
 using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Serializer;
@@ -57,6 +58,7 @@ public static class SetupCoordinationCore
         /// <typeparam name="TStore">The concrete membership store implementation to register.</typeparam>
         /// <param name="optionSetupAction">Delegate that configures <see cref="CoordinationOptions"/>.</param>
         /// <returns>The same <see cref="IServiceCollection"/> for chaining.</returns>
+        [EditorBrowsable(EditorBrowsableState.Never)]
         public IServiceCollection AddCoordinationCore<TStore>(
             Action<CoordinationOptions, IServiceProvider> optionSetupAction
         )
@@ -75,6 +77,7 @@ public static class SetupCoordinationCore
         /// <typeparam name="TStore">The concrete membership store implementation to register.</typeparam>
         /// <param name="optionSetupAction">Delegate that configures <see cref="CoordinationOptions"/>.</param>
         /// <returns>The same <see cref="IServiceCollection"/> for chaining.</returns>
+        [EditorBrowsable(EditorBrowsableState.Never)]
         public IServiceCollection AddCoordinationCore<TStore>(Action<CoordinationOptions> optionSetupAction)
             where TStore : class, IMembershipStore
         {
@@ -91,6 +94,7 @@ public static class SetupCoordinationCore
         /// <typeparam name="TStore">The concrete membership store implementation to register.</typeparam>
         /// <param name="configuration">The configuration section to bind <see cref="CoordinationOptions"/> from.</param>
         /// <returns>The same <see cref="IServiceCollection"/> for chaining.</returns>
+        [EditorBrowsable(EditorBrowsableState.Never)]
         public IServiceCollection AddCoordinationCore<TStore>(IConfiguration configuration)
             where TStore : class, IMembershipStore
         {

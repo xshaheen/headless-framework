@@ -490,7 +490,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
 
         public Task DispatchAsync(
             IReadOnlyList<IIntegrationEvent> integrationEvents,
-            CancellationToken cancellationToken
+            CancellationToken cancellationToken = default
         )
         {
             DistributedEmitters.AddRange(integrationEvents);

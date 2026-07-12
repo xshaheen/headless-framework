@@ -41,8 +41,7 @@ namespace Headless.DistributedLocks.Redis;
 /// to the caller unless explicitly caught by this class.
 /// </para>
 /// </remarks>
-[PublicAPI]
-public sealed class RedisDistributedReadWriteLockStorage(
+internal sealed class RedisDistributedReadWriteLockStorage(
     IConnectionMultiplexer multiplexer,
     [FromKeyedServices(RedisDistributedLockServiceKeys.ScriptsLoader)] HeadlessRedisScriptsLoader scriptsLoader
 ) : IDistributedReadWriteLockStorage

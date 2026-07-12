@@ -4,7 +4,6 @@ using System.Data.Common;
 using Headless.Coordination;
 using Headless.Jobs;
 using Headless.Jobs.DbContextFactory;
-using Headless.Jobs.DependencyInjection;
 using Headless.Jobs.Enums;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;

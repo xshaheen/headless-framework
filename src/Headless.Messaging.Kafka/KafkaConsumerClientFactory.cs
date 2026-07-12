@@ -14,7 +14,7 @@ namespace Headless.Messaging.Kafka;
 /// Bus (fan-out) consumer creation is not supported by Kafka; attempting to create a bus consumer
 /// throws <see cref="NotSupportedException"/>.
 /// </remarks>
-public sealed class KafkaConsumerClientFactory(
+internal sealed class KafkaConsumerClientFactory(
     IOptions<KafkaMessagingOptions> kafkaOptions,
     IServiceProvider serviceProvider,
     IConsumerRegistry? consumerRegistry = null

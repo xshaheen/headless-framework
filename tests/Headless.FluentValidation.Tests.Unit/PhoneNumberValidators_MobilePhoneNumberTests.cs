@@ -119,7 +119,7 @@ public sealed class PhoneNumberValidatorsMobilePhoneNumberTests
 
         var result = validator.TestValidate(model);
 
-        result.ShouldHaveValidationErrorFor(x => x.PhoneNumber).WithErrorCode("phone_number:invalid_mobile_number");
+        result.ShouldHaveValidationErrorFor(x => x.PhoneNumber).WithErrorCode("g:invalid_mobile_number");
     }
 
     #endregion

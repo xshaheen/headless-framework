@@ -9,8 +9,8 @@ Eliminates repetitive utility code — result/error modeling, strongly-typed dom
 ## Key Features
 
 - **Result pattern** — `ApiResult` / `ApiResult<T>` with built-in error factories (`NotFound`, `Conflict`, `ValidationFailed`, `Forbidden`, `Unauthorized`); `Result<TValue, TError>` / `Result<TError>` for custom error types; the `ResultError` record hierarchy (`NotFoundError`, `UnauthorizedError`, `ForbiddenError`, `ConflictError`, `ValidationError`, `AggregateError`); `ErrorDescriptor` for structured, severity-tagged API errors; `Match`/`Map`/`Bind` combinators with `…Async` overloads.
-- **Domain primitives** (source-generated, with JSON + TypeConverter support) — `UserId`, `AccountId`, `Money` (decimal amount, banker's rounding), `Month` (1–12), `PhoneNumber` (libphonenumber-backed, digits-only canonicalization).
-- **Value objects** (validated on construction) — `Currency` (amount + currency code, scalar `*`/`/`, same-code `+`/`-`, total ordering), `GeoCoordinate` / `FullGeoCoordinate` (range-checked lat/long, Haversine distance), `Range<T>` (inclusive/exclusive containment, overlap), `PreferredLocale`, `TimeUnit` (duration-string parsing), `NameValue<T>`, `OrderBy`, `ExtraProperties` (ordinal-keyed property bag), `TenantInformation`, `PageMetadata`, `File` / `Image`.
+- **Domain primitives** (source-generated, with JSON + TypeConverter support) — `UserId`, `AccountId`, `MoneyAmount` (decimal amount, banker's rounding), `Month` (1–12), `PhoneNumber` (libphonenumber-backed, digits-only canonicalization).
+- **Value objects** (validated on construction) — `Money` (amount + currency code, scalar `*`/`/`, same-code `+`/`-`, total ordering), `GeoCoordinate` / `FullGeoCoordinate` (range-checked lat/long, Haversine distance), `Range<T>` (inclusive/exclusive containment, overlap), `PreferredLocale`, `TimeUnit` (duration-string parsing), `NameValue<T>`, `OrderBy`, `ExtraProperties` (ordinal-keyed property bag), `TenantInformation`, `PageMetadata`, `File` / `Image`.
 - **Pagination** — `IndexPageRequest` / `IndexPage<T>` (offset) and `ContinuationPageRequest` / `ContinuationPage<T>` (cursor), each with `Select` / `Where` projection.
 - **Collections** — `ParallelForEachAsync` (bounded concurrency) and `ForEachAsync` (ordered sequential, with index/cancellation overloads); `DetectChanges` (added/removed/updated/unchanged classification by key); `EquatableArray<T>` (value-equality array wrapper); `ComparerFactory`; `TypeList` / `ITypeList`; `EnumerableExtensions` materialization helpers — `AsList` / `AsArray` / `AsICollection` / `AsIList` (→ `IList<T>`) / `AsIReadOnlyCollection` / `AsIReadOnlyList` (→ `IReadOnlyList<T>`) / `AsISet` / `AsHashSet` / `AsDictionary` (return the source as-is when it already matches the requested type, otherwise materialize a copy).
 - **Threading** — `KeyedAsyncLock` (per-key async mutual exclusion, optional timeout-returns-null, sharded, non-reentrant); `TaskExtensions` (`Forget`, `WithCancellation`, `GetResultOrDefault`, `WithAggregatedExceptions`, `DelayedAsync`); `AsyncExExtensions` (timeout/safe waits over Nito.AsyncEx primitives); `Async.RunSync` / `Async.Using`; `InterlockedExtensions.InterlockedRaiseTo` (lock-free raise-only max on a `ref long` — a CAS loop that never lowers the stored value).
@@ -26,8 +26,8 @@ Eliminates repetitive utility code — result/error modeling, strongly-typed dom
 ## Design Notes
 
 - **`Headless.Primitives` and `Headless.Urls` are separate packages.** The value objects, result pattern, paging models, and domain primitives live in `Headless.Primitives`; the URL builder lives in `Headless.Urls`. `Headless.Extensions` references both, so every type they contain stays available to `Headless.Extensions` consumers transitively — the value-object and result notes below apply either way. Consumers who need only the value model or the URL builder can depend on the smaller package directly. See the `Headless.Primitives` and `Headless.Urls` package READMEs.
-- **`Currency` scaling is scalar-only.** `operator *` and `operator /` take a `decimal` factor and round the result to 2 decimal places with `MidpointRounding.ToEven`; there is no `Currency × Currency` multiply. `operator +` / `operator -` require matching currency codes and throw otherwise. Comparison operators exist against both `Currency` and `decimal`, and `Currency` is a total order (mixed-code lists sort by code then amount).
-- **`Money` ≠ `Currency`.** `Money` is a source-generated `IPrimitive<decimal>` with no currency code; `GetRounded()` rounds to 2 dp using banker's rounding. Use `Currency` when an amount must travel with its code.
+- **`Money` scaling is scalar-only.** `operator *` and `operator /` take a `decimal` factor and round the result to 2 decimal places with `MidpointRounding.ToEven`; there is no `Money × Money` multiply. `operator +` / `operator -` require matching currency codes and throw otherwise. Comparison operators exist against both `Money` and `decimal`, and `Money` is a total order (mixed-code lists sort by code then amount).
+- **`Money` ≠ `MoneyAmount`.** `MoneyAmount` is a source-generated `IPrimitive<decimal>` with no currency code; `GetRounded()` rounds to 2 dp using banker's rounding. Use `Money` when an amount must travel with its code.
 - **`Range<T>` uses side-specific infinity semantics for `null` bounds.** A `null` `From` is unbounded below; a `null` `To` is unbounded above. Range-to-range containment, overlap, and `RemoveConflictRangeParts` compare lower and upper bounds separately, so subtracting `[m, p]` from `[null, z]` can return both `[null, predecessor(m)]` and `[successor(p), z]`. The value-level containment overloads still test a single point, so do not use `null` as a concrete point value.
 - **Result/error types are value-equal and free of equality-corrupting caches.** `ResultError` is an abstract `record`; its `Code` and `Metadata` are computed on each read rather than stored in a `field`-backed cache, because a lazily-assigned `field` participates in the compiler-generated record `Equals`/`GetHashCode` and silently breaks structural equality. A `default` `ApiResult<T>` / `Result<…>` is an uninitialized failure: reading `.Value` or `.Error` throws — branch on `IsSuccess` first.
 - **`KeyedAsyncLock` timeout returns `null`, is non-reentrant, and is sharded.** The timeout overload returns `null` instead of throwing when the wait elapses, so callers can degrade. Per-key semaphores are sharded into 8–64 stripes and reference-counted. Re-entering the same key without releasing deadlocks. The timeout overload takes a `TimeProvider` for deterministic tests.
@@ -70,16 +70,16 @@ var message = result.Match(
 );
 ```
 
-### Currency and Money
+### Money and MoneyAmount
 
 ```csharp
 using Headless.Primitives;
 
-var price = new Currency(100m, "USD");
+var price = new Money(100m, "USD");
 var withTax = price * 1.15m;          // scalar scaling -> 115.00 USD (banker's rounding)
-var total = price + new Currency(20m, "USD"); // same-code addition; throws on code mismatch
+var total = price + new Money(20m, "USD"); // same-code addition; throws on code mismatch
 
-var amount = new Money(9.875m).GetRounded(); // 9.88 (MidpointRounding.ToEven)
+var amount = new MoneyAmount(9.875m).GetRounded(); // 9.88 (MidpointRounding.ToEven)
 ```
 
 ### Bounded vs. ordered iteration

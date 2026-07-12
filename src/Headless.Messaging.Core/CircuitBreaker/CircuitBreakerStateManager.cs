@@ -521,10 +521,15 @@ internal sealed class CircuitBreakerStateManager(
         GetSnapshot(CircuitBreakerGroupKeys.For(intentType, groupName));
 
     /// <inheritdoc />
-    public async ValueTask<bool> ResetAsync(string groupName)
+    public async ValueTask<bool> ResetAsync(string groupName, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNull(groupName);
         Argument.IsLessThanOrEqualTo(groupName.Length, 256);
+
+        // Must-complete transition: this resumes ALL consumption for the group, and aborting mid-flip
+        // could leave the breaker in a torn (half-applied) state. Honor the token only here, before the
+        // transition begins — it is never raced against the state mutation or the resume callback.
+        cancellationToken.ThrowIfCancellationRequested();
 
         if (!_groups.TryGetValue(groupName, out var state))
         {
@@ -574,14 +579,22 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <inheritdoc />
-    public ValueTask<bool> ResetAsync(IntentType intentType, string groupName) =>
-        ResetAsync(CircuitBreakerGroupKeys.For(intentType, groupName));
+    public ValueTask<bool> ResetAsync(
+        IntentType intentType,
+        string groupName,
+        CancellationToken cancellationToken = default
+    ) => ResetAsync(CircuitBreakerGroupKeys.For(intentType, groupName), cancellationToken);
 
     /// <inheritdoc />
-    public async ValueTask<bool> ForceOpenAsync(string groupName)
+    public async ValueTask<bool> ForceOpenAsync(string groupName, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNull(groupName);
         Argument.IsLessThanOrEqualTo(groupName.Length, 256);
+
+        // Must-complete transition: this halts ALL consumption for the group, and aborting mid-flip
+        // could leave the breaker in a torn (half-applied) state. Honor the token only here, before the
+        // transition begins — it is never raced against the state mutation or the pause callback.
+        cancellationToken.ThrowIfCancellationRequested();
 
         if (!_groups.TryGetValue(groupName, out var state))
         {
@@ -649,8 +662,11 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <inheritdoc />
-    public ValueTask<bool> ForceOpenAsync(IntentType intentType, string groupName) =>
-        ForceOpenAsync(CircuitBreakerGroupKeys.For(intentType, groupName));
+    public ValueTask<bool> ForceOpenAsync(
+        IntentType intentType,
+        string groupName,
+        CancellationToken cancellationToken = default
+    ) => ForceOpenAsync(CircuitBreakerGroupKeys.For(intentType, groupName), cancellationToken);
 
     /// <summary>
     /// Asynchronously disposes all per-group <see cref="Timer"/> instances and cancels

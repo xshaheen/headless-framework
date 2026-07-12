@@ -24,6 +24,7 @@ namespace Headless.Serializer;
 /// <see cref="IJsonOptionsProvider"/>.
 /// </para>
 /// </remarks>
+[PublicAPI]
 [RequiresUnreferencedCode(
     "JSON serialization and deserialization might require types that cannot be statically analyzed."
 )]

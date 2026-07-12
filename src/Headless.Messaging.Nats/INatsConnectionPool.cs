@@ -14,7 +14,7 @@ namespace Headless.Messaging.Nats;
 /// Connections are long-lived and multiplexed; they are not rented or returned. Instead,
 /// <see cref="GetConnection"/> selects a connection using round-robin distribution.
 /// </remarks>
-public interface INatsConnectionPool : IAsyncDisposable
+internal interface INatsConnectionPool : IAsyncDisposable
 {
     /// <summary>Gets the formatted NATS server addresses used by this pool.</summary>
     string ServersAddress { get; }

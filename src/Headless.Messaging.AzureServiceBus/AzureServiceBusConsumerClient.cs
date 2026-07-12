@@ -167,16 +167,16 @@ internal sealed class AzureServiceBusConsumerClient(
         return new ValueTask(_ready.Task.WaitAsync(cancellationToken));
     }
 
-    public async ValueTask CommitAsync(object? sender)
+    public async ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default)
     {
         var commitInput = (AzureServiceBusConsumerCommitInput)sender!;
-        await commitInput.CompleteMessageAsync().ConfigureAwait(false);
+        await commitInput.CompleteMessageAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public async ValueTask RejectAsync(object? sender)
+    public async ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
     {
         var commitInput = (AzureServiceBusConsumerCommitInput)sender!;
-        await commitInput.AbandonMessageAsync().ConfigureAwait(false);
+        await commitInput.AbandonMessageAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask PauseAsync(CancellationToken cancellationToken = default)

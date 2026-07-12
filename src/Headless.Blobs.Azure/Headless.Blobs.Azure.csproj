@@ -5,6 +5,7 @@
     <PackageTags>headless;blobs;azure;dotnet</PackageTags>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Api.DataProtection.Tests.Integration" />
     <InternalsVisibleTo Include="Headless.Blobs.Azure.Tests.Integration" />
     <InternalsVisibleTo Include="Headless.Blobs.Azure.Tests.Unit" />
   </ItemGroup>

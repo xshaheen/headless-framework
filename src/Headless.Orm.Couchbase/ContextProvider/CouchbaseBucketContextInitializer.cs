@@ -15,6 +15,7 @@ namespace Headless.Couchbase.ContextProvider;
 /// <c>IDocumentSet&lt;T&gt;</c> property to its Couchbase scope and collection, as declared by
 /// <c>CouchbaseCollectionAttribute</c>. Uses a per-type compiled action cache for efficiency.
 /// </summary>
+[PublicAPI]
 public static class CouchbaseBucketContextInitializer
 {
     /// <summary>

@@ -3,6 +3,7 @@
 using FluentValidation;
 using FluentValidation.Results;
 using Headless.Api.Abstractions;
+using Headless.Api.Resources;
 using Headless.Primitives;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -82,7 +83,7 @@ public sealed class MinimalApiValidatorFilter<TRequest> : IEndpointFilter
             return TypedResults.Problem(
                 creator.BadRequest(
                     error: new ErrorDescriptor(
-                        "g:invalid_request_type",
+                        GeneralErrorCodes.InvalidRequestType,
                         "Invalid request type configured for this endpoint."
                     )
                 )

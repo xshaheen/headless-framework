@@ -175,7 +175,8 @@ internal sealed class PulsarConsumerClient(
                         }
                     );
 
-                    await RejectAsync(currentMessage.MessageId).ConfigureAwait(false);
+                    // Settlement is must-complete: nack the malformed message regardless of shutdown.
+                    await RejectAsync(currentMessage.MessageId, CancellationToken.None).ConfigureAwait(false);
                     return;
                 }
 
@@ -184,12 +185,12 @@ internal sealed class PulsarConsumerClient(
         }
     }
 
-    public async ValueTask CommitAsync(object? sender)
+    public async ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default)
     {
         await _consumerClient!.AcknowledgeAsync((MessageId)sender!).ConfigureAwait(false);
     }
 
-    public async ValueTask RejectAsync(object? sender)
+    public async ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
     {
         if (sender is MessageId id)
         {

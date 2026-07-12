@@ -291,10 +291,10 @@ public enum MessageNamingConvention
     /// <summary>
     /// Use the exact type name (e.g., "OrderCreated").
     /// </summary>
-    TypeName,
+    TypeName = 0,
 
     /// <summary>
     /// Convert to kebab-case (e.g., "order-created").
     /// </summary>
-    KebabCase,
+    KebabCase = 1,
 }

@@ -48,7 +48,7 @@ public interface IHeadlessSaveChangesPipeline
         DbContext context,
         Func<bool, CancellationToken, Task<int>> baseSaveChangesAsync,
         bool acceptAllChangesOnSuccess,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken = default
     );
 
     /// <summary>
@@ -112,7 +112,7 @@ internal sealed partial class HeadlessSaveChangesPipeline(
         DbContext context,
         Func<bool, CancellationToken, Task<int>> baseSaveChangesAsync,
         bool acceptAllChangesOnSuccess,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken = default
     )
     {
         // Materialize once — the framework processors don't add new ChangeTracker entries during

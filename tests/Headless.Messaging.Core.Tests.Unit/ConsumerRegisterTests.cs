@@ -110,14 +110,14 @@ public sealed class ConsumerRegisterTests : TestBase
         var first = Substitute.For<IConsumerClient>();
         var second = Substitute.For<IConsumerClient>();
         first
-            .ShutdownAsync(Arg.Any<TimeSpan>())
+            .ShutdownAsync(Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 firstStarted.TrySetResult();
                 return new ValueTask(release.Task);
             });
         second
-            .ShutdownAsync(Arg.Any<TimeSpan>())
+            .ShutdownAsync(Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 secondStarted.TrySetResult();
@@ -471,7 +471,7 @@ public sealed class ConsumerRegisterTests : TestBase
         var client = Substitute.For<IConsumerClient>();
         TimeSpan? receivedShutdownTimeout = null;
         client
-            .ShutdownAsync(Arg.Any<TimeSpan>())
+            .ShutdownAsync(Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
             .Returns(call =>
             {
                 receivedShutdownTimeout = call.Arg<TimeSpan>();
@@ -500,7 +500,7 @@ public sealed class ConsumerRegisterTests : TestBase
         await pulse.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         receivedShutdownTimeout.Should().Be(TimeSpan.FromSeconds(10));
-        await client.Received(1).ShutdownAsync(TimeSpan.FromSeconds(10));
+        await client.Received(1).ShutdownAsync(Arg.Is(TimeSpan.FromSeconds(10)), Arg.Any<CancellationToken>());
     }
 
     private ServiceProvider _CreateProvider(
@@ -690,9 +690,11 @@ public sealed class ConsumerRegisterTests : TestBase
         public ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
             new(Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken));
 
-        public ValueTask CommitAsync(object? sender) => ValueTask.CompletedTask;
+        public ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default) =>
+            ValueTask.CompletedTask;
 
-        public ValueTask RejectAsync(object? sender) => ValueTask.CompletedTask;
+        public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default) =>
+            ValueTask.CompletedTask;
 
         public ValueTask PauseAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
 
@@ -746,9 +748,11 @@ public sealed class ConsumerRegisterTests : TestBase
             return ValueTask.CompletedTask;
         }
 
-        public ValueTask CommitAsync(object? sender) => ValueTask.CompletedTask;
+        public ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default) =>
+            ValueTask.CompletedTask;
 
-        public ValueTask RejectAsync(object? sender) => ValueTask.CompletedTask;
+        public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default) =>
+            ValueTask.CompletedTask;
 
         public ValueTask PauseAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
 
@@ -805,9 +809,11 @@ public sealed class ConsumerRegisterTests : TestBase
             _ready.TrySetResult();
         }
 
-        public ValueTask CommitAsync(object? sender) => ValueTask.CompletedTask;
+        public ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default) =>
+            ValueTask.CompletedTask;
 
-        public ValueTask RejectAsync(object? sender) => ValueTask.CompletedTask;
+        public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default) =>
+            ValueTask.CompletedTask;
 
         public ValueTask PauseAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
 
@@ -848,9 +854,11 @@ public sealed class ConsumerRegisterTests : TestBase
             await Task.Delay(Timeout.Infinite, cancellationToken);
         }
 
-        public ValueTask CommitAsync(object? sender) => ValueTask.CompletedTask;
+        public ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default) =>
+            ValueTask.CompletedTask;
 
-        public ValueTask RejectAsync(object? sender) => ValueTask.CompletedTask;
+        public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default) =>
+            ValueTask.CompletedTask;
 
         public ValueTask PauseAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
 
@@ -894,9 +902,11 @@ public sealed class ConsumerRegisterTests : TestBase
             _failure.TrySetException(exception);
         }
 
-        public ValueTask CommitAsync(object? sender) => ValueTask.CompletedTask;
+        public ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default) =>
+            ValueTask.CompletedTask;
 
-        public ValueTask RejectAsync(object? sender) => ValueTask.CompletedTask;
+        public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default) =>
+            ValueTask.CompletedTask;
 
         public ValueTask PauseAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
 

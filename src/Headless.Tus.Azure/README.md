@@ -52,8 +52,7 @@ dotnet add package Headless.Tus.Azure
 
 ```csharp
 using Azure.Storage.Blobs;
-using Headless.Tus.Options;
-using Headless.Tus.Services;
+using Headless.Tus;
 using tusdotnet.Models;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -125,7 +124,7 @@ With custom HTTP headers per upload:
 
 ```csharp
 using Azure.Storage.Blobs.Models;
-using Headless.Tus.Services;
+using Headless.Tus;
 
 public sealed class MyHeadersProvider : ITusAzureBlobHttpHeadersProvider
 {

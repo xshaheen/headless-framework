@@ -6,6 +6,16 @@ using Headless.Jobs.Models;
 
 namespace Headless.Jobs.Interfaces;
 
+/// <summary>
+/// Operational-store SPI for the Jobs scheduler: the durable persistence contract a backend provider (for
+/// example the Entity Framework Core store, or the built-in in-memory provider) implements to queue, claim,
+/// lease, renew, and terminalize time jobs and cron occurrences. Applications do not call this directly — they
+/// schedule work through <c>ITimeJobManager</c> / <c>ICronJobManager</c>, and the scheduler drives this
+/// provider. Implementations own the atomicity and ownership fencing described on each member.
+/// </summary>
+/// <typeparam name="TTimeJob">The application's concrete time job entity type.</typeparam>
+/// <typeparam name="TCronJob">The application's concrete cron job entity type.</typeparam>
+[PublicAPI]
 public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()

@@ -21,8 +21,10 @@ public sealed class CashInCreateOrderRequest
     /// <summary>The order amount in the smallest currency unit (integer cents), e.g. <c>10000</c> for 100.00 EGP.</summary>
     public long AmountCents { get; private init; }
 
+    /// <summary>ISO 4217 currency code for the order (for example <c>EGP</c>).</summary>
     public string Currency { get; private init; } = null!;
 
+    /// <summary>Your own order reference ID, used to correlate Paymob orders with your system. Optional.</summary>
     public string? MerchantOrderId { get; private init; }
 
     /// <summary>

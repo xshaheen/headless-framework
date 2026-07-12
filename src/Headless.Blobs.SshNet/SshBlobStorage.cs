@@ -38,7 +38,7 @@ namespace Headless.Blobs.SshNet;
 /// stream without buffering; seekable streams are rewound to position 0 first.
 /// </para>
 /// </remarks>
-public sealed class SshBlobStorage(
+internal sealed class SshBlobStorage(
     SftpClientPool pool,
     IBlobNamingNormalizer normalizer,
     IJsonSerializer serializer,

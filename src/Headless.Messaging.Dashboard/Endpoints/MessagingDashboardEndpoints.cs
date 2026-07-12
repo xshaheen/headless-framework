@@ -817,7 +817,7 @@ internal sealed class WarpResult
 
     public required List<SubInfo> Values { get; set; }
 
-    public sealed class SubInfo
+    internal sealed class SubInfo
     {
         public required string MessageName { get; set; }
 

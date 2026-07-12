@@ -1,8 +1,8 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using Headless.Jobs;
 using Headless.Jobs.Dashboard.Jwt.Demo;
 using Headless.Jobs.Dashboard.Jwt.Demo.Data;
-using Headless.Jobs.DependencyInjection;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.Tokens;

@@ -47,7 +47,7 @@ public sealed class RedisConsumerClientTests : TestBase
         var messageNames = new[] { "messageName-1", "messageName-2" };
 
         // when
-        await client.SubscribeAsync(messageNames);
+        await client.SubscribeAsync(messageNames, AbortToken);
 
         // then
         await _mockStreamManager
@@ -92,7 +92,7 @@ public sealed class RedisConsumerClientTests : TestBase
         var sender = ("test-stream", "test-group", "1234567-0");
 
         // when
-        await client.CommitAsync(sender);
+        await client.CommitAsync(sender, AbortToken);
 
         // then
         await _mockStreamManager
@@ -122,7 +122,7 @@ public sealed class RedisConsumerClientTests : TestBase
         var sender = new RedisConsumerDelivery("test-stream", "test-group", "1234567-0", entries);
 
         // when
-        await client.RejectAsync(sender);
+        await client.RejectAsync(sender, AbortToken);
 
         // then
         await _mockStreamManager

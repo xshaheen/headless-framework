@@ -86,7 +86,7 @@ public sealed class NetworkValidatorsIpAddressTests
 
         var result = validator.TestValidate(model);
 
-        result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("net:invalid_ip");
+        result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("g:invalid_ip");
     }
 
     #endregion

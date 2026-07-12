@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.ComponentModel;
 using System.Reflection;
 using System.Text.Json.Serialization.Metadata;
 
@@ -9,6 +10,8 @@ namespace Headless.Generator.Primitives;
 /// <summary>
 /// Provides a set of static methods for retrieving JSON converters for various data types.
 /// </summary>
+/// <remarks>This type is generator-output plumbing; it must stay public for emitted code but is not intended for direct use.</remarks>
+[EditorBrowsable(EditorBrowsableState.Never)]
 public static class JsonInternalConverters
 {
     /// <summary>Returns a <see cref="JsonConverter{T}"/> instance that converts <see cref="Guid"/> values.</summary>

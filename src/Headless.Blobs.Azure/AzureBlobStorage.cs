@@ -31,7 +31,7 @@ namespace Headless.Blobs.Azure;
 /// <see cref="UploadAsync"/> never auto-creates a missing container; a missing container surfaces as an error.
 /// </para>
 /// </remarks>
-public sealed class AzureBlobStorage(
+internal sealed class AzureBlobStorage(
     BlobServiceClient blobServiceClient,
     IMimeTypeProvider mimeTypeProvider,
     IClock clock,

@@ -103,7 +103,11 @@ internal static class RecordingTransportRecorder
             {
                 try
                 {
-                    var deserialized = await serializer.DeserializeAsync(message, resolvedType).ConfigureAwait(false);
+                    // Recording is a must-complete side effect of a successful publish; it has no
+                    // caller token to observe, so deserialization runs uncancellable.
+                    var deserialized = await serializer
+                        .DeserializeAsync(message, resolvedType, CancellationToken.None)
+                        .ConfigureAwait(false);
 
                     if (deserialized.Value != null)
                     {

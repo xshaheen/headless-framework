@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.ComponentModel;
 using Xunit.Sdk;
 using Xunit.v3;
 
@@ -12,7 +13,7 @@ namespace Headless.Testing.Retry;
 /// tests — only the final attempt's messages are forwarded.
 /// </summary>
 /// <param name="innerBus">The real message bus to flush buffered messages to on disposal.</param>
-[PublicAPI]
+[EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class DelayedMessageBus(IMessageBus innerBus) : IMessageBus
 {
     private readonly List<IMessageSinkMessage> _messages = [];

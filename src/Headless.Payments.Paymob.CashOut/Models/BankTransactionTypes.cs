@@ -2,6 +2,8 @@
 
 namespace Headless.Payments.Paymob.CashOut.Models;
 
+/// <summary>Paymob CashOut bank-transaction-type discriminators for bank-card and bank-wallet disbursements.</summary>
+[PublicAPI]
 public static class BankTransactionTypes
 {
     /// <summary>For bank accounts, debit cards etc.</summary>

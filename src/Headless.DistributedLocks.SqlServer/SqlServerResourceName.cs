@@ -14,6 +14,7 @@ namespace Headless.DistributedLocks.SqlServer;
 /// The encoding is deterministic across processes: two callers with the same logical name always produce
 /// the same encoded resource, so they mutually exclude on the same application lock.
 /// </remarks>
+[PublicAPI]
 public static class SqlServerResourceName
 {
     private const string _HashPrefix = "sha256:";

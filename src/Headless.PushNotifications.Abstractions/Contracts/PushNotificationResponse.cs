@@ -128,17 +128,25 @@ public sealed record PushNotificationResponse
 }
 
 /// <summary>The category of a <see cref="PushNotificationResponse"/> outcome.</summary>
+/// <remarks>
+/// Prefer the <see cref="PushNotificationResponse.IsSucceeded"/>, <see cref="PushNotificationResponse.IsFailed"/>,
+/// and <see cref="PushNotificationResponse.IsUnregistered"/> helpers over switching on this enum directly.
+/// <see cref="Unregistered"/> occupies the zero slot deliberately: it is the neutral "neither success nor
+/// failure" outcome and the safest default. New members may be added in a future version, so consumers that
+/// <see langword="switch"/> on this enum should include a <see langword="default"/> case.
+/// </remarks>
+[PublicAPI]
 public enum PushNotificationResponseStatus
 {
     /// <summary>
     /// The device token is no longer valid (for example the app was uninstalled or the token expired).
     /// The caller should remove it from their store. This is neither a success nor a failure.
     /// </summary>
-    Unregistered,
+    Unregistered = 0,
 
     /// <summary>The notification was accepted by the provider for delivery.</summary>
-    Success,
+    Success = 1,
 
     /// <summary>The provider rejected the notification for a reason other than an unregistered token.</summary>
-    Failure,
+    Failure = 2,
 }

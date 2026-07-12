@@ -2,7 +2,8 @@
 
 using Microsoft.Extensions.Logging;
 
-namespace Headless.Tus.Services;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Tus;
 
 internal static partial class TusAzureLoggerExtensions
 {

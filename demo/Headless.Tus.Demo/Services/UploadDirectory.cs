@@ -4,7 +4,7 @@ using System.Globalization;
 using System.Text;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
-using Headless.Tus.Options;
+using Headless.Tus;
 using Microsoft.Extensions.Options;
 using tusdotnet.Models;
 using tusdotnet.Parsers;

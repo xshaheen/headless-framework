@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.ComponentModel;
 using Xunit.Sdk;
 using Xunit.v3;
 
@@ -9,7 +10,7 @@ namespace Headless.Testing.Retry;
 /// Execution context for <see cref="RetryTestCaseRunner"/>. Extends the base xUnit context
 /// with the <see cref="MaxRetries"/> limit.
 /// </summary>
-[PublicAPI]
+[EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class RetryTestCaseRunnerContext(
     int maxRetries,
     IXunitTestCase testCase,

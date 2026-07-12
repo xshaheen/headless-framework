@@ -213,8 +213,9 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     /// Commits the processing of a message.
     /// </summary>
     /// <param name="sender">The sender object</param>
+    /// <param name="cancellationToken">Unused; the in-memory transport settles synchronously.</param>
     /// <returns>A completed task</returns>
-    public ValueTask CommitAsync(object? sender)
+    public ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default)
     {
         return ValueTask.CompletedTask;
     }
@@ -223,8 +224,9 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     /// Rejects the processing of a message.
     /// </summary>
     /// <param name="sender">The sender object</param>
+    /// <param name="cancellationToken">Unused; the in-memory transport settles synchronously.</param>
     /// <returns>A completed task</returns>
-    public ValueTask RejectAsync(object? sender)
+    public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
     {
         return ValueTask.CompletedTask;
     }

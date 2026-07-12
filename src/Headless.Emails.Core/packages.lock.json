@@ -207,7 +207,10 @@
         "type": "Project"
       },
       "headless.emails.abstractions": {
-        "type": "Project"
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )"
+        }
       },
       "headless.extensions": {
         "type": "Project",

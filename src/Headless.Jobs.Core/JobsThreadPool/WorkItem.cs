@@ -7,7 +7,8 @@ namespace Headless.Jobs.JobsThreadPool;
 /// <summary>
 /// Simple work item structure for the scheduler
 /// </summary>
-public readonly struct WorkItem(Func<CancellationToken, Task> work, CancellationToken userToken) : IEquatable<WorkItem>
+internal readonly struct WorkItem(Func<CancellationToken, Task> work, CancellationToken userToken)
+    : IEquatable<WorkItem>
 {
     public Func<CancellationToken, Task> Work { get; } = Argument.IsNotNull(work);
 

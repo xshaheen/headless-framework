@@ -23,6 +23,7 @@ namespace Headless.Couchbase.Managers;
 /// overall timeout; transient failures are retried while idempotent exceptions (scope/collection/index
 /// already exists) are treated as success.
 /// </summary>
+[PublicAPI]
 public interface ICouchbaseManager
 {
     /// <summary>
@@ -87,19 +88,25 @@ public interface ICouchbaseManager
 }
 
 /// <summary>Outcome of a <c>CreateScopeAsync</c> call.</summary>
+/// <remarks>Additional members may be added in future versions; handle unrecognized values defensively.</remarks>
+[PublicAPI]
 public enum CreateScopeStatus
 {
-    /// <summary>The scope already existed; no action was taken.</summary>
-    Exist,
+    /// <summary>Default, unassigned outcome. Not returned by <c>CreateScopeAsync</c>; present as the zero sentinel.</summary>
+    Unknown = 0,
 
-    /// <summary>The operation failed after all retries were exhausted.</summary>
-    Failed,
+    /// <summary>The scope already existed; no action was taken.</summary>
+    Exist = 1,
 
     /// <summary>The scope was successfully created.</summary>
-    Success,
+    Success = 2,
+
+    /// <summary>The operation failed after all retries were exhausted.</summary>
+    Failed = 3,
 }
 
 /// <summary>Default <see cref="ICouchbaseManager"/> implementation.</summary>
+[PublicAPI]
 public sealed class CouchbaseManager : ICouchbaseManager
 {
     private readonly ResiliencePipeline _retryPipeline;
@@ -159,7 +166,7 @@ public sealed class CouchbaseManager : ICouchbaseManager
         Argument.IsNotNull(bucketName);
 
         var timestamp = Stopwatch.GetTimestamp();
-        var (cluster, _) = await _clustersProvider.GetClusterAsync(clusterKey).ConfigureAwait(false);
+        var (cluster, _) = await _clustersProvider.GetClusterAsync(clusterKey, cancellationToken).ConfigureAwait(false);
 
         await _retryPipeline
             .ExecuteAsync(
@@ -200,7 +207,7 @@ public sealed class CouchbaseManager : ICouchbaseManager
             _logger.TryCreateScope(clusterKey, bucketName, scopeName);
         }
 
-        var bucket = await _GetBucketAsync(clusterKey, bucketName).ConfigureAwait(false);
+        var bucket = await _GetBucketAsync(clusterKey, bucketName, cancellationToken).ConfigureAwait(false);
         var bucketScopes = await _GetBucketScopeSpecsAsync(clusterKey, bucket).ConfigureAwait(false);
 
         if (bucketScopes.ContainsKey(scopeName))
@@ -274,7 +281,7 @@ public sealed class CouchbaseManager : ICouchbaseManager
         Argument.IsNotEmpty(collections);
 
         var timestamp = Stopwatch.GetTimestamp();
-        var bucket = await _GetBucketAsync(clusterKey, bucketName).ConfigureAwait(false);
+        var bucket = await _GetBucketAsync(clusterKey, bucketName, cancellationToken).ConfigureAwait(false);
         var (scope, scopeCollections) = await _GetScopeAsync(clusterKey, bucket, scopeName).ConfigureAwait(false);
 
         await Parallel
@@ -398,7 +405,7 @@ public sealed class CouchbaseManager : ICouchbaseManager
         Argument.IsNotNullOrEmpty(fields);
 
         var timestamp = Stopwatch.GetTimestamp();
-        var bucket = await _GetBucketAsync(clusterKey, bucketName).ConfigureAwait(false);
+        var bucket = await _GetBucketAsync(clusterKey, bucketName, cancellationToken).ConfigureAwait(false);
         var scope = await bucket.ScopeAsync(scopeName).ConfigureAwait(false);
         var collection = await scope.CollectionAsync(collectionName).ConfigureAwait(false);
 
@@ -522,16 +529,20 @@ public sealed class CouchbaseManager : ICouchbaseManager
 
     #region Helpers
 
-    private async Task<ICluster> _GetClusterAsync(string clusterKey)
+    private async Task<ICluster> _GetClusterAsync(string clusterKey, CancellationToken cancellationToken)
     {
-        var (cluster, _) = await _clustersProvider.GetClusterAsync(clusterKey).ConfigureAwait(false);
+        var (cluster, _) = await _clustersProvider.GetClusterAsync(clusterKey, cancellationToken).ConfigureAwait(false);
 
         return cluster;
     }
 
-    private async Task<IBucket> _GetBucketAsync(string clusterKey, string bucketName)
+    private async Task<IBucket> _GetBucketAsync(
+        string clusterKey,
+        string bucketName,
+        CancellationToken cancellationToken
+    )
     {
-        var cluster = await _GetClusterAsync(clusterKey).ConfigureAwait(false);
+        var cluster = await _GetClusterAsync(clusterKey, cancellationToken).ConfigureAwait(false);
         var bucket = await cluster.BucketAsync(bucketName).ConfigureAwait(false);
 
         return bucket;

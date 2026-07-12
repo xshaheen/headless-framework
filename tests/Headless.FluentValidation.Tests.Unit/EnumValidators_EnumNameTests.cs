@@ -138,7 +138,7 @@ public sealed class EnumValidatorsEnumNameTests
 
         var result = validator.TestValidate(model);
 
-        result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("enum:invalid_name");
+        result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("g:invalid_enum_name");
     }
 
     #endregion

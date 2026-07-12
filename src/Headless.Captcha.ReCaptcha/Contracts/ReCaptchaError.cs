@@ -12,26 +12,26 @@ namespace Headless.Captcha;
 [PublicAPI]
 public enum ReCaptchaError
 {
-    /// <summary>An unknown or unrecognized error code was returned by the API.</summary>
-    Unknown = -1,
+    /// <summary>An unknown or unrecognized error code was returned by the API. Also the default sentinel value.</summary>
+    Unknown = 0,
 
     /// <summary>The secret parameter is missing.</summary>
-    MissingInputSecret = 0,
+    MissingInputSecret = 1,
 
     /// <summary>The secret parameter is invalid or malformed.</summary>
-    InvalidInputSecret = 1,
+    InvalidInputSecret = 2,
 
     /// <summary>The response parameter is missing.</summary>
-    MissingInputResponse = 2,
+    MissingInputResponse = 3,
 
     /// <summary>The response parameter is invalid or malformed.</summary>
-    InvalidInputResponse = 3,
+    InvalidInputResponse = 4,
 
     /// <summary>The request is invalid or malformed.</summary>
-    BadRequest = 4,
+    BadRequest = 5,
 
     /// <summary>The response is no longer valid: either is too old or has been used previously.</summary>
-    TimeOutOrDuplicate = 5,
+    TimeOutOrDuplicate = 6,
 }
 
 /// <summary>Helpers for converting Google's raw error-code strings into <see cref="ReCaptchaError"/> values.</summary>

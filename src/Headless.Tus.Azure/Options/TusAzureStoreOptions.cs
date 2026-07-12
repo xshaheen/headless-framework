@@ -3,7 +3,8 @@
 using Azure.Storage.Blobs.Models;
 using FluentValidation;
 
-namespace Headless.Tus.Options;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Tus;
 
 /// <summary>
 /// Configuration for the TUS Azure Blob Storage store.

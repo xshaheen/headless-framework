@@ -86,7 +86,7 @@ public sealed class NetworkValidatorsIpv6Tests
 
         var result = validator.TestValidate(model);
 
-        result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("net:invalid_ipv6");
+        result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("g:invalid_ipv6");
     }
 
     #endregion

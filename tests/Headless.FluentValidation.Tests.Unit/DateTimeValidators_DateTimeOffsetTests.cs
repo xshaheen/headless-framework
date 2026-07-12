@@ -42,7 +42,7 @@ public sealed class DateTimeValidatorsDateTimeOffsetTests
 
         if (expectError)
         {
-            result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("datetime:must_be_in_past");
+            result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("g:must_be_in_past");
         }
         else
         {
@@ -67,7 +67,7 @@ public sealed class DateTimeValidatorsDateTimeOffsetTests
 
         if (expectError)
         {
-            result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("datetime:must_be_in_future");
+            result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("g:must_be_in_future");
         }
         else
         {
@@ -92,7 +92,7 @@ public sealed class DateTimeValidatorsDateTimeOffsetTests
 
         if (expectError)
         {
-            result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("datetime:must_not_be_in_past");
+            result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("g:must_not_be_in_past");
         }
         else
         {
@@ -117,7 +117,7 @@ public sealed class DateTimeValidatorsDateTimeOffsetTests
 
         if (expectError)
         {
-            result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("datetime:must_not_be_in_future");
+            result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("g:must_not_be_in_future");
         }
         else
         {
@@ -151,7 +151,7 @@ public sealed class DateTimeValidatorsDateTimeOffsetTests
 
         var result = validator.TestValidate(new NullableModel(_Future));
 
-        result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("datetime:must_be_in_past");
+        result.ShouldHaveValidationErrorFor(x => x.Value).WithErrorCode("g:must_be_in_past");
     }
 
     #endregion

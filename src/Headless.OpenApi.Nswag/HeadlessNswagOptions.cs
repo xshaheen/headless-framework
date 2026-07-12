@@ -35,7 +35,7 @@ public sealed class HeadlessNswagOptions
 
     /// <summary>
     /// Whether to register NJsonSchema type mappers for the built-in Headless primitive types
-    /// (<c>Money</c>, <c>Month</c>, <c>AccountId</c>, <c>UserId</c>). Default is <see langword="true"/>.
+    /// (<c>MoneyAmount</c>, <c>Month</c>, <c>AccountId</c>, <c>UserId</c>). Default is <see langword="true"/>.
     /// </summary>
     public bool AddPrimitiveMappings { get; set; } = true;
 
