@@ -29,6 +29,11 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
     where TCronJob : CronJobEntity, new()
 {
     private readonly TimeSpan _leaseDuration = optionsBuilder.LeaseDuration;
+    private readonly Lock _readPastHintsLock = new();
+    private Task<string>? _readPastHintsTask;
+    private int _readPastHintsProbeCount;
+
+    internal int ReadPastHintsProbeCount => Volatile.Read(ref _readPastHintsProbeCount);
 
     public async IAsyncEnumerable<TimeJobEntity> ClaimTimeJobsAsync(
         TimeJobEntity[] timeJobs,
@@ -54,8 +59,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             var dbContext = claimTransaction.DbContext;
             var transaction = claimTransaction.Transaction;
             var mapping = TimeJobRelationalMapping.Create<TDbContext, TTimeJob>(dbContext);
-            var readPastHints = await _GetReadPastHintsAsync(dbContext, transaction, cancellationToken)
-                .ConfigureAwait(false);
+            var readPastHints = await _GetReadPastHintsAsync(cancellationToken).ConfigureAwait(false);
             var batch =
                 timeJobs.Length <= JobsClaimStrategyDefaults.MaxCandidatePageSize
                     ? timeJobs
@@ -135,8 +139,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             var dbContext = claimTransaction.DbContext;
             var transaction = claimTransaction.Transaction;
             var mapping = TimeJobRelationalMapping.Create<TDbContext, TTimeJob>(dbContext);
-            var readPastHints = await _GetReadPastHintsAsync(dbContext, transaction, cancellationToken)
-                .ConfigureAwait(false);
+            var readPastHints = await _GetReadPastHintsAsync(cancellationToken).ConfigureAwait(false);
             var candidates = $"""
                 SELECT TOP ({JobsClaimStrategyDefaults.MaxClaimBatchSize}) root.{mapping.Id}
                 FROM {mapping.Table} AS root WITH ({readPastHints})
@@ -221,8 +224,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             var dbContext = claimTransaction.DbContext;
             var transaction = claimTransaction.Transaction;
             var mapping = CronOccurrenceRelationalMapping.Create<TDbContext, TCronJob>(dbContext);
-            var readPastHints = await _GetReadPastHintsAsync(dbContext, transaction, cancellationToken)
-                .ConfigureAwait(false);
+            var readPastHints = await _GetReadPastHintsAsync(cancellationToken).ConfigureAwait(false);
             foreach (var item in cronJobOccurrences.Items)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -314,8 +316,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             var dbContext = claimTransaction.DbContext;
             var transaction = claimTransaction.Transaction;
             var mapping = CronOccurrenceRelationalMapping.Create<TDbContext, TCronJob>(dbContext);
-            var readPastHints = await _GetReadPastHintsAsync(dbContext, transaction, cancellationToken)
-                .ConfigureAwait(false);
+            var readPastHints = await _GetReadPastHintsAsync(cancellationToken).ConfigureAwait(false);
             var wonIds = await _ClaimFallbackCronOccurrencesAsync(
                     dbContext,
                     transaction,
@@ -700,15 +701,45 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
     private static string _ParameterName(string prefix, int index) =>
         string.Create(CultureInfo.InvariantCulture, $"{prefix}{index}");
 
-    private static async Task<string> _GetReadPastHintsAsync(
-        TDbContext dbContext,
-        IDbContextTransaction transaction,
-        CancellationToken cancellationToken
-    )
+    private async Task<string> _GetReadPastHintsAsync(CancellationToken cancellationToken)
     {
-        await using var command = _CreateCommand(dbContext, transaction);
+        Task<string> probe;
+        lock (_readPastHintsLock)
+        {
+            probe = _readPastHintsTask ??= _ProbeReadPastHintsAsync();
+        }
+
+        try
+        {
+            return await probe.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch when (probe.IsFaulted || probe.IsCanceled)
+        {
+            lock (_readPastHintsLock)
+            {
+                if (ReferenceEquals(_readPastHintsTask, probe))
+                {
+                    _readPastHintsTask = null;
+                }
+            }
+
+            throw;
+        }
+    }
+
+    private async Task<string> _ProbeReadPastHintsAsync()
+    {
+        Interlocked.Increment(ref _readPastHintsProbeCount);
+        await using var dbContext = await dbContextFactory.CreateDbContextAsync().ConfigureAwait(false);
+        var connection =
+            dbContext.Database.GetDbConnection() as SqlConnection
+            ?? throw new InvalidOperationException(
+                "SQL Server Jobs claims require a Microsoft.Data.SqlClient connection."
+            );
+        await connection.OpenAsync().ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
         command.CommandText = "SELECT is_read_committed_snapshot_on FROM sys.databases WHERE database_id = DB_ID();";
-        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        var result = await command.ExecuteScalarAsync().ConfigureAwait(false);
         return GetReadPastHints(result is true);
     }
 
