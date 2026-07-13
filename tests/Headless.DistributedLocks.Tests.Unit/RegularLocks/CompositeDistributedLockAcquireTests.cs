@@ -365,7 +365,7 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
 
                 var token = call.ArgAt<CancellationToken>(2);
                 secondStarted.SetResult();
-                return _ReturnLateAfterCancellationAsync(token, second);
+                return _ReturnLateAfterCancellationAsync(second, token);
             });
 
         var acquireTask = provider.TryAcquireAllAsync(
@@ -407,7 +407,7 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
                 }
 
                 secondStarted.SetResult();
-                return _ReturnLateAfterCancellationAsync(call.ArgAt<CancellationToken>(2), second);
+                return _ReturnLateAfterCancellationAsync(second, call.ArgAt<CancellationToken>(2));
             });
 
         var acquireTask = provider.TryAcquireAllAsync(
@@ -579,8 +579,8 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
     }
 
     private static async Task<IDistributedLease?> _ReturnLateAfterCancellationAsync(
-        CancellationToken cancellationToken,
-        IDistributedLease lateChild
+        IDistributedLease lateChild,
+        CancellationToken cancellationToken
     )
     {
         try
