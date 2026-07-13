@@ -4,6 +4,12 @@
 namespace Headless.DistributedLocks;
 
 /// <summary>Provides methods to acquire, release, and manage resource locks.</summary>
+/// <remarks>
+/// Composite acquisition defines resource identity with <see cref="StringComparer.Ordinal"/> before invoking the
+/// provider. Implementations whose backend aliases ordinal-distinct names must reject non-canonical names or require
+/// callers to canonicalize them before using composite acquisition. Normalizing only inside
+/// <see cref="TryAcquireAsync"/> or <see cref="AcquireAsync"/> is too late and can make one composite contend with itself.
+/// </remarks>
 [PublicAPI]
 public interface IDistributedLock
 {

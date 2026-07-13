@@ -28,6 +28,12 @@ public static class DistributedLockExtensions
         /// A lease representing the complete canonical set, or <see langword="null"/> when the set cannot be formed
         /// before the acquire timeout. A set containing one distinct resource returns the provider's original lease.
         /// </returns>
+        /// <remarks>
+        /// Resource identity is defined by <see cref="StringComparer.Ordinal"/> before the provider is called. A custom
+        /// provider whose backend aliases ordinal-distinct names must reject non-canonical names or require callers to
+        /// canonicalize them before invoking this method; provider-side normalization is too late and can make the
+        /// composite contend with itself.
+        /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="provider"/> or <paramref name="resources"/> is <see langword="null"/>.</exception>
         /// <exception cref="ArgumentException">
         /// <paramref name="resources"/> is empty or contains a null, empty, or whitespace resource name; or
@@ -69,6 +75,12 @@ public static class DistributedLockExtensions
         /// A lease representing the complete canonical set. A set containing one distinct resource returns the
         /// provider's original lease.
         /// </returns>
+        /// <remarks>
+        /// Resource identity is defined by <see cref="StringComparer.Ordinal"/> before the provider is called. A custom
+        /// provider whose backend aliases ordinal-distinct names must reject non-canonical names or require callers to
+        /// canonicalize them before invoking this method; provider-side normalization is too late and can make the
+        /// composite contend with itself.
+        /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="provider"/> or <paramref name="resources"/> is <see langword="null"/>.</exception>
         /// <exception cref="ArgumentException">
         /// <paramref name="resources"/> is empty or contains a null, empty, or whitespace resource name; or
