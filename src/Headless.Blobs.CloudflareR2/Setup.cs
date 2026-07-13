@@ -6,6 +6,7 @@ using Headless.Blobs.CloudflareR2;
 using Headless.Checks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -64,6 +65,10 @@ public static class SetupCloudflareR2Blob
 
     private static IServiceCollection _AddBlobsDefaultCore(IServiceCollection services)
     {
+        // Defensive: this package RESOLVES TimeProvider, so it must also guarantee one exists. Without this,
+        // installing the package standalone (no ServiceDefaults, no sibling that happens to register it) throws
+        // 'No service for type TimeProvider' at resolve time.
+        services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<IBlobStorage>(serviceProvider =>
         {
             var r2Options = serviceProvider.GetRequiredService<IOptions<R2BlobStorageOptions>>();

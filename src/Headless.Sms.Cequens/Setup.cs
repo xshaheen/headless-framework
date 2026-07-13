@@ -4,6 +4,7 @@ using Headless.Checks;
 using Headless.Sms.Cequens;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -156,6 +157,11 @@ public static class SetupCequens
 
         if (name is null)
         {
+            // Defensive: this package RESOLVES TimeProvider, so it must also guarantee one exists. Without this,
+            // installing the package standalone (no ServiceDefaults, no sibling that happens to register it) throws
+            // 'No service for type TimeProvider' at resolve time.
+            services.TryAddSingleton(TimeProvider.System);
+
             services.AddSingleton<ISmsSender>(static sp => new CequensSmsSender(
                 sp.GetRequiredService<IHttpClientFactory>(),
                 HttpClientName,

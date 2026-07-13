@@ -637,13 +637,11 @@ public sealed class RedisCache(
             return 0;
         }
 
-        var now = timeProvider.GetUtcNow();
-        var expiresAt = expiration.HasValue ? now.UtcDateTime.SafeAdd(expiration.Value) : DateTime.MaxValue;
-
         var redisValues = new List<RedisValue>();
-        var expiresAtMilliseconds = expiration.HasValue
-            ? expiresAt.ToUnixTimeMilliseconds()
-            : RedisCacheEntryFrame.MaxUnixEpochMilliseconds;
+
+        // Relative ttl only: Redis derives the member score and the prune cutoff from its OWN clock inside the
+        // script, so a skewed app clock cannot shift when these members expire. -1 means "never expires".
+        var ttlMilliseconds = expiration.HasValue ? (long)expiration.Value.TotalMilliseconds : -1L;
 
         if (value is string stringValue)
         {
@@ -666,8 +664,7 @@ public sealed class RedisCache(
                 redisKey,
                 [.. redisValues],
                 operation: "add",
-                expiresAtMilliseconds,
-                now.ToUnixTimeMilliseconds(),
+                ttlMilliseconds,
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -1711,8 +1708,7 @@ public sealed class RedisCache(
                 redisKey,
                 [.. redisValues],
                 operation: "remove",
-                scoreMilliseconds: 0,
-                nowMilliseconds: timeProvider.GetUtcNow().ToUnixTimeMilliseconds(),
+                ttlMilliseconds: -1,
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -3345,19 +3341,14 @@ public sealed class RedisCache(
         string logKey,
         RedisValue[] values,
         string operation,
-        long scoreMilliseconds,
-        long nowMilliseconds,
+        long ttlMilliseconds,
         CancellationToken cancellationToken
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         var result = await SetAddWithExpireScriptDefinition
-            .EvaluateAsync(
-                _database,
-                key,
-                _GetSetMutationScriptValues(operation, scoreMilliseconds, nowMilliseconds, values)
-            )
+            .EvaluateAsync(_database, key, _GetSetMutationScriptValues(operation, ttlMilliseconds, values))
             .ConfigureAwait(false);
 
         var valuesResult = (RedisResult[]?)result;
@@ -3378,19 +3369,13 @@ public sealed class RedisCache(
         return changed;
     }
 
-    private static RedisValue[] _GetSetMutationScriptValues(
-        string operation,
-        long scoreMilliseconds,
-        long nowMilliseconds,
-        RedisValue[] values
-    )
+    private static RedisValue[] _GetSetMutationScriptValues(string operation, long ttlMilliseconds, RedisValue[] values)
     {
-        var scriptValues = new RedisValue[values.Length + 4];
+        var scriptValues = new RedisValue[values.Length + 3];
         scriptValues[0] = operation;
-        scriptValues[1] = scoreMilliseconds;
-        scriptValues[2] = nowMilliseconds;
-        scriptValues[3] = RedisCacheEntryFrame.MaxUnixEpochMilliseconds;
-        values.CopyTo(scriptValues, 4);
+        scriptValues[1] = ttlMilliseconds;
+        scriptValues[2] = RedisCacheEntryFrame.MaxUnixEpochMilliseconds;
+        values.CopyTo(scriptValues, 3);
 
         return scriptValues;
     }

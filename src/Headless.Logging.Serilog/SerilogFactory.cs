@@ -54,8 +54,14 @@ public static class SerilogFactory
     /// Includes timestamp, level (3-char uppercase), request path, source context, message, and
     /// exception on a new line.
     /// </summary>
+    /// <remarks>
+    /// The timestamp is rendered in UTC (<c>UtcDateTime</c>), not local wall-clock time. Serilog captures
+    /// <c>LogEvent.Timestamp</c> from <c>DateTimeOffset.Now</c> by default, so an un-overridden template
+    /// emits the host's local time — which makes correlating logs across containers in different zones
+    /// needlessly painful and contradicts the framework's UTC-everywhere rule.
+    /// </remarks>
     public const string OutputTemplate =
-        "[{Timestamp:HH:mm:ss.fff zzz} {Level:u3}] {RequestPath} {SourceContext} {Message:lj}{NewLine}{Exception}";
+        "[{UtcTimestamp:yyyy-MM-dd HH:mm:ss.fff}Z {Level:u3}] {RequestPath} {SourceContext} {Message:lj}{NewLine}{Exception}";
 
     private static readonly Func<IPAddress?, string> _IpAddressTransform = ip => ip?.ToString() ?? string.Empty;
 
@@ -106,6 +112,7 @@ public static class SerilogFactory
 
         loggerConfiguration
             .Destructure.ByTransforming(_IpAddressTransform)
+            .Enrich.With<UtcTimestampEnricher>()
             .Enrich.WithEnvironmentName()
             .Enrich.WithThreadId()
             .Enrich.WithProcessId()

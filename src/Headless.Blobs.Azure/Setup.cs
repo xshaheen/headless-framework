@@ -6,6 +6,7 @@ using Headless.Blobs.Azure;
 using Headless.Checks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -129,6 +130,10 @@ public static class SetupAzureBlob
         Func<IServiceProvider, BlobServiceClient>? clientFactory
     )
     {
+        // Defensive: this package RESOLVES TimeProvider, so it must also guarantee one exists. Without this,
+        // installing the package standalone (no ServiceDefaults, no sibling that happens to register it) throws
+        // 'No service for type TimeProvider' at resolve time.
+        services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<IBlobStorage>(sp =>
         {
             var mimeTypeProvider = sp.GetRequiredService<IMimeTypeProvider>();

@@ -42,8 +42,8 @@ public interface IDataStorage
     /// <param name="lockedUntil">
     /// UTC timestamp until which the row is leased by an active dispatch attempt. Pass
     /// <see langword="null"/> on terminal and retry-schedule writes so the row becomes
-    /// pickup-eligible again. Only retry-transition or in-flight paths supply a value, and the
-    /// pre-attempt lease itself is written via <see cref="LeasePublishAsync"/>.
+    /// pickup-eligible again. Only retry-transition or in-flight paths supply a value; the
+    /// pre-attempt lease itself is taken via the Lease* methods, which let the STORE derive the deadline.
     /// </param>
     /// <param name="originalRetries">
     /// Optimistic-concurrency token. When supplied, storage applies <c>AND Retries = @OriginalRetries</c>
@@ -89,7 +89,11 @@ public interface IDataStorage
     /// the persisted retry processor excludes it while a dispatch attempt is active.
     /// </summary>
     /// <param name="message">The message to lease. On success the caller's <c>LockedUntil</c> is also updated.</param>
-    /// <param name="lockedUntil">UTC timestamp at which the lease expires.</param>
+    /// <param name="leaseDuration">
+    /// How long the lease should last. The STORE derives the absolute deadline from its own clock, so a lease
+    /// written by one node and evaluated by another cannot be skewed by either node's wall clock. A negative
+    /// duration yields a deadline already in the store's past (an expired lease).
+    /// </param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>
     /// <see langword="true"/> when the lease was written; <see langword="false"/> when the row was already in a terminal
@@ -115,7 +119,11 @@ public interface IDataStorage
     /// written on success) and rolls it back when this method returns <see langword="false"/>. On
     /// success the caller's <c>LockedUntil</c> and <c>Owner</c> are also updated.
     /// </param>
-    /// <param name="lockedUntil">UTC timestamp at which the lease expires.</param>
+    /// <param name="leaseDuration">
+    /// How long the lease should last. The STORE derives the absolute deadline from its own clock, so a lease
+    /// written by one node and evaluated by another cannot be skewed by either node's wall clock. A negative
+    /// duration yields a deadline already in the store's past (an expired lease).
+    /// </param>
     /// <param name="originalInlineAttempts">Optimistic-concurrency token for <c>InlineAttempts</c>.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>
@@ -141,9 +149,10 @@ public interface IDataStorage
     /// the persisted column. Only retry-transition paths pass a value.
     /// </param>
     /// <param name="lockedUntil">
-    /// UTC timestamp until which the row is leased by an active consume attempt. Pass
+    /// UTC timestamp until which the row is leased by an active dispatch attempt. Pass
     /// <see langword="null"/> on terminal and retry-schedule writes so the row becomes
-    /// pickup-eligible again. The pre-attempt lease itself is written via <see cref="LeaseReceiveAsync"/>.
+    /// pickup-eligible again. Only retry-transition or in-flight paths supply a value; the
+    /// pre-attempt lease itself is taken via the Lease* methods, which let the STORE derive the deadline.
     /// </param>
     /// <param name="originalRetries">
     /// Optimistic-concurrency token. When supplied, storage applies <c>AND Retries = @OriginalRetries</c>
@@ -188,7 +197,11 @@ public interface IDataStorage
     /// the persisted retry processor excludes it while a consume attempt is active.
     /// </summary>
     /// <param name="message">The message to lease. On success the caller's <c>LockedUntil</c> is also updated.</param>
-    /// <param name="lockedUntil">UTC timestamp at which the lease expires.</param>
+    /// <param name="leaseDuration">
+    /// How long the lease should last. The STORE derives the absolute deadline from its own clock, so a lease
+    /// written by one node and evaluated by another cannot be skewed by either node's wall clock. A negative
+    /// duration yields a deadline already in the store's past (an expired lease).
+    /// </param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>
     /// <see langword="true"/> when the lease was written; <see langword="false"/> when the row was already in a terminal
