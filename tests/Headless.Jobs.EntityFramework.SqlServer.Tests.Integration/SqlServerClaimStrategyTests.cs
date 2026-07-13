@@ -303,6 +303,49 @@ public sealed class SqlServerClaimStrategyTests(SqlServerJobsCoordinationFixture
     }
 
     [Fact]
+    public async Task native_claim_preserves_sub_second_lease_precision()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        var leaseDuration = TimeSpan.FromMilliseconds(500);
+        using var host = fixture.BuildHost("precision-sql-a", leaseDuration: leaseDuration);
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            var job = new TimeJobEntity
+            {
+                Id = Guid.NewGuid(),
+                Function = "sub-second-lease",
+                ExecutionTime = DateTime.UtcNow.AddMinutes(-1),
+            };
+            await persistence.AddTimeJobsAsync([job], ct);
+
+            var claimed = await persistence.QueueTimedOutTimeJobsAsync(ct).ToArrayAsync(ct);
+
+            claimed.Should().ContainSingle().Which.Id.Should().Be(job.Id);
+            await using var connection = fixture.CreateConnection();
+            await connection.OpenAsync(ct);
+            await using var command = connection.CreateCommand();
+            command.CommandText =
+                $"SELECT [UpdatedAt], [LockedUntil] FROM {fixture.QualifiedTimeJobsTable} WHERE [Id] = @id;";
+            command.Parameters.Add(new SqlParameter("id", job.Id));
+            await using var reader = await command.ExecuteReaderAsync(ct);
+            (await reader.ReadAsync(ct)).Should().BeTrue();
+            var persistedLeaseDuration = reader.GetDateTime(1) - reader.GetDateTime(0);
+
+            persistedLeaseDuration.Should().BeGreaterThanOrEqualTo(TimeSpan.FromMilliseconds(499));
+            persistedLeaseDuration.Should().BeLessThanOrEqualTo(TimeSpan.FromMilliseconds(501));
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    [Fact]
     public async Task descendant_stamp_failure_rolls_back_the_root_claim()
     {
         var ct = AbortToken;

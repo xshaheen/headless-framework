@@ -16,6 +16,10 @@ public sealed class PostgreSqlConformanceTests(PostgreSqlJobsCoordinationFixture
         base.queued_job_lease_uses_the_db_clock_not_a_skewed_claimant_clock();
 
     [Fact]
+    public override Task portable_claim_results_return_database_timestamps_and_batch_new_crons() =>
+        base.portable_claim_results_return_database_timestamps_and_batch_new_crons();
+
+    [Fact]
     public override Task native_claim_eligibility_uses_the_db_clock_not_a_fast_application_clock() =>
         base.native_claim_eligibility_uses_the_db_clock_not_a_fast_application_clock();
 

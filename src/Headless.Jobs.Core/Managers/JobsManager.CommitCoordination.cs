@@ -100,11 +100,34 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
             // side effects observe the timeout token, not the drain's.
             async (_, _) =>
             {
-                using var timeoutCts = new CancellationTokenSource(_postCommitDrainTimeout, timeProvider);
+                var timeoutCts = new CancellationTokenSource(_postCommitDrainTimeout, timeProvider);
+                var disposeTimeoutCts = true;
+                Task? sideEffectsTask = null;
 
                 try
                 {
-                    await sideEffects(timeoutCts.Token).ConfigureAwait(false);
+                    sideEffectsTask = sideEffects(timeoutCts.Token);
+                    await sideEffectsTask
+                        .WaitAsync(_postCommitDrainTimeout, timeProvider, CancellationToken.None)
+                        .ConfigureAwait(false);
+                }
+                catch (TimeoutException e) when (sideEffectsTask is { IsFaulted: true })
+                {
+                    // Preserve a side effect's own TimeoutException as a recoverable failure; only WaitAsync's
+                    // deadline below is the post-commit drain timeout.
+                    Log.DeferredJobSideEffectsFailed(_logger, jobScope, e);
+                }
+                catch (TimeoutException) when (sideEffectsTask is not null)
+                {
+                    // WaitAsync supplies the hard bound when a side effect ignores cancellation. The CTS was armed
+                    // before that wait, so the same deadline also asks cooperative work to stop.
+                    Log.DeferredJobSideEffectsTimedOut(_logger, jobScope, _postCommitDrainTimeout);
+
+                    // The abandoned task may still observe its token after the drain returns, so keep the CTS alive
+                    // until that task settles. Its continuation also surfaces any late fault instead of letting it go
+                    // unobserved.
+                    _ObserveLateSideEffects(sideEffectsTask, timeoutCts, _logger, jobScope);
+                    disposeTimeoutCts = false;
                 }
                 catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
                 {
@@ -117,7 +140,46 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
                 {
                     Log.DeferredJobSideEffectsFailed(_logger, jobScope, e);
                 }
+                finally
+                {
+                    if (disposeTimeoutCts)
+                    {
+                        timeoutCts.Dispose();
+                    }
+                }
             }
+        );
+    }
+
+    private static void _ObserveLateSideEffects(
+        Task sideEffectsTask,
+        CancellationTokenSource timeoutCts,
+        ILogger logger,
+        string jobScope
+    )
+    {
+        _ = sideEffectsTask.ContinueWith(
+            static (completedTask, state) =>
+            {
+                var (source, continuationLogger, continuationJobScope) = ((CancellationTokenSource, ILogger, string))
+                    state!;
+
+                try
+                {
+                    if (completedTask.Exception is { } exception)
+                    {
+                        Log.DeferredJobSideEffectsFailed(continuationLogger, continuationJobScope, exception);
+                    }
+                }
+                finally
+                {
+                    source.Dispose();
+                }
+            },
+            (timeoutCts, logger, jobScope),
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default
         );
     }
 

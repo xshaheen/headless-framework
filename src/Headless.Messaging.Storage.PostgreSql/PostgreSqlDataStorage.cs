@@ -1182,8 +1182,10 @@ internal sealed class PostgreSqlDataStorage(
         // so subsequent pickup polls (anywhere) see the row as leased until the dispatch
         // attempt completes (or the lease expires).
         //
-        // One statement-time database snapshot drives both due/expiry comparisons and the new
-        // deadline. This keeps every replica on one lease-time authority without a clock query.
+        // NextRetryAt is scheduling state written from the injected TimeProvider, so its due
+        // predicate uses that same authority. Lease expiry and stamping remain on one statement-
+        // time database snapshot, keeping every replica on one ownership authority without a
+        // clock query.
         var sql = string.Create(
             CultureInfo.InvariantCulture,
             $"""
@@ -1192,7 +1194,7 @@ internal sealed class PostgreSqlDataStorage(
                 FROM {tableName} AS message
                 WHERE "Retries" <= @Retries
                   AND "Version" = @Version
-                  AND "NextRetryAt" IS NOT NULL AND "NextRetryAt" <= statement_timestamp()
+                  AND "NextRetryAt" IS NOT NULL AND "NextRetryAt" <= @Now
                   AND ("LockedUntil" IS NULL OR "LockedUntil" <= statement_timestamp())
                   AND {_TerminalRowGuardSimple}
                 ORDER BY "NextRetryAt"
@@ -1212,6 +1214,7 @@ internal sealed class PostgreSqlDataStorage(
         [
             new NpgsqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxPersistedRetries),
             new NpgsqlParameter("@Version", messagingOptions.Value.Version),
+            new NpgsqlParameter("@Now", timeProvider.GetUtcNow().UtcDateTime),
             new NpgsqlParameter("@LeaseSeconds", messagingOptions.Value.RetryPolicy.DispatchTimeout.TotalSeconds),
             new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar)
             {

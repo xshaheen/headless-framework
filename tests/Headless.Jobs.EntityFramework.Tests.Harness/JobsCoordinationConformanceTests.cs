@@ -101,6 +101,147 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
     }
 
     /// <summary>
+    /// Portable EF claims must return the exact timestamps stamped by the database, even when the application clock is
+    /// skewed. The mixed new/existing cron batch also pins input-order preservation after new occurrences are claimed in
+    /// one database update.
+    /// </summary>
+    public virtual async Task portable_claim_results_return_database_timestamps_and_batch_new_crons()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        using var host = fixture.BuildHost(
+            "portable-skew",
+            timeProvider: new SkewedTimeProvider(TimeSpan.FromHours(-1)),
+            useNativeClaims: false
+        );
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+            var directTimeJobId = Guid.NewGuid();
+            await fixture.SeedTimeJobAsync(
+                directTimeJobId,
+                "PortableDirectTime",
+                (int)JobStatus.Idle,
+                ownerId: null,
+                ct
+            );
+            var directCandidate = await persistence.GetTimeJobsAsync(x => x.Id == directTimeJobId, ct);
+            var directTimeClaim = (await persistence.QueueTimeJobsAsync(directCandidate, ct).ToArrayAsync(ct))
+                .Should()
+                .ContainSingle()
+                .Which;
+            var directTimePersisted = await fixture.ReadTimeJobClaimTimestampsAsync(directTimeJobId, ct);
+            directTimeClaim.LockedUntil.Should().Be(directTimePersisted.LockedUntil);
+            directTimeClaim.UpdatedAt.Should().Be(directTimePersisted.UpdatedAt);
+
+            var fallbackTimeJob = new TimeJobEntity
+            {
+                Id = Guid.NewGuid(),
+                Function = "PortableFallbackTime",
+                ExecutionTime = DateTime.UtcNow.AddHours(-2),
+            };
+            await persistence.AddTimeJobsAsync([fallbackTimeJob], ct);
+            var fallbackTimeClaim = (await persistence.QueueTimedOutTimeJobsAsync(ct).ToArrayAsync(ct))
+                .Should()
+                .ContainSingle()
+                .Which;
+            var fallbackTimePersisted = await fixture.ReadTimeJobClaimTimestampsAsync(fallbackTimeJob.Id, ct);
+            fallbackTimeClaim.LockedUntil.Should().Be(fallbackTimePersisted.LockedUntil);
+            fallbackTimeClaim.UpdatedAt.Should().Be(fallbackTimePersisted.UpdatedAt);
+
+            var executionTime = DateTime.UtcNow.AddMinutes(1);
+            var newCronId1 = Guid.NewGuid();
+            var existingCronId = Guid.NewGuid();
+            var newCronId2 = Guid.NewGuid();
+            await fixture.SeedCronJobAsync(newCronId1, "PortableNewCron1", "* * * * *", NodeDeathPolicy.Retry, ct);
+            await fixture.SeedCronJobAsync(
+                existingCronId,
+                "PortableExistingCron",
+                "* * * * *",
+                NodeDeathPolicy.Retry,
+                ct
+            );
+            await fixture.SeedCronJobAsync(newCronId2, "PortableNewCron2", "* * * * *", NodeDeathPolicy.Retry, ct);
+
+            var existingOccurrenceId = Guid.NewGuid();
+            var existingCreatedAt = DateTime.UtcNow.AddMinutes(-5);
+            await fixture.SeedCronOccurrenceAsync(
+                existingOccurrenceId,
+                existingCronId,
+                (int)JobStatus.Idle,
+                ownerId: null,
+                NodeDeathPolicy.Retry,
+                lockedUntil: null,
+                executionTime,
+                ct
+            );
+
+            JobManagerDispatchContext[] cronContexts =
+            [
+                new(newCronId1) { FunctionName = "PortableNewCron1", Expression = "* * * * *" },
+                new(existingCronId)
+                {
+                    FunctionName = "PortableExistingCron",
+                    Expression = "* * * * *",
+                    NextCronOccurrence = new NextCronOccurrence(existingOccurrenceId, existingCreatedAt),
+                },
+                new(newCronId2) { FunctionName = "PortableNewCron2", Expression = "* * * * *" },
+            ];
+            var directCronClaims = await persistence
+                .QueueCronJobOccurrencesAsync((executionTime, cronContexts), ct)
+                .ToArrayAsync(ct);
+
+            directCronClaims.Select(x => x.CronJobId).Should().Equal(newCronId1, existingCronId, newCronId2);
+            foreach (var claim in directCronClaims)
+            {
+                var persisted = await fixture.ReadCronOccurrenceClaimTimestampsAsync(claim.Id, ct);
+                claim.LockedUntil.Should().Be(persisted.LockedUntil);
+                claim.UpdatedAt.Should().Be(persisted.UpdatedAt);
+            }
+
+            var fallbackCronId = Guid.NewGuid();
+            var fallbackOccurrenceId = Guid.NewGuid();
+            var fallbackExecutionTime = DateTime.UtcNow.AddHours(-2);
+            await fixture.SeedCronJobAsync(
+                fallbackCronId,
+                "PortableFallbackCron",
+                "* * * * *",
+                NodeDeathPolicy.Retry,
+                ct
+            );
+            await fixture.SeedCronOccurrenceAsync(
+                fallbackOccurrenceId,
+                fallbackCronId,
+                (int)JobStatus.Idle,
+                ownerId: null,
+                NodeDeathPolicy.Retry,
+                lockedUntil: null,
+                fallbackExecutionTime,
+                ct
+            );
+            var fallbackCronClaim = (await persistence.QueueTimedOutCronJobOccurrencesAsync(ct).ToArrayAsync(ct))
+                .Should()
+                .ContainSingle()
+                .Which;
+            var fallbackCronPersisted = await fixture.ReadCronOccurrenceClaimTimestampsAsync(fallbackOccurrenceId, ct);
+            fallbackCronClaim.LockedUntil.Should().Be(fallbackCronPersisted.LockedUntil);
+            fallbackCronClaim.UpdatedAt.Should().Be(fallbackCronPersisted.UpdatedAt);
+
+            directTimeClaim.UpdatedAt.Should().BeAfter(DateTime.UtcNow.AddMinutes(-1));
+            directTimeClaim.LockedUntil.Should().BeAfter(DateTime.UtcNow.AddMinutes(4));
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    /// <summary>
     /// #469: a fast application clock must not make a still-valid foreign lease eligible in either native fallback
     /// time-job claiming or native existing-cron claiming. Both predicates are evaluated against the database clock.
     /// </summary>

@@ -1233,8 +1233,10 @@ internal sealed class SqlServerDataStorage(
         // so subsequent pickup polls (anywhere) see the row as leased until the dispatch attempt
         // completes (or the lease expires).
         //
-        // One command-local database snapshot drives both due/expiry comparisons and the new
-        // deadline. This keeps every replica on one lease-time authority without a clock query.
+        // NextRetryAt is scheduling state written from the injected TimeProvider, so its due
+        // predicate uses that same authority. Lease expiry and stamping remain on one command-
+        // local database snapshot, keeping every replica on one ownership authority without a
+        // clock query.
         var sql = $"""
             DECLARE @ClaimNow datetime2(7) = SYSUTCDATETIME();
 
@@ -1243,7 +1245,7 @@ internal sealed class SqlServerDataStorage(
                 FROM {tableName} WITH (UPDLOCK, READPAST, ROWLOCK)
                 WHERE Retries <= @Retries
                   AND Version = @Version
-                  AND NextRetryAt IS NOT NULL AND NextRetryAt <= @ClaimNow
+                  AND NextRetryAt IS NOT NULL AND NextRetryAt <= @Now
                   AND (LockedUntil IS NULL OR LockedUntil <= @ClaimNow)
                   AND {_TerminalRowGuardSimple}
                 ORDER BY NextRetryAt, Id
@@ -1264,6 +1266,7 @@ internal sealed class SqlServerDataStorage(
             new SqlParameter("@BatchSize", messagingOptions.Value.RetryBatchSize),
             new SqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxPersistedRetries),
             new SqlParameter("@Version", messagingOptions.Value.Version),
+            new SqlParameter("@Now", SqlDbType.DateTime2) { Value = timeProvider.GetUtcNow().UtcDateTime },
             new SqlParameter("@LeaseWholeSeconds", SqlDbType.Int) { Value = leaseWholeSeconds },
             new SqlParameter("@LeaseNanoseconds", SqlDbType.Int) { Value = leaseNanoseconds },
             _OwnerParameter("@Owner", hasLease: true),

@@ -498,6 +498,30 @@ public static class JobsCoordinationFixtureExtensions
         return (ownerId, lockedUntil);
     }
 
+    /// <summary>Reads a CronJobOccurrence's database-stamped lease timestamps.</summary>
+    public static async Task<(DateTime? LockedUntil, DateTime UpdatedAt)> ReadCronOccurrenceClaimTimestampsAsync(
+        this IJobsCoordinationFixture fixture,
+        Guid id,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = fixture.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            $"SELECT \"LockedUntil\", \"UpdatedAt\" FROM {fixture.QualifiedCronJobOccurrencesTable} WHERE \"Id\" = @id;";
+        _AddParameter(command, "@id", id);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            throw new InvalidOperationException($"CronJobOccurrence {id} not found.");
+        }
+
+        var lockedUntil = await reader.IsDBNullAsync(0, cancellationToken) ? (DateTime?)null : reader.GetDateTime(0);
+        return (lockedUntil, reader.GetDateTime(1));
+    }
+
     /// <summary>Reads back a TimeJob's status + owner for assertions.</summary>
     public static async Task<(int Status, string? OwnerId)> ReadTimeJobAsync(
         this IJobsCoordinationFixture fixture,
@@ -545,6 +569,30 @@ public static class JobsCoordinationFixtureExtensions
         var skippedReason = await reader.IsDBNullAsync(4, cancellationToken) ? null : reader.GetString(4);
 
         return (status, ownerId, lockedUntil, exceptionMessage, skippedReason);
+    }
+
+    /// <summary>Reads a TimeJob's database-stamped lease timestamps.</summary>
+    public static async Task<(DateTime? LockedUntil, DateTime UpdatedAt)> ReadTimeJobClaimTimestampsAsync(
+        this IJobsCoordinationFixture fixture,
+        Guid id,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = fixture.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            $"SELECT \"LockedUntil\", \"UpdatedAt\" FROM {fixture.QualifiedTimeJobsTable} WHERE \"Id\" = @id;";
+        _AddParameter(command, "@id", id);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            throw new InvalidOperationException($"TimeJob {id} not found.");
+        }
+
+        var lockedUntil = await reader.IsDBNullAsync(0, cancellationToken) ? (DateTime?)null : reader.GetDateTime(0);
+        return (lockedUntil, reader.GetDateTime(1));
     }
 
     // Column identifiers are double-quoted: SQL Server accepts ANSI double quotes for delimited identifiers

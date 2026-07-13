@@ -4,6 +4,7 @@ using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
+using Microsoft.Extensions.DependencyInjection;
 using Polly.Retry;
 
 #pragma warning disable REFL017 // Don't use name of wrong member
@@ -225,6 +226,37 @@ public sealed class JobsOptionsBuilderTests
         var schedulerOptions = new SchedulerOptionsBuilder();
 
         schedulerOptions.PostCommitDrainTimeout.Should().Be(TimeSpan.FromSeconds(30));
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(0)]
+    [InlineData(301)]
+    public void AddHeadlessJobs_Rejects_PostCommitDrainTimeout_Outside_Valid_Range(int timeoutSeconds)
+    {
+        var services = new ServiceCollection();
+
+        var act = () =>
+            services.AddHeadlessJobs(options =>
+                options.ConfigureScheduler(scheduler =>
+                    scheduler.PostCommitDrainTimeout = TimeSpan.FromSeconds(timeoutSeconds)
+                )
+            );
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void AddHeadlessJobs_Accepts_Maximum_PostCommitDrainTimeout()
+    {
+        var services = new ServiceCollection();
+
+        var act = () =>
+            services.AddHeadlessJobs(options =>
+                options.ConfigureScheduler(scheduler => scheduler.PostCommitDrainTimeout = TimeSpan.FromMinutes(5))
+            );
+
+        act.Should().NotThrow();
     }
 
     [Fact]

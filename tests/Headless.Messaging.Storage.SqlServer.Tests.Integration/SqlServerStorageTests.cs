@@ -282,6 +282,14 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
         base.should_stamp_retry_lease_from_database_clock();
 
     [Fact]
+    public override Task should_use_application_clock_when_scheduling_published_retry() =>
+        base.should_use_application_clock_when_scheduling_published_retry();
+
+    [Fact]
+    public override Task should_use_application_clock_when_scheduling_received_retry() =>
+        base.should_use_application_clock_when_scheduling_received_retry();
+
+    [Fact]
     public async Task should_preserve_sub_second_retry_lease_precision()
     {
         _EnsureInitialized();

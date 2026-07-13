@@ -377,7 +377,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             DECLARE @claimNow datetime2(7) = SYSUTCDATETIME();
 
             UPDATE occurrence
-            SET {mapping.LockedUntil} = DATEADD(second, @leaseSeconds, @claimNow),
+            SET {mapping.LockedUntil} = {_LeaseDeadlineSql("@claimNow")},
                 {mapping.UpdatedAt} = @claimNow
             OUTPUT @claimNow
             FROM {mapping.Table} AS occurrence
@@ -386,7 +386,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             WHERE occurrence.{mapping.OwnerId} = @owner;
             """;
 #pragma warning restore CA2100
-        command.Parameters.Add(new SqlParameter("leaseSeconds", leaseDuration.TotalSeconds));
+        _AddLeaseDurationParameters(command, leaseDuration);
         command.Parameters.Add(new SqlParameter("occurrenceIds", JsonSerializer.Serialize(occurrenceIds)));
         command.Parameters.Add(new SqlParameter("owner", owner));
         return (DateTime)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!;
@@ -417,7 +417,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             OUTPUT inserted.{mapping.Id}
             SELECT
                 @id, @status, @owner, @executionTime, @cronJobId,
-                DATEADD(second, @leaseSeconds, @claimNow), @onNodeDeath, @elapsedTime, @retryCount,
+                {_LeaseDeadlineSql("@claimNow")}, @onNodeDeath, @elapsedTime, @retryCount,
                 @claimNow, @claimNow
             WHERE NOT EXISTS (
                 SELECT 1
@@ -431,7 +431,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         command.Parameters.Add(new SqlParameter("owner", owner));
         command.Parameters.Add(_DateTimeParameter("executionTime", executionTime));
         command.Parameters.Add(new SqlParameter("cronJobId", item.Id));
-        command.Parameters.Add(new SqlParameter("leaseSeconds", (lockedUntil - now).TotalSeconds));
+        _AddLeaseDurationParameters(command, lockedUntil - now);
         command.Parameters.Add(new SqlParameter("onNodeDeath", item.OnNodeDeath.ToString()));
         command.Parameters.Add(new SqlParameter("elapsedTime", SqlDbType.BigInt) { Value = 0L });
         command.Parameters.Add(new SqlParameter("retryCount", SqlDbType.Int) { Value = 0 });
@@ -494,7 +494,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             )
             UPDATE occurrence
             SET {mapping.OwnerId} = @owner,
-                {mapping.LockedUntil} = DATEADD(second, @leaseSeconds, @claimNow),
+                {mapping.LockedUntil} = {_LeaseDeadlineSql("@claimNow")},
                 {mapping.UpdatedAt} = @claimNow,
                 {mapping.Status} = @queued,
                 {mapping.OnNodeDeath} = @onNodeDeath
@@ -509,7 +509,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         command.Parameters.Add(new SqlParameter("queued", JobStatus.Queued.ToString()));
         command.Parameters.Add(new SqlParameter("owner", owner));
         command.Parameters.Add(new SqlParameter("retry", NodeDeathPolicy.Retry.ToString()));
-        command.Parameters.Add(new SqlParameter("leaseSeconds", (lockedUntil - now).TotalSeconds));
+        _AddLeaseDurationParameters(command, lockedUntil - now);
         command.Parameters.Add(new SqlParameter("onNodeDeath", item.OnNodeDeath.ToString()));
         var claimed = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return claimed is Guid
@@ -558,7 +558,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             )
             UPDATE occurrence
             SET {mapping.OwnerId} = @owner,
-                {mapping.LockedUntil} = DATEADD(second, @leaseSeconds, @claimNow),
+                {mapping.LockedUntil} = {_LeaseDeadlineSql("@claimNow")},
                 {mapping.UpdatedAt} = @claimNow,
                 {mapping.Status} = @queued
             OUTPUT inserted.{mapping.Id}
@@ -571,7 +571,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         command.Parameters.Add(new SqlParameter("queued", JobStatus.Queued.ToString()));
         command.Parameters.Add(new SqlParameter("retry", NodeDeathPolicy.Retry.ToString()));
         command.Parameters.Add(new SqlParameter("owner", owner));
-        command.Parameters.Add(new SqlParameter("leaseSeconds", (lockedUntil - now).TotalSeconds));
+        _AddLeaseDurationParameters(command, lockedUntil - now);
 
         var ids = new List<Guid>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -626,7 +626,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             )
             UPDATE job
             SET {mapping.OwnerId} = @owner,
-                {mapping.LockedUntil} = DATEADD(second, @leaseSeconds, @claimNow),
+                {mapping.LockedUntil} = {_LeaseDeadlineSql("@claimNow")},
                 {mapping.UpdatedAt} = @claimNow,
                 {mapping.Status} = @queuedStatus
             OUTPUT inserted.{mapping.Id}, @claimNow
@@ -635,7 +635,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             """;
 #pragma warning restore CA2100
         command.Parameters.Add(new SqlParameter("owner", owner));
-        command.Parameters.Add(new SqlParameter("leaseSeconds", leaseDuration.TotalSeconds));
+        _AddLeaseDurationParameters(command, leaseDuration);
         command.Parameters.Add(new SqlParameter("queuedStatus", JobStatus.Queued.ToString()));
         command.Parameters.AddRange(candidateParameters);
 
@@ -686,7 +686,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             )
             UPDATE job
             SET {mapping.OwnerId} = @owner,
-                {mapping.LockedUntil} = DATEADD(second, @leaseSeconds, @claimedAt),
+                {mapping.LockedUntil} = {_LeaseDeadlineSql("@claimedAt")},
                 {mapping.UpdatedAt} = @claimedAt
             FROM {mapping.Table} AS job
             INNER JOIN descendants ON job.{mapping.Id} = descendants.{mapping.Id}
@@ -700,7 +700,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         command.Parameters.Add(new SqlParameter("idle", JobStatus.Idle.ToString()));
         command.Parameters.Add(new SqlParameter("owner", owner));
         command.Parameters.Add(_DateTimeParameter("claimedAt", claimedAt));
-        command.Parameters.Add(new SqlParameter("leaseSeconds", leaseDuration.TotalSeconds));
+        _AddLeaseDurationParameters(command, leaseDuration);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -718,6 +718,23 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
 
     private static SqlParameter _DateTimeParameter(string name, DateTime value) =>
         new(name, SqlDbType.DateTime2) { Value = value };
+
+    private static string _LeaseDeadlineSql(string start) =>
+        "DATEADD(nanosecond, @leaseNanoseconds, "
+        + "DATEADD(second, @leaseWholeSeconds, "
+        + $"DATEADD(day, @leaseDays, {start})))";
+
+    private static void _AddLeaseDurationParameters(SqlCommand command, TimeSpan leaseDuration)
+    {
+        var leaseDays = checked((int)(leaseDuration.Ticks / TimeSpan.TicksPerDay));
+        var ticksWithinDay = leaseDuration.Ticks % TimeSpan.TicksPerDay;
+        var leaseWholeSeconds = checked((int)(ticksWithinDay / TimeSpan.TicksPerSecond));
+        var leaseNanoseconds = checked((int)(ticksWithinDay % TimeSpan.TicksPerSecond * 100));
+
+        command.Parameters.Add(new SqlParameter("leaseDays", SqlDbType.Int) { Value = leaseDays });
+        command.Parameters.Add(new SqlParameter("leaseWholeSeconds", SqlDbType.Int) { Value = leaseWholeSeconds });
+        command.Parameters.Add(new SqlParameter("leaseNanoseconds", SqlDbType.Int) { Value = leaseNanoseconds });
+    }
 
     private static string _ParameterName(string prefix, int index) =>
         string.Create(CultureInfo.InvariantCulture, $"{prefix}{index}");

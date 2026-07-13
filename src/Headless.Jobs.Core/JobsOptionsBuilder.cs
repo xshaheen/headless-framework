@@ -309,7 +309,7 @@ public sealed class SchedulerOptionsBuilder
     /// <summary>
     /// Maximum time coordinated enqueue side effects may run after the ambient transaction commits. The committed
     /// job row remains durable when this deadline elapses; the scheduler's fallback poll recovers dispatch while the
-    /// commit thread is released. Defaults to 30 seconds.
+    /// commit thread is released. Defaults to 30 seconds. Must be greater than zero and no more than five minutes.
     /// </summary>
     public TimeSpan PostCommitDrainTimeout { get; set; } = TimeSpan.FromSeconds(30);
 

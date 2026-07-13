@@ -297,6 +297,85 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase
     }
 
     [Fact]
+    public async Task Deferred_side_effect_timeout_bounds_work_that_ignores_cancellation()
+    {
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var timeout = TimeSpan.FromSeconds(5);
+        var sut = _CreateSut(
+            CoordinatorMode.LiveRelational,
+            withWriter: true,
+            dispatcherEnabled: true,
+            timeProvider: timeProvider,
+            postCommitDrainTimeout: timeout
+        );
+        var sideEffectStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var neverCompletes = new TaskCompletionSource<TimeJobEntity[]>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        sut.Persistence.AcquireImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                sideEffectStarted.SetResult();
+
+                return neverCompletes.Task;
+            });
+
+        await sut.Time.AddAsync(_ImmediateTimeJob(), AbortToken);
+
+        var drain = sut.Coordinator!.DrainCommitAsync(AbortToken);
+        await sideEffectStarted.Task.WaitAsync(AbortToken);
+        timeProvider.Advance(timeout + TimeSpan.FromTicks(1));
+
+        Func<Task> drainAction = async () => await drain;
+        await drainAction.Should().NotThrowAsync();
+        neverCompletes.Task.IsCompleted.Should().BeFalse();
+        sut.Logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning && e.Exception == null);
+
+        // Release the abandoned task after proving the drain did not retain it, so the late-completion continuation can
+        // dispose its cancellation source before the test exits.
+        neverCompletes.SetResult([]);
+    }
+
+    [Fact]
+    public async Task Deferred_side_effect_fault_after_timeout_is_observed_and_logged()
+    {
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var timeout = TimeSpan.FromSeconds(5);
+        var sut = _CreateSut(
+            CoordinatorMode.LiveRelational,
+            withWriter: true,
+            dispatcherEnabled: true,
+            timeProvider: timeProvider,
+            postCommitDrainTimeout: timeout
+        );
+        var sideEffectStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var lateSideEffect = new TaskCompletionSource<TimeJobEntity[]>();
+        sut.Persistence.AcquireImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                sideEffectStarted.SetResult();
+
+                return lateSideEffect.Task;
+            });
+
+        await sut.Time.AddAsync(_ImmediateTimeJob(), AbortToken);
+
+        var drain = sut.Coordinator!.DrainCommitAsync(AbortToken);
+        await sideEffectStarted.Task.WaitAsync(AbortToken);
+        timeProvider.Advance(timeout + TimeSpan.FromTicks(1));
+        await drain;
+
+        var boom = new InvalidOperationException("late deferred side effect boom");
+        lateSideEffect.SetException(boom);
+
+        sut.Logger.Entries.Should().HaveCount(2);
+        sut.Logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning && e.Exception == null);
+        var lateFaultEntry = sut.Logger.Entries.Single(e => e.Exception != null);
+        lateFaultEntry.Level.Should().Be(LogLevel.Warning);
+        lateFaultEntry.Exception.Should().BeOfType<AggregateException>().Which.InnerExceptions.Should().Contain(boom);
+    }
+
+    [Fact]
     public async Task Coordinated_enqueue_registers_no_rollback_callbacks()
     {
         // Coordinated side effects must fire only on commit — a rollback discards the row, so the manager must

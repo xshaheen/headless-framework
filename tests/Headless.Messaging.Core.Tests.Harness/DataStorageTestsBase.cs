@@ -1054,6 +1054,59 @@ public abstract class DataStorageTestsBase : TestBase
         claimed.LockedUntil.Should().BeAfter(DateTime.UtcNow).And.BeBefore(DateTime.UtcNow.AddMinutes(10));
     }
 
+    public virtual async Task should_use_application_clock_when_scheduling_published_retry()
+    {
+        var (storage, schedulingClock) = _CreateRelationalSchedulingClockStorage();
+        var storedMessage = await storage.StoreMessageAsync(
+            "application-clock-published-retry",
+            CreateMessage(),
+            cancellationToken: AbortToken
+        );
+        await storage.ChangePublishStateAsync(
+            storedMessage,
+            StatusName.Failed,
+            nextRetryAt: schedulingClock.GetUtcNow().UtcDateTime.AddMinutes(1),
+            cancellationToken: AbortToken
+        );
+
+        (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
+            .Should()
+            .NotContain(m => m.StorageId == storedMessage.StorageId);
+
+        schedulingClock.Advance(TimeSpan.FromMinutes(2));
+
+        (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
+            .Should()
+            .ContainSingle(m => m.StorageId == storedMessage.StorageId);
+    }
+
+    public virtual async Task should_use_application_clock_when_scheduling_received_retry()
+    {
+        var (storage, schedulingClock) = _CreateRelationalSchedulingClockStorage();
+        var storedMessage = await storage.StoreReceivedMessageAsync(
+            "application-clock-received-retry",
+            "application-clock-group",
+            CreateMessage(),
+            AbortToken
+        );
+        await storage.ChangeReceiveStateAsync(
+            storedMessage,
+            StatusName.Failed,
+            nextRetryAt: schedulingClock.GetUtcNow().UtcDateTime.AddMinutes(1),
+            cancellationToken: AbortToken
+        );
+
+        (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken))
+            .Should()
+            .NotContain(m => m.StorageId == storedMessage.StorageId);
+
+        schedulingClock.Advance(TimeSpan.FromMinutes(2));
+
+        (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken))
+            .Should()
+            .ContainSingle(m => m.StorageId == storedMessage.StorageId);
+    }
+
     public virtual async Task should_return_unstored_snapshot_when_redelivery_hits_active_receive_lease()
     {
         var storage = GetStorage();
@@ -1969,5 +2022,20 @@ public abstract class DataStorageTestsBase : TestBase
         }
 
         return storage;
+    }
+
+    private (
+        IDataStorage Storage,
+        Microsoft.Extensions.Time.Testing.FakeTimeProvider Clock
+    ) _CreateRelationalSchedulingClockStorage()
+    {
+        var clock = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(DateTimeOffset.UtcNow.AddHours(-1));
+        var storage = CreateStorageWithTimeProvider(clock);
+        if (storage is null)
+        {
+            Assert.Skip("Storage does not expose a relational scheduling-clock test seam");
+        }
+
+        return (storage, clock);
     }
 }
