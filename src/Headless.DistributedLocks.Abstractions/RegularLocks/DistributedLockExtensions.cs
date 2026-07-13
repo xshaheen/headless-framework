@@ -15,6 +15,68 @@ public static class DistributedLockExtensions
 {
     extension(IDistributedLock provider)
     {
+        /// <summary>
+        /// Tries to acquire every distinct <paramref name="resources"/> in ordinal order under one acquire budget.
+        /// </summary>
+        /// <param name="resources">Resource names to acquire. The sequence is enumerated once, deduplicated, and ordinal-sorted.</param>
+        /// <param name="options">Per-call configuration shared by every child acquisition.</param>
+        /// <param name="cancellationToken">Cancels the composite acquisition and its compensating cleanup.</param>
+        /// <returns>
+        /// A lease representing the complete canonical set, or <see langword="null"/> when the set cannot be formed
+        /// before the acquire timeout. A set containing one distinct resource returns the provider's original lease.
+        /// </returns>
+        /// <exception cref="ArgumentNullException"><paramref name="provider"/> or <paramref name="resources"/> is <see langword="null"/>.</exception>
+        /// <exception cref="ArgumentException">
+        /// <paramref name="resources"/> is empty or contains a null, empty, or whitespace resource name.
+        /// </exception>
+        /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
+        public async Task<IDistributedLease?> TryAcquireAllAsync(
+            IEnumerable<string> resources,
+            DistributedLockAcquireOptions? options = null,
+            CancellationToken cancellationToken = default
+        )
+        {
+            var result = await CompositeDistributedLockAcquireCoordinator
+                .TryAcquireAsync(provider, resources, options, cancellationToken)
+                .ConfigureAwait(false);
+
+            return result.Lease;
+        }
+
+        /// <summary>
+        /// Acquires every distinct <paramref name="resources"/> in ordinal order under one acquire budget.
+        /// </summary>
+        /// <param name="resources">Resource names to acquire. The sequence is enumerated once, deduplicated, and ordinal-sorted.</param>
+        /// <param name="options">Per-call configuration shared by every child acquisition.</param>
+        /// <param name="cancellationToken">Cancels the composite acquisition and its compensating cleanup.</param>
+        /// <returns>
+        /// A lease representing the complete canonical set. A set containing one distinct resource returns the
+        /// provider's original lease.
+        /// </returns>
+        /// <exception cref="ArgumentNullException"><paramref name="provider"/> or <paramref name="resources"/> is <see langword="null"/>.</exception>
+        /// <exception cref="ArgumentException">
+        /// <paramref name="resources"/> is empty or contains a null, empty, or whitespace resource name.
+        /// </exception>
+        /// <exception cref="LockAcquisitionTimeoutException">The complete set could not be acquired before the timeout elapsed.</exception>
+        /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
+        public async Task<IDistributedLease> AcquireAllAsync(
+            IEnumerable<string> resources,
+            DistributedLockAcquireOptions? options = null,
+            CancellationToken cancellationToken = default
+        )
+        {
+            var result = await CompositeDistributedLockAcquireCoordinator
+                .TryAcquireAsync(provider, resources, options, cancellationToken)
+                .ConfigureAwait(false);
+
+            return result.Lease
+                ?? throw (
+                    result.TryOnce
+                        ? LockAcquisitionTimeoutException.ForTryOnceContention(result.Resource)
+                        : new LockAcquisitionTimeoutException(result.Resource)
+                );
+        }
+
         /// <summary>Releases the resource lock held by <paramref name="distributedLock"/>.</summary>
         /// <param name="distributedLock">The held lease to release; supplies the resource and lease id.</param>
         /// <param name="cancellationToken">Cancels the release; surfaces as <see cref="OperationCanceledException"/>.</param>
