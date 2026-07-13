@@ -23,6 +23,14 @@ public static class DistributedLockExtensions
         {
             Argument.IsNotNull(provider);
 
+            if (distributedLock is ICompositeDistributedLease composite)
+            {
+                return CompositeDistributedLeaseOperations.RunReverseAsync(
+                    composite.Children,
+                    child => provider.ReleaseAsync(child.Resource, child.LeaseId, cancellationToken)
+                );
+            }
+
             return provider.ReleaseAsync(distributedLock.Resource, distributedLock.LeaseId, cancellationToken);
         }
 
@@ -37,6 +45,15 @@ public static class DistributedLockExtensions
             CancellationToken cancellationToken = default
         )
         {
+            if (distributedLock is ICompositeDistributedLease composite)
+            {
+                return CompositeDistributedLeaseOperations.RenewAllAsync(
+                    composite.Children,
+                    child => provider.RenewAsync(child.Resource, child.LeaseId, timeUntilExpires, cancellationToken),
+                    cancellationToken
+                );
+            }
+
             return provider.RenewAsync(
                 distributedLock.Resource,
                 distributedLock.LeaseId,
