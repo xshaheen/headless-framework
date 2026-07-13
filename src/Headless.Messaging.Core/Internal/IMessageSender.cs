@@ -434,17 +434,22 @@ internal sealed class MessageSender : IMessageSender
 
     private async Task<bool> _LeaseAsync(MediumMessage message, CancellationToken cancellationToken)
     {
-        var lockedUntil = _timeProvider.GetUtcNow().UtcDateTime.Add(_retryPolicy.DispatchTimeout);
-        return await _dataStorage.LeasePublishAsync(message, lockedUntil, cancellationToken).ConfigureAwait(false);
+        return await _dataStorage
+            .LeasePublishAsync(message, _retryPolicy.DispatchTimeout, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private async Task<bool> _LeaseAndReserveAttemptAsync(MediumMessage message, CancellationToken cancellationToken)
     {
-        var lockedUntil = _timeProvider.GetUtcNow().UtcDateTime.Add(_retryPolicy.DispatchTimeout);
         var originalInlineAttempts = message.InlineAttempts;
         message.InlineAttempts++;
         var reserved = await _dataStorage
-            .LeasePublishAndReserveAttemptAsync(message, lockedUntil, originalInlineAttempts, cancellationToken)
+            .LeasePublishAndReserveAttemptAsync(
+                message,
+                _retryPolicy.DispatchTimeout,
+                originalInlineAttempts,
+                cancellationToken
+            )
             .ConfigureAwait(false);
         if (!reserved)
         {

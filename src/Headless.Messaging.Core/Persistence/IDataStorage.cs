@@ -98,7 +98,7 @@ public interface IDataStorage
     /// </returns>
     ValueTask<bool> LeasePublishAsync(
         MediumMessage message,
-        DateTime lockedUntil,
+        TimeSpan leaseDuration,
         CancellationToken cancellationToken = default
     );
 
@@ -125,7 +125,7 @@ public interface IDataStorage
     /// </returns>
     ValueTask<bool> LeasePublishAndReserveAttemptAsync(
         MediumMessage message,
-        DateTime lockedUntil,
+        TimeSpan leaseDuration,
         int originalInlineAttempts,
         CancellationToken cancellationToken = default
     );
@@ -197,7 +197,7 @@ public interface IDataStorage
     /// </returns>
     ValueTask<bool> LeaseReceiveAsync(
         MediumMessage message,
-        DateTime lockedUntil,
+        TimeSpan leaseDuration,
         CancellationToken cancellationToken = default
     );
 
@@ -209,7 +209,7 @@ public interface IDataStorage
     /// </summary>
     ValueTask<bool> LeaseReceiveAndReserveAttemptAsync(
         MediumMessage message,
-        DateTime lockedUntil,
+        TimeSpan leaseDuration,
         int originalInlineAttempts,
         CancellationToken cancellationToken = default
     );

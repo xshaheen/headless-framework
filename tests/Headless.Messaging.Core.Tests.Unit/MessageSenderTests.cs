@@ -60,12 +60,12 @@ public sealed class MessageSenderTests : TestBase
     )
     {
         storage
-            .LeasePublishAsync(Arg.Any<MediumMessage>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .LeasePublishAsync(Arg.Any<MediumMessage>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(true));
         storage
             .LeasePublishAndReserveAttemptAsync(
                 Arg.Any<MediumMessage>(),
-                Arg.Any<DateTime>(),
+                Arg.Any<TimeSpan>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
             )
@@ -112,12 +112,12 @@ public sealed class MessageSenderTests : TestBase
     )
     {
         storage
-            .LeasePublishAsync(Arg.Any<MediumMessage>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .LeasePublishAsync(Arg.Any<MediumMessage>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(true));
         storage
             .LeasePublishAndReserveAttemptAsync(
                 Arg.Any<MediumMessage>(),
-                Arg.Any<DateTime>(),
+                Arg.Any<TimeSpan>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
             )
@@ -670,7 +670,7 @@ public sealed class MessageSenderTests : TestBase
         storage
             .LeasePublishAndReserveAttemptAsync(
                 Arg.Any<MediumMessage>(),
-                Arg.Any<DateTime>(),
+                Arg.Any<TimeSpan>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
             )
@@ -1083,7 +1083,7 @@ public sealed class MessageSenderTests : TestBase
             .Received(1)
             .LeasePublishAndReserveAttemptAsync(
                 Arg.Any<MediumMessage>(),
-                Arg.Any<DateTime>(),
+                Arg.Any<TimeSpan>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
             );

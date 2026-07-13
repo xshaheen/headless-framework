@@ -187,13 +187,13 @@ internal sealed partial class InMemoryDataStorage(
 
     public ValueTask<bool> LeasePublishAsync(
         MediumMessage message,
-        DateTime lockedUntil,
+        TimeSpan leaseDuration,
         CancellationToken cancellationToken = default
     ) =>
         _LeaseAsync(
             PublishedMessages,
             message,
-            lockedUntil,
+            timeProvider.GetUtcNow().UtcDateTime.Add(leaseDuration),
             timeProvider,
             nodeMembership.GetOwnerTag(),
             cancellationToken
@@ -201,14 +201,14 @@ internal sealed partial class InMemoryDataStorage(
 
     public ValueTask<bool> LeasePublishAndReserveAttemptAsync(
         MediumMessage message,
-        DateTime lockedUntil,
+        TimeSpan leaseDuration,
         int originalInlineAttempts,
         CancellationToken cancellationToken = default
     ) =>
         _LeaseAndReserveAttemptAsync(
             PublishedMessages,
             message,
-            lockedUntil,
+            timeProvider.GetUtcNow().UtcDateTime.Add(leaseDuration),
             originalInlineAttempts,
             timeProvider,
             nodeMembership.GetOwnerTag(),
@@ -326,13 +326,13 @@ internal sealed partial class InMemoryDataStorage(
 
     public ValueTask<bool> LeaseReceiveAsync(
         MediumMessage message,
-        DateTime lockedUntil,
+        TimeSpan leaseDuration,
         CancellationToken cancellationToken = default
     ) =>
         _LeaseAsync(
             ReceivedMessages,
             message,
-            lockedUntil,
+            timeProvider.GetUtcNow().UtcDateTime.Add(leaseDuration),
             timeProvider,
             nodeMembership.GetOwnerTag(),
             cancellationToken
@@ -340,14 +340,14 @@ internal sealed partial class InMemoryDataStorage(
 
     public ValueTask<bool> LeaseReceiveAndReserveAttemptAsync(
         MediumMessage message,
-        DateTime lockedUntil,
+        TimeSpan leaseDuration,
         int originalInlineAttempts,
         CancellationToken cancellationToken = default
     ) =>
         _LeaseAndReserveAttemptAsync(
             ReceivedMessages,
             message,
-            lockedUntil,
+            timeProvider.GetUtcNow().UtcDateTime.Add(leaseDuration),
             originalInlineAttempts,
             timeProvider,
             nodeMembership.GetOwnerTag(),
