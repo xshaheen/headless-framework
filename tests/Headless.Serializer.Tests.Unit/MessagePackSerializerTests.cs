@@ -44,6 +44,11 @@ public sealed class MessagePackSerializerTests
         public required DateTime Timestamp { get; init; }
     }
 
+    public sealed class DateTimeOffsetContainer
+    {
+        public required DateTimeOffset Timestamp { get; init; }
+    }
+
     public sealed class GuidContainer
     {
         public required Guid Id { get; init; }
@@ -230,6 +235,63 @@ public sealed class MessagePackSerializerTests
         // then
         result.Should().NotBeNull();
         result.Timestamp.Should().Be(timestamp);
+    }
+
+    [Theory]
+    [InlineData(DateTimeKind.Utc)]
+    [InlineData(DateTimeKind.Local)]
+    [InlineData(DateTimeKind.Unspecified)]
+    public void should_round_trip_a_datetime_to_the_same_instant_expressed_as_utc(DateTimeKind kind)
+    {
+        // given
+        // MessagePack's native Timestamp format stores an instant and hands it back as UTC; the original
+        // DateTimeKind is NOT carried on the wire. Assert that contract explicitly, because
+        // `Should().Be(...)` alone cannot: DateTime.Equals compares Ticks and IGNORES Kind, so a test written
+        // that way passes even when the serializer has silently changed the kind.
+        var timestamp = DateTime.SpecifyKind(new DateTime(2025, 6, 15, 10, 30, 45), kind);
+        var container = new DateTimeContainer { Timestamp = timestamp };
+
+        // when
+        var bytes = _serializer.SerializeToBytes(container);
+        var result = _serializer.Deserialize<DateTimeContainer>(bytes!);
+
+        // then
+        result.Should().NotBeNull();
+
+        // Whatever kind went in, UTC comes back — the wire format carries an instant, not a kind.
+        result.Timestamp.Kind.Should().Be(DateTimeKind.Utc);
+
+        // MessagePack's kind handling is exactly the framework's NormalizeToUtc contract (spelled out here
+        // rather than called, so this test does not depend on Headless.Extensions):
+        //   Utc         -> unchanged
+        //   Local       -> converted
+        //   Unspecified -> ASSUMED to already be UTC and stamped in place (NOT converted)
+        // That last arm is deliberately NOT DateTime.ToUniversalTime(), which interprets Unspecified as LOCAL
+        // and would shift the value by the host's UTC offset.
+        var expected = kind switch
+        {
+            DateTimeKind.Utc => timestamp,
+            DateTimeKind.Local => timestamp.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(timestamp, DateTimeKind.Utc),
+        };
+
+        result.Timestamp.Should().Be(expected);
+    }
+
+    [Fact]
+    public void should_round_trip_a_datetimeoffset_preserving_the_instant()
+    {
+        // given — a non-zero offset, so a serializer that drops the offset instead of converting is caught.
+        var instant = new DateTimeOffset(2025, 6, 15, 13, 30, 45, TimeSpan.FromHours(3));
+        var container = new DateTimeOffsetContainer { Timestamp = instant };
+
+        // when
+        var bytes = _serializer.SerializeToBytes(container);
+        var result = _serializer.Deserialize<DateTimeOffsetContainer>(bytes!);
+
+        // then — the same moment in time must survive, whatever offset it is expressed in.
+        result.Should().NotBeNull();
+        result.Timestamp.ToUniversalTime().Should().Be(instant.ToUniversalTime());
     }
 
     [Fact]
