@@ -240,6 +240,9 @@ internal static class CompositeDistributedLockAcquireCoordinator
         CancellationToken deadlineToken
     )
     {
+        // `using var` disposes at method exit -- after the catch below has cancelled and drained pendingAcquire, and
+        // after the success path has awaited it. The acquire is therefore never in flight when the source backing its
+        // token is disposed.
         using var attemptSource = CancellationTokenSource.CreateLinkedTokenSource(operationToken);
         var pendingAcquire = provider.TryAcquireAsync(resource, options, attemptSource.Token);
 
@@ -262,12 +265,21 @@ internal static class CompositeDistributedLockAcquireCoordinator
             ? formationLossToken.Register(static state => ((TaskCompletionSource)state!).TrySetResult(), waitSignal)
             : default;
 
-        // NOTE (review finding #6): Task.WhenAny attaches a continuation to every task it is given and never removes
-        // it from the losers, so re-racing pendingAcquire and waitSignal.Task on each cadence tick appends
-        // continuations to them for the life of this acquisition. Hoisting the pendingAcquire/waitSignal race out of
-        // the loop is the fix, but the hoisted task then outlives `attemptSource`'s `using` scope as far as CA2025
-        // can prove, and this package does not suppress analyzers without sign-off. Left as-is pending that call.
-        // The TCS sentinel above already removes two of the four racing tasks (and both timers).
+        // Hoisted once. Task.WhenAny attaches a continuation to every task it is given and never removes it from the
+        // losers, so re-racing pendingAcquire and waitSignal.Task on every cadence tick would append continuations to
+        // both for the life of the acquisition -- a short TTL against a long contended wait is hundreds of ticks.
+        // Composing the race once and re-racing only the per-tick cadence against it keeps that growth off them.
+        //
+        // CA2025 flags this because the race is stored rather than awaited inline, so it cannot see that the task
+        // completes before attemptSource is disposed. It does: `using var attemptSource` disposes at method exit,
+        // and by then every exit path has settled pendingAcquire -- the success path awaits it, the failure path
+        // cancels and drains it via _CancelAndObservePendingAsync (which also captures a handle that wins the
+        // cancellation race, so a late acquire is never orphaned). pendingWinner completes with it. Suppressed on
+        // that guarantee, not to silence the rule.
+#pragma warning disable CA2025 // Disposed at method exit, after pendingAcquire is awaited or drained on every path.
+        var pendingWinner = Task.WhenAny(pendingAcquire, waitSignal.Task);
+#pragma warning restore CA2025
+
         try
         {
             while (true)
@@ -290,8 +302,7 @@ internal static class CompositeDistributedLockAcquireCoordinator
                         cadenceTask = Task.Delay(Timeout.InfiniteTimeSpan, CancellationToken.None);
                     }
 
-                    var completed = await Task.WhenAny(pendingAcquire, waitSignal.Task, cadenceTask)
-                        .ConfigureAwait(false);
+                    var completed = await Task.WhenAny(pendingWinner, cadenceTask).ConfigureAwait(false);
 
                     if (cadenceSource is not null && completed != cadenceTask)
                     {
@@ -325,7 +336,7 @@ internal static class CompositeDistributedLockAcquireCoordinator
                             options.TimeUntilExpires ?? provider.DefaultTimeUntilExpires,
                             renewalSource.Token
                         );
-                        var renewalCompleted = await Task.WhenAny(renewalTask, waitSignal.Task).ConfigureAwait(false);
+                        var renewalCompleted = await Task.WhenAny(renewalTask, pendingWinner).ConfigureAwait(false);
 
                         if (renewalCompleted == renewalTask)
                         {
