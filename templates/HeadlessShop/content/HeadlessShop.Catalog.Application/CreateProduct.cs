@@ -1,4 +1,3 @@
-using Headless.Messaging;
 using HeadlessShop.Catalog.Domain;
 using HeadlessShop.Catalog.Infrastructure;
 using HeadlessShop.Contracts;
@@ -17,7 +16,7 @@ public sealed class CreateProductValidator : AbstractValidator<CreateProduct>
     }
 }
 
-public sealed class CreateProductHandler(CatalogDbContext dbContext, ICurrentTenant currentTenant, IBus bus)
+public sealed class CreateProductHandler(CatalogDbContext dbContext, ICurrentTenant currentTenant)
     : ICommandHandler<CreateProduct, ProductView>
 {
     public async ValueTask<ProductView> Handle(CreateProduct command, CancellationToken cancellationToken)
@@ -37,13 +36,18 @@ public sealed class CreateProductHandler(CatalogDbContext dbContext, ICurrentTen
         }
 
         var product = Product.Create(Guid.NewGuid(), tenantId, command.Sku, command.Name, command.Price);
+        product.AddIntegrationEvent(
+            new ProductCreated(
+                Guid.NewGuid().ToString("N"),
+                product.Id,
+                product.Sku,
+                product.Name,
+                product.Price,
+                tenantId
+            )
+        );
         dbContext.Products.Add(product);
         await dbContext.SaveChangesAsync(cancellationToken);
-
-        await bus.PublishAsync(
-            new ProductCreated(product.Id, product.Sku, product.Name, product.Price, tenantId),
-            cancellationToken: cancellationToken
-        );
 
         return new(product.Id, product.Sku, product.Name, product.Price);
     }

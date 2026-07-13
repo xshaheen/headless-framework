@@ -15,7 +15,11 @@ public static class SetupCatalogModule
         public IServiceCollection AddCatalogModule(string connectionString)
         {
             services.AddHeadlessDbContext<CatalogDbContext>(
-                options => options.UseSqlite(connectionString),
+                options =>
+                    options.UseSqlite(
+                        connectionString,
+                        sqlite => sqlite.MigrationsHistoryTable("__CatalogMigrationsHistory")
+                    ),
                 headless => headless.RemoveSaveEntryProcessor<HeadlessLocalEventSaveEntryProcessor>()
             );
             services.AddScoped<IValidator<CreateProduct>, CreateProductValidator>();

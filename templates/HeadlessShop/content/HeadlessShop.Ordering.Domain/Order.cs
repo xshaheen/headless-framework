@@ -15,9 +15,9 @@ public sealed class Order : AggregateRoot<Guid>, IMultiTenant
 
     public int Quantity { get; private set; }
 
-    public DateTimeOffset CreatedAt { get; private set; }
+    public DateTimeOffset DateCreated { get; private set; }
 
-    public static Order Place(Guid id, string tenantId, Guid productId, int quantity)
+    public static Order Place(Guid id, string tenantId, Guid productId, int quantity, DateTimeOffset dateCreated)
     {
         if (id == Guid.Empty)
         {
@@ -45,7 +45,7 @@ public sealed class Order : AggregateRoot<Guid>, IMultiTenant
             TenantId = tenantId,
             ProductId = productId,
             Quantity = quantity,
-            CreatedAt = DateTimeOffset.UtcNow,
+            DateCreated = dateCreated,
         };
     }
 }

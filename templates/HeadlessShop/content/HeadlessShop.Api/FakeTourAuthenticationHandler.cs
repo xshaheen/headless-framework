@@ -10,7 +10,6 @@ public sealed class FakeTourAuthenticationHandler(
     IOptionsMonitor<AuthenticationSchemeOptions> options,
     ILoggerFactory logger,
     UrlEncoder encoder,
-    IConfiguration configuration,
     IHostEnvironment environment
 ) : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
 {
@@ -21,7 +20,7 @@ public sealed class FakeTourAuthenticationHandler(
 
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
-        if (!_AllowFakeTourAuthentication(configuration, environment))
+        if (!environment.IsDevelopment() && !environment.IsEnvironment("Test"))
         {
             return Task.FromResult(AuthenticateResult.NoResult());
         }
@@ -51,12 +50,5 @@ public sealed class FakeTourAuthenticationHandler(
         var ticket = new AuthenticationTicket(principal, AuthenticationScheme);
 
         return Task.FromResult(AuthenticateResult.Success(ticket));
-    }
-
-    private static bool _AllowFakeTourAuthentication(IConfiguration configuration, IHostEnvironment environment)
-    {
-        return environment.IsDevelopment()
-            || environment.IsEnvironment("Test")
-            || configuration.GetValue<bool>("HeadlessShop:AllowFakeTourAuth");
     }
 }

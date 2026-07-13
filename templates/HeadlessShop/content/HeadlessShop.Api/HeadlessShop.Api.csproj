@@ -13,6 +13,7 @@
     <PackageReference Include="Headless.OpenApi.Nswag" />
     <PackageReference Include="Headless.OpenApi.Scalar" />
     <PackageReference Include="Headless.Orm.EntityFramework" />
+    <PackageReference Include="Headless.Orm.EntityFramework.Messaging" />
     <PackageReference Include="Mediator.SourceGenerator" PrivateAssets="all" OutputItemType="Analyzer" />
   </ItemGroup>
   <ItemGroup>

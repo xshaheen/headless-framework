@@ -31,9 +31,12 @@ require_command dotnet
 PACKAGES_DIR="$TMPDIR/packages"
 DOTNET_HOME="$TMPDIR/dotnet-home"
 OUTPUT_DIR="$TMPDIR/generated"
+NUGET_PACKAGES="$TMPDIR/nuget-packages"
 LOCAL_PACKAGE_SOURCE="${HEADLESS_SHOP_LOCAL_PACKAGE_SOURCE:-}"
+HEADLESS_PACKAGE_VERSION=""
 
-mkdir -p "$PACKAGES_DIR" "$DOTNET_HOME" "$OUTPUT_DIR"
+mkdir -p "$PACKAGES_DIR" "$DOTNET_HOME" "$OUTPUT_DIR" "$NUGET_PACKAGES"
+export NUGET_PACKAGES
 
 PACKAGE_PATH="${HEADLESS_SHOP_TEMPLATE_PACKAGE_PATH:-}"
 
@@ -58,17 +61,35 @@ fi
 step "Install template into isolated CLI home"
 DOTNET_CLI_HOME="$DOTNET_HOME" dotnet new install "$PACKAGE_PATH" --force
 
-step "Generate TrailStore from packed template"
-DOTNET_CLI_HOME="$DOTNET_HOME" dotnet new headless-shop -n TrailStore -o "$OUTPUT_DIR"
-
 if [ -n "$LOCAL_PACKAGE_SOURCE" ]; then
     if [ ! -d "$LOCAL_PACKAGE_SOURCE" ]; then
         echo "ERROR: Local Headless package source was not found: $LOCAL_PACKAGE_SOURCE" >&2
         exit 3
     fi
 
-    step "Add local Headless package source"
+    HEADLESS_CORE_PACKAGE="$(find "$LOCAL_PACKAGE_SOURCE" -name 'Headless.Core.*.nupkg' ! -name '*.snupkg' -type f | head -n 1)"
+
+    if [ -z "$HEADLESS_CORE_PACKAGE" ]; then
+        echo "ERROR: Headless.Core package was not found in local source: $LOCAL_PACKAGE_SOURCE" >&2
+        exit 3
+    fi
+
+    HEADLESS_PACKAGE_VERSION="${HEADLESS_CORE_PACKAGE##*/Headless.Core.}"
+    HEADLESS_PACKAGE_VERSION="${HEADLESS_PACKAGE_VERSION%.nupkg}"
+fi
+
+step "Generate TrailStore from packed template"
+if [ -n "$HEADLESS_PACKAGE_VERSION" ]; then
+    DOTNET_CLI_HOME="$DOTNET_HOME" dotnet new headless-shop -n TrailStore -o "$OUTPUT_DIR" \
+        --HeadlessPackageVersion "$HEADLESS_PACKAGE_VERSION"
+else
+    DOTNET_CLI_HOME="$DOTNET_HOME" dotnet new headless-shop -n TrailStore -o "$OUTPUT_DIR"
+fi
+
+if [ -n "$LOCAL_PACKAGE_SOURCE" ]; then
+    step "Use only locally-built Headless packages"
     dotnet nuget add source "$LOCAL_PACKAGE_SOURCE" --name local-headless --configfile "$OUTPUT_DIR/nuget.config"
+    dotnet nuget disable source github.com --configfile "$OUTPUT_DIR/nuget.config"
     perl -0pi -e 's#(<packageSourceMapping>\n)#$1    <packageSource key="local-headless">\n      <package pattern="Headless.*" />\n    </packageSource>\n#' "$OUTPUT_DIR/nuget.config"
 fi
 

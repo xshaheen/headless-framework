@@ -135,6 +135,56 @@ public sealed class ShopSmokeTests
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
+    [Fact]
+    public async Task placing_order_for_missing_product_returns_not_found()
+    {
+        await using var factory = new HeadlessShopFactory();
+        using var client = _CreateAuthenticatedClient(factory);
+
+        var response = await client.PostAsJsonAsync(
+            "/orders",
+            new PlaceOrderRequest(Guid.NewGuid(), 1),
+            TestContext.Current.CancellationToken
+        );
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task database_initialization_is_idempotent_across_hosts()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.db");
+
+        try
+        {
+            await using (var firstFactory = new HeadlessShopFactory(databasePath: databasePath))
+            using (var firstClient = firstFactory.CreateClient())
+            {
+                var firstResponse = await firstClient.GetAsync(
+                    $"/catalog/products/{Guid.NewGuid()}",
+                    TestContext.Current.CancellationToken
+                );
+                firstResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+            }
+
+            await using (var secondFactory = new HeadlessShopFactory(databasePath: databasePath))
+            using (var secondClient = secondFactory.CreateClient())
+            {
+                var secondResponse = await secondClient.GetAsync(
+                    $"/catalog/products/{Guid.NewGuid()}",
+                    TestContext.Current.CancellationToken
+                );
+                secondResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+            }
+        }
+        finally
+        {
+            File.Delete(databasePath);
+            File.Delete($"{databasePath}-wal");
+            File.Delete($"{databasePath}-shm");
+        }
+    }
+
     private static HttpClient _CreateAuthenticatedClient(WebApplicationFactory<Program> factory)
     {
         var client = factory.CreateClient();
@@ -145,9 +195,12 @@ public sealed class ShopSmokeTests
         return client;
     }
 
-    private sealed class HeadlessShopFactory(string environment = "Development") : WebApplicationFactory<Program>
+    private sealed class HeadlessShopFactory(string environment = "Development", string? databasePath = null)
+        : WebApplicationFactory<Program>
     {
-        private readonly string _databasePath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.db");
+        private readonly string _databasePath =
+            databasePath ?? Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.db");
+        private readonly bool _ownsDatabase = databasePath is null;
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
@@ -156,15 +209,19 @@ public sealed class ShopSmokeTests
             builder.UseSetting("HeadlessShop:Encryption:DefaultPassPhrase", "test-passphrase");
             builder.UseSetting("HeadlessShop:Encryption:DefaultSalt", "test-encryption-salt");
             builder.UseSetting("HeadlessShop:Hashing:DefaultSalt", "test-hash-salt");
+            builder.UseSetting("HeadlessShop:AllowFakeTourAuth", "true");
             builder.ConfigureTestServices(services => services.AddMessagingTestHarness());
         }
 
         protected override void Dispose(bool disposing)
         {
             base.Dispose(disposing);
-            _DeleteDatabaseFile(_databasePath);
-            _DeleteDatabaseFile($"{_databasePath}-wal");
-            _DeleteDatabaseFile($"{_databasePath}-shm");
+            if (_ownsDatabase)
+            {
+                _DeleteDatabaseFile(_databasePath);
+                _DeleteDatabaseFile($"{_databasePath}-wal");
+                _DeleteDatabaseFile($"{_databasePath}-shm");
+            }
         }
 
         private static void _DeleteDatabaseFile(string path)

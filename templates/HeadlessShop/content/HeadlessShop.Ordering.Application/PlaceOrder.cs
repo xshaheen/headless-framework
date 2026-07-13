@@ -1,3 +1,4 @@
+using Headless.Exceptions;
 using HeadlessShop.Ordering.Domain;
 using HeadlessShop.Ordering.Infrastructure;
 
@@ -14,8 +15,11 @@ public sealed class PlaceOrderValidator : AbstractValidator<PlaceOrder>
     }
 }
 
-public sealed class PlaceOrderHandler(OrderingDbContext dbContext, ICurrentTenant currentTenant)
-    : ICommandHandler<PlaceOrder, OrderView>
+public sealed class PlaceOrderHandler(
+    OrderingDbContext dbContext,
+    ICurrentTenant currentTenant,
+    TimeProvider timeProvider
+) : ICommandHandler<PlaceOrder, OrderView>
 {
     public async ValueTask<OrderView> Handle(PlaceOrder command, CancellationToken cancellationToken)
     {
@@ -33,10 +37,16 @@ public sealed class PlaceOrderHandler(OrderingDbContext dbContext, ICurrentTenan
 
         if (!productExists)
         {
-            throw new InvalidOperationException("The product must exist in Ordering before an order can be placed.");
+            throw new EntityNotFoundException(nameof(ProductSnapshot), command.ProductId);
         }
 
-        var order = Order.Place(Guid.NewGuid(), tenantId, command.ProductId, command.Quantity);
+        var order = Order.Place(
+            Guid.NewGuid(),
+            tenantId,
+            command.ProductId,
+            command.Quantity,
+            timeProvider.GetUtcNow()
+        );
         dbContext.Orders.Add(order);
         await dbContext.SaveChangesAsync(cancellationToken);
 

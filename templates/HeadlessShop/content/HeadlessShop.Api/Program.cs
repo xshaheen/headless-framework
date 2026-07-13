@@ -75,6 +75,7 @@ builder
 builder.Services.AddMediator(options => options.ServiceLifetime = ServiceLifetime.Scoped);
 builder.Services.AddMediatorValidationRequestBehavior();
 builder.Services.AddMediatorLoggingBehaviors();
+builder.Services.AddHeadlessDbContextServices().AddIntegrationEventOutbox();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddNswagOpenApi(setupGeneratorActions: settings =>
 {

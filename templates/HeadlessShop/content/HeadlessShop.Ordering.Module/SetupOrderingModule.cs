@@ -17,10 +17,15 @@ public static class SetupOrderingModule
         public IServiceCollection AddOrderingModule(string connectionString)
         {
             services.AddHeadlessDbContext<OrderingDbContext>(
-                options => options.UseSqlite(connectionString),
+                options =>
+                    options.UseSqlite(
+                        connectionString,
+                        sqlite => sqlite.MigrationsHistoryTable("__OrderingMigrationsHistory")
+                    ),
                 headless => headless.RemoveSaveEntryProcessor<HeadlessLocalEventSaveEntryProcessor>()
             );
             services.AddScoped<IValidator<PlaceOrder>, PlaceOrderValidator>();
+            services.AddSingleton(TimeProvider.System);
 
             return services;
         }

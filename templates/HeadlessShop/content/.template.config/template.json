@@ -26,8 +26,8 @@
     "HeadlessPackageVersion": {
       "type": "parameter",
       "datatype": "text",
-      "defaultValue": "0.4.14-preview.0.1",
-      "replaces": "0.4.14-preview.0.1",
+      "defaultValue": "0.10.1-preview.0.13",
+      "replaces": "0.10.1-preview.0.13",
       "description": "Headless package version to pin in generated central package management."
     }
   }

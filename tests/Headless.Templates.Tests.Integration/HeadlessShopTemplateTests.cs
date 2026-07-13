@@ -48,13 +48,20 @@ public sealed class HeadlessShopTemplateTests
         }
 
         await _RunDotNet("new install " + _Quote(package.FullName) + " --force", dotnetHome);
-        await _RunDotNet("new headless-shop -n TrailStore -o " + _Quote(generated.FullName), dotnetHome);
+        await _RunDotNet(
+            "new headless-shop -n TrailStore -o " + _Quote(generated.FullName) + " --HeadlessPackageVersion 9.9.9-test",
+            dotnetHome
+        );
 
         generated.File("TrailStore.slnx").Exists.Should().BeTrue();
         generated.File("AGENTS.md").Exists.Should().BeTrue();
         generated.File("docs/recipes/add-command.md").Exists.Should().BeTrue();
         generated.File("TrailStore.Api/TrailStore.Api.csproj").Exists.Should().BeTrue();
         generated.File("TrailStore.Tests.Architecture/TrailStore.Tests.Architecture.csproj").Exists.Should().BeTrue();
+        File.ReadAllText(generated.File("Directory.Packages.props").FullName)
+            .Should()
+            .Contain("Version=\"9.9.9-test\"")
+            .And.NotContain("Version=\"0.10.1-preview.0.13\"");
 
         var generatedFiles = generated
             .EnumerateFiles("*", SearchOption.AllDirectories)
@@ -91,6 +98,8 @@ public sealed class HeadlessShopTemplateTests
         script.Should().Contain("dotnet restore");
         script.Should().Contain("dotnet build");
         script.Should().Contain("HEADLESS_SHOP_LOCAL_PACKAGE_SOURCE");
+        script.Should().Contain("--HeadlessPackageVersion");
+        script.Should().Contain("dotnet nuget disable source github.com");
         script.Should().Contain("TrailStore.Tests.Architecture");
         script.Should().Contain("TrailStore.Tests.Integration");
         script.Should().Contain("docs/recipes/add-command.md");
@@ -112,9 +121,11 @@ public sealed class HeadlessShopTemplateTests
         }
 
         using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Could not start dotnet.");
-        var stdout = await process.StandardOutput.ReadToEndAsync();
-        var stderr = await process.StandardError.ReadToEndAsync();
-        await process.WaitForExitAsync();
+        var stdoutTask = process.StandardOutput.ReadToEndAsync(TestContext.Current.CancellationToken);
+        var stderrTask = process.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken);
+        await process.WaitForExitAsync(TestContext.Current.CancellationToken);
+        var stdout = await stdoutTask;
+        var stderr = await stderrTask;
 
         process.ExitCode.Should().Be(0, $"dotnet {arguments} failed.\nSTDOUT:\n{stdout}\nSTDERR:\n{stderr}");
     }

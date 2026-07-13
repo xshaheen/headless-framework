@@ -7,8 +7,9 @@ This generated app is a Headless Framework capability tour. Keep edits aligned w
 - Do not reference one module's internals from another module.
 - Keep Minimal API endpoints thin. Endpoints translate HTTP input to Mediator commands or queries.
 - Use Headless messaging abstractions for cross-module events. Do not add raw broker clients to modules.
+- The in-memory messaging transport and storage are tour-only. Choose a durable provider before production use.
 - Use `ICurrentTenant` after authentication establishes the tenant context. Do not trust caller-supplied tenant IDs in request bodies.
-- `FakeTourAuthenticationHandler` only honors headers in Development/Test unless `HeadlessShop:AllowFakeTourAuth` is explicitly enabled. Replace it before production use.
+- `FakeTourAuthenticationHandler` only honors headers in Development/Test. Replace it before production use.
 - Configure `HeadlessShop:Encryption:*` and `HeadlessShop:Hashing:DefaultSalt` outside Development.
 - Keep OpenAPI/Scalar anonymous only in Development.
 
