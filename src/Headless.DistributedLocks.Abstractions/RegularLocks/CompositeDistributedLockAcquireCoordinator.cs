@@ -24,13 +24,12 @@ internal static class CompositeDistributedLockAcquireCoordinator
 
         var totalBudget = options.AcquireTimeout ?? provider.DefaultAcquireTimeout;
 
-        if (totalBudget < TimeSpan.Zero && totalBudget != Timeout.InfiniteTimeSpan)
+        // Mirrors DistributedLockCoreHelpers.ValidateAcquireTimeout, which this package cannot call:
+        // that helper lives in Headless.DistributedLocks.Core, which references Abstractions, not the reverse.
+        if (totalBudget != Timeout.InfiniteTimeSpan)
         {
-            throw new ArgumentOutOfRangeException(
-                nameof(options),
-                options.AcquireTimeout,
-                "AcquireTimeout must be non-negative or Timeout.InfiniteTimeSpan."
-            );
+            Argument.IsPositiveOrZero(totalBudget, paramName: nameof(options));
+            Argument.IsLessThan(totalBudget.TotalMilliseconds, int.MaxValue, paramName: nameof(options));
         }
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -218,10 +217,7 @@ internal static class CompositeDistributedLockAcquireCoordinator
             materialized.Add(Argument.IsNotNullOrWhiteSpace(resource));
         }
 
-        if (materialized.Count == 0)
-        {
-            throw new ArgumentException("At least one resource is required.", nameof(resources));
-        }
+        Argument.IsNotEmpty(materialized, paramName: nameof(resources));
 
         return
         [

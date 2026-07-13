@@ -45,6 +45,44 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
     }
 
     [Fact]
+    public async Task should_validate_acquire_timeout_before_calling_provider()
+    {
+        var provider = _CreateProvider(new FakeTimeProvider());
+        TimeSpan[] invalidTimeouts = [TimeSpan.FromSeconds(-1), TimeSpan.FromMilliseconds(int.MaxValue)];
+
+        foreach (var invalidTimeout in invalidTimeouts)
+        {
+            var act = async () =>
+                await provider.TryAcquireAllAsync(
+                    ["A"],
+                    new DistributedLockAcquireOptions { AcquireTimeout = invalidTimeout },
+                    AbortToken
+                );
+
+            await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+        }
+
+        await provider
+            .DidNotReceive()
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_allow_infinite_acquire_timeout()
+    {
+        var provider = _CreateProvider(new FakeTimeProvider());
+
+        var act = async () =>
+            await provider.TryAcquireAllAsync(
+                ["A"],
+                new DistributedLockAcquireOptions { AcquireTimeout = Timeout.InfiniteTimeSpan },
+                AbortToken
+            );
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
     public async Task should_enumerate_once_and_acquire_distinct_resources_in_ordinal_order()
     {
         var timeProvider = new FakeTimeProvider();
