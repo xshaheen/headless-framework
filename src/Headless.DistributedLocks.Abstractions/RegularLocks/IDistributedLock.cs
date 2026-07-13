@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Microsoft.Extensions.Logging;
+
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
@@ -18,7 +20,23 @@ public interface IDistributedLock
     /// Provider-agnostic coordinators must use this instance so their timing remains aligned with the
     /// provider and deterministic under test.
     /// </summary>
+    /// <remarks>
+    /// This schedules work; it does not arbitrate expiry. A lease is valid only while the backend says so — the
+    /// clock decides when to ask, never whether ownership still holds.
+    /// </remarks>
     TimeProvider TimeProvider { get; }
+
+    /// <summary>
+    /// Gets the logger used by this provider. Provider-agnostic coordinators log through this instance so their
+    /// diagnostics land in the same sink as the provider's own.
+    /// </summary>
+    /// <remarks>
+    /// Required because disposal must never throw: a handle that fails to release during <c>DisposeAsync</c> has to
+    /// report that failure somewhere, and an exception would replace whatever the caller's <c>using</c> body was
+    /// already throwing. Return <see cref="Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance"/> when a
+    /// provider has no logger of its own.
+    /// </remarks>
+    ILogger Logger { get; }
 
     /// <summary>
     /// Default lease duration applied when <see cref="DistributedLockAcquireOptions.TimeUntilExpires"/> is not

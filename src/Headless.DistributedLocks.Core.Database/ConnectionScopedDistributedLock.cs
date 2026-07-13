@@ -57,6 +57,9 @@ public sealed class ConnectionScopedDistributedLock(
     /// <inheritdoc />
     public TimeProvider TimeProvider => timeProvider;
 
+    /// <inheritdoc />
+    public ILogger Logger => logger;
+
     /// <summary>
     /// Connection-scoped locks have no TTL; the lock is held for the lifetime of the underlying connection.
     /// Returns <see cref="Timeout.InfiniteTimeSpan"/>.

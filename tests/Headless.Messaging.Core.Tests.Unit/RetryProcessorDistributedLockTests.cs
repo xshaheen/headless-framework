@@ -534,6 +534,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
     private sealed class TrackingLockProvider(string resourceFilter, TimeProvider timeProvider) : IDistributedLock
     {
         public TimeProvider TimeProvider => timeProvider;
+        public ILogger Logger => NullLogger.Instance;
         public TimeSpan DefaultTimeUntilExpires => TimeSpan.FromMinutes(20);
         public TimeSpan DefaultAcquireTimeout => TimeSpan.FromSeconds(30);
 

@@ -146,7 +146,8 @@ internal static class CompositeDistributedLockAcquireCoordinator
                 compositeResource,
                 timeProvider.GetUtcNow(),
                 timeProvider.GetElapsedTime(startedAt),
-                options.ReleaseOnDispose
+                options.ReleaseOnDispose,
+                provider.Logger
             );
 #pragma warning restore CA2000
 

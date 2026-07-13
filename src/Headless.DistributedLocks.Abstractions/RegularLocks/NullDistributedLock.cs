@@ -1,5 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
@@ -10,10 +13,14 @@ namespace Headless.DistributedLocks;
 /// storage-based locks enabled should detect this sentinel by type and warn at startup.
 /// </summary>
 [PublicAPI]
-public sealed class NullDistributedLock(TimeProvider timeProvider) : IDistributedLock
+public sealed class NullDistributedLock(TimeProvider timeProvider, ILogger<NullDistributedLock>? logger = null)
+    : IDistributedLock
 {
     /// <inheritdoc />
     public TimeProvider TimeProvider => timeProvider;
+
+    /// <inheritdoc />
+    public ILogger Logger { get; } = logger ?? NullLogger<NullDistributedLock>.Instance;
 
     /// <inheritdoc />
     public TimeSpan DefaultTimeUntilExpires => TimeSpan.FromMinutes(20);

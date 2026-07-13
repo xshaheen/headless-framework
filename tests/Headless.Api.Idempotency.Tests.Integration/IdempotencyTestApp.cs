@@ -15,6 +15,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests;
 
@@ -359,6 +360,8 @@ internal static class IdempotencyTestApp
         public Func<string, TimeSpan?, TimeSpan?, CancellationToken, Task>? BeforeAcquireAsync { get; init; }
 
         public TimeProvider TimeProvider => timeProvider;
+
+        public ILogger Logger => NullLogger.Instance;
 
         public TimeSpan DefaultTimeUntilExpires => TimeSpan.FromMinutes(20);
 

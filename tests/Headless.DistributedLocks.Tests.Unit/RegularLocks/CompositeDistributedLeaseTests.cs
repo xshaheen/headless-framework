@@ -2,6 +2,7 @@
 
 using Headless.DistributedLocks;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests;
 
@@ -183,8 +184,12 @@ public sealed class CompositeDistributedLeaseTests : TestBase
     }
 
     [Fact]
-    public async Task dispose_should_aggregate_release_and_dispose_failures_after_attempting_every_child()
+    public async Task dispose_should_not_throw_but_still_attempt_every_child_when_cleanup_fails()
     {
+        // Disposal must never throw, matching every other IDistributedLease. `await using` lowers to try/finally,
+        // and an exception from a finally block REPLACES the one already in flight — so throwing here would destroy
+        // the caller's real exception whenever a release happened to fail. The failure is logged instead, and
+        // explicit ReleaseAsync() (covered above) still throws LockCleanupFailedException for callers who need it.
         var releaseError = new InvalidOperationException("release-b");
         var disposeError = new ApplicationException("dispose-a");
         var first = new TestLease("a", "lease-a") { Dispose = () => ValueTask.FromException(disposeError) };
@@ -193,15 +198,35 @@ public sealed class CompositeDistributedLeaseTests : TestBase
 
         var act = async () => await sut.DisposeAsync();
 
-        // LockCleanupFailedException derives from DistributedLockException, so a caller's documented
-        // catch (DistributedLockException) catch-all sees cleanup failures. A raw AggregateException did not.
-        var assertion = await act.Should().ThrowAsync<LockCleanupFailedException>();
-        assertion.Which.Failures.Should().ContainInOrder(releaseError, disposeError);
-        assertion.Which.Should().BeAssignableTo<DistributedLockException>();
+        await act.Should().NotThrowAsync();
         first.ReleaseCalls.Should().Be(1);
         second.ReleaseCalls.Should().Be(1);
         first.DisposeCalls.Should().Be(1);
         second.DisposeCalls.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task await_using_should_preserve_the_callers_exception_when_cleanup_fails()
+    {
+        // The regression this guards: a caller whose body throws a domain exception, whose lock release then hits a
+        // storage blip, must still see their own exception — not the storage one. `await using` puts DisposeAsync in
+        // a finally block, and a throw from there silently replaces the in-flight exception, so any compensation
+        // keyed on the domain exception would never run.
+        var callerError = new InvalidOperationException("insufficient funds");
+        var releaseError = new ApplicationException("redis timed out");
+        var first = new TestLease("a", "lease-a");
+        var second = new TestLease("b", "lease-b") { Release = () => Task.FromException(releaseError) };
+
+        var act = async () =>
+        {
+            await using var sut = _Create([first, second], releaseOnDispose: true);
+
+            throw callerError;
+        };
+
+        var assertion = await act.Should().ThrowAsync<InvalidOperationException>();
+        assertion.Which.Should().BeSameAs(callerError);
+        second.ReleaseCalls.Should().Be(1);
     }
 
     [Fact]
@@ -389,7 +414,8 @@ public sealed class CompositeDistributedLeaseTests : TestBase
             string.Join("+", children.Select(static child => child.Resource)),
             _AcquiredAt,
             _Waited,
-            releaseOnDispose
+            releaseOnDispose,
+            NullLogger.Instance
         );
     }
 

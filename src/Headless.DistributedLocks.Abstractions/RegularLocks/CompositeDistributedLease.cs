@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Microsoft.Extensions.Logging;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
@@ -14,6 +15,7 @@ internal sealed class CompositeDistributedLease : IDistributedLease, ICompositeD
 {
     private readonly IDistributedLease[] _children;
     private readonly bool _releaseOnDispose;
+    private readonly ILogger _logger;
     private readonly CancellationTokenSource? _lostSource;
     // The contract deliberately permits renew/release after DisposeAsync when release-on-dispose is false,
     // so disposing this gate as part of DisposeAsync would introduce a lifecycle race.
@@ -31,14 +33,17 @@ internal sealed class CompositeDistributedLease : IDistributedLease, ICompositeD
         string resource,
         DateTimeOffset dateAcquired,
         TimeSpan timeWaitedForLock,
-        bool releaseOnDispose
+        bool releaseOnDispose,
+        ILogger logger
     )
     {
         Argument.IsNotNull(children);
         Argument.IsGreaterThanOrEqualTo(children.Count, 2);
+        Argument.IsNotNull(logger);
 
         _children = [.. children];
         _releaseOnDispose = releaseOnDispose;
+        _logger = logger;
 
         var canObserveLoss = _children[0].CanObserveLoss;
 
@@ -144,6 +149,12 @@ internal sealed class CompositeDistributedLease : IDistributedLease, ICompositeD
         }
     }
 
+    /// <summary>
+    /// Releases (when release-on-dispose is enabled) and disposes every child in reverse order. Idempotent, and
+    /// never throws: a cleanup failure is logged through the provider's logger instead, because an exception thrown
+    /// from disposal inside <c>await using</c> would replace whatever the caller's body was already throwing. Call
+    /// <see cref="ReleaseAsync"/> explicitly when the cleanup outcome must be observed.
+    /// </summary>
     public ValueTask DisposeAsync()
     {
         lock (_disposeLock)
@@ -197,13 +208,15 @@ internal sealed class CompositeDistributedLease : IDistributedLease, ICompositeD
                 (errors ??= []).AddRange(disposeErrors);
             }
 
-            // NOTE: unlike every other IDistributedLease, composite disposal can throw — a child handle's own
-            // DisposeAsync logs and swallows its release failure, but this composite has no logger to swallow into,
-            // and dropping a failed lock release silently would be worse than surfacing it. The cost is that inside
-            // `await using`, a throw here replaces an exception already in flight from the caller's body. Callers who
-            // must not lose their own exception should release explicitly and dispose inside their own try/finally.
-            // See review finding #3: fixing this properly needs a logger on the acquisition path.
-            CompositeDistributedLeaseOperations.ThrowCleanupErrors(errors);
+            // Disposal never throws, matching every other IDistributedLease (DistributedLockHandleBase.DisposeAsync
+            // logs and swallows for the same reason). `await using` lowers to try/finally, and an exception from a
+            // finally block REPLACES the one already in flight — so throwing here would silently destroy the caller's
+            // real exception whenever a release happened to fail. Callers who need the cleanup outcome call
+            // ReleaseAsync() explicitly, which still throws LockCleanupFailedException.
+            if (errors is not null)
+            {
+                _logger.LogCompositeLeaseCleanupFailed(new LockCleanupFailedException(errors), Resource, LeaseId);
+            }
         }
         finally
         {
@@ -355,4 +368,25 @@ internal static class CompositeDistributedLeaseOperations
     }
 
     internal readonly record struct ChildRenewalOutcome(IDistributedLease Child, bool Renewed, Exception? Exception);
+}
+
+internal static partial class CompositeDistributedLeaseLogs
+{
+    /// <summary>
+    /// Logs cleanup failures observed while disposing a composite lease (Error). Disposal cannot throw — see
+    /// <see cref="CompositeDistributedLease.DisposeAsync"/> — so this is the only signal that one or more of the
+    /// set's resources may still be held until their TTL expires.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "CompositeLeaseCleanupFailed",
+        Level = LogLevel.Error,
+        Message = "Unable to release or dispose every child of composite lock: R={Resource} Id={LeaseId}"
+    )]
+    public static partial void LogCompositeLeaseCleanupFailed(
+        this ILogger logger,
+        Exception exception,
+        string resource,
+        string leaseId
+    );
 }

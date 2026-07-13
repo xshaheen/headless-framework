@@ -109,6 +109,9 @@ public sealed class DistributedLock(
     /// <inheritdoc />
     public TimeProvider TimeProvider => timeProvider;
 
+    /// <inheritdoc />
+    public ILogger Logger => logger;
+
     /// <summary>
     /// The lease TTL applied when <see cref="DistributedLockAcquireOptions.TimeUntilExpires"/> is
     /// <see langword="null"/> or <see cref="Timeout.InfiniteTimeSpan"/>. Default: 20 minutes.
