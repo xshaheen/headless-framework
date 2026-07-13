@@ -17,6 +17,14 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
     private readonly IGuidGenerator _guidGenerator = Substitute.For<IGuidGenerator>();
 
     [Fact]
+    public void should_expose_injected_time_provider()
+    {
+        var provider = _CreateProvider();
+
+        provider.TimeProvider.Should().BeSameAs(_timeProvider);
+    }
+
+    [Fact]
     public async Task should_release_acquired_storage_handle_when_fencing_token_source_fails()
     {
         var provider = _CreateProvider(fencingTokenSource: new ThrowingFencingTokenSource());

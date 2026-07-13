@@ -114,7 +114,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         var lockAcquiredTcs = new TaskCompletionSource<TrackingLock>(
             TaskCreationOptions.RunContinuationsAsynchronously
         );
-        var trackingProvider = new TrackingLockProvider("receive-retry");
+        var trackingProvider = new TrackingLockProvider("receive-retry", _realLockProvider.TimeProvider);
 
         // Block the received storage query so the background consume task never completes.
         // The storage call also fires lockAcquiredTcs, proving the received task owns an acquired
@@ -531,8 +531,9 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         throw lastFailure ?? new TimeoutException("Timed out waiting for assertion to pass.");
     }
 
-    private sealed class TrackingLockProvider(string resourceFilter) : IDistributedLock
+    private sealed class TrackingLockProvider(string resourceFilter, TimeProvider timeProvider) : IDistributedLock
     {
+        public TimeProvider TimeProvider => timeProvider;
         public TimeSpan DefaultTimeUntilExpires => TimeSpan.FromMinutes(20);
         public TimeSpan DefaultAcquireTimeout => TimeSpan.FromSeconds(30);
 

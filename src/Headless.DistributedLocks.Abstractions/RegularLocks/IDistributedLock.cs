@@ -8,6 +8,13 @@ namespace Headless.DistributedLocks;
 public interface IDistributedLock
 {
     /// <summary>
+    /// Gets the clock used by this provider for deadlines, elapsed-time measurement, and scheduled waits.
+    /// Provider-agnostic coordinators must use this instance so their timing remains aligned with the
+    /// provider and deterministic under test.
+    /// </summary>
+    TimeProvider TimeProvider { get; }
+
+    /// <summary>
     /// Default lease duration applied when <see cref="DistributedLockAcquireOptions.TimeUntilExpires"/> is not
     /// specified on an acquire call. Implementations refresh the lease in storage at this cadence when
     /// <see cref="LockMonitoringMode.AutoExtend"/> is enabled.

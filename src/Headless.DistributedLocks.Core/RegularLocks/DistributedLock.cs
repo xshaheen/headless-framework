@@ -106,6 +106,9 @@ public sealed class DistributedLock(
     private readonly int? _maxConcurrentWaitingResources = lockOptions.MaxConcurrentWaitingResources;
     private readonly int? _maxWaitersPerResource = lockOptions.MaxWaitersPerResource;
 
+    /// <inheritdoc />
+    public TimeProvider TimeProvider => timeProvider;
+
     /// <summary>
     /// The lease TTL applied when <see cref="DistributedLockAcquireOptions.TimeUntilExpires"/> is
     /// <see langword="null"/> or <see cref="Timeout.InfiniteTimeSpan"/>. Default: 20 minutes.

@@ -13,6 +13,9 @@ namespace Headless.DistributedLocks;
 public sealed class NullDistributedLock(TimeProvider timeProvider) : IDistributedLock
 {
     /// <inheritdoc />
+    public TimeProvider TimeProvider => timeProvider;
+
+    /// <inheritdoc />
     public TimeSpan DefaultTimeUntilExpires => TimeSpan.FromMinutes(20);
 
     /// <inheritdoc />

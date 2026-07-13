@@ -358,6 +358,8 @@ internal static class IdempotencyTestApp
         /// </summary>
         public Func<string, TimeSpan?, TimeSpan?, CancellationToken, Task>? BeforeAcquireAsync { get; init; }
 
+        public TimeProvider TimeProvider => timeProvider;
+
         public TimeSpan DefaultTimeUntilExpires => TimeSpan.FromMinutes(20);
 
         public TimeSpan DefaultAcquireTimeout => TimeSpan.FromSeconds(30);
