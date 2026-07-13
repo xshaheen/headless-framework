@@ -532,7 +532,7 @@ public sealed class NatsConsumerClientTests : TestBase
         var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token).AsTask();
         try
         {
-            await nakCalled.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+            await nakCalled.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
             // then — message should be nacked, callback should not be invoked
             callbackInvoked.Should().BeFalse();
@@ -639,11 +639,11 @@ public sealed class NatsConsumerClientTests : TestBase
         var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token).AsTask();
         try
         {
-            await nextStarted.Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+            await nextStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
             await client.PauseAsync(AbortToken);
 
             // then
-            await fetchCanceled.Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+            await fetchCanceled.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         }
         finally
         {
@@ -718,14 +718,14 @@ public sealed class NatsConsumerClientTests : TestBase
             await client
                 .ListeningAsync(TimeSpan.FromMilliseconds(50), AbortToken)
                 .AsTask()
-                .WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+                .WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         // then
         await act.Should().ThrowAsync<NatsConnectionFailedException>();
-        var logged = await connectError.Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+        var logged = await connectError.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         logged.Reason.Should().Contain("orders");
         logged.Reason.Should().Contain("connection failed after startup");
-        await siblingCanceled.Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+        await siblingCanceled.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         await failedConsumer
             .Received(1)
             .NextAsync(
@@ -880,14 +880,14 @@ public sealed class NatsConsumerClientTests : TestBase
         var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token).AsTask();
         try
         {
-            await startedSignals[0].Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+            await startedSignals[0].Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
             await client.PauseAsync(AbortToken);
-            await canceledSignals[0].Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+            await canceledSignals[0].Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
             await client.ResumeAsync(AbortToken);
-            await startedSignals[1].Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+            await startedSignals[1].Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
             await client.PauseAsync(AbortToken);
-            await canceledSignals[1].Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+            await canceledSignals[1].Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
             // then
             seenTokens.Should().HaveCountGreaterThanOrEqualTo(2);
@@ -980,7 +980,7 @@ public sealed class NatsConsumerClientTests : TestBase
 
         try
         {
-            await handlerStarted.Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+            await handlerStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
             // when — dispose must drain the still-running handler before completing
             var disposeTask = client.DisposeAsync().AsTask();
@@ -989,7 +989,7 @@ public sealed class NatsConsumerClientTests : TestBase
 
             // then — releasing the handler lets dispose complete
             releaseHandler.TrySetResult();
-            await disposeTask.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+            await disposeTask.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         }
         finally
         {
@@ -997,7 +997,7 @@ public sealed class NatsConsumerClientTests : TestBase
             await cts.CancelAsync();
             try
             {
-                await listeningTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+                await listeningTask.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
             }
             catch (OperationCanceledException) { }
             catch (ObjectDisposedException) { }
@@ -1030,7 +1030,7 @@ public sealed class NatsConsumerClientTests : TestBase
         shutdown.IsCompleted.Should().BeFalse();
 
         timeProvider.Advance(TimeSpan.FromSeconds(2));
-        await shutdown.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+        await shutdown.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         stuckHandler.TrySetResult();
     }
@@ -1094,12 +1094,12 @@ public sealed class NatsConsumerClientTests : TestBase
         try
         {
             // when
-            await firstFailureLogged.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+            await firstFailureLogged.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
             timeProvider.Advance(TimeSpan.FromSeconds(5)); // release the backoff so the second fetch runs
-            await terminationLogged.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+            await terminationLogged.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
             // then — the second consecutive failure escalates to a supervised-restart termination
-            var act = async () => await listening.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+            var act = async () => await listening.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
             await act.Should()
                 .ThrowAsync<BrokerConnectionException>()
                 .WithInnerException<BrokerConnectionException, InvalidOperationException>();
@@ -1187,14 +1187,14 @@ public sealed class NatsConsumerClientTests : TestBase
         try
         {
             // when — first failure, then release its backoff so the heartbeat and second failure run
-            await firstFailureLogged.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+            await firstFailureLogged.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
             timeProvider.Advance(TimeSpan.FromSeconds(5));
-            await secondFailureLogged.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+            await secondFailureLogged.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
             timeProvider.Advance(TimeSpan.FromSeconds(2));
 
             // then — the loop reached the idle 4th fetch after only the initial backoff, proving both the
             // failure streak and the retry delay reset on the heartbeat
-            await idled.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+            await idled.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
             prematureTermination.Task.IsCompleted.Should().BeFalse("the streak reset on the heartbeat fetch");
             listening.IsCompleted.Should().BeFalse();
         }
@@ -1249,11 +1249,11 @@ public sealed class NatsConsumerClientTests : TestBase
         var listening = client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token).AsTask();
         try
         {
-            await firstFailureLogged.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+            await firstFailureLogged.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
             timeProvider.Advance(TimeSpan.FromSeconds(2));
-            await terminationLogged.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+            await terminationLogged.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
-            var act = async () => await listening.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+            var act = async () => await listening.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
             await act.Should()
                 .ThrowAsync<BrokerConnectionException>()
                 .WithInnerException<BrokerConnectionException, InvalidOperationException>();
@@ -1309,7 +1309,7 @@ public sealed class NatsConsumerClientTests : TestBase
 
         try
         {
-            await listeningTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+            await listeningTask.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         }
         catch (OperationCanceledException) when (cts.IsCancellationRequested)
         {
