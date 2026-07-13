@@ -248,7 +248,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         var timeJobsToUpdate = await context
             .AsNoTracking()
             .Where(x => x.ExecutionTime != null)
-            .WhereCanFallbackClaim(now)
+            .WhereCanFallbackClaimUsingDatabaseClock()
             .Where(x => x.ExecutionTime <= fallbackThreshold)
             .Include(x => x.Children.Where(y => y.ExecutionTime == null))
             .Select(MappingExtensions.ForQueueTimeJobs<TTimeJob>())
@@ -263,7 +263,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             var expectedUpdatedAt = timeJob.UpdatedAt;
             var rootMatches = context
                 .Where(x => x.Id == rootId && x.UpdatedAt <= expectedUpdatedAt)
-                .WhereCanFallbackClaim(now);
+                .WhereCanFallbackClaimUsingDatabaseClock();
             var affected = await _ClaimTimeJobTreeAsync(context, rootMatches, rootId, owner, now, cancellationToken)
                 .ConfigureAwait(false);
 
@@ -301,7 +301,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         var cronJobsToUpdate = await context
             .AsNoTracking()
             .Include(x => x.CronJob)
-            .WhereCanFallbackClaim(now)
+            .WhereCanFallbackClaimUsingDatabaseClock()
             .Where(x => x.ExecutionTime <= fallbackThreshold)
             .Select(MappingExtensions.ForQueueCronJobOccurrence<CronJobOccurrenceEntity<TCronJob>, TCronJob>())
             .ToArrayAsync(cancellationToken)
@@ -313,13 +313,16 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
 
             var affected = await context
                 .Where(x => x.Id == cronJobOccurrence.Id && x.UpdatedAt == cronJobOccurrence.UpdatedAt)
-                .WhereCanFallbackClaim(now)
+                .WhereCanFallbackClaimUsingDatabaseClock()
                 .ExecuteUpdateAsync(
                     setter =>
                         setter
                             .SetProperty(x => x.OwnerId, owner)
-                            .SetProperty(x => x.LockedUntil, now.Add(_leaseDuration))
-                            .SetProperty(x => x.UpdatedAt, now)
+                            .SetProperty(
+                                x => x.LockedUntil,
+                                _ => DateTime.UtcNow.AddSeconds(_leaseDuration.TotalSeconds)
+                            )
+                            .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow)
                             .SetProperty(x => x.Status, JobStatus.Queued),
                     cancellationToken
                 )
@@ -367,11 +370,11 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 var itemToAdd = new CronJobOccurrenceEntity<TCronJob>
                 {
                     Id = Guid.NewGuid(),
-                    Status = JobStatus.Queued,
-                    OwnerId = owner,
+                    Status = JobStatus.Idle,
+                    OwnerId = null,
                     ExecutionTime = executionTime,
                     CronJobId = item.Id,
-                    LockedUntil = now.Add(_leaseDuration),
+                    LockedUntil = null,
                     OnNodeDeath = item.OnNodeDeath,
                     CreatedAt = now,
                     UpdatedAt = now,
@@ -389,6 +392,31 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                     continue;
                 }
 
+                var claimed = await context
+                    .Where(x => x.Id == itemToAdd.Id)
+                    .WhereCanAcquireUsingDatabaseClock(owner)
+                    .ExecuteUpdateAsync(
+                        setter =>
+                            setter
+                                .SetProperty(x => x.OwnerId, owner)
+                                .SetProperty(
+                                    x => x.LockedUntil,
+                                    _ => DateTime.UtcNow.AddSeconds(_leaseDuration.TotalSeconds)
+                                )
+                                .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow)
+                                .SetProperty(x => x.Status, JobStatus.Queued),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                if (claimed <= 0)
+                {
+                    continue;
+                }
+
+                itemToAdd.Status = JobStatus.Queued;
+                itemToAdd.OwnerId = owner;
+                itemToAdd.LockedUntil = now.Add(_leaseDuration);
                 itemToAdd.CronJob = MappingExtensions.ProjectCronJob<TCronJob>(item, owner);
                 yield return itemToAdd;
                 continue;
@@ -397,12 +425,15 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             var affectedUpdate = await context
                 .Where(x => x.Id == item.NextCronOccurrence.Id)
                 .Where(x => x.ExecutionTime == executionTime)
-                .WhereCanAcquire(owner, now)
+                .WhereCanAcquireUsingDatabaseClock(owner)
                 .ExecuteUpdateAsync(
                     prop =>
                         prop.SetProperty(y => y.OwnerId, owner)
-                            .SetProperty(y => y.LockedUntil, now.Add(_leaseDuration))
-                            .SetProperty(y => y.UpdatedAt, now)
+                            .SetProperty(
+                                y => y.LockedUntil,
+                                _ => DateTime.UtcNow.AddSeconds(_leaseDuration.TotalSeconds)
+                            )
+                            .SetProperty(y => y.UpdatedAt, _ => DateTime.UtcNow)
                             .SetProperty(y => y.Status, JobStatus.Queued)
                             .SetProperty(y => y.OnNodeDeath, item.OnNodeDeath),
                     cancellationToken
@@ -453,8 +484,8 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 setter =>
                     setter
                         .SetProperty(x => x.OwnerId, owner)
-                        .SetProperty(x => x.LockedUntil, now.Add(_leaseDuration))
-                        .SetProperty(x => x.UpdatedAt, now)
+                        .SetProperty(x => x.LockedUntil, _ => DateTime.UtcNow.AddSeconds(_leaseDuration.TotalSeconds))
+                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow)
                         .SetProperty(x => x.Status, x => x.Id == rootId ? JobStatus.Queued : x.Status),
                 cancellationToken
             );

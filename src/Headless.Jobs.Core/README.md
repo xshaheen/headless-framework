@@ -21,7 +21,7 @@ Provides reliable background job scheduling with cron expressions, delayed execu
 
 ## Design Notes
 
-The pickup lease uses the injected `TimeProvider` (application clock) for the claim predicate, matching `Headless.Messaging`'s in-memory/SQL parity so fake clocks in tests stay honest. The EF operational store separately anchors lease comparisons to the **database clock** for renewals — an intentional divergence: in-memory has no DB, so it must use the application clock; EF uses the DB clock to defeat cross-node skew on real clusters.
+The in-memory provider uses the injected `TimeProvider` for pickup leases. The EF operational store translates `DateTime.UtcNow` inside each claim statement, so both lease-expiry comparison and `LockedUntil` stamping use the **database clock** without a separate clock query. EF renewal and reclaim use the same authority, preventing application/database clock skew from shortening or extending the initial lease.
 
 `SchedulerOptionsBuilder.NodeId` is used as the row owner only on the in-memory single-process path. On the durable path it is overridden by `JobsOwnerIdentityAdapter` (reads `node@incarnation` from `Headless.Coordination`); `NodeId` becomes a pre-registration display fallback only.
 
@@ -103,6 +103,7 @@ builder.Services.AddHeadlessJobs(options =>
         scheduler.LeaseDuration = TimeSpan.FromMinutes(5); // default: 5 min
         scheduler.LeaseRenewalInterval = null; // null → LeaseDuration / 3
         scheduler.FallbackIntervalChecker = TimeSpan.FromSeconds(30); // default: 30s
+        scheduler.PostCommitDrainTimeout = TimeSpan.FromSeconds(30); // default: 30s
         scheduler.SchedulerTimeZone = TimeZoneInfo.Utc; // default: local
         scheduler.DeadNodeReconcileInterval = TimeSpan.FromMinutes(1); // durable path; default: 1 min
         scheduler.StartMode = JobsStartMode.Immediate; // or Manual

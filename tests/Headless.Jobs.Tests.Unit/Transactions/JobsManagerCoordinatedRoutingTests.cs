@@ -12,6 +12,7 @@ using Headless.Jobs.Managers;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.Transactions;
 
@@ -263,10 +264,37 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase
             .ContainSingle(e => e.Level == LogLevel.Warning && ReferenceEquals(e.Exception, boom));
     }
 
-    // Note: the former shutdown-cancellation test was removed with the OCE-on-shutdown branch it covered. The drain
-    // now bounds side effects with its own timeout token (the coordinator always drains with CancellationToken.None),
-    // so a deferred failure is exercised by Deferred_side_effect_failure_is_swallowed_and_logged above. The deferred
-    // timeout path mirrors MessageOutboxBuffer's bounded flush; a deterministic timeout test is a follow-up.
+    [Fact]
+    public async Task Deferred_side_effect_timeout_is_swallowed_and_logged()
+    {
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var timeout = TimeSpan.FromSeconds(5);
+        var sut = _CreateSut(
+            CoordinatorMode.LiveRelational,
+            withWriter: true,
+            dispatcherEnabled: true,
+            timeProvider: timeProvider,
+            postCommitDrainTimeout: timeout
+        );
+        var sideEffectStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        sut.Persistence.AcquireImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
+            .Returns(async callInfo =>
+            {
+                sideEffectStarted.SetResult();
+                await Task.Delay(Timeout.InfiniteTimeSpan, callInfo.ArgAt<CancellationToken>(1));
+                return [];
+            });
+
+        await sut.Time.AddAsync(_ImmediateTimeJob(), AbortToken);
+
+        var drain = sut.Coordinator!.DrainCommitAsync(AbortToken);
+        await sideEffectStarted.Task.WaitAsync(AbortToken);
+        timeProvider.Advance(timeout + TimeSpan.FromTicks(1));
+
+        Func<Task> drainAction = async () => await drain;
+        await drainAction.Should().NotThrowAsync();
+        sut.Logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning && e.Exception == null);
+    }
 
     [Fact]
     public async Task Coordinated_enqueue_registers_no_rollback_callbacks()
@@ -458,7 +486,13 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase
         DeadRelational,
     }
 
-    private static Sut _CreateSut(CoordinatorMode mode, bool withWriter, bool dispatcherEnabled = false)
+    private static Sut _CreateSut(
+        CoordinatorMode mode,
+        bool withWriter,
+        bool dispatcherEnabled = false,
+        TimeProvider? timeProvider = null,
+        TimeSpan? postCommitDrainTimeout = null
+    )
     {
         var persistence = withWriter
             ? Substitute.For<
@@ -490,13 +524,14 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase
         var manager = new JobsManager<TimeJobEntity, CronJobEntity>(
             persistence,
             scheduler,
-            TimeProvider.System,
+            timeProvider ?? TimeProvider.System,
             new SequentialGuidGenerator(SequentialGuidType.Version7),
             notification,
             new JobsExecutionContext(),
             dispatcher,
             new FakeCurrentCommitCoordinator(coordinator),
             new CronScheduleCache(TimeZoneInfo.Utc),
+            new SchedulerOptionsBuilder { PostCommitDrainTimeout = postCommitDrainTimeout ?? TimeSpan.FromSeconds(30) },
             logger
         );
 

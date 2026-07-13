@@ -403,6 +403,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         command.Parameters.Add(new NpgsqlParameter("executionTime", executionTime));
         command.Parameters.Add(new NpgsqlParameter("cronJobId", item.Id));
         command.Parameters.Add(new NpgsqlParameter("lockedUntil", lockedUntil));
+        command.Parameters.Add(new NpgsqlParameter("leaseSeconds", (lockedUntil - now).TotalSeconds));
         command.Parameters.Add(new NpgsqlParameter("onNodeDeath", item.OnNodeDeath.ToString()));
         command.Parameters.Add(new NpgsqlParameter("elapsedTime", NpgsqlDbType.Bigint) { Value = 0L });
         command.Parameters.Add(new NpgsqlParameter("retryCount", NpgsqlDbType.Integer) { Value = 0 });
@@ -454,8 +455,8 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             )
             UPDATE {mapping.Table} AS occurrence
             SET {mapping.OwnerId} = @owner,
-                {mapping.LockedUntil} = @lockedUntil,
-                {mapping.UpdatedAt} = @now,
+                {mapping.LockedUntil} = CURRENT_TIMESTAMP + (@leaseSeconds * INTERVAL '1 second'),
+                {mapping.UpdatedAt} = CURRENT_TIMESTAMP,
                 {mapping.Status} = @queued,
                 {mapping.OnNodeDeath} = @onNodeDeath
             FROM candidate
@@ -533,6 +534,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         command.Parameters.Add(new NpgsqlParameter("owner", owner));
         command.Parameters.Add(new NpgsqlParameter("lockedUntil", lockedUntil));
         command.Parameters.Add(new NpgsqlParameter("now", now));
+        command.Parameters.Add(new NpgsqlParameter("leaseSeconds", (lockedUntil - now).TotalSeconds));
 
         var ids = new List<Guid>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -583,8 +585,8 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             )
             UPDATE {mapping.Table} AS job
             SET {mapping.OwnerId} = @owner,
-                {mapping.LockedUntil} = @lockedUntil,
-                {mapping.UpdatedAt} = @now,
+                {mapping.LockedUntil} = CURRENT_TIMESTAMP + (@leaseSeconds * INTERVAL '1 second'),
+                {mapping.UpdatedAt} = CURRENT_TIMESTAMP,
                 {mapping.Status} = @queuedStatus
             FROM candidates
             WHERE job.{mapping.Id} = candidates.{mapping.Id}
@@ -594,6 +596,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         command.Parameters.Add(new NpgsqlParameter("owner", owner));
         command.Parameters.Add(new NpgsqlParameter("lockedUntil", lockedUntil));
         command.Parameters.Add(new NpgsqlParameter("now", now));
+        command.Parameters.Add(new NpgsqlParameter("leaseSeconds", (lockedUntil - now).TotalSeconds));
         command.Parameters.Add(new NpgsqlParameter("queuedStatus", JobStatus.Queued.ToString()));
         command.Parameters.AddRange(candidateParameters);
 
@@ -641,8 +644,8 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             )
             UPDATE {mapping.Table} AS job
             SET {mapping.OwnerId} = @owner,
-                {mapping.LockedUntil} = @lockedUntil,
-                {mapping.UpdatedAt} = @now
+                {mapping.LockedUntil} = CURRENT_TIMESTAMP + (@leaseSeconds * INTERVAL '1 second'),
+                {mapping.UpdatedAt} = CURRENT_TIMESTAMP
             FROM descendants
             WHERE job.{mapping.Id} = descendants.{mapping.Id} AND job.{mapping.Status} = @idle;
             """;
@@ -654,6 +657,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         command.Parameters.Add(new NpgsqlParameter("owner", owner));
         command.Parameters.Add(new NpgsqlParameter("lockedUntil", lockedUntil));
         command.Parameters.Add(new NpgsqlParameter("now", now));
+        command.Parameters.Add(new NpgsqlParameter("leaseSeconds", (lockedUntil - now).TotalSeconds));
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 

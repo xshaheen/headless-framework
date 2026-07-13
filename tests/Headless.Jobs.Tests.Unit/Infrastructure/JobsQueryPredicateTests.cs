@@ -160,8 +160,8 @@ public sealed class JobsQueryPredicateTests
     [Fact]
     public void WhereCanAcquire_flips_selection_as_the_client_clock_advances_past_the_lease()
     {
-        // Proves the comparison is against the supplied (client) clock, not a DB clock: the same row is excluded
-        // while the lease is live and selected once `now` advances past LockedUntil.
+        // Proves the comparison is against the supplied (client) clock: the same row is excluded while the lease is
+        // live and selected once `now` advances past LockedUntil.
         var leaseDeadline = _Now.AddMinutes(2);
         var leased = _TimeJob(JobStatus.Queued, ownerId: "node-b@2", lockedUntil: leaseDeadline);
 

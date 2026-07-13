@@ -81,9 +81,7 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
     // Liveness bound for the post-commit drain. The coordinator drains OnCommit callbacks with CancellationToken.None
     // (a committed job's dispatch must not be abandoned because the request was cancelled), so the incoming token can
     // never carry a deadline. Without an independent one, a hung dispatch / notify / cache call would hold the commit
-    // thread, DI scope, and DB connection indefinitely. Mirrors MessageOutboxBuffer's _flushTimeout. The constant
-    // matches the fallback poll-sweep cadence; making it a configurable option is a clean follow-up.
-    private static readonly TimeSpan _PostCommitDrainTimeout = TimeSpan.FromSeconds(30);
+    // thread, DI scope, and DB connection indefinitely. Mirrors MessageOutboxBuffer's configurable flush timeout.
 
     // Registers a coordinated enqueue's side effects to run after the caller's transaction commits. The row is already
     // durable when these run, so a failure cannot roll the commit back: it is logged against the job scope and the
@@ -102,7 +100,7 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
             // side effects observe the timeout token, not the drain's.
             async (_, _) =>
             {
-                using var timeoutCts = new CancellationTokenSource(_PostCommitDrainTimeout, timeProvider);
+                using var timeoutCts = new CancellationTokenSource(_postCommitDrainTimeout, timeProvider);
 
                 try
                 {
@@ -113,7 +111,7 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
                     // The deadline elapsed before the side effects finished (e.g. a hung dispatch). The row is
                     // committed and the fallback poll sweep recovers the deferred work, so this is a bounded-wait
                     // timeout — not the recoverable failure the Warning below is for.
-                    Log.DeferredJobSideEffectsTimedOut(_logger, jobScope, _PostCommitDrainTimeout);
+                    Log.DeferredJobSideEffectsTimedOut(_logger, jobScope, _postCommitDrainTimeout);
                 }
                 catch (Exception e)
                 {

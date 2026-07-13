@@ -182,7 +182,7 @@ The first positional argument is the `functionName` string that must match the `
 
 ### Lease Model and Sliding Renewal
 
-Every claim of a job or cron-occurrence row stamps a pickup lease: `LockedUntil = now + SchedulerOptionsBuilder.LeaseDuration` (default 5 minutes). The deadline uses the injected `TimeProvider` (application clock), not the database server clock — this matches `Headless.Messaging` so the in-memory and EF providers share identical pickup semantics and fake clocks work in tests.
+Every claim of a job or cron-occurrence row stamps a pickup lease: `LockedUntil = now + SchedulerOptionsBuilder.LeaseDuration` (default 5 minutes). In-memory uses the injected `TimeProvider`. EF translates `DateTime.UtcNow` inside the claim statement, so lease-expiry comparison and stamping use the database UTC clock without a separate scalar query.
 
 **Sliding lease for running jobs (#316):** before invoking user code, a job verifies that the current node still owns the row. A running job then renews its lease on the `LeaseRenewalInterval` cadence (defaults to `LeaseDuration / 3`; an explicit value must be positive and strictly less than `LeaseDuration`). On the EF storage path, renewals compare against the **database clock** (`now()`/`GETUTCDATE()`), not a node's local clock, so cross-node clock skew cannot reclaim a healthy renewing job. If a renewal affects zero rows (the row was reclaimed or its owner changed), or if the renewal cannot complete within the cadence (a hung store), the worker cancels that job's `CancellationToken` (cancel-on-loss). If the start-time check loses ownership, user code is not invoked and the row is left `InProgress` for stalled reclaim.
 
@@ -233,7 +233,7 @@ await db.ExecuteCoordinatedTransactionAsync(
 - The ambient scope must be established synchronously; do not create a custom async factory that sets `ICurrentCommitCoordinator`. Use `ExecuteCoordinatedTransactionAsync` or a synchronous enlistment API. After enlistment, normal awaits inside the coordinated operation preserve the scope.
 - Coordinated enqueues in one scope must be sequential — the scope's DB connection/transaction is not thread-safe.
 - `AddAsync` / `AddBatchAsync` **throw** on failure (validation, dead/completed transaction, mis-wire). `Update` / `Delete` return `JobResult<T>` and do not throw.
-- A returned entity on the coordinated path means the row was **enlisted** (commits with the transaction), not that dispatch ran. The fallback poll sweep (`FallbackIntervalChecker`, default 30s) recovers a missed post-commit dispatch.
+- A returned entity on the coordinated path means the row was **enlisted** (commits with the transaction), not that dispatch ran. Post-commit side effects are bounded by `PostCommitDrainTimeout` (default 30s); timeout releases the commit thread and the fallback poll sweep recovers dispatch.
 - The durable coordinated path needs **two separate registrations**: `AddHeadlessCoordination(...)` (the `Headless.Coordination` distributed-lock/membership subsystem for the operational store) AND a `Add{Provider}CommitCoordination()` (the `Headless.CommitCoordination` transactional scope subsystem). Similar names, different systems.
 
 ## Choosing a Provider
@@ -353,7 +353,7 @@ Provides reliable background job scheduling with cron expressions, delayed execu
 
 ### Design Notes
 
-The pickup lease (`LockedUntil`) uses the injected `TimeProvider` (application clock) for the claim predicate, matching `Headless.Messaging`'s in-memory/SQL parity so fake clocks in tests stay honest. The EF operational store separately anchors lease comparison to the **database clock** for renewals — this is an intentional divergence: in-memory stays under the application clock (no DB), EF renewals use the DB clock to defeat cross-node skew on real clusters.
+The in-memory pickup lease uses the injected `TimeProvider`. The EF operational store uses the **database clock** for acquisition, renewal, and reclaim. Claim predicates and stamps are translated into the existing SQL statement, avoiding both cross-node clock skew and a separate clock round trip.
 
 `SchedulerOptionsBuilder.NodeId` is used as the row owner only on the in-memory single-process path (defaults to `Environment.MachineName`). On the durable path this value is overridden by `JobsOwnerIdentityAdapter` which reads the `node@incarnation` string from `Headless.Coordination`; `NodeId` becomes a pre-registration display fallback only.
 
@@ -432,6 +432,7 @@ builder.Services.AddHeadlessJobs(options =>
         scheduler.LeaseDuration = TimeSpan.FromMinutes(5); // default: 5 min
         scheduler.LeaseRenewalInterval = null; // null → LeaseDuration / 3
         scheduler.FallbackIntervalChecker = TimeSpan.FromSeconds(30); // default: 30s
+        scheduler.PostCommitDrainTimeout = TimeSpan.FromSeconds(30); // default: 30s
         scheduler.SchedulerTimeZone = TimeZoneInfo.Utc; // default: local
         scheduler.DeadNodeReconcileInterval = TimeSpan.FromMinutes(1); // durable path; default: 1 min
         scheduler.StartMode = JobsStartMode.Immediate; // or Manual
@@ -735,7 +736,7 @@ Provides persistence of time jobs and cron occurrences across restarts and acros
 
 ### Design Notes
 
-Lease renewal on the EF path anchors `LockedUntil` comparison to the **database clock** (`now()` on PostgreSQL, `GETUTCDATE()` on SQL Server), not the node's injected `TimeProvider`. This is an intentional divergence from the in-memory path: in-memory has no DB server, so it must use the application clock. On EF, using the DB clock is the only way to guarantee that cross-node clock skew cannot falsely reclaim a renewing job on a cluster where nodes differ by seconds. Callers should not assume the two paths are semantically identical when writing tests that assert precise lease timing.
+Lease acquisition, renewal, and reclaim on the EF path anchor `LockedUntil` to the **database clock** (`now()` on PostgreSQL, `GETUTCDATE()` on SQL Server), not the node's injected `TimeProvider`. Claims translate the clock expression inside the existing update statement; they do not execute a separate scalar query. In-memory has no database server and uses `TimeProvider`, so EF tests must not assume fake application time controls lease deadlines.
 
 The `JobsDbContext<TTimeJob, TCronJob>.DbContextOptions` constructor must be `public` for the EF pool to resolve it at startup. Validation fails fast at DI build time.
 

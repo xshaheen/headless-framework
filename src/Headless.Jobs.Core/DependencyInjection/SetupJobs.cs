@@ -52,6 +52,10 @@ public static class SetupJobs
             schedulerOptionsBuilder.LeaseDuration > TimeSpan.Zero,
             "SchedulerOptionsBuilder.LeaseDuration must be greater than TimeSpan.Zero."
         );
+        Ensure.True(
+            schedulerOptionsBuilder.PostCommitDrainTimeout > TimeSpan.Zero,
+            "SchedulerOptionsBuilder.PostCommitDrainTimeout must be greater than TimeSpan.Zero."
+        );
         var retryOptions = optionInstance.RetryOptions;
         services.Configure<JobsRetryOptions, JobsRetryOptionsValidator>(configured =>
         {

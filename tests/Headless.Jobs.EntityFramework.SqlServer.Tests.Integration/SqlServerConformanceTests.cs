@@ -12,6 +12,10 @@ public sealed class SqlServerConformanceTests(SqlServerJobsCoordinationFixture f
         base.queued_job_is_stamped_with_the_node_incarnation_owner();
 
     [Fact]
+    public override Task queued_job_lease_uses_the_db_clock_not_a_skewed_claimant_clock() =>
+        base.queued_job_lease_uses_the_db_clock_not_a_skewed_claimant_clock();
+
+    [Fact]
     public override Task reclaim_touches_only_the_dead_incarnations_non_terminal_rows() =>
         base.reclaim_touches_only_the_dead_incarnations_non_terminal_rows();
 

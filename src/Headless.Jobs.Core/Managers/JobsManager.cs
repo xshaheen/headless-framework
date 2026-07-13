@@ -24,6 +24,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     IJobsDispatcher dispatcher,
     ICurrentCommitCoordinator currentCommitCoordinator,
     CronScheduleCache cronScheduleCache,
+    SchedulerOptionsBuilder schedulerOptions,
     ILogger<JobsManager<TTimeJob, TCronJob>> logger
 ) : ICronJobManager<TCronJob>, ITimeJobManager<TTimeJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
@@ -34,6 +35,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     private readonly JobsExecutionContext _executionContext = Argument.IsNotNull(executionContext);
     private readonly ICurrentCommitCoordinator _currentCommitCoordinator = Argument.IsNotNull(currentCommitCoordinator);
     private readonly CronScheduleCache _cronScheduleCache = Argument.IsNotNull(cronScheduleCache);
+    private readonly TimeSpan _postCommitDrainTimeout = Argument.IsNotNull(schedulerOptions).PostCommitDrainTimeout;
     private readonly ILogger<JobsManager<TTimeJob, TCronJob>> _logger = Argument.IsNotNull(logger);
 
     // Add is the transaction-enlisting op: it returns the persisted entity and THROWS on any failure — validation

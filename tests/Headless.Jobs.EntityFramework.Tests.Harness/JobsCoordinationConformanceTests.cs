@@ -67,6 +67,39 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
         }
     }
 
+    /// <summary>
+    /// #469: relational claims stamp their lease from the database clock inside the claim statement. A node whose
+    /// application clock is one hour slow must still persist a lease approximately one LeaseDuration ahead of DB time.
+    /// </summary>
+    public virtual async Task queued_job_lease_uses_the_db_clock_not_a_skewed_claimant_clock()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        using var host = fixture.BuildHost("node-skew", timeProvider: new SkewedTimeProvider(TimeSpan.FromHours(-1)));
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var id = Guid.NewGuid();
+            await fixture.SeedTimeJobAsync(id, "DbClockClaim", (int)JobStatus.Idle, ownerId: null, ct);
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            var idle = await persistence.GetTimeJobsAsync(x => x.Id == id, ct);
+
+            (await persistence.QueueTimeJobsAsync(idle, ct).ToListAsync(ct)).Should().ContainSingle();
+
+            var lockedUntil = (await fixture.ReadTimeJobDetailAsync(id, ct)).LockedUntil;
+            lockedUntil.Should().NotBeNull();
+            lockedUntil!.Value.Should().BeAfter(DateTime.UtcNow.AddMinutes(4));
+            lockedUntil.Value.Should().BeBefore(DateTime.UtcNow.AddMinutes(6));
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
     public virtual async Task reclaim_touches_only_the_dead_incarnations_non_terminal_rows()
     {
         var ct = AbortToken;

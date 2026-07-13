@@ -220,6 +220,14 @@ public sealed class JobsOptionsBuilderTests
     }
 
     [Fact]
+    public void Default_PostCommitDrainTimeout_Is_30_Seconds()
+    {
+        var schedulerOptions = new SchedulerOptionsBuilder();
+
+        schedulerOptions.PostCommitDrainTimeout.Should().Be(TimeSpan.FromSeconds(30));
+    }
+
+    [Fact]
     public void Explicit_NodeId_Is_Preserved_Verbatim()
     {
         var schedulerOptions = new SchedulerOptionsBuilder { NodeId = "explicit-node" };

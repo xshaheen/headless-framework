@@ -439,6 +439,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         command.Parameters.Add(_DateTimeParameter("executionTime", executionTime));
         command.Parameters.Add(new SqlParameter("cronJobId", item.Id));
         command.Parameters.Add(_DateTimeParameter("lockedUntil", lockedUntil));
+        command.Parameters.Add(new SqlParameter("leaseSeconds", (lockedUntil - now).TotalSeconds));
         command.Parameters.Add(new SqlParameter("onNodeDeath", item.OnNodeDeath.ToString()));
         command.Parameters.Add(new SqlParameter("elapsedTime", SqlDbType.BigInt) { Value = 0L });
         command.Parameters.Add(new SqlParameter("retryCount", SqlDbType.Int) { Value = 0 });
@@ -499,8 +500,8 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             )
             UPDATE occurrence
             SET {mapping.OwnerId} = @owner,
-                {mapping.LockedUntil} = @lockedUntil,
-                {mapping.UpdatedAt} = @now,
+                {mapping.LockedUntil} = DATEADD(second, @leaseSeconds, SYSUTCDATETIME()),
+                {mapping.UpdatedAt} = SYSUTCDATETIME(),
                 {mapping.Status} = @queued,
                 {mapping.OnNodeDeath} = @onNodeDeath
             OUTPUT inserted.{mapping.Id}
@@ -577,6 +578,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         command.Parameters.Add(new SqlParameter("owner", owner));
         command.Parameters.Add(_DateTimeParameter("lockedUntil", lockedUntil));
         command.Parameters.Add(_DateTimeParameter("now", now));
+        command.Parameters.Add(new SqlParameter("leaseSeconds", (lockedUntil - now).TotalSeconds));
 
         var ids = new List<Guid>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -630,8 +632,8 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             )
             UPDATE job
             SET {mapping.OwnerId} = @owner,
-                {mapping.LockedUntil} = @lockedUntil,
-                {mapping.UpdatedAt} = @now,
+                {mapping.LockedUntil} = DATEADD(second, @leaseSeconds, SYSUTCDATETIME()),
+                {mapping.UpdatedAt} = SYSUTCDATETIME(),
                 {mapping.Status} = @queuedStatus
             OUTPUT inserted.{mapping.Id}
             FROM {mapping.Table} AS job
@@ -641,6 +643,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         command.Parameters.Add(new SqlParameter("owner", owner));
         command.Parameters.Add(_DateTimeParameter("lockedUntil", lockedUntil));
         command.Parameters.Add(_DateTimeParameter("now", now));
+        command.Parameters.Add(new SqlParameter("leaseSeconds", (lockedUntil - now).TotalSeconds));
         command.Parameters.Add(new SqlParameter("queuedStatus", JobStatus.Queued.ToString()));
         command.Parameters.AddRange(candidateParameters);
 
@@ -689,8 +692,8 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             )
             UPDATE job
             SET {mapping.OwnerId} = @owner,
-                {mapping.LockedUntil} = @lockedUntil,
-                {mapping.UpdatedAt} = @now
+                {mapping.LockedUntil} = DATEADD(second, @leaseSeconds, SYSUTCDATETIME()),
+                {mapping.UpdatedAt} = SYSUTCDATETIME()
             FROM {mapping.Table} AS job
             INNER JOIN descendants ON job.{mapping.Id} = descendants.{mapping.Id}
             WHERE job.{mapping.Status} = @idle;
@@ -704,6 +707,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         command.Parameters.Add(new SqlParameter("owner", owner));
         command.Parameters.Add(_DateTimeParameter("lockedUntil", lockedUntil));
         command.Parameters.Add(_DateTimeParameter("now", now));
+        command.Parameters.Add(new SqlParameter("leaseSeconds", (lockedUntil - now).TotalSeconds));
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
