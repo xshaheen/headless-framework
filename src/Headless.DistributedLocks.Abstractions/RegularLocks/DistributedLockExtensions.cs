@@ -30,7 +30,16 @@ public static class DistributedLockExtensions
         /// </returns>
         /// <exception cref="ArgumentNullException"><paramref name="provider"/> or <paramref name="resources"/> is <see langword="null"/>.</exception>
         /// <exception cref="ArgumentException">
-        /// <paramref name="resources"/> is empty or contains a null, empty, or whitespace resource name.
+        /// <paramref name="resources"/> is empty or contains a null, empty, or whitespace resource name; or
+        /// <see cref="DistributedLockAcquireOptions.Monitoring"/> is <see cref="LockMonitoringMode.Monitor"/> or
+        /// <see cref="LockMonitoringMode.AutoExtend"/> but <see cref="DistributedLockAcquireOptions.TimeUntilExpires"/>
+        /// is <see cref="Timeout.InfiniteTimeSpan"/> (monitoring requires a finite lease).
+        /// </exception>
+        /// <exception cref="ArgumentOutOfRangeException">
+        /// A value in <paramref name="resources"/> exceeds the provider's maximum resource-name length, or
+        /// <see cref="DistributedLockAcquireOptions.AcquireTimeout"/> /
+        /// <see cref="DistributedLockAcquireOptions.TimeUntilExpires"/> is negative (other than
+        /// <see cref="Timeout.InfiniteTimeSpan"/>) or too large.
         /// </exception>
         /// <exception cref="LockHandleLostException">A held child lease was lost while the complete set was forming.</exception>
         /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
@@ -62,7 +71,16 @@ public static class DistributedLockExtensions
         /// </returns>
         /// <exception cref="ArgumentNullException"><paramref name="provider"/> or <paramref name="resources"/> is <see langword="null"/>.</exception>
         /// <exception cref="ArgumentException">
-        /// <paramref name="resources"/> is empty or contains a null, empty, or whitespace resource name.
+        /// <paramref name="resources"/> is empty or contains a null, empty, or whitespace resource name; or
+        /// <see cref="DistributedLockAcquireOptions.Monitoring"/> is <see cref="LockMonitoringMode.Monitor"/> or
+        /// <see cref="LockMonitoringMode.AutoExtend"/> but <see cref="DistributedLockAcquireOptions.TimeUntilExpires"/>
+        /// is <see cref="Timeout.InfiniteTimeSpan"/> (monitoring requires a finite lease).
+        /// </exception>
+        /// <exception cref="ArgumentOutOfRangeException">
+        /// A value in <paramref name="resources"/> exceeds the provider's maximum resource-name length, or
+        /// <see cref="DistributedLockAcquireOptions.AcquireTimeout"/> /
+        /// <see cref="DistributedLockAcquireOptions.TimeUntilExpires"/> is negative (other than
+        /// <see cref="Timeout.InfiniteTimeSpan"/>) or too large.
         /// </exception>
         /// <exception cref="LockHandleLostException">A held child lease was lost while the complete set was forming.</exception>
         /// <exception cref="LockAcquisitionTimeoutException">The complete set could not be acquired before the timeout elapsed.</exception>
