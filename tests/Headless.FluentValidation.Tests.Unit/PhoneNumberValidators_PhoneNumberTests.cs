@@ -2,6 +2,7 @@
 
 using FluentValidation;
 using FluentValidation.TestHelper;
+using FluentSeverity = FluentValidation.Severity;
 
 namespace Tests;
 
@@ -46,6 +47,6 @@ public sealed class PhoneNumberValidatorsPhoneNumberTests
     {
         var model = new TestModel(countryCode, phoneNumber);
         var result = _sut.TestValidate(model);
-        result.ShouldHaveValidationErrorFor(x => x.PhoneNumber);
+        result.ShouldHaveValidationErrorFor(x => x.PhoneNumber).Only().WithSeverity(FluentSeverity.Error);
     }
 }

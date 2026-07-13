@@ -10,8 +10,8 @@ namespace FluentValidation;
 public static class FluentValidationExtensions
 {
     /// <summary>
-    /// Applies an <see cref="ErrorDescriptor"/> to the rule, setting both the error code and the
-    /// error message in a single call.
+    /// Applies an <see cref="ErrorDescriptor"/> to the rule, setting the error code, error message,
+    /// and severity in a single call.
     /// </summary>
     /// <typeparam name="T">The type being validated.</typeparam>
     /// <typeparam name="TProperty">The property type being validated.</typeparam>
@@ -27,7 +27,9 @@ public static class FluentValidationExtensions
             ? errorDescriptor.Code
             : errorDescriptor.Description;
 
-        return rule.WithErrorCode(errorDescriptor.Code).WithMessage(description);
+        return rule.WithErrorCode(errorDescriptor.Code)
+            .WithMessage(description)
+            .WithSeverity(errorDescriptor.Severity.ToSeverity());
     }
 
     /// <summary>Converts a FluentValidation <see cref="ValidationSeverity"/> to the Headless <see cref="Severity"/> equivalent.</summary>
@@ -91,7 +93,8 @@ public static class FluentValidationExtensions
                     return new ErrorDescriptor(
                         code: errorCode,
                         description: failure.ErrorMessage,
-                        paramsDictionary: paramsDictionary
+                        paramsDictionary: paramsDictionary,
+                        severity: _ToValidationSeverity(failure.Severity)
                     );
                 },
                 StringComparer.Ordinal
@@ -101,5 +104,15 @@ public static class FluentValidationExtensions
                 IReadOnlyList<ErrorDescriptor> (failureGroup) => failureGroup.ToList(),
                 StringComparer.Ordinal
             );
+    }
+
+    private static ValidationSeverity _ToValidationSeverity(Severity severity)
+    {
+        return severity switch
+        {
+            Severity.Info => ValidationSeverity.Information,
+            Severity.Warning => ValidationSeverity.Warning,
+            _ => ValidationSeverity.Error,
+        };
     }
 }

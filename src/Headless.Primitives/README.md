@@ -35,6 +35,9 @@ descending.
 `ExtraProperties` and `Locales` derive from `Dictionary<,>` (an established repo pattern for the
 `IHasExtraProperties` bag); both are `sealed`.
 
+`ErrorDescriptor` defaults to `ValidationSeverity.Error`, matching its role as an expected failure. Pass
+`ValidationSeverity.Warning` or `ValidationSeverity.Information` explicitly for non-error diagnostics.
+
 ## Installation
 
 ```bash

@@ -2,6 +2,7 @@
 
 using FluentValidation;
 using FluentValidation.TestHelper;
+using FluentSeverity = FluentValidation.Severity;
 
 namespace Tests;
 
@@ -40,7 +41,10 @@ public sealed class UrlValidatorsCorsOriginTests
     public void should_report_invalid_format_for_non_uri(string origin)
     {
         var result = _sut.TestValidate(new TestModel(origin));
-        result.ShouldHaveValidationErrorFor(x => x.Origin).WithErrorCode("g:invalid_origin_format");
+        result
+            .ShouldHaveValidationErrorFor(x => x.Origin)
+            .WithErrorCode("g:invalid_origin_format")
+            .WithSeverity(FluentSeverity.Error);
     }
 
     // Regression: a non-http(s) absolute scheme previously threw NullReferenceException while
