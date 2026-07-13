@@ -366,7 +366,9 @@ public interface IDataStorage
     /// <remarks>
     /// <para>
     /// <b>Atomic claim-and-return:</b> returned rows are already leased — the same statement that
-    /// selects them advances <c>LockedUntil</c> to <c>now + RetryPolicyOptions.DispatchTimeout</c>.
+    /// selects them advances <c>LockedUntil</c> to <c>now + RetryPolicyOptions.DispatchTimeout</c>. Relational
+    /// providers use their database clock for this atomic comparison and stamp; in-memory providers use their
+    /// injected <see cref="TimeProvider"/>.
     /// Callers do NOT need to invoke <see cref="LeasePublishAsync"/> immediately after pickup; the
     /// pickup itself is the claim. This prevents two replicas from picking up the same row between
     /// a SELECT commit and a follow-up lease write (the prior two-step design double-dispatched).
@@ -419,7 +421,9 @@ public interface IDataStorage
     /// <remarks>
     /// <para>
     /// <b>Atomic claim-and-return:</b> returned rows are already leased — the same statement that
-    /// selects them advances <c>LockedUntil</c> to <c>now + RetryPolicyOptions.DispatchTimeout</c>.
+    /// selects them advances <c>LockedUntil</c> to <c>now + RetryPolicyOptions.DispatchTimeout</c>. Relational
+    /// providers use their database clock for this atomic comparison and stamp; in-memory providers use their
+    /// injected <see cref="TimeProvider"/>.
     /// Callers do NOT need to invoke <see cref="LeaseReceiveAsync"/> immediately after pickup; the
     /// pickup itself is the claim. This prevents two replicas from picking up the same row between
     /// a SELECT commit and a follow-up lease write (the prior two-step design double-dispatched).

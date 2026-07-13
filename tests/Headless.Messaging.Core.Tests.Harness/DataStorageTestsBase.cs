@@ -44,6 +44,12 @@ public abstract class DataStorageTestsBase : TestBase
     /// </summary>
     protected virtual bool SupportsControllableClock => false;
 
+    /// <summary>
+    /// Creates another storage instance with the supplied application clock when the provider supports
+    /// relational clock-skew conformance testing. Other providers return <see langword="null"/>.
+    /// </summary>
+    protected virtual IDataStorage? CreateStorageWithTimeProvider(TimeProvider timeProvider) => null;
+
     /// <summary>Controllable membership used by storage-provider conformance tests to stamp the owner identity.</summary>
     protected ControlledNodeMembership NodeMembership { get; } = new();
 
@@ -952,6 +958,102 @@ public abstract class DataStorageTestsBase : TestBase
             .Contain(m => m.StorageId == storedMessage.StorageId);
     }
 
+    public virtual async Task should_use_database_clock_when_reclaiming_published_retry_lease()
+    {
+        var fastClockStorage = _CreateRelationalClockSkewStorage();
+
+        var storage = GetStorage();
+        var storedMessage = await storage.StoreMessageAsync(
+            "db-clock-published-retry",
+            CreateMessage(),
+            cancellationToken: AbortToken
+        );
+        await storage.ChangePublishStateAsync(
+            storedMessage,
+            StatusName.Failed,
+            nextRetryAt: DateTime.UtcNow.AddMinutes(-1),
+            cancellationToken: AbortToken
+        );
+        (await storage.LeasePublishAsync(storedMessage, DateTime.UtcNow.AddMinutes(30), AbortToken)).Should().BeTrue();
+
+        (await fastClockStorage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
+            .Should()
+            .NotContain(m => m.StorageId == storedMessage.StorageId);
+    }
+
+    public virtual async Task should_use_database_clock_when_reclaiming_received_retry_lease()
+    {
+        var fastClockStorage = _CreateRelationalClockSkewStorage();
+
+        var storage = GetStorage();
+        var storedMessage = await storage.StoreReceivedMessageAsync(
+            "db-clock-received-retry",
+            "db-clock-group",
+            CreateMessage(),
+            AbortToken
+        );
+        await storage.ChangeReceiveStateAsync(
+            storedMessage,
+            StatusName.Failed,
+            nextRetryAt: DateTime.UtcNow.AddMinutes(-1),
+            cancellationToken: AbortToken
+        );
+        (await storage.LeaseReceiveAsync(storedMessage, DateTime.UtcNow.AddMinutes(30), AbortToken)).Should().BeTrue();
+
+        (await fastClockStorage.GetReceivedMessagesOfNeedRetryAsync(AbortToken))
+            .Should()
+            .NotContain(m => m.StorageId == storedMessage.StorageId);
+    }
+
+    public virtual async Task should_use_database_clock_when_fast_forwarding_dead_owner_lease()
+    {
+        var fastClockStorage = _CreateRelationalClockSkewStorage();
+
+        var deadOwner = NodeMembership.SetIdentity("db-clock-dead-owner");
+        var storage = GetStorage();
+        var storedMessage = await storage.StoreMessageAsync(
+            "db-clock-dead-owner-reclaim",
+            CreateMessage(),
+            cancellationToken: AbortToken
+        );
+        await storage.ChangePublishStateAsync(
+            storedMessage,
+            StatusName.Failed,
+            nextRetryAt: DateTime.UtcNow.AddMinutes(-1),
+            cancellationToken: AbortToken
+        );
+        (await storage.LeasePublishAsync(storedMessage, DateTime.UtcNow.AddMinutes(30), AbortToken)).Should().BeTrue();
+
+        (await fastClockStorage.ReclaimDeadPublishedOwnersAsync([deadOwner.ToString()], AbortToken)).Should().Be(1);
+        (await fastClockStorage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
+            .Should()
+            .Contain(m => m.StorageId == storedMessage.StorageId);
+    }
+
+    public virtual async Task should_stamp_retry_lease_from_database_clock()
+    {
+        var fastClockStorage = _CreateRelationalClockSkewStorage();
+        var storage = GetStorage();
+        var storedMessage = await storage.StoreMessageAsync(
+            "db-clock-retry-stamp",
+            CreateMessage(),
+            cancellationToken: AbortToken
+        );
+        await storage.ChangePublishStateAsync(
+            storedMessage,
+            StatusName.Failed,
+            nextRetryAt: DateTime.UtcNow.AddMinutes(-1),
+            cancellationToken: AbortToken
+        );
+
+        var claimed = (await fastClockStorage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
+            .Should()
+            .ContainSingle(m => m.StorageId == storedMessage.StorageId)
+            .Subject;
+
+        claimed.LockedUntil.Should().BeAfter(DateTime.UtcNow).And.BeBefore(DateTime.UtcNow.AddMinutes(10));
+    }
+
     public virtual async Task should_return_unstored_snapshot_when_redelivery_hits_active_receive_lease()
     {
         var storage = GetStorage();
@@ -1347,7 +1449,7 @@ public abstract class DataStorageTestsBase : TestBase
     public virtual async Task should_lease_and_reserve_publish_attempt_in_single_step()
     {
         var storage = GetStorage();
-        var message = await storage.StoreMessageAsync("lease-reserve", CreateMessage(), AbortToken);
+        var message = await storage.StoreMessageAsync("lease-reserve", CreateMessage(), cancellationToken: AbortToken);
         message.InlineAttempts = 1;
 
         var reserved = await storage.LeasePublishAndReserveAttemptAsync(
@@ -1855,4 +1957,17 @@ public abstract class DataStorageTestsBase : TestBase
     private DateTime _Now() => TimeProvider.GetUtcNow().UtcDateTime;
 
     private DateTime _FutureLeaseUntil() => _Now().AddHours(1);
+
+    private IDataStorage _CreateRelationalClockSkewStorage()
+    {
+        var storage = CreateStorageWithTimeProvider(
+            new Microsoft.Extensions.Time.Testing.FakeTimeProvider(DateTimeOffset.UtcNow.AddHours(1))
+        );
+        if (storage is null)
+        {
+            Assert.Skip("Storage does not expose a relational clock-skew test seam");
+        }
+
+        return storage;
+    }
 }

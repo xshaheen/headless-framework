@@ -156,33 +156,30 @@ need a shared durable authority; in-memory providers need one injected determini
 Do not apply this mechanically to ordinary cache freshness timestamps or connection-scoped database
 locks. First establish that the timestamp participates in cross-node ownership correctness.
 
-### Messaging has the same ownership-clock risk
+### Messaging applies the same ownership-clock rule
 
-The Messaging PostgreSQL and SQL Server stores currently use application-computed `@Now` and
-`@NewLease` values in their atomic retry pickup paths:
+The Messaging PostgreSQL and SQL Server stores apply this rule in their atomic retry pickup paths:
 
 - `src/Headless.Messaging.Storage.PostgreSql/PostgreSqlDataStorage.cs`
 - `src/Headless.Messaging.Storage.SqlServer/SqlServerDataStorage.cs`
 
-Those statements correctly combine candidate selection and lease assignment in one atomic
-claim-and-return command, but their clock authority is still the caller's `TimeProvider`. A fast worker
-can consider another worker's valid lease expired; a slow worker can defer recovery. The existing code
-comments justify application time as parity with in-memory storage, which is the same false equivalence
-Jobs corrected: provider parity is about observable lease behavior, not identical clock sources.
-
-Messaging should adopt the same provider-native design in its own focused change:
+The implementation:
 
 1. Pass `DispatchTimeout` as a duration rather than binding an absolute `@NewLease`.
 2. Snapshot PostgreSQL or SQL Server time once inside the atomic retry-claim command.
 3. Use that snapshot for both `LockedUntil <= now` and the new `LockedUntil` value.
 4. Return the persisted deadline from `RETURNING`/`OUTPUT` so the in-memory message model matches durable
    state without another read.
-5. Add real-provider tests with fast and slow application clocks; keep the in-memory provider on
+5. Uses real-provider tests with a fast application clock; the in-memory provider remains on
    `TimeProvider`.
 
-Keep that work separate from the Jobs PR because Messaging has its own storage contract, retry-policy
-surface, test harnesses, and compatibility risk. The shared design rule belongs here; the production
-changes and conformance evidence belong with Messaging.
+Dead-owner recovery uses the same provider snapshot when it shortens a live lease to database time.
+Otherwise an application-clock fast-forward followed immediately by a database-clock pickup can leave
+the row temporarily ineligible or skip the reclaim entirely under host skew.
+
+This specifically governs persisted retry pickup. Fresh-dispatch lease methods still accept an explicit
+deadline as part of the existing `IDataStorage` contract; changing that public contract is separate from
+the retry-reclaim clock-authority defect.
 
 ## Examples
 
