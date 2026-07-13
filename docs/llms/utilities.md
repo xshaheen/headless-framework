@@ -170,6 +170,10 @@ RuleFor(x => x.Total)
     .WithErrorDescriptor(new ErrorDescriptor("ORDER_TOTAL_INVALID", "Total must be positive."));
 ```
 
+`ErrorDescriptor` defaults to error severity. Pass `ValidationSeverity.Warning` or
+`ValidationSeverity.Information` explicitly for non-error rules; severity is preserved by both
+`WithErrorDescriptor(...)` and `ToErrorDescriptors()`.
+
 #### Processing Validation Results
 
 ```csharp
