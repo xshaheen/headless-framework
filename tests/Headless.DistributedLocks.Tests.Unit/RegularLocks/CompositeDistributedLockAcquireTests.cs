@@ -238,6 +238,71 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
     }
 
     [Fact]
+    public async Task should_preserve_renewal_cadence_across_multiple_later_child_acquisitions()
+    {
+        var timeProvider = new FakeTimeProvider();
+        var provider = _CreateProvider(timeProvider);
+        var leases = new Dictionary<string, TestLease>(StringComparer.Ordinal)
+        {
+            ["A"] = new("A"),
+            ["B"] = new("B"),
+            ["C"] = new("C"),
+            ["D"] = new("D"),
+        };
+        var started = new Dictionary<string, TaskCompletionSource>(StringComparer.Ordinal);
+        var results = new Dictionary<string, TaskCompletionSource<IDistributedLease?>>(StringComparer.Ordinal);
+
+        foreach (var resource in new[] { "B", "C", "D" })
+        {
+            started[resource] = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            results[resource] = new TaskCompletionSource<IDistributedLease?>(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+        }
+
+        provider
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var resource = call.ArgAt<string>(0);
+
+                if (resource == "A")
+                {
+                    return Task.FromResult<IDistributedLease?>(leases[resource]);
+                }
+
+                started[resource].TrySetResult();
+                return results[resource].Task;
+            });
+
+        var acquireTask = provider.TryAcquireAllAsync(
+            ["A", "B", "C", "D"],
+            new DistributedLockAcquireOptions
+            {
+                TimeUntilExpires = TimeSpan.FromSeconds(10),
+                AcquireTimeout = Timeout.InfiniteTimeSpan,
+            },
+            AbortToken
+        );
+
+        await started["B"].Task.WaitAsync(AbortToken);
+        timeProvider.Advance(TimeSpan.FromSeconds(4));
+        results["B"].SetResult(leases["B"]);
+        await started["C"].Task.WaitAsync(AbortToken);
+        timeProvider.Advance(TimeSpan.FromSeconds(4));
+        await _DrainUntilAsync(() => leases["A"].RenewalCount == 1);
+        results["C"].SetResult(leases["C"]);
+        await started["D"].Task.WaitAsync(AbortToken);
+        timeProvider.Advance(TimeSpan.FromSeconds(4));
+        results["D"].SetResult(leases["D"]);
+
+        (await acquireTask).Should().NotBeNull();
+        leases["A"].RenewalCount.Should().Be(1);
+        leases["B"].RenewalCount.Should().Be(1);
+        leases["C"].RenewalCount.Should().Be(0);
+    }
+
+    [Fact]
     public async Task should_return_null_after_fake_deadline_and_reverse_rollback()
     {
         var timeProvider = new FakeTimeProvider();
@@ -471,6 +536,45 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
     }
 
     [Fact]
+    public async Task should_flatten_later_child_fault_after_caller_cancellation()
+    {
+        var provider = _CreateProvider(new FakeTimeProvider());
+        var events = new List<string>();
+        var first = new TestLease("A", events);
+        var secondStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var providerError = new InvalidOperationException("acquire failed while draining");
+        using var callerSource = new CancellationTokenSource();
+        provider
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+                call.ArgAt<string>(0) == "A"
+                    ? Task.FromResult<IDistributedLease?>(first)
+                    : _ThrowAfterCancellationAsync(secondStarted, providerError, call.ArgAt<CancellationToken>(2))
+            );
+
+        var acquireTask = provider.TryAcquireAllAsync(
+            ["A", "B"],
+            new DistributedLockAcquireOptions { AcquireTimeout = Timeout.InfiniteTimeSpan },
+            callerSource.Token
+        );
+
+        await secondStarted.Task.WaitAsync(AbortToken);
+        await callerSource.CancelAsync();
+        var act = async () => await acquireTask;
+
+        var exception = (await act.Should().ThrowAsync<AggregateException>()).Which;
+        exception.InnerExceptions.Should().HaveCount(2);
+        exception
+            .InnerExceptions[0]
+            .Should()
+            .BeOfType<OperationCanceledException>()
+            .Which.CancellationToken.Should()
+            .Be(callerSource.Token);
+        exception.InnerExceptions[1].Should().BeSameAs(providerError);
+        events.Should().Equal("release:A", "dispose:A");
+    }
+
+    [Fact]
     public async Task should_abort_and_report_lost_handle_when_mid_flight_renewal_returns_false()
     {
         var timeProvider = new FakeTimeProvider();
@@ -700,6 +804,23 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
     }
 
     [Fact]
+    public async Task should_reject_loss_observed_while_linking_composite_tokens()
+    {
+        var provider = _CreateProvider(new FakeTimeProvider());
+        var events = new List<string>();
+        var first = new TestLease("A", events, canObserveLoss: true);
+        var second = new TestLease("B", events, canObserveLoss: true, markLostOnTokenRead: 3);
+        provider
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>())
+            .Returns(call => Task.FromResult<IDistributedLease?>(call.ArgAt<string>(0) == "A" ? first : second));
+
+        var act = async () => await provider.TryAcquireAllAsync(["A", "B"], cancellationToken: AbortToken);
+
+        await act.Should().ThrowAsync<LockHandleLostException>().Where(exception => exception.Resource == "B");
+        events.Should().Equal("release:B", "dispose:B", "release:A", "dispose:A");
+    }
+
+    [Fact]
     public async Task should_preserve_first_child_fault_after_caller_cancellation_as_secondary_error()
     {
         var provider = _CreateProvider(new FakeTimeProvider());
@@ -809,6 +930,23 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
         return null;
     }
 
+    private static async Task<IDistributedLease?> _ThrowAfterCancellationAsync(
+        TaskCompletionSource started,
+        Exception exception,
+        CancellationToken cancellationToken
+    )
+    {
+        started.TrySetResult();
+
+        try
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+
+        throw exception;
+    }
+
     private static async Task _DrainUntilAsync(Func<bool> condition)
     {
         for (var attempt = 0; attempt < 100 && !condition(); attempt++)
@@ -828,6 +966,8 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
         private readonly Func<TimeSpan?, CancellationToken, Task<bool>>? _renewal;
         private readonly Exception? _releaseException;
         private readonly Exception? _disposeException;
+        private readonly int? _markLostOnTokenRead;
+        private int _lostTokenReads;
 
         public TestLease(
             string resource,
@@ -838,7 +978,8 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
             Exception? renewalException = null,
             Func<TimeSpan?, CancellationToken, Task<bool>>? renewal = null,
             Exception? releaseException = null,
-            Exception? disposeException = null
+            Exception? disposeException = null,
+            int? markLostOnTokenRead = null
         )
         {
             Resource = resource;
@@ -851,8 +992,8 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
             _renewal = renewal;
             _releaseException = releaseException;
             _disposeException = disposeException;
+            _markLostOnTokenRead = markLostOnTokenRead;
             _lostSource = canObserveLoss ? new CancellationTokenSource() : null;
-            LostToken = _lostSource?.Token ?? CancellationToken.None;
         }
 
         public string LeaseId { get; }
@@ -867,7 +1008,18 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
 
         public TimeSpan TimeWaitedForLock => TimeSpan.Zero;
 
-        public CancellationToken LostToken { get; }
+        public CancellationToken LostToken
+        {
+            get
+            {
+                if (_markLostOnTokenRead == Interlocked.Increment(ref _lostTokenReads))
+                {
+                    _lostSource!.Cancel();
+                }
+
+                return _lostSource?.Token ?? CancellationToken.None;
+            }
+        }
 
         public bool CanObserveLoss { get; }
 

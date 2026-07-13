@@ -46,6 +46,7 @@ internal static class CompositeDistributedLockAcquireCoordinator
             : null;
         var operationToken = operationSource?.Token ?? cancellationToken;
         var acquired = new List<IDistributedLease>(canonicalResources.Length);
+        var renewalSchedule = new FormationRenewalSchedule(timeProvider, _GetRenewalCadence(provider, options));
         CancellationTokenSource? formationLossSource = null;
         var formationLossRegistrations = new List<CancellationTokenRegistration>(canonicalResources.Length);
 
@@ -80,6 +81,7 @@ internal static class CompositeDistributedLockAcquireCoordinator
                         resource,
                         childOptions,
                         acquired,
+                        renewalSchedule,
                         formationLossSource?.Token ?? CancellationToken.None,
                         operationToken,
                         cancellationToken,
@@ -100,6 +102,7 @@ internal static class CompositeDistributedLockAcquireCoordinator
                 }
 
                 acquired.Add(child);
+                renewalSchedule.Start();
 
                 if (child.CanObserveLoss)
                 {
@@ -173,14 +176,19 @@ internal static class CompositeDistributedLockAcquireCoordinator
 
             if (cancellationToken.IsCancellationRequested)
             {
-                List<Exception> secondaryErrors = [exception];
+                var secondaryErrors = _GetCallerCancellationSecondaries(exception, cancellationToken);
 
                 if (cleanupErrors is not null)
                 {
                     secondaryErrors.AddRange(cleanupErrors);
                 }
 
-                _ThrowCombined(new OperationCanceledException(cancellationToken), secondaryErrors);
+                if (secondaryErrors.Count > 0)
+                {
+                    _ThrowCombined(new OperationCanceledException(cancellationToken), secondaryErrors);
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
             }
 
             if (cleanupErrors is not null)
@@ -228,6 +236,7 @@ internal static class CompositeDistributedLockAcquireCoordinator
         string resource,
         DistributedLockAcquireOptions options,
         List<IDistributedLease> held,
+        FormationRenewalSchedule renewalSchedule,
         CancellationToken formationLossToken,
         CancellationToken operationToken,
         CancellationToken callerToken,
@@ -250,7 +259,6 @@ internal static class CompositeDistributedLockAcquireCoordinator
             ? Task.Delay(Timeout.InfiniteTimeSpan, CancellationToken.None)
             : Task.Delay(Timeout.InfiniteTimeSpan, lossWaitSource.Token);
         var cancellationTask = Task.Delay(Timeout.InfiniteTimeSpan, waitCancellationSource.Token);
-        var cadence = _GetRenewalCadence(provider, options);
 
         try
         {
@@ -262,12 +270,12 @@ internal static class CompositeDistributedLockAcquireCoordinator
                 {
                     Task cadenceTask;
 
-                    if (cadence is { } cadenceValue)
+                    if (renewalSchedule.GetDelay() is { } cadenceDelay)
                     {
 #pragma warning disable CA2000 // Disposed by the enclosing iteration's finally block.
                         cadenceSource = CancellationTokenSource.CreateLinkedTokenSource(operationToken);
 #pragma warning restore CA2000
-                        cadenceTask = Task.Delay(cadenceValue, provider.TimeProvider, cadenceSource.Token);
+                        cadenceTask = Task.Delay(cadenceDelay, provider.TimeProvider, cadenceSource.Token);
                     }
                     else
                     {
@@ -318,6 +326,7 @@ internal static class CompositeDistributedLockAcquireCoordinator
                     if (renewalCompleted == renewalTask)
                     {
                         await renewalTask.ConfigureAwait(false);
+                        renewalSchedule.Reset();
                         continue;
                     }
 
@@ -436,6 +445,27 @@ internal static class CompositeDistributedLockAcquireCoordinator
         }
 
         return new OperationCanceledException(deadlineToken.IsCancellationRequested ? deadlineToken : operationToken);
+    }
+
+    private static List<Exception> _GetCallerCancellationSecondaries(Exception exception, CancellationToken callerToken)
+    {
+        List<Exception>? flattened = null;
+        _AddFlattened(ref flattened, exception);
+        flattened!.RemoveAll(error =>
+            error is OperationCanceledException cancellation && cancellation.CancellationToken == callerToken
+        );
+        return flattened;
+    }
+
+    private static void _AddFlattened(ref List<Exception>? errors, Exception exception)
+    {
+        if (exception is AggregateException aggregate)
+        {
+            (errors ??= []).AddRange(aggregate.Flatten().InnerExceptions);
+            return;
+        }
+
+        (errors ??= []).Add(exception);
     }
 
 #pragma warning disable VSTHRD003 // These helpers explicitly cancel and drain operation tasks before ownership ends.
@@ -614,6 +644,34 @@ internal static class CompositeDistributedLockAcquireCoordinator
     private static void _ThrowCombined(Exception primary, IReadOnlyCollection<Exception> cleanupErrors)
     {
         throw new AggregateException([primary, .. cleanupErrors]);
+    }
+
+    private sealed class FormationRenewalSchedule(TimeProvider timeProvider, TimeSpan? cadence)
+    {
+        private long? _lastRenewedAt;
+
+        internal void Start()
+        {
+            if (cadence is not null)
+            {
+                _lastRenewedAt ??= timeProvider.GetTimestamp();
+            }
+        }
+
+        internal TimeSpan? GetDelay()
+        {
+            return cadence is not { } value || _lastRenewedAt is not { } lastRenewedAt
+                ? null
+                : (value - timeProvider.GetElapsedTime(lastRenewedAt)).Max(TimeSpan.Zero);
+        }
+
+        internal void Reset()
+        {
+            if (cadence is not null)
+            {
+                _lastRenewedAt = timeProvider.GetTimestamp();
+            }
+        }
     }
 }
 

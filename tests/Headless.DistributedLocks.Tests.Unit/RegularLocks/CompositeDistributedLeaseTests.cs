@@ -257,14 +257,24 @@ public sealed class CompositeDistributedLeaseTests : TestBase
     }
 
     [Fact]
-    public async Task should_allow_renew_and_explicit_release_after_no_release_disposal()
+    public async Task should_stop_loss_observation_and_allow_lifecycle_after_no_release_disposal()
     {
-        var first = new TestLease("a", "lease-a");
-        var second = new TestLease("b", "lease-b");
+        using var firstLostSource = new CancellationTokenSource();
+        using var secondLostSource = new CancellationTokenSource();
+        var first = new TestLease("a", "lease-a", firstLostSource.Token);
+        var second = new TestLease("b", "lease-b", secondLostSource.Token);
         var sut = _Create([first, second], releaseOnDispose: false);
+        var lostToken = sut.LostToken;
+
+        sut.CanObserveLoss.Should().BeTrue();
+        lostToken.CanBeCanceled.Should().BeTrue();
 
         await sut.DisposeAsync();
 
+        sut.CanObserveLoss.Should().BeFalse();
+        sut.LostToken.Should().Be(CancellationToken.None);
+        await secondLostSource.CancelAsync();
+        lostToken.IsCancellationRequested.Should().BeFalse();
         (await sut.RenewAsync(cancellationToken: AbortToken)).Should().BeTrue();
         await sut.ReleaseAsync();
         first.ReleaseCalls.Should().Be(1);

@@ -23,6 +23,7 @@ internal sealed class CompositeDistributedLease : IDistributedLease, ICompositeD
     private readonly Lock _disposeLock = new();
 
     private Task? _disposeTask;
+    private int _canObserveLoss;
     private bool _isReleased;
 
     internal CompositeDistributedLease(
@@ -58,14 +59,21 @@ internal sealed class CompositeDistributedLease : IDistributedLease, ICompositeD
             }
 
             _lostSource = CancellationTokenSource.CreateLinkedTokenSource(lostTokens);
+
+            if (_lostSource.IsCancellationRequested)
+            {
+                var lostChild = _children.First(static child => child.IsLost);
+                _lostSource.Dispose();
+                throw new LockHandleLostException(lostChild.Resource, lostChild.LeaseId);
+            }
         }
 
         LeaseId = Guid.NewGuid().ToString("N");
         Resource = resource;
         DateAcquired = dateAcquired;
         TimeWaitedForLock = timeWaitedForLock;
-        CanObserveLoss = canObserveLoss;
-        LostToken = _lostSource?.Token ?? CancellationToken.None;
+        _canObserveLoss = canObserveLoss ? 1 : 0;
+        LostTokenSignal = _lostSource?.Token ?? CancellationToken.None;
     }
 
     public string LeaseId { get; }
@@ -80,9 +88,11 @@ internal sealed class CompositeDistributedLease : IDistributedLease, ICompositeD
 
     public TimeSpan TimeWaitedForLock { get; }
 
-    public CancellationToken LostToken { get; }
+    public CancellationToken LostToken => CanObserveLoss ? LostTokenSignal : CancellationToken.None;
 
-    public bool CanObserveLoss { get; }
+    public bool CanObserveLoss => Volatile.Read(ref _canObserveLoss) != 0;
+
+    private CancellationToken LostTokenSignal { get; }
 
     IReadOnlyList<IDistributedLease> ICompositeDistributedLease.Children => _children;
 
@@ -182,6 +192,8 @@ internal sealed class CompositeDistributedLease : IDistributedLease, ICompositeD
         }
         finally
         {
+            // Child disposal stops their monitors, so the composite must stop advertising a live loss signal.
+            Volatile.Write(ref _canObserveLoss, 0);
             _lostSource?.Dispose();
             _lifecycleGate.Release();
         }
