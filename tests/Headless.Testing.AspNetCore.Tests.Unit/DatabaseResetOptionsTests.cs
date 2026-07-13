@@ -33,6 +33,14 @@ public sealed class DatabaseResetOptionsTests
     }
 
     [Fact]
+    public void should_default_to_null_additional_transient_exception_filter()
+    {
+        var options = new DatabaseResetOptions();
+
+        options.AdditionalTransientExceptionFilter.Should().BeNull();
+    }
+
+    [Fact]
     public void should_accept_custom_tables_to_ignore()
     {
         var options = new DatabaseResetOptions

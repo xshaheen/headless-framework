@@ -21,6 +21,7 @@ packages: Testing, Testing.AspNetCore, Testing.Testcontainers, Messaging.Testing
 - [Headless.Testing.AspNetCore](#headlesstestingaspnetcore)
     - [Problem Solved](#problem-solved-1)
     - [Key Features](#key-features-1)
+    - [Design Notes](#design-notes)
     - [Installation](#installation-1)
     - [Quick Start](#quick-start-2)
     - [Quick Start](#quick-start-3)
@@ -196,7 +197,22 @@ ASP.NET Core integration-test host wrapper with controllable time, DI-scope help
 - `ExecuteScopeAsync(...)` opens a DI scope (optionally with a `ClaimsPrincipal`) for scoped operations.
 - `WaitForReadiness(...)` polls a host-readiness predicate before tests run.
 - `ConfigureDatabaseReset(...)` + `ResetDatabaseAsync()` integrate Respawner with retry.
+- Database reset APIs default to the active xUnit test's cancellation token. The server retries
+  database, I/O, socket, and broken-connection failures up to three times, replacing the reset
+  connection between attempts.
 - `ResetMessagingHarness()` clears `MessagingTestHarness` observation buffers between tests.
+
+### Design Notes
+
+Respawn 7 does not expose cancellation tokens for its internal database commands. Headless closes
+the active reset connection when cancellation is requested and keeps the reset gate held until
+Respawn unwinds, preventing abandoned commands from racing the next reset. A cancelled standalone
+reset therefore leaves its caller-owned connection closed. The server replaces closed connections
+and transiently failed connections through `ConnectionProvider` before the next attempt.
+
+The built-in retry set covers `DbException`, `IOException`, `SocketException`, and exceptions that
+wrap one of those types. Use `AdditionalTransientExceptionFilter` for a provider-specific transient
+shape such as a bare `InvalidOperationException`; deterministic exceptions fail immediately.
 
 ### Installation
 
@@ -365,6 +381,7 @@ The same caveat applies to other databases with sub-tick storage precision (MySQ
 | `initializerTimeout` | `TimeSpan?` | 60 s | Per-`IInitializer` wait budget before a `TimeoutException` is thrown. |
 | `WaitForReadiness(check, timeout)` | fluent | 30 s per check | Registers a post-startup readiness probe. Must be called before `InitializeAsync()`. |
 | `ConfigureDatabaseReset(configure)` | fluent | (disabled) | Opts into Respawner-based DB reset. Must be called before `InitializeAsync()`. |
+| `ResetDatabaseAsync(cancellationToken)` | `Task` | active xUnit test token | Resets database state and retries transient database or transport failures up to three times. |
 
 `DatabaseResetOptions` properties (passed to `ConfigureDatabaseReset`):
 
@@ -373,6 +390,7 @@ The same caveat applies to other databases with sub-tick storage precision (MySQ
 | `DbAdapter` | `IDbAdapter` | `DbAdapter.Postgres` | Respawner adapter matching the target database engine. |
 | `TablesToIgnore` | `List<Table>` | `[]` | Additional tables to skip during reset. `__EFMigrationsHistory` is always excluded automatically. |
 | `ConnectionProvider` | `Func<IServiceProvider, DbConnection>?` | `null` | **Required** when using `ResetDatabaseAsync()`. Factory for an unopened `DbConnection` to the test database. |
+| `AdditionalTransientExceptionFilter` | `Func<Exception, bool>?` | `null` | Adds provider-specific transient exception shapes to the built-in database and transport retry set. |
 
 ### Dependencies
 
