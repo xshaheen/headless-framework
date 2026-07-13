@@ -45,9 +45,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             yield break;
         }
 
-        var now = timeProvider.GetUtcNow().UtcDateTime;
-        var lockedUntil = now.Add(_leaseDuration);
-        Guid[] wonIds;
+        ClaimResult claim;
 
         await using (
             var claimTransaction = await JobsClaimTransaction<TDbContext>.CreateAsync(
@@ -64,14 +62,13 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 timeJobs.Length <= JobsClaimStrategyDefaults.MaxCandidatePageSize
                     ? timeJobs
                     : timeJobs.Take(JobsClaimStrategyDefaults.MaxCandidatePageSize).ToArray();
-            wonIds = await _ClaimRootsAsync(
+            claim = await _ClaimRootsAsync(
                     dbContext,
                     transaction,
                     mapping,
                     _BuildDirectCandidates(batch, mapping, readPastHints),
                     owner,
-                    now,
-                    lockedUntil,
+                    _leaseDuration,
                     cancellationToken,
                     batch
                         .SelectMany(
@@ -90,17 +87,17 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                     dbContext,
                     transaction,
                     mapping,
-                    wonIds,
+                    claim.Ids,
                     owner,
-                    now,
-                    lockedUntil,
+                    claim.ClaimedAt,
+                    _leaseDuration,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
             await claimTransaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        var won = wonIds.ToHashSet();
+        var won = claim.Ids.ToHashSet();
         foreach (var timeJob in timeJobs)
         {
             if (!won.Contains(timeJob.Id))
@@ -109,8 +106,8 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             }
 
             timeJob.OwnerId = owner;
-            timeJob.LockedUntil = lockedUntil;
-            timeJob.UpdatedAt = now;
+            timeJob.LockedUntil = claim.ClaimedAt.Add(_leaseDuration);
+            timeJob.UpdatedAt = claim.ClaimedAt;
             timeJob.Status = JobStatus.Queued;
             yield return timeJob;
         }
@@ -126,9 +123,8 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         }
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
-        var lockedUntil = now.Add(_leaseDuration);
         TimeJobEntity[] claimed;
-        Guid[] wonIds;
+        ClaimResult claim;
 
         await using (
             var claimTransaction = await JobsClaimTransaction<TDbContext>.CreateAsync(
@@ -149,17 +145,17 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                   AND (root.{mapping.Status} = @idle
                        OR (root.{mapping.Status} = @queued
                            AND (root.{mapping.LockedUntil} IS NULL
-                                OR (root.{mapping.LockedUntil} <= @now AND root.{mapping.OnNodeDeath} = @retry))))
+                                OR (root.{mapping.LockedUntil} <= @claimNow
+                                    AND root.{mapping.OnNodeDeath} = @retry))))
                 ORDER BY root.{mapping.ExecutionTime}, root.{mapping.Id}
                 """;
-            wonIds = await _ClaimRootsAsync(
+            claim = await _ClaimRootsAsync(
                     dbContext,
                     transaction,
                     mapping,
                     candidates,
                     owner,
-                    now,
-                    lockedUntil,
+                    _leaseDuration,
                     cancellationToken,
                     _DateTimeParameter("fallbackThreshold", now.AddSeconds(-1)),
                     new SqlParameter("idle", JobStatus.Idle.ToString()),
@@ -172,17 +168,17 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                     dbContext,
                     transaction,
                     mapping,
-                    wonIds,
+                    claim.Ids,
                     owner,
-                    now,
-                    lockedUntil,
+                    claim.ClaimedAt,
+                    _leaseDuration,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
             await claimTransaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        if (wonIds.Length == 0)
+        if (claim.Ids.Length == 0)
         {
             claimed = [];
         }
@@ -194,7 +190,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             claimed = await dbContext
                 .Set<TTimeJob>()
                 .AsNoTracking()
-                .Where(x => wonIds.Contains(x.Id) && x.OwnerId == owner && x.UpdatedAt == now)
+                .Where(x => claim.Ids.Contains(x.Id) && x.OwnerId == owner)
                 .Include(x => x.Children.Where(y => y.ExecutionTime == null))
                 .Select(MappingExtensions.ForQueueTimeJobs<TTimeJob>())
                 .ToArrayAsync(cancellationToken)
@@ -204,8 +200,6 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         foreach (var timeJob in claimed)
         {
             timeJob.OwnerId = owner;
-            timeJob.LockedUntil = lockedUntil;
-            timeJob.UpdatedAt = now;
             timeJob.Status = JobStatus.Queued;
             yield return timeJob;
         }
@@ -274,24 +268,21 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
 
             if (claimed.Count > 0)
             {
-                var publishedAt = timeProvider.GetUtcNow().UtcDateTime;
-                var publishedLockedUntil = publishedAt.Add(_leaseDuration);
-                await _RefreshCronOccurrenceLeasesAsync(
+                var refreshedAt = await _RefreshCronOccurrenceLeasesAsync(
                         dbContext,
                         transaction,
                         mapping,
                         claimed.Select(x => x.Id).ToArray(),
                         owner,
-                        publishedAt,
-                        publishedLockedUntil,
+                        _leaseDuration,
                         cancellationToken
                     )
                     .ConfigureAwait(false);
 
                 foreach (var occurrence in claimed)
                 {
-                    occurrence.UpdatedAt = publishedAt;
-                    occurrence.LockedUntil = publishedLockedUntil;
+                    occurrence.UpdatedAt = refreshedAt;
+                    occurrence.LockedUntil = refreshedAt.Add(_leaseDuration);
                 }
             }
 
@@ -300,6 +291,8 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
 
         foreach (var occurrence in claimed)
         {
+            occurrence.OwnerId = owner;
+            occurrence.Status = JobStatus.Queued;
             yield return occurrence;
         }
     }
@@ -355,7 +348,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             claimed = await dbContext
                 .Set<CronJobOccurrenceEntity<TCronJob>>()
                 .AsNoTracking()
-                .Where(x => wonIds.Contains(x.Id) && x.OwnerId == owner && x.UpdatedAt == now)
+                .Where(x => wonIds.Contains(x.Id) && x.OwnerId == owner)
                 .Include(x => x.CronJob)
                 .Select(MappingExtensions.ForQueueCronJobOccurrence<CronJobOccurrenceEntity<TCronJob>, TCronJob>())
                 .ToArrayAsync(cancellationToken)
@@ -364,42 +357,39 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
 
         foreach (var occurrence in claimed)
         {
-            occurrence.OwnerId = owner;
-            occurrence.LockedUntil = lockedUntil;
-            occurrence.UpdatedAt = now;
-            occurrence.Status = JobStatus.Queued;
             yield return occurrence;
         }
     }
 
-    private static async Task _RefreshCronOccurrenceLeasesAsync(
+    private static async Task<DateTime> _RefreshCronOccurrenceLeasesAsync(
         TDbContext dbContext,
         IDbContextTransaction transaction,
         CronOccurrenceRelationalMapping mapping,
         Guid[] occurrenceIds,
         string owner,
-        DateTime publishedAt,
-        DateTime publishedLockedUntil,
+        TimeSpan leaseDuration,
         CancellationToken cancellationToken
     )
     {
         await using var command = _CreateCommand(dbContext, transaction);
 #pragma warning disable CA2100
         command.CommandText = $"""
+            DECLARE @claimNow datetime2(7) = SYSUTCDATETIME();
+
             UPDATE occurrence
-            SET {mapping.LockedUntil} = @lockedUntil,
-                {mapping.UpdatedAt} = @publishedAt
+            SET {mapping.LockedUntil} = DATEADD(second, @leaseSeconds, @claimNow),
+                {mapping.UpdatedAt} = @claimNow
+            OUTPUT @claimNow
             FROM {mapping.Table} AS occurrence
             INNER JOIN OPENJSON(@occurrenceIds) AS claimed
                 ON occurrence.{mapping.Id} = TRY_CONVERT(uniqueidentifier, claimed.[value])
             WHERE occurrence.{mapping.OwnerId} = @owner;
             """;
 #pragma warning restore CA2100
-        command.Parameters.Add(_DateTimeParameter("lockedUntil", publishedLockedUntil));
-        command.Parameters.Add(_DateTimeParameter("publishedAt", publishedAt));
+        command.Parameters.Add(new SqlParameter("leaseSeconds", leaseDuration.TotalSeconds));
         command.Parameters.Add(new SqlParameter("occurrenceIds", JsonSerializer.Serialize(occurrenceIds)));
         command.Parameters.Add(new SqlParameter("owner", owner));
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        return (DateTime)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!;
     }
 
     private static async Task<CronJobOccurrenceEntity<TCronJob>?> _InsertCronOccurrenceAsync(
@@ -418,6 +408,8 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         await using var command = _CreateCommand(dbContext, transaction);
 #pragma warning disable CA2100
         command.CommandText = $"""
+            DECLARE @claimNow datetime2(7) = SYSUTCDATETIME();
+
             INSERT INTO {mapping.Table}
                 ({mapping.Id}, {mapping.Status}, {mapping.OwnerId}, {mapping.ExecutionTime}, {mapping.CronJobId},
                  {mapping.LockedUntil}, {mapping.OnNodeDeath}, {mapping.ElapsedTime}, {mapping.RetryCount},
@@ -425,7 +417,8 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             OUTPUT inserted.{mapping.Id}
             SELECT
                 @id, @status, @owner, @executionTime, @cronJobId,
-                @lockedUntil, @onNodeDeath, @elapsedTime, @retryCount, @now, @now
+                DATEADD(second, @leaseSeconds, @claimNow), @onNodeDeath, @elapsedTime, @retryCount,
+                @claimNow, @claimNow
             WHERE NOT EXISTS (
                 SELECT 1
                 FROM {mapping.Table} WITH (UPDLOCK, HOLDLOCK, ROWLOCK)
@@ -438,12 +431,10 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         command.Parameters.Add(new SqlParameter("owner", owner));
         command.Parameters.Add(_DateTimeParameter("executionTime", executionTime));
         command.Parameters.Add(new SqlParameter("cronJobId", item.Id));
-        command.Parameters.Add(_DateTimeParameter("lockedUntil", lockedUntil));
         command.Parameters.Add(new SqlParameter("leaseSeconds", (lockedUntil - now).TotalSeconds));
         command.Parameters.Add(new SqlParameter("onNodeDeath", item.OnNodeDeath.ToString()));
         command.Parameters.Add(new SqlParameter("elapsedTime", SqlDbType.BigInt) { Value = 0L });
         command.Parameters.Add(new SqlParameter("retryCount", SqlDbType.Int) { Value = 0 });
-        command.Parameters.Add(_DateTimeParameter("now", now));
 
         object? inserted;
         try
@@ -488,6 +479,8 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         await using var command = _CreateCommand(dbContext, transaction);
 #pragma warning disable CA2100
         command.CommandText = $"""
+            DECLARE @claimNow datetime2(7) = SYSUTCDATETIME();
+
             WITH candidate AS (
                 SELECT TOP ({JobsClaimStrategyDefaults.MaxClaimBatchSize}) occurrence.{mapping.Id}
                 FROM {mapping.Table} AS occurrence WITH ({readPastHints})
@@ -496,12 +489,13 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                   AND (occurrence.{mapping.Status} = @idle OR occurrence.{mapping.Status} = @queued)
                   AND (occurrence.{mapping.OwnerId} = @owner
                        OR occurrence.{mapping.LockedUntil} IS NULL
-                       OR (occurrence.{mapping.LockedUntil} <= @now AND occurrence.{mapping.OnNodeDeath} = @retry))
+                       OR (occurrence.{mapping.LockedUntil} <= @claimNow
+                           AND occurrence.{mapping.OnNodeDeath} = @retry))
             )
             UPDATE occurrence
             SET {mapping.OwnerId} = @owner,
-                {mapping.LockedUntil} = DATEADD(second, @leaseSeconds, SYSUTCDATETIME()),
-                {mapping.UpdatedAt} = SYSUTCDATETIME(),
+                {mapping.LockedUntil} = DATEADD(second, @leaseSeconds, @claimNow),
+                {mapping.UpdatedAt} = @claimNow,
                 {mapping.Status} = @queued,
                 {mapping.OnNodeDeath} = @onNodeDeath
             OUTPUT inserted.{mapping.Id}
@@ -514,9 +508,8 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         command.Parameters.Add(new SqlParameter("idle", JobStatus.Idle.ToString()));
         command.Parameters.Add(new SqlParameter("queued", JobStatus.Queued.ToString()));
         command.Parameters.Add(new SqlParameter("owner", owner));
-        command.Parameters.Add(_DateTimeParameter("now", now));
         command.Parameters.Add(new SqlParameter("retry", NodeDeathPolicy.Retry.ToString()));
-        command.Parameters.Add(_DateTimeParameter("lockedUntil", lockedUntil));
+        command.Parameters.Add(new SqlParameter("leaseSeconds", (lockedUntil - now).TotalSeconds));
         command.Parameters.Add(new SqlParameter("onNodeDeath", item.OnNodeDeath.ToString()));
         var claimed = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return claimed is Guid
@@ -550,6 +543,8 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         await using var command = _CreateCommand(dbContext, transaction);
 #pragma warning disable CA2100
         command.CommandText = $"""
+            DECLARE @claimNow datetime2(7) = SYSUTCDATETIME();
+
             WITH candidates AS (
                 SELECT TOP ({JobsClaimStrategyDefaults.MaxClaimBatchSize}) occurrence.{mapping.Id}
                 FROM {mapping.Table} AS occurrence WITH ({readPastHints})
@@ -557,14 +552,14 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                   AND (occurrence.{mapping.Status} = @idle
                        OR (occurrence.{mapping.Status} = @queued
                            AND (occurrence.{mapping.LockedUntil} IS NULL
-                                OR (occurrence.{mapping.LockedUntil} <= @now
+                                OR (occurrence.{mapping.LockedUntil} <= @claimNow
                                     AND occurrence.{mapping.OnNodeDeath} = @retry))))
                 ORDER BY occurrence.{mapping.ExecutionTime}, occurrence.{mapping.Id}
             )
             UPDATE occurrence
             SET {mapping.OwnerId} = @owner,
-                {mapping.LockedUntil} = @lockedUntil,
-                {mapping.UpdatedAt} = @now,
+                {mapping.LockedUntil} = DATEADD(second, @leaseSeconds, @claimNow),
+                {mapping.UpdatedAt} = @claimNow,
                 {mapping.Status} = @queued
             OUTPUT inserted.{mapping.Id}
             FROM {mapping.Table} AS occurrence
@@ -576,8 +571,6 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         command.Parameters.Add(new SqlParameter("queued", JobStatus.Queued.ToString()));
         command.Parameters.Add(new SqlParameter("retry", NodeDeathPolicy.Retry.ToString()));
         command.Parameters.Add(new SqlParameter("owner", owner));
-        command.Parameters.Add(_DateTimeParameter("lockedUntil", lockedUntil));
-        command.Parameters.Add(_DateTimeParameter("now", now));
         command.Parameters.Add(new SqlParameter("leaseSeconds", (lockedUntil - now).TotalSeconds));
 
         var ids = new List<Guid>();
@@ -610,14 +603,13 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             """;
     }
 
-    private static async Task<Guid[]> _ClaimRootsAsync(
+    private static async Task<ClaimResult> _ClaimRootsAsync(
         TDbContext dbContext,
         IDbContextTransaction transaction,
         TimeJobRelationalMapping mapping,
         string candidateSql,
         string owner,
-        DateTime now,
-        DateTime lockedUntil,
+        TimeSpan leaseDuration,
         CancellationToken cancellationToken,
         params SqlParameter[] candidateParameters
     )
@@ -627,34 +619,36 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         // every runtime value remains a command parameter.
 #pragma warning disable CA2100
         command.CommandText = $"""
+            DECLARE @claimNow datetime2(7) = SYSUTCDATETIME();
+
             WITH candidates AS (
                 {candidateSql}
             )
             UPDATE job
             SET {mapping.OwnerId} = @owner,
-                {mapping.LockedUntil} = DATEADD(second, @leaseSeconds, SYSUTCDATETIME()),
-                {mapping.UpdatedAt} = SYSUTCDATETIME(),
+                {mapping.LockedUntil} = DATEADD(second, @leaseSeconds, @claimNow),
+                {mapping.UpdatedAt} = @claimNow,
                 {mapping.Status} = @queuedStatus
-            OUTPUT inserted.{mapping.Id}
+            OUTPUT inserted.{mapping.Id}, @claimNow
             FROM {mapping.Table} AS job
             INNER JOIN candidates ON job.{mapping.Id} = candidates.{mapping.Id};
             """;
 #pragma warning restore CA2100
         command.Parameters.Add(new SqlParameter("owner", owner));
-        command.Parameters.Add(_DateTimeParameter("lockedUntil", lockedUntil));
-        command.Parameters.Add(_DateTimeParameter("now", now));
-        command.Parameters.Add(new SqlParameter("leaseSeconds", (lockedUntil - now).TotalSeconds));
+        command.Parameters.Add(new SqlParameter("leaseSeconds", leaseDuration.TotalSeconds));
         command.Parameters.Add(new SqlParameter("queuedStatus", JobStatus.Queued.ToString()));
         command.Parameters.AddRange(candidateParameters);
 
         var ids = new List<Guid>();
+        DateTime? claimedAt = null;
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             ids.Add(reader.GetGuid(0));
+            claimedAt ??= reader.GetDateTime(1);
         }
 
-        return ids.ToArray();
+        return new ClaimResult(ids.ToArray(), claimedAt ?? default);
     }
 
     private static async Task _StampDescendantsAsync(
@@ -663,8 +657,8 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         TimeJobRelationalMapping mapping,
         Guid[] rootIds,
         string owner,
-        DateTime now,
-        DateTime lockedUntil,
+        DateTime claimedAt,
+        TimeSpan leaseDuration,
         CancellationToken cancellationToken
     )
     {
@@ -692,8 +686,8 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             )
             UPDATE job
             SET {mapping.OwnerId} = @owner,
-                {mapping.LockedUntil} = DATEADD(second, @leaseSeconds, SYSUTCDATETIME()),
-                {mapping.UpdatedAt} = SYSUTCDATETIME()
+                {mapping.LockedUntil} = DATEADD(second, @leaseSeconds, @claimedAt),
+                {mapping.UpdatedAt} = @claimedAt
             FROM {mapping.Table} AS job
             INNER JOIN descendants ON job.{mapping.Id} = descendants.{mapping.Id}
             WHERE job.{mapping.Status} = @idle;
@@ -705,11 +699,12 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         }
         command.Parameters.Add(new SqlParameter("idle", JobStatus.Idle.ToString()));
         command.Parameters.Add(new SqlParameter("owner", owner));
-        command.Parameters.Add(_DateTimeParameter("lockedUntil", lockedUntil));
-        command.Parameters.Add(_DateTimeParameter("now", now));
-        command.Parameters.Add(new SqlParameter("leaseSeconds", (lockedUntil - now).TotalSeconds));
+        command.Parameters.Add(_DateTimeParameter("claimedAt", claimedAt));
+        command.Parameters.Add(new SqlParameter("leaseSeconds", leaseDuration.TotalSeconds));
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
+
+    private readonly record struct ClaimResult(Guid[] Ids, DateTime ClaimedAt);
 
     private static SqlCommand _CreateCommand(TDbContext dbContext, IDbContextTransaction transaction)
     {

@@ -100,6 +100,70 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
         }
     }
 
+    /// <summary>
+    /// #469: a fast application clock must not make a still-valid foreign lease eligible in either native fallback
+    /// time-job claiming or native existing-cron claiming. Both predicates are evaluated against the database clock.
+    /// </summary>
+    public virtual async Task native_claim_eligibility_uses_the_db_clock_not_a_fast_application_clock()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        using var host = fixture.BuildHost("node-fast", timeProvider: new SkewedTimeProvider(TimeSpan.FromHours(1)));
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var validUntil = DateTime.UtcNow.AddMinutes(30);
+            var timeJobId = Guid.NewGuid();
+            await fixture.SeedTimeJobAsync(
+                timeJobId,
+                "DbClockFallbackEligibility",
+                (int)JobStatus.Queued,
+                "foreign@1",
+                ct,
+                lockedUntil: validUntil
+            );
+
+            var cronId = Guid.NewGuid();
+            var occurrenceId = Guid.NewGuid();
+            var executionTime = DateTime.UtcNow.AddMinutes(-1);
+            await fixture.SeedCronJobAsync(cronId, "DbClockCronEligibility", "* * * * *", NodeDeathPolicy.Retry, ct);
+            await fixture.SeedCronOccurrenceAsync(
+                occurrenceId,
+                cronId,
+                (int)JobStatus.Queued,
+                "foreign@2",
+                NodeDeathPolicy.Retry,
+                validUntil,
+                executionTime,
+                ct
+            );
+
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            (await persistence.QueueTimedOutTimeJobsAsync(ct).ToArrayAsync(ct)).Should().BeEmpty();
+
+            var cronContext = new JobManagerDispatchContext(cronId)
+            {
+                FunctionName = "DbClockCronEligibility",
+                Expression = "* * * * *",
+                OnNodeDeath = NodeDeathPolicy.Retry,
+                NextCronOccurrence = new NextCronOccurrence(occurrenceId, DateTime.UtcNow.AddMinutes(-2)),
+            };
+            (await persistence.QueueCronJobOccurrencesAsync((executionTime, [cronContext]), ct).ToArrayAsync(ct))
+                .Should()
+                .BeEmpty();
+
+            (await fixture.ReadTimeJobAsync(timeJobId, ct)).OwnerId.Should().Be("foreign@1");
+            (await fixture.ReadCronOccurrenceAsync(occurrenceId, ct)).OwnerId.Should().Be("foreign@2");
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
     public virtual async Task reclaim_touches_only_the_dead_incarnations_non_terminal_rows()
     {
         var ct = AbortToken;

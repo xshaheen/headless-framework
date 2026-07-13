@@ -39,13 +39,11 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             yield break;
         }
 
-        var now = timeProvider.GetUtcNow().UtcDateTime;
-        var lockedUntil = now.Add(_leaseDuration);
         var batch =
             timeJobs.Length <= JobsClaimStrategyDefaults.MaxCandidatePageSize
                 ? timeJobs
                 : timeJobs.Take(JobsClaimStrategyDefaults.MaxCandidatePageSize).ToArray();
-        Guid[] wonIds;
+        ClaimResult claim;
 
         await using (
             var claimTransaction = await JobsClaimTransaction<TDbContext>.CreateAsync(
@@ -57,14 +55,13 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             var dbContext = claimTransaction.DbContext;
             var transaction = claimTransaction.Transaction;
             var mapping = TimeJobRelationalMapping.Create<TDbContext, TTimeJob>(dbContext);
-            wonIds = await _ClaimRootsAsync(
+            claim = await _ClaimRootsAsync(
                     dbContext,
                     transaction,
                     mapping,
                     _BuildDirectCandidates(batch, mapping),
                     owner,
-                    now,
-                    lockedUntil,
+                    _leaseDuration,
                     cancellationToken,
                     batch
                         .SelectMany(
@@ -83,17 +80,17 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                     dbContext,
                     transaction,
                     mapping,
-                    wonIds,
+                    claim.Ids,
                     owner,
-                    now,
-                    lockedUntil,
+                    claim.ClaimedAt,
+                    _leaseDuration,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
             await claimTransaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        var won = wonIds.ToHashSet();
+        var won = claim.Ids.ToHashSet();
         foreach (var timeJob in timeJobs)
         {
             if (!won.Contains(timeJob.Id))
@@ -102,8 +99,8 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             }
 
             timeJob.OwnerId = owner;
-            timeJob.LockedUntil = lockedUntil;
-            timeJob.UpdatedAt = now;
+            timeJob.LockedUntil = claim.ClaimedAt.Add(_leaseDuration);
+            timeJob.UpdatedAt = claim.ClaimedAt;
             timeJob.Status = JobStatus.Queued;
             yield return timeJob;
         }
@@ -119,7 +116,6 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         }
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
-        var lockedUntil = now.Add(_leaseDuration);
         TimeJobEntity[] claimed;
 
         await using (
@@ -134,25 +130,25 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             var mapping = TimeJobRelationalMapping.Create<TDbContext, TTimeJob>(dbContext);
             var candidates = $"""
                 SELECT root.{mapping.Id}
-                FROM {mapping.Table} AS root
+                FROM {mapping.Table} AS root, claim_clock
                 WHERE root.{mapping.ExecutionTime} IS NOT NULL
                   AND root.{mapping.ExecutionTime} <= @fallbackThreshold
                   AND (root.{mapping.Status} = @idle
                        OR (root.{mapping.Status} = @queued
                            AND (root.{mapping.LockedUntil} IS NULL
-                                OR (root.{mapping.LockedUntil} <= @now AND root.{mapping.OnNodeDeath} = @retry))))
+                                OR (root.{mapping.LockedUntil} <= claim_clock.now
+                                    AND root.{mapping.OnNodeDeath} = @retry))))
                 ORDER BY root.{mapping.ExecutionTime}, root.{mapping.Id}
                 LIMIT {JobsClaimStrategyDefaults.MaxClaimBatchSize}
                 FOR UPDATE SKIP LOCKED
                 """;
-            var wonIds = await _ClaimRootsAsync(
+            var claim = await _ClaimRootsAsync(
                     dbContext,
                     transaction,
                     mapping,
                     candidates,
                     owner,
-                    now,
-                    lockedUntil,
+                    _leaseDuration,
                     cancellationToken,
                     new NpgsqlParameter("fallbackThreshold", now.AddSeconds(-1)),
                     new NpgsqlParameter("idle", JobStatus.Idle.ToString()),
@@ -165,10 +161,10 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                     dbContext,
                     transaction,
                     mapping,
-                    wonIds,
+                    claim.Ids,
                     owner,
-                    now,
-                    lockedUntil,
+                    claim.ClaimedAt,
+                    _leaseDuration,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -176,7 +172,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             claimed = await dbContext
                 .Set<TTimeJob>()
                 .AsNoTracking()
-                .Where(x => wonIds.Contains(x.Id) && x.OwnerId == owner && x.UpdatedAt == now)
+                .Where(x => claim.Ids.Contains(x.Id) && x.OwnerId == owner)
                 .Include(x => x.Children.Where(y => y.ExecutionTime == null))
                 .Select(MappingExtensions.ForQueueTimeJobs<TTimeJob>())
                 .ToArrayAsync(cancellationToken)
@@ -187,8 +183,6 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         foreach (var timeJob in claimed)
         {
             timeJob.OwnerId = owner;
-            timeJob.LockedUntil = lockedUntil;
-            timeJob.UpdatedAt = now;
             timeJob.Status = JobStatus.Queued;
             yield return timeJob;
         }
@@ -255,24 +249,21 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
 
             if (claimed.Count > 0)
             {
-                var publishedAt = timeProvider.GetUtcNow().UtcDateTime;
-                var publishedLockedUntil = publishedAt.Add(_leaseDuration);
-                await _RefreshCronOccurrenceLeasesAsync(
+                var refreshedAt = await _RefreshCronOccurrenceLeasesAsync(
                         dbContext,
                         transaction,
                         mapping,
                         claimed.Select(x => x.Id).ToArray(),
                         owner,
-                        publishedAt,
-                        publishedLockedUntil,
+                        _leaseDuration,
                         cancellationToken
                     )
                     .ConfigureAwait(false);
 
                 foreach (var occurrence in claimed)
                 {
-                    occurrence.UpdatedAt = publishedAt;
-                    occurrence.LockedUntil = publishedLockedUntil;
+                    occurrence.UpdatedAt = refreshedAt;
+                    occurrence.LockedUntil = refreshedAt.Add(_leaseDuration);
                 }
             }
 
@@ -281,6 +272,8 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
 
         foreach (var occurrence in claimed)
         {
+            occurrence.OwnerId = owner;
+            occurrence.Status = JobStatus.Queued;
             yield return occurrence;
         }
     }
@@ -322,7 +315,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             claimed = await dbContext
                 .Set<CronJobOccurrenceEntity<TCronJob>>()
                 .AsNoTracking()
-                .Where(x => wonIds.Contains(x.Id) && x.OwnerId == owner && x.UpdatedAt == now)
+                .Where(x => wonIds.Contains(x.Id) && x.OwnerId == owner)
                 .Include(x => x.CronJob)
                 .Select(MappingExtensions.ForQueueCronJobOccurrence<CronJobOccurrenceEntity<TCronJob>, TCronJob>())
                 .ToArrayAsync(cancellationToken)
@@ -332,42 +325,41 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
 
         foreach (var occurrence in claimed)
         {
-            occurrence.OwnerId = owner;
-            occurrence.LockedUntil = lockedUntil;
-            occurrence.UpdatedAt = now;
-            occurrence.Status = JobStatus.Queued;
             yield return occurrence;
         }
     }
 
-    private static async Task _RefreshCronOccurrenceLeasesAsync(
+    private static async Task<DateTime> _RefreshCronOccurrenceLeasesAsync(
         TDbContext dbContext,
         IDbContextTransaction transaction,
         CronOccurrenceRelationalMapping mapping,
         Guid[] occurrenceIds,
         string owner,
-        DateTime publishedAt,
-        DateTime publishedLockedUntil,
+        TimeSpan leaseDuration,
         CancellationToken cancellationToken
     )
     {
         await using var command = _CreateCommand(dbContext, transaction);
 #pragma warning disable CA2100
         command.CommandText = $"""
+            WITH claim_clock AS MATERIALIZED (
+                SELECT clock_timestamp() AS now
+            )
             UPDATE {mapping.Table}
-            SET {mapping.LockedUntil} = @lockedUntil,
-                {mapping.UpdatedAt} = @publishedAt
+            SET {mapping.LockedUntil} = claim_clock.now + (@leaseSeconds * INTERVAL '1 second'),
+                {mapping.UpdatedAt} = claim_clock.now
+            FROM claim_clock
             WHERE {mapping.Id} = ANY(@occurrenceIds)
-              AND {mapping.OwnerId} = @owner;
+              AND {mapping.OwnerId} = @owner
+            RETURNING claim_clock.now;
             """;
 #pragma warning restore CA2100
-        command.Parameters.Add(new NpgsqlParameter("lockedUntil", publishedLockedUntil));
-        command.Parameters.Add(new NpgsqlParameter("publishedAt", publishedAt));
+        command.Parameters.Add(new NpgsqlParameter("leaseSeconds", leaseDuration.TotalSeconds));
         command.Parameters.Add(
             new NpgsqlParameter("occurrenceIds", NpgsqlDbType.Array | NpgsqlDbType.Uuid) { Value = occurrenceIds }
         );
         command.Parameters.Add(new NpgsqlParameter("owner", owner));
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        return (DateTime)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!;
     }
 
     private static async Task<CronJobOccurrenceEntity<TCronJob>?> _InsertCronOccurrenceAsync(
@@ -386,13 +378,18 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         await using var command = _CreateCommand(dbContext, transaction);
 #pragma warning disable CA2100
         command.CommandText = $"""
+            WITH claim_clock AS MATERIALIZED (
+                SELECT clock_timestamp() AS now
+            )
             INSERT INTO {mapping.Table}
                 ({mapping.Id}, {mapping.Status}, {mapping.OwnerId}, {mapping.ExecutionTime}, {mapping.CronJobId},
                  {mapping.LockedUntil}, {mapping.OnNodeDeath}, {mapping.ElapsedTime}, {mapping.RetryCount},
                  {mapping.CreatedAt}, {mapping.UpdatedAt})
-            VALUES
-                (@id, @status, @owner, @executionTime, @cronJobId,
-                 @lockedUntil, @onNodeDeath, @elapsedTime, @retryCount, @now, @now)
+            SELECT
+                @id, @status, @owner, @executionTime, @cronJobId,
+                claim_clock.now + (@leaseSeconds * INTERVAL '1 second'), @onNodeDeath,
+                @elapsedTime, @retryCount, claim_clock.now, claim_clock.now
+            FROM claim_clock
             ON CONFLICT ({mapping.ExecutionTime}, {mapping.CronJobId}) DO NOTHING
             RETURNING {mapping.Id};
             """;
@@ -402,12 +399,10 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         command.Parameters.Add(new NpgsqlParameter("owner", owner));
         command.Parameters.Add(new NpgsqlParameter("executionTime", executionTime));
         command.Parameters.Add(new NpgsqlParameter("cronJobId", item.Id));
-        command.Parameters.Add(new NpgsqlParameter("lockedUntil", lockedUntil));
         command.Parameters.Add(new NpgsqlParameter("leaseSeconds", (lockedUntil - now).TotalSeconds));
         command.Parameters.Add(new NpgsqlParameter("onNodeDeath", item.OnNodeDeath.ToString()));
         command.Parameters.Add(new NpgsqlParameter("elapsedTime", NpgsqlDbType.Bigint) { Value = 0L });
         command.Parameters.Add(new NpgsqlParameter("retryCount", NpgsqlDbType.Integer) { Value = 0 });
-        command.Parameters.Add(new NpgsqlParameter("now", now));
         var inserted = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return inserted is Guid
             ? new CronJobOccurrenceEntity<TCronJob>
@@ -442,24 +437,27 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         await using var command = _CreateCommand(dbContext, transaction);
 #pragma warning disable CA2100
         command.CommandText = $"""
-            WITH candidate AS (
+            WITH claim_clock AS MATERIALIZED (
+                SELECT clock_timestamp() AS now
+            ), candidate AS (
                 SELECT occurrence.{mapping.Id}
-                FROM {mapping.Table} AS occurrence
+                FROM {mapping.Table} AS occurrence, claim_clock
                 WHERE occurrence.{mapping.Id} = @id
                   AND occurrence.{mapping.ExecutionTime} = @executionTime
                   AND (occurrence.{mapping.Status} = @idle OR occurrence.{mapping.Status} = @queued)
                   AND (occurrence.{mapping.OwnerId} = @owner
                        OR occurrence.{mapping.LockedUntil} IS NULL
-                       OR (occurrence.{mapping.LockedUntil} <= @now AND occurrence.{mapping.OnNodeDeath} = @retry))
+                       OR (occurrence.{mapping.LockedUntil} <= claim_clock.now
+                           AND occurrence.{mapping.OnNodeDeath} = @retry))
                 FOR UPDATE SKIP LOCKED
             )
             UPDATE {mapping.Table} AS occurrence
             SET {mapping.OwnerId} = @owner,
-                {mapping.LockedUntil} = CURRENT_TIMESTAMP + (@leaseSeconds * INTERVAL '1 second'),
-                {mapping.UpdatedAt} = CURRENT_TIMESTAMP,
+                {mapping.LockedUntil} = claim_clock.now + (@leaseSeconds * INTERVAL '1 second'),
+                {mapping.UpdatedAt} = claim_clock.now,
                 {mapping.Status} = @queued,
                 {mapping.OnNodeDeath} = @onNodeDeath
-            FROM candidate
+            FROM candidate, claim_clock
             WHERE occurrence.{mapping.Id} = candidate.{mapping.Id}
             RETURNING occurrence.{mapping.Id};
             """;
@@ -469,9 +467,8 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         command.Parameters.Add(new NpgsqlParameter("idle", JobStatus.Idle.ToString()));
         command.Parameters.Add(new NpgsqlParameter("queued", JobStatus.Queued.ToString()));
         command.Parameters.Add(new NpgsqlParameter("owner", owner));
-        command.Parameters.Add(new NpgsqlParameter("now", now));
         command.Parameters.Add(new NpgsqlParameter("retry", NodeDeathPolicy.Retry.ToString()));
-        command.Parameters.Add(new NpgsqlParameter("lockedUntil", lockedUntil));
+        command.Parameters.Add(new NpgsqlParameter("leaseSeconds", (lockedUntil - now).TotalSeconds));
         command.Parameters.Add(new NpgsqlParameter("onNodeDeath", item.OnNodeDeath.ToString()));
         var claimed = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return claimed is Guid
@@ -504,14 +501,16 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         await using var command = _CreateCommand(dbContext, transaction);
 #pragma warning disable CA2100
         command.CommandText = $"""
-            WITH candidates AS (
+            WITH claim_clock AS MATERIALIZED (
+                SELECT clock_timestamp() AS now
+            ), candidates AS (
                 SELECT occurrence.{mapping.Id}
-                FROM {mapping.Table} AS occurrence
+                FROM {mapping.Table} AS occurrence, claim_clock
                 WHERE occurrence.{mapping.ExecutionTime} <= @fallbackThreshold
                   AND (occurrence.{mapping.Status} = @idle
                        OR (occurrence.{mapping.Status} = @queued
                            AND (occurrence.{mapping.LockedUntil} IS NULL
-                                OR (occurrence.{mapping.LockedUntil} <= @now
+                                OR (occurrence.{mapping.LockedUntil} <= claim_clock.now
                                     AND occurrence.{mapping.OnNodeDeath} = @retry))))
                 ORDER BY occurrence.{mapping.ExecutionTime}, occurrence.{mapping.Id}
                 LIMIT {JobsClaimStrategyDefaults.MaxClaimBatchSize}
@@ -519,10 +518,10 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             )
             UPDATE {mapping.Table} AS occurrence
             SET {mapping.OwnerId} = @owner,
-                {mapping.LockedUntil} = @lockedUntil,
-                {mapping.UpdatedAt} = @now,
+                {mapping.LockedUntil} = claim_clock.now + (@leaseSeconds * INTERVAL '1 second'),
+                {mapping.UpdatedAt} = claim_clock.now,
                 {mapping.Status} = @queued
-            FROM candidates
+            FROM candidates, claim_clock
             WHERE occurrence.{mapping.Id} = candidates.{mapping.Id}
             RETURNING occurrence.{mapping.Id};
             """;
@@ -532,8 +531,6 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         command.Parameters.Add(new NpgsqlParameter("queued", JobStatus.Queued.ToString()));
         command.Parameters.Add(new NpgsqlParameter("retry", NodeDeathPolicy.Retry.ToString()));
         command.Parameters.Add(new NpgsqlParameter("owner", owner));
-        command.Parameters.Add(new NpgsqlParameter("lockedUntil", lockedUntil));
-        command.Parameters.Add(new NpgsqlParameter("now", now));
         command.Parameters.Add(new NpgsqlParameter("leaseSeconds", (lockedUntil - now).TotalSeconds));
 
         var ids = new List<Guid>();
@@ -563,14 +560,13 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             """;
     }
 
-    private static async Task<Guid[]> _ClaimRootsAsync(
+    private static async Task<ClaimResult> _ClaimRootsAsync(
         TDbContext dbContext,
         IDbContextTransaction transaction,
         TimeJobRelationalMapping mapping,
         string candidateSql,
         string owner,
-        DateTime now,
-        DateTime lockedUntil,
+        TimeSpan leaseDuration,
         CancellationToken cancellationToken,
         params NpgsqlParameter[] candidateParameters
     )
@@ -580,34 +576,36 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         // every runtime value remains a command parameter.
 #pragma warning disable CA2100
         command.CommandText = $"""
-            WITH candidates AS (
+            WITH claim_clock AS MATERIALIZED (
+                SELECT clock_timestamp() AS now
+            ), candidates AS (
                 {candidateSql}
             )
             UPDATE {mapping.Table} AS job
             SET {mapping.OwnerId} = @owner,
-                {mapping.LockedUntil} = CURRENT_TIMESTAMP + (@leaseSeconds * INTERVAL '1 second'),
-                {mapping.UpdatedAt} = CURRENT_TIMESTAMP,
+                {mapping.LockedUntil} = claim_clock.now + (@leaseSeconds * INTERVAL '1 second'),
+                {mapping.UpdatedAt} = claim_clock.now,
                 {mapping.Status} = @queuedStatus
-            FROM candidates
+            FROM candidates, claim_clock
             WHERE job.{mapping.Id} = candidates.{mapping.Id}
-            RETURNING job.{mapping.Id};
+            RETURNING job.{mapping.Id}, claim_clock.now;
             """;
 #pragma warning restore CA2100
         command.Parameters.Add(new NpgsqlParameter("owner", owner));
-        command.Parameters.Add(new NpgsqlParameter("lockedUntil", lockedUntil));
-        command.Parameters.Add(new NpgsqlParameter("now", now));
-        command.Parameters.Add(new NpgsqlParameter("leaseSeconds", (lockedUntil - now).TotalSeconds));
+        command.Parameters.Add(new NpgsqlParameter("leaseSeconds", leaseDuration.TotalSeconds));
         command.Parameters.Add(new NpgsqlParameter("queuedStatus", JobStatus.Queued.ToString()));
         command.Parameters.AddRange(candidateParameters);
 
         var ids = new List<Guid>();
+        DateTime? claimedAt = null;
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             ids.Add(reader.GetGuid(0));
+            claimedAt ??= reader.GetDateTime(1);
         }
 
-        return ids.ToArray();
+        return new ClaimResult(ids.ToArray(), claimedAt ?? default);
     }
 
     private static async Task _StampDescendantsAsync(
@@ -616,8 +614,8 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         TimeJobRelationalMapping mapping,
         Guid[] rootIds,
         string owner,
-        DateTime now,
-        DateTime lockedUntil,
+        DateTime claimedAt,
+        TimeSpan leaseDuration,
         CancellationToken cancellationToken
     )
     {
@@ -644,8 +642,8 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             )
             UPDATE {mapping.Table} AS job
             SET {mapping.OwnerId} = @owner,
-                {mapping.LockedUntil} = CURRENT_TIMESTAMP + (@leaseSeconds * INTERVAL '1 second'),
-                {mapping.UpdatedAt} = CURRENT_TIMESTAMP
+                {mapping.LockedUntil} = @claimedAt + (@leaseSeconds * INTERVAL '1 second'),
+                {mapping.UpdatedAt} = @claimedAt
             FROM descendants
             WHERE job.{mapping.Id} = descendants.{mapping.Id} AND job.{mapping.Status} = @idle;
             """;
@@ -655,11 +653,12 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         );
         command.Parameters.Add(new NpgsqlParameter("idle", JobStatus.Idle.ToString()));
         command.Parameters.Add(new NpgsqlParameter("owner", owner));
-        command.Parameters.Add(new NpgsqlParameter("lockedUntil", lockedUntil));
-        command.Parameters.Add(new NpgsqlParameter("now", now));
-        command.Parameters.Add(new NpgsqlParameter("leaseSeconds", (lockedUntil - now).TotalSeconds));
+        command.Parameters.Add(new NpgsqlParameter("claimedAt", claimedAt));
+        command.Parameters.Add(new NpgsqlParameter("leaseSeconds", leaseDuration.TotalSeconds));
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
+
+    private readonly record struct ClaimResult(Guid[] Ids, DateTime ClaimedAt);
 
     private static NpgsqlCommand _CreateCommand(TDbContext dbContext, IDbContextTransaction transaction)
     {
