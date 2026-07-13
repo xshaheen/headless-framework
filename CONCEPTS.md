@@ -44,10 +44,11 @@ liveness entry. Computed from how stale the Liveness row is against the store cl
 store-evaluated thresholds — never by an application node comparing wall clocks.
 
 ### Store as temporal authority
-The invariant that all liveness timestamps and all dead/suspected determinations come from the
-store's own server clock and predicates. No application node compares another node's wall clock to
-its own, and no failover decision is made from a stale (replica) read — only from the authoritative
-write/primary path.
+The rule that timestamps governing shared liveness or lease ownership, and the predicates that evaluate
+them, must use the durable store's server clock inside the authoritative atomic operation. Application
+nodes must not use their wall clocks to decide another node's expiry; in-memory implementations instead
+use their single injected clock because no independent shared-store clock exists. Failover decisions use
+the authoritative write/primary path rather than a stale replica read.
 
 ### Incarnation guard
 The write-time check that a heartbeat, leave, or registration write only takes effect when its

@@ -438,13 +438,11 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
-        var now = TimeProvider.GetUtcNow().UtcDateTime;
-
         // Only acquire occurrences that are acquirable (Idle/Queued and not locked by another node)
         var query = dbContext
             .Set<CronJobOccurrenceEntity<TCronJob>>()
             .Where(x => ((IEnumerable<Guid>)occurrenceIds).Contains(x.Id))
-            .WhereCanAcquire(owner, now);
+            .WhereCanAcquireUsingDatabaseClock(owner);
 
         // Lock and mark InProgress
         var affected = await query
@@ -452,9 +450,9 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
                 setter =>
                     setter
                         .SetProperty(x => x.OwnerId, owner)
-                        .SetProperty(x => x.LockedUntil, now.Add(LeaseDuration))
+                        .SetProperty(x => x.LockedUntil, _ => DateTime.UtcNow.AddSeconds(LeaseDuration.TotalSeconds))
                         .SetProperty(x => x.Status, JobStatus.InProgress)
-                        .SetProperty(x => x.UpdatedAt, now),
+                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
                 cancellationToken
             )
             .ConfigureAwait(false);

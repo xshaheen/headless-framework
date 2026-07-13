@@ -26,6 +26,8 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     private IStorageInitializer? _initializer;
     private IDataStorage? _storage;
     private ISerializer? _serializer;
+    private IOptions<PostgreSqlOptions>? _postgreSqlOptions;
+    private IOptions<MessagingOptions>? _messagingOptions;
 
     /// <inheritdoc />
     protected override DataStorageCapabilities Capabilities =>
@@ -56,6 +58,27 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     {
         _EnsureInitialized();
         return _serializer!;
+    }
+
+    /// <inheritdoc />
+    protected override IDataStorage CreateStorageWithTimeProvider(TimeProvider timeProvider)
+    {
+        _EnsureInitialized();
+        return _CreateStorage(timeProvider);
+    }
+
+    private IDataStorage _CreateStorage(TimeProvider timeProvider)
+    {
+        return new PostgreSqlDataStorage(
+            _postgreSqlOptions!,
+            _messagingOptions!,
+            _initializer!,
+            _serializer!,
+            new SequentialGuidGenerator(SequentialGuidType.Version7),
+            timeProvider,
+            NodeMembership,
+            NullLogger<PostgreSqlDataStorage>.Instance
+        );
     }
 
     /// <inheritdoc />
@@ -138,26 +161,17 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
 
         var provider = services.BuildServiceProvider();
 
-        var postgreSqlOptions = provider.GetRequiredService<IOptions<PostgreSqlOptions>>();
-        var messagingOptions = provider.GetRequiredService<IOptions<MessagingOptions>>();
+        _postgreSqlOptions = provider.GetRequiredService<IOptions<PostgreSqlOptions>>();
+        _messagingOptions = provider.GetRequiredService<IOptions<MessagingOptions>>();
         _serializer = provider.GetRequiredService<ISerializer>();
 
         _initializer = new PostgreSqlStorageInitializer(
             NullLogger<PostgreSqlStorageInitializer>.Instance,
-            postgreSqlOptions,
-            messagingOptions
+            _postgreSqlOptions,
+            _messagingOptions
         );
 
-        _storage = new PostgreSqlDataStorage(
-            postgreSqlOptions,
-            messagingOptions,
-            _initializer,
-            provider.GetRequiredService<ISerializer>(),
-            new SequentialGuidGenerator(SequentialGuidType.Version7),
-            TimeProvider.System,
-            NodeMembership,
-            NullLogger<PostgreSqlDataStorage>.Instance
-        );
+        _storage = _CreateStorage(TimeProvider.System);
     }
 
     #region Data Storage Tests
@@ -261,6 +275,30 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     [Fact]
     public override Task should_not_return_leased_published_message_until_lease_expires() =>
         base.should_not_return_leased_published_message_until_lease_expires();
+
+    [Fact]
+    public override Task should_use_database_clock_when_reclaiming_published_retry_lease() =>
+        base.should_use_database_clock_when_reclaiming_published_retry_lease();
+
+    [Fact]
+    public override Task should_use_database_clock_when_reclaiming_received_retry_lease() =>
+        base.should_use_database_clock_when_reclaiming_received_retry_lease();
+
+    [Fact]
+    public override Task should_use_database_clock_when_fast_forwarding_dead_owner_lease() =>
+        base.should_use_database_clock_when_fast_forwarding_dead_owner_lease();
+
+    [Fact]
+    public override Task should_stamp_retry_lease_from_database_clock() =>
+        base.should_stamp_retry_lease_from_database_clock();
+
+    [Fact]
+    public override Task should_use_application_clock_when_scheduling_published_retry() =>
+        base.should_use_application_clock_when_scheduling_published_retry();
+
+    [Fact]
+    public override Task should_use_application_clock_when_scheduling_received_retry() =>
+        base.should_use_application_clock_when_scheduling_received_retry();
 
     [Fact]
     public override Task should_reject_mismatched_original_retries() =>

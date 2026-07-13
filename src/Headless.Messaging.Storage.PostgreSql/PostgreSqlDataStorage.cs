@@ -1178,41 +1178,44 @@ internal sealed class PostgreSqlDataStorage(
         // "LockedUntil IS NULL" filter and lease the same row — double-dispatch.
         //
         // FOR UPDATE SKIP LOCKED on the inner SELECT preserves the "skip rows another replica
-        // is mid-claim on" behaviour. The UPDATE then assigns @NewLease = now + DispatchTimeout
+        // is mid-claim on" behaviour. The UPDATE then assigns database time + DispatchTimeout
         // so subsequent pickup polls (anywhere) see the row as leased until the dispatch
         // attempt completes (or the lease expires).
         //
-        // Use the injected TimeProvider rather than the DB server clock (now()) so InMemory and
-        // SQL providers share identical pickup semantics — keeps tests with a fake clock honest
-        // and avoids subtle drift between application time and DB time.
+        // NextRetryAt is scheduling state written from the injected TimeProvider, so its due
+        // predicate uses that same authority. Lease expiry and stamping remain on one statement-
+        // time database snapshot, keeping every replica on one ownership authority without a
+        // clock query.
         var sql = string.Create(
             CultureInfo.InvariantCulture,
             $"""
-            UPDATE {tableName} SET "LockedUntil" = @NewLease, "Owner" = @Owner
-            WHERE "Id" IN (
-                SELECT "Id" FROM {tableName}
+            WITH candidates AS (
+                SELECT message."Id"
+                FROM {tableName} AS message
                 WHERE "Retries" <= @Retries
                   AND "Version" = @Version
                   AND "NextRetryAt" IS NOT NULL AND "NextRetryAt" <= @Now
-                  AND ("LockedUntil" IS NULL OR "LockedUntil" <= @Now)
+                  AND ("LockedUntil" IS NULL OR "LockedUntil" <= statement_timestamp())
                   AND {_TerminalRowGuardSimple}
                 ORDER BY "NextRetryAt"
                 LIMIT {messagingOptions.Value.RetryBatchSize}
                 FOR UPDATE SKIP LOCKED
             )
-            RETURNING "Id","Content","IntentType","Retries","InlineAttempts","Added","NextRetryAt","LockedUntil","Owner";
+            UPDATE {tableName} AS message
+            SET "LockedUntil" = statement_timestamp() + (@LeaseSeconds * INTERVAL '1 second'),
+                "Owner" = @Owner
+            FROM candidates
+            WHERE message."Id" = candidates."Id"
+            RETURNING message."Id",message."Content",message."IntentType",message."Retries",message."InlineAttempts",message."Added",message."NextRetryAt",message."LockedUntil",message."Owner";
             """
         );
-
-        var now = timeProvider.GetUtcNow().UtcDateTime;
-        var newLease = now.Add(messagingOptions.Value.RetryPolicy.DispatchTimeout);
 
         object[] sqlParams =
         [
             new NpgsqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxPersistedRetries),
             new NpgsqlParameter("@Version", messagingOptions.Value.Version),
-            new NpgsqlParameter("@Now", now),
-            new NpgsqlParameter("@NewLease", newLease),
+            new NpgsqlParameter("@Now", timeProvider.GetUtcNow().UtcDateTime),
+            new NpgsqlParameter("@LeaseSeconds", messagingOptions.Value.RetryPolicy.DispatchTimeout.TotalSeconds),
             new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar)
             {
                 Value = nodeMembership.GetOwnerTag() ?? (object)DBNull.Value,
@@ -1410,16 +1413,15 @@ internal sealed class PostgreSqlDataStorage(
             return 0;
         }
 
-        var now = timeProvider.GetUtcNow().UtcDateTime;
         // Intentionally version-agnostic: reclaim only shortens leases on rows owned by dead
         // node incarnations, then the normal version-filtered pickup path decides what this
         // service version is allowed to dispatch.
         var sql = $"""
-            UPDATE {tableName}
-            SET "LockedUntil" = @Now
+            UPDATE {tableName} AS message
+            SET "LockedUntil" = statement_timestamp()
             WHERE "Owner" IS NOT NULL
               AND "Owner" = ANY(@DeadOwners)
-              AND "LockedUntil" > @Now
+              AND "LockedUntil" > statement_timestamp()
               AND {_TerminalRowGuardSimple};
             """;
 
@@ -1428,11 +1430,7 @@ internal sealed class PostgreSqlDataStorage(
             .ExecuteNonQueryAsync(
                 sql,
                 commandTimeout: messagingOptions.Value.CommandTimeout,
-                sqlParams:
-                [
-                    new NpgsqlParameter("@Now", now),
-                    new NpgsqlParameter("@DeadOwners", deadOwners.ToArray()) { DataTypeName = "varchar[]" },
-                ],
+                sqlParams: [new NpgsqlParameter("@DeadOwners", deadOwners.ToArray()) { DataTypeName = "varchar[]" }],
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
