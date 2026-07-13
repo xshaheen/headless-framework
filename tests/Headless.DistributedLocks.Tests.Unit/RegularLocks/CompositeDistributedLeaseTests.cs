@@ -301,6 +301,64 @@ public sealed class CompositeDistributedLeaseTests : TestBase
         (await sut.RenewAsync(cancellationToken: AbortToken)).Should().BeTrue();
     }
 
+    [Fact]
+    public async Task provider_release_should_surface_pre_cancelled_caller_token_when_all_children_cancel()
+    {
+        var provider = Substitute.For<IDistributedLock>();
+        var first = new TestLease("a", "lease-a");
+        var second = new TestLease("b", "lease-b");
+        await using var sut = _Create([first, second], releaseOnDispose: false);
+        using var callerSource = new CancellationTokenSource();
+        await callerSource.CancelAsync();
+        var callerToken = callerSource.Token;
+        provider
+            .ReleaseAsync(Arg.Any<string>(), Arg.Any<string>(), callerToken)
+            .Returns(call => Task.FromException(new OperationCanceledException(call.ArgAt<CancellationToken>(2))));
+
+        var act = async () => await provider.ReleaseAsync(sut, callerToken);
+
+        var exception = (await act.Should().ThrowAsync<OperationCanceledException>()).Which;
+        exception.Should().NotBeOfType<AggregateException>();
+        exception.CancellationToken.Should().Be(callerToken);
+        await provider.Received(1).ReleaseAsync("b", "lease-b", callerToken);
+        await provider.Received(1).ReleaseAsync("a", "lease-a", callerToken);
+    }
+
+    [Fact]
+    public async Task provider_release_should_surface_mid_flight_caller_cancellation_when_all_children_cancel()
+    {
+        var provider = Substitute.For<IDistributedLock>();
+        var first = new TestLease("a", "lease-a");
+        var second = new TestLease("b", "lease-b");
+        await using var sut = _Create([first, second], releaseOnDispose: false);
+        using var callerSource = new CancellationTokenSource();
+        var callerToken = callerSource.Token;
+        var calls = new List<string>();
+
+        async Task ReleaseChildAsync(string resource, CancellationToken cancellationToken)
+        {
+            calls.Add(resource);
+
+            if (resource == "b")
+            {
+                await callerSource.CancelAsync();
+            }
+
+            throw new OperationCanceledException(cancellationToken);
+        }
+
+        provider
+            .ReleaseAsync(Arg.Any<string>(), Arg.Any<string>(), callerToken)
+            .Returns(call => ReleaseChildAsync(call.ArgAt<string>(0), call.ArgAt<CancellationToken>(2)));
+
+        var act = async () => await provider.ReleaseAsync(sut, callerToken);
+
+        var exception = (await act.Should().ThrowAsync<OperationCanceledException>()).Which;
+        exception.Should().NotBeOfType<AggregateException>();
+        exception.CancellationToken.Should().Be(callerToken);
+        calls.Should().Equal("b", "a");
+    }
+
     private static CompositeDistributedLease _Create(
         IReadOnlyList<IDistributedLease> children,
         bool releaseOnDispose = true

@@ -114,6 +114,12 @@ internal static class CompositeDistributedLockAcquireCoordinator
             }
 
             cancellationToken.ThrowIfCancellationRequested();
+            var lostChild = acquired.FirstOrDefault(static child => child.IsLost);
+
+            if (lostChild is not null)
+            {
+                throw new LockHandleLostException(lostChild.Resource, lostChild.LeaseId);
+            }
 
             if (deadlineSource?.IsCancellationRequested == true)
             {
@@ -164,6 +170,18 @@ internal static class CompositeDistributedLockAcquireCoordinator
         catch (Exception exception)
         {
             var cleanupErrors = await _RollbackAsync(acquired).ConfigureAwait(false);
+
+            if (cancellationToken.IsCancellationRequested)
+            {
+                List<Exception> secondaryErrors = [exception];
+
+                if (cleanupErrors is not null)
+                {
+                    secondaryErrors.AddRange(cleanupErrors);
+                }
+
+                _ThrowCombined(new OperationCanceledException(cancellationToken), secondaryErrors);
+            }
 
             if (cleanupErrors is not null)
             {

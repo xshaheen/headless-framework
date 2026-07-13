@@ -20,7 +20,10 @@ public static class DistributedLockExtensions
         /// </summary>
         /// <param name="resources">Resource names to acquire. The sequence is enumerated once, deduplicated, and ordinal-sorted.</param>
         /// <param name="options">Per-call configuration shared by every child acquisition.</param>
-        /// <param name="cancellationToken">Cancels the composite acquisition and its compensating cleanup.</param>
+        /// <param name="cancellationToken">
+        /// Cancels composite formation. Pending child work is cancelled and drained, and compensating cleanup completes
+        /// before cancellation surfaces.
+        /// </param>
         /// <returns>
         /// A lease representing the complete canonical set, or <see langword="null"/> when the set cannot be formed
         /// before the acquire timeout. A set containing one distinct resource returns the provider's original lease.
@@ -29,6 +32,7 @@ public static class DistributedLockExtensions
         /// <exception cref="ArgumentException">
         /// <paramref name="resources"/> is empty or contains a null, empty, or whitespace resource name.
         /// </exception>
+        /// <exception cref="LockHandleLostException">A held child lease was lost while the complete set was forming.</exception>
         /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
         public async Task<IDistributedLease?> TryAcquireAllAsync(
             IEnumerable<string> resources,
@@ -48,7 +52,10 @@ public static class DistributedLockExtensions
         /// </summary>
         /// <param name="resources">Resource names to acquire. The sequence is enumerated once, deduplicated, and ordinal-sorted.</param>
         /// <param name="options">Per-call configuration shared by every child acquisition.</param>
-        /// <param name="cancellationToken">Cancels the composite acquisition and its compensating cleanup.</param>
+        /// <param name="cancellationToken">
+        /// Cancels composite formation. Pending child work is cancelled and drained, and compensating cleanup completes
+        /// before cancellation surfaces.
+        /// </param>
         /// <returns>
         /// A lease representing the complete canonical set. A set containing one distinct resource returns the
         /// provider's original lease.
@@ -57,6 +64,7 @@ public static class DistributedLockExtensions
         /// <exception cref="ArgumentException">
         /// <paramref name="resources"/> is empty or contains a null, empty, or whitespace resource name.
         /// </exception>
+        /// <exception cref="LockHandleLostException">A held child lease was lost while the complete set was forming.</exception>
         /// <exception cref="LockAcquisitionTimeoutException">The complete set could not be acquired before the timeout elapsed.</exception>
         /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
         public async Task<IDistributedLease> AcquireAllAsync(
@@ -87,10 +95,7 @@ public static class DistributedLockExtensions
 
             if (distributedLock is ICompositeDistributedLease composite)
             {
-                return CompositeDistributedLeaseOperations.RunReverseAsync(
-                    composite.Children,
-                    child => provider.ReleaseAsync(child.Resource, child.LeaseId, cancellationToken)
-                );
+                return _ReleaseCompositeAsync(provider, composite, cancellationToken);
             }
 
             return provider.ReleaseAsync(distributedLock.Resource, distributedLock.LeaseId, cancellationToken);
@@ -363,5 +368,30 @@ public static class DistributedLockExtensions
 
             return true;
         }
+    }
+
+    private static async Task _ReleaseCompositeAsync(
+        IDistributedLock provider,
+        ICompositeDistributedLease composite,
+        CancellationToken cancellationToken
+    )
+    {
+        var errors = await CompositeDistributedLeaseOperations
+            .CollectReverseAsync(
+                composite.Children,
+                child => provider.ReleaseAsync(child.Resource, child.LeaseId, cancellationToken)
+            )
+            .ConfigureAwait(false);
+
+        if (
+            cancellationToken.IsCancellationRequested
+            && errors is not null
+            && errors.All(static error => error is OperationCanceledException)
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+
+        CompositeDistributedLeaseOperations.ThrowIfAny(errors);
     }
 }
