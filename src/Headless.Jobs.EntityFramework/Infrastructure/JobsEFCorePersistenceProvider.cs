@@ -20,6 +20,7 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
     IJobsOwnerIdentity ownerIdentity,
     SchedulerOptionsBuilder optionsBuilder,
     ICache? cache,
+    IJobsClaimStrategy<TTimeJob, TCronJob> claimStrategy,
     ILogger logger
 )
     : BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
@@ -28,6 +29,7 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
         ownerIdentity,
         optionsBuilder,
         cache,
+        claimStrategy,
         logger
     ),
         IJobPersistenceProvider<TTimeJob, TCronJob>,

@@ -87,3 +87,45 @@ public sealed class PostgreSqlConformanceTests(PostgreSqlJobsCoordinationFixture
     public override Task cron_unified_context_inprogress_stamp_requires_a_queued_row() =>
         base.cron_unified_context_inprogress_stamp_requires_a_queued_row();
 }
+
+/// <summary>Runs native Jobs claim conformance through PostgreSQL production registration.</summary>
+[Collection<PostgreSqlJobsCoordinationFixture>]
+public sealed class PostgreSqlClaimConformanceTests(PostgreSqlJobsCoordinationFixture fixture)
+    : JobsClaimConformanceTests<PostgreSqlJobsCoordinationFixture>(fixture)
+{
+    [Fact]
+    public override Task synchronized_workers_claim_disjoint_time_job_roots_and_complete_descendant_stamps() =>
+        base.synchronized_workers_claim_disjoint_time_job_roots_and_complete_descendant_stamps();
+
+    [Fact]
+    public override Task synchronized_workers_claim_disjoint_fallback_cron_occurrences() =>
+        base.synchronized_workers_claim_disjoint_fallback_cron_occurrences();
+
+    [Fact]
+    public override Task expired_existing_cron_claim_requires_retry_policy() =>
+        base.expired_existing_cron_claim_requires_retry_policy();
+
+    [Fact]
+    public override Task direct_cron_claim_applies_the_full_acquire_predicate_matrix() =>
+        base.direct_cron_claim_applies_the_full_acquire_predicate_matrix();
+
+    [Fact]
+    public override Task expired_fallback_cron_claim_requires_retry_policy() =>
+        base.expired_fallback_cron_claim_requires_retry_policy();
+
+    [Fact]
+    public override Task many_synchronized_workers_claim_each_fallback_cron_occurrence_once() =>
+        base.many_synchronized_workers_claim_each_fallback_cron_occurrence_once();
+
+    [Fact]
+    public override Task incompatible_native_model_falls_back_to_ef_cas_through_production_registration() =>
+        base.incompatible_native_model_falls_back_to_ef_cas_through_production_registration();
+
+    [Fact]
+    public override Task concurrent_missing_cron_occurrence_creation_is_deduplicated() =>
+        base.concurrent_missing_cron_occurrence_creation_is_deduplicated();
+
+    [Fact]
+    public override Task long_cron_claim_transaction_publishes_a_fresh_lease() =>
+        base.long_cron_claim_transaction_publishes_a_fresh_lease();
+}

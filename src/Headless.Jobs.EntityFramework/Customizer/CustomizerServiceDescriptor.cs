@@ -76,7 +76,7 @@ internal static class ServiceBuilder
                 builder.PoolSize
             ));
 
-            _AddPersistenceProviderCore<TContext, TTimeJob, TCronJob>(services, resolveOptionsTemplate);
+            _AddPersistenceProviderCore<TContext, TTimeJob, TCronJob>(services, builder, resolveOptionsTemplate);
         };
     }
 
@@ -108,12 +108,13 @@ internal static class ServiceBuilder
                 builder.PoolSize
             ));
 
-            _AddPersistenceProviderCore<TContext, TTimeJob, TCronJob>(services, resolveOptionsTemplate);
+            _AddPersistenceProviderCore<TContext, TTimeJob, TCronJob>(services, builder, resolveOptionsTemplate);
         };
     }
 
     private static void _AddPersistenceProviderCore<TContext, TTimeJob, TCronJob>(
         IServiceCollection services,
+        JobsEfCoreOptionBuilder<TTimeJob, TCronJob> builder,
         Func<IServiceProvider, DbContextOptions<TContext>> coordinatedWriteOptionsFactory
     )
         where TContext : DbContext
@@ -123,6 +124,61 @@ internal static class ServiceBuilder
         // Fail loud at DI-build time when the context cannot back coordinated writes, rather than at first
         // coordinated write where the provider's static factory would surface it as a TypeInitializationException.
         CoordinatedWriteContextFactory.RequireOptionsConstructor<TContext>();
+
+        var claimStrategyServiceType = typeof(IJobsClaimStrategy<TTimeJob, TCronJob>);
+        var claimStrategyImplementationType =
+            builder.ClaimStrategyTypeDefinition?.MakeGenericType(typeof(TContext), typeof(TTimeJob), typeof(TCronJob))
+            ?? typeof(EfCoreCasJobsClaimStrategy<TContext, TTimeJob, TCronJob>);
+
+        if (!claimStrategyServiceType.IsAssignableFrom(claimStrategyImplementationType))
+        {
+            throw new InvalidOperationException(
+                $"Configured Jobs EF claim strategy {claimStrategyImplementationType.FullName} must implement "
+                    + $"{claimStrategyServiceType.FullName}."
+            );
+        }
+
+        if (
+            claimStrategyImplementationType.IsGenericType
+            && claimStrategyImplementationType.GetGenericTypeDefinition() == typeof(EfCoreCasJobsClaimStrategy<,,>)
+        )
+        {
+            services.AddSingleton(
+                claimStrategyServiceType,
+                provider => ActivatorUtilities.CreateInstance(provider, claimStrategyImplementationType)
+            );
+        }
+        else
+        {
+            services.AddSingleton(
+                claimStrategyImplementationType,
+                provider => ActivatorUtilities.CreateInstance(provider, claimStrategyImplementationType)
+            );
+            services.AddSingleton(
+                claimStrategyServiceType,
+                provider =>
+                {
+                    var nativeStrategy = provider.GetRequiredService(claimStrategyImplementationType);
+                    var casStrategyType = typeof(EfCoreCasJobsClaimStrategy<,,>).MakeGenericType(
+                        typeof(TContext),
+                        typeof(TTimeJob),
+                        typeof(TCronJob)
+                    );
+                    var casStrategy = ActivatorUtilities.CreateInstance(provider, casStrategyType);
+                    var compatibleStrategyType = typeof(CompatibleJobsClaimStrategy<,,>).MakeGenericType(
+                        typeof(TContext),
+                        typeof(TTimeJob),
+                        typeof(TCronJob)
+                    );
+                    return ActivatorUtilities.CreateInstance(
+                        provider,
+                        compatibleStrategyType,
+                        nativeStrategy,
+                        casStrategy
+                    );
+                }
+            );
+        }
 
         // ICache is resolved with GetService (optional): cron-expression caching is enabled only when the host
         // application registers a default Headless.Caching provider; otherwise Jobs reads cron expressions from the DB.
@@ -134,6 +190,7 @@ internal static class ServiceBuilder
                 provider.GetRequiredService<IJobsOwnerIdentity>(),
                 provider.GetRequiredService<SchedulerOptionsBuilder>(),
                 provider.GetService<ICache>(),
+                provider.GetRequiredService<IJobsClaimStrategy<TTimeJob, TCronJob>>(),
                 provider.GetRequiredService<ILogger<JobsEfCorePersistenceProvider<TContext, TTimeJob, TCronJob>>>()
             )
         );

@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Runtime.CompilerServices;
 using Headless.Caching;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
@@ -18,12 +17,15 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     IJobsOwnerIdentity ownerIdentity,
     SchedulerOptionsBuilder optionsBuilder,
     ICache? cache,
+    IJobsClaimStrategy<TTimeJob, TCronJob> claimStrategy,
     ILogger logger
 )
     where TDbContext : DbContext
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
+    private readonly IJobsClaimStrategy<TTimeJob, TCronJob> _claimStrategy = claimStrategy;
+
     protected IDbContextFactory<TDbContext> DbContextFactory { get; } = dbContextFactory;
 
     protected ILogger Logger { get; } = logger;
@@ -84,142 +86,13 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     }
 
     #region Core_Time_Ticker_Methods
-    public async IAsyncEnumerable<TimeJobEntity> QueueTimeJobsAsync(
+    public IAsyncEnumerable<TimeJobEntity> QueueTimeJobsAsync(
         TimeJobEntity[] timeJobs,
-        [EnumeratorCancellation] CancellationToken cancellationToken
-    )
-    {
-        if (!OwnerIdentity.TryGetStampOwner(out var owner))
-        {
-            yield break;
-        }
-
-        await using var dbContext = await DbContextFactory
-            .CreateDbContextAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        var context = dbContext.Set<TTimeJob>();
-        var now = TimeProvider.GetUtcNow().UtcDateTime;
-
-        foreach (var timeJob in timeJobs)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var rootId = timeJob.Id;
-            var expectedUpdatedAt = timeJob.UpdatedAt;
-            var rootMatches = context.Where(x => x.Id == rootId && x.UpdatedAt == expectedUpdatedAt);
-            var updatedTicker = await _ClaimTimeJobTreeAsync(
-                    context,
-                    rootMatches,
-                    rootId,
-                    owner,
-                    now,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-
-            if (updatedTicker <= 0)
-            {
-                continue;
-            }
-
-            timeJob.UpdatedAt = now;
-            timeJob.OwnerId = owner;
-            timeJob.LockedUntil = now.Add(LeaseDuration);
-            timeJob.Status = JobStatus.Queued;
-
-            yield return timeJob;
-        }
-    }
-
-    public async IAsyncEnumerable<TimeJobEntity> QueueTimedOutTimeJobsAsync(
-        [EnumeratorCancellation] CancellationToken cancellationToken
-    )
-    {
-        if (!OwnerIdentity.TryGetStampOwner(out var owner))
-        {
-            yield break;
-        }
-
-        await using var dbContext = await DbContextFactory
-            .CreateDbContextAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        var context = dbContext.Set<TTimeJob>();
-        var now = TimeProvider.GetUtcNow().UtcDateTime;
-        var fallbackThreshold = now.AddSeconds(-1); // Fallback picks up tasks older than main 1-second window
-
-        var timeJobsToUpdate = await context
-            .AsNoTracking()
-            .Where(x => x.ExecutionTime != null)
-            .WhereCanFallbackClaim(now)
-            .Where(x => x.ExecutionTime <= fallbackThreshold) // Only tasks older than 1 second
-            .Include(x => x.Children.Where(y => y.ExecutionTime == null))
-            .Select(MappingExtensions.ForQueueTimeJobs<TTimeJob>())
-            .ToArrayAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        foreach (var timeJob in timeJobsToUpdate)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var rootId = timeJob.Id;
-            var expectedUpdatedAt = timeJob.UpdatedAt;
-            var rootMatches = context
-                .Where(x => x.Id == rootId && x.UpdatedAt <= expectedUpdatedAt)
-                .WhereCanFallbackClaim(now);
-            var affected = await _ClaimTimeJobTreeAsync(context, rootMatches, rootId, owner, now, cancellationToken)
-                .ConfigureAwait(false);
-
-            if (affected <= 0)
-            {
-                continue;
-            }
-
-            timeJob.OwnerId = owner;
-            timeJob.LockedUntil = now.Add(LeaseDuration);
-            timeJob.UpdatedAt = now;
-            timeJob.Status = JobStatus.Queued;
-
-            yield return timeJob;
-        }
-    }
-
-    // Single owner of the atomic chain-claim shape shared by the direct (QueueTimeJobsAsync) and fallback
-    // (QueueTimedOutTimeJobsAsync) tickers (mirrors the in-memory provider's _ClaimIdleDescendants): scope the write to
-    // the root, its direct children, and one further generation, gated on the caller's `rootMatches` optimistic-
-    // concurrency subquery. The conditional Status setter flips only the root to Queued and keeps descendants Idle.
-    // Each caller builds its own `rootMatches` (the direct ticker uses an exact-UpdatedAt match, the fallback uses
-    // WhereCanFallbackClaim), so the emitted SQL stays byte-equivalent to the previous inline blocks.
-    private Task<int> _ClaimTimeJobTreeAsync(
-        DbSet<TTimeJob> context,
-        IQueryable<TTimeJob> rootMatches,
-        Guid rootId,
-        string owner,
-        DateTime now,
         CancellationToken cancellationToken
-    )
-    {
-        var directChildIds = context.Where(x => x.ParentId == rootId).Select(x => x.Id);
+    ) => _claimStrategy.ClaimTimeJobsAsync(timeJobs, cancellationToken);
 
-        return context
-            .Where(_ => rootMatches.Any())
-            .Where(x =>
-                x.Id == rootId
-                || x.ParentId == rootId
-                || (x.ParentId != null && directChildIds.Contains(x.ParentId.Value))
-            )
-            .Where(x => x.Id == rootId || x.Status == JobStatus.Idle)
-            .ExecuteUpdateAsync(
-                setter =>
-                    setter
-                        .SetProperty(x => x.OwnerId, owner)
-                        .SetProperty(x => x.LockedUntil, now.Add(LeaseDuration))
-                        .SetProperty(x => x.UpdatedAt, now)
-                        .SetProperty(x => x.Status, x => x.Id == rootId ? JobStatus.Queued : x.Status),
-                cancellationToken
-            );
-    }
+    public IAsyncEnumerable<TimeJobEntity> QueueTimedOutTimeJobsAsync(CancellationToken cancellationToken) =>
+        _claimStrategy.ClaimTimedOutTimeJobsAsync(cancellationToken);
 
     public async Task ReleaseAcquiredTimeJobsAsync(Guid[] timeJobIds, CancellationToken cancellationToken)
     {
@@ -892,64 +765,9 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ConfigureAwait(false);
     }
 
-    public async IAsyncEnumerable<CronJobOccurrenceEntity<TCronJob>> QueueTimedOutCronJobOccurrencesAsync(
-        [EnumeratorCancellation] CancellationToken cancellationToken = default
-    )
-    {
-        if (!OwnerIdentity.TryGetStampOwner(out var owner))
-        {
-            yield break;
-        }
-
-        var now = TimeProvider.GetUtcNow().UtcDateTime;
-        var fallbackThreshold = now.AddSeconds(-1); // Fallback picks up tasks older than main 1-second window
-
-        await using var dbContext = await DbContextFactory
-            .CreateDbContextAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        var context = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>();
-
-        var cronJobsToUpdate = await context
-            .AsNoTracking()
-            .Include(x => x.CronJob)
-            .WhereCanFallbackClaim(now)
-            .Where(x => x.ExecutionTime <= fallbackThreshold) // Only tasks older than 1 second
-            .Select(MappingExtensions.ForQueueCronJobOccurrence<CronJobOccurrenceEntity<TCronJob>, TCronJob>())
-            .ToArrayAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        foreach (var cronJobOccurrence in cronJobsToUpdate)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var affected = await context
-                .Where(x => x.Id == cronJobOccurrence.Id && x.UpdatedAt == cronJobOccurrence.UpdatedAt)
-                .WhereCanFallbackClaim(now)
-                .ExecuteUpdateAsync(
-                    setter =>
-                        setter
-                            .SetProperty(x => x.OwnerId, owner)
-                            .SetProperty(x => x.LockedUntil, now.Add(LeaseDuration))
-                            .SetProperty(x => x.UpdatedAt, now)
-                            .SetProperty(x => x.Status, JobStatus.Queued),
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-
-            if (affected <= 0)
-            {
-                continue;
-            }
-
-            cronJobOccurrence.OwnerId = owner;
-            cronJobOccurrence.LockedUntil = now.Add(LeaseDuration);
-            cronJobOccurrence.UpdatedAt = now;
-            cronJobOccurrence.Status = JobStatus.Queued;
-
-            yield return cronJobOccurrence;
-        }
-    }
+    public IAsyncEnumerable<CronJobOccurrenceEntity<TCronJob>> QueueTimedOutCronJobOccurrencesAsync(
+        CancellationToken cancellationToken = default
+    ) => _claimStrategy.ClaimTimedOutCronJobOccurrencesAsync(cancellationToken);
 
     public async Task<int> ReleaseDeadNodeOccurrenceResourcesAsync(
         string instanceIdentifier,
@@ -1174,116 +992,10 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     // update by id. Storage-level dedup is the correctness boundary here. A coarse lock would only serialize
     // independent occurrences for no benefit. Revisit only if evidence shows storage dedup is insufficient (see plan
     // #267 deferred follow-up).
-    public async IAsyncEnumerable<CronJobOccurrenceEntity<TCronJob>> QueueCronJobOccurrencesAsync(
+    public IAsyncEnumerable<CronJobOccurrenceEntity<TCronJob>> QueueCronJobOccurrencesAsync(
         (DateTime Key, JobManagerDispatchContext[] Items) cronJobOccurrences,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default
-    )
-    {
-        if (!OwnerIdentity.TryGetStampOwner(out var owner))
-        {
-            yield break;
-        }
-
-        var now = TimeProvider.GetUtcNow().UtcDateTime;
-        var executionTime = cronJobOccurrences.Key;
-
-        await using var dbContext = await DbContextFactory
-            .CreateDbContextAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        var context = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>();
-
-        foreach (var item in cronJobOccurrences.Items)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            if (item.NextCronOccurrence is null)
-            {
-                var itemToAdd = new CronJobOccurrenceEntity<TCronJob>
-                {
-                    Id = Guid.NewGuid(),
-                    Status = JobStatus.Queued,
-                    OwnerId = owner,
-                    ExecutionTime = executionTime,
-                    CronJobId = item.Id,
-                    LockedUntil = now.Add(LeaseDuration),
-                    OnNodeDeath = item.OnNodeDeath,
-                    CreatedAt = now,
-                    UpdatedAt = now,
-                };
-
-                var affectAdded = await context
-                    .Upsert(itemToAdd)
-                    .On(x => new { x.ExecutionTime, x.CronJobId })
-                    .NoUpdate()
-                    .RunAsync(cancellationToken)
-                    .ConfigureAwait(false);
-
-                if (affectAdded <= 0)
-                {
-                    continue;
-                }
-
-                itemToAdd.CronJob = new TCronJob
-                {
-                    Id = item.Id,
-                    Function = item.FunctionName,
-                    InitIdentifier = owner,
-                    Expression = item.Expression,
-                    Retries = item.Retries,
-                    RetryIntervals = item.RetryIntervals,
-                };
-                yield return itemToAdd;
-            }
-            else
-            {
-                var affectedUpdate = await context
-                    .Where(x => x.Id == item.NextCronOccurrence.Id)
-                    .Where(x => x.ExecutionTime == executionTime)
-                    .WhereCanAcquire(owner, now)
-                    .ExecuteUpdateAsync(
-                        prop =>
-                            prop.SetProperty(y => y.OwnerId, owner)
-                                .SetProperty(y => y.LockedUntil, now.Add(LeaseDuration))
-                                .SetProperty(y => y.UpdatedAt, now)
-                                .SetProperty(y => y.Status, JobStatus.Queued)
-                                // #464: re-stamp the policy from the cron def so the column, the yielded projection
-                                // (which uses item.OnNodeDeath), and the in-memory mirror all agree after a re-queue,
-                                // and a mid-flight cron-def policy edit takes effect — matching the new-occurrence arm.
-                                .SetProperty(y => y.OnNodeDeath, item.OnNodeDeath),
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-
-                if (affectedUpdate <= 0)
-                {
-                    continue;
-                }
-
-                yield return new CronJobOccurrenceEntity<TCronJob>
-                {
-                    Id = item.NextCronOccurrence.Id,
-                    CronJobId = item.Id,
-                    ExecutionTime = executionTime,
-                    Status = JobStatus.Queued,
-                    OwnerId = owner,
-                    LockedUntil = now.Add(LeaseDuration),
-                    OnNodeDeath = item.OnNodeDeath,
-                    UpdatedAt = now,
-                    CreatedAt = item.NextCronOccurrence.CreatedAt,
-                    CronJob = new TCronJob
-                    {
-                        Id = item.Id,
-                        Function = item.FunctionName,
-                        InitIdentifier = owner,
-                        Expression = item.Expression,
-                        Retries = item.Retries,
-                        RetryIntervals = item.RetryIntervals,
-                    },
-                };
-            }
-        }
-    }
+        CancellationToken cancellationToken = default
+    ) => _claimStrategy.ClaimCronJobOccurrencesAsync(cronJobOccurrences, cancellationToken);
 
     public async Task<CronJobOccurrenceEntity<TCronJob>> GetEarliestAvailableCronOccurrenceAsync(
         Guid[] ids,

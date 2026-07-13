@@ -12,11 +12,11 @@ public sealed class ErrorDescriptor
     /// <summary>Initializes a new <see cref="ErrorDescriptor"/> without parameters.</summary>
     /// <param name="code">A distinct code indicating the cause of the error.</param>
     /// <param name="description">A human-readable description of the error.</param>
-    /// <param name="severity">The severity of the error. Defaults to <see cref="ValidationSeverity.Information"/>.</param>
+    /// <param name="severity">The severity of the error. Defaults to <see cref="ValidationSeverity.Error"/>.</param>
     public ErrorDescriptor(
         string code,
         [LocalizationRequired] string description,
-        ValidationSeverity severity = ValidationSeverity.Information
+        ValidationSeverity severity = ValidationSeverity.Error
     )
     {
         Code = code;
@@ -28,12 +28,12 @@ public sealed class ErrorDescriptor
     /// <param name="code">A distinct code indicating the cause of the error.</param>
     /// <param name="description">A human-readable description of the error.</param>
     /// <param name="paramsDictionary">Parameter values related to the error, stored as the descriptor's parameter bag.</param>
-    /// <param name="severity">The severity of the error. Defaults to <see cref="ValidationSeverity.Information"/>.</param>
+    /// <param name="severity">The severity of the error. Defaults to <see cref="ValidationSeverity.Error"/>.</param>
     public ErrorDescriptor(
         string code,
         [LocalizationRequired] string description,
         Dictionary<string, object?> paramsDictionary,
-        ValidationSeverity severity = ValidationSeverity.Information
+        ValidationSeverity severity = ValidationSeverity.Error
     )
     {
         Code = code;

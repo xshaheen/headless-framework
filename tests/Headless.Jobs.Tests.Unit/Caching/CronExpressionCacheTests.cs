@@ -132,13 +132,22 @@ public sealed class CronExpressionCacheTests : TestBase
         var coordinatedWriteOptions = new DbContextOptionsBuilder<JobsDbContext>()
             .UseSqlite("DataSource=:memory:")
             .Options;
+        var dbContextFactory = new ThrowingDbContextFactory();
+        var ownerIdentity = new TestOwnerIdentity();
+        var schedulerOptions = new SchedulerOptionsBuilder();
         var sut = new JobsEfCorePersistenceProvider<JobsDbContext, TimeJobEntity, CronJobEntity>(
-            new ThrowingDbContextFactory(),
+            dbContextFactory,
             coordinatedWriteOptions,
             TimeProvider.System,
-            new TestOwnerIdentity(),
-            new SchedulerOptionsBuilder(),
+            ownerIdentity,
+            schedulerOptions,
             cache,
+            new EfCoreCasJobsClaimStrategy<JobsDbContext, TimeJobEntity, CronJobEntity>(
+                dbContextFactory,
+                TimeProvider.System,
+                ownerIdentity,
+                schedulerOptions
+            ),
             NullLogger.Instance
         );
 
@@ -268,16 +277,28 @@ public sealed class CronExpressionCacheTests : TestBase
 
         public JobsEfCorePersistenceProvider<JobsDbContext, TimeJobEntity, CronJobEntity> CreateProvider(
             ICache? cache = null
-        ) =>
-            new(
-                new TestDbContextFactory(_options),
+        )
+        {
+            var dbContextFactory = new TestDbContextFactory(_options);
+            var ownerIdentity = new TestOwnerIdentity();
+            var schedulerOptions = new SchedulerOptionsBuilder();
+
+            return new(
+                dbContextFactory,
                 _options,
                 TimeProvider.System,
-                new TestOwnerIdentity(),
-                new SchedulerOptionsBuilder(),
+                ownerIdentity,
+                schedulerOptions,
                 cache,
+                new EfCoreCasJobsClaimStrategy<JobsDbContext, TimeJobEntity, CronJobEntity>(
+                    dbContextFactory,
+                    TimeProvider.System,
+                    ownerIdentity,
+                    schedulerOptions
+                ),
                 NullLogger.Instance
             );
+        }
 
         public async Task SeedCronJobsAsync(params CronJobEntity[] cronJobs)
         {

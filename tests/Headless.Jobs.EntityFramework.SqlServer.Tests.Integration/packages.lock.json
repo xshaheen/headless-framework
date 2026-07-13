@@ -973,6 +973,13 @@
           "Microsoft.EntityFrameworkCore.Relational": "[10.0.9, )"
         }
       },
+      "headless.jobs.entityframework.sqlserver": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Jobs.EntityFramework": "[1.0.0, )",
+          "Microsoft.EntityFrameworkCore.SqlServer": "[10.0.9, )"
+        }
+      },
       "headless.jobs.entityframework.tests.harness": {
         "type": "Project",
         "dependencies": {

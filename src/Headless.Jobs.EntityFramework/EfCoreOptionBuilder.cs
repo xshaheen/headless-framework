@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Headless.Jobs.Customizer;
 using Headless.Jobs.DbContextFactory;
 using Headless.Jobs.Entities;
@@ -20,8 +21,35 @@ public class JobsEfCoreOptionBuilder<TTimeJob, TCronJob>
     where TCronJob : CronJobEntity, new()
 {
     internal Action<IServiceCollection> ConfigureServices { get; set; } = _ => { };
+    internal Type? ClaimStrategyTypeDefinition { get; private set; }
     internal int PoolSize { get; set; } = 1024;
     internal string Schema { get; set; } = "jobs";
+
+    internal void UseClaimStrategy(Type openGenericStrategyType)
+    {
+        Argument.IsNotNull(openGenericStrategyType);
+
+        if (
+            !openGenericStrategyType.IsGenericTypeDefinition
+            || openGenericStrategyType.GetGenericArguments().Length != 3
+        )
+        {
+            throw new ArgumentException(
+                "A Jobs EF claim strategy must be an open generic type with DbContext, time-job, and cron-job parameters.",
+                nameof(openGenericStrategyType)
+            );
+        }
+
+        if (ClaimStrategyTypeDefinition is not null)
+        {
+            throw new InvalidOperationException(
+                $"A native Jobs EF claim strategy is already configured ({ClaimStrategyTypeDefinition.FullName}). "
+                    + $"Cannot also configure {openGenericStrategyType.FullName}. Select exactly one database claim strategy."
+            );
+        }
+
+        ClaimStrategyTypeDefinition = openGenericStrategyType;
+    }
 
     /// <summary>
     /// Uses the application's existing <typeparamref name="TDbContext"/> to store job data alongside

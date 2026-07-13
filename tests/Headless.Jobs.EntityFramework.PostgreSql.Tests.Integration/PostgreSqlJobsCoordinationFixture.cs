@@ -3,6 +3,8 @@
 using System.Data.Common;
 using Headless.CommitCoordination;
 using Headless.Coordination;
+using Headless.Jobs;
+using Headless.Jobs.Entities;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Testing.Testcontainers;
@@ -53,6 +55,9 @@ public sealed class PostgreSqlJobsCoordinationFixture
     public void ConfigureCoordination(HeadlessCoordinationSetupBuilder setup) => setup.UsePostgreSql(ConnectionString);
 
     public void ConfigureStore(DbContextOptionsBuilder db) => db.UseNpgsql(ConnectionString);
+
+    public void ConfigureClaims(JobsEfCoreOptionBuilder<TimeJobEntity, CronJobEntity> builder) =>
+        builder.UsePostgreSqlClaims();
 
     public DbConnection CreateConnection() => new NpgsqlConnection(ConnectionString);
 

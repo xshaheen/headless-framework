@@ -86,14 +86,19 @@ RuleFor(x => x.Total)
     .WithErrorDescriptor(new ErrorDescriptor("ORDER_TOTAL_INVALID", "Total must be positive."));
 ```
 
+`ErrorDescriptor` defaults to error severity. Pass `ValidationSeverity.Warning` or
+`ValidationSeverity.Information` explicitly when defining a non-error rule; `WithErrorDescriptor(...)` carries
+that severity into the FluentValidation failure.
+
 ### Processing Validation Results
 
 ```csharp
 var errors = result.Errors.ToErrorDescriptors(); // IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>>
 ```
 
-`ToErrorDescriptors()` normalizes every failure's `ErrorCode` to the framework-standard `g:snake_case`
-shape: FluentValidation built-in codes are mapped by `FluentValidationErrorCodeMapper` (for example
+`ToErrorDescriptors()` preserves each failure's severity and normalizes its `ErrorCode` to the
+framework-standard `g:snake_case` shape. FluentValidation built-in codes are mapped by
+`FluentValidationErrorCodeMapper` (for example
 `EmailValidator` → `g:invalid_email`), and the Headless validators in this package emit `g:`-prefixed
 codes via `FluentValidatorErrorDescriber` (for example `Ipv4()` → `g:invalid_ipv4`). Clients therefore
 see a single consistent code namespace in `errors[].code`. Codes you supply yourself through
