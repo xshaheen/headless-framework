@@ -27,7 +27,7 @@ namespace Headless.Blobs.Aws;
 internal sealed class AwsBlobStorage(
     IAmazonS3 s3,
     IMimeTypeProvider mimeTypeProvider,
-    IClock clock,
+    TimeProvider timeProvider,
     IOptions<AwsBlobStorageOptions> optionsAccessor,
     IBlobNamingNormalizer normalizer,
     ILogger<AwsBlobStorage>? logger = null
@@ -91,7 +91,9 @@ internal sealed class AwsBlobStorage(
 
         // Copy the caller's metadata + framework keys into the S3 request (the helper never mutates the caller's
         // dictionary); S3 needs the entries in its MetadataCollection, which prefixes keys with "x-amz-meta-".
-        foreach (var pair in BlobStorageHelpers.BuildEffectiveMetadata(metadata, clock.UtcNow, location.Path))
+        foreach (
+            var pair in BlobStorageHelpers.BuildEffectiveMetadata(metadata, timeProvider.GetUtcNow(), location.Path)
+        )
         {
             request.Metadata[pair.Key] = pair.Value;
         }
@@ -874,7 +876,7 @@ internal sealed class AwsBlobStorage(
             Key = key,
             Verb = verb,
             // SigV4 presigning is performed locally; Expires is the absolute deadline.
-            Expires = clock.UtcNow.Add(expiry).UtcDateTime,
+            Expires = timeProvider.GetUtcNow().Add(expiry).UtcDateTime,
         };
 
         // Honor the configured endpoint scheme. When the client targets a plaintext http:// endpoint (an

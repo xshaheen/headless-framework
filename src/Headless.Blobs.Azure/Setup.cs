@@ -132,7 +132,7 @@ public static class SetupAzureBlob
         services.AddSingleton<IBlobStorage>(sp =>
         {
             var mimeTypeProvider = sp.GetRequiredService<IMimeTypeProvider>();
-            var clock = sp.GetRequiredService<IClock>();
+            var timeProvider = sp.GetRequiredService<TimeProvider>();
             var options = sp.GetRequiredService<IOptions<AzureStorageOptions>>();
             var logger = sp.GetService<ILogger<AzureBlobStorage>>() ?? NullLogger<AzureBlobStorage>.Instance;
             var client = clientFactory is not null ? clientFactory(sp) : sp.GetRequiredService<BlobServiceClient>();
@@ -140,7 +140,7 @@ public static class SetupAzureBlob
             return new AzureBlobStorage(
                 client,
                 mimeTypeProvider,
-                clock,
+                timeProvider,
                 options,
                 new AzureBlobNamingNormalizer(),
                 logger
@@ -176,7 +176,7 @@ public static class SetupAzureBlob
             (sp, _) =>
             {
                 var mimeTypeProvider = sp.GetRequiredService<IMimeTypeProvider>();
-                var clock = sp.GetRequiredService<IClock>();
+                var timeProvider = sp.GetRequiredService<TimeProvider>();
                 var options = Options.Create(sp.GetRequiredService<IOptionsMonitor<AzureStorageOptions>>().Get(name));
                 var logger = sp.GetService<ILogger<AzureBlobStorage>>() ?? NullLogger<AzureBlobStorage>.Instance;
                 var client = clientFactory is not null ? clientFactory(sp) : sp.GetRequiredService<BlobServiceClient>();
@@ -184,7 +184,7 @@ public static class SetupAzureBlob
                 return new AzureBlobStorage(
                     client,
                     mimeTypeProvider,
-                    clock,
+                    timeProvider,
                     options,
                     new AzureBlobNamingNormalizer(),
                     logger

@@ -24,7 +24,7 @@ namespace Headless.EntityFramework.Contexts.Processors;
 /// <c>IsSuspended</c> transitions are detected.
 /// </remarks>
 [PublicAPI]
-public sealed class HeadlessAuditSaveEntryProcessor(IClock clock, ICurrentUser currentUser)
+public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, ICurrentUser currentUser)
     : IHeadlessSaveEntryProcessor
 {
     private static readonly ConditionalWeakTable<
@@ -64,7 +64,11 @@ public sealed class HeadlessAuditSaveEntryProcessor(IClock clock, ICurrentUser c
 
         if (entity.DateCreated == default)
         {
-            ObjectPropertiesHelper.TrySetProperty(entity, nameof(ICreateAudit.DateCreated), () => clock.UtcNow);
+            ObjectPropertiesHelper.TrySetProperty(
+                entity,
+                nameof(ICreateAudit.DateCreated),
+                () => timeProvider.GetUtcNow()
+            );
         }
 
         _TrySetCreateAuditId(entry, currentUser.UserId, currentUser.AccountId);
@@ -139,7 +143,13 @@ public sealed class HeadlessAuditSaveEntryProcessor(IClock clock, ICurrentUser c
             return;
         }
 
-        if (ObjectPropertiesHelper.TrySetProperty(entity, nameof(IUpdateAudit.DateUpdated), () => clock.UtcNow))
+        if (
+            ObjectPropertiesHelper.TrySetProperty(
+                entity,
+                nameof(IUpdateAudit.DateUpdated),
+                () => timeProvider.GetUtcNow()
+            )
+        )
         {
             propertyEntry.IsModified = true;
         }
@@ -219,7 +229,11 @@ public sealed class HeadlessAuditSaveEntryProcessor(IClock clock, ICurrentUser c
     {
         if (entity.DateDeleted == null || !entry.Property(nameof(IDeleteAudit.DateDeleted)).IsModified)
         {
-            ObjectPropertiesHelper.TrySetProperty(entity, nameof(IDeleteAudit.DateDeleted), () => clock.UtcNow);
+            ObjectPropertiesHelper.TrySetProperty(
+                entity,
+                nameof(IDeleteAudit.DateDeleted),
+                () => timeProvider.GetUtcNow()
+            );
         }
     }
 
@@ -290,7 +304,11 @@ public sealed class HeadlessAuditSaveEntryProcessor(IClock clock, ICurrentUser c
     {
         if (entity.DateSuspended == null || !entry.Property(nameof(ISuspendAudit.DateSuspended)).IsModified)
         {
-            ObjectPropertiesHelper.TrySetProperty(entity, nameof(ISuspendAudit.DateSuspended), () => clock.UtcNow);
+            ObjectPropertiesHelper.TrySetProperty(
+                entity,
+                nameof(ISuspendAudit.DateSuspended),
+                () => timeProvider.GetUtcNow()
+            );
         }
     }
 

@@ -44,7 +44,7 @@ internal static class IdempotencyTestApp
 
         // Framework primitives required by IdempotencyMiddleware constructor
         builder.Services.TryAddSingleton(TimeProvider.System);
-        builder.Services.TryAddSingleton<IClock, Clock>();
+        builder.Services.TryAddSingleton(TimeProvider.System);
         builder.Services.TryAddSingleton<ICancellationTokenProvider, HttpContextCancellationTokenProvider>();
         builder.Services.TryAddSingleton<IBuildInformationAccessor, NullBuildInformationAccessor>();
         builder.Services.AddHttpContextAccessor();

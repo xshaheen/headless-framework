@@ -98,7 +98,7 @@ public static class SetupAwsS3
         services.AddSingleton<IBlobStorage>(serviceProvider =>
         {
             var mimeTypeProvider = serviceProvider.GetRequiredService<IMimeTypeProvider>();
-            var clock = serviceProvider.GetRequiredService<IClock>();
+            var timeProvider = serviceProvider.GetRequiredService<TimeProvider>();
             var options = serviceProvider.GetRequiredService<IOptions<AwsBlobStorageOptions>>();
             var logger = serviceProvider.GetService<ILogger<AwsBlobStorage>>() ?? NullLogger<AwsBlobStorage>.Instance;
             var s3Client = S3ClientFactory.Create(awsOptions);
@@ -106,7 +106,7 @@ public static class SetupAwsS3
             return new AwsBlobStorage(
                 s3Client,
                 mimeTypeProvider,
-                clock,
+                timeProvider,
                 options,
                 new AwsBlobNamingNormalizer(),
                 logger
@@ -135,7 +135,7 @@ public static class SetupAwsS3
             (serviceProvider, _) =>
             {
                 var mimeTypeProvider = serviceProvider.GetRequiredService<IMimeTypeProvider>();
-                var clock = serviceProvider.GetRequiredService<IClock>();
+                var timeProvider = serviceProvider.GetRequiredService<TimeProvider>();
                 var options = Options.Create(
                     serviceProvider.GetRequiredService<IOptionsMonitor<AwsBlobStorageOptions>>().Get(name)
                 );
@@ -146,7 +146,7 @@ public static class SetupAwsS3
                 return new AwsBlobStorage(
                     s3Client,
                     mimeTypeProvider,
-                    clock,
+                    timeProvider,
                     options,
                     new AwsBlobNamingNormalizer(),
                     logger

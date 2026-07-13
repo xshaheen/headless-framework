@@ -26,7 +26,7 @@ public sealed class JwtTokenFactoryTests : TestBase
     private static JwtTokenFactory _CreateFactory(FakeTimeProvider? timeProvider = null)
     {
         timeProvider ??= new FakeTimeProvider(DateTimeOffset.UtcNow);
-        var clock = new TestClock(timeProvider);
+        var clock = timeProvider;
         var identityOptions = Options.Create(
             new IdentityOptions
             {

@@ -21,7 +21,7 @@ public sealed class RedisBlobStorageTests(RedisBlobStorageFixture fixture) : Blo
             optionsWrapper,
             new SystemJsonSerializer(),
             new CrossOsNamingNormalizer(),
-            new Clock(TimeProvider.System)
+            TimeProvider.System
         );
     }
 
@@ -329,7 +329,7 @@ public sealed class RedisBlobStorageTests(RedisBlobStorageFixture fixture) : Blo
             optionsWrapper,
             new SystemJsonSerializer(),
             new CrossOsNamingNormalizer(),
-            new Clock(TimeProvider.System)
+            TimeProvider.System
         );
 
         var largeData = new byte[200]; // Exceeds 100 byte limit
@@ -360,7 +360,7 @@ public sealed class RedisBlobStorageTests(RedisBlobStorageFixture fixture) : Blo
             optionsWrapper,
             new SystemJsonSerializer(),
             new CrossOsNamingNormalizer(),
-            new Clock(TimeProvider.System)
+            TimeProvider.System
         );
 
         var data = new byte[500]; // Within limit
@@ -391,7 +391,7 @@ public sealed class RedisBlobStorageTests(RedisBlobStorageFixture fixture) : Blo
             optionsWrapper,
             new SystemJsonSerializer(),
             new CrossOsNamingNormalizer(),
-            new Clock(TimeProvider.System)
+            TimeProvider.System
         );
 
         var data = new byte[1000];

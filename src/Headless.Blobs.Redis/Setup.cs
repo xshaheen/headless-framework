@@ -75,8 +75,7 @@ public static class SetupRedisBlob
             serviceProvider.GetRequiredService<IOptions<RedisBlobStorageOptions>>(),
             serviceProvider.GetRequiredService<IJsonSerializer>(),
             new CrossOsNamingNormalizer(),
-            serviceProvider.GetRequiredService<IClock>(),
-            serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System
+            serviceProvider.GetRequiredService<TimeProvider>()
         ));
 
         // Container lifecycle is a separately-resolved capability (not a cast from IBlobStorage). Redis registers a
@@ -105,8 +104,7 @@ public static class SetupRedisBlob
                     ),
                     serviceProvider.GetRequiredService<IJsonSerializer>(),
                     new CrossOsNamingNormalizer(),
-                    serviceProvider.GetRequiredService<IClock>(),
-                    serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System
+                    serviceProvider.GetRequiredService<TimeProvider>()
                 )
         );
 

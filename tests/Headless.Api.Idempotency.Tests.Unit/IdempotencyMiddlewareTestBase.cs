@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 using IdempotencyMiddleware = Headless.Api.Idempotency.IdempotencyMiddleware;
 
 namespace Tests;
@@ -28,7 +29,7 @@ public abstract class IdempotencyMiddlewareTestBase : TestBase
         ICurrentTenant? currentTenant = null,
         ICurrentUser? currentUser = null,
         IProblemDetailsCreator? problemDetailsCreator = null,
-        IClock? clock = null,
+        TimeProvider? timeProvider = null,
         ICancellationTokenProvider? cancellationTokenProvider = null,
         ILogger<IdempotencyMiddleware>? logger = null,
         IServiceProvider? serviceProvider = null
@@ -61,11 +62,7 @@ public abstract class IdempotencyMiddlewareTestBase : TestBase
 
         problemDetailsCreator ??= Substitute.For<IProblemDetailsCreator>();
 
-        if (clock is null)
-        {
-            clock = Substitute.For<IClock>();
-            clock.UtcNow.Returns(DateTimeOffset.UtcNow);
-        }
+        timeProvider ??= new FakeTimeProvider(DateTimeOffset.UtcNow);
 
         if (cancellationTokenProvider is null)
         {
@@ -82,7 +79,7 @@ public abstract class IdempotencyMiddlewareTestBase : TestBase
             currentTenant,
             currentUser,
             problemDetailsCreator,
-            clock,
+            timeProvider,
             cancellationTokenProvider,
             logger,
             serviceProvider

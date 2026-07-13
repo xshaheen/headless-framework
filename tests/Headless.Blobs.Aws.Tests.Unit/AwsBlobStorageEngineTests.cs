@@ -23,7 +23,7 @@ public sealed class AwsBlobStorageEngineTests : TestBase
         return new AwsBlobStorage(
             _s3,
             new MimeTypeProvider(),
-            new Clock(TimeProvider.System),
+            TimeProvider.System,
             wrapper,
             new AwsBlobNamingNormalizer()
         );

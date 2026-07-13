@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Abstractions;
-using Headless.Testing.Helpers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Time.Testing;
@@ -15,13 +13,12 @@ namespace Headless.Testing.DependencyInjection;
 public static class TestTimeProviderServiceCollectionExtensions
 {
     /// <summary>
-    /// Replaces <see cref="TimeProvider"/> and <see cref="IClock"/> registrations with
-    /// <see cref="FakeTimeProvider"/> and <see cref="TestClock"/> for testing.
+    /// Replaces the <see cref="TimeProvider"/> registration with a <see cref="FakeTimeProvider"/> so tests can
+    /// freeze and advance time deterministically.
     /// </summary>
     /// <remarks>
-    /// This method uses <c>RemoveAll</c> + <c>AddSingleton</c> to handle all production registration
-    /// paths: full <c>AddTimeService()</c> (Api), EF-only (<c>IClock</c> without <c>TimeProvider</c>),
-    /// and no prior registration.
+    /// Uses <c>RemoveAll</c> + <c>AddSingleton</c> so it overrides any prior registration, including the
+    /// <c>TryAddSingleton(TimeProvider.System)</c> that provider packages register defensively.
     /// </remarks>
     /// <param name="services">The service collection to configure.</param>
     /// <returns>The <see cref="FakeTimeProvider"/> instance registered in the container,
@@ -29,13 +26,9 @@ public static class TestTimeProviderServiceCollectionExtensions
     public static FakeTimeProvider AddTestTimeProvider(this IServiceCollection services)
     {
         var fakeTimeProvider = new FakeTimeProvider();
-        var testClock = new TestClock(fakeTimeProvider);
 
         services.RemoveAll<TimeProvider>();
         services.AddSingleton<TimeProvider>(fakeTimeProvider);
-
-        services.RemoveAll<IClock>();
-        services.AddSingleton<IClock>(testClock);
 
         return fakeTimeProvider;
     }

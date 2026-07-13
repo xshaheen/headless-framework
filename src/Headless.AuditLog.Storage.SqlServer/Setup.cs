@@ -148,7 +148,6 @@ public static class SetupAuditLogSqlServer
             services.TryAddSingleton(typeof(IAuditLog<>), typeof(SqlServerAuditLog<>));
             services.TryAddSingleton(typeof(IReadAuditLog<>), typeof(SqlServerReadAuditLog<>));
             services.TryAddSingleton(TimeProvider.System);
-            services.TryAddSingleton<IClock, Clock>();
             services.TryAddSingleton<ICurrentTenant, NullCurrentTenant>();
             services.TryAddSingleton<ICurrentUser, NullCurrentUser>();
             services.TryAddSingleton<ICorrelationIdProvider, ActivityCorrelationIdProvider>();
