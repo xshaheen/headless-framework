@@ -469,6 +469,6 @@ public static class DistributedLockExtensions
             cancellationToken.ThrowIfCancellationRequested();
         }
 
-        CompositeDistributedLeaseOperations.ThrowIfAny(errors);
+        CompositeDistributedLeaseOperations.ThrowCleanupErrors(errors);
     }
 }

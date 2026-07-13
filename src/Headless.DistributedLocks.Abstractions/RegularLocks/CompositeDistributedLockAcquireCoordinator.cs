@@ -247,15 +247,26 @@ internal static class CompositeDistributedLockAcquireCoordinator
             return await pendingAcquire.ConfigureAwait(false);
         }
 
-        using var lossWaitSource = formationLossToken.CanBeCanceled
-            ? CancellationTokenSource.CreateLinkedTokenSource(formationLossToken)
-            : null;
-        using var waitCancellationSource = CancellationTokenSource.CreateLinkedTokenSource(operationToken);
-        var lossTask = lossWaitSource is null
-            ? Task.Delay(Timeout.InfiniteTimeSpan, CancellationToken.None)
-            : Task.Delay(Timeout.InfiniteTimeSpan, lossWaitSource.Token);
-        var cancellationTask = Task.Delay(Timeout.InfiniteTimeSpan, waitCancellationSource.Token);
+        // One sentinel, not two: held-child loss and operation cancellation (caller or deadline) both mean "stop
+        // waiting and re-derive why", and the post-wait checks below classify the cause from state rather than from
+        // which task won. A TaskCompletionSource signalled by one-time token registrations replaces the pair of
+        // infinite Task.Delay sentinels: there is no timer to schedule and nothing to cancel-and-drain, and the
+        // signal cannot fault, so the wait arm never needs exception handling.
+        var waitSignal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var operationRegistration = operationToken.Register(
+            static state => ((TaskCompletionSource)state!).TrySetResult(),
+            waitSignal
+        );
+        using var lossRegistration = formationLossToken.CanBeCanceled
+            ? formationLossToken.Register(static state => ((TaskCompletionSource)state!).TrySetResult(), waitSignal)
+            : default;
 
+        // NOTE (review finding #6): Task.WhenAny attaches a continuation to every task it is given and never removes
+        // it from the losers, so re-racing pendingAcquire and waitSignal.Task on each cadence tick appends
+        // continuations to them for the life of this acquisition. Hoisting the pendingAcquire/waitSignal race out of
+        // the loop is the fix, but the hoisted task then outlives `attemptSource`'s `using` scope as far as CA2025
+        // can prove, and this package does not suppress analyzers without sign-off. Left as-is pending that call.
+        // The TCS sentinel above already removes two of the four racing tasks (and both timers).
         try
         {
             while (true)
@@ -278,7 +289,7 @@ internal static class CompositeDistributedLockAcquireCoordinator
                         cadenceTask = Task.Delay(Timeout.InfiniteTimeSpan, CancellationToken.None);
                     }
 
-                    var completed = await Task.WhenAny(pendingAcquire, lossTask, cancellationTask, cadenceTask)
+                    var completed = await Task.WhenAny(pendingAcquire, waitSignal.Task, cadenceTask)
                         .ConfigureAwait(false);
 
                     if (cadenceSource is not null && completed != cadenceTask)
@@ -300,40 +311,43 @@ internal static class CompositeDistributedLockAcquireCoordinator
                         throw new OperationCanceledException(operationToken);
                     }
 
-                    if (completed == pendingAcquire)
+                    if (pendingAcquire.IsCompleted)
                     {
                         return await pendingAcquire.ConfigureAwait(false);
                     }
 
-                    if (completed != cadenceTask)
+                    if (completed == cadenceTask)
                     {
-                        continue;
+                        using var renewalSource = CancellationTokenSource.CreateLinkedTokenSource(operationToken);
+                        var renewalTask = _RenewHeldAsync(
+                            held,
+                            options.TimeUntilExpires ?? provider.DefaultTimeUntilExpires,
+                            renewalSource.Token
+                        );
+                        var renewalCompleted = await Task.WhenAny(renewalTask, waitSignal.Task).ConfigureAwait(false);
+
+                        if (renewalCompleted == renewalTask)
+                        {
+                            await renewalTask.ConfigureAwait(false);
+                            renewalSchedule.Reset();
+                            continue;
+                        }
+
+                        var renewalPrimary = _CreateWaitInterruption(held, callerToken, deadlineToken, operationToken);
+                        var observedRenewalFailure = await _CancelAndObserveTaskAsync(
+                                renewalTask,
+                                renewalSource,
+                                renewalPrimary
+                            )
+                            .ConfigureAwait(false);
+                        throw observedRenewalFailure;
                     }
 
-                    using var renewalSource = CancellationTokenSource.CreateLinkedTokenSource(operationToken);
-                    var renewalTask = _RenewHeldAsync(
-                        held,
-                        options.TimeUntilExpires ?? provider.DefaultTimeUntilExpires,
-                        renewalSource.Token
-                    );
-                    var renewalCompleted = await Task.WhenAny(renewalTask, lossTask, cancellationTask)
-                        .ConfigureAwait(false);
-
-                    if (renewalCompleted == renewalTask)
-                    {
-                        await renewalTask.ConfigureAwait(false);
-                        renewalSchedule.Reset();
-                        continue;
-                    }
-
-                    var renewalPrimary = _CreateWaitInterruption(held, callerToken, deadlineToken, operationToken);
-                    var observedRenewalFailure = await _CancelAndObserveTaskAsync(
-                            renewalTask,
-                            renewalSource,
-                            renewalPrimary
-                        )
-                        .ConfigureAwait(false);
-                    throw observedRenewalFailure;
+                    // The wait sentinel fired, yet no held child reports loss and no token is cancelled. Nothing
+                    // will change on a re-race, so looping would spin hot against an already-completed task. This
+                    // is only reachable from a lease whose LostToken and IsLost disagree; treat it as a wait
+                    // interruption rather than burning the remaining budget.
+                    throw _CreateWaitInterruption(held, callerToken, deadlineToken, operationToken);
                 }
                 finally
                 {
@@ -346,17 +360,6 @@ internal static class CompositeDistributedLockAcquireCoordinator
             var observedFailure = await _CancelAndObservePendingAsync(pendingAcquire, attemptSource, held, primary)
                 .ConfigureAwait(false);
             throw observedFailure.ReThrow();
-        }
-        finally
-        {
-            await waitCancellationSource.CancelAsync().ConfigureAwait(false);
-            await _DrainCancelledDelayAsync(cancellationTask).ConfigureAwait(false);
-
-            if (lossWaitSource is not null)
-            {
-                await lossWaitSource.CancelAsync().ConfigureAwait(false);
-                await _DrainCancelledDelayAsync(lossTask).ConfigureAwait(false);
-            }
         }
     }
 
@@ -465,37 +468,33 @@ internal static class CompositeDistributedLockAcquireCoordinator
     }
 
 #pragma warning disable VSTHRD003 // These helpers explicitly cancel and drain operation tasks before ownership ends.
-    private static async Task<Exception> _CancelAndObservePendingAsync(
+    /// <summary>
+    /// Cancels and drains the pending child acquire, capturing a handle that wins the cancellation race so rollback
+    /// can still release it — an acquire that completes after we stop waiting would otherwise leave the lock held
+    /// with no reference to release it. The cancel/drain/exception-mapping ladder itself lives in
+    /// <see cref="_CancelAndObserveTaskAsync"/>; keeping one copy of it means this path and the renewal path cannot
+    /// silently diverge.
+    /// </summary>
+    private static Task<Exception> _CancelAndObservePendingAsync(
         Task<IDistributedLease?> pendingAcquire,
         CancellationTokenSource attemptSource,
         List<IDistributedLease> acquired,
         Exception primary
     )
     {
-        await attemptSource.CancelAsync().ConfigureAwait(false);
+        return _CancelAndObserveTaskAsync(_CaptureLateChildAsync(pendingAcquire, acquired), attemptSource, primary);
+    }
 
-        try
-        {
-            var lateChild = await pendingAcquire.ConfigureAwait(false);
+    private static async Task _CaptureLateChildAsync(
+        Task<IDistributedLease?> pendingAcquire,
+        List<IDistributedLease> acquired
+    )
+    {
+        var lateChild = await pendingAcquire.ConfigureAwait(false);
 
-            if (lateChild is not null)
-            {
-                acquired.Add(lateChild);
-            }
-
-            return primary;
-        }
-        catch (OperationCanceledException) when (attemptSource.IsCancellationRequested)
+        if (lateChild is not null)
         {
-            return primary;
-        }
-        catch (Exception drainException) when (ReferenceEquals(primary, drainException))
-        {
-            return primary;
-        }
-        catch (Exception drainException)
-        {
-            return new AggregateException(primary, drainException);
+            acquired.Add(lateChild);
         }
     }
 
@@ -598,7 +597,7 @@ internal static class CompositeDistributedLockAcquireCoordinator
                 _ThrowCombined(cancellation, cleanupErrors);
             }
 
-            CompositeDistributedLeaseOperations.ThrowIfAny(cleanupErrors);
+            CompositeDistributedLeaseOperations.ThrowCleanupErrors(cleanupErrors);
         }
 
         callerToken.ThrowIfCancellationRequested();

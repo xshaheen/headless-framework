@@ -62,16 +62,22 @@ public sealed class CompositeDistributedLeaseTests : TestBase
     }
 
     [Fact]
-    public async Task should_renew_all_children_and_return_false_when_any_child_is_lost()
+    public async Task should_renew_all_children_and_throw_naming_the_lost_child()
     {
+        // Renewals fan out concurrently, so when "b" reports loss, "a" has already been extended by a full lease
+        // duration and is still held. Reporting `false` would mean "already lost -- nothing to release" under the
+        // IDistributedLease contract, and a caller acting on that would orphan "a" until its TTL expired. Throwing
+        // names the lost child and cannot be silently ignored.
         var first = new TestLease("a", "lease-a");
         var second = new TestLease("b", "lease-b") { Renew = static (_, _) => Task.FromResult(false) };
         await using var sut = _Create([first, second], releaseOnDispose: false);
         var ttl = TimeSpan.FromMinutes(5);
 
-        var result = await sut.RenewAsync(ttl, AbortToken);
+        var act = async () => await sut.RenewAsync(ttl, AbortToken);
 
-        result.Should().BeFalse();
+        var assertion = await act.Should().ThrowAsync<LockHandleLostException>();
+        assertion.Which.Resource.Should().Be("b");
+        assertion.Which.LeaseId.Should().Be("lease-b");
         first.RenewCalls.Should().Be(1);
         second.RenewCalls.Should().Be(1);
         first.LastRenewalTtl.Should().Be(ttl);
@@ -154,8 +160,9 @@ public sealed class CompositeDistributedLeaseTests : TestBase
         await using var sut = _Create([first, second], releaseOnDispose: false);
 
         var firstRelease = async () => await sut.ReleaseAsync();
-        var assertion = await firstRelease.Should().ThrowAsync<InvalidOperationException>();
-        assertion.Which.Should().BeSameAs(firstError);
+        var assertion = await firstRelease.Should().ThrowAsync<LockCleanupFailedException>();
+        assertion.Which.Failures.Should().ContainSingle().Which.Should().BeSameAs(firstError);
+        assertion.Which.InnerException.Should().BeSameAs(firstError);
 
         await sut.ReleaseAsync();
 
@@ -186,8 +193,11 @@ public sealed class CompositeDistributedLeaseTests : TestBase
 
         var act = async () => await sut.DisposeAsync();
 
-        var assertion = await act.Should().ThrowAsync<AggregateException>();
-        assertion.Which.InnerExceptions.Should().ContainInOrder(releaseError, disposeError);
+        // LockCleanupFailedException derives from DistributedLockException, so a caller's documented
+        // catch (DistributedLockException) catch-all sees cleanup failures. A raw AggregateException did not.
+        var assertion = await act.Should().ThrowAsync<LockCleanupFailedException>();
+        assertion.Which.Failures.Should().ContainInOrder(releaseError, disposeError);
+        assertion.Which.Should().BeAssignableTo<DistributedLockException>();
         first.ReleaseCalls.Should().Be(1);
         second.ReleaseCalls.Should().Be(1);
         first.DisposeCalls.Should().Be(1);

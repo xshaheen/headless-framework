@@ -96,6 +96,15 @@ internal sealed class CompositeDistributedLease : IDistributedLease, ICompositeD
 
     IReadOnlyList<IDistributedLease> ICompositeDistributedLease.Children => _children;
 
+    /// <summary>
+    /// Renews every child concurrently. Returns <see langword="true"/> when all children renewed, and
+    /// <see langword="false"/> only when this composite was already released. Losing a child throws
+    /// <see cref="LockHandleLostException"/> rather than returning <see langword="false"/>: renewals fan out
+    /// concurrently, so a surviving sibling has already been extended and is still held, and the composite must
+    /// still be released or disposed. Reporting <see langword="false"/> would mean "already lost — nothing to
+    /// release" under the <see cref="IDistributedLease"/> contract, which would orphan those survivors.
+    /// </summary>
+    /// <exception cref="LockHandleLostException">A child lease was lost; its resource and lease id name the child.</exception>
     public async Task<bool> RenewAsync(TimeSpan? timeUntilExpires = null, CancellationToken cancellationToken = default)
     {
         await _lifecycleGate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -188,7 +197,13 @@ internal sealed class CompositeDistributedLease : IDistributedLease, ICompositeD
                 (errors ??= []).AddRange(disposeErrors);
             }
 
-            CompositeDistributedLeaseOperations.ThrowIfAny(errors);
+            // NOTE: unlike every other IDistributedLease, composite disposal can throw — a child handle's own
+            // DisposeAsync logs and swallows its release failure, but this composite has no logger to swallow into,
+            // and dropping a failed lock release silently would be worse than surfacing it. The cost is that inside
+            // `await using`, a throw here replaces an exception already in flight from the caller's body. Callers who
+            // must not lose their own exception should release explicitly and dispose inside their own try/finally.
+            // See review finding #3: fixing this properly needs a logger on the acquisition path.
+            CompositeDistributedLeaseOperations.ThrowCleanupErrors(errors);
         }
         finally
         {
@@ -212,7 +227,21 @@ internal static class CompositeDistributedLeaseOperations
         ThrowRenewalErrors(outcomes, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return outcomes.All(static outcome => outcome.Renewed);
+        // A partial renewal cannot be reported as `false`. Renewals fan out concurrently, so by the time one child
+        // reports loss its siblings have already been extended by a full lease duration and remain held. The
+        // IDistributedLease contract defines `false` as "already lost — nothing to release", and a caller acting on
+        // that would abandon the handle and orphan every surviving child until its TTL expires. Throwing names the
+        // lost child and cannot be silently ignored; the composite stays held for its survivors, so the caller must
+        // still release or dispose it. This matches what the coordinator already does for the identical condition
+        // during formation (CompositeDistributedLockAcquireCoordinator._RenewHeldAsync).
+        var lostChild = outcomes.FirstOrDefault(static outcome => !outcome.Renewed).Child;
+
+        if (lostChild is not null)
+        {
+            throw new LockHandleLostException(lostChild.Resource, lostChild.LeaseId);
+        }
+
+        return true;
     }
 
     internal static Task<ChildRenewalOutcome[]> CollectRenewalOutcomesAsync(
@@ -254,7 +283,23 @@ internal static class CompositeDistributedLeaseOperations
     )
     {
         var errors = await CollectReverseAsync(children, action).ConfigureAwait(false);
-        ThrowIfAny(errors);
+        ThrowCleanupErrors(errors);
+    }
+
+    /// <summary>
+    /// Surfaces failures reported while releasing or disposing children. Distinct from <see cref="ThrowIfAny"/>:
+    /// cleanup failures carry the dedicated <see cref="LockCleanupFailedException"/> so a caller's
+    /// <c>catch (DistributedLockException)</c> — the hierarchy the package documents as its catch-all — sees them.
+    /// A raw storage exception or an <see cref="AggregateException"/> would escape that catch entirely.
+    /// </summary>
+    internal static void ThrowCleanupErrors(List<Exception>? errors)
+    {
+        if (errors is null || errors.Count == 0)
+        {
+            return;
+        }
+
+        throw new LockCleanupFailedException(errors);
     }
 
     internal static async Task<List<Exception>?> CollectReverseAsync(

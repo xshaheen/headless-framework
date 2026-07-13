@@ -156,6 +156,11 @@ public interface IDistributedLock
     /// <param name="resource">The resource to inspect. Must be non-null and non-whitespace.</param>
     /// <param name="cancellationToken">Cancels the read; surfaces as <see cref="OperationCanceledException"/>.</param>
     /// <returns>The current holder's lease id, or <see langword="null"/> when not locked or not observable.</returns>
+    /// <remarks>
+    /// Do not pass a multi-resource lease's <see cref="IDistributedLease.Resource"/> here. Composite acquisition
+    /// returns a joined diagnostic identity (for example <c>"a+b"</c>) that was never written to the backend as a key,
+    /// so this reports "not locked" rather than failing. Inspect the individual resource names instead.
+    /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="resource"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException"><paramref name="resource"/> is empty or whitespace.</exception>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
@@ -178,6 +183,12 @@ public interface IDistributedLock
     /// <param name="resource">The resource to inspect. Must be non-null and non-whitespace.</param>
     /// <param name="cancellationToken">Cancels the read; surfaces as <see cref="OperationCanceledException"/>.</param>
     /// <returns><see langword="true"/> when the resource currently has an active lock; otherwise <see langword="false"/>.</returns>
+    /// <remarks>
+    /// Do not pass a multi-resource lease's <see cref="IDistributedLease.Resource"/> here. Composite acquisition
+    /// returns a joined diagnostic identity (for example <c>"a+b"</c>) that was never written to the backend as a key,
+    /// so this returns <see langword="false"/> for a set that is genuinely held. Inspect the individual resource names
+    /// instead.
+    /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="resource"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException"><paramref name="resource"/> is empty or whitespace.</exception>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
@@ -187,6 +198,11 @@ public interface IDistributedLock
     /// <param name="resource">The resource to inspect. Must be non-null and non-whitespace.</param>
     /// <param name="cancellationToken">Cancels the read; surfaces as <see cref="OperationCanceledException"/>.</param>
     /// <returns>The remaining TTL, or null if the resource is not locked or has no expiration.</returns>
+    /// <remarks>
+    /// Do not pass a multi-resource lease's <see cref="IDistributedLease.Resource"/> here. Composite acquisition
+    /// returns a joined diagnostic identity (for example <c>"a+b"</c>) that was never written to the backend as a key,
+    /// so this reports <see langword="null"/> rather than failing. Inspect the individual resource names instead.
+    /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="resource"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException"><paramref name="resource"/> is empty or whitespace.</exception>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
@@ -196,8 +212,16 @@ public interface IDistributedLock
     /// <param name="resource">The resource to inspect. Must be non-null and non-whitespace.</param>
     /// <param name="cancellationToken">Cancels the read; surfaces as <see cref="OperationCanceledException"/>.</param>
     /// <remarks>
+    /// <para>
     /// <see cref="DistributedLockInfo.LeaseId"/> may be null when the backend can observe that the
     /// resource is locked but cannot surface the current holder identity on the inspection path.
+    /// </para>
+    /// <para>
+    /// Do not pass a multi-resource lease's <see cref="IDistributedLease.Resource"/> here. Composite acquisition
+    /// returns a joined diagnostic identity (for example <c>"a+b"</c>) that was never written to the backend as a key,
+    /// so this reports <see langword="null"/> for a set that is genuinely held. Inspect the individual resource names
+    /// instead.
+    /// </para>
     /// </remarks>
     /// <returns>Lock information, or null if the resource is not locked.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="resource"/> is <see langword="null"/>.</exception>

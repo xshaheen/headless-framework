@@ -762,7 +762,13 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
 
         var act = async () => await provider.TryAcquireAllAsync(["A", "B"], cancellationToken: AbortToken);
 
-        (await act.Should().ThrowAsync<InvalidOperationException>()).Which.Should().BeSameAs(cleanupError);
+        // Cleanup failures carry LockCleanupFailedException so that catch (DistributedLockException) -- the catch-all
+        // the package documents on its exception hierarchy -- sees them. The storage exception is preserved on
+        // Failures and InnerException rather than being thrown raw, which would have escaped that catch.
+        var assertion = await act.Should().ThrowAsync<LockCleanupFailedException>();
+        assertion.Which.Failures.Should().ContainSingle().Which.Should().BeSameAs(cleanupError);
+        assertion.Which.InnerException.Should().BeSameAs(cleanupError);
+        assertion.Which.Should().BeAssignableTo<DistributedLockException>();
     }
 
     [Fact]
