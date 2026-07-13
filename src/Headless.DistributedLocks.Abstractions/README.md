@@ -8,7 +8,7 @@ Lets application and domain code depend on lock interfaces without referencing a
 
 ## Key Features
 
-- `IDistributedLock` with `TryAcquireAsync(...)` and `AcquireAsync(...)`.
+- `IDistributedLock` with single-resource `TryAcquireAsync(...)` / `AcquireAsync(...)` and multi-resource `TryAcquireAllAsync(...)` / `AcquireAllAsync(...)` extensions.
 - `IDistributedReadWriteLock` with read/write acquire methods returning `IDistributedLease`.
 - `IDistributedSemaphoreProvider` and `IDistributedSemaphore` for creation-time `maxCount` concurrency control.
 - `IDistributedLease` handle with `LeaseId`, nullable `FencingToken`, `LostToken`, `CanObserveLoss`, `IsLost`, `ThrowIfLost()`, `RenewAsync(...)`, and `ReleaseAsync(...)`.
@@ -19,8 +19,11 @@ Lets application and domain code depend on lock interfaces without referencing a
 ## Design Notes
 
 - `AcquireAsync(...)` is a throwing convenience over `TryAcquireAsync(...)`. It does not provide stronger safety guarantees.
+- Multi-resource acquisition validates, deduplicates, and ordinal-sorts the complete input before the first provider call, then applies one acquire timeout across the canonical set. A zero timeout gives every canonical resource one non-blocking attempt. Partial acquisition is compensated by exhaustive reverse-order release and disposal; it is not transactional.
+- A canonical set of one returns the provider's original child lease, preserving its `LeaseId` and `FencingToken`. A true multi-resource lease has a synthetic `LeaseId`, a joined diagnostic `Resource`, and a `null` scalar `FencingToken`; its loss signal links the child signals, and renew/release operate on every child.
+- During composite formation, finite-TTL children are renewed at half the TTL, capped at one minute, unless `LockMonitoringMode.AutoExtend` already owns renewal. Composite deadlines and waits use `IDistributedLock.TimeProvider`; custom providers must expose the clock used by their own acquisition logic.
 - Per-call configuration (`TimeUntilExpires`, `AcquireTimeout`, `ReleaseOnDispose`, `Monitoring`) is bundled into `DistributedLockAcquireOptions`. Omit the argument to use defaults; use `with` expressions to derive variants.
-- `ReleaseOnDispose = false` prevents dispose-time release but does not disable explicit `ReleaseAsync(...)`.
+- `ReleaseOnDispose = false` prevents dispose-time release but does not disable explicit `ReleaseAsync(...)`, including for composite leases.
 - `FencingToken` is a per-resource monotonic grant counter for stale-write rejection. It is distinct from `LeaseId`, which remains the opaque ownership token used for renew/release equality. It is `null` when the backend or lock type does not support fencing.
 - `DistributedLockInfo.LeaseId` may be `null` when the backend can prove a resource is locked but cannot expose the current holder identity on the inspection path.
 - `LostToken` is `CancellationToken.None` unless the acquire call enables monitoring (check `CanObserveLoss` to disambiguate). It is an observability signal. A faulted monitor is surfaced as cancellation here as a fail-safe so a silently dead monitor cannot keep appearing healthy.
@@ -35,13 +38,15 @@ dotnet add package Headless.DistributedLocks.Abstractions
 
 ## Quick Start
 
+The multi-resource extension signatures are `Task<IDistributedLease?> TryAcquireAllAsync(IEnumerable<string> resources, DistributedLockAcquireOptions? options = null, CancellationToken cancellationToken = default)` and `Task<IDistributedLease> AcquireAllAsync(IEnumerable<string> resources, DistributedLockAcquireOptions? options = null, CancellationToken cancellationToken = default)`.
+
 ```csharp
 public sealed class OrderWorker(IDistributedLock lockProvider)
 {
     public async Task ProcessAsync(Guid orderId, CancellationToken ct)
     {
-        await using var lease = await lockProvider.AcquireAsync(
-            $"order:{orderId}",
+        await using var lease = await lockProvider.AcquireAllAsync(
+            [$"order:{orderId}", $"customer:{orderId}"],
             new DistributedLockAcquireOptions
             {
                 TimeUntilExpires = TimeSpan.FromMinutes(5),
