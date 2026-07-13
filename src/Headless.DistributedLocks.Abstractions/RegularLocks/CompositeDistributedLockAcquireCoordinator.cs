@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Runtime.ExceptionServices;
 using Headless.Checks;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
@@ -21,7 +20,6 @@ internal static class CompositeDistributedLockAcquireCoordinator
         Argument.IsNotNull(resources);
 
         var canonicalResources = _MaterializeCanonicalResources(resources);
-        var compositeResource = string.Join("+", canonicalResources);
         options ??= new DistributedLockAcquireOptions();
 
         var totalBudget = options.AcquireTimeout ?? provider.DefaultAcquireTimeout;
@@ -48,6 +46,8 @@ internal static class CompositeDistributedLockAcquireCoordinator
             : null;
         var operationToken = operationSource?.Token ?? cancellationToken;
         var acquired = new List<IDistributedLease>(canonicalResources.Length);
+        CancellationTokenSource? formationLossSource = null;
+        var formationLossRegistrations = new List<CancellationTokenRegistration>(canonicalResources.Length);
 
         try
         {
@@ -57,8 +57,7 @@ internal static class CompositeDistributedLockAcquireCoordinator
                 {
                     return await _RollbackForTimeoutAsync(
                             acquired,
-                            compositeResource,
-                            tryOnce,
+                            _GetCompositeResource(canonicalResources),
                             cancellationToken,
                             deadlineSource!.Token
                         )
@@ -67,10 +66,13 @@ internal static class CompositeDistributedLockAcquireCoordinator
 
                 var childOptions = options with
                 {
-                    AcquireTimeout =
-                        tryOnce ? TimeSpan.Zero
-                        : infiniteBudget ? Timeout.InfiniteTimeSpan
-                        : _GetRemaining(timeProvider, startedAt, totalBudget),
+                    AcquireTimeout = _GetChildAcquireTimeout(
+                        tryOnce,
+                        infiniteBudget,
+                        timeProvider,
+                        startedAt,
+                        totalBudget
+                    ),
                 };
 
                 var child = await _AcquireChildAsync(
@@ -78,6 +80,7 @@ internal static class CompositeDistributedLockAcquireCoordinator
                         resource,
                         childOptions,
                         acquired,
+                        formationLossSource?.Token ?? CancellationToken.None,
                         operationToken,
                         cancellationToken,
                         deadlineSource?.Token ?? CancellationToken.None
@@ -88,7 +91,7 @@ internal static class CompositeDistributedLockAcquireCoordinator
                 {
                     return await _RollbackForNullAsync(
                             acquired,
-                            compositeResource,
+                            _GetCompositeResource(canonicalResources),
                             tryOnce,
                             cancellationToken,
                             deadlineSource?.Token ?? CancellationToken.None
@@ -97,6 +100,17 @@ internal static class CompositeDistributedLockAcquireCoordinator
                 }
 
                 acquired.Add(child);
+
+                if (child.CanObserveLoss)
+                {
+                    formationLossSource ??= new CancellationTokenSource();
+                    formationLossRegistrations.Add(
+                        child.LostToken.Register(
+                            static state => ((CancellationTokenSource)state!).Cancel(),
+                            formationLossSource
+                        )
+                    );
+                }
             }
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -105,8 +119,7 @@ internal static class CompositeDistributedLockAcquireCoordinator
             {
                 return await _RollbackForTimeoutAsync(
                         acquired,
-                        compositeResource,
-                        tryOnce,
+                        _GetCompositeResource(canonicalResources),
                         cancellationToken,
                         deadlineSource.Token
                     )
@@ -115,12 +128,14 @@ internal static class CompositeDistributedLockAcquireCoordinator
 
             if (acquired.Count == 1)
             {
-                return new CompositeDistributedLockAcquireResult(acquired[0], compositeResource, tryOnce);
+                return new CompositeDistributedLockAcquireResult(acquired[0], canonicalResources[0], tryOnce);
             }
 
+            var compositeResource = _GetCompositeResource(canonicalResources);
 #pragma warning disable CA2000 // Ownership is transferred to the returned IDistributedLease.
             var lease = new CompositeDistributedLease(
                 acquired,
+                compositeResource,
                 timeProvider.GetUtcNow(),
                 timeProvider.GetElapsedTime(startedAt),
                 options.ReleaseOnDispose
@@ -144,7 +159,7 @@ internal static class CompositeDistributedLockAcquireCoordinator
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            return new CompositeDistributedLockAcquireResult(null, compositeResource, tryOnce);
+            return new CompositeDistributedLockAcquireResult(null, _GetCompositeResource(canonicalResources), tryOnce);
         }
         catch (Exception exception)
         {
@@ -155,8 +170,16 @@ internal static class CompositeDistributedLockAcquireCoordinator
                 _ThrowCombined(exception, cleanupErrors);
             }
 
-            ExceptionDispatchInfo.Capture(exception).Throw();
-            throw;
+            throw exception.ReThrow();
+        }
+        finally
+        {
+            foreach (var registration in formationLossRegistrations)
+            {
+                await registration.DisposeAsync().ConfigureAwait(false);
+            }
+
+            formationLossSource?.Dispose();
         }
     }
 
@@ -187,6 +210,7 @@ internal static class CompositeDistributedLockAcquireCoordinator
         string resource,
         DistributedLockAcquireOptions options,
         List<IDistributedLease> held,
+        CancellationToken formationLossToken,
         CancellationToken operationToken,
         CancellationToken callerToken,
         CancellationToken deadlineToken
@@ -200,15 +224,13 @@ internal static class CompositeDistributedLockAcquireCoordinator
             return await pendingAcquire.ConfigureAwait(false);
         }
 
-        var lossTokens = held.Where(static child => child.CanObserveLoss)
-            .Select(static child => child.LostToken)
-            .ToArray();
-        using var lossSource =
-            lossTokens.Length > 0 ? CancellationTokenSource.CreateLinkedTokenSource(lossTokens) : null;
+        using var lossWaitSource = formationLossToken.CanBeCanceled
+            ? CancellationTokenSource.CreateLinkedTokenSource(formationLossToken)
+            : null;
         using var waitCancellationSource = CancellationTokenSource.CreateLinkedTokenSource(operationToken);
-        var lossTask = lossSource is null
+        var lossTask = lossWaitSource is null
             ? Task.Delay(Timeout.InfiniteTimeSpan, CancellationToken.None)
-            : Task.Delay(Timeout.InfiniteTimeSpan, lossSource.Token);
+            : Task.Delay(Timeout.InfiniteTimeSpan, lossWaitSource.Token);
         var cancellationTask = Task.Delay(Timeout.InfiniteTimeSpan, waitCancellationSource.Token);
         var cadence = _GetRenewalCadence(provider, options);
 
@@ -300,17 +322,16 @@ internal static class CompositeDistributedLockAcquireCoordinator
         {
             var observedFailure = await _CancelAndObservePendingAsync(pendingAcquire, attemptSource, held, primary)
                 .ConfigureAwait(false);
-            ExceptionDispatchInfo.Capture(observedFailure).Throw();
-            throw;
+            throw observedFailure.ReThrow();
         }
         finally
         {
             await waitCancellationSource.CancelAsync().ConfigureAwait(false);
             await _DrainCancelledDelayAsync(cancellationTask).ConfigureAwait(false);
 
-            if (lossSource is not null)
+            if (lossWaitSource is not null)
             {
-                await lossSource.CancelAsync().ConfigureAwait(false);
+                await lossWaitSource.CancelAsync().ConfigureAwait(false);
                 await _DrainCancelledDelayAsync(lossTask).ConfigureAwait(false);
             }
         }
@@ -322,57 +343,16 @@ internal static class CompositeDistributedLockAcquireCoordinator
         CancellationToken cancellationToken
     )
     {
-        var tasks = held.Select(child => _RenewChildAsync(child, timeUntilExpires, cancellationToken)).ToArray();
-        var outcomes = await Task.WhenAll(tasks).ConfigureAwait(false);
-        List<Exception>? errors = null;
-
-        foreach (var outcome in outcomes)
-        {
-            if (outcome.Exception is { } exception)
-            {
-                (errors ??= []).Add(exception);
-            }
-        }
-
-        if (errors is not null)
-        {
-            if (
-                cancellationToken.IsCancellationRequested
-                && errors.All(static error => error is OperationCanceledException)
-            )
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-            }
-
-            CompositeDistributedLeaseOperations.ThrowIfAny(errors);
-        }
-
+        var outcomes = await CompositeDistributedLeaseOperations
+            .CollectRenewalOutcomesAsync(held, child => child.RenewAsync(timeUntilExpires, cancellationToken))
+            .ConfigureAwait(false);
+        CompositeDistributedLeaseOperations.ThrowRenewalErrors(outcomes, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
         var lostChild = outcomes.FirstOrDefault(static outcome => !outcome.Renewed).Child;
 
         if (lostChild is not null)
         {
             throw new LockHandleLostException(lostChild.Resource, lostChild.LeaseId);
-        }
-    }
-
-    private static async Task<RenewChildOutcome> _RenewChildAsync(
-        IDistributedLease child,
-        TimeSpan timeUntilExpires,
-        CancellationToken cancellationToken
-    )
-    {
-        try
-        {
-            return new RenewChildOutcome(
-                child,
-                await child.RenewAsync(timeUntilExpires, cancellationToken).ConfigureAwait(false),
-                Exception: null
-            );
-        }
-        catch (Exception exception)
-        {
-            return new RenewChildOutcome(child, Renewed: false, exception);
         }
     }
 
@@ -389,14 +369,33 @@ internal static class CompositeDistributedLockAcquireCoordinator
             return null;
         }
 
-        var half = TimeSpan.FromTicks(Math.Max(1, timeUntilExpires.Ticks / 2));
-        return half <= _MaxRenewalCadence ? half : _MaxRenewalCadence;
+        return TimeSpan.FromTicks(timeUntilExpires.Ticks / 2).Clamp(TimeSpan.FromTicks(1), _MaxRenewalCadence);
     }
 
     private static TimeSpan _GetRemaining(TimeProvider timeProvider, long startedAt, TimeSpan totalBudget)
     {
-        var remaining = totalBudget - timeProvider.GetElapsedTime(startedAt);
-        return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
+        return (totalBudget - timeProvider.GetElapsedTime(startedAt)).Max(TimeSpan.Zero);
+    }
+
+    private static TimeSpan _GetChildAcquireTimeout(
+        bool tryOnce,
+        bool infiniteBudget,
+        TimeProvider timeProvider,
+        long startedAt,
+        TimeSpan totalBudget
+    )
+    {
+        if (tryOnce)
+        {
+            return TimeSpan.Zero;
+        }
+
+        return infiniteBudget ? Timeout.InfiniteTimeSpan : _GetRemaining(timeProvider, startedAt, totalBudget);
+    }
+
+    private static string _GetCompositeResource(IReadOnlyList<string> canonicalResources)
+    {
+        return string.Join("+", canonicalResources);
     }
 
     private static Exception _CreateWaitInterruption(
@@ -502,7 +501,6 @@ internal static class CompositeDistributedLockAcquireCoordinator
     private static async Task<CompositeDistributedLockAcquireResult> _RollbackForTimeoutAsync(
         List<IDistributedLease> acquired,
         string compositeResource,
-        bool tryOnce,
         CancellationToken callerToken,
         CancellationToken deadlineToken
     )
@@ -526,7 +524,7 @@ internal static class CompositeDistributedLockAcquireCoordinator
             _ThrowCombined(new OperationCanceledException(deadlineToken), cleanupErrors);
         }
 
-        return new CompositeDistributedLockAcquireResult(null, compositeResource, tryOnce);
+        return new CompositeDistributedLockAcquireResult(null, compositeResource, TryOnce: false);
     }
 
     private static async Task<CompositeDistributedLockAcquireResult> _RollbackForNullAsync(
@@ -538,10 +536,16 @@ internal static class CompositeDistributedLockAcquireCoordinator
     )
     {
         var cleanupErrors = await _RollbackAsync(acquired).ConfigureAwait(false);
-        Exception? cancellation =
-            callerToken.IsCancellationRequested ? new OperationCanceledException(callerToken)
-            : deadlineToken.IsCancellationRequested ? new OperationCanceledException(deadlineToken)
-            : null;
+        Exception? cancellation = null;
+
+        if (callerToken.IsCancellationRequested)
+        {
+            cancellation = new OperationCanceledException(callerToken);
+        }
+        else if (deadlineToken.IsCancellationRequested)
+        {
+            cancellation = new OperationCanceledException(deadlineToken);
+        }
 
         if (cleanupErrors is not null)
         {
@@ -593,8 +597,6 @@ internal static class CompositeDistributedLockAcquireCoordinator
     {
         throw new AggregateException([primary, .. cleanupErrors]);
     }
-
-    private readonly record struct RenewChildOutcome(IDistributedLease Child, bool Renewed, Exception? Exception);
 }
 
 internal readonly record struct CompositeDistributedLockAcquireResult(

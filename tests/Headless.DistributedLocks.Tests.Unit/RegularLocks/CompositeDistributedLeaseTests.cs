@@ -306,7 +306,13 @@ public sealed class CompositeDistributedLeaseTests : TestBase
         bool releaseOnDispose = true
     )
     {
-        return new CompositeDistributedLease(children, _AcquiredAt, _Waited, releaseOnDispose);
+        return new CompositeDistributedLease(
+            children,
+            string.Join("+", children.Select(static child => child.Resource)),
+            _AcquiredAt,
+            _Waited,
+            releaseOnDispose
+        );
     }
 
     private static TestLease _CreateOrderedLease(string resource, List<string> calls)

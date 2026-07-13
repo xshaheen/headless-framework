@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Runtime.ExceptionServices;
 using Headless.Checks;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
@@ -28,6 +27,7 @@ internal sealed class CompositeDistributedLease : IDistributedLease, ICompositeD
 
     internal CompositeDistributedLease(
         IReadOnlyList<IDistributedLease> children,
+        string resource,
         DateTimeOffset dateAcquired,
         TimeSpan timeWaitedForLock,
         bool releaseOnDispose
@@ -61,7 +61,7 @@ internal sealed class CompositeDistributedLease : IDistributedLease, ICompositeD
         }
 
         LeaseId = Guid.NewGuid().ToString("N");
-        Resource = string.Join("+", _children.Select(child => child.Resource));
+        Resource = resource;
         DateAcquired = dateAcquired;
         TimeWaitedForLock = timeWaitedForLock;
         CanObserveLoss = canObserveLoss;
@@ -196,28 +196,34 @@ internal static class CompositeDistributedLeaseOperations
         CancellationToken cancellationToken = default
     )
     {
-        var tasks = children.Select(child => _InvokeRenewAsync(child, renew)).ToArray();
-        var outcomes = await Task.WhenAll(tasks).ConfigureAwait(false);
+        var outcomes = await CollectRenewalOutcomesAsync(children, renew).ConfigureAwait(false);
+        ThrowRenewalErrors(outcomes, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
 
-        List<Exception>? errors = null;
-        var renewed = true;
+        return outcomes.All(static outcome => outcome.Renewed);
+    }
 
-        foreach (var outcome in outcomes)
+    internal static Task<ChildRenewalOutcome[]> CollectRenewalOutcomesAsync(
+        IReadOnlyList<IDistributedLease> children,
+        Func<IDistributedLease, Task<bool>> renew
+    )
+    {
+        return Task.WhenAll(children.Select(child => _InvokeRenewAsync(child, renew)));
+    }
+
+    internal static void ThrowRenewalErrors(
+        IReadOnlyList<ChildRenewalOutcome> outcomes,
+        CancellationToken cancellationToken
+    )
+    {
+        var errors = outcomes
+            .Where(static outcome => outcome.Exception is not null)
+            .Select(static outcome => outcome.Exception!)
+            .ToList();
+
+        if (errors.Count == 0)
         {
-            if (outcome.Exception is { } exception)
-            {
-                (errors ??= []).Add(exception);
-                continue;
-            }
-
-            renewed &= outcome.Renewed;
-        }
-
-        if (errors is null)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            return renewed;
+            return;
         }
 
         if (
@@ -228,8 +234,6 @@ internal static class CompositeDistributedLeaseOperations
         }
 
         ThrowIfAny(errors);
-
-        return renewed;
     }
 
     internal static async Task RunReverseAsync(
@@ -272,26 +276,26 @@ internal static class CompositeDistributedLeaseOperations
 
         if (errors.Count == 1)
         {
-            ExceptionDispatchInfo.Capture(errors[0]).Throw();
+            throw errors[0].ReThrow();
         }
 
         throw new AggregateException(errors);
     }
 
-    private static async Task<RenewOutcome> _InvokeRenewAsync(
+    private static async Task<ChildRenewalOutcome> _InvokeRenewAsync(
         IDistributedLease child,
         Func<IDistributedLease, Task<bool>> renew
     )
     {
         try
         {
-            return new RenewOutcome(await renew(child).ConfigureAwait(false), Exception: null);
+            return new ChildRenewalOutcome(child, await renew(child).ConfigureAwait(false), Exception: null);
         }
         catch (Exception exception)
         {
-            return new RenewOutcome(Renewed: false, exception);
+            return new ChildRenewalOutcome(child, Renewed: false, exception);
         }
     }
 
-    private readonly record struct RenewOutcome(bool Renewed, Exception? Exception);
+    internal readonly record struct ChildRenewalOutcome(IDistributedLease Child, bool Renewed, Exception? Exception);
 }
