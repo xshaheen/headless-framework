@@ -28,6 +28,8 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
     private IStorageInitializer? _initializer;
     private IDataStorage? _storage;
     private ISerializer? _serializer;
+    private IOptions<SqlServerOptions>? _sqlServerOptions;
+    private IOptions<MessagingOptions>? _messagingOptions;
 
     /// <inheritdoc />
     protected override DataStorageCapabilities Capabilities =>
@@ -58,6 +60,27 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
     {
         _EnsureInitialized();
         return _serializer!;
+    }
+
+    /// <inheritdoc />
+    protected override IDataStorage CreateStorageWithTimeProvider(TimeProvider timeProvider)
+    {
+        _EnsureInitialized();
+        return _CreateStorage(timeProvider);
+    }
+
+    private IDataStorage _CreateStorage(TimeProvider timeProvider)
+    {
+        return new SqlServerDataStorage(
+            _messagingOptions!,
+            _sqlServerOptions!,
+            _initializer!,
+            _serializer!,
+            new SequentialGuidGenerator(SequentialGuidType.SqlServer),
+            timeProvider,
+            NodeMembership,
+            NullLogger<SqlServerDataStorage>.Instance
+        );
     }
 
     /// <inheritdoc />
@@ -127,26 +150,17 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
 
         var provider = services.BuildServiceProvider();
 
-        var sqlServerOptions = provider.GetRequiredService<IOptions<SqlServerOptions>>();
-        var messagingOptions = provider.GetRequiredService<IOptions<MessagingOptions>>();
+        _sqlServerOptions = provider.GetRequiredService<IOptions<SqlServerOptions>>();
+        _messagingOptions = provider.GetRequiredService<IOptions<MessagingOptions>>();
         _serializer = provider.GetRequiredService<ISerializer>();
 
         _initializer = new SqlServerStorageInitializer(
             NullLogger<SqlServerStorageInitializer>.Instance,
-            sqlServerOptions,
-            messagingOptions
+            _sqlServerOptions,
+            _messagingOptions
         );
 
-        _storage = new SqlServerDataStorage(
-            messagingOptions,
-            sqlServerOptions,
-            _initializer,
-            provider.GetRequiredService<ISerializer>(),
-            new SequentialGuidGenerator(SequentialGuidType.SqlServer),
-            TimeProvider.System,
-            NodeMembership,
-            NullLogger<SqlServerDataStorage>.Instance
-        );
+        _storage = _CreateStorage(TimeProvider.System);
     }
 
     #region Data Storage Tests
@@ -250,6 +264,57 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
     [Fact]
     public override Task should_not_return_leased_published_message_until_lease_expires() =>
         base.should_not_return_leased_published_message_until_lease_expires();
+
+    [Fact]
+    public override Task should_use_database_clock_when_reclaiming_published_retry_lease() =>
+        base.should_use_database_clock_when_reclaiming_published_retry_lease();
+
+    [Fact]
+    public override Task should_use_database_clock_when_reclaiming_received_retry_lease() =>
+        base.should_use_database_clock_when_reclaiming_received_retry_lease();
+
+    [Fact]
+    public override Task should_use_database_clock_when_fast_forwarding_dead_owner_lease() =>
+        base.should_use_database_clock_when_fast_forwarding_dead_owner_lease();
+
+    [Fact]
+    public override Task should_stamp_retry_lease_from_database_clock() =>
+        base.should_stamp_retry_lease_from_database_clock();
+
+    [Fact]
+    public override Task should_use_application_clock_when_scheduling_published_retry() =>
+        base.should_use_application_clock_when_scheduling_published_retry();
+
+    [Fact]
+    public override Task should_use_application_clock_when_scheduling_received_retry() =>
+        base.should_use_application_clock_when_scheduling_received_retry();
+
+    [Fact]
+    public async Task should_preserve_sub_second_retry_lease_precision()
+    {
+        _EnsureInitialized();
+        _messagingOptions!.Value.RetryPolicy.DispatchTimeout = TimeSpan.FromMilliseconds(500);
+        var storage = GetStorage();
+        var storedMessage = await storage.StoreMessageAsync(
+            "sub-second-retry-lease",
+            CreateMessage(),
+            cancellationToken: AbortToken
+        );
+        await storage.ChangePublishStateAsync(
+            storedMessage,
+            StatusName.Failed,
+            nextRetryAt: DateTime.UtcNow.AddMinutes(-1),
+            cancellationToken: AbortToken
+        );
+
+        var beforeClaim = DateTime.UtcNow;
+        var claimed = (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
+            .Should()
+            .ContainSingle(m => m.StorageId == storedMessage.StorageId)
+            .Subject;
+
+        claimed.LockedUntil.Should().BeAfter(beforeClaim.AddMilliseconds(100));
+    }
 
     [Fact]
     public override Task should_reject_mismatched_original_retries() =>

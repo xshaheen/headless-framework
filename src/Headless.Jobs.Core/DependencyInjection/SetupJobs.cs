@@ -26,6 +26,8 @@ namespace Headless.Jobs;
 
 public static class SetupJobs
 {
+    private static readonly TimeSpan _MaximumPostCommitDrainTimeout = TimeSpan.FromMinutes(5);
+
     public static IServiceCollection AddHeadlessJobs(
         this IServiceCollection services,
         Action<JobsOptionsBuilder<TimeJobEntity, CronJobEntity>>? optionsBuilder = null
@@ -51,6 +53,14 @@ public static class SetupJobs
         Ensure.True(
             schedulerOptionsBuilder.LeaseDuration > TimeSpan.Zero,
             "SchedulerOptionsBuilder.LeaseDuration must be greater than TimeSpan.Zero."
+        );
+        Ensure.True(
+            schedulerOptionsBuilder.PostCommitDrainTimeout > TimeSpan.Zero,
+            "SchedulerOptionsBuilder.PostCommitDrainTimeout must be greater than TimeSpan.Zero."
+        );
+        Ensure.True(
+            schedulerOptionsBuilder.PostCommitDrainTimeout <= _MaximumPostCommitDrainTimeout,
+            "SchedulerOptionsBuilder.PostCommitDrainTimeout must not exceed 5 minutes."
         );
         var retryOptions = optionInstance.RetryOptions;
         services.Configure<JobsRetryOptions, JobsRetryOptionsValidator>(configured =>

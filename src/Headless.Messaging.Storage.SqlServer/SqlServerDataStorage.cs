@@ -1229,42 +1229,47 @@ internal sealed class SqlServerDataStorage(
         // same "LockedUntil IS NULL" filter and lease the same row — double-dispatch.
         //
         // WITH (UPDLOCK, READPAST, ROWLOCK) on the UPDATE preserves the "skip rows another
-        // replica is mid-claim on" behaviour. The UPDATE assigns @NewLease = now + DispatchTimeout
+        // replica is mid-claim on" behaviour. The UPDATE assigns database time + DispatchTimeout
         // so subsequent pickup polls (anywhere) see the row as leased until the dispatch attempt
         // completes (or the lease expires).
         //
-        // Use the injected TimeProvider rather than the DB server clock (GETUTCDATE()) so InMemory
-        // and SQL providers share identical pickup semantics — keeps tests with a fake clock honest
-        // and avoids subtle drift between application time and DB time.
+        // NextRetryAt is scheduling state written from the injected TimeProvider, so its due
+        // predicate uses that same authority. Lease expiry and stamping remain on one command-
+        // local database snapshot, keeping every replica on one ownership authority without a
+        // clock query.
         var sql = $"""
+            DECLARE @ClaimNow datetime2(7) = SYSUTCDATETIME();
+
             WITH Candidates AS (
                 SELECT TOP (@BatchSize) Id
                 FROM {tableName} WITH (UPDLOCK, READPAST, ROWLOCK)
                 WHERE Retries <= @Retries
                   AND Version = @Version
                   AND NextRetryAt IS NOT NULL AND NextRetryAt <= @Now
-                  AND (LockedUntil IS NULL OR LockedUntil <= @Now)
+                  AND (LockedUntil IS NULL OR LockedUntil <= @ClaimNow)
                   AND {_TerminalRowGuardSimple}
                 ORDER BY NextRetryAt, Id
             )
             UPDATE target
-            SET LockedUntil = @NewLease, Owner = @Owner
+            SET LockedUntil = DATEADD(nanosecond, @LeaseNanoseconds, DATEADD(second, @LeaseWholeSeconds, @ClaimNow)), Owner = @Owner
             OUTPUT inserted.Id, inserted.Content, inserted.IntentType, inserted.Retries, inserted.InlineAttempts, inserted.Added, inserted.NextRetryAt, inserted.LockedUntil, inserted.Owner
             FROM {tableName} AS target
             INNER JOIN Candidates ON target.Id = Candidates.Id;
             """;
 
-        var now = timeProvider.GetUtcNow().UtcDateTime;
-        var newLease = now.Add(messagingOptions.Value.RetryPolicy.DispatchTimeout);
+        var dispatchTimeout = messagingOptions.Value.RetryPolicy.DispatchTimeout;
+        var leaseWholeSeconds = checked((int)(dispatchTimeout.Ticks / TimeSpan.TicksPerSecond));
+        var leaseNanoseconds = checked((int)(dispatchTimeout.Ticks % TimeSpan.TicksPerSecond * 100));
 
         object[] sqlParams =
         [
             new SqlParameter("@BatchSize", messagingOptions.Value.RetryBatchSize),
             new SqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxPersistedRetries),
             new SqlParameter("@Version", messagingOptions.Value.Version),
-            new SqlParameter("@Now", SqlDbType.DateTime2) { Value = now },
-            new SqlParameter("@NewLease", SqlDbType.DateTime2) { Value = newLease },
-            _OwnerParameter("@Owner", newLease),
+            new SqlParameter("@Now", SqlDbType.DateTime2) { Value = timeProvider.GetUtcNow().UtcDateTime },
+            new SqlParameter("@LeaseWholeSeconds", SqlDbType.Int) { Value = leaseWholeSeconds },
+            new SqlParameter("@LeaseNanoseconds", SqlDbType.Int) { Value = leaseNanoseconds },
+            _OwnerParameter("@Owner", hasLease: true),
         ];
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
@@ -1453,24 +1458,21 @@ internal sealed class SqlServerDataStorage(
             return 0;
         }
 
-        var now = timeProvider.GetUtcNow().UtcDateTime;
         var sql = $"""
+            DECLARE @ReclaimNow datetime2(7) = SYSUTCDATETIME();
+
             UPDATE target
-            SET LockedUntil = @Now
+            SET LockedUntil = @ReclaimNow
             FROM {tableName} AS target
             WHERE target.Owner IS NOT NULL
               AND target.Owner IN (SELECT [Owner] FROM @DeadOwners)
-              AND target.LockedUntil > @Now
+              AND target.LockedUntil > @ReclaimNow
               AND {_TerminalRowGuardSimple};
             """;
 
         // A TVP keeps the SQL text and parameter shape constant regardless of owner count, so SQL Server reuses
         // a single cached plan even when a mass-node-loss reconcile batches many dead owners into one UPDATE.
-        var sqlParams = new object[]
-        {
-            new SqlParameter("@Now", SqlDbType.DateTime2) { Value = now },
-            _BuildOwnerListTvpParameter(deadOwners),
-        };
+        var sqlParams = new object[] { _BuildOwnerListTvpParameter(deadOwners) };
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
         return await connection
@@ -1508,9 +1510,12 @@ internal sealed class SqlServerDataStorage(
     }
 
     private SqlParameter _OwnerParameter(string name, DateTime? lockedUntil) =>
+        _OwnerParameter(name, lockedUntil is not null);
+
+    private SqlParameter _OwnerParameter(string name, bool hasLease) =>
         new(name, SqlDbType.NVarChar, options.Value.OwnerColumnMaxLength)
         {
-            Value = nodeMembership.GetOwnerParameterValue(lockedUntil),
+            Value = hasLease ? nodeMembership.GetOwnerTag() ?? (object)DBNull.Value : DBNull.Value,
         };
 
     private static PoisonMessage _CreatePoisonMessage(Guid storageId, Exception exception) =>

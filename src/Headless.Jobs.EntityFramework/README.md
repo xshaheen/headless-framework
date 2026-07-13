@@ -24,7 +24,7 @@ Provides persistence of time jobs and cron occurrences across restarts and acros
 
 ## Design Notes
 
-Lease renewal on the EF path anchors `LockedUntil` comparison to the **database clock** (`now()` on PostgreSQL, `GETUTCDATE()` on SQL Server), not the node's injected `TimeProvider`. This is an intentional divergence from the in-memory path: in-memory has no DB server, so it uses the application clock. On EF, the DB clock is the only way to guarantee cross-node clock skew cannot falsely reclaim a renewing job on a cluster. Do not write tests asserting precise lease timing using a fake `TimeProvider` against the EF provider.
+Lease acquisition, renewal, and reclaim on the EF path use the **database clock** (`now()` on PostgreSQL, `GETUTCDATE()` on SQL Server), not the node's injected `TimeProvider`. Claims translate `DateTime.UtcNow` inside the existing update statement, so lease comparison and stamping share one authority without a separate scalar clock query. In-memory has no database server and continues to use `TimeProvider`. Do not write EF tests that expect a fake `TimeProvider` to control lease deadlines.
 
 The `JobsDbContext<TTimeJob, TCronJob>` constructor must be `public` for the EF pool to resolve it at startup. Validation fails fast at DI build time.
 

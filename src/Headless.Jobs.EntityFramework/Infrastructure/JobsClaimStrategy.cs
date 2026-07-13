@@ -202,7 +202,6 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             .ConfigureAwait(false);
 
         var context = dbContext.Set<TTimeJob>();
-        var now = timeProvider.GetUtcNow().UtcDateTime;
 
         foreach (var timeJob in timeJobs)
         {
@@ -211,7 +210,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             var rootId = timeJob.Id;
             var expectedUpdatedAt = timeJob.UpdatedAt;
             var rootMatches = context.Where(x => x.Id == rootId && x.UpdatedAt == expectedUpdatedAt);
-            var affected = await _ClaimTimeJobTreeAsync(context, rootMatches, rootId, owner, now, cancellationToken)
+            var affected = await _ClaimTimeJobTreeAsync(context, rootMatches, rootId, owner, cancellationToken)
                 .ConfigureAwait(false);
 
             if (affected <= 0)
@@ -219,9 +218,16 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 continue;
             }
 
-            timeJob.UpdatedAt = now;
+            var claimTimestamps = await context
+                .AsNoTracking()
+                .Where(x => x.Id == rootId)
+                .Select(x => new { x.LockedUntil, x.UpdatedAt })
+                .SingleAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            timeJob.UpdatedAt = claimTimestamps.UpdatedAt;
             timeJob.OwnerId = owner;
-            timeJob.LockedUntil = now.Add(_leaseDuration);
+            timeJob.LockedUntil = claimTimestamps.LockedUntil;
             timeJob.Status = JobStatus.Queued;
 
             yield return timeJob;
@@ -248,7 +254,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         var timeJobsToUpdate = await context
             .AsNoTracking()
             .Where(x => x.ExecutionTime != null)
-            .WhereCanFallbackClaim(now)
+            .WhereCanFallbackClaimUsingDatabaseClock()
             .Where(x => x.ExecutionTime <= fallbackThreshold)
             .Include(x => x.Children.Where(y => y.ExecutionTime == null))
             .Select(MappingExtensions.ForQueueTimeJobs<TTimeJob>())
@@ -263,8 +269,8 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             var expectedUpdatedAt = timeJob.UpdatedAt;
             var rootMatches = context
                 .Where(x => x.Id == rootId && x.UpdatedAt <= expectedUpdatedAt)
-                .WhereCanFallbackClaim(now);
-            var affected = await _ClaimTimeJobTreeAsync(context, rootMatches, rootId, owner, now, cancellationToken)
+                .WhereCanFallbackClaimUsingDatabaseClock();
+            var affected = await _ClaimTimeJobTreeAsync(context, rootMatches, rootId, owner, cancellationToken)
                 .ConfigureAwait(false);
 
             if (affected <= 0)
@@ -272,9 +278,16 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 continue;
             }
 
+            var claimTimestamps = await context
+                .AsNoTracking()
+                .Where(x => x.Id == rootId)
+                .Select(x => new { x.LockedUntil, x.UpdatedAt })
+                .SingleAsync(cancellationToken)
+                .ConfigureAwait(false);
+
             timeJob.OwnerId = owner;
-            timeJob.LockedUntil = now.Add(_leaseDuration);
-            timeJob.UpdatedAt = now;
+            timeJob.LockedUntil = claimTimestamps.LockedUntil;
+            timeJob.UpdatedAt = claimTimestamps.UpdatedAt;
             timeJob.Status = JobStatus.Queued;
 
             yield return timeJob;
@@ -301,7 +314,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         var cronJobsToUpdate = await context
             .AsNoTracking()
             .Include(x => x.CronJob)
-            .WhereCanFallbackClaim(now)
+            .WhereCanFallbackClaimUsingDatabaseClock()
             .Where(x => x.ExecutionTime <= fallbackThreshold)
             .Select(MappingExtensions.ForQueueCronJobOccurrence<CronJobOccurrenceEntity<TCronJob>, TCronJob>())
             .ToArrayAsync(cancellationToken)
@@ -313,13 +326,16 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
 
             var affected = await context
                 .Where(x => x.Id == cronJobOccurrence.Id && x.UpdatedAt == cronJobOccurrence.UpdatedAt)
-                .WhereCanFallbackClaim(now)
+                .WhereCanFallbackClaimUsingDatabaseClock()
                 .ExecuteUpdateAsync(
                     setter =>
                         setter
                             .SetProperty(x => x.OwnerId, owner)
-                            .SetProperty(x => x.LockedUntil, now.Add(_leaseDuration))
-                            .SetProperty(x => x.UpdatedAt, now)
+                            .SetProperty(
+                                x => x.LockedUntil,
+                                _ => DateTime.UtcNow.AddSeconds(_leaseDuration.TotalSeconds)
+                            )
+                            .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow)
                             .SetProperty(x => x.Status, JobStatus.Queued),
                     cancellationToken
                 )
@@ -330,9 +346,16 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 continue;
             }
 
+            var claimTimestamps = await context
+                .AsNoTracking()
+                .Where(x => x.Id == cronJobOccurrence.Id)
+                .Select(x => new { x.LockedUntil, x.UpdatedAt })
+                .SingleAsync(cancellationToken)
+                .ConfigureAwait(false);
+
             cronJobOccurrence.OwnerId = owner;
-            cronJobOccurrence.LockedUntil = now.Add(_leaseDuration);
-            cronJobOccurrence.UpdatedAt = now;
+            cronJobOccurrence.LockedUntil = claimTimestamps.LockedUntil;
+            cronJobOccurrence.UpdatedAt = claimTimestamps.UpdatedAt;
             cronJobOccurrence.Status = JobStatus.Queued;
 
             yield return cronJobOccurrence;
@@ -357,21 +380,24 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             .ConfigureAwait(false);
 
         var context = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>();
+        var claimResults = new CronJobOccurrenceEntity<TCronJob>?[cronJobOccurrences.Items.Length];
+        var newOccurrenceIds = new List<Guid>();
 
-        foreach (var item in cronJobOccurrences.Items)
+        for (var index = 0; index < cronJobOccurrences.Items.Length; index++)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            var item = cronJobOccurrences.Items[index];
 
             if (item.NextCronOccurrence is null)
             {
                 var itemToAdd = new CronJobOccurrenceEntity<TCronJob>
                 {
                     Id = Guid.NewGuid(),
-                    Status = JobStatus.Queued,
-                    OwnerId = owner,
+                    Status = JobStatus.Idle,
+                    OwnerId = null,
                     ExecutionTime = executionTime,
                     CronJobId = item.Id,
-                    LockedUntil = now.Add(_leaseDuration),
+                    LockedUntil = null,
                     OnNodeDeath = item.OnNodeDeath,
                     CreatedAt = now,
                     UpdatedAt = now,
@@ -389,20 +415,26 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                     continue;
                 }
 
+                itemToAdd.Status = JobStatus.Queued;
+                itemToAdd.OwnerId = owner;
                 itemToAdd.CronJob = MappingExtensions.ProjectCronJob<TCronJob>(item, owner);
-                yield return itemToAdd;
+                claimResults[index] = itemToAdd;
+                newOccurrenceIds.Add(itemToAdd.Id);
                 continue;
             }
 
             var affectedUpdate = await context
                 .Where(x => x.Id == item.NextCronOccurrence.Id)
                 .Where(x => x.ExecutionTime == executionTime)
-                .WhereCanAcquire(owner, now)
+                .WhereCanAcquireUsingDatabaseClock(owner)
                 .ExecuteUpdateAsync(
                     prop =>
                         prop.SetProperty(y => y.OwnerId, owner)
-                            .SetProperty(y => y.LockedUntil, now.Add(_leaseDuration))
-                            .SetProperty(y => y.UpdatedAt, now)
+                            .SetProperty(
+                                y => y.LockedUntil,
+                                _ => DateTime.UtcNow.AddSeconds(_leaseDuration.TotalSeconds)
+                            )
+                            .SetProperty(y => y.UpdatedAt, _ => DateTime.UtcNow)
                             .SetProperty(y => y.Status, JobStatus.Queued)
                             .SetProperty(y => y.OnNodeDeath, item.OnNodeDeath),
                     cancellationToken
@@ -414,19 +446,62 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 continue;
             }
 
-            yield return new CronJobOccurrenceEntity<TCronJob>
+            claimResults[index] = new CronJobOccurrenceEntity<TCronJob>
             {
                 Id = item.NextCronOccurrence.Id,
                 CronJobId = item.Id,
                 ExecutionTime = executionTime,
                 Status = JobStatus.Queued,
                 OwnerId = owner,
-                LockedUntil = now.Add(_leaseDuration),
                 OnNodeDeath = item.OnNodeDeath,
-                UpdatedAt = now,
                 CreatedAt = item.NextCronOccurrence.CreatedAt,
                 CronJob = MappingExtensions.ProjectCronJob<TCronJob>(item, owner),
             };
+        }
+
+        if (newOccurrenceIds.Count > 0)
+        {
+            await context
+                .Where(x => newOccurrenceIds.Contains(x.Id))
+                .WhereCanAcquireUsingDatabaseClock(owner)
+                .ExecuteUpdateAsync(
+                    setter =>
+                        setter
+                            .SetProperty(x => x.OwnerId, owner)
+                            .SetProperty(
+                                x => x.LockedUntil,
+                                _ => DateTime.UtcNow.AddSeconds(_leaseDuration.TotalSeconds)
+                            )
+                            .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow)
+                            .SetProperty(x => x.Status, JobStatus.Queued),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+
+        var claimedIds = claimResults.Where(x => x is not null).Select(x => x!.Id).ToArray();
+        var claimTimestamps = await context
+            .AsNoTracking()
+            .Where(x => claimedIds.Contains(x.Id) && x.OwnerId == owner && x.Status == JobStatus.Queued)
+            .Select(x => new
+            {
+                x.Id,
+                x.LockedUntil,
+                x.UpdatedAt,
+            })
+            .ToDictionaryAsync(x => x.Id, cancellationToken)
+            .ConfigureAwait(false);
+
+        foreach (var result in claimResults)
+        {
+            if (result is null || !claimTimestamps.TryGetValue(result.Id, out var timestamps))
+            {
+                continue;
+            }
+
+            result.LockedUntil = timestamps.LockedUntil;
+            result.UpdatedAt = timestamps.UpdatedAt;
+            yield return result;
         }
     }
 
@@ -435,7 +510,6 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         IQueryable<TTimeJob> rootMatches,
         Guid rootId,
         string owner,
-        DateTime now,
         CancellationToken cancellationToken
     )
     {
@@ -453,8 +527,8 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 setter =>
                     setter
                         .SetProperty(x => x.OwnerId, owner)
-                        .SetProperty(x => x.LockedUntil, now.Add(_leaseDuration))
-                        .SetProperty(x => x.UpdatedAt, now)
+                        .SetProperty(x => x.LockedUntil, _ => DateTime.UtcNow.AddSeconds(_leaseDuration.TotalSeconds))
+                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow)
                         .SetProperty(x => x.Status, x => x.Id == rootId ? JobStatus.Queued : x.Status),
                 cancellationToken
             );

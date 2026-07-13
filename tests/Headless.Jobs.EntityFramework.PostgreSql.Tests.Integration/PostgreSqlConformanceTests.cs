@@ -12,6 +12,18 @@ public sealed class PostgreSqlConformanceTests(PostgreSqlJobsCoordinationFixture
         base.queued_job_is_stamped_with_the_node_incarnation_owner();
 
     [Fact]
+    public override Task queued_job_lease_uses_the_db_clock_not_a_skewed_claimant_clock() =>
+        base.queued_job_lease_uses_the_db_clock_not_a_skewed_claimant_clock();
+
+    [Fact]
+    public override Task portable_claim_results_return_database_timestamps_and_batch_new_crons() =>
+        base.portable_claim_results_return_database_timestamps_and_batch_new_crons();
+
+    [Fact]
+    public override Task native_claim_eligibility_uses_the_db_clock_not_a_fast_application_clock() =>
+        base.native_claim_eligibility_uses_the_db_clock_not_a_fast_application_clock();
+
+    [Fact]
     public override Task reclaim_touches_only_the_dead_incarnations_non_terminal_rows() =>
         base.reclaim_touches_only_the_dead_incarnations_non_terminal_rows();
 
