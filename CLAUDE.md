@@ -200,6 +200,34 @@ When adding a new `.csproj` to the solution, set the project SDK to one of the H
 
 After creating the project, attach it to [headless-framework.slnx](headless-framework.slnx). The Headless SDKs apply the project's strict baseline, including nullable references, current analyzers, banned `Newtonsoft.Json`, deterministic builds, and CI-aware warning handling. Do not disable defaults without a documented reason. Configuration switches and `Disable*` properties are documented at https://raw.githubusercontent.com/xshaheen/headless-sdk/refs/heads/main/README.md.
 
+## Date & Time
+
+Full rationale: [docs/solutions/design-patterns/temporal-authority-standard.md](docs/solutions/design-patterns/temporal-authority-standard.md). The one rule:
+
+> **Time semantics belong to whichever authority owns the decision — never to the ambient environment of whichever process happens to be running.**
+
+Every timestamp answers exactly one of four questions, and each has exactly one correct authority:
+
+| The timestamp answers… | Authority | Use |
+|---|---|---|
+| "Who owns this, and until when?" (leases, locks, liveness, visibility) | **The store** | DB/Redis server clock, inlined into the atomic statement |
+| "How long has this taken?" (timeouts, backoff, deadlines) | **Monotonic** | `TimeProvider.GetTimestamp()` / `GetElapsedTime()` |
+| "When should this fire in human terms?" (cron, calendars) | **The tz database** | `TimeZoneInfo` — explicit, never `TimeZoneInfo.Local` |
+| "When did this happen?" (audit, `CreatedAt`, logs) | **The app clock** | Injected `TimeProvider` |
+
+Using the wrong row is how every date/time defect in this repo has happened. Concretely:
+
+- **Ownership time must be written AND compared by the store**, in one statement. Never sample a clock into a variable and bind it as a parameter — that reintroduces the app clock and adds a round trip whose latency silently shortens the lease. Pass a **duration**, never an absolute deadline, across any API that reaches the store.
+- **PostgreSQL:** `clock_timestamp()` (real time) or `statement_timestamp()` (stable across one statement — preferred when the WHERE arm and the SET arm must agree). **Never `now()`/`CURRENT_TIMESTAMP`** — those are transaction-start time. **SQL Server:** `SYSUTCDATETIME()`. **Never `GETUTCDATE()`** — `datetime` precision (~3.33 ms).
+- **Redis:** send a *relative* duration (`PX`/`PEXPIRE`) or compute inside Lua with `redis.call('TIME')`. Never `PEXPIREAT` with a client-computed absolute epoch.
+- **In an EF `ExecuteUpdate`/`Where` expression tree, a bare `DateTime.UtcNow` is NOT evaluated in-process** — the provider translates it to server time. This is the correct way to express the DB clock in LINQ. Prove it with a SQL-capturing test; a skewed-`TimeProvider` test cannot catch a client-evaluation regression (a client-evaluated `DateTime.UtcNow` ignores `TimeProvider` and dodges the skew).
+- **Prefer `TimeProvider.GetTimestamp()` over `Stopwatch`/`Environment.TickCount64`** — all three are monotonic, but only `TimeProvider` is fakeable.
+- **Types:** `DateTimeOffset` for persisted instants and public APIs. PostgreSQL `timestamptz`; SQL Server `datetime2(7)`.
+- **Never trust an external SDK's `DateTime.Kind`** (AWS S3 returns `Unspecified`); `new DateTimeOffset(DateTime)` applies the *host's* offset to an Unspecified value. Use `DateTime.SpecifyKind(v, DateTimeKind.Utc)`.
+- **Clamp any caller-supplied delay** (non-negative, capped). Backoff must be jittered.
+- **Enforcement:** `DateTime.Now`/`UtcNow`/`DateTimeOffset.Now`/`UtcNow` are banned at compile time by the Headless SDK (`RS0030`) — including inside `<see cref>` doc comments (use `<c>…</c>`).
+- **Tests:** frozen clock (`FakeTimeProvider`) by default. Wall-clock waits only where a real server clock genuinely cannot be faked (Redis/DB TTL). Anything that decides ownership needs a skew test.
+
 ## Documentation
 
 - `docs/solutions/` is a searchable knowledge store of past fixes and patterns, organized by category (`api`, `concurrency`, `guides`, `messaging`, etc.) with YAML frontmatter (`module`, `tags`, `problem_type`). Search it before implementing features, debugging issues, or making decisions in a documented area.
