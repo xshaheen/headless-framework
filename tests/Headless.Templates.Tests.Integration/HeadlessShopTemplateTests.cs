@@ -55,22 +55,34 @@ public sealed class HeadlessShopTemplateTests
 
         generated.File("TrailStore.slnx").Exists.Should().BeTrue();
         generated.File("AGENTS.md").Exists.Should().BeTrue();
+        generated.File("README.md").Exists.Should().BeTrue();
+        generated.File("compose.yaml").Exists.Should().BeTrue();
         generated.File("docs/recipes/add-command.md").Exists.Should().BeTrue();
         generated.File("TrailStore.Api/TrailStore.Api.csproj").Exists.Should().BeTrue();
         generated.File("TrailStore.Tests.Architecture/TrailStore.Tests.Architecture.csproj").Exists.Should().BeTrue();
-        File.ReadAllText(generated.File("Directory.Packages.props").FullName)
+        (
+            await File.ReadAllTextAsync(
+                generated.File("Directory.Packages.props").FullName,
+                TestContext.Current.CancellationToken
+            )
+        )
             .Should()
             .Contain("Version=\"9.9.9-test\"")
             .And.NotContain("Version=\"0.10.1-preview.0.13\"");
 
         var generatedFiles = generated
             .EnumerateFiles("*", SearchOption.AllDirectories)
-            .Where(file => file.Extension is ".cs" or ".csproj" or ".md" or ".json");
+            .Where(file => file.Extension is ".cs" or ".csproj" or ".md" or ".json")
+            .ToArray();
 
-        generatedFiles
+        var generatedContents = await Task.WhenAll(
+            generatedFiles.Select(file => File.ReadAllTextAsync(file.FullName, TestContext.Current.CancellationToken))
+        );
+
+        generatedContents
             .Should()
             .OnlyContain(
-                file => !File.ReadAllText(file.FullName).Contains("HeadlessShop", StringComparison.Ordinal),
+                content => !content.Contains("HeadlessShop", StringComparison.Ordinal),
                 "sourceName replacement should produce a clean generated checkout"
             );
     }
@@ -81,6 +93,8 @@ public sealed class HeadlessShopTemplateTests
         var content = _RepoRoot.Directory("templates/HeadlessShop/content");
 
         content.File("AGENTS.md").Exists.Should().BeTrue();
+        content.File("README.md").Exists.Should().BeTrue();
+        content.File("compose.yaml").Exists.Should().BeTrue();
         content.File("docs/architecture.md").Exists.Should().BeTrue();
         content.File("docs/validation.md").Exists.Should().BeTrue();
         content.File("docs/recipes/add-command.md").Exists.Should().BeTrue();
@@ -89,9 +103,12 @@ public sealed class HeadlessShopTemplateTests
     }
 
     [Fact]
-    public void validation_script_runs_the_full_generated_gate()
+    public async Task validation_script_runs_the_full_generated_gate()
     {
-        var script = File.ReadAllText(_RepoRoot.File("tools/validate-headless-shop-template.sh").FullName);
+        var script = await File.ReadAllTextAsync(
+            _RepoRoot.File("tools/validate-headless-shop-template.sh").FullName,
+            TestContext.Current.CancellationToken
+        );
 
         script.Should().Contain("dotnet new install");
         script.Should().Contain("dotnet new headless-shop");
@@ -103,6 +120,7 @@ public sealed class HeadlessShopTemplateTests
         script.Should().Contain("TrailStore.Tests.Architecture");
         script.Should().Contain("TrailStore.Tests.Integration");
         script.Should().Contain("docs/recipes/add-command.md");
+        script.Should().Contain("compose.yaml");
     }
 
     private static async Task _RunDotNet(string arguments, DirectoryInfo? dotnetHome = null)

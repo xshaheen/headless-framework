@@ -16,9 +16,9 @@ public static class SetupCatalogModule
         {
             services.AddHeadlessDbContext<CatalogDbContext>(
                 options =>
-                    options.UseSqlite(
+                    options.UseNpgsql(
                         connectionString,
-                        sqlite => sqlite.MigrationsHistoryTable("__CatalogMigrationsHistory")
+                        postgres => postgres.MigrationsHistoryTable("__CatalogMigrationsHistory", "catalog")
                     ),
                 headless => headless.RemoveSaveEntryProcessor<HeadlessLocalEventSaveEntryProcessor>()
             );

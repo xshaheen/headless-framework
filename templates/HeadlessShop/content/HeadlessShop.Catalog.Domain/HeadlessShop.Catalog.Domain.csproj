@@ -5,4 +5,7 @@
   <ItemGroup>
     <PackageReference Include="Headless.Domain" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\HeadlessShop.Contracts\HeadlessShop.Contracts.csproj" />
+  </ItemGroup>
 </Project>

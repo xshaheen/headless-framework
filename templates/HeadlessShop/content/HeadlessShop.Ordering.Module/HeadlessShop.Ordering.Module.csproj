@@ -7,7 +7,7 @@
     <PackageReference Include="FluentValidation" />
     <PackageReference Include="Headless.Messaging.Core" />
     <PackageReference Include="Headless.Orm.EntityFramework" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\HeadlessShop.Contracts\HeadlessShop.Contracts.csproj" />

@@ -1,10 +1,13 @@
 using Headless.Api;
 using Headless.Api.MultiTenancy;
-using Headless.Api.OperationProcessors;
+using Headless.Api.ServiceDefaults;
 using Headless.EntityFramework;
 using Headless.Mediator;
 using Headless.Messaging;
 using Headless.MultiTenancy;
+using Headless.OpenApi.Nswag;
+using Headless.OpenApi.Nswag.OperationProcessors;
+using Headless.OpenApi.Scalar;
 using HeadlessShop.Api;
 using HeadlessShop.Catalog.Api;
 using HeadlessShop.Modules;
@@ -14,7 +17,9 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 
 var builder = WebApplication.CreateBuilder(args);
-var connectionString = builder.Configuration.GetConnectionString("Shop") ?? "Data Source=headless-shop.db";
+var connectionString =
+    builder.Configuration.GetConnectionString("Shop")
+    ?? "Host=localhost;Port=5432;Database=headless_shop;Username=postgres;Password=postgres";
 
 builder.AddHeadless(
     encryption =>
@@ -94,7 +99,8 @@ builder.Services.AddShopModules(connectionString);
 builder.Services.AddHeadlessMessaging(setup =>
 {
     setup.UseInMemory();
-    setup.UseInMemoryStorage();
+    setup.UsePostgreSql(connectionString);
+    setup.Options.RetryPolicy.MaxPersistedRetries = 3;
     setup.AddOrderingMessaging();
 });
 

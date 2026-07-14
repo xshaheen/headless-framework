@@ -1,6 +1,8 @@
+using Headless.Exceptions;
+using Headless.Primitives;
 using HeadlessShop.Catalog.Domain;
 using HeadlessShop.Catalog.Infrastructure;
-using HeadlessShop.Contracts;
+using Npgsql;
 
 namespace HeadlessShop.Catalog.Application;
 
@@ -32,23 +34,27 @@ public sealed class CreateProductHandler(CatalogDbContext dbContext, ICurrentTen
 
         if (duplicateSku)
         {
-            throw new InvalidOperationException($"Product SKU '{command.Sku}' already exists for this tenant.");
+            throw _DuplicateSku(command.Sku);
         }
 
         var product = Product.Create(Guid.NewGuid(), tenantId, command.Sku, command.Name, command.Price);
-        product.AddIntegrationEvent(
-            new ProductCreated(
-                Guid.NewGuid().ToString("N"),
-                product.Id,
-                product.Sku,
-                product.Name,
-                product.Price,
-                tenantId
-            )
-        );
         dbContext.Products.Add(product);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException exception)
+            when (exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+        {
+            throw _DuplicateSku(command.Sku);
+        }
 
         return new(product.Id, product.Sku, product.Name, product.Price);
+    }
+
+    private static ConflictException _DuplicateSku(string sku)
+    {
+        var error = new ErrorDescriptor("catalog:duplicate_sku", $"Product SKU '{sku}' already exists.");
+        return new ConflictException(error);
     }
 }

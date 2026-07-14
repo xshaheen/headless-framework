@@ -7,7 +7,7 @@
     <PackageReference Include="Headless.Core" />
     <PackageReference Include="Headless.Messaging.Core" />
     <PackageReference Include="Mediator.Abstractions" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\HeadlessShop.Catalog.Domain\HeadlessShop.Catalog.Domain.csproj" />

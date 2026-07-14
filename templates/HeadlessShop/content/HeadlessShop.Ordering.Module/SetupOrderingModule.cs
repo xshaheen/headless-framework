@@ -1,6 +1,7 @@
 using FluentValidation;
 using Headless.EntityFramework;
 using Headless.EntityFramework.Contexts.Processors;
+using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using HeadlessShop.Contracts;
 using HeadlessShop.Ordering.Application;
@@ -18,9 +19,9 @@ public static class SetupOrderingModule
         {
             services.AddHeadlessDbContext<OrderingDbContext>(
                 options =>
-                    options.UseSqlite(
+                    options.UseNpgsql(
                         connectionString,
-                        sqlite => sqlite.MigrationsHistoryTable("__OrderingMigrationsHistory")
+                        postgres => postgres.MigrationsHistoryTable("__OrderingMigrationsHistory", "ordering")
                     ),
                 headless => headless.RemoveSaveEntryProcessor<HeadlessLocalEventSaveEntryProcessor>()
             );

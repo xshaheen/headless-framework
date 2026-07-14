@@ -27,10 +27,13 @@ require_command() {
 }
 
 require_command dotnet
+require_command docker
+require_command perl
 
 PACKAGES_DIR="$TMPDIR/packages"
 DOTNET_HOME="$TMPDIR/dotnet-home"
 OUTPUT_DIR="$TMPDIR/generated"
+GLOBAL_PACKAGES_SOURCE="${NUGET_PACKAGES:-${HOME}/.nuget/packages}"
 NUGET_PACKAGES="$TMPDIR/nuget-packages"
 LOCAL_PACKAGE_SOURCE="${HEADLESS_SHOP_LOCAL_PACKAGE_SOURCE:-}"
 HEADLESS_PACKAGE_VERSION=""
@@ -67,6 +70,21 @@ if [ -n "$LOCAL_PACKAGE_SOURCE" ]; then
         exit 3
     fi
 
+    LOCAL_VALIDATION_SOURCE="$TMPDIR/local-headless-source"
+    mkdir -p "$LOCAL_VALIDATION_SOURCE"
+    find "$LOCAL_PACKAGE_SOURCE" -maxdepth 1 -name '*.nupkg' ! -name '*.snupkg' -type f \
+        -exec cp {} "$LOCAL_VALIDATION_SOURCE" \;
+
+    for sdk_package in headless.net.sdk headless.net.sdk.web headless.net.sdk.test; do
+        sdk_path="$GLOBAL_PACKAGES_SOURCE/$sdk_package/0.0.129/$sdk_package.0.0.129.nupkg"
+        if [ ! -f "$sdk_path" ]; then
+            echo "ERROR: Required SDK package was not found in the global package cache: $sdk_path" >&2
+            exit 3
+        fi
+        cp "$sdk_path" "$LOCAL_VALIDATION_SOURCE"
+    done
+
+    LOCAL_PACKAGE_SOURCE="$LOCAL_VALIDATION_SOURCE"
     HEADLESS_CORE_PACKAGE="$(find "$LOCAL_PACKAGE_SOURCE" -name 'Headless.Core.*.nupkg' ! -name '*.snupkg' -type f | head -n 1)"
 
     if [ -z "$HEADLESS_CORE_PACKAGE" ]; then
@@ -104,6 +122,9 @@ fi
 
 for required_path in \
     "$OUTPUT_DIR/AGENTS.md" \
+    "$OUTPUT_DIR/.config/dotnet-tools.json" \
+    "$OUTPUT_DIR/README.md" \
+    "$OUTPUT_DIR/compose.yaml" \
     "$OUTPUT_DIR/docs/architecture.md" \
     "$OUTPUT_DIR/docs/validation.md" \
     "$OUTPUT_DIR/docs/recipes/add-command.md" \
@@ -139,19 +160,20 @@ for documented_path in \
 done
 
 step "Restore generated solution"
+dotnet tool restore --tool-manifest "$OUTPUT_DIR/.config/dotnet-tools.json"
 dotnet restore "$OUTPUT_DIR/TrailStore.slnx"
 
 step "Build generated solution"
 dotnet build "$OUTPUT_DIR/TrailStore.slnx" --configuration Release --no-restore --no-incremental -v:q -nologo /clp:ErrorsOnly
 
 step "Run generated architecture tests"
-dotnet test --project "$OUTPUT_DIR/TrailStore.Tests.Architecture/TrailStore.Tests.Architecture.csproj" \
+dotnet test "$OUTPUT_DIR/TrailStore.Tests.Architecture/TrailStore.Tests.Architecture.csproj" \
     --configuration Release \
     --no-build \
     -v:q
 
 step "Run generated integration smoke tests"
-dotnet test --project "$OUTPUT_DIR/TrailStore.Tests.Integration/TrailStore.Tests.Integration.csproj" \
+dotnet test "$OUTPUT_DIR/TrailStore.Tests.Integration/TrailStore.Tests.Integration.csproj" \
     --configuration Release \
     --no-build \
     -v:q

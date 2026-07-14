@@ -1,4 +1,5 @@
 using Headless.Domain;
+using HeadlessShop.Contracts;
 
 namespace HeadlessShop.Catalog.Domain;
 
@@ -46,7 +47,7 @@ public sealed class Product : AggregateRoot<Guid>, IMultiTenant
             throw new ArgumentOutOfRangeException(nameof(price), price, "Price must be greater than zero.");
         }
 
-        return new()
+        var product = new Product
         {
             Id = id,
             TenantId = tenantId,
@@ -54,5 +55,18 @@ public sealed class Product : AggregateRoot<Guid>, IMultiTenant
             Name = name.Trim(),
             Price = price,
         };
+
+        product.AddIntegrationEvent(
+            new ProductCreated(
+                Guid.NewGuid().ToString("N"),
+                product.Id,
+                product.Sku,
+                product.Name,
+                product.Price,
+                tenantId
+            )
+        );
+
+        return product;
     }
 }
