@@ -125,7 +125,7 @@ public abstract class DistributedLockTestsBase : TestBase
     public virtual async Task should_acquire_composite_in_canonical_order_and_deduplicate()
     {
         var lockProvider = GetLockProvider();
-        var (first, second) = _CreateCompositeResources();
+        var (first, second) = CompositeTestResources.CreatePair();
         var handle = await lockProvider.AcquireAllAsync([second, first, second], cancellationToken: AbortToken);
 
         try
@@ -146,7 +146,7 @@ public abstract class DistributedLockTestsBase : TestBase
     public virtual async Task should_acquire_opposite_composite_orders_sequentially()
     {
         var lockProvider = GetLockProvider();
-        var (first, second) = _CreateCompositeResources();
+        var (first, second) = CompositeTestResources.CreatePair();
         var options = new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromSeconds(5) };
         var firstHandle = await lockProvider.AcquireAllAsync([second, first], options, AbortToken);
         var secondTask = lockProvider.TryAcquireAllAsync([first, second], options, AbortToken);
@@ -165,7 +165,7 @@ public abstract class DistributedLockTestsBase : TestBase
     public virtual async Task should_release_earlier_composite_children_when_later_resource_is_contended()
     {
         var lockProvider = GetLockProvider();
-        var (first, second) = _CreateCompositeResources();
+        var (first, second) = CompositeTestResources.CreatePair();
         await using var blocker = await lockProvider.AcquireAsync(second, cancellationToken: AbortToken);
 
         var handle = await lockProvider.TryAcquireAllAsync(
@@ -182,7 +182,7 @@ public abstract class DistributedLockTestsBase : TestBase
     public virtual async Task should_renew_and_release_composite_lease()
     {
         var lockProvider = GetLockProvider();
-        var (first, second) = _CreateCompositeResources();
+        var (first, second) = CompositeTestResources.CreatePair();
         var handle = await lockProvider.AcquireAllAsync([first, second], cancellationToken: AbortToken);
 
         try
@@ -203,7 +203,7 @@ public abstract class DistributedLockTestsBase : TestBase
     public virtual async Task should_dispatch_composite_renew_and_release_through_provider()
     {
         var lockProvider = GetLockProvider();
-        var (first, second) = _CreateCompositeResources();
+        var (first, second) = CompositeTestResources.CreatePair();
         var handle = await lockProvider.AcquireAllAsync(
             [first, second],
             new DistributedLockAcquireOptions { ReleaseOnDispose = false },
@@ -228,7 +228,7 @@ public abstract class DistributedLockTestsBase : TestBase
     public virtual async Task should_keep_composite_resources_when_disposed_without_release()
     {
         var lockProvider = GetLockProvider();
-        var (first, second) = _CreateCompositeResources();
+        var (first, second) = CompositeTestResources.CreatePair();
         var handle = await lockProvider.AcquireAllAsync(
             [first, second],
             new DistributedLockAcquireOptions { ReleaseOnDispose = false },
@@ -244,13 +244,6 @@ public abstract class DistributedLockTestsBase : TestBase
 
         (await lockProvider.IsLockedAsync(first, AbortToken)).Should().BeFalse();
         (await lockProvider.IsLockedAsync(second, AbortToken)).Should().BeFalse();
-    }
-
-    private static (string First, string Second) _CreateCompositeResources()
-    {
-        var prefix = $"composite:{Guid.NewGuid():N}";
-
-        return ($"{prefix}:a", $"{prefix}:b");
     }
 
     public virtual async Task should_release_lock_multiple_times()

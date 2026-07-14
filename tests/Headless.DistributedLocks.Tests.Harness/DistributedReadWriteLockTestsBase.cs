@@ -409,7 +409,7 @@ public abstract class DistributedReadWriteLockTestsBase : TestBase
     public virtual async Task should_acquire_composite_read_write_set_in_canonical_order_and_collapse_modes()
     {
         var provider = GetReaderWriterLockProvider();
-        var (first, second) = _CreateCompositeResources();
+        var (first, second) = CompositeTestResources.CreatePair();
 
         // Supplied out of order, and `first` is asked for in both modes. Canonicalization sorts by resource and
         // collapses the pair to a single Write child, because a write lock subsumes a read lock.
@@ -466,7 +466,7 @@ public abstract class DistributedReadWriteLockTestsBase : TestBase
 
         for (var iteration = 0; iteration < 20; iteration++)
         {
-            var (first, second) = _CreateCompositeResources();
+            var (first, second) = CompositeTestResources.CreatePair();
             var options = new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromSeconds(5) };
 
             // Both callers are released from one barrier onto separate pool threads. Without this the composites do
@@ -554,7 +554,7 @@ public abstract class DistributedReadWriteLockTestsBase : TestBase
     public virtual async Task should_release_earlier_composite_children_when_later_resource_is_contended()
     {
         var provider = GetReaderWriterLockProvider();
-        var (first, second) = _CreateCompositeResources();
+        var (first, second) = CompositeTestResources.CreatePair();
 
         // A blocker holds the ordinally-LATER resource, so the composite acquires `first` and then fails on `second`.
         await using var blocker = await provider.AcquireWriteLockAsync(second, cancellationToken: AbortToken);
@@ -577,7 +577,7 @@ public abstract class DistributedReadWriteLockTestsBase : TestBase
     public virtual async Task should_renew_and_release_composite_read_write_lease()
     {
         var provider = GetReaderWriterLockProvider();
-        var (first, second) = _CreateCompositeResources();
+        var (first, second) = CompositeTestResources.CreatePair();
 
         var handle = await provider.AcquireAllAsync(
             [
@@ -604,7 +604,7 @@ public abstract class DistributedReadWriteLockTestsBase : TestBase
     public virtual async Task should_keep_composite_read_write_resources_when_disposed_without_release()
     {
         var provider = GetReaderWriterLockProvider();
-        var (first, second) = _CreateCompositeResources();
+        var (first, second) = CompositeTestResources.CreatePair();
 
         var handle = await provider.AcquireAllAsync(
             [
@@ -629,7 +629,7 @@ public abstract class DistributedReadWriteLockTestsBase : TestBase
     public virtual async Task should_return_child_lease_for_single_canonical_read_write_resource()
     {
         var provider = GetReaderWriterLockProvider();
-        var (first, _) = _CreateCompositeResources();
+        var (first, _) = CompositeTestResources.CreatePair();
 
         // Both entries name one resource, so the canonical set has a single item and there is no composite to build:
         // the provider's own lease is returned, keeping its real LeaseId and its bare resource name.
@@ -693,11 +693,4 @@ public abstract class DistributedReadWriteLockTestsBase : TestBase
         catch (Exception) { }
     }
 #pragma warning restore CA1031
-
-    private static (string First, string Second) _CreateCompositeResources()
-    {
-        var prefix = $"composite:{Guid.NewGuid():N}";
-
-        return ($"{prefix}:a", $"{prefix}:b");
-    }
 }

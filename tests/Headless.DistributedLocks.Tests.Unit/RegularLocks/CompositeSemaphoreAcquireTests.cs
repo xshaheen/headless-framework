@@ -368,7 +368,7 @@ public sealed class CompositeSemaphoreAcquireTests : TestBase
 
         await secondStarted.Task.WaitAsync(AbortToken);
         timeProvider.Advance(TimeSpan.FromSeconds(5));
-        await _DrainUntilAsync(() => first.RenewalCount == 1);
+        await CompositeTestScheduler.DrainUntilAsync(() => first.RenewalCount == 1);
         secondResult.SetResult(second);
 
         (await acquireTask).Should().NotBeNull();
@@ -518,15 +518,5 @@ public sealed class CompositeSemaphoreAcquireTests : TestBase
         await Task.Yield();
         started.SetResult();
         return await result.ConfigureAwait(false);
-    }
-
-    private static async Task _DrainUntilAsync(Func<bool> condition)
-    {
-        for (var attempt = 0; attempt < 100 && !condition(); attempt++)
-        {
-            await Task.Yield();
-        }
-
-        condition().Should().BeTrue();
     }
 }

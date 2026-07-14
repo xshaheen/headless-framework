@@ -86,7 +86,7 @@ public static class DistributedReadWriteLockExtensions
         /// <exception cref="AggregateException">
         /// A child release or disposal failed during compensating rollback. The primary failure (cancellation, timeout,
         /// or the fault that triggered rollback) is first, followed by every cleanup failure. When rollback reports a
-        /// single failure and there is no primary, that exception is rethrown as-is instead.
+        /// failure and there is no primary, <see cref="LockCleanupFailedException"/> is thrown instead.
         /// </exception>
         public async Task<IDistributedLease?> TryAcquireAllAsync(
             IEnumerable<DistributedReadWriteLockRequest> requests,
@@ -125,7 +125,7 @@ public static class DistributedReadWriteLockExtensions
         /// <para>
         /// Compensating rollback releases and disposes every child already acquired, and a failure reported by one of
         /// those cleanup calls is surfaced rather than hidden — so a failed acquisition can throw an
-        /// <see cref="AggregateException"/> (or the child's own exception) instead of
+        /// <see cref="AggregateException"/> (or <see cref="LockCleanupFailedException"/>) instead of
         /// <see cref="LockAcquisitionTimeoutException"/>.
         /// </para>
         /// </remarks>
@@ -154,7 +154,7 @@ public static class DistributedReadWriteLockExtensions
         /// <exception cref="AggregateException">
         /// A child release or disposal failed during compensating rollback. The primary failure (cancellation, timeout,
         /// or the fault that triggered rollback) is first, followed by every cleanup failure. When rollback reports a
-        /// single failure and there is no primary, that exception is rethrown as-is instead.
+        /// failure and there is no primary, <see cref="LockCleanupFailedException"/> is thrown instead.
         /// </exception>
         public async Task<IDistributedLease> AcquireAllAsync(
             IEnumerable<DistributedReadWriteLockRequest> requests,
@@ -165,12 +165,7 @@ public static class DistributedReadWriteLockExtensions
             var result = await _TryAcquireAllCoreAsync(provider, requests, options, cancellationToken)
                 .ConfigureAwait(false);
 
-            return result.Lease
-                ?? throw (
-                    result.TryOnce
-                        ? LockAcquisitionTimeoutException.ForTryOnceContention(result.Resource)
-                        : new LockAcquisitionTimeoutException(result.Resource)
-                );
+            return result.LeaseOrThrow();
         }
 
         /// <summary>

@@ -267,7 +267,7 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
 
         await secondStarted.Task.WaitAsync(AbortToken);
         timeProvider.Advance(TimeSpan.FromSeconds(5));
-        await _DrainUntilAsync(() => first.RenewalCount == 1);
+        await CompositeTestScheduler.DrainUntilAsync(() => first.RenewalCount == 1);
         secondResult.SetResult(second);
 
         var result = await acquireTask;
@@ -329,7 +329,7 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
         results["B"].SetResult(leases["B"]);
         await started["C"].Task.WaitAsync(AbortToken);
         timeProvider.Advance(TimeSpan.FromSeconds(4));
-        await _DrainUntilAsync(() => leases["A"].RenewalCount == 1);
+        await CompositeTestScheduler.DrainUntilAsync(() => leases["A"].RenewalCount == 1);
         results["C"].SetResult(leases["C"]);
         await started["D"].Task.WaitAsync(AbortToken);
         timeProvider.Advance(TimeSpan.FromSeconds(4));
@@ -490,7 +490,7 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
         await Task.Yield();
         first.RenewalCount.Should().Be(0);
         timeProvider.Advance(TimeSpan.FromSeconds(1));
-        await _DrainUntilAsync(() => first.RenewalCount == 1);
+        await CompositeTestScheduler.DrainUntilAsync(() => first.RenewalCount == 1);
         secondResult.SetResult(second);
 
         (await acquireTask).Should().NotBeNull();
@@ -990,16 +990,6 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
 
         throw exception;
-    }
-
-    private static async Task _DrainUntilAsync(Func<bool> condition)
-    {
-        for (var attempt = 0; attempt < 100 && !condition(); attempt++)
-        {
-            await Task.Yield();
-        }
-
-        condition().Should().BeTrue();
     }
 
     private static async Task<bool> _BlockRenewalUntilCancellationAsync(

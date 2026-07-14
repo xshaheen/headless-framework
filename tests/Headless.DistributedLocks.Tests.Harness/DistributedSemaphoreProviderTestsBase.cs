@@ -45,22 +45,11 @@ public abstract class DistributedSemaphoreProviderTestsBase : TestBase
         return await pending.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
     }
 
-    /// <summary>
-    /// Two ordinal-ordered resources under a per-test unique prefix, so the composite's canonical order is known
-    /// (<c>:a</c> sorts before <c>:b</c>) and no other test can contend with this one.
-    /// </summary>
-    protected static (string First, string Second) CreateCompositeResources()
-    {
-        var prefix = $"composite:{Guid.NewGuid():N}";
-
-        return ($"{prefix}:a", $"{prefix}:b");
-    }
-
     /// <summary>Covers SC2: one slot of each named semaphore, whatever their individual capacities.</summary>
     public virtual async Task should_acquire_composite_slots_across_differently_sized_semaphores()
     {
         var provider = GetSemaphoreProvider();
-        var (first, second) = CreateCompositeResources();
+        var (first, second) = CompositeTestResources.CreatePair();
 
         var handle = await provider.AcquireAllAsync(
             [new DistributedSemaphoreRequest(first, 5), new DistributedSemaphoreRequest(second, 2)],
@@ -90,7 +79,7 @@ public abstract class DistributedSemaphoreProviderTestsBase : TestBase
     public virtual async Task should_reject_conflicting_max_count_for_one_resource()
     {
         var provider = GetSemaphoreProvider();
-        var (first, _) = CreateCompositeResources();
+        var (first, _) = CompositeTestResources.CreatePair();
 
         var act = async () =>
             await provider.TryAcquireAllAsync(
@@ -109,7 +98,7 @@ public abstract class DistributedSemaphoreProviderTestsBase : TestBase
     public virtual async Task should_acquire_composite_slots_in_canonical_order_and_deduplicate()
     {
         var provider = GetSemaphoreProvider();
-        var (first, second) = CreateCompositeResources();
+        var (first, second) = CompositeTestResources.CreatePair();
 
         var handle = await provider.AcquireAllAsync(
             [
@@ -143,7 +132,7 @@ public abstract class DistributedSemaphoreProviderTestsBase : TestBase
     public virtual async Task should_release_earlier_slots_when_later_semaphore_is_saturated()
     {
         var provider = GetSemaphoreProvider();
-        var (first, second) = CreateCompositeResources();
+        var (first, second) = CompositeTestResources.CreatePair();
         var blocker = await provider.CreateSemaphore(second, maxCount: 1).AcquireAsync(cancellationToken: AbortToken);
 
         try
@@ -170,7 +159,7 @@ public abstract class DistributedSemaphoreProviderTestsBase : TestBase
     public virtual async Task should_renew_and_release_composite_slot_lease()
     {
         var provider = GetSemaphoreProvider();
-        var (first, second) = CreateCompositeResources();
+        var (first, second) = CompositeTestResources.CreatePair();
         var handle = await provider.AcquireAllAsync(
             [new DistributedSemaphoreRequest(first, 5), new DistributedSemaphoreRequest(second, 2)],
             cancellationToken: AbortToken
@@ -202,7 +191,7 @@ public abstract class DistributedSemaphoreProviderTestsBase : TestBase
     public virtual async Task should_return_child_lease_for_single_canonical_semaphore_resource()
     {
         var provider = GetSemaphoreProvider();
-        var (first, _) = CreateCompositeResources();
+        var (first, _) = CompositeTestResources.CreatePair();
 
         var handle = await provider.AcquireAllAsync(
             [new DistributedSemaphoreRequest(first, 5), new DistributedSemaphoreRequest(first, 5)],

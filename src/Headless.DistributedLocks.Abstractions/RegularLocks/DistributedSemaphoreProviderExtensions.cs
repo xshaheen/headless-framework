@@ -170,20 +170,17 @@ public static class DistributedSemaphoreProviderExtensions
             var result = await _TryAcquireAllAsync(provider, requests, options, cancellationToken)
                 .ConfigureAwait(false);
 
-            return result.Lease
-                ?? throw (
-                    result.TryOnce
-                        ? LockAcquisitionTimeoutException.ForTryOnceContention(result.Resource)
-                        : new LockAcquisitionTimeoutException(result.Resource)
-                );
+            return result.LeaseOrThrow();
         }
     }
 
     /// <summary>
-    /// The semaphore adapter over <see cref="CompositeAcquireCoordinator"/>: canonicalizes the request set, materializes
-    /// one <see cref="IDistributedSemaphore"/> per canonical resource, and supplies their
-    /// <see cref="IDistributedSemaphore.TryAcquireAsync"/> as the child-acquire delegate. The delegate has to close over
-    /// the created semaphore because that method takes no resource argument.
+    /// The semaphore adapter over <see cref="CompositeAcquireCoordinator"/>: canonicalizes the request set and supplies
+    /// <see cref="IDistributedSemaphore.TryAcquireAsync"/> as the child-acquire delegate. The delegate materializes each
+    /// semaphore on its own turn, because <see cref="IDistributedSemaphore.TryAcquireAsync"/> takes no resource argument
+    /// and so a semaphore instance is the only way to name one. The coordinator calls the delegate at most once per
+    /// canonical request, in ordinal order, and stops at the first failure — so a resource past the one that blocks is
+    /// never created.
     /// </summary>
     private static Task<CompositeAcquireResult> _TryAcquireAllAsync(
         IDistributedSemaphoreProvider provider,
@@ -197,15 +194,6 @@ public static class DistributedSemaphoreProviderExtensions
 
         // Every request is validated here, so no provider call happens on an invalid set.
         var canonicalRequests = _MaterializeCanonicalRequests(requests);
-        var semaphores = new Dictionary<string, IDistributedSemaphore>(
-            canonicalRequests.Length,
-            StringComparer.Ordinal
-        );
-
-        foreach (var request in canonicalRequests)
-        {
-            semaphores.Add(request.Resource, provider.CreateSemaphore(request.Resource, request.MaxCount));
-        }
 
         var environment = new CompositeAcquireEnvironment(
             provider.TimeProvider,
@@ -218,7 +206,7 @@ public static class DistributedSemaphoreProviderExtensions
             canonicalRequests,
             static request => request.Resource,
             (request, childOptions, childToken) =>
-                semaphores[request.Resource].TryAcquireAsync(childOptions, childToken),
+                provider.CreateSemaphore(request.Resource, request.MaxCount).TryAcquireAsync(childOptions, childToken),
             _GetCompositeResource,
             environment,
             options,

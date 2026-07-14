@@ -490,7 +490,7 @@ public sealed class CompositeReadWriteLockAcquireTests : TestBase
 
         await secondStarted.Task.WaitAsync(AbortToken);
         timeProvider.Advance(TimeSpan.FromSeconds(5));
-        await _DrainUntilAsync(() => first.RenewalCount == 1);
+        await CompositeTestScheduler.DrainUntilAsync(() => first.RenewalCount == 1);
         secondResult.SetResult(new CompositeTestLease("b"));
 
         (await acquireTask).Should().NotBeNull();
@@ -779,15 +779,5 @@ public sealed class CompositeReadWriteLockAcquireTests : TestBase
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
 
         return null;
-    }
-
-    private static async Task _DrainUntilAsync(Func<bool> condition)
-    {
-        for (var attempt = 0; attempt < 100 && !condition(); attempt++)
-        {
-            await Task.Yield();
-        }
-
-        condition().Should().BeTrue();
     }
 }

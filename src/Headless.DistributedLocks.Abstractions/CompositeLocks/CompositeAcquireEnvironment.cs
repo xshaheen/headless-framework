@@ -41,4 +41,20 @@ internal readonly record struct CompositeAcquireEnvironment(
 /// Whether the caller requested a non-blocking single attempt (<see cref="TimeSpan.Zero"/> acquire timeout). Selects
 /// the contention-specific timeout exception on the throwing entry points.
 /// </param>
-internal readonly record struct CompositeAcquireResult(IDistributedLease? Lease, string Resource, bool TryOnce);
+internal readonly record struct CompositeAcquireResult(IDistributedLease? Lease, string Resource, bool TryOnce)
+{
+    /// <summary>
+    /// Unwraps the result for the throwing <c>AcquireAllAsync</c> entry points, which differ from their <c>Try</c>
+    /// siblings only in turning an unformed set into a timeout exception. A non-blocking single attempt reports
+    /// contention rather than an elapsed wait, because no time ever passed.
+    /// </summary>
+    internal IDistributedLease LeaseOrThrow()
+    {
+        return Lease
+            ?? throw (
+                TryOnce
+                    ? LockAcquisitionTimeoutException.ForTryOnceContention(Resource)
+                    : new LockAcquisitionTimeoutException(Resource)
+            );
+    }
+}
