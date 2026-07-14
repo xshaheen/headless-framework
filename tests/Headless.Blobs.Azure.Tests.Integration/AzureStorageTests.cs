@@ -28,7 +28,7 @@ public sealed class AzureStorageTests(AzureBlobStorageFixture fixture) : BlobSto
         return new AzureBlobStorage(
             _CreateClient(),
             new MimeTypeProvider(),
-            new Clock(TimeProvider.System),
+            TimeProvider.System,
             new OptionsWrapper<AzureStorageOptions>(new AzureStorageOptions()),
             new AzureBlobNamingNormalizer(),
             LoggerFactory.CreateLogger<AzureBlobStorage>()

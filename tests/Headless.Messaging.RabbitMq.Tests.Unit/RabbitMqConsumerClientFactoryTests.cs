@@ -39,7 +39,7 @@ public sealed class RabbitMqConsumerClientFactoryTests : TestBase
         var factory = new RabbitMqConsumerClientFactory(options, pool, serviceProvider);
 
         // when
-        var client = await factory.CreateAsync("test-group", 5);
+        var client = await factory.CreateAsync("test-group", 5, AbortToken);
 
         // then
         client.Should().NotBeNull();
@@ -131,7 +131,7 @@ public sealed class RabbitMqConsumerClientFactoryTests : TestBase
         var factory = new RabbitMqConsumerClientFactory(options, pool, serviceProvider);
 
         // when
-        await factory.CreateAsync("test-group", 5);
+        await factory.CreateAsync("test-group", 5, AbortToken);
 
         // then - verify connection was retrieved during factory.CreateAsync
         await pool.Received(1).GetConnectionAsync(Arg.Any<CancellationToken>());

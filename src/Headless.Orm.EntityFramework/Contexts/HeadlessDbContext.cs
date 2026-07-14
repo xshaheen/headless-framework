@@ -81,7 +81,7 @@ internal interface IHeadlessDbContextScopeOwner
 /// </item>
 /// </list>
 /// <para>
-/// <c>ICurrentTenant</c> (AsyncLocal-backed) and <c>IClock</c> are not the blocker — only
+/// <c>ICurrentTenant</c> (AsyncLocal-backed) and <c>TimeProvider</c> are not the blocker — only
 /// the save/outbox/audit pipeline is request-bound. Use a plain <see cref="DbContext"/>
 /// with <c>AddDbContextPool</c> for read-heavy hot paths that do not need the Headless
 /// write machinery.

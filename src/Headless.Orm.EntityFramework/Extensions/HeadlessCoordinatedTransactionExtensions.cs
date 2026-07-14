@@ -45,8 +45,7 @@ public static class HeadlessCoordinatedTransactionExtensions
         CancellationToken cancellationToken = default
     )
         where TContext : DbContext, IHeadlessDbContext =>
-        HeadlessEntityFrameworkCoordinatedTransactionExtensions.ExecuteCoordinatedTransactionAsync(
-            context,
+        context.ExecuteCoordinatedTransactionAsync(
             (dbContext, ct) => operation((TContext)dbContext, ct),
             context.ServiceProvider,
             isolation,
@@ -64,8 +63,7 @@ public static class HeadlessCoordinatedTransactionExtensions
         CancellationToken cancellationToken = default
     )
         where TContext : DbContext, IHeadlessDbContext =>
-        HeadlessEntityFrameworkCoordinatedTransactionExtensions.ExecuteCoordinatedTransactionAsync(
-            context,
+        context.ExecuteCoordinatedTransactionAsync(
             (dbContext, ct) => operation(arg, (TContext)dbContext, ct),
             context.ServiceProvider,
             isolation,
@@ -90,8 +88,7 @@ public static class HeadlessCoordinatedTransactionExtensions
         CancellationToken cancellationToken = default
     )
         where TContext : DbContext, IHeadlessDbContext =>
-        HeadlessEntityFrameworkCoordinatedTransactionExtensions.ExecuteCoordinatedTransactionAsync(
-            context,
+        context.ExecuteCoordinatedTransactionAsync(
             (dbContext, ct) => operation((TContext)dbContext, ct),
             context.ServiceProvider,
             isolation,
@@ -109,8 +106,7 @@ public static class HeadlessCoordinatedTransactionExtensions
         CancellationToken cancellationToken = default
     )
         where TContext : DbContext, IHeadlessDbContext =>
-        HeadlessEntityFrameworkCoordinatedTransactionExtensions.ExecuteCoordinatedTransactionAsync(
-            context,
+        context.ExecuteCoordinatedTransactionAsync(
             (dbContext, ct) => operation(arg, (TContext)dbContext, ct),
             context.ServiceProvider,
             isolation,

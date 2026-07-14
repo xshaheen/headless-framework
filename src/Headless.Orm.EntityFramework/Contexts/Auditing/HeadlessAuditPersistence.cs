@@ -23,7 +23,6 @@ internal sealed class HeadlessAuditPersistence(
     private readonly ICorrelationIdProvider? _correlationIdProvider =
         serviceProvider.GetService<ICorrelationIdProvider>();
     private readonly TimeProvider _timeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
-    private readonly IClock? _clock = serviceProvider.GetService<IClock>();
     private readonly IOptions<AuditLogOptions>? _auditOptions = serviceProvider.GetService<IOptions<AuditLogOptions>>();
 
     /// <summary>
@@ -39,7 +38,7 @@ internal sealed class HeadlessAuditPersistence(
             return null;
         }
 
-        var timestamp = _clock?.UtcNow ?? _timeProvider.GetUtcNow();
+        var timestamp = _timeProvider.GetUtcNow();
 
         try
         {

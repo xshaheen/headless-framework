@@ -66,9 +66,9 @@ public sealed class HeadlessTestServerTests : TestBase
         _server = new HeadlessTestServer<Program>();
         await _server.InitializeAsync();
 
-        var clock = _server.Services.GetRequiredService<IClock>();
+        var timeProvider = _server.Services.GetRequiredService<TimeProvider>();
 
-        clock.Should().BeOfType<TestClock>();
+        timeProvider.Should().BeOfType<FakeTimeProvider>();
     }
 
     [Fact]

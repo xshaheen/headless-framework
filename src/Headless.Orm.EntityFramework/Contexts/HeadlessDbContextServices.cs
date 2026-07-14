@@ -20,14 +20,11 @@ namespace Headless.EntityFramework;
 public sealed class HeadlessDbContextServices(
     IServiceProvider serviceProvider,
     ICurrentTenant currentTenant,
-    IClock clock,
     IHeadlessSaveChangesPipeline saveChangesPipeline,
     IOptions<TenantWriteGuardOptions> tenantWriteGuardOptions
 )
 {
     internal string? TenantId => currentTenant.Id;
-
-    internal IClock Clock { get; } = clock;
 
     internal IHeadlessSaveChangesPipeline SaveChangesPipeline { get; } = saveChangesPipeline;
 

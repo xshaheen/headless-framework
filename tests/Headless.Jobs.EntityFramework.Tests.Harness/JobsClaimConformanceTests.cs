@@ -51,7 +51,7 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
             var remainingCandidates = candidates.Where(x => !initiallyClaimedIds.Contains(x.Id)).ToArray();
             var followUp = await first.QueueTimeJobsAsync(remainingCandidates, ct).ToArrayAsync(ct);
             var claimedRoots = claims.SelectMany(x => x).Concat(followUp).ToArray();
-            claimedRoots.Select(x => x.Id).Should().OnlyHaveUniqueItems();
+            claimedRoots.Should().OnlyHaveUniqueItems(x => x.Id);
             claimedRoots.Should().HaveCount(101);
             var claimedRootIds = claimedRoots.Select(x => x.Id).ToHashSet();
             foreach (var root in roots.Where(x => claimedRootIds.Contains(x.Id)))
@@ -113,7 +113,7 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
 
             claims.Should().OnlyContain(x => x.Length > 0);
             var claimedOccurrences = claims.SelectMany(x => x).ToArray();
-            claimedOccurrences.Select(x => x.Id).Should().OnlyHaveUniqueItems();
+            claimedOccurrences.Should().OnlyHaveUniqueItems(x => x.Id);
             claimedOccurrences.Should().HaveCount(101);
         }
         finally
@@ -395,7 +395,7 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
             gate.SetResult();
             var claims = (await claimsTask).SelectMany(x => x).ToArray();
 
-            claims.Select(x => x.Id).Should().OnlyHaveUniqueItems();
+            claims.Should().OnlyHaveUniqueItems(x => x.Id);
             claims.Should().HaveCount(100);
         }
         finally

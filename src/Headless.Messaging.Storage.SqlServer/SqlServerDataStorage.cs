@@ -1124,16 +1124,19 @@ internal sealed class SqlServerDataStorage(
         // statement (one round trip instead of the _LeaseMessageAsync + _ReserveAttemptAsync pair).
         // Combines the lease-contention predicate (#15) with the durable-counter CAS from
         // _ReserveAttemptAsync; no owner match is required because this path is TAKING the lease.
+        // Ownership time is the DATABASE's: one SYSUTCDATETIME() snapshot supplies BOTH the expiry
+        // comparison and the new deadline, so the lease a remote replica later evaluates was written by the
+        // same clock it compares against. OUTPUT returns the durable deadline so the in-memory model matches
+        // the row without a second read.
         var sql = $"""
-            DECLARE @LeaseNow datetime2(7) = SYSUTCDATETIME();
-
+            DECLARE @ClaimNow datetime2(7) = SYSUTCDATETIME();
             UPDATE {tableName}
-            SET LockedUntil = DATEADD(nanosecond, @LeaseNanoseconds, DATEADD(second, @LeaseWholeSeconds, @LeaseNow)),
+            SET LockedUntil = DATEADD(nanosecond, @LeaseNanoseconds, DATEADD(second, @LeaseWholeSeconds, @ClaimNow)),
                 Owner = @Owner,
                 InlineAttempts = @InlineAttempts
             OUTPUT inserted.LockedUntil, inserted.Owner
             WHERE Id = @Id
-              AND (LockedUntil IS NULL OR LockedUntil <= @LeaseNow)
+              AND (LockedUntil IS NULL OR LockedUntil <= @ClaimNow)
               AND {_TerminalRowGuardWithRetries};
             """;
 
@@ -1154,17 +1157,26 @@ internal sealed class SqlServerDataStorage(
         ];
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
-        var result = await connection
+        var persistedLease = await connection
             .ExecuteReaderAsync(
                 sql,
-                _ReadStoredLeaseAsync,
+                LeaseDeadlineReader.ReadAsync,
                 commandTimeout: messagingOptions.Value.CommandTimeout,
                 sqlParams: sqlParams,
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
 
-        return _ApplyStoredLease(message, result);
+        if (persistedLease is not { } lease)
+        {
+            return false;
+        }
+
+        // Mirror the DURABLE deadline the server issued, not a locally recomputed one.
+        message.LockedUntil = lease.LockedUntil;
+        message.Owner = lease.Owner;
+
+        return true;
     }
 
     private async ValueTask<bool> _LeaseMessageAsync(
@@ -1180,15 +1192,15 @@ internal sealed class SqlServerDataStorage(
         // and PostgreSql atomic-claim pickup paths already filter on LockedUntil, but the lease call
         // from the consume/publish path itself was unconditional). Returning false here surfaces the
         // contention to the inline retry loop, which skips dispatch.
+        // Ownership time is the DATABASE's — see _LeaseAndReserveAttemptAsync for why.
         var sql = $"""
-            DECLARE @LeaseNow datetime2(7) = SYSUTCDATETIME();
-
+            DECLARE @ClaimNow datetime2(7) = SYSUTCDATETIME();
             UPDATE {tableName}
-            SET LockedUntil = DATEADD(nanosecond, @LeaseNanoseconds, DATEADD(second, @LeaseWholeSeconds, @LeaseNow)),
+            SET LockedUntil = DATEADD(nanosecond, @LeaseNanoseconds, DATEADD(second, @LeaseWholeSeconds, @ClaimNow)),
                 Owner = @Owner
             OUTPUT inserted.LockedUntil, inserted.Owner
             WHERE Id = @Id
-              AND (LockedUntil IS NULL OR LockedUntil <= @LeaseNow)
+              AND (LockedUntil IS NULL OR LockedUntil <= @ClaimNow)
               AND {_TerminalRowGuardSimple};
             """;
 
@@ -1206,53 +1218,38 @@ internal sealed class SqlServerDataStorage(
         ];
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
-        var result = await connection
+        var persistedLease = await connection
             .ExecuteReaderAsync(
                 sql,
-                _ReadStoredLeaseAsync,
+                LeaseDeadlineReader.ReadAsync,
                 commandTimeout: messagingOptions.Value.CommandTimeout,
                 sqlParams: sqlParams,
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
 
-        return _ApplyStoredLease(message, result);
-    }
-
-    private static async Task<(bool Acquired, DateTime? LockedUntil, string? Owner)> _ReadStoredLeaseAsync(
-        DbDataReader reader,
-        CancellationToken cancellationToken
-    )
-    {
-        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            return (false, null, null);
-        }
-
-        var lockedUntil = ((DateTime?)reader.GetDateTime(0)).ToUtcOrSelf();
-        var owner = await reader.IsDBNullAsync(1, cancellationToken).ConfigureAwait(false) ? null : reader.GetString(1);
-        return (true, lockedUntil, owner);
-    }
-
-    private static bool _ApplyStoredLease(
-        MediumMessage message,
-        (bool Acquired, DateTime? LockedUntil, string? Owner) storedLease
-    )
-    {
-        if (!storedLease.Acquired)
+        if (persistedLease is not { } lease)
         {
             return false;
         }
 
-        message.LockedUntil = storedLease.LockedUntil;
-        message.Owner = storedLease.Owner;
+        // Mirror the DURABLE deadline the server issued, not a locally recomputed one.
+        message.LockedUntil = lease.LockedUntil;
+        message.Owner = lease.Owner;
+
         return true;
     }
 
+    /// <summary>
+    /// Splits a lease duration into the whole-seconds and nanoseconds pair required by <c>DATEADD</c>.
+    /// A seconds-only call would lose sub-second precision, while a nanoseconds-only call overflows
+    /// its integer argument for durations longer than roughly two seconds.
+    /// </summary>
     private static (int WholeSeconds, int Nanoseconds) _SplitLeaseDuration(TimeSpan leaseDuration)
     {
         var wholeSeconds = checked((int)(leaseDuration.Ticks / TimeSpan.TicksPerSecond));
         var nanoseconds = checked((int)(leaseDuration.Ticks % TimeSpan.TicksPerSecond * 100));
+
         return (wholeSeconds, nanoseconds);
     }
 

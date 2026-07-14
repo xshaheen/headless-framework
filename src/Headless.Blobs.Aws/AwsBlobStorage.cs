@@ -27,7 +27,7 @@ namespace Headless.Blobs.Aws;
 internal sealed class AwsBlobStorage(
     IAmazonS3 s3,
     IMimeTypeProvider mimeTypeProvider,
-    IClock clock,
+    TimeProvider timeProvider,
     IOptions<AwsBlobStorageOptions> optionsAccessor,
     IBlobNamingNormalizer normalizer,
     ILogger<AwsBlobStorage>? logger = null
@@ -91,7 +91,9 @@ internal sealed class AwsBlobStorage(
 
         // Copy the caller's metadata + framework keys into the S3 request (the helper never mutates the caller's
         // dictionary); S3 needs the entries in its MetadataCollection, which prefixes keys with "x-amz-meta-".
-        foreach (var pair in BlobStorageHelpers.BuildEffectiveMetadata(metadata, clock.UtcNow, location.Path))
+        foreach (
+            var pair in BlobStorageHelpers.BuildEffectiveMetadata(metadata, timeProvider.GetUtcNow(), location.Path)
+        )
         {
             request.Metadata[pair.Key] = pair.Value;
         }
@@ -631,7 +633,7 @@ internal sealed class AwsBlobStorage(
 
         var metadata = _ToDictionary(response.Metadata);
         var created = BlobStorageHelpers.ParseUploadDate(metadata, DateTimeOffset.MinValue);
-        var modified = response.LastModified is null ? created : new(response.LastModified.Value);
+        var modified = response.LastModified is null ? created : _ToUtcOffset(response.LastModified.Value);
 
         return new BlobInfo
         {
@@ -767,11 +769,24 @@ internal sealed class AwsBlobStorage(
         return enriched;
     }
 
+    /// <summary>
+    /// Converts an S3 <c>Last-Modified</c> value into a UTC <see cref="DateTimeOffset"/>.
+    /// </summary>
+    /// <remarks>
+    /// S3 always reports <c>Last-Modified</c> in UTC, but the AWS SDK hands it back with
+    /// <see cref="DateTimeKind.Unspecified"/> when the header carries no zone (aws/aws-sdk-net#1224, #1885).
+    /// <c>new DateTimeOffset(DateTime)</c> treats an Unspecified value as LOCAL and applies the host's UTC
+    /// offset, so on any non-UTC host the timestamp silently shifts by that offset. Stamp the kind explicitly
+    /// instead of trusting the SDK.
+    /// </remarks>
+    private static DateTimeOffset _ToUtcOffset(DateTime lastModified)
+    {
+        return new DateTimeOffset(DateTime.SpecifyKind(lastModified, DateTimeKind.Utc), TimeSpan.Zero);
+    }
+
     private static BlobInfo _ToBlobInfo(S3Object blob)
     {
-        var modified = blob.LastModified is null
-            ? DateTimeOffset.MinValue
-            : new DateTimeOffset(blob.LastModified.Value);
+        var modified = blob.LastModified is null ? DateTimeOffset.MinValue : _ToUtcOffset(blob.LastModified.Value);
 
         return new BlobInfo
         {
@@ -874,7 +889,7 @@ internal sealed class AwsBlobStorage(
             Key = key,
             Verb = verb,
             // SigV4 presigning is performed locally; Expires is the absolute deadline.
-            Expires = clock.UtcNow.Add(expiry).UtcDateTime,
+            Expires = timeProvider.GetUtcNow().Add(expiry).UtcDateTime,
         };
 
         // Honor the configured endpoint scheme. When the client targets a plaintext http:// endpoint (an

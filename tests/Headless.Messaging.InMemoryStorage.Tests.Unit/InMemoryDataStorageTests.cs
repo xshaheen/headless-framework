@@ -271,7 +271,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
             .Should()
             .NotContain(m => m.StorageId == storedMessage.StorageId);
 
-        _fakeTimeProvider.Advance(leaseWindow + TimeSpan.FromMilliseconds(250));
+        _fakeTimeProvider!.Advance(leaseWindow + TimeSpan.FromMilliseconds(250));
 
         (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
             .Should()
@@ -653,7 +653,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
             .Should()
             .NotContain(m => m.StorageId == storedMessage.StorageId);
 
-        _fakeTimeProvider.Advance(leaseWindow + TimeSpan.FromMilliseconds(250));
+        _fakeTimeProvider!.Advance(leaseWindow + TimeSpan.FromMilliseconds(250));
 
         (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken))
             .Should()

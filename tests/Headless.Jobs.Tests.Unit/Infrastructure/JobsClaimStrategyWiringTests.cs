@@ -7,13 +7,14 @@ using Headless.Jobs.Entities;
 using Headless.Jobs.Infrastructure;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
+using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests.Infrastructure;
 
-public sealed class JobsClaimStrategyWiringTests
+public sealed class JobsClaimStrategyWiringTests : TestBase
 {
     [Fact]
     public void default_configuration_resolves_the_ef_cas_strategy()
@@ -60,7 +61,7 @@ public sealed class JobsClaimStrategyWiringTests
         var cas = new CountingJobsClaimStrategy<FilteredTimeJob, CronJobEntity>();
         var strategy = _CreateCompatibleStrategy<FilteredJobsDbContext, FilteredTimeJob>(native, cas);
 
-        await strategy.ClaimTimedOutTimeJobsAsync(TestContext.Current.CancellationToken).ToArrayAsync();
+        await strategy.ClaimTimedOutTimeJobsAsync(AbortToken).ToArrayAsync(AbortToken);
 
         native.Calls.Should().Be(0);
         cas.Calls.Should().Be(1);
@@ -73,7 +74,7 @@ public sealed class JobsClaimStrategyWiringTests
         var cas = new CountingJobsClaimStrategy<DiscriminatedTimeJob, CronJobEntity>();
         var strategy = _CreateCompatibleStrategy<DiscriminatedJobsDbContext, DiscriminatedTimeJob>(native, cas);
 
-        await strategy.ClaimTimedOutTimeJobsAsync(TestContext.Current.CancellationToken).ToArrayAsync();
+        await strategy.ClaimTimedOutTimeJobsAsync(AbortToken).ToArrayAsync(AbortToken);
 
         native.Calls.Should().Be(0);
         cas.Calls.Should().Be(1);
@@ -86,7 +87,7 @@ public sealed class JobsClaimStrategyWiringTests
         var cas = new CountingJobsClaimStrategy<TimeJobEntity, CronJobEntity>();
         var strategy = _CreateCompatibleStrategy<PlainJobsDbContext, TimeJobEntity>(native, cas);
 
-        await strategy.ClaimTimedOutTimeJobsAsync(TestContext.Current.CancellationToken).ToArrayAsync();
+        await strategy.ClaimTimedOutTimeJobsAsync(AbortToken).ToArrayAsync(AbortToken);
 
         native.Calls.Should().Be(1);
         cas.Calls.Should().Be(0);

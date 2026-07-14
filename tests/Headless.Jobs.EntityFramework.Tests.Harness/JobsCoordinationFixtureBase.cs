@@ -11,6 +11,7 @@ using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
@@ -54,6 +55,15 @@ public interface IJobsCoordinationFixture
 
     /// <summary>Provider SQL expression for "now in UTC" (Postgres: <c>now()</c>; SqlServer: <c>SYSUTCDATETIME()</c>).</summary>
     string UtcNowSqlExpression { get; }
+
+    /// <summary>
+    /// The server-clock function EF Core emits when it translates a bare <c>DateTime.UtcNow</c> inside an
+    /// expression tree (Postgres: <c>now()</c>; SqlServer: <c>GETUTCDATE()</c>). This is NOT
+    /// <see cref="UtcNowSqlExpression" />: that one is what the harness itself writes in seed SQL, this one is
+    /// what the EF provider chooses. <see cref="JobsDatabaseClockConformanceTests{TFixture}" /> asserts it against
+    /// the SQL the real Jobs lease paths put on the wire.
+    /// </summary>
+    string EfTranslatedDatabaseClockSql { get; }
 
     /// <summary>Provider DDL that drops every Jobs and Coordination table so each test starts empty.</summary>
     string ResetSql { get; }
@@ -116,6 +126,30 @@ public static class JobsCoordinationFixtureExtensions
         where TDbContext : JobsDbContext<TimeJobEntity, CronJobEntity> =>
         _BuildHost<TDbContext>(fixture, nodeId, schema, MembershipLostBehavior.StopMembershipOnly, null);
 
+    /// <summary>
+    /// Builds a host whose <em>real</em> Jobs DbContext carries <paramref name="interceptor" />, so a test can read
+    /// the SQL the production lease paths actually put on the wire. Native claiming is off: the native strategies
+    /// build raw ADO commands off the underlying connection (bypassing EF's interception pipeline) and spell
+    /// <c>clock_timestamp()</c> / <c>SYSUTCDATETIME()</c> literally in their SQL, so they are not the subject here.
+    /// The EF-translated clock — the one a client-evaluated regression could silently replace — is.
+    /// </summary>
+    public static IHost BuildInterceptedHost(
+        this IJobsCoordinationFixture fixture,
+        string nodeId,
+        IInterceptor interceptor,
+        TimeSpan? leaseDuration = null
+    ) =>
+        _BuildHost<JobsDbContext>(
+            fixture,
+            nodeId,
+            "jobs",
+            MembershipLostBehavior.StopMembershipOnly,
+            timeProvider: null,
+            leaseDuration,
+            useNativeClaims: false,
+            interceptor
+        );
+
     private static IHost _BuildHost<TDbContext>(
         IJobsCoordinationFixture fixture,
         string nodeId,
@@ -123,7 +157,8 @@ public static class JobsCoordinationFixtureExtensions
         MembershipLostBehavior lostBehavior,
         TimeProvider? timeProvider,
         TimeSpan? leaseDuration = null,
-        bool useNativeClaims = true
+        bool useNativeClaims = true,
+        IInterceptor? interceptor = null
     )
         where TDbContext : JobsDbContext<TimeJobEntity, CronJobEntity>
     {
@@ -158,7 +193,17 @@ public static class JobsCoordinationFixtureExtensions
             }
             options.UseEntityFramework(ef =>
             {
-                ef.UseJobsDbContext<TDbContext>(fixture.ConfigureStore, schema);
+                ef.UseJobsDbContext<TDbContext>(
+                    db =>
+                    {
+                        fixture.ConfigureStore(db);
+                        if (interceptor is not null)
+                        {
+                            db.AddInterceptors(interceptor);
+                        }
+                    },
+                    schema
+                );
                 if (useNativeClaims)
                 {
                     fixture.ConfigureClaims(ef);
@@ -189,7 +234,18 @@ public static class JobsCoordinationFixtureExtensions
         this IJobsCoordinationFixture fixture,
         string nodeId,
         bool includeMessaging = false
+    ) => fixture.BuildCoordinatedEnqueueHost<JobsDbContext>(nodeId, includeMessaging: includeMessaging);
+
+    /// <summary>
+    /// Builds the coordinated-enqueue host with a custom Jobs context and optional options instrumentation.
+    /// </summary>
+    public static IHost BuildCoordinatedEnqueueHost<TDbContext>(
+        this IJobsCoordinationFixture fixture,
+        string nodeId,
+        Action<DbContextOptionsBuilder>? configureOptions = null,
+        bool includeMessaging = false
     )
+        where TDbContext : JobsDbContext<TimeJobEntity, CronJobEntity>
     {
         JobFunctionProvider.RegisterFunctions(
             new Dictionary<string, JobFunctionRegistration>(StringComparer.Ordinal)
@@ -225,7 +281,14 @@ public static class JobsCoordinationFixtureExtensions
         {
             options.DisableBackgroundServices();
             options.UseEntityFramework(ef =>
-                ef.UseJobsDbContext<JobsDbContext>(fixture.ConfigureStore, schema: "jobs")
+                ef.UseJobsDbContext<TDbContext>(
+                    db =>
+                    {
+                        fixture.ConfigureStore(db);
+                        configureOptions?.Invoke(db);
+                    },
+                    schema: "jobs"
+                )
             );
         });
 

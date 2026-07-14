@@ -61,7 +61,7 @@ This project uses the [Headless .NET Framework](https://github.com/xshaheen/head
 - Always pass `AbortToken` as the cancellation token argument for async calls inside test methods. `AbortToken` is the per-test `CancellationToken` exposed by `TestBase` (xUnit v3's `TestContext.Current.CancellationToken`) — it fires when the test framework cancels the test (timeout, abort, run cancellation), so propagating it makes the system-under-test cancel correctly with the test. Do not use `CancellationToken.None` or `default`.
 - The test stack is `xunit.v3` (Microsoft Testing Platform), `AwesomeAssertions` (fork of FluentAssertions), `NSubstitute`, and `Bogus`. Do not introduce Moq, the original FluentAssertions, NUnit, or MSTest.
 - For flaky tests (network/timing-dependent), use `[RetryFact(MaxRetries = N)]` / `[RetryTheory(MaxRetries = N)]` rather than retry loops inside the test body.
-- For time-dependent logic, inject `TestClock` (a `TimeProvider`) and call `clock.Advance(...)` to simulate elapsed time. Do not call `DateTime.UtcNow` directly from production code under test.
+- For time-dependent logic, inject a `FakeTimeProvider` (from `Microsoft.Extensions.TimeProvider.Testing`) as the `TimeProvider` and call `timeProvider.Advance(...)` / `SetUtcNow(...)` to simulate elapsed time. Production code under test must take an injected `TimeProvider`; `DateTime.UtcNow` and friends are banned at compile time (`RS0030`).
 - For tenant and user context in unit tests, use `TestCurrentTenant` and `TestCurrentUser` instead of mocking `IRequestContext`.
 - For async test setup/teardown, override `InitializeAsync()` and `DisposeAsyncCore()` on `TestBase` subclasses (call `base.InitializeAsync()` / `base.DisposeAsyncCore()`).
 

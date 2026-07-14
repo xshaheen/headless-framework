@@ -49,15 +49,14 @@ public static class SetupApiServices
         }
 
         /// <summary>
-        /// Registers the Headless time stack: <see cref="TimeProvider.System"/>, <see cref="IClock"/>,
-        /// and <see cref="ITimezoneProvider"/> (TzConvert-backed).
+        /// Registers the Headless time stack: <see cref="TimeProvider.System"/> and
+        /// <see cref="ITimezoneProvider"/> (TzConvert-backed).
         /// All registrations are guarded with <c>TryAddSingleton</c>.
         /// </summary>
         /// <returns>The same service collection.</returns>
         public IServiceCollection AddHeadlessTimeService()
         {
             services.TryAddSingleton(TimeProvider.System);
-            services.TryAddSingleton<IClock, Clock>();
             services.TryAddSingleton<ITimezoneProvider, TzConvertTimezoneProvider>();
 
             return services;

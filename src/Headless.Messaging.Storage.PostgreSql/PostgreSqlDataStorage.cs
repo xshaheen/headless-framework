@@ -1040,6 +1040,9 @@ internal sealed class PostgreSqlDataStorage(
         // redelivered message that arrives while the row is being dispatched would otherwise
         // overwrite LockedUntil = NULL, releasing the active pickup lease mid-attempt and letting
         // the retry processor re-pick the row while the inline retry burst is still in flight.
+        // Ownership time is the DATABASE's: the guard compares against statement_timestamp(), the same
+        // clock that wrote "LockedUntil" in _LeaseAndReserveAttemptAsync. Sampling the app clock here
+        // instead would let a node running ahead of the server see a live lease as expired and CLEAR it.
         // The DO UPDATE SET list deliberately excludes "Retries" and "InlineAttempts" so a benign
         // redelivery collapse never resets the durable retry counters.
         // Mirrors the matching guard in SqlServerDataStorage._StoreReceivedMessage.
@@ -1087,6 +1090,9 @@ internal sealed class PostgreSqlDataStorage(
         // statement (one round trip instead of the _LeaseMessageAsync + _ReserveAttemptAsync pair).
         // Combines the lease-contention predicate (#15) with the durable-counter CAS from
         // _ReserveAttemptAsync; no owner match is required because this path is TAKING the lease.
+        // Ownership time is the database's: one statement-stable snapshot supplies both the expiry
+        // comparison and the new deadline. Returning the stored identity keeps the caller's fence
+        // byte-for-byte aligned with durable state.
         var sql = $"""
             WITH clock AS (SELECT statement_timestamp() AS now)
             UPDATE {tableName} AS message
@@ -1113,9 +1119,9 @@ internal sealed class PostgreSqlDataStorage(
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
         var storedLease = await connection
-            .ExecuteReaderAsync<(DateTime LockedUntil, string? Owner)?>(
+            .ExecuteReaderAsync(
                 sql,
-                _ReadStoredLeaseAsync,
+                LeaseDeadlineReader.ReadAsync,
                 commandTimeout: messagingOptions.Value.CommandTimeout,
                 sqlParams: sqlParams,
                 cancellationToken: cancellationToken
@@ -1134,6 +1140,7 @@ internal sealed class PostgreSqlDataStorage(
     {
         // #15 — explicit lease-contention predicate: only acquire the lease when the row is unleased
         // OR its existing lease has expired. Mirrors the matching guard in SqlServerDataStorage._LeaseMessageAsync.
+        // Ownership time is the database's — see _LeaseAndReserveAttemptAsync.
         var sql = $"""
             WITH clock AS (SELECT statement_timestamp() AS now)
             UPDATE {tableName} AS message
@@ -1156,9 +1163,9 @@ internal sealed class PostgreSqlDataStorage(
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
         var storedLease = await connection
-            .ExecuteReaderAsync<(DateTime LockedUntil, string? Owner)?>(
+            .ExecuteReaderAsync(
                 sql,
-                _ReadStoredLeaseAsync,
+                LeaseDeadlineReader.ReadAsync,
                 commandTimeout: messagingOptions.Value.CommandTimeout,
                 sqlParams: sqlParams,
                 cancellationToken: cancellationToken
@@ -1166,21 +1173,6 @@ internal sealed class PostgreSqlDataStorage(
             .ConfigureAwait(false);
 
         return _ApplyStoredLease(message, storedLease);
-    }
-
-    private static async Task<(DateTime LockedUntil, string? Owner)?> _ReadStoredLeaseAsync(
-        DbDataReader reader,
-        CancellationToken cancellationToken
-    )
-    {
-        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            return null;
-        }
-
-        var lockedUntil = ((DateTime?)reader.GetDateTime(0)).ToUtcOrSelf()!.Value;
-        var owner = await reader.IsDBNullAsync(1, cancellationToken).ConfigureAwait(false) ? null : reader.GetString(1);
-        return (lockedUntil, owner);
     }
 
     private static bool _ApplyStoredLease(MediumMessage message, (DateTime LockedUntil, string? Owner)? storedLease)

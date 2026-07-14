@@ -331,6 +331,7 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
 
     private static TimeSpan _FutureLease() => TimeSpan.FromHours(1);
 
+    /// <summary>A negative lease: the DB stamps a deadline already in its own past, so the row seeds as expired.</summary>
     private static TimeSpan _ExpiredLease() => TimeSpan.FromSeconds(-1);
 
     private static long _NextId() => Interlocked.Increment(ref _messageCounter);

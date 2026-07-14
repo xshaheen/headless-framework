@@ -34,7 +34,7 @@ public abstract class PostgreSqlDbContextTestFixture<TContext> : IDbContextTestF
 
     public ServiceProvider ServiceProvider { get; private set; } = null!;
 
-    public TestClock Clock { get; } = new() { TimeProvider = new FakeTimeProvider(_Now) };
+    public FakeTimeProvider Clock { get; } = new(_Now);
 
     public TestCurrentTenant CurrentTenant { get; } = new() { Id = null };
 
@@ -78,7 +78,7 @@ public abstract class PostgreSqlDbContextTestFixture<TContext> : IDbContextTestF
         var services = new ServiceCollection();
 
         services.AddLogging(x => x.AddProvider(TestHelpers.CreateXUnitLoggerFactory().Provider));
-        services.AddSingleton<IClock>(Clock);
+        services.AddSingleton<TimeProvider>(Clock);
         services.AddSingleton<ICurrentUser>(CurrentUser);
         services.AddSingleton<IGuidGenerator>(new SequentialGuidGenerator(SequentialGuidType.Version7));
         services.AddHeadlessDbContextServices();

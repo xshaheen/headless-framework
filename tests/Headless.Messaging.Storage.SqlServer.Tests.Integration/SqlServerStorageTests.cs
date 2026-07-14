@@ -69,6 +69,30 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
         return _CreateStorage(timeProvider);
     }
 
+    /// <inheritdoc />
+    protected override async Task<DateTime?> GetDatabaseUtcNowAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        return await connection.ExecuteScalarAsync<DateTime>("SELECT SYSUTCDATETIME()");
+    }
+
+    /// <inheritdoc />
+    protected override async Task<PersistedLeaseIdentity?> GetPersistedLeaseIdentityAsync(
+        bool published,
+        Guid storageId,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        var tableName = published ? "Published" : "Received";
+        return await connection.QuerySingleAsync<PersistedLeaseIdentity>(
+            $"SELECT LockedUntil, Owner FROM messaging.{tableName} WHERE Id = @Id",
+            new { Id = storageId }
+        );
+    }
+
     private IDataStorage _CreateStorage(TimeProvider timeProvider)
     {
         return new SqlServerDataStorage(
@@ -321,64 +345,8 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
     [InlineData(false, false)]
     [InlineData(true, true)]
     [InlineData(false, true)]
-    public async Task should_stamp_fresh_dispatch_lease_from_database_clock(bool publish, bool reserveAttempt)
-    {
-        _EnsureInitialized();
-        var originalOwner = NodeMembership.SetIdentity("sql-server-lease-owner");
-        var storage = GetStorage();
-        var message = publish
-            ? await storage.StoreMessageAsync("db-clock-dispatch-lease", CreateMessage(), cancellationToken: AbortToken)
-            : await storage.StoreReceivedMessageAsync(
-                "db-clock-dispatch-lease",
-                "db-clock-dispatch-group",
-                CreateMessage(),
-                AbortToken
-            );
-        var skewedStorage = _CreateStorage(
-            new Microsoft.Extensions.Time.Testing.FakeTimeProvider(DateTimeOffset.UtcNow.AddDays(1))
-        );
-        var leaseDuration = TimeSpan.FromMilliseconds(1500);
-
-        await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(AbortToken);
-        var databaseBefore = await connection.ExecuteScalarAsync<DateTime>("SELECT SYSUTCDATETIME()");
-
-        bool acquired;
-        if (reserveAttempt)
-        {
-            message.InlineAttempts = 1;
-            acquired = publish
-                ? await skewedStorage.LeasePublishAndReserveAttemptAsync(message, leaseDuration, 0, AbortToken)
-                : await skewedStorage.LeaseReceiveAndReserveAttemptAsync(message, leaseDuration, 0, AbortToken);
-        }
-        else
-        {
-            acquired = publish
-                ? await skewedStorage.LeasePublishAsync(message, leaseDuration, AbortToken)
-                : await skewedStorage.LeaseReceiveAsync(message, leaseDuration, AbortToken);
-        }
-
-        var databaseAfter = await connection.ExecuteScalarAsync<DateTime>("SELECT SYSUTCDATETIME()");
-        var tableName = publish ? "Published" : "Received";
-        var persisted = await connection.QuerySingleAsync<MediumMessage>(
-            $"SELECT LockedUntil, Owner FROM messaging.{tableName} WHERE Id = @Id",
-            new { Id = message.StorageId }
-        );
-
-        acquired.Should().BeTrue();
-        message.LockedUntil.Should().Be(persisted.LockedUntil);
-        message.Owner.Should().Be(persisted.Owner).And.Be(originalOwner.ToString());
-        message
-            .LockedUntil.Should()
-            .BeOnOrAfter(databaseBefore.Add(leaseDuration))
-            .And.BeOnOrBefore(databaseAfter.Add(leaseDuration));
-
-        NodeMembership.SetIdentity("sql-server-lease-contender");
-        var reacquired = publish
-            ? await skewedStorage.LeasePublishAsync(message, leaseDuration, AbortToken)
-            : await skewedStorage.LeaseReceiveAsync(message, leaseDuration, AbortToken);
-        reacquired.Should().BeFalse("the database-authored lease is still active");
-    }
+    public override Task should_stamp_fresh_dispatch_lease_from_database_clock(bool publish, bool reserveAttempt) =>
+        base.should_stamp_fresh_dispatch_lease_from_database_clock(publish, reserveAttempt);
 
     [Fact]
     public override Task should_reject_mismatched_original_retries() =>
