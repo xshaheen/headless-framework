@@ -67,33 +67,31 @@ failover even if it can serve approximate dashboard views.
 
 ### Relationships
 
-A **message type** carries exactly one **Marker** (`IEvent` or `ICommand`), which fixes its **Lane**.
-The lane selects the publish surface (`IBus` for events, `IQueue` for commands). **Delivery mode** is
-orthogonal to lane: it decides whether a publish goes through storage or straight to transport.
+A **message contract** is a plain serializable class, record, or interface. The invoked operation and
+lane-scoped registration select its **Message lane**: `IBus.PublishAsync` for broadcast or
+`IQueue.EnqueueAsync` for point-to-point delivery. **Delivery mode** is orthogonal to lane: it decides
+whether the message is captured durably or sent straight to transport.
 
-### Lane
+### Message lane
 The semantic channel of a message: bus (broadcast — every subscriber group gets a copy) or queue
-(point-to-point — competing consumers, one worker per message). Under the type-intent model a type
-belongs to exactly one lane, fixed by its Marker. *Avoid:* "intent" in new writing — intent was the
-late-bound era's name for the per-registration/per-call lane choice.
+(point-to-point — competing consumers, one worker per message). The same CLR contract may use both
+lanes intentionally, but each lane has an independent registration, route, runtime key, storage
+discriminator, and physical topology. Use `MessageLane.Bus` / `MessageLane.Queue` in new APIs and
+writing; `IntentType` is the legacy name.
 
-### Type-intent model
-The decided messaging model (2026-06-10): the message type determines the lane via Markers enforced
-by generic constraints (`where T : IEvent` / `where T : ICommand`); one type → one lane; cross-lane
-use is a compile error. Supersedes Late-bound intent.
+### Verb-conveyed lane model
+The decided messaging model (2026-07-13): the operation conveys semantics. Publishing through `IBus`
+uses the Bus lane; enqueueing through `IQueue` uses the Queue lane. Message contracts implement no
+framework classification marker. Consumer configuration is structurally lane-scoped through
+`setup.Bus.ForMessage<T>` / `setup.Queue.ForMessage<T>`, and registry identity is
+`(MessageType, MessageLane)`.
 
 ### Late-bound intent
-The superseded model where the lane was chosen per registration (`OnBus`/`OnQueue`) and per publish
-call, independent of the message type — the same type could traverse both lanes. Root cause of the
-#344 cross-intent leak.
-
-### Marker
-One of the empty contract interfaces `IEvent`/`ICommand` (both extending a common `IMessage`) whose
-presence classifies a message type. A type is valid when assignable to exactly one of the two after
-walking its full base-type and interface graph — derived aliases (`IDomainEvent : IEvent`) are
-allowed; a graph reaching both markers is a boot error. Unowned external types are wrapped in owned
-marker-bearing records — never convention-classified (no predicate/attribute/builder classification
-exists).
+The current pre-redesign implementation chooses a lane with `OnBus`/`OnQueue` inside one shared
+`ForMessage<T>` builder. It permits correct semantics but does not carry the lane structurally through
+every registration key and provider topology, which enabled #344's cross-intent leak. The target
+verb-conveyed model keeps the flexibility while moving the lane to the builder root and every runtime
+identity.
 
 ### Delivery mode
 The per-call durability choice on publish/enqueue: `Auto`, `Durable`, `TransportDirect`. Auto, the

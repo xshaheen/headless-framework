@@ -1,9 +1,15 @@
 ---
 date: 2026-06-10
 topic: messaging-type-intent-public-api
+status: superseded
+superseded_by: docs/plans/2026-07-13-002-messaging-reviewed-architecture-plan.md
 ---
 
 # Messaging Type-Intent Public API — Requirements
+
+> **Superseded 2026-07-13.** The owner selected verb-conveyed Bus/Queue semantics with plain message
+> contracts and structurally lane-scoped registration. This file remains as the rejected marker-based
+> alternative and decision history. Do not implement it.
 
 ## Summary
 
