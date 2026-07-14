@@ -219,4 +219,30 @@ public static class DateTimeExtensions
     {
         return TimeOnly.FromDateTime(date.ToUniversalTime());
     }
+
+    /// <summary>
+    /// Normalizes <paramref name="date"/> to <see cref="DateTimeKind.Utc"/> so an instant can be persisted or
+    /// compared without depending on the ambient machine timezone.
+    /// </summary>
+    /// <param name="date">The value to normalize.</param>
+    /// <returns>
+    /// A <see cref="DateTime"/> with <see cref="DateTimeKind.Utc"/>. <see cref="DateTimeKind.Local"/> values are
+    /// converted; <see cref="DateTimeKind.Unspecified"/> values are re-stamped in place.
+    /// </returns>
+    /// <remarks>
+    /// <see cref="DateTimeKind.Unspecified"/> is assumed to ALREADY be UTC and is stamped without conversion — it is
+    /// the kind relational providers hand back on read. Interpreting it as local would silently shift every value
+    /// read from the database by the host's UTC offset.
+    /// </remarks>
+    [SystemPure]
+    [JetBrainsPure]
+    public static DateTime NormalizeToUtc(this DateTime date)
+    {
+        return date.Kind switch
+        {
+            DateTimeKind.Utc => date,
+            DateTimeKind.Local => date.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(date, DateTimeKind.Utc),
+        };
+    }
 }

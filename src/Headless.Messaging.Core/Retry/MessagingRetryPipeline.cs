@@ -153,7 +153,7 @@ internal sealed class MessagingRetryPipeline
                     new RetryDelayGeneratorArguments<object>(
                         args.Context,
                         exception is null
-                            ? Outcome.FromResult<object>(null!)
+                            ? Outcome.FromResult<object>(value: null)
                             : Outcome.FromException<object>(exception),
                         args.AttemptNumber
                     )

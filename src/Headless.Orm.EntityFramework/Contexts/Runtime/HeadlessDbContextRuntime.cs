@@ -184,7 +184,7 @@ internal sealed class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextSe
         }
     }
 
-    private void _ConfigureDateTimeValueConverters(ModelBuilder modelBuilder)
+    private static void _ConfigureDateTimeValueConverters(ModelBuilder modelBuilder)
     {
         foreach (var type in modelBuilder.Model.GetEntityTypes())
         {
@@ -195,7 +195,7 @@ internal sealed class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextSe
         }
     }
 
-    private void _ConfigureDateTimeValueConverters(ModelBuilder modelBuilder, IMutableEntityType type)
+    private static void _ConfigureDateTimeValueConverters(ModelBuilder modelBuilder, IMutableEntityType type)
     {
         var properties = type.GetProperties()
             .Where(property =>
@@ -212,8 +212,8 @@ internal sealed class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextSe
             return;
         }
 
-        var dateTimeConverter = new NormalizeDateTimeValueConverter(services.Clock);
-        var nullableDateTimeConverter = new NullableNormalizeDateTimeValueConverter(services.Clock);
+        var dateTimeConverter = new NormalizeDateTimeValueConverter();
+        var nullableDateTimeConverter = new NullableNormalizeDateTimeValueConverter();
 
         foreach (var property in properties)
         {

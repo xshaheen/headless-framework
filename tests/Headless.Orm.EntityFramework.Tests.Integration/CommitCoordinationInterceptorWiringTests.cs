@@ -123,7 +123,7 @@ public sealed class CommitCoordinationInterceptorWiringTests : TestBase
 
                 var services = new ServiceCollection();
                 services.AddLogging();
-                services.AddSingleton<IClock>(new TestClock { TimeProvider = new FakeTimeProvider() });
+                services.AddSingleton<TimeProvider>(new FakeTimeProvider());
                 services.AddSingleton<ICurrentTenant>(new TestCurrentTenant { Id = null });
                 services.AddSingleton<ICurrentUser>(new TestCurrentUser());
                 services.AddSingleton<IGuidGenerator>(new SequentialGuidGenerator(SequentialGuidType.Version7));

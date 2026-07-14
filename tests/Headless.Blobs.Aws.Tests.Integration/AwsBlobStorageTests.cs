@@ -42,7 +42,7 @@ public sealed class AwsBlobStorageTests(AwsBlobStorageFixture fixture) : BlobSto
         return new AwsBlobStorage(
             amazonS3Client,
             new MimeTypeProvider(),
-            new Clock(TimeProvider.System),
+            TimeProvider.System,
             options,
             new AwsBlobNamingNormalizer()
         );

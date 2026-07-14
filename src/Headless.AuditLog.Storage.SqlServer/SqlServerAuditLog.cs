@@ -10,7 +10,7 @@ internal sealed class SqlServerAuditLog<TContext>(
     ICurrentUser currentUser,
     ICurrentTenant currentTenant,
     ICorrelationIdProvider correlationIdProvider,
-    IClock clock,
+    TimeProvider timeProvider,
     IOptions<AuditLogOptions> options
 ) : IAuditLog<TContext>
 {
@@ -31,7 +31,7 @@ internal sealed class SqlServerAuditLog<TContext>(
 
         var entry = new AuditLogEntryData
         {
-            CreatedAt = clock.UtcNow,
+            CreatedAt = timeProvider.GetUtcNow(),
             UserId = AuditLogFieldLimits.Truncate(currentUser.UserId?.ToString(), AuditLogFieldLimits.UserId),
             AccountId = AuditLogFieldLimits.Truncate(currentUser.AccountId?.ToString(), AuditLogFieldLimits.AccountId),
             TenantId = AuditLogFieldLimits.Truncate(currentTenant.Id, AuditLogFieldLimits.TenantId),

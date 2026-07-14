@@ -62,7 +62,7 @@ public sealed class CloudflareR2BlobStorageTests : BlobStorageTestsBase
         await using var storage = new AwsBlobStorage(
             client,
             new MimeTypeProvider(),
-            new Clock(TimeProvider.System),
+            TimeProvider.System,
             Options.Create(new AwsBlobStorageOptions()),
             new R2BlobNamingNormalizer()
         );
@@ -420,7 +420,7 @@ public sealed class CloudflareR2BlobStorageTests : BlobStorageTestsBase
         new(
             client,
             new MimeTypeProvider(),
-            new Clock(TimeProvider.System),
+            TimeProvider.System,
             // R2-forced behavior: no ACLs, no chunked encoding, payload signing disabled.
             Options.Create(
                 new AwsBlobStorageOptions

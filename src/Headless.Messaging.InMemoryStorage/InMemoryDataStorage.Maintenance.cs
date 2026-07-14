@@ -26,7 +26,7 @@ internal sealed partial class InMemoryDataStorage
         lock (current)
         {
             if (
-                (current.StatusName is StatusName.Succeeded or StatusName.Failed) && current.NextRetryAt is null
+                ((current.StatusName is StatusName.Succeeded or StatusName.Failed) && current.NextRetryAt is null)
                 || current.Retries != message.Retries
                 || current.InlineAttempts != originalInlineAttempts
                 || current.LockedUntil != message.LockedUntil

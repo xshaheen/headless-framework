@@ -50,17 +50,17 @@ internal sealed record CronOccurrenceRelationalMapping(
 
         return new CronOccurrenceRelationalMapping(
             sql.DelimitIdentifier(tableName, entity.GetSchema()),
-            Column(nameof(CronJobOccurrenceEntity<TCronJob>.Id)),
-            Column(nameof(CronJobOccurrenceEntity<TCronJob>.Status)),
-            Column(nameof(CronJobOccurrenceEntity<TCronJob>.OwnerId)),
-            Column(nameof(CronJobOccurrenceEntity<TCronJob>.ExecutionTime)),
-            Column(nameof(CronJobOccurrenceEntity<TCronJob>.CronJobId)),
-            Column(nameof(CronJobOccurrenceEntity<TCronJob>.LockedUntil)),
-            Column(nameof(CronJobOccurrenceEntity<TCronJob>.OnNodeDeath)),
-            Column(nameof(CronJobOccurrenceEntity<TCronJob>.ElapsedTime)),
-            Column(nameof(CronJobOccurrenceEntity<TCronJob>.RetryCount)),
-            Column(nameof(CronJobOccurrenceEntity<TCronJob>.CreatedAt)),
-            Column(nameof(CronJobOccurrenceEntity<TCronJob>.UpdatedAt))
+            Column(nameof(CronJobOccurrenceEntity<>.Id)),
+            Column(nameof(CronJobOccurrenceEntity<>.Status)),
+            Column(nameof(CronJobOccurrenceEntity<>.OwnerId)),
+            Column(nameof(CronJobOccurrenceEntity<>.ExecutionTime)),
+            Column(nameof(CronJobOccurrenceEntity<>.CronJobId)),
+            Column(nameof(CronJobOccurrenceEntity<>.LockedUntil)),
+            Column(nameof(CronJobOccurrenceEntity<>.OnNodeDeath)),
+            Column(nameof(CronJobOccurrenceEntity<>.ElapsedTime)),
+            Column(nameof(CronJobOccurrenceEntity<>.RetryCount)),
+            Column(nameof(CronJobOccurrenceEntity<>.CreatedAt)),
+            Column(nameof(CronJobOccurrenceEntity<>.UpdatedAt))
         );
     }
 }

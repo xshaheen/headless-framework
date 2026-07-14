@@ -24,7 +24,7 @@ internal sealed partial class IdempotencyMiddleware(
     ICurrentTenant currentTenant,
     ICurrentUser currentUser,
     IProblemDetailsCreator problemDetailsCreator,
-    IClock clock,
+    TimeProvider timeProvider,
     ICancellationTokenProvider cancellationTokenProvider,
     ILogger<IdempotencyMiddleware> logger,
     // IDistributedLock is an OPTIONAL dependency: only the WaitAndReplay in-flight strategy needs it
@@ -228,7 +228,7 @@ internal sealed partial class IdempotencyMiddleware(
                 {
                     Kind = RecordKind.InFlight,
                     Fingerprint = fingerprint,
-                    CreatedAt = clock.UtcNow,
+                    CreatedAt = timeProvider.GetUtcNow(),
                 };
 
                 // Sentinel TTL matches the completed-record TTL: a shorter marker TTL plus the
@@ -596,7 +596,7 @@ internal sealed partial class IdempotencyMiddleware(
                     Headers = capturedHeaders,
                     Body = captureStream.CapturedBytes,
                     Fingerprint = fingerprint,
-                    CreatedAt = clock.UtcNow,
+                    CreatedAt = timeProvider.GetUtcNow(),
                 };
 
                 // Compare-and-swap the marker we inserted with the Complete record in a single

@@ -46,7 +46,7 @@ public sealed class RedisConsumerClientFactoryTests : TestBase
         var factory = new RedisConsumerClientFactory(options, messagingOptions, mockStreamManager, logger);
 
         // when
-        var client = await factory.CreateAsync("my-consumer-group", 5);
+        var client = await factory.CreateAsync("my-consumer-group", 5, AbortToken);
 
         // then
         client.Should().NotBeNull();
@@ -68,7 +68,7 @@ public sealed class RedisConsumerClientFactoryTests : TestBase
         var factory = new RedisConsumerClientFactory(options, messagingOptions, mockStreamManager, logger);
 
         // when
-        var client = await factory.CreateAsync("group-name", 0);
+        var client = await factory.CreateAsync("group-name", 0, AbortToken);
 
         // then
         client.Should().NotBeNull();
@@ -88,8 +88,8 @@ public sealed class RedisConsumerClientFactoryTests : TestBase
         var factory = new RedisConsumerClientFactory(options, messagingOptions, mockStreamManager, logger);
 
         // when
-        var client1 = await factory.CreateAsync("group-1", 1);
-        var client2 = await factory.CreateAsync("group-2", 2);
+        var client1 = await factory.CreateAsync("group-1", 1, AbortToken);
+        var client2 = await factory.CreateAsync("group-2", 2, AbortToken);
 
         // then
         client1.Should().NotBeSameAs(client2);

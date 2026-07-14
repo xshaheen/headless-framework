@@ -101,7 +101,11 @@ internal sealed class JobsRetryPipeline
         var retryIndex = execution.StartingRetryCount + args.AttemptNumber;
         if (execution.Job.RetryIntervals is { Length: > 0 } intervals)
         {
-            return TimeSpan.FromSeconds(intervals[Math.Min(retryIndex, intervals.Length - 1)]);
+            // Clamp per-row intervals exactly like the DelayGenerator branch below. RetryIntervals is an
+            // unvalidated public int[] on the job entity, so a negative value (a plausible typo) would otherwise
+            // reach Polly as a negative TimeSpan and turn a scheduling mistake into a hard failure of the retry
+            // mechanism itself.
+            return _ClampCustomDelay(TimeSpan.FromSeconds(intervals[Math.Min(retryIndex, intervals.Length - 1)]));
         }
 
         if (_options.RetryStrategy.DelayGenerator is not null)

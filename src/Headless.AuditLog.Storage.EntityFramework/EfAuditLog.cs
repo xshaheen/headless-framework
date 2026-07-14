@@ -11,7 +11,7 @@ internal sealed class EfAuditLog<TContext>(
     ICurrentUser currentUser,
     ICurrentTenant currentTenant,
     ICorrelationIdProvider correlationIdProvider,
-    IClock clock,
+    TimeProvider timeProvider,
     IOptions<AuditLogOptions> options
 ) : IAuditLog<TContext>
     where TContext : DbContext
@@ -39,7 +39,7 @@ internal sealed class EfAuditLog<TContext>(
             .Add(
                 new AuditLogEntry
                 {
-                    CreatedAt = clock.UtcNow.UtcDateTime,
+                    CreatedAt = timeProvider.GetUtcNow().UtcDateTime,
                     UserId = AuditLogFieldLimits.Truncate(currentUser.UserId?.ToString(), AuditLogFieldLimits.UserId),
                     AccountId = AuditLogFieldLimits.Truncate(
                         currentUser.AccountId?.ToString(),

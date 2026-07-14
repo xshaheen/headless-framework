@@ -114,6 +114,17 @@ jobs:
       - name: "Unit tests with coverage"
         run: make ci-test
 
+      # Re-run the unit suite under a non-UTC zone. GitHub runners are UTC, so a UTC-only pipeline
+      # structurally cannot catch a local-offset bug: code that trusts DateTime.Kind, calls
+      # ToUniversalTime() on an Unspecified value, or builds a DateTimeOffset from a bare DateTime
+      # behaves identically on a UTC box and silently shifts by the offset everywhere else. That is
+      # exactly how the AWS LastModified defect survived. Cairo (UTC+2/+3) is also DST-observing.
+      # Reuses the binaries built above.
+      - name: "Unit tests under a non-UTC timezone"
+        env:
+          TZ: Africa/Cairo
+        run: make ci-test
+
       - name: "Generate coverage summary"
         if: always()
         run: |

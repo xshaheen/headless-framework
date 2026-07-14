@@ -337,7 +337,7 @@ Wires the audit log pipeline into EF Core's ChangeTracker so entity mutations ar
 
 - `EfAuditChangeCapture` — scans ChangeTracker before save, produces `AuditLogEntryData` per changed entity.
 - `EfAuditLogStore` — adds `AuditLogEntry` rows to the same `DbContext` so they commit in the same transaction as entity changes.
-- `EfAuditLog<TContext>` — implements `IAuditLog<TContext>` for explicit event logging; resolves `ICurrentUser`, `ICurrentTenant`, `ICorrelationIdProvider`, and `IClock` from DI.
+- `EfAuditLog<TContext>` — implements `IAuditLog<TContext>` for explicit event logging; resolves `ICurrentUser`, `ICurrentTenant`, `ICorrelationIdProvider`, and `TimeProvider` from DI.
 - `EfReadAuditLog<TContext>` — implements `IReadAuditLog<TContext>` using `IDbContextFactory<TContext>` (no-tracking queries).
 - `AuditLogEntry` — EF entity; decorated with `[AuditIgnore]` to prevent recursive capture when `AuditByDefault` is enabled.
 - `AuditLogModelBuilderExtensions.AddHeadlessAuditLog(modelBuilder, options)` — registers and configures the `AuditLogEntry` entity type; idempotent.
@@ -561,7 +561,7 @@ setup.UsePostgreSql((options, sp) =>
 - Registers `IAuditLogStore` as scoped (`PostgreSqlAuditLogStore`).
 - Registers `IAuditLog<TContext>` as singleton (`PostgreSqlAuditLog<TContext>`).
 - Registers `IReadAuditLog<TContext>` as singleton (`PostgreSqlReadAuditLog<TContext>`).
-- Registers `IJsonSerializer`, `IClock`, `ICurrentTenant`, `ICurrentUser`, `ICorrelationIdProvider` as singletons if not already registered.
+- Registers `IJsonSerializer`, `TimeProvider` (`TimeProvider.System`), `ICurrentTenant`, `ICurrentUser`, `ICorrelationIdProvider` as singletons if not already registered.
 
 ---
 
@@ -667,4 +667,4 @@ setup.UseSqlServer((options, sp) =>
 - Registers `IAuditLogStore` as scoped (`SqlServerAuditLogStore`).
 - Registers `IAuditLog<TContext>` as singleton (`SqlServerAuditLog<TContext>`).
 - Registers `IReadAuditLog<TContext>` as singleton (`SqlServerReadAuditLog<TContext>`).
-- Registers `IJsonSerializer`, `IClock`, `ICurrentTenant`, `ICurrentUser`, `ICorrelationIdProvider` as singletons if not already registered.
+- Registers `IJsonSerializer`, `TimeProvider` (`TimeProvider.System`), `ICurrentTenant`, `ICurrentUser`, `ICorrelationIdProvider` as singletons if not already registered.

@@ -119,7 +119,8 @@ public static class HeadlessEntityFrameworkCoordinatedTransactionExtensions
     )
     {
         var state = (Operation: operation, Isolation: isolation, Context: context, Services: services);
-        var attempt = await context
+
+        var (result, error) = await context
             .Database.CreateExecutionStrategy()
             .ExecuteAsync(
                 state,
@@ -151,7 +152,8 @@ public static class HeadlessEntityFrameworkCoordinatedTransactionExtensions
             )
             .ConfigureAwait(false);
 
-        attempt.Error?.Throw();
-        return attempt.Result;
+        error?.Throw();
+
+        return result;
     }
 }
