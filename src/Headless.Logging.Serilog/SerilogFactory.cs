@@ -60,11 +60,10 @@ public static class SerilogFactory
     /// emits the host's local time — which makes correlating logs across containers in different zones
     /// needlessly painful and contradicts the framework's UTC-everywhere rule.
     /// <para>
-    /// The <c>{UtcTimestamp}</c> token is not a Serilog built-in: it is supplied by
-    /// <see cref="UtcTimestampEnricher"/>. Any <see cref="LoggerConfiguration"/> using this template must
-    /// register that enricher via <c>.Enrich.With&lt;UtcTimestampEnricher&gt;()</c>, or Serilog renders the
-    /// token as an empty string and every log line loses its timestamp. Both profiles in this factory already
-    /// do so.
+    /// <c>{UtcTimestamp}</c> is a Serilog BUILT-IN output-template token (<c>OutputProperties</c>), rendered by the
+    /// formatter directly from <c>LogEvent.Timestamp.UtcDateTime</c>. It requires no enricher, and a custom event
+    /// property of the same name cannot influence it — the formatter resolves this token itself and never consults
+    /// the property bag for it. Consumers can use this template on any <see cref="LoggerConfiguration"/> as-is.
     /// </para>
     /// </remarks>
     public const string OutputTemplate =
@@ -222,7 +221,6 @@ public static class SerilogFactory
                 }
             )
             .Destructure.ByTransforming(_IpAddressTransform)
-            .Enrich.With<UtcTimestampEnricher>()
             .Enrich.FromLogContext()
             .Enrich.WithSpan()
             .Enrich.WithEnvironmentName()
