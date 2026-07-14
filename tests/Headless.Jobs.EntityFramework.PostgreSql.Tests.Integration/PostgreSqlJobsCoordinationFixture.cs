@@ -54,7 +54,7 @@ public sealed class PostgreSqlJobsCoordinationFixture
             .WithPassword("postgres");
     }
 
-    public string CreateProbeTableSql => "CREATE TABLE IF NOT EXISTS jobs_probe (id integer); DELETE FROM jobs_probe;";
+    public string CreateProbeTableSql => "DROP TABLE IF EXISTS jobs_probe; CREATE TABLE jobs_probe (id integer);";
 
     public void ConfigureCoordination(HeadlessCoordinationSetupBuilder setup) => setup.UsePostgreSql(ConnectionString);
 

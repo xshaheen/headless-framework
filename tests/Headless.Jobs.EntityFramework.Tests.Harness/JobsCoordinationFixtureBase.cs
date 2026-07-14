@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using System.Data;
 using System.Data.Common;
 using Headless.Coordination;
@@ -7,6 +8,8 @@ using Headless.Jobs;
 using Headless.Jobs.DbContextFactory;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
+using Headless.Jobs.Interfaces;
+using Headless.Jobs.Models;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
@@ -224,17 +227,27 @@ public static class JobsCoordinationFixtureExtensions
     /// <summary>The time-job function the coordinated-enqueue conformance scenarios enqueue against.</summary>
     public const string CoordinatedFunctionName = "Coordinated_Enqueue_Sample";
 
+    /// <summary>The typed function scheduled through <see cref="IJobScheduler" /> by facade conformance scenarios.</summary>
+    public const string CoordinatedFacadeFunctionName = "Coordinated_Facade_Enqueue_Sample";
+
     /// <summary>
     /// Builds (but does not start) a host wired like <see cref="BuildHost" /> plus commit coordination, so the
     /// <c>JobsManager</c> coordinated-enqueue path is active and <c>ExecuteCoordinatedTransactionAsync</c> can enlist.
     /// A test time-job function is registered before the host's startup <c>Build()</c> so <c>AddAsync</c> validation
     /// passes (empty cron expression so the startup seeder ignores it).
     /// </summary>
-    public static IHost BuildCoordinatedEnqueueHost(
+    internal static IHost BuildCoordinatedEnqueueHost(
         this IJobsCoordinationFixture fixture,
         string nodeId,
-        bool includeMessaging = false
-    ) => fixture.BuildCoordinatedEnqueueHost<JobsDbContext>(nodeId, includeMessaging: includeMessaging);
+        bool includeMessaging = false,
+        JobsSideEffectsProbe? sideEffectsProbe = null
+    ) =>
+        _BuildCoordinatedEnqueueHost<JobsDbContext>(
+            fixture,
+            nodeId,
+            includeMessaging: includeMessaging,
+            sideEffectsProbe: sideEffectsProbe
+        );
 
     /// <summary>
     /// Builds the coordinated-enqueue host with a custom Jobs context and optional options instrumentation.
@@ -244,6 +257,18 @@ public static class JobsCoordinationFixtureExtensions
         string nodeId,
         Action<DbContextOptionsBuilder>? configureOptions = null,
         bool includeMessaging = false
+    )
+        where TDbContext : JobsDbContext<TimeJobEntity, CronJobEntity>
+    {
+        return _BuildCoordinatedEnqueueHost<TDbContext>(fixture, nodeId, configureOptions, includeMessaging);
+    }
+
+    private static IHost _BuildCoordinatedEnqueueHost<TDbContext>(
+        IJobsCoordinationFixture fixture,
+        string nodeId,
+        Action<DbContextOptionsBuilder>? configureOptions = null,
+        bool includeMessaging = false,
+        JobsSideEffectsProbe? sideEffectsProbe = null
     )
         where TDbContext : JobsDbContext<TimeJobEntity, CronJobEntity>
     {
@@ -257,6 +282,34 @@ public static class JobsCoordinationFixtureExtensions
                     Delegate = (_, _, _) => Task.CompletedTask,
                     MaxConcurrency = 1,
                 },
+                [CoordinatedFacadeFunctionName] = new JobFunctionRegistration
+                {
+                    CronExpression = string.Empty,
+                    Priority = JobPriority.LongRunning,
+                    Delegate = (_, _, _) => Task.CompletedTask,
+                    MaxConcurrency = 1,
+                },
+            }
+        );
+        JobFunctionProvider.RegisterRequestType(
+            new Dictionary<string, (string, Type)>(StringComparer.Ordinal)
+            {
+                [CoordinatedFacadeFunctionName] = (
+                    typeof(CoordinatedFacadeRequest).FullName!,
+                    typeof(CoordinatedFacadeRequest)
+                ),
+            }
+        );
+        JobFunctionProvider.RegisterDescriptors(
+            new Dictionary<string, JobFunctionDescriptor>(StringComparer.Ordinal)
+            {
+                [CoordinatedFacadeFunctionName] = new(
+                    CoordinatedFacadeFunctionName,
+                    typeof(CoordinatedFacadeRequest),
+                    string.Empty,
+                    JobPriority.LongRunning,
+                    1
+                ),
             }
         );
 
@@ -291,6 +344,12 @@ public static class JobsCoordinationFixtureExtensions
                 )
             );
         });
+
+        if (sideEffectsProbe is not null)
+        {
+            builder.Services.AddSingleton<IJobsHostScheduler>(sideEffectsProbe);
+            builder.Services.AddSingleton<IJobsNotificationHubSender>(sideEffectsProbe);
+        }
 
         if (includeMessaging)
         {
@@ -687,4 +746,75 @@ public static class JobsCoordinationFixtureExtensions
         }
         command.Parameters.Add(parameter);
     }
+}
+
+/// <summary>Typed payload registered as a generated-equivalent job-function request by the relational harness.</summary>
+public sealed record CoordinatedFacadeRequest(Guid Id, string Value);
+
+/// <summary>Observes scheduler wake-ups so conformance tests can distinguish pre-commit from post-commit effects.</summary>
+internal sealed class JobsSideEffectsProbe : IJobsHostScheduler, IJobsNotificationHubSender
+{
+    private readonly ConcurrentQueue<Guid> _notificationIds = new();
+    private int _restartCount;
+
+    bool IJobsHostScheduler.IsRunning => false;
+
+    public int RestartCount => Volatile.Read(ref _restartCount);
+
+    public Guid[] NotificationIds => [.. _notificationIds];
+
+    Task IJobsHostScheduler.StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    Task IJobsHostScheduler.StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    void IJobsHostScheduler.RestartIfNeeded(DateTime? dateTime)
+    {
+        if (dateTime is not null)
+        {
+            Interlocked.Increment(ref _restartCount);
+        }
+    }
+
+    void IJobsHostScheduler.Restart() => Interlocked.Increment(ref _restartCount);
+
+    Task IJobsNotificationHubSender.AddTimeJobNotifyAsync(Guid id)
+    {
+        _notificationIds.Enqueue(id);
+        return Task.CompletedTask;
+    }
+
+    Task IJobsNotificationHubSender.AddCronJobNotifyAsync(object cronJob) => Task.CompletedTask;
+
+    Task IJobsNotificationHubSender.UpdateCronJobNotifyAsync(object cronJob) => Task.CompletedTask;
+
+    Task IJobsNotificationHubSender.RemoveCronJobNotifyAsync(Guid id) => Task.CompletedTask;
+
+    Task IJobsNotificationHubSender.AddTimeJobsBatchNotifyAsync() => Task.CompletedTask;
+
+    Task IJobsNotificationHubSender.UpdateTimeJobNotifyAsync(object timeJob) => Task.CompletedTask;
+
+    Task IJobsNotificationHubSender.RemoveTimeJobNotifyAsync(Guid id) => Task.CompletedTask;
+
+    void IJobsNotificationHubSender.UpdateActiveThreads(object activeThreads) { }
+
+    void IJobsNotificationHubSender.UpdateNextOccurrence(object nextOccurrence) { }
+
+    void IJobsNotificationHubSender.UpdateHostStatus(object active) { }
+
+    void IJobsNotificationHubSender.UpdateHostException(object exceptionMessage) { }
+
+    Task IJobsNotificationHubSender.UpdateNodesAsync(object nodes) => Task.CompletedTask;
+
+    Task IJobsNotificationHubSender.AddCronOccurrenceAsync(Guid groupId, object occurrence) => Task.CompletedTask;
+
+    Task IJobsNotificationHubSender.UpdateCronOccurrenceAsync(Guid groupId, object occurrence) => Task.CompletedTask;
+
+    Task IJobsNotificationHubSender.UpdateTimeJobFromExecutionState<TTimeJobEntity>(JobExecutionState executionState) =>
+        Task.CompletedTask;
+
+    Task IJobsNotificationHubSender.UpdateCronOccurrenceFromExecutionState<TCronJobEntity>(
+        JobExecutionState executionState
+    ) => Task.CompletedTask;
+
+    Task IJobsNotificationHubSender.CanceledJobNotifyAsync(Guid id) => Task.CompletedTask;
 }
