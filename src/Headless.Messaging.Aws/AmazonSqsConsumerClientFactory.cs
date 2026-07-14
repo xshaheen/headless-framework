@@ -8,23 +8,34 @@ using Microsoft.Extensions.Options;
 namespace Headless.Messaging.Aws;
 
 internal sealed class AmazonSqsConsumerClientFactory(
-    IOptions<AmazonSqsOptions> amazonSqsOptions,
+    IOptions<AmazonSqsMessagingOptions> amazonSqsOptions,
     ILogger<AmazonSqsConsumerClient> logger
 ) : IIntentAwareConsumerClientFactory
 {
-    public Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent)
+    public Task<IConsumerClient> CreateAsync(
+        string groupName,
+        byte groupConcurrent,
+        CancellationToken cancellationToken = default
+    )
     {
-        return CreateAsync(groupName, groupConcurrent, IntentType.Bus);
+        return CreateAsync(groupName, groupConcurrent, IntentType.Bus, cancellationToken);
     }
 
-    public Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent, IntentType intentType)
+    public Task<IConsumerClient> CreateAsync(
+        string groupName,
+        byte groupConcurrent,
+        IntentType intentType,
+        CancellationToken cancellationToken = default
+    )
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         try
         {
             var client = new AmazonSqsConsumerClient(groupName, groupConcurrent, amazonSqsOptions, logger, intentType);
             return Task.FromResult<IConsumerClient>(client);
         }
-        catch (Exception e)
+        catch (Exception e) when (e is not OperationCanceledException)
         {
             throw new BrokerConnectionException(e);
         }

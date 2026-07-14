@@ -4,7 +4,7 @@ namespace Headless.Captcha;
 
 /// <summary>
 /// Resolves <see cref="ICaptchaVerifier"/> instances registered under a name — either named instances added through
-/// the setup builder (for example <c>setup.UseTurnstile("turnstile", …)</c>) or a default provider's canonical key
+/// the setup builder (for example <c>setup.AddNamed("turnstile", i =&gt; i.UseTurnstile(…))</c>) or a default provider's canonical key
 /// (the <c>Headless.Captcha:</c> constants on <see cref="CaptchaConstants"/>). Inject the concrete verifier
 /// interface (<c>IReCaptchaV3Verifier</c>, <c>ITurnstileVerifier</c>) directly when you need provider-only data.
 /// </summary>

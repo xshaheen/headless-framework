@@ -14,13 +14,6 @@ public interface IFeatureDefinitionContext
     /// <returns>The matching <see cref="FeatureGroupDefinition"/>, or <see langword="null"/>.</returns>
     FeatureGroupDefinition? GetGroupOrDefault(string name);
 
-    /// <summary>Registers an already-constructed feature group definition.</summary>
-    /// <param name="definition">The group to add.</param>
-    /// <returns>The same <paramref name="definition"/> that was added.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="definition"/> is <see langword="null"/>.</exception>
-    /// <exception cref="InvalidOperationException">A group with the same name is already registered in this context.</exception>
-    FeatureGroupDefinition AddGroup(FeatureGroupDefinition definition);
-
     /// <summary>Creates and registers a feature group with the given name.</summary>
     /// <param name="name">Unique name of the group.</param>
     /// <param name="displayName">Human-readable display name. Defaults to <paramref name="name"/> when <see langword="null"/>.</param>

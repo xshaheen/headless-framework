@@ -21,6 +21,7 @@
     <ProjectReference Include="..\..\src\Headless.Messaging.Bus.Abstractions\Headless.Messaging.Bus.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Headless.Permissions.Core\Headless.Permissions.Core.csproj" />
     <ProjectReference Include="..\..\src\Headless.Permissions.Storage.EntityFramework\Headless.Permissions.Storage.EntityFramework.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Permissions.Testing\Headless.Permissions.Testing.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
   </ItemGroup>
 </Project>

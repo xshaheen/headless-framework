@@ -6,6 +6,7 @@ namespace Headless.PushNotifications;
 /// <summary>
 /// Aggregate result of a multicast send, combining overall counts with per-token outcomes.
 /// </summary>
+[PublicAPI]
 public sealed class BatchPushNotificationResponse
 {
     /// <summary>Number of tokens the provider accepted for delivery.</summary>

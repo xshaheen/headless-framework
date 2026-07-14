@@ -19,7 +19,7 @@ namespace Headless.Imaging.ImageSharp;
 /// <see cref="ImageProcessState.Failed"/> and disposes the intermediate stream. GIF, BMP, TIFF, and
 /// other formats are not supported for compression and yield <see cref="ImageProcessState.Unsupported"/>.
 /// </remarks>
-public sealed class ImageSharpImageCompressorContributor(
+internal sealed class ImageSharpImageCompressorContributor(
     IOptions<ImageSharpOptions> optionsAccessor,
     ILogger<ImageSharpImageCompressorContributor> logger
 ) : IImageCompressorContributor

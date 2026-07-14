@@ -11,8 +11,8 @@ namespace Headless.Messaging.Redis;
 /// A lazily-initialised, retrying Redis connection that establishes the <c>IConnectionMultiplexer</c>
 /// on first await. Up to five connection attempts are made with a two-second delay between retries.
 /// </summary>
-public class AsyncLazyRedisConnection(
-    MessagingRedisOptions redisOptions,
+internal sealed class AsyncLazyRedisConnection(
+    RedisMessagingOptions redisOptions,
     ILogger<AsyncLazyRedisConnection> logger,
     TimeProvider? timeProvider = null,
     CancellationToken cancellationToken = default
@@ -25,7 +25,13 @@ public class AsyncLazyRedisConnection(
     /// Returns the established <see cref="RedisConnection"/> when the lazy value has already been
     /// resolved; otherwise <see langword="null"/>.
     /// </summary>
-    public RedisConnection? CreatedConnection => IsValueCreated ? Value.GetAwaiter().GetResult() : null;
+#pragma warning disable VSTHRD104 // Offer async methods
+    public RedisConnection? CreatedConnection => IsValueCreated && Value.IsCompletedSuccessfully ? Value.Result : null;
+#pragma warning restore VSTHRD104
+
+    /// <summary>Returns the connection task, cancelling only this caller's wait when requested.</summary>
+    public async Task<RedisConnection> GetValueAsync(CancellationToken cancellationToken = default) =>
+        await Value.WaitAsync(cancellationToken).ConfigureAwait(false);
 
     /// <summary>Returns an awaiter so the connection can be awaited directly.</summary>
     public TaskAwaiter<RedisConnection> GetAwaiter()
@@ -34,7 +40,7 @@ public class AsyncLazyRedisConnection(
     }
 
     private static async Task<RedisConnection> _ConnectAsync(
-        MessagingRedisOptions redisOptions,
+        RedisMessagingOptions redisOptions,
         ILogger<AsyncLazyRedisConnection> logger,
         TimeProvider timeProvider,
         CancellationToken cancellationToken
@@ -70,7 +76,12 @@ public class AsyncLazyRedisConnection(
 
         if (connection == null)
         {
-            throw new InvalidOperationException($"Can't establish redis connection,after [{attempt}] attempts.");
+            throw new InvalidOperationException(
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Can't establish redis connection,after [{attempt}] attempts."
+                )
+            );
         }
 
         return new RedisConnection(connection);
@@ -80,7 +91,7 @@ public class AsyncLazyRedisConnection(
 /// <summary>
 /// Wraps an established <c>IConnectionMultiplexer</c> with a capacity counter and owns its lifetime.
 /// </summary>
-public sealed class RedisConnection(IConnectionMultiplexer connection) : IDisposable
+internal sealed class RedisConnection(IConnectionMultiplexer connection) : IDisposable
 {
     private bool _isDisposed;
 

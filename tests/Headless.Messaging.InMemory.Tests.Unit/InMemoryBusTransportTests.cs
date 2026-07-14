@@ -3,13 +3,11 @@
 using System.Collections.Concurrent;
 using Headless.Messaging;
 using Headless.Messaging.InMemory;
-using Headless.Messaging.Messages;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class InMemoryBusTransportTests : TestBase
 {
     [Fact]
@@ -40,14 +38,14 @@ public sealed class InMemoryBusTransportTests : TestBase
         await using var client2 = new InMemoryConsumerClient(queue, "group-2", 1);
         await using var client3 = new InMemoryConsumerClient(queue, "group-3", 1);
 
-        await client1.SubscribeAsync(["events"]);
-        await client2.SubscribeAsync(["events"]);
-        await client3.SubscribeAsync(["events"]);
+        await client1.SubscribeAsync(["events"], AbortToken);
+        await client2.SubscribeAsync(["events"], AbortToken);
+        await client3.SubscribeAsync(["events"], AbortToken);
 
         var received = new ConcurrentDictionary<string, int>(StringComparer.Ordinal);
         var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        Task OnMessage(TransportMessage message, object? __)
+        Task onMessage(TransportMessage message, object? __)
         {
             var group = message.Headers[Headers.Group]!;
             received.AddOrUpdate(group, 1, (_, count) => count + 1);
@@ -60,9 +58,9 @@ public sealed class InMemoryBusTransportTests : TestBase
             return Task.CompletedTask;
         }
 
-        client1.OnMessageCallback = OnMessage;
-        client2.OnMessageCallback = OnMessage;
-        client3.OnMessageCallback = OnMessage;
+        client1.OnMessageCallback = onMessage;
+        client2.OnMessageCallback = onMessage;
+        client3.OnMessageCallback = onMessage;
 
         using var cts = new CancellationTokenSource();
         var listen1 = Task.Run(() => _ListenAsync(client1, cts.Token), AbortToken);

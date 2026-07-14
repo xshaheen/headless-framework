@@ -12,9 +12,9 @@ Provides email sending via AWS SES v2 using the unified `IEmailSender` abstracti
 - Simple sends (no attachments) use the SES structured API path — no MIME serialization
 - Attachment sends serialize to raw MIME and use the SES raw message path
 - AWS SDK configuration integration (`AWSOptions` from `AWSSDK.Extensions.NETCore.Setup`)
-- SES-specific exceptions (`MessageRejectedException`, `BadRequestException`, `NotFoundException`, `AccountSuspendedException`, `MailFromDomainNotVerifiedException`, `LimitExceededException`, `TooManyRequestsException`, `SendingPausedException`) propagate — not wrapped in `Failed()`
+- SES-specific exceptions (`MessageRejectedException`, `BadRequestException`, `NotFoundException`, `AccountSuspendedException`, `MailFromDomainNotVerifiedException`, `LimitExceededException`, `TooManyRequestsException`, `SendingPausedException`) — surfaced by the SDK as `AmazonSimpleEmailServiceV2Exception` — are returned as a failed `SendSingleEmailResponse` (the provider's raw error message is surfaced to the caller), never thrown; only `OperationCanceledException` and argument validation propagate. On success `ProviderMessageId` carries the SES message id
 - BCC is delivered via the SES envelope (`Destination`) and the `Bcc` header is hidden from the serialized MIME on the raw (attachment) path, so BCC recipients are never disclosed
-- Non-PII logging on non-success HTTP responses (status code, request ID, message ID — no recipient/sender addresses)
+- Non-PII logging on failure (SES error code, HTTP status, request/message ID — never the exception message, which can embed a rejected address, and never recipient/sender addresses)
 - Strongly-typed SES event tracking contracts (`Headless.Emails.Aws.Tracking`) for delivery/bounce/complaint/open/click/etc. notifications (see [Email Event Tracking](#email-event-tracking))
 
 ## Installation
@@ -49,7 +49,7 @@ builder.Services.AddHeadlessEmails(setup => setup.UseAwsSes(null));
 // Named instance (keyed IEmailSender, resolvable via IEmailSenderProvider):
 builder.Services.AddHeadlessEmails(setup =>
 {
-    setup.UseNoop(); // default (required)
+    setup.UseNoop(); // default (optional)
     setup.AddNamed("ses", i => i.UseAwsSes(awsOptions)); // keyed "ses"
 });
 ```

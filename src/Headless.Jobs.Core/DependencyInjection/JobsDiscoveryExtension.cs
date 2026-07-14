@@ -3,12 +3,11 @@
 using System.Reflection;
 using Headless.Jobs.Entities;
 
-namespace Headless.Jobs.DependencyInjection;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Jobs;
 
 public static class JobsDiscoveryExtension
 {
-    private const string _GeneratedClassSuffix = "JobsInstanceFactoryExtensions";
-
     /// <summary>
     /// Forces the specified assemblies to load so their source-generated <c>ModuleInitializer</c>
     /// code runs and registers job functions with <c>JobFunctionProvider</c>.
@@ -24,7 +23,7 @@ public static class JobsDiscoveryExtension
     /// <param name="assemblies">The assemblies to force-load.</param>
     public static JobsOptionsBuilder<TTimeJob, TCronJob> AddJobsDiscovery<TTimeJob, TCronJob>(
         this JobsOptionsBuilder<TTimeJob, TCronJob> jobsConfiguration,
-        Assembly[] assemblies
+        Assembly[]? assemblies
     )
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
         where TCronJob : CronJobEntity, new()

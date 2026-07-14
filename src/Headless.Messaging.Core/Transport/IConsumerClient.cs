@@ -3,8 +3,26 @@
 namespace Headless.Messaging.Transport;
 
 /// <summary>Message queue consumer client interface that defines operations for consuming messages from various message brokers</summary>
+[PublicAPI]
 public interface IConsumerClient : IAsyncDisposable
 {
+    /// <summary>
+    /// Shuts down the consumer client while bounding provider-specific in-flight work.
+    /// </summary>
+    /// <remarks>
+    /// Implementations with their own drain stage should honor <paramref name="timeout"/>. The default
+    /// delegates to <see cref="IAsyncDisposable.DisposeAsync"/> for providers without an in-flight drain.
+    /// The messaging core also bounds how long it waits for this operation.
+    /// </remarks>
+    /// <param name="timeout">The remaining end-to-end messaging shutdown budget.</param>
+    /// <param name="cancellationToken">
+    /// Reserved for API consistency. Implementations must complete or safely detach cleanup even when cancellation is requested.
+    /// </param>
+    ValueTask ShutdownAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
+    {
+        return DisposeAsync();
+    }
+
     /// <summary>
     /// Gets the broker address information that this consumer is connected to
     /// </summary>
@@ -14,18 +32,26 @@ public interface IConsumerClient : IAsyncDisposable
     /// Creates (if necessary) and retrieves message-name identifiers from the message broker
     /// </summary>
     /// <param name="messageNames">Names of the requested messages to fetch</param>
+    /// <param name="cancellationToken">Token to cancel broker topology provisioning.</param>
     /// <returns>A collection of message-name identifiers returned by the broker</returns>
-    ValueTask<ICollection<string>> FetchMessageNamesAsync(IEnumerable<string> messageNames)
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> is canceled.</exception>
+    ValueTask<ICollection<string>> FetchMessageNamesAsync(
+        IEnumerable<string> messageNames,
+        CancellationToken cancellationToken = default
+    )
     {
-        return ValueTask.FromResult<ICollection<string>>(messageNames.ToList());
+        cancellationToken.ThrowIfCancellationRequested();
+        return ValueTask.FromResult<ICollection<string>>([.. messageNames]);
     }
 
     /// <summary>
     /// Subscribes to a set of message names in the message broker
     /// </summary>
     /// <param name="messageNames">Collection of message-name identifiers to subscribe to</param>
+    /// <param name="cancellationToken">Token to cancel broker subscription setup.</param>
     /// <returns>A task that represents the asynchronous subscribe operation</returns>
-    ValueTask SubscribeAsync(IEnumerable<string> messageNames);
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> is canceled.</exception>
+    ValueTask SubscribeAsync(IEnumerable<string> messageNames, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Starts listening for messages from the subscribed message names
@@ -52,15 +78,17 @@ public interface IConsumerClient : IAsyncDisposable
     /// Manually commits message offset when the message consumption is complete
     /// </summary>
     /// <param name="sender">The message or context object to commit</param>
+    /// <param name="cancellationToken">Token to cancel the commit operation. Implementations may treat commit as must-complete.</param>
     /// <returns>A task that represents the asynchronous commit operation</returns>
-    ValueTask CommitAsync(object? sender);
+    ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Rejects the message and optionally returns it to the queue for reprocessing
     /// </summary>
     /// <param name="sender">The message or context object to reject</param>
+    /// <param name="cancellationToken">Token to cancel the reject operation. Implementations may treat reject as must-complete.</param>
     /// <returns>A task that represents the asynchronous reject operation</returns>
-    ValueTask RejectAsync(object? sender);
+    ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Pauses message consumption. Idempotent — calling on an already-paused client is a no-op.

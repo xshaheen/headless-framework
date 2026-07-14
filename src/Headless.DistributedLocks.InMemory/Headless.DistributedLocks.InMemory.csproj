@@ -2,7 +2,7 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <Description>In-process (single-instance) implementation of the Headless distributed-lock abstractions. NOT for multi-process or distributed coordination.</Description>
-    <PackageTags>headless;distributed-locks;in-memory;in-process;testing</PackageTags>
+    <PackageTags>headless;distributed-locks;in-memory;in-process;testing;dotnet</PackageTags>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.DistributedLocks.Core\Headless.DistributedLocks.Core.csproj" />

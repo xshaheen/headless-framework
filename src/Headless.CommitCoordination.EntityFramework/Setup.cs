@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.CommitCoordination.EntityFramework;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -8,7 +9,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 
-namespace Headless.CommitCoordination.EntityFramework;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.CommitCoordination;
 
 /// <summary>
 /// Registers EF Core commit coordination services.

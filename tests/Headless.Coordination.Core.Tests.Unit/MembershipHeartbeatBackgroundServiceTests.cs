@@ -2,7 +2,6 @@
 
 using Headless.Coordination;
 using Headless.Testing.Tests;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 
@@ -69,6 +68,99 @@ public sealed class MembershipHeartbeatBackgroundServiceTests : TestBase
         store.Heartbeats.Should().ContainSingle();
         membership.Identity.Should().BeNull();
         store.ReadLivenessCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_self_fence_after_heartbeat_failures_reach_the_dead_threshold()
+    {
+        var options = new CoordinationOptions
+        {
+            HeartbeatInterval = TimeSpan.FromSeconds(1),
+            SuspicionThreshold = TimeSpan.FromSeconds(2),
+            DeadThreshold = TimeSpan.FromSeconds(3),
+        };
+        var store = new FakeMembershipStore { ThrowOnHeartbeat = true };
+        var (sut, timeProvider, membership) = _CreateSut(store, options);
+        await membership.RegisterAsync(AbortToken);
+
+        await sut.RunOnceAsync(AbortToken);
+        membership.Identity.Should().NotBeNull();
+
+        timeProvider.Advance(options.DeadThreshold);
+        await sut.RunOnceAsync(AbortToken);
+
+        membership.Identity.Should().BeNull();
+        membership.LocalMembershipLostToken.IsCancellationRequested.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_reset_the_self_fence_budget_when_a_heartbeat_succeeds()
+    {
+        var options = new CoordinationOptions
+        {
+            HeartbeatInterval = TimeSpan.FromSeconds(1),
+            SuspicionThreshold = TimeSpan.FromSeconds(2),
+            DeadThreshold = TimeSpan.FromSeconds(3),
+        };
+        var store = new FakeMembershipStore { ThrowOnHeartbeat = true };
+        var (sut, timeProvider, membership) = _CreateSut(store, options);
+        await membership.RegisterAsync(AbortToken);
+
+        // Fail once inside the budget, then recover: the accepted heartbeat must reset the deadline.
+        await sut.RunOnceAsync(AbortToken);
+        timeProvider.Advance(TimeSpan.FromSeconds(2));
+        store.ThrowOnHeartbeat = false;
+        await sut.RunOnceAsync(AbortToken);
+
+        // Without the reset-on-success write this failure lands 4s after register (> DeadThreshold) and fences.
+        store.ThrowOnHeartbeat = true;
+        timeProvider.Advance(TimeSpan.FromSeconds(2));
+        await sut.RunOnceAsync(AbortToken);
+
+        membership.Identity.Should().NotBeNull();
+        membership.LocalMembershipLostToken.IsCancellationRequested.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_self_fence_when_heartbeat_call_hangs_past_the_dead_threshold()
+    {
+        var options = new CoordinationOptions
+        {
+            HeartbeatInterval = TimeSpan.FromSeconds(1),
+            SuspicionThreshold = TimeSpan.FromSeconds(2),
+            DeadThreshold = TimeSpan.FromSeconds(3),
+        };
+        var store = new FakeMembershipStore { BlockOnHeartbeat = true };
+        var (sut, timeProvider, membership) = _CreateSut(store, options);
+        await membership.RegisterAsync(AbortToken);
+
+        var heartbeat = sut.RunOnceAsync(AbortToken);
+        timeProvider.Advance(options.DeadThreshold);
+        await heartbeat.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        store.HeartbeatRelease.TrySetResult();
+
+        membership.Identity.Should().BeNull();
+        membership.LocalMembershipLostToken.IsCancellationRequested.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_not_self_fence_for_liveness_read_failures_while_heartbeats_succeed()
+    {
+        var options = new CoordinationOptions
+        {
+            HeartbeatInterval = TimeSpan.FromSeconds(1),
+            SuspicionThreshold = TimeSpan.FromSeconds(2),
+            DeadThreshold = TimeSpan.FromSeconds(3),
+        };
+        var store = new FakeMembershipStore { ThrowOnRead = true };
+        var (sut, timeProvider, membership) = _CreateSut(store, options);
+        await membership.RegisterAsync(AbortToken);
+
+        timeProvider.Advance(options.DeadThreshold + options.HeartbeatInterval);
+        await sut.RunOnceAsync(AbortToken);
+
+        membership.Identity.Should().NotBeNull();
+        membership.LocalMembershipLostToken.IsCancellationRequested.Should().BeFalse();
     }
 
     [Fact]
@@ -146,7 +238,7 @@ public sealed class MembershipHeartbeatBackgroundServiceTests : TestBase
         for (var i = 0; i < 20 && store.AllocateIncarnationCalls < expectedAttempts; i++)
         {
             timeProvider.Advance(TimeSpan.FromSeconds(10));
-            await Task.Delay(10, TestContext.Current.CancellationToken);
+            await Task.Delay(10, AbortToken);
         }
 
         sut.ExecuteTask.Should().NotBeNull();

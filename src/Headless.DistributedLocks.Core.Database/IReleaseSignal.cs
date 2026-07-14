@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.ComponentModel;
+
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
@@ -15,6 +17,7 @@ namespace Headless.DistributedLocks;
 /// The default <see cref="PollingReleaseSignal"/> implements this in-process.
 /// </remarks>
 [PublicAPI]
+[EditorBrowsable(EditorBrowsableState.Never)]
 public interface IReleaseSignal
 {
     /// <summary>

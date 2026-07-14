@@ -11,11 +11,16 @@ namespace Headless.Messaging.InMemory;
 /// </summary>
 internal sealed class InMemoryConsumerClient : IConsumerClient
 {
+    // Bounds pending-message memory when a consumer is paused or slower than the publisher.
+    // Publishers call AddSubscribeMessage under MemoryQueue's global lock, so overflow must
+    // drop (TryAdd) rather than block — a blocking Add would stall every publisher.
+    private const int _MaxPendingMessages = 65_536;
+
     private readonly MemoryQueue _queue;
     private readonly string _groupId;
     private readonly IntentType _intentType;
     private readonly byte _groupConcurrent;
-    private readonly BlockingCollection<TransportMessage> _messageQueue = [];
+    private readonly BlockingCollection<TransportMessage> _messageQueue = new(_MaxPendingMessages);
     private readonly SemaphoreSlim _semaphore;
     private readonly ConsumerPauseGate _pauseGate = new();
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -63,9 +68,10 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     /// <param name="messageNames">The list of message names to subscribe to</param>
     /// <returns>A completed task</returns>
     /// <exception cref="ArgumentNullException">Thrown when messageNames is null</exception>
-    public ValueTask SubscribeAsync(IEnumerable<string> messageNames)
+    public ValueTask SubscribeAsync(IEnumerable<string> messageNames, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNull(messageNames);
+        cancellationToken.ThrowIfCancellationRequested();
         _queue.Subscribe(_intentType, _groupId, messageNames);
         _ready.TrySetResult();
 
@@ -98,12 +104,23 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     }
 
     /// <summary>
-    /// Adds a message to the message queue for processing.
+    /// Adds a message to the message queue for processing. When the pending queue is full the
+    /// message is dropped and reported through <see cref="OnLogCallback"/>.
     /// </summary>
     /// <param name="message">The transport message to add</param>
     public void AddSubscribeMessage(TransportMessage message)
     {
-        _messageQueue.Add(message);
+        if (!_messageQueue.TryAdd(message))
+        {
+            OnLogCallback?.Invoke(
+                new LogMessageEventArgs
+                {
+                    LogType = MqLogType.ConsumeError,
+                    Reason =
+                        $"Pending message queue for group '{_groupId}' is full ({_MaxPendingMessages}); message '{message.Name}' dropped.",
+                }
+            );
+        }
     }
 
     /// <summary>
@@ -196,8 +213,9 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     /// Commits the processing of a message.
     /// </summary>
     /// <param name="sender">The sender object</param>
+    /// <param name="cancellationToken">Unused; the in-memory transport settles synchronously.</param>
     /// <returns>A completed task</returns>
-    public ValueTask CommitAsync(object? sender)
+    public ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default)
     {
         return ValueTask.CompletedTask;
     }
@@ -206,8 +224,9 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     /// Rejects the processing of a message.
     /// </summary>
     /// <param name="sender">The sender object</param>
+    /// <param name="cancellationToken">Unused; the in-memory transport settles synchronously.</param>
     /// <returns>A completed task</returns>
-    public ValueTask RejectAsync(object? sender)
+    public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
     {
         return ValueTask.CompletedTask;
     }

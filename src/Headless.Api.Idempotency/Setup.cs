@@ -5,7 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Api;
+namespace Headless.Api.Idempotency;
 
 /// <summary>
 /// Service-collection extensions that register the Stripe-style HTTP idempotency middleware and
@@ -115,7 +115,7 @@ public static class SetupIdempotency
             services.TryAddScoped<IdempotencyMiddleware>();
 
             services.TryAddEnumerable(
-                ServiceDescriptor.Singleton<IValidateOptions<IdempotencyOptions>, IdempotencyOptionsDIValidator>()
+                ServiceDescriptor.Singleton<IValidateOptions<IdempotencyOptions>, IdempotencyOptionsDiValidator>()
             );
 
             return services;

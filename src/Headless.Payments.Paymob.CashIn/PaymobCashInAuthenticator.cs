@@ -9,15 +9,19 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Payments.Paymob.CashIn;
 
-public sealed class PaymobCashInAuthenticator : IPaymobCashInAuthenticator, IDisposable
+internal sealed class PaymobCashInAuthenticator : IPaymobCashInAuthenticator, IDisposable
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly TimeProvider _timeProvider;
     private readonly IOptionsMonitor<PaymobCashInOptions> _options;
     private readonly IDisposable? _optionsChangeSubscription;
     private readonly SemaphoreSlim _tokenLock = new(1, 1);
-    private string? _cachedToken;
-    private DateTimeOffset _tokenExpiration;
+
+    // A single immutable holder swapped atomically (reference assignment), so the lock-free fast path can
+    // never observe a torn token/expiration pair (DateTimeOffset writes are not atomic).
+    private CachedToken? _cachedToken;
+
+    private sealed record CachedToken(string Token, DateTimeOffset Expiration);
 
     public PaymobCashInAuthenticator(
         IHttpClientFactory httpClientFactory,
@@ -29,11 +33,7 @@ public sealed class PaymobCashInAuthenticator : IPaymobCashInAuthenticator, IDis
         _timeProvider = timeProvider;
         _options = options;
 
-        _optionsChangeSubscription = options.OnChange(_ =>
-        {
-            _cachedToken = null;
-            _tokenExpiration = DateTimeOffset.MinValue;
-        });
+        _optionsChangeSubscription = options.OnChange(_ => _cachedToken = null);
     }
 
     public void Dispose()
@@ -42,8 +42,9 @@ public sealed class PaymobCashInAuthenticator : IPaymobCashInAuthenticator, IDis
         _tokenLock.Dispose();
     }
 
-    public Task<CashInAuthenticationTokenResponse> RequestAuthenticationTokenAsync() =>
-        _RequestAuthenticationTokenAsync(CancellationToken.None);
+    public Task<CashInAuthenticationTokenResponse> RequestAuthenticationTokenAsync(
+        CancellationToken cancellationToken = default
+    ) => _RequestAuthenticationTokenAsync(cancellationToken);
 
     private async Task<CashInAuthenticationTokenResponse> _RequestAuthenticationTokenAsync(
         CancellationToken cancellationToken
@@ -64,20 +65,20 @@ public sealed class PaymobCashInAuthenticator : IPaymobCashInAuthenticator, IDis
             await PaymobCashInException.ThrowAsync(response, CancellationToken.None).ConfigureAwait(false);
         }
 
-        var content = await response
-            .Content.ReadFromJsonAsync<CashInAuthenticationTokenResponse>(
-                CashInJsonOptions.JsonOptions,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+        var content =
+            await response
+                .Content.ReadFromJsonAsync<CashInAuthenticationTokenResponse>(
+                    CashInJsonOptions.JsonOptions,
+                    cancellationToken
+                )
+                .ConfigureAwait(false)
+            ?? throw new PaymobCashInException(
+                "Paymob CashIn returned null response body.",
+                response.StatusCode,
+                body: null
+            );
 
-        if (content is null)
-        {
-            throw new PaymobCashInException("Paymob CashIn returned null response body.", response.StatusCode, null);
-        }
-
-        _cachedToken = content.Token;
-        _tokenExpiration = _timeProvider.GetUtcNow().Add(config.TokenRefreshBuffer);
+        _cachedToken = new CachedToken(content.Token, _timeProvider.GetUtcNow().Add(config.TokenRefreshBuffer));
 
         return content;
     }
@@ -85,18 +86,22 @@ public sealed class PaymobCashInAuthenticator : IPaymobCashInAuthenticator, IDis
     public async ValueTask<string> GetAuthenticationTokenAsync(CancellationToken cancellationToken = default)
     {
         // Fast path - no lock needed for cached valid token
-        if (_cachedToken is not null && _tokenExpiration > _timeProvider.GetUtcNow())
+        var cached = _cachedToken;
+
+        if (cached is not null && cached.Expiration > _timeProvider.GetUtcNow())
         {
-            return _cachedToken;
+            return cached.Token;
         }
 
         await _tokenLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             // Double-check after acquiring lock
-            if (_cachedToken is not null && _tokenExpiration > _timeProvider.GetUtcNow())
+            cached = _cachedToken;
+
+            if (cached is not null && cached.Expiration > _timeProvider.GetUtcNow())
             {
-                return _cachedToken;
+                return cached.Token;
             }
 
             var response = await _RequestAuthenticationTokenAsync(cancellationToken).ConfigureAwait(false);

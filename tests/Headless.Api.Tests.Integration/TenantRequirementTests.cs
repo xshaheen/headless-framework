@@ -5,6 +5,7 @@ using System.Net.Http.Json;
 using Headless.Abstractions;
 using Headless.Api;
 using Headless.Api.MultiTenancy;
+using Headless.Api.ServiceDefaults;
 using Headless.Constants;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
@@ -217,6 +218,36 @@ public sealed class TenantRequirementTests : TestBase
             .Be(HeadlessProblemDetailsConstants.Errors.TenantContextRequired.Code);
     }
 
+    [Theory]
+    [InlineData("/tenant-required", "auth-marker", null)]
+    [InlineData("/throw-missing-tenant", "exception-marker", "tenant-a")]
+    public async Task should_apply_customize_problem_details_once_per_response(
+        string path,
+        string marker,
+        string? tenantId
+    )
+    {
+        var customizeCount = 0;
+        await using var app = await _CreateAppAsync(configureProblemDetails: options =>
+            options.CustomizeProblemDetails = context =>
+            {
+                customizeCount++;
+                context.ProblemDetails.Extensions["x-custom"] = marker;
+                context.ProblemDetails.Extensions["x-customize-count"] = customizeCount;
+            }
+        );
+        using var client = HttpTenancyTestHarness.CreateClient(app);
+
+        using var response = await _SendAsync(client, path, user: "alice", tenantId: tenantId);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var json = await response.Content.ReadAsStringAsync(AbortToken);
+        using var doc = JsonDocument.Parse(json);
+        doc.RootElement.GetProperty("x-custom").GetString().Should().Be(marker);
+        doc.RootElement.GetProperty("x-customize-count").GetInt32().Should().Be(1);
+        customizeCount.Should().Be(1);
+    }
+
     private async Task<WebApplication> _CreateAppAsync(
         Action<ProblemDetailsOptions>? configureProblemDetails = null,
         bool registerCustomAuthResultHandler = false
@@ -248,20 +279,23 @@ public sealed class TenantRequirementTests : TestBase
 
         builder.Services.AddSingleton<IAuthorizationHandler, AlwaysFailRequirementHandler>();
         builder.Services.AddTestAuthentication(registerForbidScheme: true);
-        builder.Services.AddAuthorization(options =>
-        {
-            options.FallbackPolicy = new AuthorizationPolicyBuilder(HttpTenancyTestHarness.Scheme)
-                .RequireAuthenticatedUser()
-                .AddRequirements(new TenantRequirement())
-                .Build();
-            options.AddPolicy(
+
+        builder
+            .Services.AddAuthorizationBuilder()
+            .SetFallbackPolicy(
+                new AuthorizationPolicyBuilder(HttpTenancyTestHarness.Scheme)
+                    .RequireAuthenticatedUser()
+                    .AddRequirements(new TenantRequirement())
+                    .Build()
+            )
+            .AddPolicy(
                 "TenantAndDenied",
                 policy =>
                     policy
                         .RequireAuthenticatedUser()
                         .AddRequirements(new TenantRequirement(), new AlwaysFailRequirement())
             );
-        });
+
         if (registerCustomAuthResultHandler)
         {
             // Registered after AddHeadlessTenancy() to verify the typed-feature contract survives
@@ -313,7 +347,7 @@ public sealed class TenantRequirementTests : TestBase
 
     private async Task _AssertTenantRequiredProblemDetailsAsync(HttpResponseMessage response)
     {
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        response.Content.Headers.ContentType?.MediaType.Should()?.Be("application/problem+json");
         var json = await response.Content.ReadAsStringAsync(AbortToken);
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;

@@ -42,8 +42,8 @@ public interface IDataStorage
     /// <param name="lockedUntil">
     /// UTC timestamp until which the row is leased by an active dispatch attempt. Pass
     /// <see langword="null"/> on terminal and retry-schedule writes so the row becomes
-    /// pickup-eligible again. Only retry-transition or in-flight paths supply a value, and the
-    /// pre-attempt lease itself is written via <see cref="LeasePublishAsync"/>.
+    /// pickup-eligible again. Only retry-transition or in-flight paths supply a value; the
+    /// pre-attempt lease itself is taken via the Lease* methods, which let the STORE derive the deadline.
     /// </param>
     /// <param name="originalRetries">
     /// Optimistic-concurrency token. When supplied, storage applies <c>AND Retries = @OriginalRetries</c>
@@ -52,7 +52,7 @@ public interface IDataStorage
     /// </param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>
-    /// <c>true</c> when the row was updated; <c>false</c> when the row was already in a terminal state
+    /// <see langword="true"/> when the row was updated; <see langword="false"/> when the row was already in a terminal state
     /// (<see cref="StatusName.Failed"/> or <see cref="StatusName.Succeeded"/> with no scheduled retry),
     /// the row was not found, or the optimistic <paramref name="originalRetries"/> predicate did not match.
     /// </returns>
@@ -66,21 +66,75 @@ public interface IDataStorage
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>Updates published retry state with optimistic checks for both durable retry counters.</summary>
+    ValueTask<bool> ChangePublishRetryStateAsync(
+        MediumMessage message,
+        StatusName state,
+        DateTime? nextRetryAt,
+        DateTime? lockedUntil,
+        int originalRetries,
+        int originalInlineAttempts,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Atomically reserves the next published delivery attempt under the active lease.</summary>
+    ValueTask<bool> ReservePublishAttemptAsync(
+        MediumMessage message,
+        int originalInlineAttempts,
+        CancellationToken cancellationToken = default
+    );
+
     /// <summary>
     /// Writes a pre-attempt lease on a published message, setting <c>LockedUntil</c> on the row so
     /// the persisted retry processor excludes it while a dispatch attempt is active.
     /// </summary>
     /// <param name="message">The message to lease. On success the caller's <c>LockedUntil</c> is also updated.</param>
-    /// <param name="lockedUntil">UTC timestamp at which the lease expires.</param>
+    /// <param name="leaseDuration">
+    /// How long the lease should last. The STORE derives the absolute deadline from its own clock, so a lease
+    /// written by one node and evaluated by another cannot be skewed by either node's wall clock. A negative
+    /// duration yields a deadline already in the store's past (an expired lease).
+    /// </param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>
-    /// <c>true</c> when the lease was written; <c>false</c> when the row was already in a terminal
+    /// <see langword="true"/> when the lease was written; <see langword="false"/> when the row was already in a terminal
     /// state (<see cref="StatusName.Failed"/> or <see cref="StatusName.Succeeded"/> with no scheduled
-    /// retry) or the row was not found. Callers must stop the attempt path on <c>false</c>.
+    /// retry) or the row was not found. Callers must stop the attempt path on <see langword="false"/>.
     /// </returns>
     ValueTask<bool> LeasePublishAsync(
         MediumMessage message,
-        DateTime lockedUntil,
+        TimeSpan leaseDuration,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Atomically acquires the dispatch lease AND durably reserves the next inline delivery attempt
+    /// in a single statement — the fresh-dispatch fast path that replaces a
+    /// <see cref="LeasePublishAsync"/> + <see cref="ReservePublishAttemptAsync"/> pair with one
+    /// round trip. Succeeds only when the row is non-terminal, unleased or lease-expired, and both
+    /// durable counters still match the caller's view (<c>Retries</c> and
+    /// <paramref name="originalInlineAttempts"/>).
+    /// </summary>
+    /// <param name="message">
+    /// The message to lease. The caller pre-increments <c>InlineAttempts</c> (the reservation value
+    /// written on success) and rolls it back when this method returns <see langword="false"/>. On
+    /// success the caller's <c>LockedUntil</c> and <c>Owner</c> are also updated.
+    /// </param>
+    /// <param name="leaseDuration">
+    /// How long the lease should last. The STORE derives the absolute deadline from its own clock, so a lease
+    /// written by one node and evaluated by another cannot be skewed by either node's wall clock. A negative
+    /// duration yields a deadline already in the store's past (an expired lease).
+    /// </param>
+    /// <param name="originalInlineAttempts">Optimistic-concurrency token for <c>InlineAttempts</c>.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>
+    /// <see langword="true"/> when the lease and reservation were written; <see langword="false"/> when the row is
+    /// terminal, actively leased by another owner, counter state moved, or the row was not found.
+    /// Callers must stop the attempt path on <see langword="false"/>.
+    /// </returns>
+    ValueTask<bool> LeasePublishAndReserveAttemptAsync(
+        MediumMessage message,
+        TimeSpan leaseDuration,
+        int originalInlineAttempts,
         CancellationToken cancellationToken = default
     );
 
@@ -95,9 +149,10 @@ public interface IDataStorage
     /// the persisted column. Only retry-transition paths pass a value.
     /// </param>
     /// <param name="lockedUntil">
-    /// UTC timestamp until which the row is leased by an active consume attempt. Pass
+    /// UTC timestamp until which the row is leased by an active dispatch attempt. Pass
     /// <see langword="null"/> on terminal and retry-schedule writes so the row becomes
-    /// pickup-eligible again. The pre-attempt lease itself is written via <see cref="LeaseReceiveAsync"/>.
+    /// pickup-eligible again. Only retry-transition or in-flight paths supply a value; the
+    /// pre-attempt lease itself is taken via the Lease* methods, which let the STORE derive the deadline.
     /// </param>
     /// <param name="originalRetries">
     /// Optimistic-concurrency token. When supplied, storage applies <c>AND Retries = @OriginalRetries</c>
@@ -106,7 +161,7 @@ public interface IDataStorage
     /// </param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>
-    /// <c>true</c> when the row was updated; <c>false</c> when the row was already in a terminal state
+    /// <see langword="true"/> when the row was updated; <see langword="false"/> when the row was already in a terminal state
     /// (<see cref="StatusName.Failed"/> or <see cref="StatusName.Succeeded"/> with no scheduled retry),
     /// the row was not found, or the optimistic <paramref name="originalRetries"/> predicate did not match.
     /// </returns>
@@ -119,21 +174,56 @@ public interface IDataStorage
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>Updates received retry state with optimistic checks for both durable retry counters.</summary>
+    ValueTask<bool> ChangeReceiveRetryStateAsync(
+        MediumMessage message,
+        StatusName state,
+        DateTime? nextRetryAt,
+        DateTime? lockedUntil,
+        int originalRetries,
+        int originalInlineAttempts,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Atomically reserves the next received delivery attempt under the active lease.</summary>
+    ValueTask<bool> ReserveReceiveAttemptAsync(
+        MediumMessage message,
+        int originalInlineAttempts,
+        CancellationToken cancellationToken = default
+    );
+
     /// <summary>
     /// Writes a pre-attempt lease on a received message, setting <c>LockedUntil</c> on the row so
     /// the persisted retry processor excludes it while a consume attempt is active.
     /// </summary>
     /// <param name="message">The message to lease. On success the caller's <c>LockedUntil</c> is also updated.</param>
-    /// <param name="lockedUntil">UTC timestamp at which the lease expires.</param>
+    /// <param name="leaseDuration">
+    /// How long the lease should last. The STORE derives the absolute deadline from its own clock, so a lease
+    /// written by one node and evaluated by another cannot be skewed by either node's wall clock. A negative
+    /// duration yields a deadline already in the store's past (an expired lease).
+    /// </param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>
-    /// <c>true</c> when the lease was written; <c>false</c> when the row was already in a terminal
+    /// <see langword="true"/> when the lease was written; <see langword="false"/> when the row was already in a terminal
     /// state (<see cref="StatusName.Failed"/> or <see cref="StatusName.Succeeded"/> with no scheduled
-    /// retry) or the row was not found. Callers must stop the attempt path on <c>false</c>.
+    /// retry) or the row was not found. Callers must stop the attempt path on <see langword="false"/>.
     /// </returns>
     ValueTask<bool> LeaseReceiveAsync(
         MediumMessage message,
-        DateTime lockedUntil,
+        TimeSpan leaseDuration,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Atomically acquires the consume lease AND durably reserves the next inline delivery attempt
+    /// in a single statement — the fresh-dispatch fast path that replaces a
+    /// <see cref="LeaseReceiveAsync"/> + <see cref="ReserveReceiveAttemptAsync"/> pair with one
+    /// round trip. Same contract as <see cref="LeasePublishAndReserveAttemptAsync"/>.
+    /// </summary>
+    ValueTask<bool> LeaseReceiveAndReserveAttemptAsync(
+        MediumMessage message,
+        TimeSpan leaseDuration,
+        int originalInlineAttempts,
         CancellationToken cancellationToken = default
     );
 
@@ -283,13 +373,17 @@ public interface IDataStorage
     );
 
     /// <summary>
-    /// Returns published messages due for retry, filtered by <c>NextRetryAt &lt;= now()</c>.
+    /// Returns published messages due for retry, filtered by <c>NextRetryAt &lt;= now()</c> using the
+    /// injected <see cref="TimeProvider"/> that created the schedule.
     /// No lookback window is applied.
     /// </summary>
     /// <remarks>
     /// <para>
     /// <b>Atomic claim-and-return:</b> returned rows are already leased — the same statement that
-    /// selects them advances <c>LockedUntil</c> to <c>now + RetryPolicyOptions.DispatchTimeout</c>.
+    /// selects them advances <c>LockedUntil</c> to <c>now + RetryPolicyOptions.DispatchTimeout</c>. Relational
+    /// providers use their database clock for lease-expiry comparison and stamping while retaining the injected
+    /// <see cref="TimeProvider"/> as the <c>NextRetryAt</c> scheduling authority. In-memory providers use their
+    /// injected <see cref="TimeProvider"/> for both responsibilities.
     /// Callers do NOT need to invoke <see cref="LeasePublishAsync"/> immediately after pickup; the
     /// pickup itself is the claim. This prevents two replicas from picking up the same row between
     /// a SELECT commit and a follow-up lease write (the prior two-step design double-dispatched).
@@ -336,13 +430,17 @@ public interface IDataStorage
     );
 
     /// <summary>
-    /// Returns received messages due for retry, filtered by <c>NextRetryAt &lt;= now()</c>.
+    /// Returns received messages due for retry, filtered by <c>NextRetryAt &lt;= now()</c> using the
+    /// injected <see cref="TimeProvider"/> that created the schedule.
     /// No lookback window is applied.
     /// </summary>
     /// <remarks>
     /// <para>
     /// <b>Atomic claim-and-return:</b> returned rows are already leased — the same statement that
-    /// selects them advances <c>LockedUntil</c> to <c>now + RetryPolicyOptions.DispatchTimeout</c>.
+    /// selects them advances <c>LockedUntil</c> to <c>now + RetryPolicyOptions.DispatchTimeout</c>. Relational
+    /// providers use their database clock for lease-expiry comparison and stamping while retaining the injected
+    /// <see cref="TimeProvider"/> as the <c>NextRetryAt</c> scheduling authority. In-memory providers use their
+    /// injected <see cref="TimeProvider"/> for both responsibilities.
     /// Callers do NOT need to invoke <see cref="LeaseReceiveAsync"/> immediately after pickup; the
     /// pickup itself is the claim. This prevents two replicas from picking up the same row between
     /// a SELECT commit and a follow-up lease write (the prior two-step design double-dispatched).

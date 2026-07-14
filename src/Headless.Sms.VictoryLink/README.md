@@ -8,7 +8,7 @@ Provides SMS sending via the VictoryLink API, a regional gateway serving the Mid
 
 ## Key Features
 
-- `VictoryLinkSmsSender` — `ISmsSender` implementation backed by the VictoryLink REST API.
+- `VictoryLinkSmsSender` — implements `ISmsSender` (single recipient) and `IBulkSmsSender` (multi-recipient bulk), backed by the VictoryLink REST API.
 - Username + password authentication.
 - Configurable `Sender` name and `Endpoint` URL.
 - Response-code-based error detection.
@@ -37,6 +37,13 @@ builder.Services.AddHeadlessSms(setup =>
         options.Sender = "MyApp";
     })
 );
+
+// Named instance — an isolated HttpClient and options (keyed "otp"):
+builder.Services.AddHeadlessSms(setup =>
+{
+    setup.UseVictoryLink(builder.Configuration.GetSection("Sms:VictoryLink")); // default (optional)
+    setup.AddNamed("otp", i => i.UseVictoryLink(builder.Configuration.GetSection("Sms:VictoryLinkOtp")));
+});
 ```
 
 ## Configuration
@@ -67,10 +74,10 @@ builder.Services.AddHeadlessSms(setup =>
 
 ## Dependencies
 
-- `Headless.Sms.Abstractions`
+- `Headless.Sms.Core`
 - `Microsoft.Extensions.Http.Resilience`
 
 ## Side Effects
 
-- Registers `ISmsSender` as singleton (`VictoryLinkSmsSender`).
-- Registers a named `HttpClient` (`Headless:VictoryLinkSms`) with a standard resilience handler (retry disabled).
+- Default: registers `ISmsSender` (`VictoryLinkSmsSender`) and `IBulkSmsSender` (forwarding to the same instance) as unkeyed singletons, plus a named `HttpClient` (`Headless:VictoryLinkSms`) with a standard resilience handler (retry disabled).
+- Named (`AddNamed(name, i => i.UseVictoryLink(…))`): registers a keyed `ISmsSender` and keyed `IBulkSmsSender` (same instance), named options, and a per-name `HttpClient` (`Headless:VictoryLinkSms:{name}`) with its own resilience pipeline.

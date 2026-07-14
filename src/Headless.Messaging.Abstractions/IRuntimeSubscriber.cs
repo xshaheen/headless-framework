@@ -191,7 +191,7 @@ public interface IRuntimeSubscriber
     /// </summary>
     /// <param name="subscriptionId">The runtime subscription id returned by <see cref="SubscribeAsync{TMessage}" />.</param>
     /// <param name="cancellationToken">The cancellation token for the detach operation.</param>
-    /// <returns><c>true</c> when a subscription was detached; otherwise <c>false</c>.</returns>
+    /// <returns><see langword="true"/> when a subscription was detached; otherwise <see langword="false"/>.</returns>
     /// <remarks>
     /// Detach is atomic for future deliveries and does not cancel handlers that are already in flight.
     /// </remarks>

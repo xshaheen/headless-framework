@@ -37,13 +37,21 @@ public sealed class DatabaseReset
     /// </summary>
     /// <param name="connection">An <b>open</b> <see cref="DbConnection"/>.</param>
     /// <param name="options">
-    /// Optional configuration. When <c>null</c>, defaults to Postgres adapter with only the
+    /// Optional configuration. When <see langword="null"/>, defaults to Postgres adapter with only the
     /// EF migrations history table excluded.
+    /// </param>
+    /// <param name="cancellationToken">
+    /// Token used to cancel Respawn by closing the active connection. When omitted,
+    /// <see cref="Xunit.TestContext.Current"/> supplies the active test's cancellation token.
     /// </param>
     /// <exception cref="InvalidOperationException">
     /// Thrown when <paramref name="connection"/> is not in the <see cref="System.Data.ConnectionState.Open"/> state.
     /// </exception>
-    public static async Task<DatabaseReset> CreateAsync(DbConnection connection, DatabaseResetOptions? options = null)
+    public static async Task<DatabaseReset> CreateAsync(
+        DbConnection connection,
+        DatabaseResetOptions? options = null,
+        CancellationToken cancellationToken = default
+    )
     {
         Ensure.True(connection.State == ConnectionState.Open, "Connection must be open to create Respawner.");
 
@@ -55,10 +63,15 @@ public sealed class DatabaseReset
         };
         tablesToIgnore.AddRange(options.TablesToIgnore);
 
-        var respawner = await Respawner
-            .CreateAsync(
+        var respawner = await DatabaseResetOperation
+            .RunAsync(
                 connection,
-                new RespawnerOptions { TablesToIgnore = [.. tablesToIgnore], DbAdapter = options.DbAdapter }
+                () =>
+                    Respawner.CreateAsync(
+                        connection,
+                        new RespawnerOptions { TablesToIgnore = [.. tablesToIgnore], DbAdapter = options.DbAdapter }
+                    ),
+                cancellationToken
             )
             .ConfigureAwait(false);
 
@@ -69,13 +82,19 @@ public sealed class DatabaseReset
     /// Deletes all data from non-excluded tables using the provided open <paramref name="connection"/>.
     /// </summary>
     /// <param name="connection">An <b>open</b> <see cref="DbConnection"/>.</param>
+    /// <param name="cancellationToken">
+    /// Token used to cancel Respawn by closing the active connection. When omitted,
+    /// <see cref="Xunit.TestContext.Current"/> supplies the active test's cancellation token.
+    /// </param>
     /// <exception cref="InvalidOperationException">
     /// Thrown when <paramref name="connection"/> is not in the <see cref="System.Data.ConnectionState.Open"/> state.
     /// </exception>
-    public Task ResetAsync(DbConnection connection)
+    public async Task ResetAsync(DbConnection connection, CancellationToken cancellationToken = default)
     {
         Ensure.True(connection.State == ConnectionState.Open, "Connection must be open to reset database.");
 
-        return _respawner.ResetAsync(connection);
+        await DatabaseResetOperation
+            .RunAsync(connection, () => _respawner.ResetAsync(connection), cancellationToken)
+            .ConfigureAwait(false);
     }
 }

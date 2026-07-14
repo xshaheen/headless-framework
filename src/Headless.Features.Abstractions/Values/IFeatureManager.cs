@@ -55,10 +55,10 @@ public interface IFeatureManager
     /// <param name="providerKey">Provider-specific key. When <see langword="null"/>, the provider uses its default logic.</param>
     /// <param name="fallback">When <see langword="true"/>, falls back to subsequent providers for features with no value in <paramref name="providerName"/>.</param>
     /// <param name="cancellationToken">The abort token.</param>
-    /// <returns>A list of <see cref="FeatureValue"/> instances — one per registered feature.</returns>
+    /// <returns>A read-only list of <see cref="FeatureValue"/> instances — one per registered feature.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="providerName"/> is <see langword="null"/>.</exception>
     /// <exception cref="Headless.Exceptions.ConflictException">The specified provider is not registered.</exception>
-    Task<List<FeatureValue>> GetAllAsync(
+    Task<IReadOnlyList<FeatureValue>> GetAllAsync(
         string providerName,
         string? providerKey = null,
         bool fallback = true,

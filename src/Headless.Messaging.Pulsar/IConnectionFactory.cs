@@ -12,11 +12,11 @@ namespace Headless.Messaging.Pulsar;
 /// Manages the shared Pulsar client and per-topic producer cache for the Pulsar transport.
 /// </summary>
 /// <remarks>
-/// The <c>PulsarClient</c> is created lazily on the first call to <see cref="RentClient"/> or
+/// The <c>PulsarClient</c> is created lazily on the first call to <see cref="RentClientAsync"/> or
 /// <see cref="CreateProducerAsync"/>. Producers are cached per topic; a failed producer task is
 /// evicted from the cache so the next call creates a fresh producer.
 /// </remarks>
-public interface IConnectionFactory
+internal interface IConnectionFactory
 {
     /// <summary>Gets the formatted Pulsar service URL used by this factory.</summary>
     string ServersAddress { get; }
@@ -32,21 +32,24 @@ public interface IConnectionFactory
     /// Returns the shared <c>PulsarClient</c>, creating it if it has not been opened yet.
     /// The client is long-lived; do not dispose it directly.
     /// </summary>
-    PulsarClient RentClient();
+    /// <param name="cancellationToken">Token to cancel client acquisition or creation.</param>
+    Task<PulsarClient> RentClientAsync(CancellationToken cancellationToken = default);
 }
 
 /// <summary>Default implementation of <see cref="IConnectionFactory"/>.</summary>
-public sealed class ConnectionFactory : IConnectionFactory, IAsyncDisposable
+internal sealed class ConnectionFactory : IConnectionFactory, IAsyncDisposable
 {
-    private readonly Lock _lock = new();
+    private readonly SemaphoreSlim _clientLock = new(1, 1);
     private PulsarClient? _client;
-    private readonly MessagingPulsarOptions _options;
+    private Task<PulsarClient>? _clientBuildTask;
+    private int _disposed;
+    private readonly PulsarMessagingOptions _options;
     private readonly Func<string, Task<IProducer<byte[]>>>? _producerFactoryOverride;
     private readonly ConcurrentDictionary<string, Task<IProducer<byte[]>>> _topicProducers;
 
     public ConnectionFactory(
         ILogger<ConnectionFactory> logger,
-        IOptions<MessagingPulsarOptions> options,
+        IOptions<PulsarMessagingOptions> options,
         Func<string, Task<IProducer<byte[]>>>? producerFactoryOverride = null
     )
     {
@@ -66,15 +69,40 @@ public sealed class ConnectionFactory : IConnectionFactory, IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return;
+        }
+
         foreach (var value in _topicProducers.Values)
         {
             await (await value.ConfigureAwait(false)).DisposeAsync().ConfigureAwait(false);
         }
 
-        if (_client is not null)
+        PulsarClient? client;
+        Task<PulsarClient>? clientBuildTask;
+
+        await _clientLock.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+        try
         {
-            await _client.CloseAsync().ConfigureAwait(false);
+            client = _client;
+            clientBuildTask = _clientBuildTask;
         }
+        finally
+        {
+            _clientLock.Release();
+        }
+
+        if (client is not null)
+        {
+            await client.CloseAsync().ConfigureAwait(false);
+        }
+        else if (clientBuildTask is not null)
+        {
+            _CloseWhenCompletedAsync(clientBuildTask).Forget();
+        }
+
+        _clientLock.Dispose();
     }
 
     public string ServersAddress => BrokerAddressDisplay.Format(_options.ServiceUrl);
@@ -83,7 +111,7 @@ public sealed class ConnectionFactory : IConnectionFactory, IAsyncDisposable
     {
         if (_producerFactoryOverride is null)
         {
-            _client ??= RentClient();
+            _client ??= await RentClientAsync().ConfigureAwait(false);
         }
 
         var producerTask = _topicProducers.GetOrAdd(
@@ -103,27 +131,92 @@ public sealed class ConnectionFactory : IConnectionFactory, IAsyncDisposable
         }
     }
 
-    public PulsarClient RentClient()
+    public async Task<PulsarClient> RentClientAsync(CancellationToken cancellationToken = default)
     {
-        lock (_lock)
-        {
-            if (_client is null)
-            {
-                var builder = new PulsarClientBuilder().ServiceUrl(_options.ServiceUrl);
-                if (_options.TlsOptions != null)
-                {
-                    builder.EnableTlsHostnameVerification(_options.TlsOptions.TlsHostnameVerificationEnable);
-                    builder.AllowTlsInsecureConnection(_options.TlsOptions.TlsAllowInsecureConnection);
-                    builder.TlsTrustCertificate(_options.TlsOptions.TlsTrustCertificate);
-                    builder.Authentication(_options.TlsOptions.Authentication);
-                    builder.TlsProtocols(_options.TlsOptions.TlsProtocols);
-                }
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
 
-                _client = builder.BuildAsync().Result;
+        Task<PulsarClient> clientBuildTask;
+
+        await _clientLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+
+            if (_client is not null)
+            {
+                return _client;
             }
 
-            return _client;
+            _clientBuildTask ??= _BuildClientAsync();
+            clientBuildTask = _clientBuildTask;
         }
+        finally
+        {
+            _clientLock.Release();
+        }
+
+        PulsarClient client;
+        try
+        {
+            client = await clientBuildTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch when (clientBuildTask.IsFaulted || clientBuildTask.IsCanceled)
+        {
+            await _clientLock.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+            try
+            {
+                if (ReferenceEquals(_clientBuildTask, clientBuildTask))
+                {
+                    _clientBuildTask = null;
+                }
+            }
+            finally
+            {
+                _clientLock.Release();
+            }
+
+            throw;
+        }
+
+        await _clientLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+            return _client ??= client;
+        }
+        finally
+        {
+            _clientLock.Release();
+        }
+    }
+
+    private async Task<PulsarClient> _BuildClientAsync()
+    {
+        var builder = new PulsarClientBuilder().ServiceUrl(_options.ServiceUrl);
+        if (_options.TlsOptions != null)
+        {
+            builder.EnableTlsHostnameVerification(_options.TlsOptions.TlsHostnameVerificationEnable);
+            builder.AllowTlsInsecureConnection(_options.TlsOptions.TlsAllowInsecureConnection);
+            builder.TlsTrustCertificate(_options.TlsOptions.TlsTrustCertificate);
+            builder.Authentication(_options.TlsOptions.Authentication);
+            builder.TlsProtocols(_options.TlsOptions.TlsProtocols);
+        }
+
+        return await builder.BuildAsync().ConfigureAwait(false);
+    }
+
+    private static async Task _CloseWhenCompletedAsync(Task<PulsarClient> clientTask)
+    {
+        try
+        {
+#pragma warning disable VSTHRD003 // Cleanup intentionally observes an SDK task started by BuildAsync.
+            var client = await clientTask.ConfigureAwait(false);
+#pragma warning restore VSTHRD003
+            await client.CloseAsync().ConfigureAwait(false);
+        }
+#pragma warning disable ERP022 // Best-effort cleanup for an SDK operation abandoned by caller cancellation.
+        catch { }
+#pragma warning restore ERP022
     }
 
     private Task<IProducer<byte[]>> _CreateProducerAsync(string topic)

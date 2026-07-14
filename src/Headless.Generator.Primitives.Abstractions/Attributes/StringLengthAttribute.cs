@@ -3,7 +3,7 @@
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Generator.Primitives;
 
-/// <summary>Validation attribute to assert a string property, field or parameter does not exceed a maximum length</summary>
+/// <summary>Validation attribute applied to a string-backed primitive type declaration to assert its value length stays within the configured minimum and maximum bounds.</summary>
 /// <param name="minimumLength">The minimum length allowed for the string.</param>
 /// <param name="maximumLength">The maximum length allowed for the string.</param>
 /// <param name="validate">Indicates whether the string length should be validated.</param>

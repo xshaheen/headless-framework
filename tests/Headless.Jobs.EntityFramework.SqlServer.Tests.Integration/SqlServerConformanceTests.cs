@@ -12,6 +12,18 @@ public sealed class SqlServerConformanceTests(SqlServerJobsCoordinationFixture f
         base.queued_job_is_stamped_with_the_node_incarnation_owner();
 
     [Fact]
+    public override Task queued_job_lease_uses_the_db_clock_not_a_skewed_claimant_clock() =>
+        base.queued_job_lease_uses_the_db_clock_not_a_skewed_claimant_clock();
+
+    [Fact]
+    public override Task portable_claim_results_return_database_timestamps_and_batch_new_crons() =>
+        base.portable_claim_results_return_database_timestamps_and_batch_new_crons();
+
+    [Fact]
+    public override Task native_claim_eligibility_uses_the_db_clock_not_a_fast_application_clock() =>
+        base.native_claim_eligibility_uses_the_db_clock_not_a_fast_application_clock();
+
+    [Fact]
     public override Task reclaim_touches_only_the_dead_incarnations_non_terminal_rows() =>
         base.reclaim_touches_only_the_dead_incarnations_non_terminal_rows();
 
@@ -70,4 +82,62 @@ public sealed class SqlServerConformanceTests(SqlServerJobsCoordinationFixture f
     [Fact]
     public override Task node_death_sweep_leaves_a_valid_lease_inprogress_row_to_the_lease() =>
         base.node_death_sweep_leaves_a_valid_lease_inprogress_row_to_the_lease();
+
+    [Fact]
+    public override Task queueing_a_time_job_claims_its_child_tree() =>
+        base.queueing_a_time_job_claims_its_child_tree();
+
+    [Fact]
+    public override Task fallback_queueing_a_time_job_claims_its_child_tree() =>
+        base.fallback_queueing_a_time_job_claims_its_child_tree();
+
+    [Fact]
+    public override Task unified_context_inprogress_stamp_requires_a_queued_row() =>
+        base.unified_context_inprogress_stamp_requires_a_queued_row();
+
+    [Fact]
+    public override Task cron_unified_context_inprogress_stamp_requires_a_queued_row() =>
+        base.cron_unified_context_inprogress_stamp_requires_a_queued_row();
+}
+
+/// <summary>Runs native Jobs claim conformance through SQL Server production registration.</summary>
+[Collection<SqlServerJobsCoordinationFixture>]
+public sealed class SqlServerClaimConformanceTests(SqlServerJobsCoordinationFixture fixture)
+    : JobsClaimConformanceTests<SqlServerJobsCoordinationFixture>(fixture)
+{
+    [Fact]
+    public override Task synchronized_workers_claim_disjoint_time_job_roots_and_complete_descendant_stamps() =>
+        base.synchronized_workers_claim_disjoint_time_job_roots_and_complete_descendant_stamps();
+
+    [Fact]
+    public override Task synchronized_workers_claim_disjoint_fallback_cron_occurrences() =>
+        base.synchronized_workers_claim_disjoint_fallback_cron_occurrences();
+
+    [Fact]
+    public override Task expired_existing_cron_claim_requires_retry_policy() =>
+        base.expired_existing_cron_claim_requires_retry_policy();
+
+    [Fact]
+    public override Task direct_cron_claim_applies_the_full_acquire_predicate_matrix() =>
+        base.direct_cron_claim_applies_the_full_acquire_predicate_matrix();
+
+    [Fact]
+    public override Task expired_fallback_cron_claim_requires_retry_policy() =>
+        base.expired_fallback_cron_claim_requires_retry_policy();
+
+    [Fact]
+    public override Task many_synchronized_workers_claim_each_fallback_cron_occurrence_once() =>
+        base.many_synchronized_workers_claim_each_fallback_cron_occurrence_once();
+
+    [Fact]
+    public override Task incompatible_native_model_falls_back_to_ef_cas_through_production_registration() =>
+        base.incompatible_native_model_falls_back_to_ef_cas_through_production_registration();
+
+    [Fact]
+    public override Task concurrent_missing_cron_occurrence_creation_is_deduplicated() =>
+        base.concurrent_missing_cron_occurrence_creation_is_deduplicated();
+
+    [Fact]
+    public override Task long_cron_claim_transaction_publishes_a_fresh_lease() =>
+        base.long_cron_claim_transaction_publishes_a_fresh_lease();
 }

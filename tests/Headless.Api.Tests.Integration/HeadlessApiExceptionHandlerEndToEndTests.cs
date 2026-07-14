@@ -5,6 +5,7 @@ using System.Net.Mime;
 using FluentValidation.Results;
 using Headless.Abstractions;
 using Headless.Api;
+using Headless.Api.ServiceDefaults;
 using Headless.Constants;
 using Headless.Exceptions;
 using Headless.Primitives;
@@ -17,6 +18,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
+#pragma warning disable MA0025 // Implement the functionality instead of throwing NotImplementedException
 namespace Tests;
 
 public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
@@ -36,7 +38,7 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
 
         // then
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        response.Content.Headers.ContentType?.MediaType.Should()?.Be("application/problem+json");
 
         var json = await response.Content.ReadAsStringAsync(AbortToken);
         using var doc = JsonDocument.Parse(json);
@@ -96,7 +98,7 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
 
         // then
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        response.Content.Headers.ContentType?.MediaType.Should()?.Be("application/problem+json");
 
         var json = await response.Content.ReadAsStringAsync(AbortToken);
         using var doc = JsonDocument.Parse(json);
@@ -124,7 +126,7 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
 
         // then
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        response.Content.Headers.ContentType?.MediaType.Should()?.Be("application/problem+json");
 
         var json = await response.Content.ReadAsStringAsync(AbortToken);
         json.Should().NotContain(sentinel);
@@ -157,7 +159,7 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
 
         // then
         response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        response.Content.Headers.ContentType?.MediaType.Should()?.Be("application/problem+json");
 
         var json = await response.Content.ReadAsStringAsync(AbortToken);
         using var doc = JsonDocument.Parse(json);
@@ -251,7 +253,7 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
 
         // then
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        response.Content.Headers.ContentType?.MediaType.Should()?.Be("application/problem+json");
 
         var json = await response.Content.ReadAsStringAsync(AbortToken);
         using var doc = JsonDocument.Parse(json);
@@ -281,7 +283,7 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
         builder.Services.TryAddSingleton<IBuildInformationAccessor, BuildInformationAccessor>();
 
         // catch-all registered FIRST
-        builder.Services.AddSingleton<IExceptionHandler, _CatchAllHandler>();
+        builder.Services.AddSingleton<IExceptionHandler, CatchAllHandler>();
         // tenancy handler registered SECOND via AddHeadlessProblemDetails
         builder.Services.AddHeadlessProblemDetails();
 
@@ -341,7 +343,7 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
         return new HttpClient { BaseAddress = new Uri(app.Urls.Single()) };
     }
 
-    private sealed class _CatchAllHandler : IExceptionHandler
+    private sealed class CatchAllHandler : IExceptionHandler
     {
         public async ValueTask<bool> TryHandleAsync(
             HttpContext httpContext,

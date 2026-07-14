@@ -10,10 +10,9 @@ namespace Headless.Jobs.Instrumentation;
 /// <summary>
 /// No-operation implementation of IJobsInstrumentation
 /// </summary>
-internal sealed class LoggerInstrumentation : JobsBaseLoggerInstrumentation, IJobsInstrumentation
+internal sealed class LoggerInstrumentation(ILogger<LoggerInstrumentation> logger, IJobsOwnerIdentity ownerIdentity)
+    : JobsBaseLoggerInstrumentation(logger, ownerIdentity),
+        IJobsInstrumentation
 {
-    public LoggerInstrumentation(ILogger<LoggerInstrumentation> logger, IJobsOwnerIdentity ownerIdentity)
-        : base(logger, ownerIdentity) { }
-
-    public override Activity? StartJobActivity(string activityName, InternalFunctionContext context) => null;
+    public override Activity? StartJobActivity(string activityName, JobExecutionState context) => null;
 }

@@ -50,6 +50,17 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
         var provider = services.BuildServiceProvider();
         var initializer = provider.GetRequiredService<IStorageInitializer>();
         await initializer.InitializeAsync();
+
+        // Other classes in this collection share the `messaging` schema and not all reset on teardown,
+        // so start each monitoring test from an empty table to keep the counts exact.
+        await using (var resetConnection = new SqlConnection(fixture.ConnectionString))
+        {
+            await resetConnection.OpenAsync();
+            await resetConnection.ExecuteAsync(
+                "TRUNCATE TABLE messaging.published; TRUNCATE TABLE messaging.received;"
+            );
+        }
+
         _storage = new SqlServerDataStorage(
             provider.GetRequiredService<IOptions<MessagingOptions>>(),
             provider.GetRequiredService<IOptions<SqlServerOptions>>(),
@@ -287,7 +298,7 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
         var query = new MessageQuery
         {
             MessageType = MessageType.Publish,
-            StatusName = nameof(StatusName.Succeeded),
+            StatusName = StatusName.Succeeded,
             CurrentPage = 0,
             PageSize = 2,
         };
@@ -314,7 +325,7 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
         var query = new MessageQuery
         {
             MessageType = MessageType.Publish,
-            StatusName = nameof(StatusName.Succeeded),
+            StatusName = StatusName.Succeeded,
             CurrentPage = 3,
             PageSize = 2,
         };
@@ -338,7 +349,7 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
         var query = new MessageQuery
         {
             MessageType = MessageType.Publish,
-            StatusName = nameof(StatusName.Failed),
+            StatusName = StatusName.Failed,
             CurrentPage = 0,
             PageSize = 10,
         };
@@ -348,7 +359,7 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
 
         // then
         result.Items.Should().HaveCount(2);
-        result.Items.Should().AllSatisfy(m => m.StatusName.Should().Be(nameof(StatusName.Failed)));
+        result.Items.Should().AllSatisfy(m => m.StatusName.Should().Be(StatusName.Failed));
     }
 
     [Fact]
@@ -370,7 +381,7 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
         var result = await _monitoringApi.GetMessagesAsync(query, AbortToken);
 
         // then
-        result.Items.Should().HaveCount(1);
+        result.Items.Should().ContainSingle();
         result.Items.Single().Name.Should().Be("orders.created");
     }
 

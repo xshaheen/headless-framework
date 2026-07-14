@@ -26,4 +26,7 @@
   <data name="setting:tenant_not_available" xml:space="preserve">
     <value>المستأجر غير متاح للاستخدام مع موفر الإعداد.</value>
   </data>
+  <data name="setting:decryption_failed" xml:space="preserve">
+    <value>فشل فك تشفير قيمة الإعداد لـ {0}.</value>
+  </data>
 </root>

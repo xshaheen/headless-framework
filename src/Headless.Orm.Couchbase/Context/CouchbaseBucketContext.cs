@@ -19,6 +19,7 @@ namespace Headless.Couchbase.Context;
 /// reflectively wires each <c>IDocumentSet&lt;T&gt;</c> property to its scope and collection. Do not
 /// construct subclasses manually; use <c>IBucketContextProvider</c> instead.
 /// </remarks>
+[PublicAPI]
 public class CouchbaseBucketContext(IBucket bucket, Transactions transactions, ILogger<CouchbaseBucketContext> logger)
     : BucketContext(bucket)
 {
@@ -66,11 +67,19 @@ public class CouchbaseBucketContext(IBucket bucket, Transactions transactions, I
     /// <see langword="false"/> (or throw) to roll back.
     /// </param>
     /// <param name="config">Optional per-transaction overrides (timeout, durability, etc.).</param>
+    /// <param name="cancellationToken">
+    /// A token to observe before the transaction begins. The Couchbase transactions SDK
+    /// (<c>Transactions.RunAsync</c>) exposes no <see cref="CancellationToken"/> hook, so the token is
+    /// honored only up front; once the SDK transaction loop starts it runs to completion, SDK timeout, or
+    /// failure. Bound in-transaction duration with <paramref name="config"/> (timeout / durability) instead.
+    /// </param>
     public async Task ExecuteTransactionAsync(
         Func<AttemptContext, Task<bool>> operation,
-        PerTransactionConfig? config = null
+        PerTransactionConfig? config = null,
+        CancellationToken cancellationToken = default
     )
     {
+        cancellationToken.ThrowIfCancellationRequested();
         config ??= PerTransactionConfigBuilder.Create().Build();
 
         try

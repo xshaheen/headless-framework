@@ -1,7 +1,9 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <RootNamespace>Headless.Api</RootNamespace>
+    <Description>Idempotency integration for Headless API.</Description>
+    <PackageTags>headless;api;idempotency;dotnet</PackageTags>
+    <RootNamespace>Headless.Api.Idempotency</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Api.Idempotency.Tests.Unit" />

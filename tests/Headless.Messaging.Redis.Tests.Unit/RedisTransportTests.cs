@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
-using Headless.Messaging.Messages;
 using Headless.Messaging.Redis;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
@@ -23,7 +22,7 @@ public sealed class RedisTransportTests : TestBase
     {
         _mockStreamManager = Substitute.For<IRedisStreamManager>();
         var options = Options.Create(
-            new MessagingRedisOptions { Configuration = ConfigurationOptions.Parse("localhost:6379") }
+            new RedisMessagingOptions { Configuration = ConfigurationOptions.Parse("localhost:6379") }
         );
         var logger = LoggerFactory.CreateLogger<RedisTransport>();
         _sut = new RedisTransport(_mockStreamManager, options, logger);
@@ -63,7 +62,6 @@ public sealed class RedisTransportTests : TestBase
         );
 
         // when
-        // ReSharper disable once AccessToDisposedClosure
         var act = async () => await _sut.SendAsync(message, cts.Token);
 
         // then
@@ -86,14 +84,16 @@ public sealed class RedisTransportTests : TestBase
         var body = """{"data":"test"}"""u8.ToArray();
         var message = new TransportMessage(headers, body);
 
-        _mockStreamManager.PublishAsync(Arg.Any<string>(), Arg.Any<NameValueEntry[]>()).Returns(Task.CompletedTask);
+        _mockStreamManager
+            .PublishAsync(Arg.Any<string>(), Arg.Any<NameValueEntry[]>(), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
 
         // when
-        var result = await _sut.SendAsync(message);
+        var result = await _sut.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeTrue();
-        await _mockStreamManager.Received(1).PublishAsync("test-topic", Arg.Any<NameValueEntry[]>());
+        await _mockStreamManager.Received(1).PublishAsync("test-topic", Arg.Any<NameValueEntry[]>(), AbortToken);
     }
 
     [Fact]
@@ -108,10 +108,12 @@ public sealed class RedisTransportTests : TestBase
         var message = new TransportMessage(headers, ReadOnlyMemory<byte>.Empty);
 
         var expectedException = new RedisException("Connection failed");
-        _mockStreamManager.PublishAsync(Arg.Any<string>(), Arg.Any<NameValueEntry[]>()).ThrowsAsync(expectedException);
+        _mockStreamManager
+            .PublishAsync(Arg.Any<string>(), Arg.Any<NameValueEntry[]>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(expectedException);
 
         // when
-        var result = await _sut.SendAsync(message);
+        var result = await _sut.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeFalse();
@@ -134,11 +136,15 @@ public sealed class RedisTransportTests : TestBase
 
         NameValueEntry[]? capturedEntries = null;
         _mockStreamManager
-            .PublishAsync(Arg.Any<string>(), Arg.Do<NameValueEntry[]>(x => capturedEntries = x))
+            .PublishAsync(
+                Arg.Any<string>(),
+                Arg.Do<NameValueEntry[]>(x => capturedEntries = x),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(Task.CompletedTask);
 
         // when
-        await _sut.SendAsync(message);
+        await _sut.SendAsync(message, AbortToken);
 
         // then
         capturedEntries.Should().NotBeNull();

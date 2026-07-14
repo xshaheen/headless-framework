@@ -7,10 +7,10 @@ namespace Headless.Serializer;
 /// <summary>
 /// An <see cref="IBufferWriter{T}"/> backed by an <see cref="ArrayPool{T}"/> rental. Used by
 /// <see cref="SerializerExtensions"/> to bridge the buffer-first <see cref="ISerializer"/> contract to the
-/// <c>byte[]</c> / <c>string</c> / <see cref="Stream"/> convenience adapters without paying for a
+/// <c>byte[]</c> / <see langword="string"/> / <see cref="Stream"/> convenience adapters without paying for a
 /// <see cref="MemoryStream"/> plus its <c>ToArray()</c> copy, and available to consumers that want to serialize
 /// into a pooled buffer and read the result via <see cref="WrittenSpan"/> / <see cref="WrittenMemory"/> with no
-/// intermediate array. Always use inside a <c>using</c> block so the rented array returns to the pool; the written
+/// intermediate array. Always use inside a <see langword="using"/> block so the rented array returns to the pool; the written
 /// span/memory is only valid until the next write or <see cref="Dispose"/>.
 /// </summary>
 /// <remarks>
@@ -21,25 +21,21 @@ namespace Headless.Serializer;
 /// over-advance instead of silently corrupting the write index.
 /// </remarks>
 [PublicAPI]
-public sealed class PooledByteBufferWriter : IBufferWriter<byte>, IDisposable
+public sealed class PooledByteBufferWriter(int initialCapacity = PooledByteBufferWriter._DefaultInitialBufferSize)
+    : IBufferWriter<byte>,
+        IDisposable
 {
     private const int _DefaultInitialBufferSize = 256;
 
-    private byte[] _buffer;
+    private byte[] _buffer = ArrayPool<byte>.Shared.Rent(Math.Max(initialCapacity, _DefaultInitialBufferSize));
     private int _index;
-
-    public PooledByteBufferWriter(int initialCapacity = _DefaultInitialBufferSize)
-    {
-        _buffer = ArrayPool<byte>.Shared.Rent(Math.Max(initialCapacity, _DefaultInitialBufferSize));
-        _index = 0;
-    }
 
     /// <summary>The bytes written so far. Valid only until the next write or <see cref="Dispose"/>.</summary>
     public ReadOnlySpan<byte> WrittenSpan => _buffer.AsSpan(0, _index);
 
     /// <summary>
     /// The bytes written so far, as memory backed by the pooled rental. Valid only until the next write or
-    /// <see cref="Dispose"/> — do not retain it past the <c>using</c> scope.
+    /// <see cref="Dispose"/> — do not retain it past the <see langword="using"/> scope.
     /// </summary>
     public ReadOnlyMemory<byte> WrittenMemory => _buffer.AsMemory(0, _index);
 

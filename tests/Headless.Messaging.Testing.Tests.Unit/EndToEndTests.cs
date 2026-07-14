@@ -4,12 +4,11 @@ using System.Collections.Concurrent;
 using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
-using Headless.Messaging.Messages;
-using Headless.Messaging.Retry;
 using Headless.Messaging.Testing;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
+using Polly.Retry;
 
 namespace Tests;
 
@@ -122,7 +121,7 @@ public sealed class EndToEndTests : TestBase
         // then
         recorded.MessageId.Should().NotBeNullOrWhiteSpace();
         recorded.MessageName.Should().NotBeNullOrWhiteSpace();
-        recorded.MessageType.Should().Be(typeof(OrderCreatedEvent));
+        recorded.MessageType.Should().Be<OrderCreatedEvent>();
         recorded.Message.Should().BeOfType<OrderCreatedEvent>().Which.OrderId.Should().Be("ORD-001");
 
         harness.Published.Should().ContainSingle();
@@ -163,18 +162,21 @@ public sealed class EndToEndTests : TestBase
     public async Task WaitForConsumed_with_predicate_filters_correctly()
     {
         // given — use TestConsumer so we get a singleton that handles the messages
-        await using var harness = await MessagingTestHarness.CreateAsync(services =>
-        {
-            services.AddSingleton<TestConsumer<OrderCreatedEvent>>();
-            services.AddHeadlessMessaging(options =>
+        await using var harness = await MessagingTestHarness.CreateAsync(
+            services =>
             {
-                options.UseInMemory();
-                options.UseInMemoryStorage();
-                options.ForMessage<OrderCreatedEvent>(message =>
-                    message.MessageName("order-created").OnBus<TestConsumer<OrderCreatedEvent>>()
-                );
-            });
-        });
+                services.AddSingleton<TestConsumer<OrderCreatedEvent>>();
+                services.AddHeadlessMessaging(options =>
+                {
+                    options.UseInMemory();
+                    options.UseInMemoryStorage();
+                    options.ForMessage<OrderCreatedEvent>(message =>
+                        message.MessageName("order-created").OnBus<TestConsumer<OrderCreatedEvent>>()
+                    );
+                });
+            },
+            AbortToken
+        );
 
         // Publish a non-target message first
         await harness.Publisher.PublishAsync(new OrderCreatedEvent("other", 1m), cancellationToken: AbortToken);
@@ -184,14 +186,14 @@ public sealed class EndToEndTests : TestBase
 
         // when — wait for specifically the "target" order
         var recorded = await harness.WaitForConsumed<OrderCreatedEvent>(
-            msg => msg.OrderId == "target",
+            msg => string.Equals(msg.OrderId, "target", StringComparison.Ordinal),
             TimeSpan.FromSeconds(5),
             AbortToken
         );
 
         // then
         recorded.Message.Should().BeOfType<OrderCreatedEvent>().Which.OrderId.Should().Be("target");
-        recorded.MessageType.Should().Be(typeof(OrderCreatedEvent));
+        recorded.MessageType.Should().Be<OrderCreatedEvent>();
     }
 
     // ─── Test 4: timeout produces descriptive exception ───────────────────────
@@ -208,7 +210,7 @@ public sealed class EndToEndTests : TestBase
 
         // then
         var ex = await act.Should().ThrowAsync<MessageObservationTimeoutException>();
-        ex.Which.ExpectedType.Should().Be(typeof(OrderCreatedEvent));
+        ex.Which.ExpectedType.Should().Be<OrderCreatedEvent>();
         ex.Which.ObservationType.Should().Be(MessageObservationType.Consumed);
         ex.Which.Message.Should().Contain(nameof(OrderCreatedEvent));
         ex.Which.Elapsed.Should().BeGreaterThan(TimeSpan.Zero);
@@ -256,18 +258,21 @@ public sealed class EndToEndTests : TestBase
         // given
         var notifier = Substitute.For<INotificationService>();
 
-        await using var harness = await MessagingTestHarness.CreateAsync(services =>
-        {
-            services.AddSingleton(notifier);
-            services.AddHeadlessMessaging(options =>
+        await using var harness = await MessagingTestHarness.CreateAsync(
+            services =>
             {
-                options.UseInMemory();
-                options.UseInMemoryStorage();
-                options.ForMessage<OrderCreatedEvent>(message =>
-                    message.MessageName("order-created").OnBus<NotifyingConsumer>()
-                );
-            });
-        });
+                services.AddSingleton(notifier);
+                services.AddHeadlessMessaging(options =>
+                {
+                    options.UseInMemory();
+                    options.UseInMemoryStorage();
+                    options.ForMessage<OrderCreatedEvent>(message =>
+                        message.MessageName("order-created").OnBus<NotifyingConsumer>()
+                    );
+                });
+            },
+            AbortToken
+        );
 
         // when
         await harness.Publisher.PublishAsync(new OrderCreatedEvent("ORD-INJ", 75m), cancellationToken: AbortToken);
@@ -281,22 +286,25 @@ public sealed class EndToEndTests : TestBase
     public async Task Bus_and_queue_observations_are_distinguished_by_intent()
     {
         // given
-        await using var harness = await MessagingTestHarness.CreateAsync(services =>
-        {
-            services.AddSingleton<IntentRecorder>();
-            services.AddHeadlessMessaging(options =>
+        await using var harness = await MessagingTestHarness.CreateAsync(
+            services =>
             {
-                options.ForMessage<OrderCreatedEvent>(message =>
+                services.AddSingleton<IntentRecorder>();
+                services.AddHeadlessMessaging(options =>
                 {
-                    message
-                        .MessageName("order-created")
-                        .OnBus<BusIntentConsumer>(consumer => consumer.Group("bus-workers"));
-                    message.OnQueue<QueueIntentConsumer>(consumer => consumer.Group("queue-workers"));
+                    options.ForMessage<OrderCreatedEvent>(message =>
+                    {
+                        message
+                            .MessageName("order-created")
+                            .OnBus<BusIntentConsumer>(consumer => consumer.Group("bus-workers"));
+                        message.OnQueue<QueueIntentConsumer>(consumer => consumer.Group("queue-workers"));
+                    });
+                    options.UseInMemory();
+                    options.UseInMemoryStorage();
                 });
-                options.UseInMemory();
-                options.UseInMemoryStorage();
-            });
-        });
+            },
+            AbortToken
+        );
 
         var bus = harness.GetRequiredService<IBus>();
         var queue = harness.GetRequiredService<IQueue>();
@@ -356,22 +364,25 @@ public sealed class EndToEndTests : TestBase
     public async Task Outbox_bus_and_queue_flow_through_inmemory_transport_with_intent()
     {
         // given
-        await using var harness = await MessagingTestHarness.CreateAsync(services =>
-        {
-            services.AddSingleton<IntentRecorder>();
-            services.AddHeadlessMessaging(options =>
+        await using var harness = await MessagingTestHarness.CreateAsync(
+            services =>
             {
-                options.ForMessage<OrderCreatedEvent>(message =>
+                services.AddSingleton<IntentRecorder>();
+                services.AddHeadlessMessaging(options =>
                 {
-                    message
-                        .MessageName("outbox-order-created")
-                        .OnBus<BusIntentConsumer>(consumer => consumer.Group("outbox-bus"));
-                    message.OnQueue<QueueIntentConsumer>(consumer => consumer.Group("outbox-queue"));
+                    options.ForMessage<OrderCreatedEvent>(message =>
+                    {
+                        message
+                            .MessageName("outbox-order-created")
+                            .OnBus<BusIntentConsumer>(consumer => consumer.Group("outbox-bus"));
+                        message.OnQueue<QueueIntentConsumer>(consumer => consumer.Group("outbox-queue"));
+                    });
+                    options.UseInMemory();
+                    options.UseInMemoryStorage();
                 });
-                options.UseInMemory();
-                options.UseInMemoryStorage();
-            });
-        });
+            },
+            AbortToken
+        );
 
         var outboxBus = harness.GetRequiredService<IOutboxBus>();
         var outboxQueue = harness.GetRequiredService<IOutboxQueue>();
@@ -400,12 +411,12 @@ public sealed class EndToEndTests : TestBase
             AbortToken
         );
         var busConsumed = await harness.WaitForConsumed<OrderCreatedEvent>(
-            message => message.OrderId == "outbox-bus",
+            message => string.Equals(message.OrderId, "outbox-bus", StringComparison.Ordinal),
             TimeSpan.FromSeconds(5),
             AbortToken
         );
         var queueConsumed = await harness.WaitForConsumed<OrderCreatedEvent>(
-            message => message.OrderId == "outbox-queue",
+            message => string.Equals(message.OrderId, "outbox-queue", StringComparison.Ordinal),
             TimeSpan.FromSeconds(5),
             AbortToken
         );
@@ -422,14 +433,17 @@ public sealed class EndToEndTests : TestBase
     public async Task Queue_observation_is_not_double_recorded_as_bus_for_queue_transport()
     {
         // given
-        await using var harness = await MessagingTestHarness.CreateAsync(services =>
-        {
-            services.AddHeadlessMessaging(options =>
+        await using var harness = await MessagingTestHarness.CreateAsync(
+            services =>
             {
-                options.UseInMemoryStorage();
-                options.RegisterExtension(new QueueOnlyTransportExtension());
-            });
-        });
+                services.AddHeadlessMessaging(options =>
+                {
+                    options.UseInMemoryStorage();
+                    options.RegisterExtension(new QueueOnlyTransportExtension());
+                });
+            },
+            AbortToken
+        );
 
         var queue = harness.GetRequiredService<IQueue>();
 
@@ -457,7 +471,7 @@ public sealed class EndToEndTests : TestBase
             .GetType()
             .GetFields(BindingFlags.Instance | BindingFlags.NonPublic)
             .Select(field => field.GetValue(transport)?.GetType().Name)
-            .FirstOrDefault(name => name is not null && name.Contains("Transport", StringComparison.Ordinal));
+            .FirstOrDefault(name => name?.Contains("Transport", StringComparison.Ordinal) == true);
     }
 
     private sealed class QueueOnlyTransportExtension : IMessagesOptionsExtension
@@ -482,8 +496,11 @@ public sealed class EndToEndTests : TestBase
 
     private sealed class UnusedConsumerClientFactory : IConsumerClientFactory
     {
-        public Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent) =>
-            throw new InvalidOperationException("The queue-only transport harness test registers no consumers.");
+        public Task<IConsumerClient> CreateAsync(
+            string groupName,
+            byte groupConcurrent,
+            CancellationToken cancellationToken = default
+        ) => throw new InvalidOperationException("The queue-only transport harness test registers no consumers.");
     }
 
     // ─── Test 7: AddMessagingTestHarness registers into existing container ───
@@ -539,9 +556,13 @@ public sealed class EndToEndTests : TestBase
                 options.ForMessage<OrderCreatedEvent>(message =>
                     message.MessageName("order-created").OnBus<FailingConsumer>()
                 );
-                options.Options.RetryPolicy.MaxInlineRetries = 0;
                 options.Options.RetryPolicy.MaxPersistedRetries = 0;
-                options.Options.RetryPolicy.BackoffStrategy = new FixedIntervalBackoffStrategy(TimeSpan.Zero);
+                options.Options.RetryPolicy.RetryStrategy = new RetryStrategyOptions
+                {
+                    MaxRetryAttempts = 0,
+                    Delay = TimeSpan.Zero,
+                    ShouldHandle = static _ => ValueTask.FromResult(true),
+                };
                 options.Options.RetryPolicy.OnExhausted = (_, _) =>
                 {
                     Interlocked.Increment(ref userCallbackFired);
@@ -555,7 +576,7 @@ public sealed class EndToEndTests : TestBase
         var recorded = await harness.WaitForExhausted<OrderCreatedEvent>(TimeSpan.FromSeconds(5), AbortToken);
 
         // then — observation captures the exhausted message and its exception
-        recorded.MessageType.Should().Be(typeof(OrderCreatedEvent));
+        recorded.MessageType.Should().Be<OrderCreatedEvent>();
         recorded.Message.Should().BeOfType<OrderCreatedEvent>().Which.OrderId.Should().Be("ORD-EXH");
         // The exception is the pipeline-wrapped failure; the original "Test failure" is the inner.
         recorded.Exception.Should().NotBeNull();
@@ -583,9 +604,13 @@ public sealed class EndToEndTests : TestBase
                 options.ForMessage<OrderCreatedEvent>(message =>
                     message.MessageName("order-created").OnBus<FailingConsumer>()
                 );
-                options.Options.RetryPolicy.MaxInlineRetries = 0;
                 options.Options.RetryPolicy.MaxPersistedRetries = 0;
-                options.Options.RetryPolicy.BackoffStrategy = new FixedIntervalBackoffStrategy(TimeSpan.Zero);
+                options.Options.RetryPolicy.RetryStrategy = new RetryStrategyOptions
+                {
+                    MaxRetryAttempts = 0,
+                    Delay = TimeSpan.Zero,
+                    ShouldHandle = static _ => ValueTask.FromResult(true),
+                };
                 options.Options.RetryPolicy.OnExhaustedTimeout = TimeSpan.FromMilliseconds(200);
                 options.Options.RetryPolicy.OnExhausted = async (_, ct) =>
                 {

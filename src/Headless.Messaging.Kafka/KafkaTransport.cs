@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Runtime.InteropServices;
 using Confluent.Kafka;
 using Microsoft.Extensions.Logging;
 
@@ -27,32 +28,32 @@ internal sealed class KafkaTransport(ILogger<KafkaTransport> logger, IKafkaConne
                 headers.Add(
                     header.Value != null
                         ? new Header(header.Key, Encoding.UTF8.GetBytes(header.Value))
-                        : new Header(header.Key, null)
+                        : new Header(header.Key, value: null)
                 );
             }
 
             var result = await producer
                 .ProduceAsync(
-                    message.GetName(),
+                    message.Name,
                     new Message<string, byte[]>
                     {
                         Headers = headers,
                         Key =
-                            message.Headers.TryGetValue(KafkaHeaders.KafkaKey, out var kafkaMessageKey)
+                            message.Headers.TryGetValue(KafkaMessagingHeaders.KafkaKey, out var kafkaMessageKey)
                             && !string.IsNullOrEmpty(kafkaMessageKey)
                                 ? kafkaMessageKey
-                                : message.GetId(),
-                        Value = message.Body.ToArray(),
+                                : message.Id,
+                        Value = _GetMessageBodyArray(message.Body),
                     },
                     cancellationToken
                 )
                 .ConfigureAwait(false);
 
-            if (result.Status is PersistenceStatus.Persisted or PersistenceStatus.PossiblyPersisted)
+            if (result.Status is PersistenceStatus.Persisted)
             {
                 if (_logger.IsEnabled(LogLevel.Debug))
                 {
-                    _logger.LogKafkaTopicMessagePublished(message.GetName());
+                    _logger.LogKafkaTopicMessagePublished(message.Name);
                 }
 
                 return OperateResult.Success;
@@ -75,6 +76,20 @@ internal sealed class KafkaTransport(ILogger<KafkaTransport> logger, IKafkaConne
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+    private static byte[] _GetMessageBodyArray(ReadOnlyMemory<byte> body)
+    {
+        if (
+            MemoryMarshal.TryGetArray(body, out var segment)
+            && segment is { Array: { } array, Offset: 0 }
+            && segment.Count == array.Length
+        )
+        {
+            return array;
+        }
+
+        return body.ToArray();
+    }
 }
 
 internal static partial class KafkaTransportLog

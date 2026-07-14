@@ -9,8 +9,13 @@ namespace Headless.Emails;
 /// <see cref="IEmailSenderProvider"/> over the container's keyed <see cref="IEmailSender"/> registrations —
 /// resolves the named instances added through <c>setup.AddNamed(name, …)</c>.
 /// </summary>
-internal sealed class KeyedServiceEmailSenderProvider(IServiceProvider serviceProvider) : IEmailSenderProvider
+internal sealed class KeyedServiceEmailSenderProvider(
+    IServiceProvider serviceProvider,
+    IReadOnlySet<string> registeredNames
+) : IEmailSenderProvider
 {
+    public IReadOnlySet<string> RegisteredNames { get; } = registeredNames;
+
     public IEmailSender GetSender(string name)
     {
         Argument.IsNotNullOrWhiteSpace(name);

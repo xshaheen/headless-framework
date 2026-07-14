@@ -23,7 +23,6 @@ internal sealed class HeadlessAuditPersistence(
     private readonly ICorrelationIdProvider? _correlationIdProvider =
         serviceProvider.GetService<ICorrelationIdProvider>();
     private readonly TimeProvider _timeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
-    private readonly IClock? _clock = serviceProvider.GetService<IClock>();
     private readonly IOptions<AuditLogOptions>? _auditOptions = serviceProvider.GetService<IOptions<AuditLogOptions>>();
 
     /// <summary>
@@ -39,7 +38,7 @@ internal sealed class HeadlessAuditPersistence(
             return null;
         }
 
-        var timestamp = _clock?.UtcNow ?? _timeProvider.GetUtcNow();
+        var timestamp = _timeProvider.GetUtcNow();
 
         try
         {
@@ -244,14 +243,10 @@ internal sealed class HeadlessAuditPersistence(
         // ReSharper disable once NullCoalescingConditionIsAlwaysNotNullAccordingToAPIContract
         var result = await _auditStore.SaveAsync(entries, context, cancellationToken).ConfigureAwait(false);
 
-        if (result is null)
-        {
-            throw new InvalidOperationException(
+        return result
+            ?? throw new InvalidOperationException(
                 "IAuditLogStore.SaveAsync returned null; implementation must return an empty list when no entries are saved, never null."
             );
-        }
-
-        return result;
     }
 
     private static void _SuppressEntries(DbContext context, IReadOnlyList<TrackedEntrySnapshot> snapshots)
@@ -277,7 +272,7 @@ internal sealed class HeadlessAuditPersistence(
         IReadOnlyList<PropertySnapshot> Properties
     )
     {
-        public static IReadOnlyList<TrackedEntrySnapshot> Capture(DbContext context)
+        public static List<TrackedEntrySnapshot> Capture(DbContext context)
         {
             List<TrackedEntrySnapshot>? snapshots = null;
 
@@ -298,7 +293,7 @@ internal sealed class HeadlessAuditPersistence(
                 (snapshots ??= []).Add(new(entry.Entity, entry.State, properties));
             }
 
-            return snapshots ?? (IReadOnlyList<TrackedEntrySnapshot>)[];
+            return snapshots ?? [];
         }
 
         public void Restore(DbContext context)

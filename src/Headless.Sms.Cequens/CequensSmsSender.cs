@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers.Text;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -16,10 +17,12 @@ namespace Headless.Sms.Cequens;
  */
 internal sealed class CequensSmsSender(
     IHttpClientFactory httpClientFactory,
+    string httpClientName,
     TimeProvider timeProvider,
-    IOptions<CequensSmsOptions> optionsAccessor,
+    IOptionsMonitor<CequensSmsOptions> optionsMonitor,
+    string? optionsName,
     ILogger<CequensSmsSender> logger
-) : ISmsSender, IDisposable
+) : ISmsSender, IBulkSmsSender, IDisposable
 {
     private static readonly JsonSerializerOptions _JsonOptions = new()
     {
@@ -27,7 +30,9 @@ internal sealed class CequensSmsSender(
         TypeInfoResolver = CequensJsonSerializerContext.Default,
     };
 
-    private readonly CequensSmsOptions _options = optionsAccessor.Value;
+    // Snapshot for this instance's options name — never CurrentValue, which binds the default options and
+    // would bleed configuration across keyed instances.
+    private readonly CequensSmsOptions _options = optionsMonitor.Get(optionsName);
     private readonly SemaphoreSlim _tokenLock = new(1, 1);
 
     public async ValueTask<SendSingleSmsResponse> SendAsync(
@@ -36,12 +41,55 @@ internal sealed class CequensSmsSender(
     )
     {
         Argument.IsNotNull(request);
+        Argument.IsNotNull(request.Destination);
+        Argument.IsNotEmpty(request.Text);
+
+        return await _SendAsync(
+                request.Destination.ToString(),
+                request.MessageId,
+                request.Text,
+                destinationCount: 1,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    public async ValueTask<SendBulkSmsResponse> SendBulkAsync(
+        SendBulkSmsRequest request,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(request);
+        Argument.IsNotNull(request.Destinations);
         Argument.IsNotEmpty(request.Destinations);
         Argument.IsNotEmpty(request.Text);
 
+        // Cequens accepts a comma-separated recipient list and reports a single status, so the same outcome
+        // applies to every recipient.
+        var outcome = await _SendAsync(
+                string.Join(',', request.Destinations),
+                request.MessageId,
+                request.Text,
+                request.Destinations.Count,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return SendBulkSmsResponse.FromAggregate(request.Destinations, outcome);
+    }
+
+    private async ValueTask<SendSingleSmsResponse> _SendAsync(
+        string recipients,
+        string? messageId,
+        string text,
+        int destinationCount,
+        CancellationToken cancellationToken
+    )
+    {
         try
         {
-            return await _SendCoreAsync(request, cancellationToken).ConfigureAwait(false);
+            return await _SendCoreAsync(recipients, messageId, text, destinationCount, cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -49,29 +97,29 @@ internal sealed class CequensSmsSender(
         }
         catch (Exception e)
         {
-            logger.LogSmsSendException(e, request.Destinations.Count);
+            logger.LogSmsSendException(e, destinationCount);
 
-            return SendSingleSmsResponse.Failed(e.Message, SmsFailureKind.Transient);
+            return SendSingleSmsResponse.FromException(e, SmsFailureKinds.FromException(e));
         }
     }
 
     private async ValueTask<SendSingleSmsResponse> _SendCoreAsync(
-        SendSingleSmsRequest request,
+        string recipients,
+        string? messageId,
+        string text,
+        int destinationCount,
         CancellationToken cancellationToken
     )
     {
-        using var httpClient = httpClientFactory.CreateClient(SetupCequens.HttpClientName);
+        using var httpClient = httpClientFactory.CreateClient(httpClientName);
 
         var apiRequest = new SendSmsRequest
         {
             ClientMessageId =
-                request.MessageId is not null
-                && int.TryParse(request.MessageId, CultureInfo.InvariantCulture, out var id)
-                    ? id
-                    : null,
+                messageId is not null && int.TryParse(messageId, CultureInfo.InvariantCulture, out var id) ? id : null,
             SenderName = _options.SenderName,
-            MessageText = request.Text,
-            Recipients = request.IsBatch ? string.Join(',', request.Destinations) : request.Destinations[0].ToString(),
+            MessageText = text,
+            Recipients = recipients,
         };
 
         // At most two attempts: a 401 invalidates a stale cached token so the retry re-authenticates.
@@ -95,7 +143,7 @@ internal sealed class CequensSmsSender(
 
             if (response.IsSuccessStatusCode)
             {
-                logger.LogSmsSentSuccessfully(request.Destinations.Count, response.StatusCode);
+                logger.LogSmsSentSuccessfully(destinationCount, response.StatusCode);
 
                 return SendSingleSmsResponse.Succeeded();
             }
@@ -107,32 +155,40 @@ internal sealed class CequensSmsSender(
                 continue;
             }
 
-            logger.LogFailedToSendSms(request.Destinations.Count, response.StatusCode);
+            logger.LogFailedToSendSms(destinationCount, response.StatusCode);
 
             var rawContent = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
             var error = string.IsNullOrEmpty(rawContent) ? "Failed to send SMS using Cequens API" : rawContent;
-            var failureKind =
-                response.StatusCode == HttpStatusCode.Unauthorized
+
+            // Cequens publishes no machine-readable error contract for this endpoint; the only status with
+            // unambiguous meaning is the 401 the re-auth path above already keys on (bearer token rejected).
+            // Everything else surfaces the raw body without guessing a kind.
+            var kind =
+                response.StatusCode is HttpStatusCode.Unauthorized
                     ? SmsFailureKind.AuthFailure
                     : SmsFailureKind.Unknown;
 
-            return SendSingleSmsResponse.Failed(error, failureKind);
+            return SendSingleSmsResponse.Failed(error, kind);
         }
     }
 
     #region Helpers
 
-    private string? _cachedToken;
-    private DateTime _tokenExpiration;
+    // A single immutable holder swapped atomically (reference assignment is atomic), so the fast-path read
+    // outside the lock can never observe a torn token/expiration pair.
+    private CachedToken? _cached;
+
+    private sealed record CachedToken(string Token, DateTime Expiration);
 
     private async Task<string?> _GetTokenRequestAsync(HttpClient httpClient, CancellationToken cancellationToken)
     {
         var now = timeProvider.GetUtcNow().UtcDateTime;
 
         // Quick check before lock
-        if (_cachedToken != null && _tokenExpiration > now)
+        var cached = _cached;
+        if (cached is not null && cached.Expiration > now)
         {
-            return _cachedToken;
+            return cached.Token;
         }
 
         await _tokenLock.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -140,20 +196,22 @@ internal sealed class CequensSmsSender(
         {
             // Double-check after acquiring lock
             now = timeProvider.GetUtcNow().UtcDateTime;
-            if (_cachedToken != null && _tokenExpiration > now)
+            cached = _cached;
+            if (cached is not null && cached.Expiration > now)
             {
-                return _cachedToken;
+                return cached.Token;
             }
 
             try
             {
                 var signInRequest = new SigningInRequest(_options.ApiKey, _options.UserName);
                 using var signInContent = JsonContent.Create(signInRequest, options: _JsonOptions);
-                var response = await httpClient
+                using var response = await httpClient
                     .PostAsync(_options.TokenEndpoint, signInContent, cancellationToken)
                     .ConfigureAwait(false);
-                var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 
+                // Only the status code is reported on failure, so skip buffering the body to a string and
+                // deserialize the success payload straight off the response stream.
                 if (!response.IsSuccessStatusCode)
                 {
                     logger.LogFailedToGetTokenWithStatusCode(response.StatusCode);
@@ -161,12 +219,15 @@ internal sealed class CequensSmsSender(
                     return null;
                 }
 
-                var token = JsonSerializer.Deserialize<SigningInResponse>(content, _JsonOptions)?.Data?.AccessToken;
+                var signInResponse = await response
+                    .Content.ReadFromJsonAsync<SigningInResponse>(_JsonOptions, cancellationToken)
+                    .ConfigureAwait(false);
+
+                var token = signInResponse?.Data?.AccessToken;
 
                 if (token != null)
                 {
-                    _cachedToken = token;
-                    _tokenExpiration = _ComputeTokenExpiration(token, now);
+                    _cached = new CachedToken(token, _ComputeTokenExpiration(token, now));
                 }
 
                 return token;
@@ -191,8 +252,7 @@ internal sealed class CequensSmsSender(
 
     private void _InvalidateToken()
     {
-        _cachedToken = null;
-        _tokenExpiration = default;
+        _cached = null;
     }
 
     /// <summary>
@@ -230,16 +290,7 @@ internal sealed class CequensSmsSender(
 
     private static string _Base64UrlDecode(string value)
     {
-        var normalized = value.Replace('-', '+').Replace('_', '/');
-
-        normalized += (normalized.Length % 4) switch
-        {
-            2 => "==",
-            3 => "=",
-            _ => "",
-        };
-
-        return Encoding.UTF8.GetString(Convert.FromBase64String(normalized));
+        return Encoding.UTF8.GetString(Base64Url.DecodeFromChars(value));
     }
 
     public void Dispose()

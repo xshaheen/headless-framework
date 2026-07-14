@@ -220,7 +220,7 @@ public sealed class ProblemDetailsCreatorTests : TestBase
     {
         // given
         var creator = _CreateCreator();
-        var errors = new Dictionary<string, List<ErrorDescriptor>>(StringComparer.Ordinal)
+        var errors = new Dictionary<string, IReadOnlyList<ErrorDescriptor>>(StringComparer.Ordinal)
         {
             ["Name"] = [new ErrorDescriptor("Name is required", "REQUIRED")],
         };
@@ -239,7 +239,7 @@ public sealed class ProblemDetailsCreatorTests : TestBase
     {
         // given
         var creator = _CreateCreator();
-        var errors = new Dictionary<string, List<ErrorDescriptor>>(StringComparer.Ordinal)
+        var errors = new Dictionary<string, IReadOnlyList<ErrorDescriptor>>(StringComparer.Ordinal)
         {
             ["Email"] = [new ErrorDescriptor("Invalid email", "INVALID_EMAIL")],
             ["Age"] = [new ErrorDescriptor("Must be positive", "POSITIVE")],

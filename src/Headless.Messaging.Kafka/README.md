@@ -4,7 +4,7 @@ Apache Kafka transport provider for the messaging system.
 
 ## Problem Solved
 
-Enables high-throughput, distributed event streaming using Apache Kafka with consumer groups, partitions, and exactly-once semantics.
+Enables high-throughput, distributed event streaming using Apache Kafka with consumer groups, partitions, broker-level ordering controls, and Headless's at-least-once delivery contract.
 
 ## Key Features
 
@@ -12,7 +12,13 @@ Enables high-throughput, distributed event streaming using Apache Kafka with con
 - **Partitioning**: Parallel processing with ordered delivery per partition
 - **Consumer Groups**: Load balancing across consumers
 - **Retention**: Persistent message storage with configurable retention
-- **Exactly-Once**: Transactional publishing and consuming
+- **At-Least-Once Delivery**: Broker delivery plus Headless retry/outbox recovery; consumers must remain idempotent
+- **Kafka Configuration Access**: Exposes raw Kafka producer and consumer settings through `MainConfig` and consumer-specific options
+- **Host-Cancellable Startup**: Topic creation and subscription setup honor host shutdown.
+
+## Design Notes
+
+Kafka is queue-intent only in this package. `PartitionBy(...)` maps to the Kafka key. The framework does not impose a Kafka key length cap; broker/client configuration owns practical limits. Delivery remains at-least-once; consumers must dedupe by business key or message id. A publish succeeds only when Kafka reports `Persisted`; the uncertain `PossiblyPersisted` result is retried, so producer retries can create duplicates. When consumer concurrency is greater than one, successful handlers can finish out of order, but Kafka commits advance only through the contiguous completed offset watermark per partition; a completed high offset does not commit past lower in-flight offsets. Rebalances invalidate in-flight offsets for revoked or lost partitions, so late handlers cannot commit or seek partitions now owned by another consumer.
 
 ## Installation
 
@@ -61,7 +67,7 @@ options.ForMessage<OrderEvent>(message =>
 );
 ```
 
-`PartitionBy(...)` stamps `KafkaHeaders.KafkaKey` (`headless-kafka-key`) during publish. The selector output is broker-visible metadata, so do not put secrets or raw PII in it.
+`PartitionBy(...)` stamps `KafkaMessagingHeaders.KafkaKey` (`headless-kafka-key`) during publish. The selector output is broker-visible metadata, so do not put secrets or raw PII in it.
 
 Consumer-side Kafka knobs attach to the consumer registration:
 
@@ -113,13 +119,16 @@ options.EnableSubscriberParallelExecute = false; // Disable parallel execution
 ## Messaging Semantics
 
 - Publish writes the serialized body as record bytes and forwards framework headers.
+- Delivery remains at-least-once. A broker accept followed by a failed success-mark write can redeliver, and an uncertain `PossiblyPersisted` result is treated as a retryable failure; configure Kafka idempotence or read-committed isolation for broker-level features, and keep consumers idempotent.
 - Delay stays in the core pipeline. This provider does not add broker-native scheduling.
-- Commit commits the consumed partition offset.
-- Reject seeks back to the failed offset so Kafka can redeliver on the next poll.
-- `FetchTopicsAsync(...)` creates concrete topics when auto-create is enabled and normalizes wildcard subscriptions.
+- Commit commits the consumed partition offset. Under concurrent consumption, commits advance only through the contiguous completed offset watermark per partition. Rebalances invalidate tracked offsets for revoked or lost partitions.
+- Reject seeks back to the failed offset so Kafka can redeliver on the next poll. A late rejection is ignored after its partition has been revoked or lost.
+- `FetchMessageNamesAsync(...)` creates concrete topics when auto-create is enabled and normalizes wildcard subscriptions.
 - `SubscribeAsync(...)` joins the configured consumer group to those topics.
 - Partition keys control ordering. Parallel handlers or multiple partitions can reorder observed processing.
 - Topic names, header sizes, and record sizes follow Kafka broker limits.
+
+**Registration overloads:** `UseKafka(...)` accepts the standard trio — an `IConfiguration` section, an `Action<KafkaMessagingOptions>` delegate, or an `Action<KafkaMessagingOptions, IServiceProvider>` delegate — plus the bootstrap-servers convenience form. `RetriableErrorCodes` / `DefaultRetriableErrorCodes` are `int` values of Confluent's `ErrorCode` enum, so configuring retries needs no compile-time `Confluent.Kafka` reference.
 
 ## Dependencies
 

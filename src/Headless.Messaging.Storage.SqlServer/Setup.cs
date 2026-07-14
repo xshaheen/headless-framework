@@ -1,15 +1,16 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.CommitCoordination.EntityFramework;
+using Headless.CommitCoordination;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
+using Headless.Messaging.Storage.SqlServer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Headless.Messaging.Storage.SqlServer;
+namespace Headless.Messaging;
 
 [PublicAPI]
 public static class SetupSqlServerMessaging
@@ -29,10 +30,7 @@ public static class SetupSqlServerMessaging
         {
             Argument.IsNotNullOrWhiteSpace(connectionString);
 
-            return setup.UseSqlServer(opt =>
-            {
-                opt.ConnectionString = connectionString;
-            });
+            return setup.UseSqlServer(opt => opt.ConnectionString = connectionString);
         }
 
         /// <summary>

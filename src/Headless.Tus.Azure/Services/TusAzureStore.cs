@@ -8,13 +8,14 @@ using FluentValidation;
 using Headless.Checks;
 using Headless.Tus.Internal;
 using Headless.Tus.Models;
-using Headless.Tus.Options;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using tusdotnet.Interfaces;
+using tusdotnet.Models;
 using tusdotnet.Stores.FileIdProviders;
 
-namespace Headless.Tus.Services;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Tus;
 
 /// <summary>
 /// TUS resumable-upload store backed by Azure Block Blob Storage.
@@ -28,16 +29,18 @@ namespace Headless.Tus.Services;
 /// </para>
 /// <para>
 /// When <see cref="TusAzureStoreOptions.EnableChunkSplitting"/> is enabled (the default), incoming
-/// PATCH bodies are split into fixed-size blocks so that individual blocks never exceed Azure's
-/// 100 MB per-block limit. Without splitting, the entire PATCH body is staged as one block.
+/// PATCH bodies are split into fixed-size blocks no larger than the configured chunk size (capped
+/// at 100 MB, which also bounds per-request memory; Azure's own per-block maximum is 4,000 MiB on
+/// current service versions). Without splitting, the entire PATCH body is staged as one block.
 /// </para>
 /// <para>
 /// <b>Checksum deferred commit:</b> when a PATCH request carries a TUS-Checksum header, blocks
 /// are staged but <em>not</em> committed until <c>VerifyChecksumAsync</c> confirms the digest.
-/// The block IDs and the pre-calculated digest are stored in blob metadata
-/// (<c>tus_last_chunk_blocks</c> / <c>tus_last_chunk_checksum</c>) so verification and commit
-/// happen in a separate call. Failed verification leaves the blocks uncommitted; Azure
-/// automatically discards uncommitted blocks after seven days.
+/// The staged block range (a constant-size token/index/count triple) and the pre-calculated
+/// digest are stored in blob metadata (<c>tus_last_chunk_blocks</c> /
+/// <c>tus_last_chunk_checksum</c>) so verification and commit happen in a separate call. Failed
+/// verification leaves the blocks uncommitted; Azure automatically discards uncommitted blocks
+/// after seven days.
 /// </para>
 /// <para>
 /// When <see cref="TusAzureStoreOptions.CreateContainerIfNotExists"/> is <see langword="true"/>
@@ -176,6 +179,53 @@ public sealed partial class TusAzureStore
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// Validates an externally-supplied file id against the configured
+    /// <c>ITusFileIdProvider</c>, mirroring <c>TusDiskStore</c>'s <c>InternalFileId.Parse</c>.
+    /// <c>TusBlobName</c> still applies its own traversal defense when the id becomes a blob name.
+    /// </summary>
+    /// <exception cref="TusStoreException">thrown if the id fails provider validation (mapped to 400 by tusdotnet)</exception>
+    private async Task _EnsureValidFileIdAsync(string fileId)
+    {
+        if (!await _fileIdProvider.ValidateId(fileId).ConfigureAwait(false))
+        {
+            throw new TusStoreException($"Invalid TUS file id: '{fileId}'.");
+        }
+    }
+
+    /// <summary>
+    /// Clears stale chunk-tracking metadata after an append that received zero bytes. Without
+    /// this, a checksum-trailer fallback (<c>VerifyChecksumAsync</c> with tusdotnet's sentinel)
+    /// following an empty append would act on the PREVIOUS append's rollback point and discard a
+    /// chunk that was already committed and verified. Skips the write when the state is already
+    /// clean; must-complete because the caller's token is cancelled in exactly this scenario.
+    /// </summary>
+    private static async Task _RefreshChunkTrackingForEmptyAppendAsync(
+        BlobClient blobClient,
+        TusAzureFile file,
+        long currentOffset
+    )
+    {
+        var metadata = file.Metadata;
+
+        if (
+            metadata.LastChunkBlocks is null
+            && metadata.LastChunkChecksum is null
+            && metadata.LastChunkOffset == currentOffset
+        )
+        {
+            return;
+        }
+
+        metadata.LastChunkBlocks = null;
+        metadata.LastChunkChecksum = null;
+        metadata.LastChunkOffset = currentOffset;
+
+        await blobClient
+            .SetMetadataAsync(metadata.ToAzure(), cancellationToken: CancellationToken.None)
+            .ConfigureAwait(false);
     }
 
     private BlobClient _GetBlobClient(string fileId)

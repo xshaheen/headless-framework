@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
-using Headless.Messaging.Messages;
 using Headless.Messaging.Redis;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
@@ -11,7 +10,6 @@ using StackExchange.Redis;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 // ReSharper disable DisposeOnUsingVariable
 /// <summary>
 /// Unit tests for <see cref="RedisConsumerClient"/>.
@@ -20,8 +18,8 @@ public sealed class RedisConsumerClientTests : TestBase
 {
     private readonly IRedisStreamManager _mockStreamManager = Substitute.For<IRedisStreamManager>();
 
-    private readonly IOptions<MessagingRedisOptions> _options = Options.Create(
-        new MessagingRedisOptions { Configuration = ConfigurationOptions.Parse("localhost:6379") }
+    private readonly IOptions<RedisMessagingOptions> _options = Options.Create(
+        new RedisMessagingOptions { Configuration = ConfigurationOptions.Parse("localhost:6379") }
     );
 
     [Fact]
@@ -49,11 +47,27 @@ public sealed class RedisConsumerClientTests : TestBase
         var messageNames = new[] { "messageName-1", "messageName-2" };
 
         // when
-        await client.SubscribeAsync(messageNames);
+        await client.SubscribeAsync(messageNames, AbortToken);
 
         // then
-        await _mockStreamManager.Received(1).CreateStreamWithConsumerGroupAsync("messageName-1", "my-group");
-        await _mockStreamManager.Received(1).CreateStreamWithConsumerGroupAsync("messageName-2", "my-group");
+        await _mockStreamManager
+            .Received(1)
+            .CreateStreamWithConsumerGroupAsync("messageName-1", "my-group", Arg.Any<CancellationToken>());
+        await _mockStreamManager
+            .Received(1)
+            .CreateStreamWithConsumerGroupAsync("messageName-2", "my-group", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_propagate_exact_token_when_subscribing()
+    {
+        var logger = LoggerFactory.CreateLogger<RedisConsumerClient>();
+        await using var client = new RedisConsumerClient("my-group", 1, _mockStreamManager, _options, logger);
+        using var cts = new CancellationTokenSource();
+
+        await client.SubscribeAsync(["orders"], cts.Token);
+
+        await _mockStreamManager.Received(1).CreateStreamWithConsumerGroupAsync("orders", "my-group", cts.Token);
     }
 
     [Fact]
@@ -78,10 +92,12 @@ public sealed class RedisConsumerClientTests : TestBase
         var sender = ("test-stream", "test-group", "1234567-0");
 
         // when
-        await client.CommitAsync(sender);
+        await client.CommitAsync(sender, AbortToken);
 
         // then
-        await _mockStreamManager.Received(1).Ack("test-stream", "test-group", "1234567-0");
+        await _mockStreamManager
+            .Received(1)
+            .Ack("test-stream", "test-group", "1234567-0", Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -94,6 +110,24 @@ public sealed class RedisConsumerClientTests : TestBase
         // when & then - reject should complete without error
         var action = async () => await client.RejectAsync(null);
         await action.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task should_requeue_and_ack_message_on_reject()
+    {
+        // given
+        var logger = LoggerFactory.CreateLogger<RedisConsumerClient>();
+        await using var client = new RedisConsumerClient("test-group", 1, _mockStreamManager, _options, logger);
+        var entries = new NameValueEntry[] { new("headers", "{}"), new("body", "[]") };
+        var sender = new RedisConsumerDelivery("test-stream", "test-group", "1234567-0", entries);
+
+        // when
+        await client.RejectAsync(sender, AbortToken);
+
+        // then
+        await _mockStreamManager
+            .Received(1)
+            .RequeueAndAck("test-stream", "test-group", "1234567-0", entries, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -139,8 +173,8 @@ public sealed class RedisConsumerClientTests : TestBase
         await using var client = new RedisConsumerClient("test-group", 1, _mockStreamManager, _options, logger);
 
         // when
-        await client.PauseAsync();
-        await client.PauseAsync();
+        await client.PauseAsync(AbortToken);
+        await client.PauseAsync(AbortToken);
 
         // then — no exception
     }
@@ -153,7 +187,7 @@ public sealed class RedisConsumerClientTests : TestBase
         await using var client = new RedisConsumerClient("test-group", 1, _mockStreamManager, _options, logger);
 
         // when
-        await client.ResumeAsync();
+        await client.ResumeAsync(AbortToken);
 
         // then — no exception
     }
@@ -166,8 +200,8 @@ public sealed class RedisConsumerClientTests : TestBase
         await using var client = new RedisConsumerClient("test-group", 1, _mockStreamManager, _options, logger);
 
         // when
-        await client.PauseAsync();
-        await client.ResumeAsync();
+        await client.PauseAsync(AbortToken);
+        await client.ResumeAsync(AbortToken);
 
         // then — no exception
     }

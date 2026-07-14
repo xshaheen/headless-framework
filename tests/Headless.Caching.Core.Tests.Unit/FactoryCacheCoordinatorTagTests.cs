@@ -11,6 +11,19 @@ public sealed class FactoryCacheCoordinatorTagTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
     private readonly FakeFactoryCacheStore _store = new();
+    private readonly List<FactoryCacheCoordinator> _coordinators = [];
+
+    protected override ValueTask DisposeAsyncCore()
+    {
+        foreach (var coordinator in _coordinators)
+        {
+            coordinator.Dispose();
+        }
+
+        _coordinators.Clear();
+
+        return base.DisposeAsyncCore();
+    }
 
     [Fact]
     public async Task should_reject_empty_tag_in_options()
@@ -155,6 +168,85 @@ public sealed class FactoryCacheCoordinatorTagTests : TestBase
         entry!.Tags.Should().BeEquivalentTo("factory-tag");
     }
 
-    private FactoryCacheCoordinator _CreateCoordinator() =>
-        new(_timeProvider, NullLogger<FactoryCacheCoordinator>.Instance);
+    [Fact]
+    public async Task should_preserve_created_at_when_notmodified_restamps_entry()
+    {
+        // given — a logically-expired but physically-present entry carrying a known birth time
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var createdAt = now.AddHours(-1);
+        _store.SetEntry(
+            "key",
+            "value",
+            logicalExpiresAt: now.AddMilliseconds(-10),
+            physicalExpiresAt: now.AddMinutes(5),
+            createdAt: createdAt
+        );
+
+        var options = new CacheEntryOptions { Duration = TimeSpan.FromMinutes(1) };
+
+        // when — the factory returns NotModified, re-stamping the existing value as fresh
+        var result = await _CreateCoordinator()
+            .GetOrAddAsync<string>(
+                _store,
+                "key",
+                (context, _) => ValueTask.FromResult(context.NotModified()),
+                options,
+                AbortToken
+            );
+
+        // then — the re-stamp carries the original birth time forward instead of stamping it to now
+        result.Value.Should().Be("value");
+        var entry = _store.GetEntry("key");
+        entry!.CreatedAt.Should().Be(createdAt);
+    }
+
+    [Fact]
+    public async Task should_preserve_created_at_when_failsafe_throttle_restamps_reserve()
+    {
+        // given — a fresh reserve with a known birth time and fail-safe enabled
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var createdAt = now;
+        _store.SetEntry(
+            "key",
+            "stale",
+            logicalExpiresAt: now.AddSeconds(1),
+            physicalExpiresAt: now.AddMinutes(5),
+            createdAt: createdAt
+        );
+
+        var options = new CacheEntryOptions
+        {
+            Duration = TimeSpan.FromSeconds(5),
+            IsFailSafeEnabled = true,
+            FailSafeThrottleDuration = TimeSpan.FromSeconds(10),
+        };
+
+        // advance past logical expiry so the reserve is stale but still physically present
+        _timeProvider.Advance(TimeSpan.FromSeconds(2));
+
+        // when — the factory throws, activating fail-safe and the throttle re-stamp
+        var result = await _CreateCoordinator()
+            .GetOrAddAsync<string>(
+                _store,
+                "key",
+                _ => throw new InvalidOperationException("downstream unavailable"),
+                options,
+                AbortToken
+            );
+
+        // then — the throttle re-stamp preserves the original birth time, not the advanced clock
+        result.Value.Should().Be("stale");
+        result.IsStale.Should().BeTrue();
+        var entry = _store.GetEntry("key");
+        entry!.CreatedAt.Should().Be(createdAt);
+    }
+
+    // Tracks every coordinator so it is disposed in teardown; inline fluent calls cannot take a `using`.
+    private FactoryCacheCoordinator _CreateCoordinator()
+    {
+        var coordinator = new FactoryCacheCoordinator(_timeProvider, NullLogger<FactoryCacheCoordinator>.Instance);
+        _coordinators.Add(coordinator);
+
+        return coordinator;
+    }
 }

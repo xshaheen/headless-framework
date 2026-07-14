@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.PushNotifications.Abstractions;
-
 namespace Headless.PushNotifications.Firebase.Internals;
 
 /// <summary>The notification content sent to one or more device tokens.</summary>

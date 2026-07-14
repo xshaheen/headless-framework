@@ -7,11 +7,10 @@ using RabbitMQ.Client;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class RabbitMqConsumerClientValidationTests : TestBase
 {
     private readonly IConnectionChannelPool _pool;
-    private readonly IOptions<RabbitMqOptions> _options;
+    private readonly IOptions<RabbitMqMessagingOptions> _options;
     private readonly IServiceProvider _serviceProvider;
 
     public RabbitMqConsumerClientValidationTests()
@@ -19,7 +18,15 @@ public sealed class RabbitMqConsumerClientValidationTests : TestBase
         _pool = Substitute.For<IConnectionChannelPool>();
         _pool.Exchange.Returns("test-exchange");
 
-        _options = Options.Create(new RabbitMqOptions { HostName = "localhost", Port = 5672 });
+        _options = Options.Create(
+            new RabbitMqMessagingOptions
+            {
+                HostName = "localhost",
+                Port = 5672,
+                UserName = "test_user",
+                Password = "test_pass",
+            }
+        );
 
         _serviceProvider = Substitute.For<IServiceProvider>();
     }
@@ -85,12 +92,12 @@ public sealed class RabbitMqConsumerClientValidationTests : TestBase
         var channel = Substitute.For<IChannel>();
         var connection = Substitute.For<IConnection>();
         connection.CreateChannelAsync(Arg.Any<CreateChannelOptions?>(), Arg.Any<CancellationToken>()).Returns(channel);
-        _pool.GetConnectionAsync().Returns(connection);
+        _pool.GetConnectionAsync(AbortToken).Returns(connection);
 
         var invalidTopics = new[] { "invalid message name" };
 
         // when
-        var action = async () => await client.SubscribeAsync(invalidTopics);
+        var action = async () => await client.SubscribeAsync(invalidTopics, AbortToken);
 
         // then
         await action.Should().ThrowAsync<ArgumentException>().WithMessage("*alphanumeric*");
@@ -105,12 +112,12 @@ public sealed class RabbitMqConsumerClientValidationTests : TestBase
         var channel = Substitute.For<IChannel>();
         var connection = Substitute.For<IConnection>();
         connection.CreateChannelAsync(Arg.Any<CreateChannelOptions?>(), AbortToken).Returns(channel);
-        _pool.GetConnectionAsync().Returns(connection);
+        _pool.GetConnectionAsync(AbortToken).Returns(connection);
 
         var validTopics = new[] { "valid-messageName.name_123" };
 
         // when
-        var action = async () => await client.SubscribeAsync(validTopics);
+        var action = async () => await client.SubscribeAsync(validTopics, AbortToken);
 
         // then
         await action.Should().NotThrowAsync();

@@ -15,7 +15,7 @@ namespace Headless.Captcha;
 [HtmlTargetElement("recaptcha-script-v3", TagStructure = TagStructure.WithoutEndTag)]
 public sealed class ReCaptchaV3ScriptTagHelper(
     IOptionsSnapshot<ReCaptchaOptions> optionsAccessor,
-    IReCaptchaLanguageCodeProvider reCaptchaLanguageCodeProvider
+    ICaptchaLanguageCodeProvider languageCodeProvider
 ) : TagHelper
 {
     private readonly ReCaptchaOptions _options = optionsAccessor.Get(CaptchaConstants.ReCaptchaV3Provider);
@@ -43,7 +43,7 @@ public sealed class ReCaptchaV3ScriptTagHelper(
         }
 
         var src = Url.Parse(_options.VerifyBaseUrl.TrimEnd('/') + "/recaptcha/api.js")
-            .SetQueryParam("hl", reCaptchaLanguageCodeProvider.GetLanguageCode())
+            .SetQueryParam("hl", languageCodeProvider.GetLanguageCode())
             .SetQueryParam("render", _options.SiteKey)
             .ToString();
 

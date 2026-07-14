@@ -1,7 +1,12 @@
 ﻿<Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <Description>ImageSharp integration for Headless image processing.</Description>
+    <PackageTags>headless;imaging;imagesharp;dotnet</PackageTags>
   </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Imaging.ImageSharp.Tests.Unit" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Imaging.Core\Headless.Imaging.Core.csproj" />
   </ItemGroup>

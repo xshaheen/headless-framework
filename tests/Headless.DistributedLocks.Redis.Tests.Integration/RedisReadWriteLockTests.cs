@@ -2,12 +2,11 @@
 
 using Headless.Abstractions;
 using Headless.DistributedLocks;
-using Headless.DistributedLocks.Redis;
 using Headless.Redis;
-using Headless.Testing.Tests;
+using Headless.Redis.Testing;
 using Microsoft.Extensions.Logging;
 
-namespace Tests.ReaderWriterLocks;
+namespace Tests;
 
 [Collection<RedisTestFixture>]
 public sealed class RedisReaderWriterLockProviderTests(RedisTestFixture fixture) : DistributedReadWriteLockTestsBase

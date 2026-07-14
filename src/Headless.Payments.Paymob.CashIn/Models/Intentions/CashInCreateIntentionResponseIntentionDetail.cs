@@ -4,8 +4,9 @@ namespace Headless.Payments.Paymob.CashIn.Models.Intentions;
 
 public sealed class CashInCreateIntentionResponseIntentionDetail
 {
+    /// <summary>The intention amount in the smallest currency unit (integer cents).</summary>
     [JsonPropertyName("amount")]
-    public int Amount { get; init; }
+    public long Amount { get; init; }
 
     [JsonPropertyName("currency")]
     public required string Currency { get; init; }

@@ -3,7 +3,8 @@
 using Headless.Tus.Models;
 using tusdotnet.Interfaces;
 
-namespace Headless.Tus.Services;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Tus;
 
 public sealed partial class TusAzureStore : ITusReadableStore
 {
@@ -18,6 +19,8 @@ public sealed partial class TusAzureStore : ITusReadableStore
     /// </returns>
     public async Task<ITusFile?> GetFileAsync(string fileId, CancellationToken cancellationToken)
     {
+        await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
+
         var blobClient = _GetBlobClient(fileId);
         var tusFile = await _GetTusFileInfoAsync(blobClient, fileId, cancellationToken).ConfigureAwait(false);
 

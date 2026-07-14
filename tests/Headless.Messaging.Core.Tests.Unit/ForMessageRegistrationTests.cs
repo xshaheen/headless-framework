@@ -2,16 +2,17 @@
 
 using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
-using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
+using Headless.Messaging.Registration;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Tests.Helpers;
 
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
 namespace Tests;
 
-public sealed class ForMessageRegistrationTests
+public sealed class ForMessageRegistrationTests : TestBase
 {
     [Fact]
     public void should_stash_message_registration_with_bus_consumer()
@@ -458,7 +459,8 @@ public sealed class ForMessageRegistrationTests
 
         // when
         var act = () =>
-            provider.GetRequiredService<IBootstrapper>().BootstrapAsync(TestContext.Current.CancellationToken);
+            // ReSharper disable once AccessToDisposedClosure
+            provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
 
         // then
         await act.Should()
@@ -485,8 +487,7 @@ public sealed class ForMessageRegistrationTests
         await using var provider = services.BuildServiceProvider();
 
         // when
-        var act = () =>
-            provider.GetRequiredService<IBootstrapper>().BootstrapAsync(TestContext.Current.CancellationToken);
+        var act = () => provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
 
         // then
         await act.Should()
@@ -513,8 +514,7 @@ public sealed class ForMessageRegistrationTests
         await using var provider = services.BuildServiceProvider();
 
         // when
-        var act = () =>
-            provider.GetRequiredService<IBootstrapper>().BootstrapAsync(TestContext.Current.CancellationToken);
+        var act = () => provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
 
         // then
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*OrderPlaced*OtherOrderPlaced*");

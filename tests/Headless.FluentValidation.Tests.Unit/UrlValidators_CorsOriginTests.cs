@@ -2,6 +2,7 @@
 
 using FluentValidation;
 using FluentValidation.TestHelper;
+using FluentSeverity = FluentValidation.Severity;
 
 namespace Tests;
 
@@ -40,7 +41,10 @@ public sealed class UrlValidatorsCorsOriginTests
     public void should_report_invalid_format_for_non_uri(string origin)
     {
         var result = _sut.TestValidate(new TestModel(origin));
-        result.ShouldHaveValidationErrorFor(x => x.Origin).WithErrorCode("url:invalid_origin_format");
+        result
+            .ShouldHaveValidationErrorFor(x => x.Origin)
+            .WithErrorCode("g:invalid_origin_format")
+            .WithSeverity(FluentSeverity.Error);
     }
 
     // Regression: a non-http(s) absolute scheme previously threw NullReferenceException while
@@ -52,7 +56,7 @@ public sealed class UrlValidatorsCorsOriginTests
     public void should_report_invalid_scheme_for_non_http_scheme(string origin)
     {
         var result = _sut.TestValidate(new TestModel(origin));
-        result.ShouldHaveValidationErrorFor(x => x.Origin).WithErrorCode("url:invalid_origin_scheme");
+        result.ShouldHaveValidationErrorFor(x => x.Origin).WithErrorCode("g:invalid_origin_scheme");
     }
 
     // Regression: an Origin (RFC 6454) is scheme://host[:port] only and must not carry userinfo.
@@ -62,7 +66,7 @@ public sealed class UrlValidatorsCorsOriginTests
     public void should_report_invalid_format_for_userinfo(string origin)
     {
         var result = _sut.TestValidate(new TestModel(origin));
-        result.ShouldHaveValidationErrorFor(x => x.Origin).WithErrorCode("url:invalid_origin_format");
+        result.ShouldHaveValidationErrorFor(x => x.Origin).WithErrorCode("g:invalid_origin_format");
     }
 
     [Theory]
@@ -72,14 +76,14 @@ public sealed class UrlValidatorsCorsOriginTests
     public void should_report_invalid_path_for_non_root(string origin)
     {
         var result = _sut.TestValidate(new TestModel(origin));
-        result.ShouldHaveValidationErrorFor(x => x.Origin).WithErrorCode("url:invalid_origin_path");
+        result.ShouldHaveValidationErrorFor(x => x.Origin).WithErrorCode("g:invalid_origin_path");
     }
 
     [Fact]
     public void should_report_trailing_slash()
     {
         var result = _sut.TestValidate(new TestModel("http://example.com/"));
-        result.ShouldHaveValidationErrorFor(x => x.Origin).WithErrorCode("url:invalid_origin_trailing_slash");
+        result.ShouldHaveValidationErrorFor(x => x.Origin).WithErrorCode("g:invalid_origin_trailing_slash");
     }
 
     // Uri.TryCreate trims surrounding whitespace, so a padded origin would otherwise validate but never
@@ -91,18 +95,18 @@ public sealed class UrlValidatorsCorsOriginTests
     public void should_report_invalid_format_for_whitespace_padding(string origin)
     {
         var result = _sut.TestValidate(new TestModel(origin));
-        result.ShouldHaveValidationErrorFor(x => x.Origin).WithErrorCode("url:invalid_origin_format");
+        result.ShouldHaveValidationErrorFor(x => x.Origin).WithErrorCode("g:invalid_origin_format");
     }
 
     [Fact]
     public void should_substitute_placeholders_in_failure_messages()
     {
         var formatFailure = _sut.TestValidate(new TestModel("not-an-origin"))
-            .Errors.Single(e => e.PropertyName == nameof(TestModel.Origin));
+            .Errors.Single(e => string.Equals(e.PropertyName, nameof(TestModel.Origin), StringComparison.Ordinal));
         formatFailure.ErrorMessage.Should().Contain("not-an-origin").And.NotContain("{PropertyValue}");
 
         var schemeFailure = _sut.TestValidate(new TestModel("ftp://example.com"))
-            .Errors.Single(e => e.PropertyName == nameof(TestModel.Origin));
+            .Errors.Single(e => string.Equals(e.PropertyName, nameof(TestModel.Origin), StringComparison.Ordinal));
         schemeFailure.ErrorMessage.Should().Contain("ftp").And.NotContain("{Scheme}");
     }
 }

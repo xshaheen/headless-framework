@@ -2,7 +2,7 @@
 
 using Headless.Checks;
 using Headless.Messaging.Configuration;
-using Headless.Messaging.Internal;
+using Headless.Messaging.Runtime;
 
 namespace Headless.Messaging;
 
@@ -182,7 +182,8 @@ internal sealed class ConsumerRegistry : IConsumerRegistry
         }
 
         return all.FirstOrDefault(m =>
-            string.Equals(m.MessageName, messageName, StringComparison.OrdinalIgnoreCase) && m.Group == group
+            string.Equals(m.MessageName, messageName, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(m.Group, group, StringComparison.Ordinal)
         );
     }
 
@@ -256,7 +257,7 @@ internal sealed class ConsumerRegistry : IConsumerRegistry
     /// Checks if a consumer is already registered for the specified message type.
     /// </summary>
     /// <param name="messageType">The message type to check.</param>
-    /// <returns><c>true</c> if a consumer is registered for the message type; otherwise, <c>false</c>.</returns>
+    /// <returns><see langword="true"/> if a consumer is registered for the message type; otherwise, <see langword="false"/>.</returns>
     public bool IsRegistered(Type messageType)
     {
         // If frozen, check the frozen list
@@ -268,7 +269,7 @@ internal sealed class ConsumerRegistry : IConsumerRegistry
         // Otherwise check the mutable list
         lock (_lock)
         {
-            return _consumers?.Any(m => m.MessageType == messageType) ?? false;
+            return _consumers?.Exists(m => m.MessageType == messageType) ?? false;
         }
     }
 

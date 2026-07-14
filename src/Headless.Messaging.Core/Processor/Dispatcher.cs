@@ -4,6 +4,7 @@ using System.Threading.Channels;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
+using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
@@ -23,12 +24,20 @@ internal sealed class Dispatcher : IDispatcher
     private readonly IDataStorage _storage;
     private readonly TimeProvider _timeProvider;
     private readonly IHostApplicationLifetime? _hostApplicationLifetime;
+#pragma warning disable CA2213 // Disposed by deadline-bounded asynchronous finalization.
     private readonly ScheduledMediumMessageQueue _schedulerQueue;
+#pragma warning restore CA2213
     private readonly bool _enableParallelExecute;
     private readonly bool _enableParallelSend;
     private readonly int _publishChannelSize;
 
+#pragma warning disable CA2213 // Disposed by deadline-bounded asynchronous finalization.
     private CancellationTokenSource? _tasksCts;
+#pragma warning restore CA2213
+    private Task? _sendingTask;
+    private Task[] _processingTasks = [];
+    private Task? _schedulerTask;
+    private Task? _eventualCleanupTask;
 
     // Volatile because writers (DisposeAsync, _ResetStateIfNeeded) race readers on channel-writer
     // and processing-loop threads. Without the barrier, a stale `false` read can slip past the
@@ -100,8 +109,8 @@ internal sealed class Dispatcher : IDispatcher
             await _StartProcessingTasksAsync().ConfigureAwait(false);
         }
 
-        var schedulerTask = _StartSchedulerTaskAsync();
-        _ = schedulerTask.ContinueWith(
+        _schedulerTask = _StartSchedulerTaskAsync();
+        _ = _schedulerTask.ContinueWith(
             _OnSchedulerLoopFaulted,
             CancellationToken.None,
             TaskContinuationOptions.OnlyOnFaulted,
@@ -238,18 +247,135 @@ internal sealed class Dispatcher : IDispatcher
         }
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
+        return DisposeAsync(_options.ShutdownTimeout);
+    }
+
+    public async ValueTask DisposeAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
+    {
+        var shutdownStarted = _timeProvider.GetTimestamp();
+
         if (_disposed)
         {
+            if (_eventualCleanupTask is { } eventualCleanupTask)
+            {
+                // Bound the reentrant join: both IDispatcher and IConsumerRegister are registered as
+                // IProcessingServer over this same instance, so the second dispose always lands here.
+                // An unbounded await would let a handler that never observes cancellation hang host
+                // shutdown past ShutdownTimeout — the exact failure the option exists to prevent. On
+                // timeout the cleanup keeps running in background and logs its own outcome.
+                if (timeout <= TimeSpan.Zero)
+                {
+                    _logger.ProcessorStopFailed(
+                        new TimeoutException("The shared messaging shutdown deadline has expired."),
+                        nameof(Dispatcher)
+                    );
+                    return;
+                }
+
+                try
+                {
+                    await eventualCleanupTask
+                        .WaitAsync(timeout, _timeProvider, CancellationToken.None)
+                        .ConfigureAwait(false);
+                }
+                catch (TimeoutException ex)
+                {
+                    _logger.ProcessorStopFailed(ex, nameof(Dispatcher));
+                }
+            }
+
             return;
         }
 
-        // Flush scheduler queue to storage BEFORE cancelling/disposing _tasksCts. Earlier
-        // implementations did this in a CancellationToken.Register callback that ran synchronously
-        // on the stopping thread; we used .GetAwaiter().GetResult() which blocks the threadpool slot
-        // the async storage continuation needs and creates a shutdown deadlock window. Performing
-        // the async flush here keeps the operation cooperatively async.
+        _disposed = true;
+
+        if (_tasksCts is not null)
+        {
+            var cancellationTask = _tasksCts.CancelAsync();
+            var remaining = _GetRemainingTimeout(shutdownStarted, timeout);
+            if (!cancellationTask.IsCompleted)
+            {
+                if (remaining <= TimeSpan.Zero)
+                {
+                    _LogShutdownTimeout();
+                    _eventualCleanupTask = _CompleteShutdownAfterCancellationAsync(cancellationTask);
+                    return;
+                }
+
+                try
+                {
+                    await cancellationTask
+                        .WaitAsync(remaining, _timeProvider, CancellationToken.None)
+                        .ConfigureAwait(false);
+                }
+                catch (TimeoutException ex)
+                {
+                    _logger.ProcessorStopFailed(ex, nameof(Dispatcher));
+                    _eventualCleanupTask = _CompleteShutdownAfterCancellationAsync(cancellationTask);
+                    return;
+                }
+            }
+            else
+            {
+                await cancellationTask.ConfigureAwait(false);
+            }
+
+            if (
+                !await _WaitForBackgroundTasksAsync(_GetRemainingTimeout(shutdownStarted, timeout))
+                    .ConfigureAwait(false)
+            )
+            {
+                return;
+            }
+        }
+
+        await _FinalizeShutdownWithinBudgetAsync(shutdownStarted, timeout).ConfigureAwait(false);
+    }
+
+    private TimeSpan _GetRemainingTimeout(long started, TimeSpan timeout)
+    {
+        var remaining = timeout - _timeProvider.GetElapsedTime(started);
+        return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
+    }
+
+    private async Task _FinalizeShutdownWithinBudgetAsync(long shutdownStarted, TimeSpan timeout)
+    {
+        var finalizationTask = _FinalizeShutdownAsync();
+        if (finalizationTask.IsCompleted)
+        {
+            await finalizationTask.ConfigureAwait(false);
+            return;
+        }
+
+        var remaining = _GetRemainingTimeout(shutdownStarted, timeout);
+        if (remaining > TimeSpan.Zero)
+        {
+            try
+            {
+                await finalizationTask
+                    .WaitAsync(remaining, _timeProvider, CancellationToken.None)
+                    .ConfigureAwait(false);
+                return;
+            }
+            catch (TimeoutException ex)
+            {
+                _logger.ProcessorStopFailed(ex, nameof(Dispatcher));
+            }
+        }
+        else
+        {
+            _LogShutdownTimeout();
+        }
+
+        _eventualCleanupTask = _ObserveFinalizationAsync(finalizationTask);
+    }
+
+    private async Task _FinalizeShutdownAsync()
+    {
+        // Flush after the scheduler task has observed cancellation, so no concurrent consumer can
+        // remove and publish a row while this shutdown path is moving remaining queued ids back to Delayed.
         await _FlushSchedulerQueueAsync().ConfigureAwait(false);
 
         if (_tasksCts is not null)
@@ -258,10 +384,6 @@ internal sealed class Dispatcher : IDispatcher
         }
 
         await castAndDispose(_schedulerQueue).ConfigureAwait(false);
-
-        _disposed = true;
-
-        return;
 
         static async ValueTask castAndDispose(IDisposable resource)
         {
@@ -310,14 +432,26 @@ internal sealed class Dispatcher : IDispatcher
     /// <remarks>
     /// This is the only call site that flips <see cref="_disposed"/> back to <see langword="false"/>.
     /// All other consumers must treat the dispatcher as terminally disposed once
-    /// <see cref="DisposeAsync"/> has run.
+    /// <see cref="DisposeAsync()"/> has run.
     /// </remarks>
     private void _ResetStateIfNeeded()
     {
         if (_disposed || _tasksCts is { IsCancellationRequested: true })
         {
+            if (
+                _sendingTask is { IsCompleted: false }
+                || _processingTasks.Any(static task => !task.IsCompleted)
+                || _schedulerTask is { IsCompleted: false }
+            )
+            {
+                throw new InvalidOperationException("Dispatcher shutdown is still in progress.");
+            }
+
             _tasksCts?.Dispose();
             _tasksCts = null;
+            _sendingTask = null;
+            _processingTasks = [];
+            _schedulerTask = null;
             _disposed = false;
         }
     }
@@ -345,7 +479,7 @@ internal sealed class Dispatcher : IDispatcher
             {
                 AllowSynchronousContinuations = true,
                 SingleReader = isSingleReader,
-                SingleWriter = true,
+                SingleWriter = false,
                 FullMode = BoundedChannelFullMode.Wait,
             }
         );
@@ -367,8 +501,8 @@ internal sealed class Dispatcher : IDispatcher
         // would otherwise leave PublishedChannel filling indefinitely (BoundedChannelFullMode.Wait)
         // and every subsequent EnqueueToPublish would block forever while the host still reports
         // "healthy".
-        var loop = Task.Run(_SendingAsync, TasksCts.Token);
-        _ = loop.ContinueWith(
+        _sendingTask = Task.Run(_SendingAsync, TasksCts.Token);
+        _ = _sendingTask.ContinueWith(
             t => _SignalLoopTermination("sending", t.Exception!),
             CancellationToken.None,
             TaskContinuationOptions.OnlyOnFaulted,
@@ -382,12 +516,12 @@ internal sealed class Dispatcher : IDispatcher
         // Fire-and-forget per-thread processing loops; faults are signalled to the host (R2)
         // via _SignalLoopTermination. A dead processing loop would leave ReceivedChannel filling
         // and EnqueueToExecute would block forever, masking the failure from the host.
-        var processingTasks = Enumerable
+        _processingTasks = Enumerable
             .Range(0, _options.SubscriberParallelExecuteThreadCount)
             .Select(_ => Task.Run(_ProcessingAsync, TasksCts.Token))
             .ToArray();
 
-        foreach (var loop in processingTasks)
+        foreach (var loop in _processingTasks)
         {
             _ = loop.ContinueWith(
                 t => _SignalLoopTermination("processing", t.Exception!),
@@ -425,6 +559,129 @@ internal sealed class Dispatcher : IDispatcher
             },
             TasksCts.Token
         );
+    }
+
+    private async ValueTask<bool> _WaitForBackgroundTasksAsync(TimeSpan timeout)
+    {
+        var tasks = _GetBackgroundTasks();
+
+        if (tasks.Count == 0)
+        {
+            return true;
+        }
+
+        var completionTask = Task.WhenAll(tasks);
+
+        if (timeout <= TimeSpan.Zero)
+        {
+            var exception = new TimeoutException("The shared messaging shutdown deadline has expired.");
+            _logger.ProcessorStopFailed(exception, nameof(Dispatcher));
+            _eventualCleanupTask = _CompleteTimedOutShutdownAsync(tasks);
+            return false;
+        }
+
+        try
+        {
+            await completionTask.WaitAsync(timeout, _timeProvider, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (TimeoutException ex)
+        {
+            _logger.ProcessorStopFailed(ex, nameof(Dispatcher));
+            _eventualCleanupTask = _CompleteTimedOutShutdownAsync(tasks);
+            return false;
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected during shutdown.
+        }
+        catch (Exception ex)
+        {
+            _logger.ProcessorStopFailed(ex, nameof(Dispatcher));
+        }
+        _ClearBackgroundTasks();
+
+        return true;
+    }
+
+    private List<Task> _GetBackgroundTasks()
+    {
+        var tasks = new List<Task>(_processingTasks.Length + 2);
+        if (_sendingTask is { } sendingTask)
+        {
+            tasks.Add(sendingTask);
+        }
+
+        tasks.AddRange(_processingTasks);
+        if (_schedulerTask is { } schedulerTask)
+        {
+            tasks.Add(schedulerTask);
+        }
+
+        return tasks;
+    }
+
+    private async Task _CompleteShutdownAfterCancellationAsync(Task cancellationTask)
+    {
+        try
+        {
+#pragma warning disable VSTHRD003 // The cancellation task is deliberately completed during eventual cleanup.
+            await cancellationTask.ConfigureAwait(false);
+#pragma warning restore VSTHRD003
+        }
+        catch (Exception ex)
+        {
+            _logger.ProcessorStopFailed(ex, nameof(Dispatcher));
+        }
+
+        await _CompleteTimedOutShutdownAsync(_GetBackgroundTasks()).ConfigureAwait(false);
+    }
+
+    private async Task _CompleteTimedOutShutdownAsync(IReadOnlyCollection<Task> tasks)
+    {
+        try
+        {
+            await Task.WhenAll(tasks).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected during shutdown.
+        }
+        catch (Exception ex)
+        {
+            _logger.ProcessorStopFailed(ex, nameof(Dispatcher));
+        }
+
+        _ClearBackgroundTasks();
+        await _ObserveFinalizationAsync(_FinalizeShutdownAsync()).ConfigureAwait(false);
+    }
+
+#pragma warning disable VSTHRD003 // The caller-created finalization task is explicitly fault-observed here.
+    private async Task _ObserveFinalizationAsync(Task finalizationTask)
+    {
+        try
+        {
+            await finalizationTask.ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.ProcessorStopFailed(ex, nameof(Dispatcher));
+        }
+    }
+#pragma warning restore VSTHRD003
+
+    private void _LogShutdownTimeout()
+    {
+        _logger.ProcessorStopFailed(
+            new TimeoutException("The shared messaging shutdown deadline has expired."),
+            nameof(Dispatcher)
+        );
+    }
+
+    private void _ClearBackgroundTasks()
+    {
+        _sendingTask = null;
+        _processingTasks = [];
+        _schedulerTask = null;
     }
 
     #endregion
@@ -523,7 +780,7 @@ internal sealed class Dispatcher : IDispatcher
             var result = await _sender.SendAsync(message, dispatchScope.ServiceProvider).ConfigureAwait(false);
             if (!result.Succeeded)
             {
-                _logger.MessagePublishException(result.Exception, message.Origin.GetId(), result.ToString());
+                _logger.MessagePublishException(result.Exception, message.Origin.Id, result.ToString());
             }
         }
         catch (Exception ex)
@@ -540,7 +797,7 @@ internal sealed class Dispatcher : IDispatcher
             var result = await _sender.SendAsync(message, dispatchScope.ServiceProvider).ConfigureAwait(false);
             if (!result.Succeeded)
             {
-                _logger.MessagePublishException(result.Exception, message.Origin.GetId(), result.ToString());
+                _logger.MessagePublishException(result.Exception, message.Origin.Id, result.ToString());
             }
         }
         catch (Exception ex)

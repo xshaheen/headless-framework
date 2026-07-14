@@ -39,11 +39,11 @@ public sealed class UrlUtilityMethodTests
 
         // every 10th char needs to be encoded
         var s = string.Concat(Enumerable.Repeat("xxxxxxxxx ", len / 10));
-        s.Length.Should().Be(len);
+        s.Should().HaveLength(len);
 
         // encode space as %20
         var encoded = Url.Encode(s, false);
-        encoded.Length.Should().Be(len + (2 * len / 10));
+        encoded.Should().HaveLength(len + (2 * len / 10));
         var expected = string.Concat(Enumerable.Repeat("xxxxxxxxx%20", len / 10));
         encoded.Should().Be(expected);
 
@@ -52,7 +52,7 @@ public sealed class UrlUtilityMethodTests
 
         // encode space as +
         encoded = Url.Encode(s, true);
-        encoded.Length.Should().Be(len);
+        encoded.Should().HaveLength(len);
         expected = string.Concat(Enumerable.Repeat("xxxxxxxxx+", len / 10));
         encoded.Should().Be(expected);
 

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Azure.Storage.Blobs;
+using Azure.Storage.Blobs.Models;
 using Headless.Abstractions;
 using Headless.Blobs;
 using Headless.Blobs.Azure;
@@ -38,20 +39,20 @@ public sealed class AzureBlobsRegistrationTests
         services.AddLogging();
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IMimeTypeProvider, MimeTypeProvider>();
-        services.TryAddSingleton<IClock, Clock>();
+        services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton(defaultClient); // ambient client for the default store
 
         services.AddHeadlessBlobs(blobs =>
         {
             // Default store: resolves BlobServiceClient from DI
-            blobs.UseAzure(options => options.AutoCreateContainer = true);
+            blobs.UseAzure(options => options.ContainerPublicAccessType = PublicAccessType.None);
 
             // Named "archive": per-store client factory — simulates a second Azure account
             blobs.AddNamed(
                 "archive",
                 instance =>
                     instance.UseAzure(
-                        setupAction: options => options.AutoCreateContainer = false,
+                        setupAction: options => options.ContainerPublicAccessType = PublicAccessType.None,
                         clientFactory: _ => archiveClient
                     )
             );
@@ -86,6 +87,12 @@ public sealed class AzureBlobsRegistrationTests
         // keyed resolution is consistent with provider resolution
         sp.GetRequiredKeyedService<IBlobStorage>("archive").Should().BeSameAs(archive);
         sp.GetRequiredKeyedService<IBlobStorage>("docs").Should().BeSameAs(docs);
+
+        // the container-management capability is a separately-registered service (resolved, not cast from storage):
+        // the default store registers an unkeyed manager and each named store registers a keyed one.
+        sp.GetService<IBlobContainerManager>().Should().BeOfType<AzureBlobContainerManager>();
+        sp.GetRequiredKeyedService<IBlobContainerManager>("archive").Should().NotBeNull();
+        sp.GetRequiredKeyedService<IBlobContainerManager>("docs").Should().NotBeNull();
     }
 
     [Fact]
@@ -98,7 +105,7 @@ public sealed class AzureBlobsRegistrationTests
         services.AddLogging();
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IMimeTypeProvider, MimeTypeProvider>();
-        services.TryAddSingleton<IClock, Clock>();
+        services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton(client);
 
         services.AddHeadlessBlobs(blobs =>
@@ -135,7 +142,7 @@ public sealed class AzureBlobsRegistrationTests
         services.AddLogging();
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IMimeTypeProvider, MimeTypeProvider>();
-        services.TryAddSingleton<IClock, Clock>();
+        services.TryAddSingleton(TimeProvider.System);
 
         services.AddHeadlessBlobs(blobs =>
         {
@@ -151,6 +158,10 @@ public sealed class AzureBlobsRegistrationTests
         sp.GetService<IBlobStorage>().Should().BeNull();
         sp.GetService<IPresignedUrlBlobStorage>().Should().BeNull();
         sp.GetRequiredKeyedService<IBlobStorage>("reports").Should().NotBeNull();
+
+        // the container-management capability follows the same shape: no unkeyed manager, only the keyed one.
+        sp.GetService<IBlobContainerManager>().Should().BeNull();
+        sp.GetRequiredKeyedService<IBlobContainerManager>("reports").Should().NotBeNull();
     }
 
     [Fact]
@@ -163,7 +174,7 @@ public sealed class AzureBlobsRegistrationTests
         services.AddLogging();
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IMimeTypeProvider, MimeTypeProvider>();
-        services.TryAddSingleton<IClock, Clock>();
+        services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton(ambientClient);
 
         services.AddHeadlessBlobs(blobs =>

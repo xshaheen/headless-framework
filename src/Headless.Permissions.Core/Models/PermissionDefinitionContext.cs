@@ -18,15 +18,11 @@ public sealed class PermissionDefinitionContext : IPermissionDefinitionContext
     {
         Argument.IsNotNull(name);
 
-        var group = new PermissionGroupDefinition(name, displayName);
-
-        return AddGroup(group);
+        return _AddGroup(new PermissionGroupDefinition(name, displayName));
     }
 
-    public PermissionGroupDefinition AddGroup(PermissionGroupDefinition group)
+    private PermissionGroupDefinition _AddGroup(PermissionGroupDefinition group)
     {
-        Argument.IsNotNull(group);
-
         if (Groups.ContainsKey(group.Name))
         {
             throw new InvalidOperationException(
@@ -39,7 +35,7 @@ public sealed class PermissionDefinitionContext : IPermissionDefinitionContext
 
     public PermissionGroupDefinition GetGroup(string name)
     {
-        var group = GetGroupOrNull(name);
+        var group = GetGroupOrDefault(name);
 
         return group
             ?? throw new InvalidOperationException(
@@ -47,7 +43,7 @@ public sealed class PermissionDefinitionContext : IPermissionDefinitionContext
             );
     }
 
-    public PermissionGroupDefinition? GetGroupOrNull(string name)
+    public PermissionGroupDefinition? GetGroupOrDefault(string name)
     {
         Argument.IsNotNull(name);
 

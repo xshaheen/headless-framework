@@ -14,12 +14,15 @@ internal sealed class AzureServiceBusConsumerClient(
     ILogger logger,
     string subscriptionName,
     byte groupConcurrent,
-    IOptions<AzureServiceBusOptions> options,
+    IOptions<AzureServiceBusMessagingOptions> options,
     IServiceProvider serviceProvider,
     IntentType intentType = IntentType.Bus
 ) : IConsumerClient
 {
-    private readonly AzureServiceBusOptions _asbOptions = Argument.IsNotNull(options.Value);
+    // Headless must settle only after durable receive storage and handler outcome are known.
+    private const bool _AutoCompleteMessages = false;
+
+    private readonly AzureServiceBusMessagingOptions _asbOptions = Argument.IsNotNull(options.Value);
     private readonly SemaphoreSlim _connectionLock = new(1, 1);
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
     private readonly ConsumerPauseGate _pauseGate = new();
@@ -39,18 +42,21 @@ internal sealed class AzureServiceBusConsumerClient(
     public BrokerAddress BrokerAddress =>
         ServiceBusHelpers.GetBrokerAddress(_asbOptions.ConnectionString, _asbOptions.Namespace);
 
-    public async ValueTask SubscribeAsync(IEnumerable<string> messageNames)
+    public async ValueTask SubscribeAsync(
+        IEnumerable<string> messageNames,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotNull(messageNames);
 
-        await ConnectAsync().ConfigureAwait(false);
+        await ConnectAsync(cancellationToken).ConfigureAwait(false);
 
         if (intentType == IntentType.Queue)
         {
             foreach (var messageName in messageNames)
             {
                 CheckValidQueueName(messageName);
-                await _EnsureQueueProcessorAsync(messageName).ConfigureAwait(false);
+                await _EnsureQueueProcessorAsync(messageName, cancellationToken).ConfigureAwait(false);
             }
 
             return;
@@ -64,20 +70,20 @@ internal sealed class AzureServiceBusConsumerClient(
         // Get existing rules
 
         var allRuleNames = new List<string>();
-        var allRules = _administrationClient!.GetRulesAsync(_asbOptions.TopicPath, subscriptionName);
+        var allRules = _administrationClient!.GetRulesAsync(_asbOptions.TopicPath, subscriptionName, cancellationToken);
 
-        await foreach (var rule in allRules)
+        await foreach (var rule in allRules.WithCancellation(cancellationToken).ConfigureAwait(false))
         {
             allRuleNames.Add(rule.Name);
         }
 
-        var messageNamesList = messageNames.Concat(_asbOptions.SqlFilters?.Select(o => o.Key) ?? []).ToList();
+        var messageNamesList = messageNames.Concat(_asbOptions.SqlFilters.Select(o => o.Key)).ToList();
 
         foreach (var newRule in messageNamesList.Except(allRuleNames, StringComparer.Ordinal))
         {
             var isSqlRule =
                 _asbOptions
-                    .SqlFilters?.FirstOrDefault(o => string.Equals(o.Key, newRule, StringComparison.Ordinal))
+                    .SqlFilters.FirstOrDefault(o => string.Equals(o.Key, newRule, StringComparison.Ordinal))
                     .Value
                 is not null;
 
@@ -86,7 +92,7 @@ internal sealed class AzureServiceBusConsumerClient(
             if (isSqlRule)
             {
                 var sqlExpression = _asbOptions
-                    .SqlFilters?.FirstOrDefault(o => string.Equals(o.Key, newRule, StringComparison.Ordinal))
+                    .SqlFilters.FirstOrDefault(o => string.Equals(o.Key, newRule, StringComparison.Ordinal))
                     .Value;
                 currentRuleToAdd = new SqlRuleFilter(sqlExpression);
             }
@@ -106,7 +112,8 @@ internal sealed class AzureServiceBusConsumerClient(
                 .CreateRuleAsync(
                     _asbOptions.TopicPath,
                     subscriptionName,
-                    new CreateRuleOptions { Name = newRule, Filter = currentRuleToAdd }
+                    new CreateRuleOptions { Name = newRule, Filter = currentRuleToAdd },
+                    cancellationToken
                 )
                 .ConfigureAwait(false);
 
@@ -116,7 +123,7 @@ internal sealed class AzureServiceBusConsumerClient(
         foreach (var oldRule in allRuleNames.Except(messageNamesList, StringComparer.Ordinal))
         {
             await _administrationClient
-                .DeleteRuleAsync(_asbOptions.TopicPath, subscriptionName, oldRule)
+                .DeleteRuleAsync(_asbOptions.TopicPath, subscriptionName, oldRule, cancellationToken)
                 .ConfigureAwait(false);
 
             logger.RuleRemoved(oldRule);
@@ -125,7 +132,7 @@ internal sealed class AzureServiceBusConsumerClient(
 
     public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
-        await ConnectAsync().ConfigureAwait(false);
+        await ConnectAsync(cancellationToken).ConfigureAwait(false);
 
         IReadOnlyList<ServiceBusProcessorFacade> processors =
             intentType == IntentType.Queue ? _queueProcessors : [_serviceBusProcessor!];
@@ -160,19 +167,16 @@ internal sealed class AzureServiceBusConsumerClient(
         return new ValueTask(_ready.Task.WaitAsync(cancellationToken));
     }
 
-    public async ValueTask CommitAsync(object? sender)
+    public async ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default)
     {
         var commitInput = (AzureServiceBusConsumerCommitInput)sender!;
-        if (!_asbOptions.AutoCompleteMessages)
-        {
-            await commitInput.CompleteMessageAsync().ConfigureAwait(false);
-        }
+        await commitInput.CompleteMessageAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public async ValueTask RejectAsync(object? sender)
+    public async ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
     {
         var commitInput = (AzureServiceBusConsumerCommitInput)sender!;
-        await commitInput.AbandonMessageAsync().ConfigureAwait(false);
+        await commitInput.AbandonMessageAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask PauseAsync(CancellationToken cancellationToken = default)
@@ -314,14 +318,14 @@ internal sealed class AzureServiceBusConsumerClient(
         await OnMessageCallback!(context, new AzureServiceBusConsumerCommitInput(arg)).ConfigureAwait(false);
     }
 
-    public async Task ConnectAsync()
+    public async Task ConnectAsync(CancellationToken cancellationToken = default)
     {
         if (_serviceBusProcessor != null || (intentType == IntentType.Queue && _serviceBusClient != null))
         {
             return;
         }
 
-        await _connectionLock.WaitAsync().ConfigureAwait(false);
+        await _connectionLock.WaitAsync(cancellationToken).ConfigureAwait(false);
 
         try
         {
@@ -353,16 +357,22 @@ internal sealed class AzureServiceBusConsumerClient(
 
                     foreach (var (topicPath, subscribe) in topicConfigs)
                     {
-                        if (!await administrationClient.TopicExistsAsync(topicPath).ConfigureAwait(false))
+                        if (
+                            !await administrationClient
+                                .TopicExistsAsync(topicPath, cancellationToken)
+                                .ConfigureAwait(false)
+                        )
                         {
-                            await administrationClient.CreateTopicAsync(topicPath).ConfigureAwait(false);
+                            await administrationClient
+                                .CreateTopicAsync(topicPath, cancellationToken)
+                                .ConfigureAwait(false);
                             logger.TopicCreated(topicPath);
                         }
 
                         if (
                             subscribe
                             && !await administrationClient
-                                .SubscriptionExistsAsync(topicPath, subscriptionName)
+                                .SubscriptionExistsAsync(topicPath, subscriptionName, cancellationToken)
                                 .ConfigureAwait(false)
                         )
                         {
@@ -376,7 +386,7 @@ internal sealed class AzureServiceBusConsumerClient(
                             };
 
                             await administrationClient
-                                .CreateSubscriptionAsync(subscriptionDescription)
+                                .CreateSubscriptionAsync(subscriptionDescription, cancellationToken)
                                 .ConfigureAwait(false);
 
                             logger.SubscriptionCreated(topicPath, subscriptionName);
@@ -396,7 +406,7 @@ internal sealed class AzureServiceBusConsumerClient(
                             subscriptionName,
                             new ServiceBusProcessorOptions
                             {
-                                AutoCompleteMessages = _asbOptions.AutoCompleteMessages,
+                                AutoCompleteMessages = _AutoCompleteMessages,
                                 MaxConcurrentCalls = _asbOptions.MaxConcurrentCalls,
                                 MaxAutoLockRenewalDuration = _asbOptions.MaxAutoLockRenewalDuration,
                             }
@@ -408,7 +418,7 @@ internal sealed class AzureServiceBusConsumerClient(
                             subscriptionName,
                             new ServiceBusSessionProcessorOptions
                             {
-                                AutoCompleteMessages = _asbOptions.AutoCompleteMessages,
+                                AutoCompleteMessages = _AutoCompleteMessages,
                                 MaxConcurrentCallsPerSession = _asbOptions.MaxConcurrentCalls,
                                 MaxAutoLockRenewalDuration = _asbOptions.MaxAutoLockRenewalDuration,
                                 MaxConcurrentSessions = _asbOptions.MaxConcurrentSessions,
@@ -424,13 +434,13 @@ internal sealed class AzureServiceBusConsumerClient(
         }
     }
 
-    private async Task _EnsureQueueProcessorAsync(string queueName)
+    private async Task _EnsureQueueProcessorAsync(string queueName, CancellationToken cancellationToken)
     {
-        await ConnectAsync().ConfigureAwait(false);
+        await ConnectAsync(cancellationToken).ConfigureAwait(false);
 
         if (_asbOptions.AutoProvision && _administrationClient is not null)
         {
-            if (!await _administrationClient.QueueExistsAsync(queueName).ConfigureAwait(false))
+            if (!await _administrationClient.QueueExistsAsync(queueName, cancellationToken).ConfigureAwait(false))
             {
                 var queueOptions = new CreateQueueOptions(queueName)
                 {
@@ -441,7 +451,7 @@ internal sealed class AzureServiceBusConsumerClient(
                     MaxDeliveryCount = _asbOptions.SubscriptionMaxDeliveryCount,
                 };
 
-                await _administrationClient.CreateQueueAsync(queueOptions).ConfigureAwait(false);
+                await _administrationClient.CreateQueueAsync(queueOptions, cancellationToken).ConfigureAwait(false);
             }
         }
 
@@ -451,7 +461,7 @@ internal sealed class AzureServiceBusConsumerClient(
                     queueName,
                     new ServiceBusProcessorOptions
                     {
-                        AutoCompleteMessages = _asbOptions.AutoCompleteMessages,
+                        AutoCompleteMessages = _AutoCompleteMessages,
                         MaxConcurrentCalls = _asbOptions.MaxConcurrentCalls,
                         MaxAutoLockRenewalDuration = _asbOptions.MaxAutoLockRenewalDuration,
                     }
@@ -462,7 +472,7 @@ internal sealed class AzureServiceBusConsumerClient(
                     queueName,
                     new ServiceBusSessionProcessorOptions
                     {
-                        AutoCompleteMessages = _asbOptions.AutoCompleteMessages,
+                        AutoCompleteMessages = _AutoCompleteMessages,
                         MaxConcurrentCallsPerSession = _asbOptions.MaxConcurrentCalls,
                         MaxAutoLockRenewalDuration = _asbOptions.MaxAutoLockRenewalDuration,
                         MaxConcurrentSessions = _asbOptions.MaxConcurrentSessions,
@@ -518,7 +528,7 @@ internal sealed class AzureServiceBusConsumerClient(
 
     internal static void CheckValidSubscriptionName(string subscriptionName)
     {
-        const string pathDelimiter = "/";
+        const char pathDelimiter = '/';
         const int ruleNameMaximumLength = 50;
         char[] invalidEntityPathCharacters = ['@', '?', '#', '*'];
 
@@ -529,7 +539,7 @@ internal sealed class AzureServiceBusConsumerClient(
 
         // "\" will be converted to "/" on the REST path anyway. Gateway/REST do not
         // have to worry about the begin/end slash problem, so this is purely a client side check.
-        var tmpName = subscriptionName.Replace(@"\", pathDelimiter, StringComparison.Ordinal);
+        var tmpName = subscriptionName.Replace('\\', pathDelimiter);
         if (tmpName.Length > ruleNameMaximumLength)
         {
             throw new ArgumentOutOfRangeException(
@@ -538,10 +548,7 @@ internal sealed class AzureServiceBusConsumerClient(
             );
         }
 
-        if (
-            tmpName.StartsWith(pathDelimiter, StringComparison.Ordinal)
-            || tmpName.EndsWith(pathDelimiter, StringComparison.Ordinal)
-        )
+        if (tmpName.StartsWith(pathDelimiter) || tmpName.EndsWith(pathDelimiter))
         {
             throw new ArgumentException(
                 $"The subscribe name cannot contain '/' as prefix or suffix. The supplied value is '{subscriptionName}'.",
@@ -571,7 +578,7 @@ internal sealed class AzureServiceBusConsumerClient(
 
     internal static void CheckValidQueueName(string queueName)
     {
-        const string pathDelimiter = "/";
+        const char pathDelimiter = '/';
         const int queueNameMaximumLength = 260;
         char[] invalidEntityPathCharacters = ['@', '?', '#', '*'];
 
@@ -580,7 +587,7 @@ internal sealed class AzureServiceBusConsumerClient(
             throw new ArgumentException("Queue name cannot be null or whitespace.", nameof(queueName));
         }
 
-        var tmpName = queueName.Replace(@"\", pathDelimiter, StringComparison.Ordinal);
+        var tmpName = queueName.Replace('\\', pathDelimiter);
         if (tmpName.Length > queueNameMaximumLength)
         {
             throw new ArgumentOutOfRangeException(
@@ -589,10 +596,7 @@ internal sealed class AzureServiceBusConsumerClient(
             );
         }
 
-        if (
-            tmpName.StartsWith(pathDelimiter, StringComparison.Ordinal)
-            || tmpName.EndsWith(pathDelimiter, StringComparison.Ordinal)
-        )
+        if (tmpName.StartsWith(pathDelimiter) || tmpName.EndsWith(pathDelimiter))
         {
             throw new ArgumentException(
                 $"The queue name cannot contain '/' as prefix or suffix. The supplied value is '{queueName}'.",

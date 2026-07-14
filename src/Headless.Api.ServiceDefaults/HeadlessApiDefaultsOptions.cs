@@ -3,7 +3,7 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.HttpOverrides;
 
-namespace Headless.Api;
+namespace Headless.Api.ServiceDefaults;
 
 /// <summary>Options for <see cref="SetupApi.UseHeadless(WebApplication, Action{HeadlessApiDefaultsOptions}?)"/>.</summary>
 [PublicAPI]

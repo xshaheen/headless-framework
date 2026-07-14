@@ -1,15 +1,14 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
-using Headless.Features;
 using Headless.Features.Internal;
 using Headless.Features.Repositories;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Microsoft.Extensions.DependencyInjection;
+namespace Headless.Features;
 
 /// <summary>Registers the Entity Framework Core storage provider for Headless Features.</summary>
 [PublicAPI]
@@ -44,7 +43,7 @@ public static class SetupFeaturesEntityFramework
             services.AddOptions<FeaturesStorageOptions, EntityFrameworkFeaturesStorageOptionsValidator>();
             services.TryAddSingleton(
                 typeof(IFeatureValueRecordRepository),
-                typeof(EfFeatureValueRecordRecordRepository<>).MakeGenericType(dbContextType)
+                typeof(EfFeatureValueRecordRepository<>).MakeGenericType(dbContextType)
             );
             services.TryAddSingleton(
                 typeof(IFeatureDefinitionRecordRepository),

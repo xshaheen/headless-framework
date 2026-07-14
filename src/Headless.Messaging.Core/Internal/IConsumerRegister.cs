@@ -9,6 +9,7 @@ using Headless.Messaging.Exceptions;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Retry;
+using Headless.Messaging.Runtime;
 using Headless.Messaging.Serialization;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
@@ -20,7 +21,7 @@ namespace Headless.Messaging.Internal;
 /// <summary>
 /// Handler received message of subscribed.
 /// </summary>
-public interface IConsumerRegister : IProcessingServer
+internal interface IConsumerRegister : IProcessingServer
 {
     bool IsHealthy();
 
@@ -34,6 +35,7 @@ internal sealed class ConsumerRegister(
     IServiceScopeFactory serviceScopeFactory
 ) : IConsumerRegister
 {
+    private static readonly TimeSpan _RestartShutdownTimeout = TimeSpan.FromSeconds(2);
     private static readonly DiagnosticListener _DiagnosticListener = new(
         MessageDiagnosticListenerNames.DiagnosticListenerName
     );
@@ -46,7 +48,9 @@ internal sealed class ConsumerRegister(
 
     private ICircuitBreakerStateManager? _circuitBreakerStateManager;
     private IConsumerClientFactory _consumerClientFactory = null!;
+#pragma warning disable CA2213 // Disposed through the remaining-budget DisposeAsync(TimeSpan) overload.
     private IDispatcher _dispatcher = null!;
+#pragma warning restore CA2213
     private int _state = (int)LifecycleState.NotStarted;
     private readonly SemaphoreSlim _restartGate = new(1, 1);
     private volatile bool _isHealthy = true;
@@ -106,17 +110,22 @@ internal sealed class ConsumerRegister(
         }
         catch
         {
-            // Clean up any partially created consumer handles before resetting state.
-            try
+            // Host cancellation can race this failure path with DisposeAsync. Only the startup
+            // owner may reset state; once disposal wins, it owns cleanup and the terminal state.
+            if ((LifecycleState)Volatile.Read(ref _state) == LifecycleState.Starting)
             {
-                await PulseAsync().ConfigureAwait(false);
-            }
+                try
+                {
+                    await PulseAsync().ConfigureAwait(false);
+                }
 #pragma warning disable ERP022 // Best-effort cleanup — state reset below prevents stale handles from being accessible.
-            // ReSharper disable once EmptyGeneralCatchClause
-            catch { }
+                // ReSharper disable once EmptyGeneralCatchClause
+                catch { }
 #pragma warning restore ERP022
 
-            Interlocked.Exchange(ref _state, (int)LifecycleState.NotStarted);
+                Interlocked.CompareExchange(ref _state, (int)LifecycleState.NotStarted, (int)LifecycleState.Starting);
+            }
+
             Interlocked.Exchange(ref _pendingTopologyRefresh, 0);
             throw;
         }
@@ -189,6 +198,8 @@ internal sealed class ConsumerRegister(
 
     public async ValueTask DisposeAsync()
     {
+        var shutdownStarted = _timeProvider.GetTimestamp();
+
         // Spin until we win the transition to Disposed, or discover someone else already did.
         while (true)
         {
@@ -207,7 +218,8 @@ internal sealed class ConsumerRegister(
 
         try
         {
-            await PulseAsync().ConfigureAwait(false);
+            await PulseAsync(waitTimeout: _GetRemainingTimeout(shutdownStarted, _options.ShutdownTimeout))
+                .ConfigureAwait(false);
         }
         catch (AggregateException e)
         {
@@ -222,7 +234,9 @@ internal sealed class ConsumerRegister(
             // ReSharper disable once ConditionIsAlwaysTrueOrFalseAccordingToNullableAPIContract
             if (_dispatcher is not null)
             {
-                await _dispatcher.DisposeAsync().ConfigureAwait(false);
+                await _dispatcher
+                    .DisposeAsync(_GetRemainingTimeout(shutdownStarted, _options.ShutdownTimeout))
+                    .ConfigureAwait(false);
             }
 
             _restartGate.Dispose();
@@ -230,52 +244,102 @@ internal sealed class ConsumerRegister(
         }
     }
 
-    public async Task PulseAsync(bool removeCircuitState = true)
+    public async Task PulseAsync(bool removeCircuitState = true, TimeSpan? waitTimeout = null)
     {
-        // Cancel all group CTSes
-        foreach (var handle in _groupHandles.Values)
+        var shutdownTimeout = waitTimeout ?? _RestartShutdownTimeout;
+        var shutdownStarted = _timeProvider.GetTimestamp();
+        var handles = _groupHandles.Values.ToArray();
+
+        // Signal every group concurrently so one slow cancellation callback cannot delay the others.
+        if (handles.Length > 0)
         {
-            await handle.Cts.CancelAsync().ConfigureAwait(false);
+            var cancellationTask = Task.WhenAll(handles.Select(handle => handle.Cts.CancelAsync()));
+            await _WaitWithinShutdownBudgetAsync(cancellationTask, shutdownStarted, shutdownTimeout)
+                .ConfigureAwait(false);
         }
 
         // Wait for all consumer tasks to complete
-        var allTasks = _groupHandles.Values.SelectMany(h => h.ConsumerTasks).ToArray();
+        var allTasks = handles.SelectMany(handle => handle.ConsumerTasks).ToArray();
         if (allTasks.Length > 0)
         {
             try
             {
-                await Task.WhenAll(allTasks)
-                    .WaitAsync(TimeSpan.FromSeconds(2), _timeProvider, CancellationToken.None)
+                await _WaitWithinShutdownBudgetAsync(Task.WhenAll(allTasks), shutdownStarted, shutdownTimeout)
                     .ConfigureAwait(false);
             }
-#pragma warning disable ERP022, RCS1075 // Intentional: timeout or cancellation — proceed with cleanup
-            // ReSharper disable once EmptyGeneralCatchClause
+#pragma warning disable ERP022, RCS1075 // Listener cancellation/failure must not prevent client cleanup.
             catch (Exception) { }
 #pragma warning restore ERP022, RCS1075
         }
 
         // Dispose all handles; only remove circuit state on final teardown,
         // not on transport restarts where state must survive broker reconnects.
-        foreach (var handle in _groupHandles.Values)
+        if (handles.Length > 0)
         {
-            await handle.DisposeAsync().ConfigureAwait(false);
-            if (removeCircuitState)
-            {
-                if (_circuitBreakerStateManager is not null)
-                {
-                    await _circuitBreakerStateManager.RemoveGroupAsync(handle.GroupName).ConfigureAwait(false);
-                }
-            }
+            var remaining = _GetRemainingTimeout(shutdownStarted, shutdownTimeout);
+            var disposalTask = Task.WhenAll(handles.Select(handle => handle.DisposeAsync(remaining).AsTask()));
+            await _WaitWithinShutdownBudgetAsync(disposalTask, shutdownStarted, shutdownTimeout).ConfigureAwait(false);
         }
 
         _groupHandles.Clear();
 
-        // Dispose the token registration before disposing the CTS to prevent
-        // accumulated Dispose callbacks across successive ReStartAsync calls.
-        // CTS.Dispose alone does not deregister Token.Register callbacks.
-        await _stoppingCtsRegistration.DisposeAsync().ConfigureAwait(false);
-        _stoppingCts.Dispose();
+        var finalizationTask = _FinalizePulseAsync(handles, removeCircuitState, _stoppingCtsRegistration, _stoppingCts);
+        await _WaitWithinShutdownBudgetAsync(finalizationTask, shutdownStarted, shutdownTimeout).ConfigureAwait(false);
     }
+
+    private async Task _FinalizePulseAsync(
+        IReadOnlyCollection<GroupHandle> handles,
+        bool removeCircuitState,
+        CancellationTokenRegistration stoppingRegistration,
+        CancellationTokenSource stoppingCts
+    )
+    {
+        if (removeCircuitState && _circuitBreakerStateManager is not null)
+        {
+            await Task.WhenAll(
+                    handles.Select(handle => _circuitBreakerStateManager.RemoveGroupAsync(handle.GroupName).AsTask())
+                )
+                .ConfigureAwait(false);
+        }
+
+        // Dispose the token registration before disposing the CTS to prevent accumulated callbacks
+        // across successive restarts. Snapshots keep eventual cleanup isolated from replacement state.
+        await stoppingRegistration.DisposeAsync().ConfigureAwait(false);
+        stoppingCts.Dispose();
+    }
+
+    private TimeSpan _GetRemainingTimeout(long started, TimeSpan timeout)
+    {
+        var remaining = timeout - _timeProvider.GetElapsedTime(started);
+        return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
+    }
+
+#pragma warning disable VSTHRD003 // The caller-created task is explicitly deadline-bounded or fault-observed below.
+    private async Task _WaitWithinShutdownBudgetAsync(Task task, long started, TimeSpan timeout)
+    {
+        if (task.IsCompleted)
+        {
+            await task.ConfigureAwait(false);
+            return;
+        }
+
+        var remaining = _GetRemainingTimeout(started, timeout);
+        if (remaining == TimeSpan.Zero)
+        {
+            task.Forget();
+            return;
+        }
+
+        try
+        {
+            await task.WaitAsync(remaining, _timeProvider, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            task.Forget();
+        }
+    }
+#pragma warning restore VSTHRD003
 
     public async ValueTask ExecuteAsync()
     {
@@ -298,11 +362,16 @@ internal sealed class ConsumerRegister(
             ICollection<string> messageNames;
             try
             {
-                await using var client = await _CreateConsumerClientAsync(groupName, limit, intentType)
+                await using var client = await _CreateConsumerClientAsync(
+                        groupName,
+                        limit,
+                        intentType,
+                        _stoppingCts.Token
+                    )
                     .ConfigureAwait(false);
                 client.OnLogCallback = _WriteLog;
                 messageNames = await client
-                    .FetchMessageNamesAsync(matchGroup.Value.Select(x => x.MessageName))
+                    .FetchMessageNamesAsync(matchGroup.Value.Select(x => x.MessageName), _stoppingCts.Token)
                     .ConfigureAwait(false);
             }
             catch (BrokerConnectionException e)
@@ -350,7 +419,12 @@ internal sealed class ConsumerRegister(
                         {
                             try
                             {
-                                var innerClient = await _CreateConsumerClientAsync(groupName, limit, intentType)
+                                var innerClient = await _CreateConsumerClientAsync(
+                                        groupName,
+                                        limit,
+                                        intentType,
+                                        groupCts.Token
+                                    )
                                     .ConfigureAwait(false);
 
                                 await handle.AddClientAsync(innerClient).ConfigureAwait(false);
@@ -365,7 +439,7 @@ internal sealed class ConsumerRegister(
                                     groupCts.Token
                                 );
 
-                                await innerClient.SubscribeAsync(messageNames).ConfigureAwait(false);
+                                await innerClient.SubscribeAsync(messageNames, groupCts.Token).ConfigureAwait(false);
                                 await _AwaitConsumerReadyThenListenAsync(innerClient, startupReady, groupCts.Token)
                                     .ConfigureAwait(false);
                             }
@@ -382,10 +456,11 @@ internal sealed class ConsumerRegister(
                             catch (Exception e)
                             {
                                 startupReady.TrySetException(e);
+                                _isHealthy = false;
                                 _logger.ConsumerProcessingLoopFailed(e);
                             }
                         },
-                        groupCts.Token,
+                        CancellationToken.None,
                         TaskCreationOptions.LongRunning,
                         TaskScheduler.Default
                     )
@@ -406,12 +481,13 @@ internal sealed class ConsumerRegister(
     private Task<IConsumerClient> _CreateConsumerClientAsync(
         string groupName,
         byte groupConcurrent,
-        IntentType intentType
+        IntentType intentType,
+        CancellationToken cancellationToken
     )
     {
         return _consumerClientFactory is IIntentAwareConsumerClientFactory intentAwareFactory
-            ? intentAwareFactory.CreateAsync(groupName, groupConcurrent, intentType)
-            : _consumerClientFactory.CreateAsync(groupName, groupConcurrent);
+            ? intentAwareFactory.CreateAsync(groupName, groupConcurrent, intentType, cancellationToken)
+            : _consumerClientFactory.CreateAsync(groupName, groupConcurrent, cancellationToken);
     }
 
     private void _EnsureConsumerFactorySupportsIntent(IEnumerable<ConsumerGroupKey> groupKeys)
@@ -614,21 +690,22 @@ internal sealed class ConsumerRegister(
 
                     if (!probeAcquired)
                     {
-                        await client.RejectAsync(sender).ConfigureAwait(false);
+                        // Settlement is must-complete: never abandon a reject on host shutdown.
+                        await client.RejectAsync(sender, CancellationToken.None).ConfigureAwait(false);
                         return;
                     }
                 }
 
                 if (_logger.IsEnabled(LogLevel.Debug))
                 {
-                    var safeMessageId = LogSanitizer.Sanitize(transportMessage.GetId());
-                    var safeMessageName = LogSanitizer.Sanitize(transportMessage.GetName());
+                    var safeMessageId = LogSanitizer.Sanitize(transportMessage.Id);
+                    var safeMessageName = LogSanitizer.Sanitize(transportMessage.Name);
                     _logger.MessageReceived(safeMessageId, safeMessageName);
                 }
 
                 tracingTimestamp = _TracingBefore(transportMessage, intentType, _serverAddress, hostShutdownToken);
 
-                var name = transportMessage.GetName();
+                var name = transportMessage.Name;
 
                 Message message;
                 Exception? dispatchBypassException = null;
@@ -658,16 +735,12 @@ internal sealed class ConsumerRegister(
                     }
 
                     // Extract the actual message type for deserialization
-                    // For IConsume<T>.Consume(ConsumeContext<T>, CancellationToken), we need T, not ConsumeContext<T>
-                    var paramType = executor!.Parameters.FirstOrDefault(x => !x.IsFromMessaging)?.ParameterType;
-                    var messageValueType =
-                        paramType is { IsGenericType: true }
-                        && paramType.GetGenericTypeDefinition() == typeof(ConsumeContext<>)
-                            ? paramType.GetGenericArguments()[0]
-                            : paramType;
+                    // For IConsume<T>.Consume(ConsumeContext<T>, CancellationToken), we need T, not ConsumeContext<T>.
+                    // Cached on the descriptor - recomputing it per message is pure reflection overhead.
+                    var messageValueType = executor!.MessageValueType;
 
                     message = await _serializer
-                        .DeserializeAsync(transportMessage, messageValueType)
+                        .DeserializeAsync(transportMessage, messageValueType, hostShutdownToken)
                         .ConfigureAwait(false);
                     message.RemoveException();
                 }
@@ -730,7 +803,8 @@ internal sealed class ConsumerRegister(
                         )
                         .ConfigureAwait(false);
 
-                    await client.CommitAsync(sender).ConfigureAwait(false);
+                    // Settlement is must-complete: never abandon a commit on host shutdown.
+                    await client.CommitAsync(sender, CancellationToken.None).ConfigureAwait(false);
 
                     var bypassCallback = _options.RetryPolicy.OnExhausted;
                     if (stored && bypassCallback is not null)
@@ -772,6 +846,7 @@ internal sealed class ConsumerRegister(
                                 _options.RetryPolicy.OnExhaustedTimeout,
                                 storageId: Guid.Empty,
                                 _logger,
+                                _timeProvider,
                                 hostShutdownToken
                             )
                             .ConfigureAwait(false);
@@ -780,14 +855,11 @@ internal sealed class ConsumerRegister(
                     {
                         if (_logger.IsEnabled(LogLevel.Information))
                         {
-                            _logger.SkippingPoisonedOnExhaustedAlreadyTerminal(message.GetId());
+                            _logger.SkippingPoisonedOnExhaustedAlreadyTerminal(message.Id);
                         }
                     }
 
-                    _logger.ConsumerReceivedMessageAfterThreshold(
-                        message.GetId(),
-                        _options.RetryPolicy.MaxPersistedRetries
-                    );
+                    _logger.ConsumerReceivedMessageAfterThreshold(message.Id, _options.RetryPolicy.MaxPersistedRetries);
 
                     _TracingAfter(tracingTimestamp, transportMessage, intentType, _serverAddress, hostShutdownToken);
                 }
@@ -816,14 +888,16 @@ internal sealed class ConsumerRegister(
                         .ConfigureAwait(false);
                     probeOutcomeTransferred = true;
 
-                    await client.CommitAsync(sender).ConfigureAwait(false);
+                    // Settlement is must-complete: never abandon a commit on host shutdown.
+                    await client.CommitAsync(sender, CancellationToken.None).ConfigureAwait(false);
                 }
             }
             catch (Exception e)
             {
                 _logger.LogProcessReceivedMessageFailed(e, transportMessage);
 
-                await client.RejectAsync(sender).ConfigureAwait(false);
+                // Settlement is must-complete: never abandon a reject on host shutdown.
+                await client.RejectAsync(sender, CancellationToken.None).ConfigureAwait(false);
 
                 _TracingError(
                     tracingTimestamp,
@@ -912,7 +986,7 @@ internal sealed class ConsumerRegister(
         Disposed = 4,
     }
 
-    private sealed class GroupHandle : IAsyncDisposable
+    private sealed class GroupHandle
     {
         private readonly Lock _clientsLock = new();
         private bool _disposing;
@@ -925,6 +999,9 @@ internal sealed class ConsumerRegister(
         public required string GroupName { get; init; }
         public ConcurrentBag<Task> ConsumerTasks { get; init; } = [];
 
+        // Production reads the pause state through the private _isPaused field (see AddClientAsync); the public getter
+        // exists for setter symmetry and is exercised by the reflection-based ConsumerRegisterTests. Not dead state.
+        // ReSharper disable once UnusedMember.Local
         public bool IsPaused
         {
             get
@@ -978,6 +1055,13 @@ internal sealed class ConsumerRegister(
                 catch (Exception ex)
                 {
                     Logger.LogPauseNewlyAddedClientFailed(ex, GroupName);
+                    lock (_clientsLock)
+                    {
+                        _clients.Remove(client);
+                    }
+
+                    await client.DisposeAsync().ConfigureAwait(false);
+                    throw;
                 }
             }
         }
@@ -990,7 +1074,7 @@ internal sealed class ConsumerRegister(
             }
         }
 
-        public async ValueTask DisposeAsync()
+        public async ValueTask DisposeAsync(TimeSpan shutdownTimeout)
         {
             await Cts.CancelAsync().ConfigureAwait(false);
             Cts.Dispose();
@@ -1002,10 +1086,8 @@ internal sealed class ConsumerRegister(
                 snapshot = [.. _clients];
             }
 
-            foreach (var client in snapshot)
-            {
-                await client.DisposeAsync().ConfigureAwait(false);
-            }
+            await Task.WhenAll(snapshot.Select(client => client.ShutdownAsync(shutdownTimeout).AsTask()))
+                .ConfigureAwait(false);
         }
     }
 
@@ -1023,7 +1105,7 @@ internal sealed class ConsumerRegister(
             var eventData = new MessageEventDataSubStore
             {
                 OperationTimestamp = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds(),
-                Operation = message.GetName(),
+                Operation = message.Name,
                 BrokerAddress = broker,
                 TransportMessage = message,
                 IntentType = intentType,
@@ -1053,7 +1135,7 @@ internal sealed class ConsumerRegister(
             var eventData = new MessageEventDataSubStore
             {
                 OperationTimestamp = now,
-                Operation = message.GetName(),
+                Operation = message.Name,
                 BrokerAddress = broker,
                 TransportMessage = message,
                 IntentType = intentType,
@@ -1081,7 +1163,7 @@ internal sealed class ConsumerRegister(
             var eventData = new MessageEventDataSubStore
             {
                 OperationTimestamp = now,
-                Operation = message.GetName(),
+                Operation = message.Name,
                 BrokerAddress = broker,
                 TransportMessage = message,
                 IntentType = intentType,

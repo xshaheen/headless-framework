@@ -9,13 +9,19 @@ namespace Headless.Messaging.Redis;
 
 internal sealed class RedisPubSubConsumerClientFactory(
     IRedisPubSubConnectionProvider connectionProvider,
-    IOptions<RedisPubSubOptions> options,
+    IOptions<RedisPubSubMessagingOptions> options,
     ILogger<RedisPubSubConsumerClient> logger,
     TimeProvider timeProvider
 ) : IConsumerClientFactory
 {
-    public Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent)
+    public Task<IConsumerClient> CreateAsync(
+        string groupName,
+        byte groupConcurrent,
+        CancellationToken cancellationToken = default
+    )
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         try
         {
             return Task.FromResult<IConsumerClient>(
@@ -29,7 +35,7 @@ internal sealed class RedisPubSubConsumerClientFactory(
                 )
             );
         }
-        catch (Exception e)
+        catch (Exception e) when (e is not OperationCanceledException)
         {
             throw new BrokerConnectionException(e);
         }

@@ -3,7 +3,6 @@
 using Confluent.Kafka;
 using Headless.Messaging;
 using Headless.Messaging.Kafka;
-using Headless.Messaging.Messages;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -86,7 +85,7 @@ public sealed class KafkaTransportTests : TestBase
             .Returns(deliveryResult);
 
         // when
-        var result = await transport.SendAsync(message);
+        var result = await transport.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeTrue();
@@ -117,7 +116,7 @@ public sealed class KafkaTransportTests : TestBase
             .Returns(deliveryResult);
 
         // when
-        await transport.SendAsync(message);
+        await transport.SendAsync(message, AbortToken);
 
         // then
         _pool.Received(1).Return(_producer);
@@ -147,7 +146,7 @@ public sealed class KafkaTransportTests : TestBase
             );
 
         // when
-        var result = await transport.SendAsync(message);
+        var result = await transport.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeFalse();
@@ -179,7 +178,7 @@ public sealed class KafkaTransportTests : TestBase
             .Returns(deliveryResult);
 
         // when
-        await transport.SendAsync(message);
+        await transport.SendAsync(message, AbortToken);
 
         // then
         await _producer
@@ -201,7 +200,7 @@ public sealed class KafkaTransportTests : TestBase
             {
                 { MessagingHeaders.MessageId, "msg-123" },
                 { MessagingHeaders.MessageName, "TestTopic" },
-                { KafkaHeaders.KafkaKey, "custom-partition-key" },
+                { KafkaMessagingHeaders.KafkaKey, "custom-partition-key" },
             },
             body: "test-body"u8.ToArray()
         );
@@ -216,7 +215,7 @@ public sealed class KafkaTransportTests : TestBase
             .Returns(deliveryResult);
 
         // when
-        await transport.SendAsync(message);
+        await transport.SendAsync(message, AbortToken);
 
         // then
         await _producer
@@ -238,7 +237,7 @@ public sealed class KafkaTransportTests : TestBase
             {
                 { MessagingHeaders.MessageId, "msg-123" },
                 { MessagingHeaders.MessageName, "TestTopic" },
-                { KafkaHeaders.KafkaKey, "" },
+                { KafkaMessagingHeaders.KafkaKey, "" },
             },
             body: "test-body"u8.ToArray()
         );
@@ -253,7 +252,7 @@ public sealed class KafkaTransportTests : TestBase
             .Returns(deliveryResult);
 
         // when
-        await transport.SendAsync(message);
+        await transport.SendAsync(message, AbortToken);
 
         // then
         await _producer
@@ -290,7 +289,7 @@ public sealed class KafkaTransportTests : TestBase
             .Returns(deliveryResult);
 
         // when
-        await transport.SendAsync(message);
+        await transport.SendAsync(message, AbortToken);
 
         // then
         await _producer
@@ -300,6 +299,82 @@ public sealed class KafkaTransportTests : TestBase
                 Arg.Is<Message<string, byte[]>>(m => m.Headers != null && m.Headers.Count == 3),
                 Arg.Any<CancellationToken>()
             );
+    }
+
+    [Fact]
+    public async Task should_reuse_whole_array_body_when_publishing()
+    {
+        // given
+        await using var transport = new KafkaTransport(_logger, _pool);
+        var body = "test-body"u8.ToArray();
+        var message = new TransportMessage(
+            headers: new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                { MessagingHeaders.MessageId, "msg-123" },
+                { MessagingHeaders.MessageName, "TestTopic" },
+            },
+            body: body
+        );
+
+        Message<string, byte[]>? producedMessage = null;
+        var deliveryResult = new DeliveryResult<string, byte[]>
+        {
+            Status = PersistenceStatus.Persisted,
+            Topic = "TestTopic",
+        };
+        _producer
+            .ProduceAsync(
+                Arg.Any<string>(),
+                Arg.Do<Message<string, byte[]>>(m => producedMessage = m),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(deliveryResult);
+
+        // when
+        await transport.SendAsync(message, AbortToken);
+
+        // then
+        producedMessage.Should().NotBeNull();
+        producedMessage!.Value.Should().BeSameAs(body);
+    }
+
+    [Fact]
+    public async Task should_copy_sliced_body_when_publishing()
+    {
+        // given
+        await using var transport = new KafkaTransport(_logger, _pool);
+        var source = "xxbodyyy"u8.ToArray();
+        var body = new ReadOnlyMemory<byte>(source, 2, 4);
+        var message = new TransportMessage(
+            headers: new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                { MessagingHeaders.MessageId, "msg-123" },
+                { MessagingHeaders.MessageName, "TestTopic" },
+            },
+            body: body
+        );
+
+        Message<string, byte[]>? producedMessage = null;
+        var deliveryResult = new DeliveryResult<string, byte[]>
+        {
+            Status = PersistenceStatus.Persisted,
+            Topic = "TestTopic",
+        };
+        _producer
+            .ProduceAsync(
+                Arg.Any<string>(),
+                Arg.Do<Message<string, byte[]>>(m => producedMessage = m),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(deliveryResult);
+
+        // when
+        await transport.SendAsync(message, AbortToken);
+
+        // then
+        producedMessage.Should().NotBeNull();
+        producedMessage!.Value.Should().Equal("body"u8.ToArray());
+        producedMessage.Value.Should().NotBeSameAs(source);
     }
 
     [Fact]
@@ -327,14 +402,14 @@ public sealed class KafkaTransportTests : TestBase
             .Returns(deliveryResult);
 
         // when
-        var result = await transport.SendAsync(message);
+        var result = await transport.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeTrue();
     }
 
     [Fact]
-    public async Task should_succeed_when_status_is_PossiblyPersisted()
+    public async Task should_fail_when_status_is_PossiblyPersisted()
     {
         // given
         await using var transport = new KafkaTransport(_logger, _pool);
@@ -357,10 +432,12 @@ public sealed class KafkaTransportTests : TestBase
             .Returns(deliveryResult);
 
         // when
-        var result = await transport.SendAsync(message);
+        var result = await transport.SendAsync(message, AbortToken);
 
         // then
-        result.Succeeded.Should().BeTrue();
+        result.Succeeded.Should().BeFalse();
+        result.Exception.Should().BeOfType<PublisherSentFailedException>();
+        result.Exception!.Message.Should().Contain("persisted failed");
     }
 
     [Fact]
@@ -387,7 +464,7 @@ public sealed class KafkaTransportTests : TestBase
             .Returns(deliveryResult);
 
         // when
-        var result = await transport.SendAsync(message);
+        var result = await transport.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeFalse();
@@ -419,7 +496,7 @@ public sealed class KafkaTransportTests : TestBase
             .Returns(deliveryResult);
 
         // when
-        await transport.SendAsync(message);
+        await transport.SendAsync(message, AbortToken);
 
         // then
         _pool.Received(1).Return(_producer);

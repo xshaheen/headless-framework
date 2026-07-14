@@ -13,15 +13,28 @@ namespace Tests;
 public sealed class ConnectionChannelPoolTests : TestBase
 {
     private readonly IOptions<MessagingOptions> _capOptions = Options.Create(new MessagingOptions { Version = "v1" });
-    private readonly IOptions<RabbitMqOptions> _rabbitOptions = Options.Create(
-        new RabbitMqOptions
+    private readonly IOptions<RabbitMqMessagingOptions> _rabbitOptions = Options.Create(
+        new RabbitMqMessagingOptions
         {
             HostName = "localhost",
             Port = 5672,
+            UserName = "test_user",
+            Password = "test_pass",
             ExchangeName = "test.exchange",
         }
     );
     private readonly ILogger<ConnectionChannelPool> _logger = NullLogger<ConnectionChannelPool>.Instance;
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void should_configure_confirmation_tracking_to_match_publish_confirms(bool publishConfirms)
+    {
+        var options = ConnectionChannelPool.BuildChannelOptions(publishConfirms);
+
+        options.PublisherConfirmationsEnabled.Should().Be(publishConfirms);
+        options.PublisherConfirmationTrackingEnabled.Should().Be(publishConfirms);
+    }
 
     [Fact]
     public void should_initialize_with_correct_host_address()
@@ -64,10 +77,12 @@ public sealed class ConnectionChannelPoolTests : TestBase
     {
         // given
         var options = Options.Create(
-            new RabbitMqOptions
+            new RabbitMqMessagingOptions
             {
                 HostName = "rabbit1.local,rabbit2.local",
                 Port = 5672,
+                UserName = "test_user",
+                Password = "test_pass",
                 ExchangeName = "test.exchange",
             }
         );
@@ -136,10 +151,12 @@ public sealed class ConnectionChannelPoolTests : TestBase
     {
         // given
         var options = Options.Create(
-            new RabbitMqOptions
+            new RabbitMqMessagingOptions
             {
                 HostName = "invalid-host-that-does-not-exist",
                 Port = 9999,
+                UserName = "test_user",
+                Password = "test_pass",
                 ExchangeName = "test.exchange",
             }
         );
@@ -160,10 +177,12 @@ public sealed class ConnectionChannelPoolTests : TestBase
     {
         // given
         var options = Options.Create(
-            new RabbitMqOptions
+            new RabbitMqMessagingOptions
             {
                 HostName = "localhost",
                 Port = 5672,
+                UserName = "test_user",
+                Password = "test_pass",
                 ExchangeName = "test.exchange",
                 ConnectionFactoryOptions = factory =>
                 {
@@ -192,10 +211,12 @@ public sealed class ConnectionChannelPoolTests : TestBase
         // which under load (search-domain timeouts) easily exceeded the 5s budget because
         // ConnectionChannelPool serializes the underlying connect via _connectionLock.
         var options = Options.Create(
-            new RabbitMqOptions
+            new RabbitMqMessagingOptions
             {
                 HostName = "127.0.0.1",
                 Port = 1,
+                UserName = "test_user",
+                Password = "test_pass",
                 ExchangeName = "test.exchange",
             }
         );
@@ -204,23 +225,13 @@ public sealed class ConnectionChannelPoolTests : TestBase
         var sut = (IConnectionChannelPool)pool;
 
         // when - force multiple exceptions (up to pool size of 15)
-        var rentTasks = Enumerable
-            .Range(0, 20)
-            .Select(async _ =>
-            {
-                try
-                {
-                    await sut.Rent();
-                }
-                catch
-                {
-                    // expected: all calls should fail due to refused connection
-                }
-            })
-            .ToList();
+        var rentTasks = Enumerable.Range(0, 20).Select(_ => sut.Rent(AbortToken)).ToList();
+        var allRentTasks = Task.WhenAll(rentTasks);
 
         // then - all should complete (with failures) without deadlock within timeout
-        await Task.WhenAll(rentTasks).WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        var completedTask = await Task.WhenAny(allRentTasks, Task.Delay(TimeSpan.FromSeconds(10), AbortToken));
+        completedTask.Should().Be(allRentTasks);
+        await allRentTasks.Invoking(static task => task).Should().ThrowAsync<Exception>();
 
         // Verify pool is still usable
         await sut.Invoking(p => p.Rent()).Should().ThrowAsync<Exception>();
@@ -247,7 +258,7 @@ public sealed class ConnectionChannelPoolTests : TestBase
         {
             for (var i = 0; i < 30; i++)
             {
-                var rented = await sut.Rent();
+                var rented = await sut.Rent(AbortToken);
                 sut.Return(rented);
             }
         };
@@ -255,7 +266,7 @@ public sealed class ConnectionChannelPoolTests : TestBase
         // then - no over-release, and the pool stays usable for one more cycle
         await act.Should().NotThrowAsync();
 
-        var last = await sut.Rent();
+        var last = await sut.Rent(AbortToken);
         sut.Return(last).Should().BeTrue();
     }
 
@@ -330,10 +341,12 @@ public sealed class ConnectionChannelPoolTests : TestBase
     {
         // given
         var options = Options.Create(
-            new RabbitMqOptions
+            new RabbitMqMessagingOptions
             {
                 HostName = "localhost",
                 Port = 5672,
+                UserName = "test_user",
+                Password = "test_pass",
                 ExchangeName = "custom.exchange",
             }
         );

@@ -2,6 +2,7 @@
 
 using Headless.CommitCoordination;
 using Headless.CommitCoordination.SqlServer;
+using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -9,7 +10,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Tests;
 
 #pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-public sealed class SqlServerCommitSignalSourceTests
+public sealed class SqlServerCommitSignalSourceTests : TestBase
 {
     [Fact]
     public async Task should_signal_attached_scope_by_provider_key()
@@ -26,7 +27,7 @@ public sealed class SqlServerCommitSignalSourceTests
                 Services = new ServiceCollection().BuildServiceProvider(),
                 ProviderTransactionKey = key,
             },
-            CancellationToken.None
+            AbortToken
         );
 
         await using (scope)
@@ -40,7 +41,7 @@ public sealed class SqlServerCommitSignalSourceTests
                 }
             );
 
-            await source.SignalCommittedAsync(key, CancellationToken.None);
+            await source.SignalCommittedAsync(key);
         }
 
         calls.Should().Be(1);
@@ -63,7 +64,7 @@ public sealed class SqlServerCommitSignalSourceTests
 
         var scope = source.Attach(
             new CommitCoordinatorBindings { Services = callerScope.ServiceProvider, ProviderTransactionKey = key },
-            CancellationToken.None
+            AbortToken
         );
 
         scope.Coordinator.OnCommit(
@@ -76,7 +77,7 @@ public sealed class SqlServerCommitSignalSourceTests
         );
 
         await callerScope.DisposeAsync();
-        await source.SignalCommittedAsync(key, CancellationToken.None);
+        await source.SignalCommittedAsync(key);
         await scope.DisposeAsync();
 
         marker.Should().NotBeNull();
@@ -93,8 +94,8 @@ public sealed class SqlServerCommitSignalSourceTests
         // No scope attached for this key — the diagnostic fires for every connection, so an absent key is the
         // normal case and must be a silent no-op (no throw) that completes SYNCHRONOUSLY: the fast-path returns
         // ValueTask.CompletedTask, which is what lets the observer's _Drain skip the Task allocation.
-        var committed = source.SignalCommittedAsync(new object(), CancellationToken.None);
-        var rolledBack = source.SignalRolledBackAsync(new object(), CancellationToken.None);
+        var committed = source.SignalCommittedAsync(new object());
+        var rolledBack = source.SignalRolledBackAsync(new object());
 
         committed
             .IsCompletedSuccessfully.Should()
@@ -128,7 +129,7 @@ public sealed class SqlServerCommitSignalSourceTests
                 Services = new ServiceCollection().BuildServiceProvider(),
                 ProviderTransactionKey = connection.ClientConnectionId,
             },
-            CancellationToken.None
+            AbortToken
         );
 
         await using (scope)
@@ -150,7 +151,7 @@ public sealed class SqlServerCommitSignalSourceTests
                 )
             );
 
-            await committed.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            await committed.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         }
 
         scope.Coordinator.State.Should().Be(CommitCoordinatorState.Committed);
@@ -178,7 +179,7 @@ public sealed class SqlServerCommitSignalSourceTests
                 Services = new ServiceCollection().BuildServiceProvider(),
                 ProviderTransactionKey = connection.ClientConnectionId,
             },
-            CancellationToken.None
+            AbortToken
         );
 
         await using (scope)
@@ -209,7 +210,7 @@ public sealed class SqlServerCommitSignalSourceTests
                 )
             );
 
-            await rolledBack.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            await rolledBack.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         }
 
         commits.Should().Be(0, "a rollback-operation commit-after event must never run commit work");
@@ -248,14 +249,14 @@ public sealed class SqlServerCommitSignalSourceTests
         using var provider = new ServiceCollection().BuildServiceProvider();
         using var scope = source.Attach(
             new CommitCoordinatorBindings { Services = provider, ProviderTransactionKey = key },
-            CancellationToken.None
+            AbortToken
         );
 
         source
             .Invoking(x =>
                 x.Attach(
                     new CommitCoordinatorBindings { Services = provider, ProviderTransactionKey = key },
-                    CancellationToken.None
+                    AbortToken
                 )
             )
             .Should()
@@ -272,7 +273,7 @@ public sealed class SqlServerCommitSignalSourceTests
             new CommitScopeFactory(new CommitScopeStack()),
             NullLogger<SqlServerCommitSignalSource>.Instance
         );
-        using var provider = new ServiceCollection().BuildServiceProvider();
+        await using var provider = new ServiceCollection().BuildServiceProvider();
         var key = new object();
         var firstCommits = 0;
         var secondCommits = 0;
@@ -280,29 +281,32 @@ public sealed class SqlServerCommitSignalSourceTests
         // Predecessor lives in its own async flow so its ambient frame never leaks into the test flow; this mirrors a
         // pooled connection reused across requests (same ClientConnectionId, independent ambient scopes).
         ICommitScope first = null!;
-        await Task.Run(async () =>
-        {
-            first = source.Attach(
-                new CommitCoordinatorBindings { Services = provider, ProviderTransactionKey = key },
-                CancellationToken.None
-            );
-            first.Coordinator.OnCommit(
-                (_, _) =>
-                {
-                    Interlocked.Increment(ref firstCommits);
+        await Task.Run(
+            async () =>
+            {
+                first = source.Attach(
+                    new CommitCoordinatorBindings { Services = provider, ProviderTransactionKey = key },
+                    AbortToken
+                );
+                first.Coordinator.OnCommit(
+                    (_, _) =>
+                    {
+                        Interlocked.Increment(ref firstCommits);
 
-                    return ValueTask.CompletedTask;
-                }
-            );
+                        return ValueTask.CompletedTask;
+                    }
+                );
 
-            // Commit removes the predecessor from the registry (synchronous TryRemove) but does NOT dispose it.
-            await source.SignalCommittedAsync(key, CancellationToken.None);
-        });
+                // Commit removes the predecessor from the registry (synchronous TryRemove) but does NOT dispose it.
+                await source.SignalCommittedAsync(key);
+            },
+            AbortToken
+        );
 
         // Successor reuses the same key now that the registry slot is free.
         var second = source.Attach(
             new CommitCoordinatorBindings { Services = provider, ProviderTransactionKey = key },
-            CancellationToken.None
+            AbortToken
         );
         second.Coordinator.OnCommit(
             (_, _) =>
@@ -316,7 +320,7 @@ public sealed class SqlServerCommitSignalSourceTests
         // Disposing the predecessor must NOT evict the successor that now owns the key (remove-if-equal).
         await first.DisposeAsync();
 
-        await source.SignalCommittedAsync(key, CancellationToken.None);
+        await source.SignalCommittedAsync(key);
         await second.DisposeAsync();
 
         firstCommits.Should().Be(1);

@@ -11,7 +11,7 @@ public sealed class PublishContextTests : TestBase
     public void should_allow_options_and_delay_mutation_before_completion()
     {
         // given
-        var context = new PublishingContext<OrderPlaced>(
+        var context = new PublishContext<OrderPlaced>(
             new OrderPlaced("order-1"),
             IntentType.Bus,
             new PublishOptions { CorrelationId = "corr-1" },
@@ -35,7 +35,7 @@ public sealed class PublishContextTests : TestBase
     public void should_reject_options_and_delay_mutation_after_completion()
     {
         // given
-        var context = new PublishingContext<OrderPlaced>(
+        var context = new PublishContext<OrderPlaced>(
             new OrderPlaced("order-1"),
             IntentType.Bus,
             new PublishOptions { TenantId = "tenant-1" },
@@ -60,7 +60,7 @@ public sealed class PublishContextTests : TestBase
         // given
         using var first = new CancellationTokenSource();
         using var second = new CancellationTokenSource();
-        var context = new PublishingContext<OrderPlaced>(
+        var context = new PublishContext<OrderPlaced>(
             new OrderPlaced("order-1"),
             IntentType.Bus,
             options: null,
@@ -93,7 +93,7 @@ public sealed class PublishContextTests : TestBase
         };
 
         // when
-        var context = new PublishingContext<OrderPlaced>(
+        var context = new PublishContext<OrderPlaced>(
             new OrderPlaced("order-1"),
             IntentType.Bus,
             options,
@@ -111,6 +111,29 @@ public sealed class PublishContextTests : TestBase
         baseContext.CancellationToken.Should().Be(cts.Token);
         baseContext.Headers["x-feature"].Should().Be("enabled");
         baseContext.MessageName.Should().Be("orders");
+    }
+
+    [Fact]
+    public void should_snapshot_headers_from_publish_options()
+    {
+        // given
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal) { ["x-feature"] = "enabled" };
+        var options = new PublishOptions { Headers = headers };
+
+        // when
+        var context = new PublishContext<OrderPlaced>(
+            new OrderPlaced("order-1"),
+            IntentType.Bus,
+            options,
+            delayTime: null
+        );
+        headers["x-feature"] = "disabled";
+        headers["x-new"] = "new";
+
+        // then
+        context.Headers.Should().ContainKey("x-feature");
+        context.Headers["x-feature"].Should().Be("enabled");
+        context.Headers.Should().NotContainKey("x-new");
     }
 
     private sealed record OrderPlaced(string OrderId);

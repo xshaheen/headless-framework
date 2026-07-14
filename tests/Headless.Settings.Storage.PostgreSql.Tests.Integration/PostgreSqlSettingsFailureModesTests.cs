@@ -4,6 +4,7 @@ using Headless;
 using Headless.Hosting.Initialization;
 using Headless.Settings;
 using Headless.Settings.Seeders;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -12,7 +13,7 @@ using Npgsql;
 namespace Tests;
 
 [Collection<PostgreSqlSettingsFixture>]
-public sealed class PostgreSqlSettingsFailureModesTests(PostgreSqlSettingsFixture fixture)
+public sealed class PostgreSqlSettingsFailureModesTests(PostgreSqlSettingsFixture fixture) : TestBase
 {
     [Fact]
     public async Task should_throw_and_keep_initializer_unmarked_when_database_unreachable()
@@ -25,7 +26,7 @@ public sealed class PostgreSqlSettingsFailureModesTests(PostgreSqlSettingsFixtur
 
         // when / then — wrapped in HostFailedToStartException by the host pipeline; inner is NpgsqlException
         await FluentActions
-            .Awaiting(() => host.StartAsync(TestContext.Current.CancellationToken))
+            .Awaiting(() => host.StartAsync(AbortToken))
             .Should()
             .ThrowAsync<Exception>()
             .Where(e => e is NpgsqlException || e.InnerException is NpgsqlException);
@@ -36,7 +37,7 @@ public sealed class PostgreSqlSettingsFailureModesTests(PostgreSqlSettingsFixtur
         initializer.IsInitialized.Should().BeFalse();
 
         await FluentActions
-            .Awaiting(() => initializer.WaitForInitializationAsync(TestContext.Current.CancellationToken))
+            .Awaiting(() => initializer.WaitForInitializationAsync(AbortToken))
             .Should()
             .ThrowAsync<NpgsqlException>();
     }
@@ -56,7 +57,7 @@ public sealed class PostgreSqlSettingsFailureModesTests(PostgreSqlSettingsFixtur
         try
         {
             // when — start all hosts in parallel
-            var startTasks = hosts.Select(h => h.StartAsync(TestContext.Current.CancellationToken)).ToArray();
+            var startTasks = hosts.Select(h => h.StartAsync(AbortToken)).ToArray();
             await Task.WhenAll(startTasks);
 
             // then — all initializers report ready, exactly one of each table exists, and the
@@ -109,15 +110,15 @@ public sealed class PostgreSqlSettingsFailureModesTests(PostgreSqlSettingsFixtur
     private async Task _DropSchemaAsync(string schema)
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         await using var command = new NpgsqlCommand($"""DROP SCHEMA IF EXISTS "{schema}" CASCADE;""", connection);
-        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        await command.ExecuteNonQueryAsync(AbortToken);
     }
 
     private async Task<int> _CountTablesAsync(string schema, string table)
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         await using var command = new NpgsqlCommand(
             """
             SELECT COUNT(*)
@@ -126,19 +127,16 @@ public sealed class PostgreSqlSettingsFailureModesTests(PostgreSqlSettingsFixtur
             """,
             connection
         );
-        command.Parameters.AddWithValue("schema", schema);
-        command.Parameters.AddWithValue("table", table);
+        command.Parameters.AddWithValue(nameof(schema), schema);
+        command.Parameters.AddWithValue(nameof(table), table);
 
-        return Convert.ToInt32(
-            await command.ExecuteScalarAsync(TestContext.Current.CancellationToken),
-            CultureInfo.InvariantCulture
-        );
+        return Convert.ToInt32(await command.ExecuteScalarAsync(AbortToken), CultureInfo.InvariantCulture);
     }
 
     private async Task<int> _CountIndexesAsync(string schema)
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         // Matches the 3 `CREATE UNIQUE INDEX IF NOT EXISTS IX_*` statements in the PG initializer;
         // the LIKE filter excludes the PK indexes (named `PK_<table>`).
         await using var command = new NpgsqlCommand(
@@ -149,11 +147,8 @@ public sealed class PostgreSqlSettingsFailureModesTests(PostgreSqlSettingsFixtur
             """,
             connection
         );
-        command.Parameters.AddWithValue("schema", schema);
+        command.Parameters.AddWithValue(nameof(schema), schema);
 
-        return Convert.ToInt32(
-            await command.ExecuteScalarAsync(TestContext.Current.CancellationToken),
-            CultureInfo.InvariantCulture
-        );
+        return Convert.ToInt32(await command.ExecuteScalarAsync(AbortToken), CultureInfo.InvariantCulture);
     }
 }

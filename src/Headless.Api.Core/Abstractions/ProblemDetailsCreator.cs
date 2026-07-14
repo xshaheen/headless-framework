@@ -15,8 +15,7 @@ internal sealed class ProblemDetailsCreator(
     TimeProvider timeProvider,
     IBuildInformationAccessor buildInformationAccessor,
     IHttpContextAccessor httpContextAccessor,
-    IOptions<ApiBehaviorOptions> apiOptionsAccessor,
-    IOptions<ProblemDetailsOptions>? problemOptionsAccessor = null
+    IOptions<ApiBehaviorOptions> apiOptionsAccessor
 ) : IProblemDetailsCreator
 {
     public ProblemDetails EndpointNotFound(ErrorDescriptor? error = null)
@@ -66,7 +65,7 @@ internal sealed class ProblemDetailsCreator(
         return problemDetails;
     }
 
-    public ProblemDetails UnprocessableEntity(Dictionary<string, List<ErrorDescriptor>> errors)
+    public ProblemDetails UnprocessableEntity(IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>> errors)
     {
         var problemDetails = new ProblemDetails
         {
@@ -259,17 +258,6 @@ internal sealed class ProblemDetailsCreator(
     private void _Normalize(ProblemDetails problemDetails)
     {
         Normalize(problemDetails);
-
-        if (httpContextAccessor.HttpContext is not null)
-        {
-            problemOptionsAccessor?.Value.CustomizeProblemDetails?.Invoke(
-                new ProblemDetailsContext
-                {
-                    HttpContext = httpContextAccessor.HttpContext,
-                    ProblemDetails = problemDetails,
-                }
-            );
-        }
     }
 
     private static void _SetError(ProblemDetails problemDetails, ErrorDescriptor? error)

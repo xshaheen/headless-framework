@@ -4,6 +4,7 @@ using System.Net;
 using Headless.Abstractions;
 using Headless.Api;
 using Headless.Api.Abstractions;
+using Headless.Api.ServiceDefaults;
 using Headless.Constants;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
@@ -34,7 +35,7 @@ public sealed class EndpointsExtensionsWireShapeTests : TestBase
 
         // then
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        response.Content.Headers.ContentType?.MediaType.Should()?.Be("application/problem+json");
 
         var json = await response.Content.ReadAsStringAsync(AbortToken);
         using var doc = JsonDocument.Parse(json);

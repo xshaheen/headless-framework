@@ -16,6 +16,8 @@ Provides durable, transactional message storage using PostgreSQL with automatic 
 - **Performance**: Optimized indexes and queries for high throughput
 - **Monitoring**: Built-in dashboard data queries
 
+Fresh dispatch and retry pickup accept a lease duration, atomically compare and stamp ownership from one PostgreSQL clock snapshot, and return the persisted `(LockedUntil, Owner)` identity for fenced attempt and state writes.
+
 ## Installation
 
 ```bash
@@ -47,8 +49,24 @@ options.UsePostgreSql(config =>
 {
     config.ConnectionString = "connection_string";
     config.Schema = "messaging";
+
+    // Optional: cap schema-init DDL (CREATE/DROP INDEX CONCURRENTLY, the CREATE EXTENSION probe, and the
+    // advisory-lock waits that gate them). Default null = no timeout (wait indefinitely), decoupled from
+    // the OLTP MessagingOptions.CommandTimeout so a large-table index build at startup is not killed at
+    // ~30s (which would leave the CONCURRENTLY index INVALID for the next boot to repair).
+    config.DdlCommandTimeout = TimeSpan.FromMinutes(30);
 });
 ```
+
+### `pg_trgm` on managed PostgreSQL
+
+Dashboard content (ILIKE) search is accelerated by GIN trigram indexes that require the `pg_trgm`
+extension. The initializer runs `CREATE EXTENSION IF NOT EXISTS pg_trgm` **best-effort, outside** the
+schema transaction. On managed PostgreSQL (AWS RDS, Azure Database for PostgreSQL, Neon, Supabase) the
+application role usually lacks `CREATE EXTENSION`; the initializer logs a warning, **skips the trigram
+content indexes**, and continues — all write/retry paths initialize normally, only dashboard content
+search is unavailable. A DBA/superuser can pre-install it (`CREATE EXTENSION pg_trgm;`) and it is picked
+up automatically on the next startup.
 
 ## Dependencies
 
@@ -61,6 +79,7 @@ options.UsePostgreSql(config =>
   - `{schema}.published` - Published messages
   - `{schema}.received` - Received messages
 - Uses PostgreSQL `UUID` primary keys for message row IDs
-- Creates indexes for message queries
+- Creates the final index shape directly (including `("StatusName","Added")` for dashboard timelines and a partial `("Version","ExpiresAt") WHERE "StatusName" = 'Queued'` index for the delayed scheduler); schema initialization does not alter legacy columns or drop superseded indexes
+- Best-effort `CREATE EXTENSION pg_trgm` for dashboard content search; trigram indexes are skipped when the extension is unavailable
 - Stores `IntentType` on published and received rows without a database default; runtime writes must provide the intent explicitly
 - Periodically cleans up expired messages

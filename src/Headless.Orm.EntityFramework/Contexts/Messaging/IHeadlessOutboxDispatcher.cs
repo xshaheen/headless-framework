@@ -19,10 +19,14 @@ namespace Headless.EntityFramework;
 /// <c>Headless.Orm.EntityFramework.Messaging</c> bridge package; register it with
 /// <c>AddHeadlessDbContextServices(...).AddIntegrationEventOutbox()</c>.
 /// </remarks>
+[PublicAPI]
 public interface IHeadlessOutboxDispatcher
 {
     /// <summary>Enqueues integration events into transaction-bound storage for post-commit delivery.</summary>
-    Task DispatchAsync(IReadOnlyList<IIntegrationEvent> integrationEvents, CancellationToken cancellationToken);
+    Task DispatchAsync(
+        IReadOnlyList<IIntegrationEvent> integrationEvents,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>Enqueues integration events into transaction-bound storage for post-commit delivery.</summary>
     void Dispatch(IReadOnlyList<IIntegrationEvent> integrationEvents);

@@ -7,36 +7,50 @@ using StackExchange.Redis;
 
 namespace Headless.Messaging.Redis;
 
-internal class RedisStreamManager(
+internal sealed class RedisStreamManager(
     IRedisConnectionPool connectionsPool,
-    IOptions<MessagingRedisOptions> options,
-    ILogger<RedisStreamManager> logger
+    IOptions<RedisMessagingOptions> options,
+    ILogger<RedisStreamManager> logger,
+    TimeProvider? timeProvider = null
 ) : IRedisStreamManager
 {
-    private readonly MessagingRedisOptions _options = options.Value;
+    private readonly RedisMessagingOptions _options = options.Value;
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private IConnectionMultiplexer? _redis;
 
-    public async Task CreateStreamWithConsumerGroupAsync(string stream, string consumerGroup)
+    public async Task CreateStreamWithConsumerGroupAsync(
+        string stream,
+        string consumerGroup,
+        CancellationToken cancellationToken = default
+    )
     {
-        await _ConnectAsync().ConfigureAwait(false);
+        await _ConnectAsync(cancellationToken).ConfigureAwait(false);
 
         //The object returned from GetDatabase is a cheap pass - thru object, and does not need to be stored
         var database = _redis!.GetDatabase();
 
-        await database.TryGetOrCreateStreamConsumerGroupAsync(stream, consumerGroup).ConfigureAwait(false);
+        await database
+            .TryGetOrCreateStreamConsumerGroupAsync(stream, consumerGroup)
+            .WaitAsync(cancellationToken)
+            .ConfigureAwait(false);
     }
 
-    public async Task PublishAsync(string stream, NameValueEntry[] message)
+    public async Task PublishAsync(
+        string stream,
+        NameValueEntry[] message,
+        CancellationToken cancellationToken = default
+    )
     {
-        await _ConnectAsync().ConfigureAwait(false);
+        await _ConnectAsync(cancellationToken).ConfigureAwait(false);
 
         //The object returned from GetDatabase is a cheap pass - thru object, and does not need to be stored
         await _redis!.GetDatabase().StreamAddAsync(stream, message).ConfigureAwait(false);
     }
 
-    public async IAsyncEnumerable<IEnumerable<RedisStream>> PollStreamsLatestMessagesAsync(
+    public async IAsyncEnumerable<IEnumerable<RedisStreamMessages>> PollStreamsLatestMessagesAsync(
         string[] streams,
         string consumerGroup,
+        string consumerName,
         TimeSpan pollDelay,
         [EnumeratorCancellation] CancellationToken token
     )
@@ -45,21 +59,35 @@ internal class RedisStreamManager(
         // instead of rebuilding the StreamPosition[] on every poll iteration.
         var positions = streams.Select(stream => new StreamPosition(stream, StreamPosition.NewMessages)).ToArray();
 
+        var errorDelay = pollDelay;
+
         while (true)
         {
-            var result = await _TryReadConsumerGroupAsync(consumerGroup, positions, token).ConfigureAwait(false);
+            var (succeeded, result) = await _TryReadConsumerGroupAsync(consumerGroup, consumerName, positions, token)
+                .ConfigureAwait(false);
 
             yield return result;
 
-            token.WaitHandle.WaitOne(pollDelay);
+            if (succeeded)
+            {
+                errorDelay = pollDelay;
+                await _timeProvider.Delay(pollDelay, token).ConfigureAwait(false);
+            }
+            else
+            {
+                // During a Redis outage back off instead of re-hammering at the fixed poll cadence.
+                errorDelay = _NextBackoff(errorDelay);
+                await _timeProvider.Delay(errorDelay, token).ConfigureAwait(false);
+            }
         }
 
         // ReSharper disable once IteratorNeverReturns
     }
 
-    public async IAsyncEnumerable<IEnumerable<RedisStream>> PollStreamsPendingMessagesAsync(
+    public async IAsyncEnumerable<IEnumerable<RedisStreamMessages>> PollStreamsPendingMessagesAsync(
         string[] streams,
         string consumerGroup,
+        string consumerName,
         TimeSpan pollDelay,
         [EnumeratorCancellation] CancellationToken token
     )
@@ -75,8 +103,8 @@ internal class RedisStreamManager(
             // Materialize the lazy SelectMany result once: it is both yielded to the consumer and
             // re-inspected by the All() check below, so leaving it deferred would flatten it twice.
             var result = (
-                await _TryReadConsumerGroupAsync(consumerGroup, positions, token).ConfigureAwait(false)
-            ).ToArray();
+                await _TryReadConsumerGroupAsync(consumerGroup, consumerName, positions, token).ConfigureAwait(false)
+            ).Streams.ToArray();
 
             yield return result;
 
@@ -86,19 +114,86 @@ internal class RedisStreamManager(
                 break;
             }
 
-            token.WaitHandle.WaitOne(pollDelay);
+            await _timeProvider.Delay(pollDelay, token).ConfigureAwait(false);
         }
     }
 
-    public async Task Ack(string stream, string consumerGroup, string messageId)
+    public async IAsyncEnumerable<IEnumerable<RedisStreamMessages>> PollStreamsStalePendingMessagesAsync(
+        string[] streams,
+        string consumerGroup,
+        string consumerName,
+        TimeSpan claimMinIdleTime,
+        TimeSpan pollDelay,
+        [EnumeratorCancellation] CancellationToken token
+    )
     {
-        await _ConnectAsync().ConfigureAwait(false);
+        var positions = streams.Select(stream => new StreamPosition(stream, StreamPosition.Beginning)).ToArray();
+        var nextStartIds = streams.ToDictionary(stream => (RedisKey)stream, _ => (RedisValue)StreamPosition.Beginning);
+        var errorDelay = pollDelay;
+
+        while (true)
+        {
+            var (succeeded, result) = await _TryAutoClaimStalePendingAsync(
+                    consumerGroup,
+                    consumerName,
+                    positions,
+                    nextStartIds,
+                    claimMinIdleTime,
+                    _options.StreamEntriesCount,
+                    token
+                )
+                .ConfigureAwait(false);
+
+            yield return result;
+
+            if (succeeded)
+            {
+                errorDelay = pollDelay;
+                await _timeProvider.Delay(pollDelay, token).ConfigureAwait(false);
+            }
+            else
+            {
+                errorDelay = _NextBackoff(errorDelay);
+                await _timeProvider.Delay(errorDelay, token).ConfigureAwait(false);
+            }
+        }
+
+        // ReSharper disable once IteratorNeverReturns
+    }
+
+    public async Task Ack(
+        string stream,
+        string consumerGroup,
+        string messageId,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await _ConnectAsync(cancellationToken).ConfigureAwait(false);
 
         await _redis!.GetDatabase().StreamAcknowledgeAsync(stream, consumerGroup, messageId).ConfigureAwait(false);
     }
 
-    private async Task<IEnumerable<RedisStream>> _TryReadConsumerGroupAsync(
+    public async Task RequeueAndAck(
+        string stream,
         string consumerGroup,
+        string messageId,
+        NameValueEntry[] entries,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await _ConnectAsync(cancellationToken).ConfigureAwait(false);
+
+        var database = _redis!.GetDatabase();
+
+        // Preserve at-least-once semantics: if requeue succeeds and ack fails, Redis may redeliver
+        // both entries; if requeue fails, the original entry remains pending for stale-claim recovery.
+        await database.StreamAddAsync(stream, entries).ConfigureAwait(false);
+        await database.StreamAcknowledgeAsync(stream, consumerGroup, messageId).ConfigureAwait(false);
+    }
+
+    private async Task<(bool Succeeded, IEnumerable<RedisStreamMessages> Streams)> _TryReadConsumerGroupAsync(
+        string consumerGroup,
+        string consumerName,
         StreamPosition[] positions,
         CancellationToken token
     )
@@ -109,7 +204,7 @@ internal class RedisStreamManager(
 
             List<StreamPosition> createdPositions = [];
 
-            await _ConnectAsync().ConfigureAwait(false);
+            await _ConnectAsync(token).ConfigureAwait(false);
 
             var database = _redis!.GetDatabase();
 
@@ -125,7 +220,7 @@ internal class RedisStreamManager(
 
             if (createdPositions.Count == 0)
             {
-                return [];
+                return (Succeeded: true, Streams: []);
             }
 
             //calculate keys HashSlots to start reading per HashSlot
@@ -135,30 +230,125 @@ internal class RedisStreamManager(
                     database.StreamReadGroupAsync(
                         [.. group],
                         consumerGroup,
-                        consumerGroup,
-                        (int)_options.StreamEntriesCount
+                        consumerName,
+                        _options.StreamEntriesCount,
+                        noAck: false
                     )
                 );
 
             var readSet = await Task.WhenAll(groupedPositions).ConfigureAwait(false);
 
-            return readSet.SelectMany(set => set);
+            return (
+                Succeeded: true,
+                Streams: readSet.SelectMany(set =>
+                    set.Select(stream => new RedisStreamMessages(stream.Key, stream.Entries))
+                )
+            );
         }
         catch (OperationCanceledException)
         {
-            // ignore
+            // Cancellation is not a read failure; the caller's next Delay(token) ends the poll loop.
+            return (Succeeded: true, Streams: []);
         }
         catch (Exception ex)
         {
             logger.LogReadConsumerGroupFailed(ex, consumerGroup);
         }
 
-        return [];
+        return (Succeeded: false, Streams: []);
     }
 
-    private async Task _ConnectAsync()
+    private async Task<(bool Succeeded, IEnumerable<RedisStreamMessages> Streams)> _TryAutoClaimStalePendingAsync(
+        string consumerGroup,
+        string consumerName,
+        StreamPosition[] positions,
+        Dictionary<RedisKey, RedisValue> nextStartIds,
+        TimeSpan claimMinIdleTime,
+        int count,
+        CancellationToken token
+    )
     {
-        _redis = await connectionsPool.ConnectAsync().ConfigureAwait(false);
+        try
+        {
+            token.ThrowIfCancellationRequested();
+
+            List<RedisStreamMessages> streams = [];
+
+            await _ConnectAsync(token).ConfigureAwait(false);
+
+            var database = _redis!.GetDatabase();
+            var minIdleTimeMilliseconds = _ToRedisMilliseconds(claimMinIdleTime);
+
+            await foreach (
+                var position in database
+                    .TryGetOrCreateConsumerGroupPositionsAsync(positions, consumerGroup, logger)
+                    .ConfigureAwait(false)
+                    .WithCancellation(token)
+            )
+            {
+                if (!nextStartIds.TryGetValue(position.Key, out var startId))
+                {
+                    startId = StreamPosition.Beginning;
+                }
+
+                var result = await database
+                    .StreamAutoClaimAsync(
+                        position.Key,
+                        consumerGroup,
+                        consumerName,
+                        minIdleTimeMilliseconds,
+                        startId,
+                        count
+                    )
+                    .ConfigureAwait(false);
+
+                if (result.IsNull)
+                {
+                    continue;
+                }
+
+                nextStartIds[position.Key] = result.NextStartId;
+
+                if (result.ClaimedEntries.Length > 0)
+                {
+                    streams.Add(new RedisStreamMessages(position.Key, result.ClaimedEntries));
+                }
+            }
+
+            return (Succeeded: true, Streams: streams);
+        }
+        catch (OperationCanceledException)
+        {
+            return (Succeeded: true, Streams: []);
+        }
+        catch (Exception ex)
+        {
+            logger.LogAutoClaimConsumerGroupFailed(ex, consumerGroup);
+        }
+
+        return (Succeeded: false, Streams: []);
+    }
+
+    private static long _ToRedisMilliseconds(TimeSpan value)
+    {
+        return Math.Max(1, (long)Math.Ceiling(value.TotalMilliseconds));
+    }
+
+    private static TimeSpan _NextBackoff(TimeSpan current)
+    {
+        var floor = TimeSpan.FromMilliseconds(200);
+        var ceiling = TimeSpan.FromSeconds(30);
+        var doubled = TimeSpan.FromTicks(Math.Max(current.Ticks * 2, floor.Ticks));
+        var capped = doubled > ceiling ? ceiling : doubled;
+#pragma warning disable CA5394 // Non-security jitter for retry backoff; cryptographic RNG is unnecessary here.
+        var jitterMs = Random.Shared.Next(0, (int)Math.Max(1, capped.TotalMilliseconds / 4));
+#pragma warning restore CA5394
+        return capped + TimeSpan.FromMilliseconds(jitterMs);
+    }
+
+    private async Task _ConnectAsync(CancellationToken cancellationToken = default)
+    {
+        _redis = await connectionsPool.ConnectAsync(cancellationToken).ConfigureAwait(false);
     }
 }
 
@@ -171,6 +361,18 @@ internal static partial class RedisStreamManagerLog
         Message = "Redis error when trying read consumer group {ConsumerGroup}"
     )]
     public static partial void LogReadConsumerGroupFailed(
+        this ILogger logger,
+        Exception exception,
+        string consumerGroup
+    );
+
+    [LoggerMessage(
+        EventId = 2,
+        EventName = "AutoClaimConsumerGroupFailed",
+        Level = LogLevel.Error,
+        Message = "Redis error when trying to auto-claim pending messages for consumer group {ConsumerGroup}"
+    )]
+    public static partial void LogAutoClaimConsumerGroupFailed(
         this ILogger logger,
         Exception exception,
         string consumerGroup

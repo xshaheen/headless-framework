@@ -62,8 +62,12 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
     private int _isDisposed;
     private RecoveryItem? _replaying;
 
-    // Tracks the most-recently-started ProcessAsync task so DrainAsync can await it on disposal.
-    private volatile Task? _activeProcessTask;
+    // Signals completion of the currently-gated recovery pass so DrainAsync can await it on disposal. Published by
+    // _OnTimerTick only AFTER it wins the _processing gate (and owned by that pass alone), so a gate-blocked no-op
+    // tick never overwrites a running pass's signal with an immediately-completed one — the hole that previously let
+    // DrainAsync return while a real pass was still replaying to L2. RunContinuationsAsynchronously keeps the awaiting
+    // DrainAsync off the thread that completes the source.
+    private volatile TaskCompletionSource? _activeProcessTcs;
 
     // Tracks the item with the earliest ExpiresAt so the queue-full eviction path avoids an O(N) scan.
     // Maintained incrementally on every add inside _admissionLock; invalidated (set to null) when that tracked item
@@ -199,7 +203,7 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
             // Conservatively invalidate the tracked minimum: we don't hold _admissionLock here, so we can't
             // cheaply confirm whether this item was the minimum. Null forces a one-time re-scan on the next
             // queue-full add. Volatile ensures the write is visible to threads entering Enqueue.
-            Volatile.Write(ref _minExpiryItem, null);
+            Volatile.Write(ref _minExpiryItem, value: null);
             _logger.LogAutoRecoveryItemSuperseded(key, item.Kind);
         }
     }
@@ -222,7 +226,7 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
         // Remove only if the slot still holds the same item we inspected (a newer bump may have replaced it).
         if (_items.TryRemove(KeyValuePair.Create(key, item)))
         {
-            Volatile.Write(ref _minExpiryItem, null);
+            Volatile.Write(ref _minExpiryItem, value: null);
             _logger.LogAutoRecoveryItemSuperseded(key, item.Kind);
         }
     }
@@ -246,7 +250,7 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
         // so replaying an old marker only re-asserts its generation and cannot lower a newer one; and (2) synthetic
         // marker keys (the "\0hybrid-marker:*" namespace) are never emitted as real cache keys in invalidation
         // messages, so they never match the key/prefix branches below.
-        bool IsConflicting(RecoveryItem item) =>
+        bool isConflicting(RecoveryItem item) =>
             item.Kind != HybridCacheRecoveryKind.MarkerBump
             && (message.Timestamp is null || item.EnqueuedAt < message.Timestamp.Value);
 
@@ -254,7 +258,7 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
         {
             foreach (var pair in _items)
             {
-                if (IsConflicting(pair.Value))
+                if (isConflicting(pair.Value))
                 {
                     _TryRemoveConflicting(pair);
                 }
@@ -267,7 +271,7 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
         {
             foreach (var pair in _items)
             {
-                if (pair.Key.StartsWith(message.Prefix, StringComparison.Ordinal) && IsConflicting(pair.Value))
+                if (pair.Key.StartsWith(message.Prefix, StringComparison.Ordinal) && isConflicting(pair.Value))
                 {
                     _TryRemoveConflicting(pair);
                 }
@@ -280,7 +284,7 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
         {
             foreach (var key in message.Keys)
             {
-                if (_items.TryGetValue(key, out var item) && IsConflicting(item))
+                if (_items.TryGetValue(key, out var item) && isConflicting(item))
                 {
                     _TryRemoveConflicting(new(key, item));
                 }
@@ -292,7 +296,7 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
         if (
             !string.IsNullOrEmpty(message.Key)
             && _items.TryGetValue(message.Key, out var single)
-            && IsConflicting(single)
+            && isConflicting(single)
         )
         {
             _TryRemoveConflicting(new(message.Key, single));
@@ -323,110 +327,117 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
 
         try
         {
-            var now = _timeProvider.GetUtcNow();
-
-            if (now.UtcTicks < Volatile.Read(ref _barrierUntilTicks) || _items.IsEmpty)
-            {
-                return;
-            }
-
-            foreach (var pair in _items)
-            {
-                if (pair.Value.ExpiresAt <= now && _items.TryRemove(pair))
-                {
-                    // Invalidate the tracked minimum so the next queue-full Enqueue re-scans rather
-                    // than trusting a pointer that may now refer to a removed item. Volatile matches
-                    // the write pattern used by OnSuccessfulL2Operation and _TryRemoveConflicting.
-                    Volatile.Write(ref _minExpiryItem, null);
-                    _logger.LogAutoRecoveryItemExpired(pair.Key, pair.Value.Kind);
-                }
-            }
-
-            foreach (var pair in _items)
-            {
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    return;
-                }
-
-                var item = pair.Value;
-                HybridCacheRecoveryReplayOutcome outcome;
-
-                // Mark the in-flight item so a residual publish enqueued from inside its own replay (post-replay
-                // publish failure) is allowed to replace it instead of being subsumed by it.
-                Volatile.Write(ref _replaying, item);
-
-                try
-                {
-                    outcome = await item.Replay(cancellationToken).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                {
-                    return;
-                }
-                catch (Exception exception)
-                {
-                    // Single pass at a time (the _processing gate), so the increment needs no interlock.
-                    item.RetryCount++;
-
-                    if (item.RetryCount >= _options.AutoRecoveryMaxRetries)
-                    {
-                        if (_items.TryRemove(pair))
-                        {
-                            // Invalidate the tracked minimum so the next queue-full Enqueue re-scans rather than
-                            // trusting a pointer that may now refer to a removed item.
-                            Volatile.Write(ref _minExpiryItem, null);
-                            _logger.LogAutoRecoveryItemDroppedAfterRetries(
-                                exception,
-                                item.Key,
-                                item.Kind,
-                                item.RetryCount
-                            );
-                        }
-                    }
-                    else
-                    {
-                        _logger.LogAutoRecoveryReplayFailed(exception, item.Key, item.Kind, item.RetryCount);
-                    }
-
-                    // Arm the failure barrier so the NEXT pass is delayed (a sustained outage must not turn into a
-                    // retry storm), but keep processing the rest of THIS pass: a single poison/failing item must
-                    // not starve healthy items queued behind it. Convergence is timestamp-driven, so replaying the
-                    // remaining items now is safe regardless of order.
-                    Volatile.Write(
-                        ref _barrierUntilTicks,
-                        (_timeProvider.GetUtcNow() + _options.AutoRecoveryDelay).UtcTicks
-                    );
-
-                    continue;
-                }
-                finally
-                {
-                    Volatile.Write(ref _replaying, null);
-                }
-
-                // Conditional remove: a newer item (or this item's own residual publish) may have replaced this
-                // one mid-replay; keep that one.
-                if (_items.TryRemove(pair))
-                {
-                    // Invalidate the tracked minimum so the next queue-full Enqueue re-scans rather than
-                    // trusting a pointer that may now refer to a removed item.
-                    Volatile.Write(ref _minExpiryItem, null);
-                }
-
-                if (outcome == HybridCacheRecoveryReplayOutcome.Replayed)
-                {
-                    _logger.LogAutoRecoveryItemReplayed(item.Key, item.Kind);
-                }
-                else
-                {
-                    _logger.LogAutoRecoveryItemObsolete(item.Key, item.Kind);
-                }
-            }
+            await _ProcessCoreAsync(cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             Volatile.Write(ref _processing, 0);
+        }
+    }
+
+    /// <summary>
+    /// The replay pass body, WITHOUT the <see cref="_processing"/> gate. The caller MUST already hold the gate:
+    /// <see cref="ProcessAsync"/> acquires it before delegating here, and the timer path acquires it in
+    /// <see cref="_OnTimerTick"/> before publishing the drain signal — so a gate-blocked no-op tick never publishes
+    /// an already-completed drain signal that would let disposal's <see cref="DrainAsync"/> return while a real pass
+    /// is still replaying. Never throws (cancellation included).
+    /// </summary>
+    private async Task _ProcessCoreAsync(CancellationToken cancellationToken)
+    {
+        var now = _timeProvider.GetUtcNow();
+
+        if (now.UtcTicks < Volatile.Read(ref _barrierUntilTicks) || _items.IsEmpty)
+        {
+            return;
+        }
+
+        foreach (var pair in _items)
+        {
+            if (pair.Value.ExpiresAt <= now && _items.TryRemove(pair))
+            {
+                // Invalidate the tracked minimum so the next queue-full Enqueue re-scans rather
+                // than trusting a pointer that may now refer to a removed item. Volatile matches
+                // the write pattern used by OnSuccessfulL2Operation and _TryRemoveConflicting.
+                Volatile.Write(ref _minExpiryItem, value: null);
+                _logger.LogAutoRecoveryItemExpired(pair.Key, pair.Value.Kind);
+            }
+        }
+
+        foreach (var pair in _items)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+
+            var item = pair.Value;
+            HybridCacheRecoveryReplayOutcome outcome;
+
+            // Mark the in-flight item so a residual publish enqueued from inside its own replay (post-replay
+            // publish failure) is allowed to replace it instead of being subsumed by it.
+            Volatile.Write(ref _replaying, item);
+
+            try
+            {
+                outcome = await item.Replay(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+            catch (Exception exception)
+            {
+                // Single pass at a time (the _processing gate), so the increment needs no interlock.
+                item.RetryCount++;
+
+                if (item.RetryCount >= _options.AutoRecoveryMaxRetries)
+                {
+                    if (_items.TryRemove(pair))
+                    {
+                        // Invalidate the tracked minimum so the next queue-full Enqueue re-scans rather than
+                        // trusting a pointer that may now refer to a removed item.
+                        Volatile.Write(ref _minExpiryItem, value: null);
+                        _logger.LogAutoRecoveryItemDroppedAfterRetries(exception, item.Key, item.Kind, item.RetryCount);
+                    }
+                }
+                else
+                {
+                    _logger.LogAutoRecoveryReplayFailed(exception, item.Key, item.Kind, item.RetryCount);
+                }
+
+                // Arm the failure barrier so the NEXT pass is delayed (a sustained outage must not turn into a
+                // retry storm), but keep processing the rest of THIS pass: a single poison/failing item must
+                // not starve healthy items queued behind it. Convergence is timestamp-driven, so replaying the
+                // remaining items now is safe regardless of order.
+                Volatile.Write(
+                    ref _barrierUntilTicks,
+                    (_timeProvider.GetUtcNow() + _options.AutoRecoveryDelay).UtcTicks
+                );
+
+                continue;
+            }
+            finally
+            {
+                Volatile.Write(ref _replaying, value: null);
+            }
+
+            // Conditional remove: a newer item (or this item's own residual publish) may have replaced this
+            // one mid-replay; keep that one.
+            if (_items.TryRemove(pair))
+            {
+                // Invalidate the tracked minimum so the next queue-full Enqueue re-scans rather than
+                // trusting a pointer that may now refer to a removed item.
+                Volatile.Write(ref _minExpiryItem, value: null);
+            }
+
+            if (outcome == HybridCacheRecoveryReplayOutcome.Replayed)
+            {
+                _logger.LogAutoRecoveryItemReplayed(item.Key, item.Kind);
+            }
+            else
+            {
+                _logger.LogAutoRecoveryItemObsolete(item.Key, item.Kind);
+            }
         }
     }
 
@@ -449,17 +460,46 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
             return;
         }
 
-        // Fire-and-forget: ProcessAsync never throws, and the _processing gate prevents overlapping passes.
-        // Attach a fault observer so an unexpected exception (e.g. from logger or TimeProvider) is logged
-        // rather than silently lost as an unobserved task fault.
-        var task = ProcessAsync(_disposeCts.Token);
-        _activeProcessTask = task;
-        _ = task.ContinueWith(
-            faulted => _logger.LogAutoRecoveryProcessUnexpectedFault(faulted.Exception!),
-            CancellationToken.None,
-            TaskContinuationOptions.OnlyOnFaulted,
-            TaskScheduler.Default
-        );
+        // Acquire the processing gate HERE, before publishing the drain signal. A tick that fires while a prior pass
+        // still holds the gate must NOT overwrite _activeProcessTcs: doing so would replace the running pass's signal
+        // with a fresh source that this no-op tick completes immediately, letting a concurrent DrainAsync (disposal)
+        // observe a completed no-op and return while the real pass is still replaying to L2. The gated pass releases
+        // _processing in _RunProcessPassAsync's finally.
+        if (Interlocked.CompareExchange(ref _processing, 1, 0) != 0)
+        {
+            return; // A previous pass is still running and owns the current _activeProcessTcs; leave it in place.
+        }
+
+        // Publish the completion signal for the pass we just gated so a concurrent DrainAsync (disposal) can await it.
+        // RunContinuationsAsynchronously keeps the awaiting DrainAsync off the thread that completes the source.
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _activeProcessTcs = completion;
+
+        // Fire-and-forget the gated pass. The wrapper runs the gateless core, logs any unexpected fault, releases the
+        // _processing gate, and always signals completion so the drain cannot hang.
+        _ = _RunProcessPassAsync(completion);
+    }
+
+    private async Task _RunProcessPassAsync(TaskCompletionSource completion)
+    {
+        try
+        {
+            // The gate was already acquired by _OnTimerTick, so run the gateless core directly — calling the public
+            // ProcessAsync here would no-op on the gate this pass already owns.
+            await _ProcessCoreAsync(_disposeCts.Token).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            // The pass is documented not to throw (e.g. from logger or TimeProvider); log the unexpected fault
+            // rather than silently losing it as an unobserved task fault.
+            _logger.LogAutoRecoveryProcessUnexpectedFault(exception);
+        }
+        finally
+        {
+            // Release the gate acquired in _OnTimerTick, then signal completion so a waiting DrainAsync returns.
+            Volatile.Write(ref _processing, 0);
+            completion.TrySetResult();
+        }
     }
 
     /// <summary>
@@ -469,26 +509,22 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
     /// </summary>
     internal async Task DrainAsync(CancellationToken cancellationToken)
     {
-        var active = _activeProcessTask;
+        var completion = _activeProcessTcs;
 
-        if (active is null || active.IsCompleted)
+        if (completion?.Task.IsCompleted != false)
         {
             return;
         }
 
         try
         {
-            await active.WaitAsync(cancellationToken).ConfigureAwait(false);
+            // The source only ever completes successfully (the pass wrapper signals it in a finally and logs any
+            // fault itself), so the await can only surface caller cancellation.
+            await completion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
             // Drain timed out or was cancelled — acceptable during shutdown.
-        }
-        catch (Exception ex)
-        {
-            // ProcessAsync is documented not to throw; fault observers are wired up in _OnTimerTick.
-            // Log and continue so disposal always completes.
-            _logger.LogAutoRecoveryProcessUnexpectedFault(ex);
         }
     }
 
@@ -524,7 +560,7 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
         {
             // Same conservative invalidation as OnSuccessfulL2Operation: no lock held here, so null to force
             // a re-scan on the next queue-full admission rather than comparing against a potentially stale pointer.
-            Volatile.Write(ref _minExpiryItem, null);
+            Volatile.Write(ref _minExpiryItem, value: null);
             _logger.LogAutoRecoveryItemConflicted(pair.Key, pair.Value.Kind);
         }
     }

@@ -27,12 +27,12 @@ public static class ServiceBusHelpers
                 ),
             _ when string.IsNullOrWhiteSpace(connectionString)
                     || (!string.IsNullOrWhiteSpace(@namespace) && !string.IsNullOrWhiteSpace(connectionString)) =>
-                @namespace!,
+                @namespace,
             _ when string.IsNullOrWhiteSpace(@namespace) => _TryGetEndpointFromConnectionString(
                 connectionString,
                 out var extractedValue
             )
-                ? extractedValue!
+                ? extractedValue
                 : throw new InvalidOperationException("Unable to extract namespace from connection string."),
             _ => throw new InvalidOperationException("Unhandled case in switch expression."),
         };

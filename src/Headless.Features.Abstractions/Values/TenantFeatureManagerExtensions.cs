@@ -23,8 +23,8 @@ public static class TenantFeatureManagerExtensions
         /// <summary>Gets all feature values scoped to the given tenant.</summary>
         /// <param name="tenantId">The tenant identifier used as the provider key.</param>
         /// <param name="fallback">When <see langword="true"/>, falls back to other providers when the tenant provider has no value.</param>
-        /// <returns>A list of <see cref="FeatureValue"/> instances for the given tenant.</returns>
-        public Task<List<FeatureValue>> GetAllForTenantAsync(string tenantId, bool fallback = true)
+        /// <returns>A read-only list of <see cref="FeatureValue"/> instances for the given tenant.</returns>
+        public Task<IReadOnlyList<FeatureValue>> GetAllForTenantAsync(string tenantId, bool fallback = true)
         {
             return featureManager.GetAllAsync(FeatureValueProviderNames.Tenant, tenantId, fallback);
         }

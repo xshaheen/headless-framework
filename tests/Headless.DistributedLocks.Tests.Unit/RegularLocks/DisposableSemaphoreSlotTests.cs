@@ -6,7 +6,6 @@ using Headless.Messaging;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
-using Tests.Fakes;
 
 namespace Tests.RegularLocks;
 
@@ -330,7 +329,11 @@ public sealed class DisposableSemaphoreSlotTests : TestBase
             resource,
             deregisterMonitor: (_, _) => Interlocked.Increment(ref deregisterCount)
         );
-        var monitor = new LeaseMonitor(slot, _timeProvider, LoggerFactory.CreateLogger(nameof(LeaseMonitor)));
+        await using var monitor = new LeaseMonitor(
+            slot,
+            _timeProvider,
+            LoggerFactory.CreateLogger(nameof(LeaseMonitor))
+        );
         slot.AttachMonitor(monitor);
         slot.CanObserveLoss.Should().BeTrue();
         var lostToken = slot.LostToken;
@@ -356,7 +359,11 @@ public sealed class DisposableSemaphoreSlotTests : TestBase
             resource,
             deregisterMonitor: (_, _) => Interlocked.Increment(ref deregisterCount)
         );
-        var monitor = new LeaseMonitor(slot, _timeProvider, LoggerFactory.CreateLogger(nameof(LeaseMonitor)));
+        await using var monitor = new LeaseMonitor(
+            slot,
+            _timeProvider,
+            LoggerFactory.CreateLogger(nameof(LeaseMonitor))
+        );
         slot.AttachMonitor(monitor);
         var lostToken = slot.LostToken;
 
@@ -412,7 +419,7 @@ public sealed class DisposableSemaphoreSlotTests : TestBase
         var handle = await semaphore.TryAcquireAsync(acquireOptions, AbortToken);
         handle.Should().NotBeNull("pre-condition: slot must be acquired");
 
-        var slot = (DisposableSemaphoreSlot)handle!;
+        var slot = (DisposableSemaphoreSlot)handle;
 
         // Reattach deregisterMonitor if provided by rebuilding the slot directly.
         // DistributedSemaphoreProvider wires its own deregister; for tests that need a custom

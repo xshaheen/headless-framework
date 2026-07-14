@@ -62,7 +62,7 @@ Neither provider registers itself into DI automatically — you must call `servi
 - Do not call `System.Text.Json.JsonSerializer` directly in application code — go through `IJsonSerializer` so the implementation can be swapped and options are centralized.
 - Register JSON: `services.AddSingleton<IJsonSerializer, SystemJsonSerializer>()`. Also register a custom `IJsonOptionsProvider` if you need non-default options (registration order does not matter — it is resolved by constructor injection).
 - Register MessagePack: `services.AddSingleton<IBinarySerializer, MessagePackSerializer>()`. Pass custom `MessagePackSerializerOptions` via constructor for compression or resolver changes.
-- **MessagePack security**: the parameterless `MessagePackSerializer()` uses `MessagePackSecurity.TrustedData` — only safe when payloads originate inside your trust boundary (e.g. cache values the app itself wrote). When deserializing data from outside it (a cache other services or attackers can write to, external message producers), register `new MessagePackSerializer(untrustedData: true)` to apply `MessagePackSecurity.UntrustedData` (recursion-depth limit + collision-resistant hashing). When you supply your own `MessagePackSerializerOptions`, set `Security` there — the `untrustedData` switch is ignored and never relaxes a level you chose.
+- **MessagePack security**: the parameterless `MessagePackSerializer()` uses `MessagePackSecurity.UntrustedData`, so it is safe for cross-service caches and external producers by default. Use `new MessagePackSerializer(untrustedData: false)` only when payloads originate inside the current trust boundary and the MessagePack-CSharp fast path is a deliberate choice. When you supply your own `MessagePackSerializerOptions`, set `Security` there — the `untrustedData` switch is ignored and never changes the level you chose.
 - `SystemJsonSerializer` is annotated `[RequiresUnreferencedCode]` and `[RequiresDynamicCode]` — not AOT-safe as-is. For AOT/NativeAOT scenarios, implement a source-generated `IJsonSerializer` instead.
 - The `ISerializer` contract is buffer-first: writes target an `IBufferWriter<byte>`, reads consume a `ReadOnlyMemory<byte>` or `ReadOnlySequence<byte>`. Use extension methods (`SerializeToBytes<T>`, `SerializeToString<T>`, `Deserialize<T>(byte[])`, `Deserialize<T>(string?)`, plus `Serialize<T>(T, Stream)` / `Deserialize<T>(Stream)`) from `SerializerExtensions` when you hold a `byte[]`, `string`, or `Stream` instead.
 - `SerializeToString` on a binary serializer (e.g., MessagePack) returns a Base64 string; on a text serializer it returns UTF-8. `Deserialize<T>(string?)` reverses this automatically.
@@ -206,10 +206,11 @@ Provides JSON serialization via System.Text.Json with a battle-tested default co
 
 - `SystemJsonSerializer` — `IJsonSerializer` implementation; accepts an optional `IJsonOptionsProvider`
 - `IJsonOptionsProvider` / `DefaultJsonOptionsProvider` — injectable options split into separate serialize and deserialize `JsonSerializerOptions`
-- `JsonConstants` — shared, pre-configured option sets:
+- `JsonConstants` — shared, pre-configured, **read-only** (frozen) option sets. Customize by copying via a `Create*JsonOptions()` factory rather than mutating a preset:
   - `DefaultWebJsonOptions` — camelCase, case-insensitive read, enum-as-camelCase-string, `IpAddressJsonConverter`, nullable-annotations respected, trailing commas allowed, cycles ignored
   - `DefaultInternalJsonOptions` — strict (no case-insensitive read, no trailing commas, `WhenWritingNull`)
   - `DefaultPrettyJsonOptions` — `DefaultWebJsonOptions` with `WriteIndented = true`
+  - `CreateWebJsonOptions()` / `CreateInternalJsonOptions()` / `CreatePrettyJsonOptions()` — return a fresh **mutable** instance with the matching preset applied
   - `ConfigureWebJsonOptions(JsonSerializerOptions)` / `ConfigureInternalJsonOptions(JsonSerializerOptions)` — apply settings to an existing instance
 - Built-in converters (all in namespace `Headless.Serializer.Converters`):
   - `UnixTimeJsonConverter` — `DateTimeOffset` ↔ Unix epoch seconds (reads number or string)
@@ -227,11 +228,13 @@ Provides JSON serialization via System.Text.Json with a battle-tested default co
   - `JsonSerializerModifiersOptions` — holds the modifier list
   - `JsonPropertiesModifiers<TClass>.CreateIgnorePropertyModifyAction` — exclude a property from serialization
   - `JsonPropertiesModifiers<TClass>.CreateIncludeNonPublicPropertiesModifyAction` — enable non-public setter deserialization
-- `ToObjectExtensions.To<T>(this object?, JsonSerializerOptions?)` — extension on `object?` that converts via `Convert.ChangeType`, `TypeDescriptor`, enum parse, or STJ deserialization depending on the input type
+- `ToObjectExtensions.To<T>(this object?, JsonSerializerOptions?)` (namespace `Headless.Serializer`) — extension on `object?` that converts via `Convert.ChangeType`, `TypeDescriptor`, enum parse, or STJ deserialization depending on the input type. Requires `using Headless.Serializer;`
 
 ### Design Notes
 
 `SystemJsonSerializer` is annotated `[RequiresUnreferencedCode]` and `[RequiresDynamicCode]` because it uses reflection-based STJ APIs. This means it is **not AOT-safe** out of the box. The annotation propagates to call sites — you will see trim warnings in NativeAOT or PublishTrimmed builds. For AOT scenarios, write a source-generated `IJsonSerializer` wrapper using `JsonSerializerContext` and register it instead.
+
+The three `JsonConstants` presets (`DefaultWebJsonOptions`, `DefaultInternalJsonOptions`, `DefaultPrettyJsonOptions`) are frozen (`JsonSerializerOptions.IsReadOnly == true`) at initialization so they can be shared process-wide without a caller silently reconfiguring framework serialization. Mutating a preset throws `InvalidOperationException` — start from a fresh mutable copy via `CreateWebJsonOptions()` / `CreateInternalJsonOptions()` / `CreatePrettyJsonOptions()` instead.
 
 `DefaultWebJsonOptions` adds `JsonStringEnumConverter(CamelCase)` and `IpAddressJsonConverter` automatically. Creating a custom `IJsonOptionsProvider` that calls `JsonConstants.ConfigureWebJsonOptions` inherits these converters without duplication.
 
@@ -312,13 +315,13 @@ Provides compact binary serialization for high-throughput scenarios (cache entri
 - `MessagePackSerializer` — `IBinarySerializer` implementation
 - Contractless by default: uses `ContractlessStandardResolver`, so plain POCOs serialize without any attributes
 - Accepts `MessagePackSerializerOptions` via constructor for compression, custom resolvers, or security settings
-- `untrustedData` constructor flag opts into `MessagePackSecurity.UntrustedData` (recursion-depth limit + collision-resistant hashing) without hand-building options
+- Applies `MessagePackSecurity.UntrustedData` by default; pass `untrustedData: false` only for trusted payloads where the MessagePack-CSharp fast path is intentional
 - Built-in LZ4 compression available via `WithCompression(MessagePackCompression.Lz4BlockArray)`
 - Full `ISerializer` surface via MessagePack's native buffer APIs — `Serialize(IBufferWriter<byte>)`, `Deserialize(ReadOnlyMemory<byte>)` / `Deserialize(in ReadOnlySequence<byte>)` — avoiding the buffer-copy overhead of its `Stream` overloads
 
 ### Design Notes
 
-The parameterless constructor uses MessagePack-CSharp's trusted-data security default (`MessagePackSecurity.TrustedData`) — the fast path, appropriate when payloads originate inside the trust boundary (e.g. cache values the app itself wrote). When deserializing data from outside the trust boundary (a cache other services or attackers can write to, message payloads from external producers), construct with `untrustedData: true` to apply `MessagePackSecurity.UntrustedData`, which defends against hash-flooding and stack-overflow DoS. For finer control, supply your own `MessagePackSerializerOptions`: the serializer uses them verbatim and you own the security level, so set a custom `Security` there rather than combining it with the `untrustedData` switch.
+The parameterless constructor uses `MessagePackSecurity.UntrustedData` so default deserialization is safe for cross-service caches, external message producers, and other payloads outside the current process trust boundary. For trusted payloads where the MessagePack-CSharp fast path is intentional, construct with `untrustedData: false` or supply custom `MessagePackSerializerOptions` with the desired `Security`. When you pass options, the serializer uses them verbatim and you own the security level.
 
 ### Installation
 
@@ -329,8 +332,11 @@ dotnet add package Headless.Serializer.MessagePack
 ### Quick Start
 
 ```csharp
-// Default: contractless, no compression:
+// Default: contractless, no compression, MessagePackSecurity.UntrustedData:
 builder.Services.AddSingleton<IBinarySerializer, MessagePackSerializer>();
+
+// Trusted payload fast path only when the trust boundary is explicit:
+builder.Services.AddSingleton<IBinarySerializer>(new MessagePackSerializer(untrustedData: false));
 
 // With LZ4 compression:
 var options = MessagePackSerializerOptions
@@ -356,7 +362,7 @@ All configuration is passed via `MessagePackSerializerOptions` at construction t
 // Switch to attribute-based (non-contractless) mode:
 var options = MessagePackSerializerOptions.Standard; // requires [MessagePackObject]/[Key] attributes
 
-// Harden for untrusted input — the untrustedData flag is the shortcut for this:
+// The parameterless constructor already applies this security level:
 var options = MessagePackSerializerOptions
     .Standard.WithResolver(ContractlessStandardResolver.Instance)
     .WithSecurity(MessagePackSecurity.UntrustedData);

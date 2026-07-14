@@ -1,8 +1,8 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using Headless.Jobs;
 using Headless.Jobs.Dashboard.Jwt.Demo;
 using Headless.Jobs.Dashboard.Jwt.Demo.Data;
-using Headless.Jobs.DependencyInjection;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.Tokens;
@@ -51,18 +51,12 @@ builder
 
 const string dashboardPolicy = "DashboardPolicy";
 
-builder.Services.AddAuthorization(options =>
-{
-    options.AddPolicy(dashboardPolicy, policy => policy.RequireAuthenticatedUser());
-});
+builder.Services.AddAuthorizationBuilder().AddPolicy(dashboardPolicy, policy => policy.RequireAuthenticatedUser());
 
 builder.Services.AddHttpClient();
 
-// Jobs setup — no AddOperationalStore() means in-memory persistence by default
-builder.Services.AddHeadlessJobs(options =>
-{
-    options.AddDashboard(d => d.WithHostAuthentication(dashboardPolicy));
-});
+// Jobs setup — no UseEntityFramework() means in-memory persistence by default
+builder.Services.AddHeadlessJobs(options => options.AddDashboard(d => d.WithHostAuthentication(dashboardPolicy)));
 
 builder.Services.AddHostedService<DemoJobSeeder>();
 
@@ -73,7 +67,7 @@ app.UseStaticFiles();
 
 app.UseRouting();
 
-app.MapGet("/", () => Results.LocalRedirect("/index.html", true));
+app.MapGet("/", () => Results.LocalRedirect("/index.html", permanent: true));
 
 app.MapPost(
     "/security/createToken",

@@ -6,7 +6,7 @@ using NSwag.Generation.AspNetCore;
 using NSwag.Generation.Processors;
 using NSwag.Generation.Processors.Contexts;
 
-namespace Headless.Api.OperationProcessors;
+namespace Headless.OpenApi.Nswag.OperationProcessors;
 
 /// <summary>
 /// NSwag operation processor that enriches generated operations with supplemental API-Explorer metadata:

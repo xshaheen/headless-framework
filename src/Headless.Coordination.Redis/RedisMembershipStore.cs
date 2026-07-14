@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using Headless.Coordination.Redis.Scripts;
 using Headless.Redis;
 using Headless.Serializer;
 using Microsoft.Extensions.DependencyInjection;
@@ -66,17 +67,7 @@ internal sealed class RedisMembershipStore(
             .EvaluateAsync(
                 Db,
                 RedisMembershipHeartbeatScriptDefinition.Instance,
-                new HeartbeatParams(
-                    _LiveKey(),
-                    _KnownKey(),
-                    _GenKey(descriptor.Identity.NodeId),
-                    _GenerationField(descriptor.Identity.NodeId),
-                    descriptor.Identity.ToString(),
-                    descriptor.Identity.Incarnation.Value,
-                    _ToMilliseconds(Options.DeadThreshold),
-                    descriptor.Role ?? string.Empty,
-                    _MetadataJson(descriptor.Identity, descriptor)
-                ),
+                _CreateHeartbeatParams(descriptor.Identity, descriptor, allowCreate: true),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -93,17 +84,7 @@ internal sealed class RedisMembershipStore(
             .EvaluateAsync(
                 Db,
                 RedisMembershipHeartbeatScriptDefinition.Instance,
-                new HeartbeatParams(
-                    _LiveKey(),
-                    _KnownKey(),
-                    _GenKey(identity.NodeId),
-                    _GenerationField(identity.NodeId),
-                    identity.ToString(),
-                    identity.Incarnation.Value,
-                    _ToMilliseconds(Options.DeadThreshold),
-                    descriptor?.Role ?? string.Empty,
-                    _MetadataJson(identity, descriptor)
-                ),
+                _CreateHeartbeatParams(identity, descriptor, allowCreate: false),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -261,7 +242,10 @@ internal sealed class RedisMembershipStore(
                 // Local contract violation on the script's return shape, not an error raised by the Redis
                 // server, so InvalidOperationException (matching _ClusterKey below) is the precise type.
                 throw new InvalidOperationException(
-                    $"Unexpected coordination membership read script result shape (length={fields?.Length ?? 0}, expected >= 4)."
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"Unexpected coordination membership read script result shape (length={fields?.Length ?? 0}, expected >= 4)."
+                    )
                 );
             }
 
@@ -281,7 +265,7 @@ internal sealed class RedisMembershipStore(
         }
 
         // The read Lua already returns members sorted (table.sort); no C# re-sort is needed.
-        return snapshots.ToArray();
+        return [.. snapshots];
     }
 
     private static NodeIdentity[] _ParseLiveNodes(RedisResult[]? result)
@@ -358,6 +342,24 @@ internal sealed class RedisMembershipStore(
 
         return _ToMilliseconds(retention);
     }
+
+    private HeartbeatParams _CreateHeartbeatParams(
+        NodeIdentity identity,
+        NodeDescriptor? descriptor,
+        bool allowCreate
+    ) =>
+        new(
+            _LiveKey(),
+            _KnownKey(),
+            _GenKey(identity.NodeId),
+            _GenerationField(identity.NodeId),
+            identity.ToString(),
+            identity.Incarnation.Value,
+            _ToMilliseconds(Options.DeadThreshold),
+            allowCreate ? 1 : 0,
+            descriptor?.Role ?? string.Empty,
+            _MetadataJson(identity, descriptor)
+        );
 
     private static long _ToMilliseconds(TimeSpan value)
     {

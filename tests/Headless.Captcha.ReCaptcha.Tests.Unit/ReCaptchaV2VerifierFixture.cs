@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Captcha;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
@@ -24,13 +25,7 @@ public sealed class ReCaptchaV2VerifierFixture : ICaptchaVerifierFixture, IDispo
     {
         var services = new ServiceCollection();
 
-        services.AddHeadlessCaptcha(builder =>
-            builder.UseReCaptchaV2(options =>
-            {
-                options.SiteKey = "test-site-key";
-                options.SiteSecret = "test-secret";
-            })
-        );
+        services.AddHeadlessCaptcha(builder => builder.UseReCaptchaV2(_Configuration()));
 
         services.AddHttpClient(CaptchaConstants.ReCaptchaV2Provider).ConfigurePrimaryHttpMessageHandler(() => handler);
 
@@ -39,6 +34,17 @@ public sealed class ReCaptchaV2VerifierFixture : ICaptchaVerifierFixture, IDispo
 
         return serviceProvider.GetRequiredService<ICaptchaVerifier>();
     }
+
+    private static IConfiguration _Configuration() =>
+        new ConfigurationBuilder()
+            .AddInMemoryCollection(
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    ["SiteKey"] = "test-site-key",
+                    ["SiteSecret"] = "test-secret",
+                }
+            )
+            .Build();
 
     public void Dispose()
     {

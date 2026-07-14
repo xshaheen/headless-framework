@@ -1,7 +1,12 @@
 ﻿<Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <Description>Indexing integration for Headless media indexing.</Description>
+    <PackageTags>headless;media;indexing;dotnet</PackageTags>
   </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Media.Indexing.Tests.Unit" />
+  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="DocumentFormat.OpenXml" />
     <PackageReference Include="PdfPig" />

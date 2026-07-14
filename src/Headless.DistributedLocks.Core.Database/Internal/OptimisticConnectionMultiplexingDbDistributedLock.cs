@@ -16,7 +16,7 @@ internal sealed class OptimisticConnectionMultiplexingDbDistributedLock : IDbDis
     private readonly string _connectionString;
     private readonly MultiplexedConnectionLockPool _multiplexedConnectionLockPool;
     private readonly TimeSpan _keepaliveCadence;
-    private readonly IDbDistributedLock _fallbackLock;
+    private readonly DedicatedConnectionOrTransactionDbDistributedLock _fallbackLock;
 
     /// <summary>
     /// Initializes an optimistic multiplexing lock.

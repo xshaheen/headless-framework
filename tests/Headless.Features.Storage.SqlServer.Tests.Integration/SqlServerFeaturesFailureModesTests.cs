@@ -3,6 +3,7 @@
 using Headless.Features;
 using Headless.Features.Seeders;
 using Headless.Hosting.Initialization;
+using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -10,7 +11,7 @@ using Microsoft.Extensions.Hosting;
 namespace Tests;
 
 [Collection<SqlServerFeaturesFixture>]
-public sealed class SqlServerFeaturesFailureModesTests(SqlServerFeaturesFixture fixture)
+public sealed class SqlServerFeaturesFailureModesTests(SqlServerFeaturesFixture fixture) : TestBase
 {
     [Fact]
     public async Task should_throw_and_keep_initializer_unmarked_when_database_unreachable()
@@ -21,9 +22,9 @@ public sealed class SqlServerFeaturesFailureModesTests(SqlServerFeaturesFixture 
             "Server=127.0.0.1,1;Database=missing;User Id=sa;Password=placeholder-never-used;Connect Timeout=2;TrustServerCertificate=true";
         using var host = _CreateHost(unreachable);
 
-        // when / then — wrapped in HostFailedToStartException by the host pipeline; inner is SqlException
+        // when & then — wrapped in HostFailedToStartException by the host pipeline; inner is SqlException
         await FluentActions
-            .Awaiting(() => host.StartAsync(TestContext.Current.CancellationToken))
+            .Awaiting(() => host.StartAsync(AbortToken))
             .Should()
             .ThrowAsync<Exception>()
             .Where(e => e is SqlException || e.InnerException is SqlException);
@@ -34,7 +35,7 @@ public sealed class SqlServerFeaturesFailureModesTests(SqlServerFeaturesFixture 
         initializer.IsInitialized.Should().BeFalse();
 
         await FluentActions
-            .Awaiting(() => initializer.WaitForInitializationAsync(TestContext.Current.CancellationToken))
+            .Awaiting(() => initializer.WaitForInitializationAsync(AbortToken))
             .Should()
             .ThrowAsync<SqlException>();
     }
@@ -54,7 +55,7 @@ public sealed class SqlServerFeaturesFailureModesTests(SqlServerFeaturesFixture 
         try
         {
             // when — start all hosts in parallel
-            var startTasks = hosts.Select(h => h.StartAsync(TestContext.Current.CancellationToken)).ToArray();
+            var startTasks = hosts.Select(h => h.StartAsync(AbortToken)).ToArray();
             await Task.WhenAll(startTasks);
 
             // then — all initializers report ready, exactly one of each table exists, and the
@@ -99,7 +100,7 @@ public sealed class SqlServerFeaturesFailureModesTests(SqlServerFeaturesFixture 
     private async Task _DropSchemaAsync(string schema)
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         await using var command = new SqlCommand(
             $"""
             IF OBJECT_ID(N'{schema}.FeatureValues', N'U') IS NOT NULL DROP TABLE [{schema}].[FeatureValues];
@@ -110,13 +111,13 @@ public sealed class SqlServerFeaturesFailureModesTests(SqlServerFeaturesFixture 
             """,
             connection
         );
-        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        await command.ExecuteNonQueryAsync(AbortToken);
     }
 
     private async Task<int> _CountTablesAsync(string schema, string table)
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         await using var command = new SqlCommand(
             """
             SELECT COUNT(*)
@@ -128,16 +129,13 @@ public sealed class SqlServerFeaturesFailureModesTests(SqlServerFeaturesFixture 
         command.Parameters.AddWithValue("@schema", schema);
         command.Parameters.AddWithValue("@table", table);
 
-        return Convert.ToInt32(
-            await command.ExecuteScalarAsync(TestContext.Current.CancellationToken),
-            CultureInfo.InvariantCulture
-        );
+        return Convert.ToInt32(await command.ExecuteScalarAsync(AbortToken), CultureInfo.InvariantCulture);
     }
 
     private async Task<int> _CountIndexesAsync(string schema)
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         // Nonclustered indexes only (type = 2) across the schema — excludes the clustered PKs so the
         // count matches the 6 CREATE [UNIQUE] INDEX statements in SqlServerFeaturesStorageInitializer.
         await using var command = new SqlCommand(
@@ -152,9 +150,6 @@ public sealed class SqlServerFeaturesFailureModesTests(SqlServerFeaturesFixture 
         );
         command.Parameters.AddWithValue("@schema", schema);
 
-        return Convert.ToInt32(
-            await command.ExecuteScalarAsync(TestContext.Current.CancellationToken),
-            CultureInfo.InvariantCulture
-        );
+        return Convert.ToInt32(await command.ExecuteScalarAsync(AbortToken), CultureInfo.InvariantCulture);
     }
 }

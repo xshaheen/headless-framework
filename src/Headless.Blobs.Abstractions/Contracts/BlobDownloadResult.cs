@@ -14,15 +14,20 @@ namespace Headless.Blobs;
 /// <param name="Stream">Readable stream delivering the blob's content.</param>
 /// <param name="FileName">The blob's file name as stored by the provider.</param>
 /// <param name="Metadata">Provider-supplied metadata key/value pairs, or <see langword="null"/> when the provider does not return metadata.</param>
-public sealed record BlobDownloadResult(Stream Stream, string FileName, Dictionary<string, string?>? Metadata = null)
-    : IAsyncDisposable,
-        IDisposable
+[PublicAPI]
+public sealed record BlobDownloadResult(
+    Stream Stream,
+    string FileName,
+    IReadOnlyDictionary<string, string>? Metadata = null
+) : IAsyncDisposable, IDisposable
 {
+    /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
         await Stream.DisposeAsync().ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
     public void Dispose()
     {
         Stream.Dispose();

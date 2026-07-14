@@ -26,6 +26,7 @@ packages: Api.Abstractions, Api.Core, Api.ServiceDefaults, Api.DataProtection, A
 - [Headless.Api.Core](#headlessapicore)
     - [Problem Solved](#problem-solved-1)
     - [Key Features](#key-features-1)
+    - [Design Notes](#design-notes)
     - [Installation](#installation-1)
     - [Quick Start](#quick-start-1)
     - [Configuration](#configuration-1)
@@ -59,7 +60,7 @@ packages: Api.Abstractions, Api.Core, Api.ServiceDefaults, Api.DataProtection, A
 - [Headless.Api.Idempotency](#headlessapiidempotency)
     - [Problem Solved](#problem-solved-5)
     - [Key Features](#key-features-5)
-    - [Design Notes](#design-notes)
+    - [Design Notes](#design-notes-1)
     - [Installation](#installation-5)
     - [Quick Start](#quick-start-5)
     - [Configuration](#configuration-5)
@@ -108,7 +109,7 @@ Use `Headless.Api.Abstractions` when you only need interfaces (`IRequestContext`
 
 Additional packages:
 
-- `Headless.Api.FluentValidation` — validators for `IFormFile` uploads (size, content type, magic bytes).
+- `Headless.Api.FluentValidation` — validators for `IFormFile` uploads (size, content type, magic bytes) plus API request contracts (`PhoneNumberRequest`, `GeoCoordinateRequest`, `PageMetadataRequest`).
 - `Headless.Api.DataProtection` — persist ASP.NET Core Data Protection keys to any `IBlobStorage` provider.
 - `Headless.Api.Logging.Serilog` — enrich Serilog logs with per-request context (IP, user agent, user ID, tenant ID, correlation ID).
 - `Headless.Api.Idempotency` — Stripe-style idempotency middleware: cache full HTTP responses on first execution and replay them byte-equivalent on identical retries. See [mediator.md](mediator.md) for why idempotency is HTTP middleware and not a Mediator behavior.
@@ -120,13 +121,15 @@ Additional packages:
 - Use `UseHeadless()` for the default middleware order (`UseStatusCodePages()` before `UseExceptionHandler()`), then add auth/tenant middleware, then map endpoints. `UseHeadless` and `MapHeadlessEndpoints` are idempotent.
 - For tenant-aware HTTP apps, configure `builder.AddHeadlessTenancy(tenancy => tenancy.Http(http => http.ResolveFromClaims()))` and place `app.UseHeadlessTenancy()` after app-owned `UseAuthentication()` and before app-owned `UseAuthorization()`.
 - For idempotent-replay middleware, register `services.AddIdempotency(o => { ... })` and place `app.UseIdempotency()` AFTER `UseAuthorization()` and AFTER `UseHeadlessTenancy()`. Idempotency reads `ICurrentTenant.Id` for cache-key composition; tenant and auth must be resolved first so unauthenticated/unauthorized requests do not allocate cache slots. `InFlightStrategy = WaitAndReplay` requires `IDistributedLock`; the DI startup validator fails fast if it is missing.
+- Basic and API-key handlers authenticate only credentials supplied for their own scheme. Do not rely on an existing cookie/bearer principal to satisfy an endpoint that explicitly requires `Basic` or `ApiKey`.
+- API-key query-string authentication is opt-in (`AllowApiKeyInQueryString = true`); the dynamic scheme provider ignores `?api_key=` unless the API-key handler would accept it.
 - Use `MapHeadlessEndpoints()` to expose `/health`, `/alive`, OpenAPI JSON, and static web assets. `AddHeadless()` registers a `self` health check tagged `live`.
 - Keep `TrustForwardedHeadersFromAnyProxy` disabled unless the service is reachable only through trusted proxy infrastructure.
 - `Headless.Api.ServiceDefaults` validates by default that `UseHeadless()`, `UseStatusCodesRewriter()`, and `MapHeadlessEndpoints()` were applied at startup. For custom/manual pipelines, disable via `options.Validation.RequireUseHeadless = false`, `options.Validation.RequireStatusCodesRewriter = false`, and `options.Validation.RequireMapHeadlessEndpoints = false`.
 - `AddHeadless()` invokes `SetupApi.ConfigureGlobalSettings()` automatically (idempotent) to set regex timeout, FluentValidation, and JWT defaults. Call it manually only if you need those defaults applied before `AddHeadless()` runs.
 - Prefer `Headless.Api.MinimalApi` over `Headless.Api.Mvc` for new projects. Use `.Validate<T>()` on endpoints for FluentValidation integration.
 - For MVC, inherit from `ApiControllerBase` — it provides common utilities. Use `ConfigureMvc()` not manual `MvcOptions` configuration.
-- Use `Headless.Api.FluentValidation` validators (`FileNotEmpty()`, `LessThanOrEqualTo()`, `ContentTypes()`, `HaveSignatures()`) for `IFormFile` validation — do not write manual file validation logic.
+- Use `Headless.Api.FluentValidation` validators (`FileNotEmpty()`, `LessThanOrEqualTo()`, `ContentTypes()`, `HaveSignatures()`, `PhoneNumber()`, `GeoCoordinate()`, `PageMetadata()`) for API-boundary validation — do not write manual file or request-contract validation logic.
 - Use `PersistKeysToBlobStorage()` from `Headless.Api.DataProtection` to persist Data Protection keys in distributed/containerized environments.
 - For Serilog enrichment, call `AddSerilogEnrichers()` on services and `UseSerilogEnrichers()` on the app — place the middleware early in the pipeline.
 - Inject `IRequestContext` (from Abstractions) for request-scoped user, tenant, locale, timezone, and correlation ID — never access `HttpContext` directly in service code.
@@ -154,7 +157,7 @@ Additional packages:
 
 ### Problem details and error codes
 
-`AddHeadlessProblemDetails()` registers `IProblemDetailsCreator` (for building structured ProblemDetails responses) and `HeadlessApiExceptionHandler` (a single `IExceptionHandler` covering all framework-known exceptions). The creator adds standard extensions to every ProblemDetails: `traceId`, `buildNumber`, `commitNumber`, `instance`, `timestamp`. Error codes follow the `g:lower_snake_case` shape (`g:tenant_required`, `g:cross_tenant_write`, `g:idempotency_key_reused`). Clients should route on the stable `error.code` and `status` values, not on `title` or `detail` which are human-readable and may be localized.
+`AddHeadlessProblemDetails()` registers `IProblemDetailsCreator` (for building structured ProblemDetails responses) and `HeadlessApiExceptionHandler` (a single `IExceptionHandler` covering all framework-known exceptions). The creator adds standard extensions to every ProblemDetails: `traceId`, `buildNumber`, `commitNumber`, `instance`, `timestamp`. Error codes follow the `g:lower_snake_case` shape (`g:tenant_required`, `g:cross_tenant_write`, `g:idempotency_key_reused`). Every framework-emitted code — including FluentValidation validator failures (both the built-in codes mapped by `FluentValidationErrorCodeMapper` and the Headless validators surfaced by `FluentValidatorErrorDescriber`) — uses this single `g:` shape, so clients see one consistent code namespace in `errors[].code`. Stable codes are exposed as compile-time `public const string` on `*ErrorCodes` holders (`GeneralErrorCodes`, `IdentityErrorCodes` in `Headless.Api.Resources`; `IdempotencyErrorCodes`) — branch on these constants. Clients should route on the stable `error.code` and `status` values, not on `title` or `detail` which are human-readable and may be localized.
 
 The exception table (see `# Headless.Api.Core` below) covers MVC actions and Minimal-API endpoints. Middleware running before `UseExceptionHandler`, hosted/background services, and SignalR hubs need their own catch sites.
 
@@ -183,7 +186,7 @@ Idempotency is an HTTP-layer concern, not a Mediator pipeline behavior. The midd
 
 ## Headless.Api.Abstractions
 
-Defines core interfaces and contracts for HTTP request context, user identity, and web client information in ASP.NET Core applications.
+Defines core interfaces and contracts for HTTP request context, user identity, web client information, ProblemDetails construction, and absolute-URL building in ASP.NET Core applications.
 
 ### Problem Solved
 
@@ -194,6 +197,8 @@ Provides a standardized abstraction layer for accessing request-scoped context (
 - `IRequestContext` — unified access to request-scoped information (user, tenant, locale, timezone, correlation ID)
 - `IWebClientInfoProvider` — client detection (IP address, user agent, device info)
 - `IRequestedApiVersion` — API versioning abstraction
+- `IProblemDetailsCreator` — contract for building normalized RFC 7807 `ProblemDetails` responses (implemented in `Headless.Api.Core`)
+- `IAbsoluteUrlFactory` — contract for building absolute URLs from the current request (implemented in `Headless.Api.Core`)
 - Framework constants for HTTP headers and common values
 
 ### Installation
@@ -237,6 +242,7 @@ No configuration required. This package contains interfaces only.
 ### Dependencies
 
 - `Headless.Core`
+- `Microsoft.AspNetCore.App` (framework reference) — required by `IProblemDetailsCreator` (`ProblemDetails`) and `IAbsoluteUrlFactory` (`HttpContext`)
 
 ### Side Effects
 
@@ -260,12 +266,20 @@ Exposes each API primitive individually so teams that need à-la-carte compositi
 - `AddStatusCodesRewriterMiddleware()` + `UseStatusCodesRewriter()` — rewrites bare 401, 403, 404 to structured `application/problem+json` via `IProblemDetailsCreator`
 - `ConfigureHeadlessDefaultApi()` — Kestrel limits (no `Server` header, 30 MB body, 40 headers), HSTS (365-day max-age, subdomain, preload), lowercase route URLs, form limits (4 MB value, 16 KB multipart headers, 30 MB multipart body), default `self` liveness health check
 - `AddHeadlessJsonService()` — `IJsonOptionsProvider`, `IJsonSerializer`, `ITextSerializer`, `ISerializer` (all `TryAddSingleton` — safe to override)
-- `AddHeadlessTimeService()` — `TimeProvider.System`, `IClock`, `ITimezoneProvider` (all `TryAddSingleton`)
+- `AddHeadlessTimeService()` — `TimeProvider.System`, `ITimezoneProvider` (all `TryAddSingleton`)
 - `AddServerTimingMiddleware()` + `UseServerTiming()` — appends `Server-Timing` trailer when response supports trailers
 - `UseNoCacheWhenMissingCacheHeaders()` — injects `Cache-Control: no-cache,no-store,must-revalidate` when response omits the header
+- Basic/API-key authentication helpers — `AddBasicSchema()` and `AddApiKey()` register the canonical `Basic` and `ApiKey` schemes; handlers only authenticate credentials supplied for their own scheme
 - HTTP tenant resolution: `ResolveFromClaims()`, `UseHeadlessTenancy()`, `[SkipTenantResolution]`, `.SkipTenantResolution()`
 - HTTP tenant authorization: `TenantRequirement`, `[AllowMissingTenant]`, `.AllowMissingTenant()`, `[RequireTenant]`, `.RequireTenant()`
 - Diagnostic listeners: `AddHeadlessApiDiagnosticListeners()`, `BadRequestDiagnosticAdapter`, `MiddlewareAnalysisDiagnosticAdapter`
+
+### Design Notes
+
+- `IProblemDetailsCreator` factory methods normalize Headless fields (`traceId`, build metadata, `instance`, timestamp) but leave consumer `ProblemDetailsOptions.CustomizeProblemDetails` callbacks to the final response writer. Exception-handler and status-code-rewriter responses run consumer customization once through ASP.NET Core's `IProblemDetailsService`; MVC direct `ObjectResult` responses built from Headless-normalized ProblemDetails are customized once by `Headless.Api.Mvc`.
+- `HeadlessApiExceptionHandler` honors `Accept` quality values when deciding whether to write JSON ProblemDetails. A request that rejects JSON, or explicitly rejects `application/problem+json`, with `q=0` is left for downstream/default handlers instead of receiving a JSON body.
+- Basic authentication delegates password validation to `SignInManager.CheckPasswordSignInAsync(..., lockoutOnFailure: true)`, so configured ASP.NET Core Identity lockout policies apply to failed Basic credentials.
+- Batch `IFormFile.SaveAsync(...)` preserves result ordering while bounding concurrent file stream copies to `Environment.ProcessorCount` to avoid unbounded file-handle and disk pressure on large multipart requests.
 
 ### Installation
 
@@ -339,6 +353,8 @@ All other exceptions return `false`; the host default or a downstream handler re
 
 `StatusCodesRewriterMiddleware` is required for the `g:tenant_required` discriminator on 403 authorization rejections. It is wired by ServiceDefaults; apps that skip ServiceDefaults must call `UseStatusCodesRewriter()` themselves. `TenantRequirement` must live in `DefaultPolicy` or `FallbackPolicy` — the startup validator does not inspect named policies. `UseHeadlessTenancy()` / `UseTenantResolution()` must run after `UseRouting()` so endpoint metadata is available when `[SkipTenantResolution]` is evaluated.
 
+`AddBasicSchema()` defaults to the canonical `Basic` authentication scheme and `AddApiKey()` defaults to `ApiKey`. `DynamicAuthenticationSchemeProvider` selects those same canonical names. API keys are read from the configured header by default; query-string keys are routed and accepted only when `ApiKeyAuthenticationSchemeOptions.AllowApiKeyInQueryString` is `true`.
+
 ### Dependencies
 
 - `Headless.Api.Abstractions`
@@ -348,7 +364,6 @@ All other exceptions return `false`; the host default or a downstream handler re
 - `Headless.Security`
 - `Headless.Caching.Abstractions`
 - `Headless.FluentValidation`
-- `Headless.Api.FluentValidation`
 - `Headless.Hosting`
 - `Asp.Versioning.Http`
 - `DeviceDetector.NET`
@@ -416,7 +431,9 @@ app.MapHeadlessEndpoints();
 app.Run();
 ```
 
-### Tenant-Context Exception Mapping
+### Configuration
+
+#### Pipeline and Endpoint Behavior
 
 `UseHeadless()` applies Headless' standard ASP.NET Core middleware order:
 
@@ -437,7 +454,7 @@ Antiforgery is **opt-in and consumer-owned**: `AddHeadless()` does not register 
 
 `MapHeadlessEndpoints()` maps `/health` for all health checks with a JSON body containing `status` and per-check `results`, and `/alive` for checks tagged `live`. It also maps OpenAPI JSON documents and static web assets when configured. Health endpoints are named, excluded from OpenAPI descriptions, and allow anonymous requests by default. `AddHeadless()` registers the default `self` liveness check, disables Kestrel's `Server` response header, and applies conservative Kestrel limits: 30MB max request body and 40 request headers. Both `UseHeadless` and `MapHeadlessEndpoints` are idempotent.
 
-### Configuration
+#### Service Options
 
 ```csharp
 builder.AddHeadless(configureServices: options =>
@@ -494,30 +511,29 @@ builder.AddHeadless(configureServices: options =>
 
 ### Dependencies
 
-- `Headless.Api.Abstractions`
-- `Headless.Core`
-- `Headless.MultiTenancy`
-- `Headless.Security.Abstractions`
-- `Headless.Security`
-- `Headless.Caching.Abstractions`
-- `Headless.FluentValidation`
-- `Headless.Api.FluentValidation`
-- `Headless.Hosting`
-- `Asp.Versioning.Http`
-- `DeviceDetector.NET`
-- `FluentValidation`
+- `Headless.Api.Core`
+- `FileSignatures`
 - `Microsoft.AspNetCore.OpenApi`
 - `Microsoft.Extensions.Http.Resilience`
-- `NetEscapades.AspNetCore.SecurityHeaders`
+- `Microsoft.Extensions.ServiceDiscovery`
+- `OpenTelemetry.Exporter.OpenTelemetryProtocol`
+- `OpenTelemetry.Extensions.Hosting`
+- `OpenTelemetry.Instrumentation.AspNetCore`
+- `OpenTelemetry.Instrumentation.Http`
+- `OpenTelemetry.Instrumentation.Runtime`
 
 ### Side Effects
 
-- Registers `HttpContextAccessor`
-- Configures response compression providers
-- Configures route options (lowercase URLs)
-- Configures form options (file upload limits)
-- Configures HSTS options
-- Adds resilience handler to `HttpClient` defaults
+- Enables service-provider validation on startup (`ValidateOnBuild`, `ValidateScopes`).
+- Registers all core primitives from `Headless.Api.Core` including problem details, response compression, JWT, identity, status-code rewriting, and default API conventions.
+- Registers antiforgery services only when `options.Antiforgery.Enabled` is `true`.
+- Configures MVC and Minimal API JSON serializer defaults.
+- Registers ASP.NET Core source-generated input validation (`services.AddValidation()`).
+- Registers OpenTelemetry logging, metrics, and tracing when `OpenTelemetry.Enabled` is `true`.
+- Registers OpenAPI services when `OpenApi.Enabled` is `true`.
+- Configures service discovery when `HttpClient.UseServiceDiscovery` is `true`.
+- Configures HttpClient defaults for standard resilience, service discovery, and application User-Agent.
+- Adds a startup filter that validates `UseHeadless()`, `UseStatusCodesRewriter()`, and `MapHeadlessEndpoints()` usage.
 
 ---
 
@@ -533,7 +549,12 @@ In distributed/containerized environments, ASP.NET Core Data Protection keys mus
 
 - `PersistKeysToBlobStorage()` extension for `IDataProtectionBuilder`
 - Works with any `IBlobStorage` implementation
-- Supports factory-based storage resolution for DI scenarios
+- Ensures the `DataProtection` container before writes when an `IBlobContainerManager` is registered or supplied
+- Supports factory-based storage resolution for DI scenarios, including keyed/named stores via a `serviceKey` overload
+- Enforces container provisioning up front: with no manager and a provisioning-requiring storage (`IBlobStorage.RequiresContainerProvisioning`), configuration throws unless `provisioning: BlobContainerProvisioning.PreProvisioned` acknowledges out-of-band provisioning
+- `ValidateKeyRingAtStartup()` — opt-in startup gate (runs before other hosted services) that exercises the key ring, verifies write access with a real sentinel write, and fails an empty key ring on read-only nodes — converting lazy first-write/rotation failures into deploy-time failures
+- `AddDataProtectionKeyRing()` — opt-in readiness health check, the continuous complement to the startup gate: re-validates the key-ring store on every health probe, catching a container deleted or write permission revoked after boot. The default probe is the definitive sentinel write (so `Healthy` uniformly means "the key ring can be persisted"); `KeyRingProbeStyle.ContainerExistence` is a cheap explicit opt-down that does not verify write access
+- Container ensure runs inside the same retry pipeline as the key upload; terminal write failures surface as `InvalidOperationException` naming the `DataProtection` container, whether a manager was wired, and the remediation (original exception as inner)
 
 ### Installation
 
@@ -546,18 +567,43 @@ dotnet add package Headless.Api.DataProtection
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddDataProtection().PersistKeysToBlobStorage();
+builder.Services.AddDataProtection()
+    .PersistKeysToBlobStorage()
+    // Opt-in: probe the key ring at startup so a missing container / bad credentials fails the deploy,
+    // not the first key write or the ~90-day rotation months later.
+    .ValidateKeyRingAtStartup();
 
-// Or with explicit storage instance
-builder.Services.AddDataProtection().PersistKeysToBlobStorage(storageInstance);
+// Opt-in continuous complement to the startup gate: a readiness health check that re-validates the
+// key-ring store on every health probe — see "Key-ring health check" in Configuration.
+builder.Services.AddHealthChecks().AddDataProtectionKeyRing();
+
+// Or with explicit storage instance. No manager is involved, so for provisioning-requiring backends this throws
+// at config time unless you acknowledge that the DataProtection container exists — see Configuration.
+builder.Services.AddDataProtection().PersistKeysToBlobStorage(storageInstance, provisioning: BlobContainerProvisioning.PreProvisioned);
+
+// Or with explicit storage + container manager (ensures the DataProtection container before writes)
+builder.Services.AddDataProtection().PersistKeysToBlobStorage(storageInstance, containerManager);
 
 // Or with factory
 builder.Services.AddDataProtection().PersistKeysToBlobStorage(sp => sp.GetRequiredService<IBlobStorage>());
+
+// Or against a named/keyed blob store (resolves the keyed IBlobStorage + IBlobContainerManager)
+builder.Services.AddDataProtection().PersistKeysToBlobStorage(serviceKey: "keys");
 ```
 
 ### Configuration
 
-No specific configuration. Depends on the underlying `IBlobStorage` configuration.
+No specific configuration. Depends on the underlying `IBlobStorage` configuration. Cloud/object-store providers should also register or pass the matching `IBlobContainerManager` so the `DataProtection` container is created before the first key write.
+
+The missing-container failure mode is **enforced at configuration time**, not just documented: whenever the effective container manager is `null` and the storage reports `IBlobStorage.RequiresContainerProvisioning == true`, `PersistKeysToBlobStorage` throws `InvalidOperationException` (at call time for the storage-instance overload; at first options resolution for the DI/factory/keyed overloads) unless `provisioning: BlobContainerProvisioning.PreProvisioned` acknowledges that the `DataProtection` container was provisioned out-of-band (portal, CLI, IaC). When a manager is present it is always used to ensure the container — `PreProvisioned` never disables it.
+
+Provisioning matrix: **managed** — a manager is registered/keyed/passed, the container is ensured before writes, no acknowledgment needed; **explicit pre-provisioned** — no manager on a provisioning-requiring backend (AWS, Azure, FileSystem, SSH — and Cloudflare R2, where this is the *only* option because R2 ships no `IBlobContainerManager`), provision the container out-of-band and pass `provisioning: BlobContainerProvisioning.PreProvisioned`; **exempt** — Redis reports `RequiresContainerProvisioning == false` (the backing hash materializes on first write), so the storage-only overload works with no acknowledgment.
+
+**Startup validation** — key writes are lazy (first boot + ~90-day rotation), so misconfiguration can stay hidden for months post-deploy. `ValidateKeyRingAtStartup(Action<DataProtectionStartupValidationOptions>? configure = null)` registers an opt-in startup gate: an `IHostedLifecycleService` whose probe runs in `StartingAsync`, before any registered `IHostedService.StartAsync`. With `KeyManagementOptions.AutoGenerateKeys == true` (default) it protects/unprotects a payload through the real provider — on a fresh deployment this generates a key and drives the full persistence path (container ensure + upload); with `AutoGenerateKeys == false` (designated-key-writer topologies) it performs a read-only `IKeyManager.GetAllKeys()` probe and never forces key generation — and a reachable-but-empty key ring FAILS validation (the node would have no usable key; the message asks whether the designated key writer has run / the container is right). Unless `DataProtectionStartupValidationOptions.ProbeWritePath` is disabled (default `true`), BOTH modes also verify write access with a real write: a reserved sentinel blob (`startup-write-probe.xml`) is uploaded and deleted through the same ensure + retry pipeline the key writes use — the only way to catch lost write permission when a valid key already exists (the round-trip performs no write then) and the only write guarantee on read-only nodes; the sentinel is always excluded from key-ring loading, and the probe is skipped with a debug log for non-blob repositories. `DataProtectionStartupValidationOptions.Mode` selects `StartupValidationMode.Throw` (default — `StartingAsync` throws an actionable `InvalidOperationException` naming the `DataProtection` container and the provisioning/manager remediation, failing host start) or `StartupValidationMode.LogOnly` (log at `Critical`, continue). Registration is idempotent.
+
+**Key-ring health check** — `ValidateKeyRingAtStartup` is a one-shot boot gate; it cannot see a container deleted or write permission revoked AFTER the host started. `AddDataProtectionKeyRing(this IHealthChecksBuilder, string name = "dataprotection-keyring", HealthStatus? failureStatus = null, IEnumerable<string>? tags = null, KeyRingProbeStyle probeStyle = KeyRingProbeStyle.WriteProbe)` registers the opt-in continuous complement: a readiness health check that re-validates the key-ring store on every health probe. The probe is selected by `KeyRingProbeStyle`, not by the wiring, so `Healthy` has one meaning per registration (each probe reports a distinct description so operators can tell which ran): `KeyRingProbeStyle.WriteProbe` (default) is the definitive sentinel write probe — the reserved `startup-write-probe.xml` blob is uploaded and deleted through the same ensure + retry pipeline the key writes use, manager or not (crash-safe; the sentinel is always excluded from key-ring loading), so `Healthy` means the key ring can actually be persisted (what the ~90-day rotation needs); `KeyRingProbeStyle.ContainerExistence` is the explicit opt-down — a cheap `ContainerExistsAsync("DataProtection")` existence check via the wired `IBlobContainerManager` (a missing container fails the check — key rotation would fail) that does NOT verify write access: revoked write permission still reports `Healthy` while the next rotation write would fail. With `ContainerExistence` and no manager wired (pre-provisioned mode), the check falls back to the write probe — the only probe possible — and says so in its description (that legitimate wiring does not report `Degraded`). Statuses: `Healthy` — the probe that ran succeeded (with the default style that means the full persistence path is verified); `Degraded` — `KeyManagementOptions.XmlRepository` is not the blob-backed repository (registration misuse, nothing to check — not an outage); `Unhealthy` (default failure status, override via `failureStatus:`) — container missing, existence check threw, or the sentinel write failed, with the probe exception attached. Probe-interval note: the default write probe performs a real write + delete per readiness ping — pair it with a probe interval you are comfortable with, or opt down to `probeStyle: KeyRingProbeStyle.ContainerExistence` and accept its weaker guarantee; the check deliberately does no caching or throttling of its own.
+
+**Write resilience & failure context** — the container ensure runs inside the same retry pipeline as the key upload (transient ensure failures are retried under the same predicate), and a terminal write failure is wrapped in `InvalidOperationException` naming the `DataProtection` container, whether a manager was wired, and the remediation, with the original backend exception as the inner exception (context only — no failure-kind guessing).
 
 ### Dependencies
 
@@ -565,20 +611,24 @@ No specific configuration. Depends on the underlying `IBlobStorage` configuratio
 - `Headless.Checks`
 - `Azure.Extensions.AspNetCore.DataProtection.Blobs`
 - `Microsoft.AspNetCore.DataProtection`
+- `Microsoft.Extensions.Diagnostics.HealthChecks`
+- `Microsoft.Extensions.Hosting.Abstractions`
 
 ### Side Effects
 
 - Configures `KeyManagementOptions.XmlRepository` to use blob storage
+- `ValidateKeyRingAtStartup()` registers an `IHostedLifecycleService` that probes the key ring in `StartingAsync`, before other hosted services start (with `AutoGenerateKeys`, the first key may be created at boot instead of at first use; with `ProbeWritePath`, a sentinel blob is written and deleted each boot)
+- `AddDataProtectionKeyRing()` adds an `IHealthCheck` registration (default name `dataprotection-keyring`); with the default `KeyRingProbeStyle.WriteProbe`, each probe writes and deletes the sentinel blob
 
 ---
 
 ## Headless.Api.FluentValidation
 
-FluentValidation extensions for validating ASP.NET Core `IFormFile` uploads including size, content type, and file signature verification.
+FluentValidation extensions for ASP.NET Core file uploads and reusable Headless API request contracts.
 
 ### Problem Solved
 
-Provides reusable, type-safe validators for file uploads with proper error messages, eliminating boilerplate validation code for common file upload scenarios and preventing extension spoofing attacks.
+Provides reusable, type-safe validators for file uploads and common API request contracts, keeping validation rules out of `Headless.Api.Core` while eliminating repeated boundary-validation boilerplate.
 
 ### Key Features
 
@@ -587,6 +637,9 @@ Provides reusable, type-safe validators for file uploads with proper error messa
 - `LessThanOrEqualTo(bytes)` — maximum file size validation
 - `ContentTypes(list)` — MIME type allowlist validation
 - `HaveSignatures(inspector, predicate)` — magic bytes/file signature validation
+- `PhoneNumber()` — validates `PhoneNumberRequest` country code and local subscriber number
+- `GeoCoordinate()` — validates `GeoCoordinateRequest` latitude/longitude ranges
+- `PageMetadata()` — validates `PageMetadataRequest` SEO field length and element-count limits
 - Localized error messages (English, Arabic)
 
 ### Installation
@@ -601,17 +654,30 @@ dotnet add package Headless.Api.FluentValidation
 using FileSignatures;
 using FileSignatures.Formats;
 using FluentValidation;
+using Headless.Api.Contracts;
 using Headless.FluentValidation;
+using Microsoft.AspNetCore.Http;
 
-public sealed class UploadRequestValidator : AbstractValidator<UploadRequest>
+public sealed record ProfileRequest(
+    IFormFile? Avatar,
+    PhoneNumberRequest? PhoneNumber,
+    GeoCoordinateRequest? Location,
+    PageMetadataRequest? Metadata
+);
+
+public sealed class ProfileRequestValidator : AbstractValidator<ProfileRequest>
 {
-    public UploadRequestValidator(IFileFormatInspector inspector)
+    public ProfileRequestValidator(IFileFormatInspector inspector)
     {
         RuleFor(x => x.Avatar)
             .FileNotEmpty()
             .LessThanOrEqualTo(5 * 1024 * 1024) // 5MB
             .ContentTypes(["image/jpeg", "image/png"])
             .HaveSignatures(inspector, format => format is Jpeg or Png);
+
+        RuleFor(x => x.PhoneNumber).PhoneNumber();
+        RuleFor(x => x.Location).GeoCoordinate();
+        RuleFor(x => x.Metadata).PageMetadata();
     }
 }
 ```
@@ -623,6 +689,7 @@ No configuration required.
 ### Dependencies
 
 - `Headless.FluentValidation`
+- `Headless.Api.Core`
 - `FileSignatures`
 - `Microsoft.AspNetCore.App` (framework reference)
 
@@ -719,7 +786,7 @@ app.MapPost("/webhooks", HandleWebhook)
 | `WinnerLockLease` | 5 minutes | Lease duration for the winner's distributed lock under `WaitAndReplay`. Must be >= `InFlightLockTimeout`. Capped at 1 hour. |
 | `MaxBodySizeForHashing` | 1 MiB | Maximum body size eligible for fingerprinting. Capped at 64 MiB. |
 | `OversizeBehavior` | `Reject` | `Reject` returns 413 (`g:idempotency_body_too_large`). `PassThrough` runs the handler without idempotency guarantees. |
-| `OnCacheError` | `FailOpen` | `FailOpen` logs a warning and bypasses idempotency for the failing request. `Throw` propagates the exception as 5xx. |
+| `OnCacheError` | `FailOpen` | `FailOpen` logs a warning and bypasses idempotency for pre-handler cache failures; post-handler finalize failures remove the marker and preserve the handler response. `Throw` propagates the exception as 5xx. |
 | `RequireUserIdentity` | `true` | When `true`, the default cache key requires an authenticated user; tenant-only anonymous requests pass through. Set `false` for webhook receivers / OAuth callbacks. |
 | `MismatchStatusCode` | 422 | Status code for fingerprint mismatch. Must be 409 or 422. |
 | `ReplayHeaderAllowlist` | Content-Type, Content-Language, Content-Encoding, Content-Disposition, Location, Link, ETag, Last-Modified, Cache-Control, Vary | Response headers copied into the cached record. `Set-Cookie` and `traceparent` are excluded by design. |
@@ -741,10 +808,10 @@ app.MapPost("/webhooks", HandleWebhook)
 
 ### Side Effects
 
-- Reads `ICurrentTenant.Id` and `ICurrentUser.UserId` for cache-key composition; when both are absent and no `KeyDeriver` is configured, the middleware passes through without applying idempotency.
+- Reads `ICurrentTenant.Id` and authenticated `ICurrentUser.UserId` for cache-key composition; when both are absent and no `KeyDeriver` is configured, the middleware passes through without applying idempotency.
 - Buffers the request body up to `MaxBodySizeForHashing + 1` bytes via `HttpRequest.EnableBuffering`.
 - On replay, writes `Idempotent-Replayed: true` to the response. Pre-existing allowlisted response headers set by upstream middleware are removed before captured headers are written for byte-equivalent replay.
-- On cache miss, inserts an `InFlight` sentinel marker before invoking the handler, then upserts the `Complete` record afterward using compare-and-swap (`TryReplaceIfEqualAsync`). The marker uses the same TTL as `IdempotencyKeyExpiration`.
+- On cache miss, inserts an `InFlight` sentinel marker before invoking the handler, then promotes it to the `Complete` record afterward using compare-and-swap (`TryReplaceIfEqualAsync`). The marker uses the same TTL as `IdempotencyKeyExpiration`.
 - When the **response** body exceeds `MaxBodySizeForHashing` (`captureStream.TruncatedCapture`), the completed record is not stored and replay does not apply. `OversizeBehavior` controls **request**-body handling only.
 
 ---
@@ -869,6 +936,7 @@ Provides consistent MVC configuration, base controllers, and URL canonicalizatio
 - Environment-based action filters (`BlockInEnvironmentAttribute`, `RequireEnvironmentAttribute`)
 - URL canonicalization middleware (`RedirectToCanonicalUrlRule`)
 - Pre-configured JSON and MVC options
+- Direct MVC `ObjectResult` responses carrying Headless-normalized `ProblemDetails` run `ProblemDetailsOptions.CustomizeProblemDetails` once before serialization
 - API versioning integration with API Explorer
 
 ### Installation
@@ -916,8 +984,8 @@ No additional configuration required.
 - `Headless.Api.Core` (and `Headless.Api.ServiceDefaults` if you want the orchestrator)
 - `Asp.Versioning.Mvc`
 - `Asp.Versioning.Mvc.ApiExplorer`
-- `Microsoft.EntityFrameworkCore`
 
 ### Side Effects
 
 - Configures `MvcOptions` and `JsonOptions` for controllers
+- Adds a result filter that applies ProblemDetails customization to Headless-generated MVC object results

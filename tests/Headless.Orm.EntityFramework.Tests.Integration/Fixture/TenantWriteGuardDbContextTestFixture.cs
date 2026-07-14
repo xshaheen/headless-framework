@@ -29,7 +29,7 @@ public abstract class TenantWriteGuardDbContextTestFixtureBase : IAsyncLifetime
 
     public ServiceProvider ServiceProvider { get; private set; } = null!;
 
-    public TestClock Clock { get; } = new() { TimeProvider = new FakeTimeProvider(Now) };
+    public FakeTimeProvider Clock { get; } = new(Now);
 
     public TestCurrentTenant CurrentTenant { get; } = new();
 
@@ -43,7 +43,7 @@ public abstract class TenantWriteGuardDbContextTestFixtureBase : IAsyncLifetime
         var services = new ServiceCollection();
 
         services.AddLogging(x => x.AddProvider(TestHelpers.CreateXUnitLoggerFactory().Provider));
-        services.AddSingleton<IClock>(Clock);
+        services.AddSingleton<TimeProvider>(Clock);
         services.AddSingleton<ICurrentUser>(CurrentUser);
         services.AddSingleton<IGuidGenerator>(new SequentialGuidGenerator(SequentialGuidType.Version7));
 

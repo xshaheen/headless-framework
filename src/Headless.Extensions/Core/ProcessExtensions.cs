@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections;
+using System.ComponentModel;
 using System.Reactive.Linq;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
@@ -111,9 +112,9 @@ public static class ProcessExtensions
             // Process has already exited (WaitForExitAsync awaited above), so the synchronous WaitForExit() returns
             // immediately after draining buffered stdio — no deadlock risk; the async overload does not guarantee
             // redirected streams have fully drained.
-#pragma warning disable CA1849, AsyncFixer02
+#pragma warning disable CA1849, AsyncFixer02, MA0042
             process.WaitForExit();
-#pragma warning restore CA1849, AsyncFixer02
+#pragma warning restore CA1849, AsyncFixer02, MA0042
 
             exitCode = process.ExitCode;
         }
@@ -208,8 +209,7 @@ public static class ProcessExtensions
                 {
                     if (cancellationToken.CanBeCanceled && !process.HasExited)
                     {
-                        // ReSharper disable once AccessToDisposedClosure
-                        registration = cancellationToken.Register(() => process.TryToKill());
+                        registration = cancellationToken.Register(process.TryToKill);
                     }
 
                     await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
@@ -224,9 +224,9 @@ public static class ProcessExtensions
                 // callbacks may still be in-flight. The no-argument WaitForExit() blocks until
                 // all redirected streams have been fully read, ensuring OnNext is never called
                 // after OnCompleted (which would violate the Rx contract).
-#pragma warning disable CA1849 // Synchronous WaitForExit() is intentional: the async overload does not guarantee redirected stdio has drained.
+#pragma warning disable CA1849, MA0042 // Synchronous WaitForExit() is intentional: the async overload does not guarantee redirected stdio has drained.
                 process.WaitForExit();
-#pragma warning restore CA1849
+#pragma warning restore CA1849, MA0042
 
                 observer.OnNext(
                     new ProcessObservedOutput(
@@ -251,18 +251,23 @@ public static class ProcessExtensions
         {
             process.Kill(entireProcessTree: true);
         }
-        catch (InvalidOperationException)
+        catch (Exception exception) when (_IsExpectedKillFailure(exception))
         {
             try
             {
                 // Try to at least kill the root process
                 process.Kill();
             }
-            catch (InvalidOperationException)
+            catch (Exception retryException) when (_IsExpectedKillFailure(retryException))
             {
                 // Ignore
             }
         }
+    }
+
+    private static bool _IsExpectedKillFailure(Exception exception)
+    {
+        return exception is InvalidOperationException or Win32Exception or NotSupportedException or AggregateException;
     }
 }
 
@@ -286,16 +291,18 @@ public sealed record ProcessObservedOutput(ProcessObservedOutputType Type, strin
 }
 
 /// <summary>Identifies the kind of item produced by <see cref="ProcessExtensions.RunAsObservable(ProcessStartInfo)"/>.</summary>
+/// <remarks>Additional members may be added in future versions; consumers switching on this enum should include a default case.</remarks>
+[PublicAPI]
 public enum ProcessObservedOutputType
 {
     /// <summary>A line written to standard output.</summary>
-    StandardOutput,
+    StandardOutput = 0,
 
     /// <summary>A line written to standard error.</summary>
-    StandardError,
+    StandardError = 1,
 
     /// <summary>The process exit code, reported once the process terminates.</summary>
-    ExitCode,
+    ExitCode = 2,
 }
 
 #endregion
@@ -374,13 +381,15 @@ public sealed class ProcessOutputCollection : IReadOnlyList<ProcessOutput>
 }
 
 /// <summary>Identifies which standard stream a captured <see cref="ProcessOutput"/> line came from.</summary>
+/// <remarks>Additional members may be added in future versions; consumers switching on this enum should include a default case.</remarks>
+[PublicAPI]
 public enum ProcessOutputType
 {
     /// <summary>A line written to standard output.</summary>
-    StandardOutput,
+    StandardOutput = 0,
 
     /// <summary>A line written to standard error.</summary>
-    StandardError,
+    StandardError = 1,
 }
 
 #endregion

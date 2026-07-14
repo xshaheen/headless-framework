@@ -2,7 +2,7 @@
 
 using Headless.Primitives;
 
-namespace Headless.Api.Models;
+namespace Headless.OpenApi.Nswag.Models;
 
 /// <summary>
 /// Problem details schema for 409 Conflict responses.

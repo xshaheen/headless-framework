@@ -6,7 +6,6 @@ using Amazon.SQS;
 using Amazon.SQS.Model;
 using Headless.Messaging;
 using Headless.Messaging.Aws;
-using Headless.Messaging.Messages;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -16,9 +15,9 @@ namespace Tests;
 
 public sealed class AmazonSqsQueueTransportTests : TestBase
 {
-    private static IOptions<AmazonSqsOptions> _CreateOptions() =>
+    private static IOptions<AmazonSqsMessagingOptions> _CreateOptions() =>
         Options.Create(
-            new AmazonSqsOptions
+            new AmazonSqsMessagingOptions
             {
                 Region = Amazon.RegionEndpoint.USEast1,
                 SqsServiceUrl = "http://localhost:4566",

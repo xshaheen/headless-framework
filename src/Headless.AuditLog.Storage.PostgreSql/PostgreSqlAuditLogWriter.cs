@@ -50,6 +50,7 @@ internal sealed class PostgreSqlAuditLogWriter(
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
+#pragma warning disable MA0045 // This sync API intentionally avoids blocking on the async writer path.
     /// <summary>
     /// True-sync writer using <see cref="NpgsqlCommand.ExecuteNonQuery"/>. Used by the sync
     /// <c>IAuditLogStore.Save</c> path to avoid <c>.GetAwaiter().GetResult()</c> on the async path.
@@ -116,6 +117,7 @@ internal sealed class PostgreSqlAuditLogWriter(
             command.ExecuteNonQuery();
         }
     }
+#pragma warning restore MA0045
 
     private string _BuildInsertSql(int rowCount)
     {
@@ -123,7 +125,7 @@ internal sealed class PostgreSqlAuditLogWriter(
         var table = PostgreSqlAuditLogStorageInitializer.Qualified(options);
         var jsonColumnType = (options.JsonColumnType ?? AuditLogJsonColumnType.Jsonb).ToSqlFragment();
 
-        var builder = new StringBuilder(256 + rowCount * 256);
+        var builder = new StringBuilder(256 + (rowCount * 256));
         builder.Append("INSERT INTO ").Append(table);
         builder.Append(
             " (\"CreatedAt\",\"UserId\",\"AccountId\",\"TenantId\",\"IpAddress\",\"UserAgent\",\"CorrelationId\",\"Action\",\"ChangeType\",\"EntityType\",\"EntityId\",\"OldValues\",\"NewValues\",\"ChangedFields\",\"Success\",\"ErrorCode\") VALUES "
@@ -197,47 +199,85 @@ internal sealed class PostgreSqlAuditLogWriter(
         for (var i = 0; i < rowCount; i++)
         {
             var entry = entries[offset + i];
-            parameters.Add(_Param($"CreatedAt_{i}", entry.CreatedAt));
+            parameters.Add(_Param(string.Create(CultureInfo.InvariantCulture, $"CreatedAt_{i}"), entry.CreatedAt));
             parameters.Add(
-                _Param($"UserId_{i}", AuditLogFieldLimits.Truncate(entry.UserId, AuditLogFieldLimits.UserId))
-            );
-            parameters.Add(
-                _Param($"AccountId_{i}", AuditLogFieldLimits.Truncate(entry.AccountId, AuditLogFieldLimits.AccountId))
-            );
-            parameters.Add(
-                _Param($"TenantId_{i}", AuditLogFieldLimits.Truncate(entry.TenantId, AuditLogFieldLimits.TenantId))
-            );
-            parameters.Add(
-                _Param($"IpAddress_{i}", AuditLogFieldLimits.Truncate(entry.IpAddress, AuditLogFieldLimits.IpAddress))
-            );
-            parameters.Add(
-                _Param($"UserAgent_{i}", AuditLogFieldLimits.Truncate(entry.UserAgent, AuditLogFieldLimits.UserAgent))
+                _Param(
+                    string.Create(CultureInfo.InvariantCulture, $"UserId_{i}"),
+                    AuditLogFieldLimits.Truncate(entry.UserId, AuditLogFieldLimits.UserId)
+                )
             );
             parameters.Add(
                 _Param(
-                    $"CorrelationId_{i}",
+                    string.Create(CultureInfo.InvariantCulture, $"AccountId_{i}"),
+                    AuditLogFieldLimits.Truncate(entry.AccountId, AuditLogFieldLimits.AccountId)
+                )
+            );
+            parameters.Add(
+                _Param(
+                    string.Create(CultureInfo.InvariantCulture, $"TenantId_{i}"),
+                    AuditLogFieldLimits.Truncate(entry.TenantId, AuditLogFieldLimits.TenantId)
+                )
+            );
+            parameters.Add(
+                _Param(
+                    string.Create(CultureInfo.InvariantCulture, $"IpAddress_{i}"),
+                    AuditLogFieldLimits.Truncate(entry.IpAddress, AuditLogFieldLimits.IpAddress)
+                )
+            );
+            parameters.Add(
+                _Param(
+                    string.Create(CultureInfo.InvariantCulture, $"UserAgent_{i}"),
+                    AuditLogFieldLimits.Truncate(entry.UserAgent, AuditLogFieldLimits.UserAgent)
+                )
+            );
+            parameters.Add(
+                _Param(
+                    string.Create(CultureInfo.InvariantCulture, $"CorrelationId_{i}"),
                     AuditLogFieldLimits.Truncate(entry.CorrelationId, AuditLogFieldLimits.CorrelationId)
                 )
             );
             parameters.Add(
-                _Param($"Action_{i}", AuditLogFieldLimits.Truncate(entry.Action, AuditLogFieldLimits.Action))
+                _Param(
+                    string.Create(CultureInfo.InvariantCulture, $"Action_{i}"),
+                    AuditLogFieldLimits.Truncate(entry.Action, AuditLogFieldLimits.Action)
+                )
             );
-            parameters.Add(_Param($"ChangeType_{i}", entry.ChangeType is null ? null : (int)entry.ChangeType.Value));
             parameters.Add(
                 _Param(
-                    $"EntityType_{i}",
+                    string.Create(CultureInfo.InvariantCulture, $"ChangeType_{i}"),
+                    entry.ChangeType is null ? null : (int)entry.ChangeType.Value
+                )
+            );
+            parameters.Add(
+                _Param(
+                    string.Create(CultureInfo.InvariantCulture, $"EntityType_{i}"),
                     AuditLogFieldLimits.Truncate(entry.EntityType, AuditLogFieldLimits.EntityType)
                 )
             );
             parameters.Add(
-                _Param($"EntityId_{i}", AuditLogFieldLimits.Truncate(entry.EntityId, AuditLogFieldLimits.EntityId))
+                _Param(
+                    string.Create(CultureInfo.InvariantCulture, $"EntityId_{i}"),
+                    AuditLogFieldLimits.Truncate(entry.EntityId, AuditLogFieldLimits.EntityId)
+                )
             );
-            parameters.Add(_Param($"OldValues_{i}", _Serialize(entry.OldValues)));
-            parameters.Add(_Param($"NewValues_{i}", _Serialize(entry.NewValues)));
-            parameters.Add(_Param($"ChangedFields_{i}", _Serialize(entry.ChangedFields)));
-            parameters.Add(_Param($"Success_{i}", entry.Success));
             parameters.Add(
-                _Param($"ErrorCode_{i}", AuditLogFieldLimits.Truncate(entry.ErrorCode, AuditLogFieldLimits.ErrorCode))
+                _Param(string.Create(CultureInfo.InvariantCulture, $"OldValues_{i}"), _Serialize(entry.OldValues))
+            );
+            parameters.Add(
+                _Param(string.Create(CultureInfo.InvariantCulture, $"NewValues_{i}"), _Serialize(entry.NewValues))
+            );
+            parameters.Add(
+                _Param(
+                    string.Create(CultureInfo.InvariantCulture, $"ChangedFields_{i}"),
+                    _Serialize(entry.ChangedFields)
+                )
+            );
+            parameters.Add(_Param(string.Create(CultureInfo.InvariantCulture, $"Success_{i}"), entry.Success));
+            parameters.Add(
+                _Param(
+                    string.Create(CultureInfo.InvariantCulture, $"ErrorCode_{i}"),
+                    AuditLogFieldLimits.Truncate(entry.ErrorCode, AuditLogFieldLimits.ErrorCode)
+                )
             );
         }
     }

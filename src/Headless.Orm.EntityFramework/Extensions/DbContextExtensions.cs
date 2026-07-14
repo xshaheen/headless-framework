@@ -31,7 +31,7 @@ public static class DbContextExtensions
 
     /// <summary>
     /// The application service provider EF Core was built with (set by the Headless registration via
-    /// <c>UseApplicationServiceProvider</c>), or <c>null</c> for a hand-constructed <c>DbContextOptions</c>
+    /// <c>UseApplicationServiceProvider</c>), or <see langword="null"/> for a hand-constructed <c>DbContextOptions</c>
     /// outside the DI pipeline — in which case the generators fall back to their framework default.
     /// </summary>
     internal static IServiceProvider? GetApplicationServices(this DbContext context)

@@ -9,25 +9,35 @@ namespace Tests;
 public sealed class EmailsSetupBuilderTests
 {
     [Fact]
-    public void should_reject_setup_when_default_provider_is_missing()
+    public void should_allow_setup_with_no_default_and_register_provider()
+    {
+        // given - the default slot is optional (at most one); an empty setup still registers the factory.
+        var services = new ServiceCollection();
+
+        // when
+        services.AddHeadlessEmails(static _ => { });
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        provider.GetService<IEmailSender>().Should().BeNull();
+        provider.GetRequiredService<IEmailSenderProvider>().RegisteredNames.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void named_only_setup_should_not_register_default_email_sender()
     {
         // given
         var services = new ServiceCollection();
 
         // when
-        var action = () => services.AddHeadlessEmails(static _ => { });
+        services.AddHeadlessEmails(static setup =>
+            setup.AddNamed("sink", static instance => instance.UseDevelopment("out.txt"))
+        );
+        using var provider = services.BuildServiceProvider();
 
-        // then
-        action
-            .Should()
-            .Throw<InvalidOperationException>()
-            .Which.Message.Should()
-            .Contain("exactly one default provider")
-            .And.Contain("UseAzure")
-            .And.Contain("UseAwsSes")
-            .And.Contain("UseMailkit")
-            .And.Contain("UseDevelopment")
-            .And.Contain("UseNoop");
+        // then - the named instance resolves while the unkeyed default stays unregistered.
+        provider.GetService<IEmailSender>().Should().BeNull();
+        provider.GetRequiredService<IEmailSenderProvider>().GetSender("sink").Should().BeOfType<DevEmailSender>();
     }
 
     [Fact]
@@ -45,7 +55,11 @@ public sealed class EmailsSetupBuilderTests
             });
 
         // then
-        action.Should().Throw<InvalidOperationException>().WithMessage("*Multiple default providers*");
+        action
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*at most one default*")
+            .WithMessage("*AddNamed*");
     }
 
     [Fact]

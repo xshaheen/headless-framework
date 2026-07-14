@@ -17,18 +17,18 @@ namespace Tests;
 /// </summary>
 public sealed class CloudflareR2BlobsRegistrationTests
 {
-    private static ServiceCollection CreateServices()
+    private static ServiceCollection _CreateServices()
     {
         var services = new ServiceCollection();
         services.AddLogging();
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IMimeTypeProvider, MimeTypeProvider>();
-        services.TryAddSingleton<IClock, Clock>();
+        services.TryAddSingleton(TimeProvider.System);
 
         return services;
     }
 
-    private static void ConfigureR2(R2BlobStorageOptions options)
+    private static void _ConfigureR2(R2BlobStorageOptions options)
     {
         options.AccountId = "test-account";
         options.AccessKeyId = "test-access-key";
@@ -39,12 +39,12 @@ public sealed class CloudflareR2BlobsRegistrationTests
     public async Task default_and_named_r2_stores_resolve_and_expose_presigned()
     {
         // given
-        var services = CreateServices();
+        var services = _CreateServices();
         services.AddHeadlessBlobs(blobs =>
         {
-            blobs.UseCloudflareR2(ConfigureR2);
-            blobs.AddNamed("images", instance => instance.UseCloudflareR2(ConfigureR2));
-            blobs.AddNamed("docs", instance => instance.UseCloudflareR2(ConfigureR2));
+            blobs.UseCloudflareR2(_ConfigureR2);
+            blobs.AddNamed("images", instance => instance.UseCloudflareR2(_ConfigureR2));
+            blobs.AddNamed("docs", instance => instance.UseCloudflareR2(_ConfigureR2));
         });
         await using var sp = services.BuildServiceProvider();
 
@@ -68,10 +68,10 @@ public sealed class CloudflareR2BlobsRegistrationTests
     public async Task r2_forced_defaults_are_isolated_from_a_coexisting_aws_store()
     {
         // given — an R2 named store and an AWS named store side by side
-        var services = CreateServices();
+        var services = _CreateServices();
         services.AddHeadlessBlobs(blobs =>
         {
-            blobs.AddNamed("r2store", instance => instance.UseCloudflareR2(ConfigureR2));
+            blobs.AddNamed("r2store", instance => instance.UseCloudflareR2(_ConfigureR2));
             blobs.AddNamed("awsstore", instance => instance.UseAws(options => options.DisablePayloadSigning = false));
         });
         await using var sp = services.BuildServiceProvider();
@@ -91,10 +91,10 @@ public sealed class CloudflareR2BlobsRegistrationTests
         // given — R2 as the DEFAULT store, plus a named AWS store
         const string collidingName = "__headless_blobs_r2_default";
 
-        var services = CreateServices();
+        var services = _CreateServices();
         services.AddHeadlessBlobs(blobs =>
         {
-            blobs.UseCloudflareR2(ConfigureR2);
+            blobs.UseCloudflareR2(_ConfigureR2);
             blobs.AddNamed(collidingName, instance => instance.UseAws(options => { }));
         });
         await using var sp = services.BuildServiceProvider();
@@ -104,5 +104,24 @@ public sealed class CloudflareR2BlobsRegistrationTests
         // AwsBlobStorageOptions nor an internal-looking named AWS store inherits R2's DisablePayloadSigning = true.
         sp.GetRequiredService<IOptions<AwsBlobStorageOptions>>().Value.DisablePayloadSigning.Should().BeFalse();
         monitor.Get(collidingName).DisablePayloadSigning.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task r2_registers_no_container_manager_capability()
+    {
+        // given — R2's object-scoped tokens cannot manage buckets, so the provider deliberately registers no
+        // IBlobContainerManager (unlike AWS). Because the capability is DI-resolved (not cast from IBlobStorage),
+        // omitting the registration makes it honestly resolve to null for both default and named instances.
+        var services = _CreateServices();
+        services.AddHeadlessBlobs(blobs =>
+        {
+            blobs.UseCloudflareR2(_ConfigureR2);
+            blobs.AddNamed("images", instance => instance.UseCloudflareR2(_ConfigureR2));
+        });
+        await using var sp = services.BuildServiceProvider();
+
+        // then
+        sp.GetService<IBlobContainerManager>().Should().BeNull();
+        sp.GetKeyedService<IBlobContainerManager>("images").Should().BeNull();
     }
 }

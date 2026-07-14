@@ -49,15 +49,14 @@ public static class SetupApiServices
         }
 
         /// <summary>
-        /// Registers the Headless time stack: <see cref="TimeProvider.System"/>, <see cref="IClock"/>,
-        /// and <see cref="ITimezoneProvider"/> (TzConvert-backed).
+        /// Registers the Headless time stack: <see cref="TimeProvider.System"/> and
+        /// <see cref="ITimezoneProvider"/> (TzConvert-backed).
         /// All registrations are guarded with <c>TryAddSingleton</c>.
         /// </summary>
         /// <returns>The same service collection.</returns>
         public IServiceCollection AddHeadlessTimeService()
         {
             services.TryAddSingleton(TimeProvider.System);
-            services.TryAddSingleton<IClock, Clock>();
             services.TryAddSingleton<ITimezoneProvider, TzConvertTimezoneProvider>();
 
             return services;
@@ -92,10 +91,8 @@ public static class SetupApiServices
             services.TryAddSingleton<IProblemDetailsCreator, ProblemDetailsCreator>();
             services.AddProblemDetails();
 
-            // Resolve IProblemDetailsCreator lazily on each request rather than at options-build
-            // time. ProblemDetailsCreator depends on IOptions<ProblemDetailsOptions>; capturing
-            // the singleton via Configure<TDep>() at build time would create a circular DI
-            // dependency that deadlocks during host startup.
+            // Resolve IProblemDetailsCreator from request services so consumer replacements are
+            // honored at write time instead of capturing the default singleton at options-build time.
             services.Configure<Microsoft.AspNetCore.Http.ProblemDetailsOptions>(options =>
             {
                 options.CustomizeProblemDetails += context =>

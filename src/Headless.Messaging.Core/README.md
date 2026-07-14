@@ -12,15 +12,20 @@ Provides the foundational runtime for reliable distributed messaging with transa
 - **Outbox Delivery**: Transactional message publishing with database consistency
 - **Scheduled Delivery**: `PublishOptions.Delay` and `EnqueueOptions.Delay` defer outbox dispatch
 - **Consumer Management**: `ForMessage<TMessage>(...)`, `setup.ForMessagesFromAssembly(...)`, invocation, and per-dispatch lifecycle handling
+- **Registration Builders**: callback interfaces such as `IMessageBuilder<TMessage>` and `IBusConsumerBuilder<TConsumer>` live under `Headless.Messaging.Registration`; lambda setup usually infers them, while explicit references should import that namespace
+- **Public Runtime SPI**: the blessed cross-package contracts consumed by storage providers, transports, and dashboards — `IProcessingServer`, `IConsumerServiceSelector`, and `MethodMatcherCache` — live under `Headless.Messaging.Runtime` (the `TransportNaming` / `RuntimeTypeInspection` helpers there are `internal`, shared with first-party transports via `InternalsVisibleTo`) (previously `Headless.Messaging.Internal`, which now holds only implementation detail); monitoring status is the typed `StatusName` enum under `Headless.Messaging.Monitoring`, so `MessageView.StatusName` and the `MessageQuery.StatusName` filter are compile-time safe while the persisted/serialized value stays the enum member name
 - **Runtime Delegate Support**: Broker-attached function handlers with scoped DI and the same consume pipeline as class handlers
 - **Message Processing**: Retry processor, delayed message scheduler, transport health checks
 - **Durable Intent Dispatch**: Outbox rows carry bus/queue intent so retry drainers use the matching transport
 - **Type-Safe Dispatch**: Reflection-free consumer invocation via compile-time generated code
 - **Extension System**: Pluggable storage and transport providers, with exactly one storage provider required
 - **Bootstrapper**: Hosted service for startup and shutdown coordination
+- **Host-Cancellable Consumer Startup**: Factory creation, metadata provisioning, and subscription receive the host-stopping token without converting cancellation into broker failures
 - **Circuit Breaker**: Per-consumer-group circuit breaker (Closed → Open → HalfOpen) with exponential open-duration escalation
 - **Adaptive Retry Backpressure**: Retry processor backs off polling when circuit-open rate exceeds threshold
 - **Distributed Lock Integration**: Optional `IDistributedLock`-backed mutual exclusion for multi-replica retry pickup (`UseStorageLock`)
+
+Consumer providers implement trailing optional cancellation tokens on both `IConsumerClientFactory.CreateAsync(...)` contract shapes and on `IConsumerClient.FetchMessageNamesAsync(...)` / `SubscribeAsync(...)`. Core passes the host-stopping token through metadata startup and a linked group token through worker creation and subscription. Providers preserve `OperationCanceledException` so shutdown is not reported as a broker connection failure.
 
 ## Installation
 
@@ -30,74 +35,93 @@ dotnet add package Headless.Messaging.Core
 
 ## Quick Start
 
+For a local, dependency-free first run, install the in-memory transport and storage providers alongside Core:
+
+```bash
+dotnet add package Headless.Messaging.Core
+dotnet add package Headless.Messaging.InMemory
+dotnet add package Headless.Messaging.InMemoryStorage
+```
+
 ```csharp
-// Register messaging with storage and transport
+using Headless.Messaging;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+
+var builder = Host.CreateApplicationBuilder(args);
+
 builder.Services.AddHeadlessMessaging(setup =>
 {
-    setup.ForMessagesFromAssemblyContaining<Program>(
-        (ctx, consumer) =>
-        {
-            if (ctx.ConsumerType.Name.EndsWith("Worker", StringComparison.Ordinal))
-            {
-                consumer.OnQueue().Group("imports").Concurrency(4);
-            }
+    setup.UseInMemoryStorage();
+    setup.UseInMemory();
 
-            if (ctx.ConsumerType.Namespace?.Contains(".Experimental.", StringComparison.Ordinal) == true)
-            {
-                consumer.Skip();
-            }
-        }
+    setup.ForMessage<OrderPlaced>(message =>
+        message
+            .MessageName("orders.placed")
+            .OnBus<OrderPlacedConsumer>(consumer => consumer.Group("orders").Concurrency(4))
     );
-
-    // Core configuration (value-typed options live under setup.Options)
-    setup.Options.SucceedMessageExpiredAfter = 24 * 3600;
-    setup.Options.RetryPolicy.MaxPersistedRetries = 50;
-    setup.UseConventions(c =>
-    {
-        c.UseKebabCaseMessageNames();
-        c.UseApplicationId("ordering-api");
-        c.UseVersion("v1");
-    });
-
-    // Add exactly one storage provider (required)
-    setup.UsePostgreSql("connection_string");
-
-    // Add transport (required)
-    setup.UseRabbitMq(rmq =>
-    {
-        rmq.HostName = "localhost";
-        rmq.Port = 5672;
-    });
 });
 
-// Publish broadcast messages with the transactional outbox (reliable delivery).
-// NOTE: on the EF storage path (setup.UseEntityFramework<TContext>()) the outbox is on by default and the
-// commit interceptor is attached for you — see "Transactional Outbox (Atomic Publish)" above. The manual
-// EnlistCommitCoordination below is the raw-ADO / advanced seam: it makes the open transaction the ambient
-// commit coordinator so the outbox writer stores rows INSIDE it; the EF transaction interceptor dispatches
-// them post-commit and discards them on rollback. The enlist is synchronous on purpose — it must run in the
-// caller's frame so the ambient scope flows to the publish below.
-public sealed class OrderService(IOutboxBus bus, AppDbContext dbContext, IServiceProvider services)
-{
-    public async Task PlaceOrderAsync(Order order, CancellationToken ct)
-    {
-        await using var tx = await dbContext.Database.BeginTransactionAsync(ct);
-        await using var _ = dbContext.Database.EnlistCommitCoordination(tx, services);
+using var app = builder.Build();
 
-        await bus.PublishAsync(order, new PublishOptions { MessageName = "orders.placed" }, ct);
-        await dbContext.SaveChangesAsync(ct);
-        await tx.CommitAsync(ct);
+await app.Services.GetRequiredService<IBootstrapper>()
+    .BootstrapAsync(CancellationToken.None);
+
+await app.Services.GetRequiredService<IOutboxBus>()
+    .PublishAsync(
+        new OrderPlaced("order-123"),
+        new PublishOptions { MessageName = "orders.placed" },
+        CancellationToken.None
+    );
+
+public sealed record OrderPlaced(string OrderId);
+
+public sealed class OrderPlacedConsumer(ILogger<OrderPlacedConsumer> logger) : IConsume<OrderPlaced>
+{
+    public ValueTask ConsumeAsync(ConsumeContext<OrderPlaced> context, CancellationToken cancellationToken)
+    {
+        logger.LogInformation("Processing order {OrderId}", context.Message.OrderId);
+        return ValueTask.CompletedTask;
     }
 }
+```
 
-// Enqueue point-to-point work directly (fire-and-forget)
-public sealed class ImportService(IQueue queue)
+Publish through the outbox when durability matters:
+
+```csharp
+await serviceProvider.GetRequiredService<IOutboxBus>()
+    .PublishAsync(
+        new OrderPlaced("order-123"),
+        new PublishOptions { MessageName = "orders.placed" },
+        cancellationToken
+    );
+```
+
+For durable infrastructure, replace the in-memory providers with exactly one storage provider and one transport provider:
+
+```csharp
+using Polly;
+using Polly.Retry;
+
+builder.Services.AddHeadlessMessaging(setup =>
 {
-    public async Task StartAsync(ImportRequested request, CancellationToken ct)
+    setup.UsePostgreSql(options =>
     {
-        await queue.EnqueueAsync(request, new EnqueueOptions { MessageName = "imports.requested" }, ct);
-    }
-}
+        options.ConnectionString = builder.Configuration.GetConnectionString("Messaging");
+    });
+
+    setup.UseRabbitMq(options =>
+    {
+        options.HostName = builder.Configuration["RabbitMq:HostName"]!;
+        options.UserName = builder.Configuration["RabbitMq:UserName"]!;
+        options.Password = builder.Configuration["RabbitMq:Password"]!;
+    });
+
+    setup.ForMessage<OrderPlaced>(message =>
+        message.MessageName("orders.placed").OnBus<OrderPlacedConsumer>()
+    );
+});
 ```
 
 ## Transactional Outbox (Atomic Publish)
@@ -227,7 +251,7 @@ builder.Services.AddHeadlessMessaging(setup =>
 ```
 
 - `Version` is validated non-empty and at most 20 characters: the SQL storage providers persist it as a literal into a `VARCHAR(20)`/`nvarchar(20)` column, so an over-long value is rejected at startup instead of failing every outbox insert.
-- `RetryBatchSize` (default 200) caps the retry-pickup batch; `SchedulerBatchSize` (default 1,000) caps the delayed/queued scheduler batch.
+- `RetryBatchSize` (default 200, `> 0`) caps the retry-pickup batch; `SchedulerBatchSize` (default 1,000, `> 0`) caps the delayed/queued scheduler batch.
 
 ## Middleware
 
@@ -244,9 +268,9 @@ public sealed class LoggingConsumeMiddleware(ILogger<LoggingConsumeMiddleware> l
     }
 }
 
-public sealed class CorrelationPublishMiddleware : IPublishMiddleware<PublishingContext<OrderPlaced>>
+public sealed class CorrelationPublishMiddleware : IPublishMiddleware<PublishContext<OrderPlaced>>
 {
-    public ValueTask InvokeAsync(PublishingContext<OrderPlaced> context, Func<ValueTask> next)
+    public ValueTask InvokeAsync(PublishContext<OrderPlaced> context, Func<ValueTask> next)
     {
         context.Options = (context.Options ?? new PublishOptions()) with
         {
@@ -268,7 +292,7 @@ Registration scopes:
 - `AddConsumeMiddlewareFor<TMiddleware, TMessage>(group)`: typed consume middleware for one message type and consumer group.
 - `.WithPriority(int)`: lower values run first; ties use registration order. Framework tenant propagation middleware uses priority `-1000`, so user middleware defaults (`0`) run after tenant restoration/stamping.
 
-Middleware can short-circuit by returning without calling `next`. Use ordinary `try/catch` around `await next()` for compensation and error policy. The framework still guards two runtime invariants: post-success middleware failures are logged and suppressed only after the inner ring completed, and cancellation matching `context.CancellationToken` is never silently swallowed. `PublishingContext<T>.Options` and `DelayTime` are mutable before `await next()` and throw after `next()` returns; reads, including `IsTransactional`, remain valid.
+Middleware can short-circuit by returning without calling `next`. Use ordinary `try/catch` around `await next()` for compensation and error policy. The framework still guards two runtime invariants: post-success middleware failures are logged and suppressed only after the inner ring completed, and cancellation matching `context.CancellationToken` is never silently swallowed. `PublishContext<T>.Options` and `DelayTime` are mutable before `await next()` and throw after `next()` returns; reads, including `IsTransactional`, remain valid.
 
 ### Multi-Tenancy Propagation
 
@@ -301,7 +325,7 @@ Message ordering guarantees depend on the transport provider and configuration:
 
 ### Transport-Specific Ordering
 
-- **Kafka**: Messages with same partition key are strictly ordered within partitions
+- **Kafka**: Messages with same partition key are strictly ordered within partitions. With concurrent consumers, Headless commits offsets only through the contiguous completed watermark for each partition, so a fast high offset does not acknowledge lower in-flight messages.
 - **Azure Service Bus**: FIFO ordering when sessions are enabled (`EnableSessions = true`)
 - **RabbitMQ**: No ordering guarantees by default; consumers may process messages concurrently
 - **AWS SQS**: FIFO queues provide strict ordering; standard queues do not
@@ -331,19 +355,26 @@ Message ordering guarantees depend on the transport provider and configuration:
 ```csharp
 builder.Services.AddHeadlessMessaging(setup =>
 {
-    setup.Options.RetryPolicy.MaxInlineRetries = 2;
     setup.Options.RetryPolicy.MaxPersistedRetries = 15;
     setup.Options.RetryPolicy.DispatchTimeout = TimeSpan.FromMinutes(5);
     setup.Options.TransportPublishTimeout = TimeSpan.FromSeconds(10);
     setup.Options.CommandTimeout = TimeSpan.FromSeconds(30);
     setup.Options.OutboxFlushTimeout = TimeSpan.FromSeconds(30);
-    setup.Options.RetryPolicy.BackoffStrategy = new ExponentialBackoffStrategy(
-        initialDelay: TimeSpan.FromSeconds(1),
-        maxDelay: TimeSpan.FromMinutes(5)
-    );
+    setup.Options.ShutdownTimeout = TimeSpan.FromSeconds(30);
+    setup.Options.RetryPolicy.RetryStrategy = new RetryStrategyOptions
+    {
+        MaxRetryAttempts = 2,
+        Delay = TimeSpan.FromSeconds(1),
+        BackoffType = DelayBackoffType.Exponential,
+        UseJitter = true,
+        MaxDelay = TimeSpan.FromMinutes(5),
+        ShouldHandle = args => ValueTask.FromResult(
+            args.Outcome.Exception is TimeoutException or HttpRequestException
+        ),
+    };
     setup.Options.RetryPolicy.OnExhausted = (info, ct) =>
     {
-        // Fires only when budget is fully consumed (Exhausted), not on permanent failures (Stop).
+        // Fires only after the retryable budget is fully consumed and stored terminally.
         var logger = info.ServiceProvider.GetRequiredService<ILogger<MyService>>();
         logger.LogError(info.Exception, "Message {Id} permanently failed", info.Message.StorageId);
         return Task.CompletedTask;
@@ -355,12 +386,11 @@ builder.Services.AddHeadlessMessaging(setup =>
 
 | Property | Type | Default | Notes |
 | --- | --- | --- | --- |
-| `MaxInlineRetries` | `int` | `2` | Retries to run inline on each delivery before persisting. `>= 0`. |
-| `MaxPersistedRetries` | `int` | `15` | Maximum persisted-retry pickups. `>= 0`. Total attempts = `(MaxInlineRetries + 1) × (MaxPersistedRetries + 1)`. |
+| `RetryStrategy` | `Polly.Retry.RetryStrategyOptions` | Exponential, jittered, 2 retries | Public Polly configuration for inline retry classification, delay, and observation. Configure `ShouldHandle` explicitly. |
+| `MaxPersistedRetries` | `int` | `15` | Maximum persisted-retry pickups. `>= 0`. Total attempts = `(RetryStrategy.MaxRetryAttempts + 1) × (MaxPersistedRetries + 1)`. |
 | `InitialDispatchGrace` | `TimeSpan` | `30s` | Initial `NextRetryAt` delay before crash-recovery pickup can see a newly stored row. |
 | `DispatchTimeout` | `TimeSpan` | `5m` | Active delivery lease written to `LockedUntil` before each publish/consume attempt. `> 0`, `<= 1h`. Handlers exceeding this remain at-least-once and may be re-dispatched. |
-| `BackoffStrategy` | `IRetryBackoffStrategy` | `new ExponentialBackoffStrategy()` | Strategy returns `RetryDecision.Stop` (permanent), `RetryDecision.Continue(delay)` (transient), or `RetryDecision.Exhausted` (custom budget exhausted). |
-| `OnExhausted` | `Func<FailedInfo, CancellationToken, Task>?` | `null` | Fires only on `RetryDecision.Exhausted`. Does NOT fire on `RetryDecision.Stop`. |
+| `OnExhausted` | `Func<FailedInfo, CancellationToken, Task>?` | `null` | Fires only after a retryable failure consumes the complete budget and the owned terminal write succeeds. |
 | `OnExhaustedTimeout` | `TimeSpan` | `30s` | Bounds the exhausted callback wait. |
 
 Top-level messaging timeouts that influence retry behavior:
@@ -370,9 +400,10 @@ Top-level messaging timeouts that influence retry behavior:
 | `TransportPublishTimeout` | `TimeSpan` | `10s` | Linked with host shutdown and passed to transport publish calls. If the broker client honors cancellation, stuck publishes fail into the retry policy instead of outliving shutdown. |
 | `CommandTimeout` | `TimeSpan` | `30s` | Applied to SQL-backed storage commands, including terminal writes that deliberately use `CancellationToken.None`. |
 | `OutboxFlushTimeout` | `TimeSpan` | `30s` | Bounds the post-commit drain that flushes buffered outbox messages to the transport. The drain runs with `CancellationToken.None`, so an unresponsive broker would otherwise hold the request thread, DI scope, and DB connection indefinitely. Undispatched messages stay durable and are recovered by the relay sweep. `> 0`, `<= 5m`. |
+| `ShutdownTimeout` | `TimeSpan` | `30s` | End-to-end messaging shutdown bound shared by the consumer-register listener drain, concurrent consumer-client disposal, provider-specific in-flight drains, and the dispatcher loop drain. Cleanup still running when the deadline expires continues fault-observed in the background. `> 0`, `<= 5m`. |
 | `DeadNodeReconcileInterval` | `TimeSpan` | `1m` | Cadence of the always-on dead-owner recovery reconcile backstop. `> 0` (no upper bound — the per-row `LockedUntil` floor owns correctness). Independent of `UseStorageLock`. |
 
-Persisted retries use two independent timestamps: `NextRetryAt` controls when a row is due, and `LockedUntil` controls whether an active attempt still owns the row. Retry pickup filters on both. Retry state writes clear `LockedUntil`; counter advances use an optimistic `Retries == originalRetries` predicate so concurrent replicas cannot overwrite each other's retry budget.
+`NextRetryAt` remains application-scheduled through the injected `TimeProvider`, while lease ownership is store-authoritative for fresh dispatch and retry pickup. The public `IDataStorage` SPI accepts a `DispatchTimeout` duration; PostgreSQL and SQL Server compare and stamp leases from one database-clock snapshot, and InMemoryStorage uses its injected `TimeProvider`. A successful call returns the persisted `(LockedUntil, Owner)` identity on the message for fenced attempt and state writes. This eliminates client-clock skew from relational ownership, not duplicate delivery: genuine `DispatchTimeout` expiry permits a successor, and a process paused beyond its lease can resume already-running work alongside it. Delivery remains at-least-once.
 
 **Delivery semantics are at-least-once; consumers must be idempotent.** The framework never promises exactly-once: the commit-edge drain and the relay sweep can both deliver the same message in a narrow window (the `LockedUntil` lease plus the Succeeded/Failed terminal-row guard minimize but do not eliminate duplicates), and a crash between broker accept and the success-mark write redelivers on recovery. Dedupe in consumers by business key or message id.
 
@@ -380,35 +411,35 @@ When a Coordination provider is registered, storage rows also stamp nullable `Ow
 
 ### Exhausted vs Stop
 
-`OnExhausted` fires **only on `RetryDecision.Exhausted`** — the retry budget was fully consumed and the failure was transient.
+`OnExhausted` fires only after the retry budget was fully consumed by a failure matched by Polly's configured `ShouldHandle`.
 
 When tenant propagation is configured, `OnExhausted` runs under the message envelope tenant for publish, consume, and poisoned-on-arrival paths. Poisoned broker redelivery skips the callback when storage reports the terminal row was not mutated.
 
-It does **NOT** fire on `RetryDecision.Stop`. Stop is the framework's signal for:
+It does not fire for:
 
-- **Permanent exceptions** classified by the backoff strategy (`SubscriberNotFoundException`, `ArgumentException`, `ArgumentNullException`, `InvalidOperationException`, `NotSupportedException`).
+- **Permanent exceptions** rejected by `RetryStrategy.ShouldHandle`.
 - **Cancellation** (`OperationCanceledException` whose token matches the dispatch cancellation token).
 
 For a single exit point covering both Stop and Exhausted, use consume/publish middleware.
 
 ### Inline vs Persisted Retry Paths
 
-Retries up to `MaxInlineRetries` run inline inside the same `ExecuteAsync` / `SendAsync` call. Once the inline budget is exhausted, the message is persisted with `NextRetryAt` set and picked up by `MessageNeedToRetryProcessor` (up to `MaxPersistedRetries` times). Each pickup then bursts another round of `MaxInlineRetries` inline attempts.
+`RetryStrategy.MaxRetryAttempts` excludes the original execution and controls inline retries in the reusable Polly pipeline. Once that budget is exhausted, Messaging persists `NextRetryAt` and the retry processor performs up to `MaxPersistedRetries` pickups. Messaging reserves each attempt durably in `InlineAttempts` before invoking user or transport code, so a crash cannot reset the current burst.
 
-Worked example with `MaxInlineRetries = 2, MaxPersistedRetries = 2` — total (2+1)×(2+1) = 9 attempts:
+Worked example with `RetryStrategy.MaxRetryAttempts = 2, MaxPersistedRetries = 2` — total (2+1)×(2+1) = 9 attempts:
 
 ```
 pickup 1 (initial dispatch):
   attempt 1 (original)        ── inline
-  attempt 2 (inline retry #1) ── inline, after BackoffStrategy delay
-  attempt 3 (inline retry #2) ── inline, after BackoffStrategy delay → persist (1/2)
+  attempt 2 (inline retry #1) ── inline, after Polly delay
+  attempt 3 (inline retry #2) ── inline, after Polly delay → persist (1/2)
 pickup 2 (persisted retry #1):
   attempt 4                   ── inline
-  attempt 5 (inline retry #1) ── inline, after BackoffStrategy delay
-  attempt 6 (inline retry #2) ── inline, after BackoffStrategy delay → persist (2/2)
+  attempt 5 (inline retry #1) ── inline, after Polly delay
+  attempt 6 (inline retry #2) ── inline, after Polly delay → persist (2/2)
 pickup 3 (persisted retry #2):
   attempt 7                   ── inline
-  attempt 8 (inline retry #1) ── inline, after BackoffStrategy delay
+  attempt 8 (inline retry #1) ── inline, after Polly delay
   attempt 9 (inline retry #2) ── final; on failure → Exhausted → OnExhausted fires
 ```
 
@@ -512,7 +543,7 @@ The circuit breaker operates **per-process only**. There is no cross-instance co
 
 ## Distributed Lock Integration
 
-`MessagingOptions.UseStorageLock` (default `false`) enables `IDistributedLock`-backed mutual exclusion in `MessageNeedToRetryProcessor`. When `true`, the retry processor acquires a named lock before each retry pickup cycle, preventing duplicate work across replicas.
+`MessagingOptions.UseStorageLock` (default `false`) enables `IDistributedLock`-backed mutual exclusion in `MessageNeedToRetryProcessor`. When `true`, the retry processor acquires a named lock before each retry pickup cycle, reducing duplicate retry-pickup work across replicas. Delivery remains at-least-once; consumers must still be idempotent.
 
 Use `MessagingBuilder.UseDistributedLock(...)` to wire the provider — calling this implicitly sets `UseStorageLock = true`:
 
@@ -537,7 +568,7 @@ If only the default `NullNodeMembership` is registered, the bootstrapper logs **
 
 Retry locks use non-blocking acquire (`AcquireTimeout = TimeSpan.Zero`), a finite lease window equal to the current polling interval, and `LockMonitoringMode.AutoExtend`. If a lease's `LostToken` fires, the processor logs EventId 79 and does not start new pickup under an already-lost lease; in-flight dispatch remains guarded by per-row `LockedUntil`.
 
-When `UseStorageLock = false` (default), `IDistributedLock` is never called; skip this for single-replica deployments or when the storage provider natively prevents duplicate retry pickup. Dead-owner recovery is unaffected — it runs independently of this lock (see [Coordination Recovery](#coordination-recovery)).
+When `UseStorageLock = false` (default), `IDistributedLock` is never called; skip this for single-replica deployments or when the storage provider natively prevents duplicate retry pickup. This does not change the at-least-once delivery contract. Dead-owner recovery is unaffected — it runs independently of this lock (see [Coordination Recovery](#coordination-recovery)).
 
 ### Coordination Recovery
 
@@ -566,6 +597,7 @@ Operational invariant: set Coordination's dead threshold no lower than the large
 - `Headless.Extensions`
 - `Headless.Checks`
 - `Headless.MultiTenancy`
+- `Polly.Core`
 - Transport package (RabbitMQ, Kafka, etc.)
 - Storage package (PostgreSql, SqlServer, etc.)
 

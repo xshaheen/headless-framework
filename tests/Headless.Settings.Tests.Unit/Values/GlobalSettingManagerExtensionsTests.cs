@@ -24,8 +24,8 @@ public sealed class GlobalSettingManagerExtensionsTests : TestBase
         // given
         const string settingName = "TestSetting";
         _settingManager
-            .FindAsync(settingName, SettingValueProviderNames.Global, null, true, AbortToken)
-            .Returns("true");
+            .GetAsync(settingName, SettingValueProviderNames.Global, null, true, AbortToken)
+            .Returns(new SettingValue(settingName, "true"));
 
         // when
         var result = await _settingManager.IsTrueGlobalAsync(settingName, cancellationToken: AbortToken);
@@ -34,7 +34,7 @@ public sealed class GlobalSettingManagerExtensionsTests : TestBase
         result.Should().BeTrue();
         await _settingManager
             .Received(1)
-            .FindAsync(settingName, SettingValueProviderNames.Global, null, true, AbortToken);
+            .GetAsync(settingName, SettingValueProviderNames.Global, null, true, AbortToken);
     }
 
     [Fact]
@@ -43,8 +43,8 @@ public sealed class GlobalSettingManagerExtensionsTests : TestBase
         // given
         const string settingName = "TestSetting";
         _settingManager
-            .FindAsync(settingName, SettingValueProviderNames.Global, null, false, AbortToken)
-            .Returns("true");
+            .GetAsync(settingName, SettingValueProviderNames.Global, null, false, AbortToken)
+            .Returns(new SettingValue(settingName, "true"));
 
         // when
         var result = await _settingManager.IsTrueGlobalAsync(
@@ -57,7 +57,7 @@ public sealed class GlobalSettingManagerExtensionsTests : TestBase
         result.Should().BeTrue();
         await _settingManager
             .Received(1)
-            .FindAsync(settingName, SettingValueProviderNames.Global, null, false, AbortToken);
+            .GetAsync(settingName, SettingValueProviderNames.Global, null, false, AbortToken);
     }
 
     #endregion
@@ -70,8 +70,8 @@ public sealed class GlobalSettingManagerExtensionsTests : TestBase
         // given
         const string settingName = "TestSetting";
         _settingManager
-            .FindAsync(settingName, SettingValueProviderNames.Global, null, true, AbortToken)
-            .Returns("false");
+            .GetAsync(settingName, SettingValueProviderNames.Global, null, true, AbortToken)
+            .Returns(new SettingValue(settingName, "false"));
 
         // when
         var result = await _settingManager.IsFalseGlobalAsync(settingName, cancellationToken: AbortToken);
@@ -80,12 +80,12 @@ public sealed class GlobalSettingManagerExtensionsTests : TestBase
         result.Should().BeTrue();
         await _settingManager
             .Received(1)
-            .FindAsync(settingName, SettingValueProviderNames.Global, null, true, AbortToken);
+            .GetAsync(settingName, SettingValueProviderNames.Global, null, true, AbortToken);
     }
 
     #endregion
 
-    #region FindGlobalAsync<T>
+    #region GetGlobalAsync<T>
 
     [Fact]
     public async Task should_find_typed_from_global_provider()
@@ -95,10 +95,12 @@ public sealed class GlobalSettingManagerExtensionsTests : TestBase
         var testObj = new TestSettings { Value = "global-test" };
         var json = JsonSerializer.Serialize(testObj, JsonConstants.DefaultInternalJsonOptions);
 
-        _settingManager.FindAsync(settingName, SettingValueProviderNames.Global, null, true, AbortToken).Returns(json);
+        _settingManager
+            .GetAsync(settingName, SettingValueProviderNames.Global, null, true, AbortToken)
+            .Returns(new SettingValue(settingName, json));
 
         // when
-        var result = await _settingManager.FindGlobalAsync<TestSettings>(settingName, cancellationToken: AbortToken);
+        var result = await _settingManager.GetGlobalAsync<TestSettings>(settingName, cancellationToken: AbortToken);
 
         // then
         result.Should().NotBeNull();
@@ -107,7 +109,7 @@ public sealed class GlobalSettingManagerExtensionsTests : TestBase
 
     #endregion
 
-    #region FindGlobalAsync (string)
+    #region GetGlobalAsync (string)
 
     [Fact]
     public async Task should_find_string_from_global_provider()
@@ -117,17 +119,17 @@ public sealed class GlobalSettingManagerExtensionsTests : TestBase
         const string expectedValue = "global-value";
 
         _settingManager
-            .FindAsync(settingName, SettingValueProviderNames.Global, null, true, AbortToken)
-            .Returns(expectedValue);
+            .GetAsync(settingName, SettingValueProviderNames.Global, null, true, AbortToken)
+            .Returns(new SettingValue(settingName, expectedValue));
 
         // when
-        var result = await _settingManager.FindGlobalAsync(settingName, cancellationToken: AbortToken);
+        var result = await _settingManager.GetGlobalAsync(settingName, cancellationToken: AbortToken);
 
         // then
         result.Should().Be(expectedValue);
         await _settingManager
             .Received(1)
-            .FindAsync(settingName, SettingValueProviderNames.Global, null, true, AbortToken);
+            .GetAsync(settingName, SettingValueProviderNames.Global, null, true, AbortToken);
     }
 
     [Fact]
@@ -137,16 +139,16 @@ public sealed class GlobalSettingManagerExtensionsTests : TestBase
         const string settingName = "TestSetting";
 
         _settingManager
-            .FindAsync(settingName, SettingValueProviderNames.Global, null, false, AbortToken)
-            .Returns("value");
+            .GetAsync(settingName, SettingValueProviderNames.Global, null, false, AbortToken)
+            .Returns(new SettingValue(settingName, "value"));
 
         // when
-        await _settingManager.FindGlobalAsync(settingName, fallback: false, cancellationToken: AbortToken);
+        await _settingManager.GetGlobalAsync(settingName, fallback: false, cancellationToken: AbortToken);
 
         // then
         await _settingManager
             .Received(1)
-            .FindAsync(settingName, SettingValueProviderNames.Global, null, false, AbortToken);
+            .GetAsync(settingName, SettingValueProviderNames.Global, null, false, AbortToken);
     }
 
     #endregion

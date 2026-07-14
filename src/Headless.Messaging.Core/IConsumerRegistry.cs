@@ -70,7 +70,7 @@ public interface IConsumerRegistry
     /// </summary>
     /// <param name="messageType">The message type to search for.</param>
     /// <param name="messageName">The raw message name, when a mapping exists.</param>
-    /// <returns><c>true</c> when a mapping exists; otherwise, <c>false</c>.</returns>
+    /// <returns><see langword="true"/> when a mapping exists; otherwise, <see langword="false"/>.</returns>
     /// <remarks>
     /// The returned value is the raw logical name as registered — it is <strong>not</strong> the wire/subscription
     /// name. The framework prepends the configured <c>MessageNamePrefix</c> (on <c>MessagingOptions</c>) before

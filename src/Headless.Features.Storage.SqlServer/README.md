@@ -9,7 +9,9 @@ Provides feature repositories and startup schema initialization without requirin
 ## Key Features
 
 - `setup.UseSqlServer(string connectionString)` — registers the SQL Server storage provider from a connection string
+- `setup.UseSqlServer(IConfiguration configuration)` — binds `SqlServerFeaturesOptions` from a configuration section
 - `setup.UseSqlServer(Action<SqlServerFeaturesOptions> configure)` — overload for full option control
+- `setup.UseSqlServer(Action<SqlServerFeaturesOptions, IServiceProvider> configure)` — overload with service-provider access for late-bound configuration
 - Idempotent schema, table, and index creation at host startup via `SqlServerFeaturesStorageInitializer`
 - Raw ADO.NET repositories for feature values, feature definitions, and feature group definitions
 - `SqlServerFeaturesOptions` — connection string and command timeout (`CommandTimeout`, default 30 seconds)

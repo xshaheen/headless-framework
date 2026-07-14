@@ -25,11 +25,11 @@ public static class SettingManagerExtensions
             CancellationToken cancellationToken = default
         )
         {
-            var value = await settingManager
-                .FindAsync(settingName, providerName, providerKey, fallback, cancellationToken)
+            var settingValue = await settingManager
+                .GetAsync(settingName, providerName, providerKey, fallback, cancellationToken)
                 .ConfigureAwait(false);
 
-            return string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
+            return string.Equals(settingValue.Value, "true", StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>Returns <see langword="true"/> when the named setting value equals <c>"false"</c> (case-insensitive).</summary>
@@ -47,14 +47,14 @@ public static class SettingManagerExtensions
             CancellationToken cancellationToken = default
         )
         {
-            var value = await settingManager
-                .FindAsync(settingName, providerName, providerKey, fallback, cancellationToken)
+            var settingValue = await settingManager
+                .GetAsync(settingName, providerName, providerKey, fallback, cancellationToken)
                 .ConfigureAwait(false);
 
-            return string.Equals(value, "false", StringComparison.OrdinalIgnoreCase);
+            return string.Equals(settingValue.Value, "false", StringComparison.OrdinalIgnoreCase);
         }
 
-        /// <summary>Finds a setting value and deserializes it to <typeparamref name="T"/>.</summary>
+        /// <summary>Gets a setting value and deserializes it to <typeparamref name="T"/>.</summary>
         /// <typeparam name="T">The target type to deserialize the stored JSON value into.</typeparam>
         /// <param name="settingName">The unique name of the setting.</param>
         /// <param name="providerName">Provider to query; <see langword="null"/> queries all providers in order.</param>
@@ -62,7 +62,7 @@ public static class SettingManagerExtensions
         /// <param name="fallback">When <see langword="true"/>, falls back to subsequent providers if no value is found.</param>
         /// <param name="cancellationToken">The abort token.</param>
         /// <returns>The deserialized value, or <see langword="default"/> when the setting has no value.</returns>
-        public async Task<T?> FindAsync<T>(
+        public async Task<T?> GetAsync<T>(
             string settingName,
             string? providerName = null,
             string? providerKey = null,
@@ -70,13 +70,13 @@ public static class SettingManagerExtensions
             CancellationToken cancellationToken = default
         )
         {
-            var value = await settingManager
-                .FindAsync(settingName, providerName, providerKey, fallback, cancellationToken)
+            var settingValue = await settingManager
+                .GetAsync(settingName, providerName, providerKey, fallback, cancellationToken)
                 .ConfigureAwait(false);
 
-            return string.IsNullOrEmpty(value)
+            return string.IsNullOrEmpty(settingValue.Value)
                 ? default
-                : JsonSerializer.Deserialize<T>(value, JsonConstants.DefaultInternalJsonOptions);
+                : JsonSerializer.Deserialize<T>(settingValue.Value, JsonConstants.DefaultInternalJsonOptions);
         }
 
         /// <summary>Serializes <paramref name="value"/> to JSON and persists it through a specific provider.</summary>

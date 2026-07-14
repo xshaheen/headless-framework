@@ -14,7 +14,7 @@ internal sealed class OpenTelemetryInstrumentation(
     IJobsOwnerIdentity ownerIdentity
 ) : JobsBaseLoggerInstrumentation(logger, ownerIdentity), IJobsInstrumentation
 {
-    public override Activity? StartJobActivity(string activityName, InternalFunctionContext context)
+    public override Activity? StartJobActivity(string activityName, JobExecutionState context)
     {
         var activity = JobsDiagnostics.Start(activityName);
 
@@ -69,10 +69,7 @@ internal sealed class OpenTelemetryInstrumentation(
         activity?.SetTag("headless.job.success", success);
 
         // Set activity status based on success
-        if (activity != null)
-        {
-            activity.SetStatus(success ? ActivityStatusCode.Ok : ActivityStatusCode.Error);
-        }
+        activity?.SetStatus(success ? ActivityStatusCode.Ok : ActivityStatusCode.Error);
 
         base.LogJobCompleted(jobId, functionName, executionTimeMs, success);
     }

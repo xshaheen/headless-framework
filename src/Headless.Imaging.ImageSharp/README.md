@@ -8,8 +8,8 @@ Provides the actual image-processing implementation wired into the contributor p
 
 ## Key Features
 
-- `ImageSharpImageResizerContributor` — resize via `SixLabors.ImageSharp`; supports JPEG, PNG, GIF, BMP, TIFF, WebP
-- `ImageSharpImageCompressorContributor` — compression via configurable `IImageEncoder` per format; supports JPEG, PNG, WebP
+- Internal ImageSharp-backed `IImageResizerContributor` (registered by `AddImageSharpContributors`) — resize via `SixLabors.ImageSharp`; supports JPEG, PNG, GIF, BMP, TIFF, WebP
+- Internal ImageSharp-backed `IImageCompressorContributor` (registered by `AddImageSharpContributors`) — compression via configurable `IImageEncoder` per format; supports JPEG, PNG, WebP
 - `ImageSharpOptions` — encoder settings with per-format encoder instances
 - Compression skips output if compressed size exceeds original (returns `Failed`)
 - Format is auto-detected from stream metadata when `args.MimeType` is not provided
@@ -71,5 +71,5 @@ Validation (applied at startup): `DefaultCompressQuality` must be between 1 and 
 
 ## Side Effects
 
-- Registers `IImageResizerContributor` as singleton (`ImageSharpImageResizerContributor`)
-- Registers `IImageCompressorContributor` as singleton (`ImageSharpImageCompressorContributor`)
+- Registers `IImageResizerContributor` as singleton (internal ImageSharp resize contributor)
+- Registers `IImageCompressorContributor` as singleton (internal ImageSharp compress contributor)

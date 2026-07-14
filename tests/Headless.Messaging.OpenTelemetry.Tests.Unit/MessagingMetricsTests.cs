@@ -28,7 +28,7 @@ public sealed class MessagingMetricsTests : TestBase
         long? count = null;
         meterListener.InstrumentPublished = (instrument, listener) =>
         {
-            if (instrument.Name == "messaging.publish.messages")
+            if (string.Equals(instrument.Name, "messaging.publish.messages", StringComparison.Ordinal))
             {
                 listener.EnableMeasurementEvents(instrument);
             }
@@ -36,7 +36,7 @@ public sealed class MessagingMetricsTests : TestBase
         meterListener.SetMeasurementEventCallback<long>(
             (instrument, measurement, _, _) =>
             {
-                if (instrument.Name == "messaging.publish.messages")
+                if (string.Equals(instrument.Name, "messaging.publish.messages", StringComparison.Ordinal))
                 {
                     count = measurement;
                 }
@@ -61,7 +61,7 @@ public sealed class MessagingMetricsTests : TestBase
         double? duration = null;
         meterListener.InstrumentPublished = (instrument, listener) =>
         {
-            if (instrument.Name == "messaging.publish.duration")
+            if (string.Equals(instrument.Name, "messaging.publish.duration", StringComparison.Ordinal))
             {
                 listener.EnableMeasurementEvents(instrument);
             }
@@ -69,7 +69,7 @@ public sealed class MessagingMetricsTests : TestBase
         meterListener.SetMeasurementEventCallback<double>(
             (instrument, measurement, _, _) =>
             {
-                if (instrument.Name == "messaging.publish.duration")
+                if (string.Equals(instrument.Name, "messaging.publish.duration", StringComparison.Ordinal))
                 {
                     duration = measurement;
                 }
@@ -94,7 +94,7 @@ public sealed class MessagingMetricsTests : TestBase
         long? count = null;
         meterListener.InstrumentPublished = (instrument, listener) =>
         {
-            if (instrument.Name == "messaging.publish.errors")
+            if (string.Equals(instrument.Name, "messaging.publish.errors", StringComparison.Ordinal))
             {
                 listener.EnableMeasurementEvents(instrument);
             }
@@ -102,7 +102,7 @@ public sealed class MessagingMetricsTests : TestBase
         meterListener.SetMeasurementEventCallback<long>(
             (instrument, measurement, _, _) =>
             {
-                if (instrument.Name == "messaging.publish.errors")
+                if (string.Equals(instrument.Name, "messaging.publish.errors", StringComparison.Ordinal))
                 {
                     count = measurement;
                 }
@@ -127,7 +127,7 @@ public sealed class MessagingMetricsTests : TestBase
         long? count = null;
         meterListener.InstrumentPublished = (instrument, listener) =>
         {
-            if (instrument.Name == "messaging.consume.messages")
+            if (string.Equals(instrument.Name, "messaging.consume.messages", StringComparison.Ordinal))
             {
                 listener.EnableMeasurementEvents(instrument);
             }
@@ -135,7 +135,7 @@ public sealed class MessagingMetricsTests : TestBase
         meterListener.SetMeasurementEventCallback<long>(
             (instrument, measurement, _, _) =>
             {
-                if (instrument.Name == "messaging.consume.messages")
+                if (string.Equals(instrument.Name, "messaging.consume.messages", StringComparison.Ordinal))
                 {
                     count = measurement;
                 }
@@ -160,7 +160,7 @@ public sealed class MessagingMetricsTests : TestBase
         double? duration = null;
         meterListener.InstrumentPublished = (instrument, listener) =>
         {
-            if (instrument.Name == "messaging.consume.duration")
+            if (string.Equals(instrument.Name, "messaging.consume.duration", StringComparison.Ordinal))
             {
                 listener.EnableMeasurementEvents(instrument);
             }
@@ -168,7 +168,7 @@ public sealed class MessagingMetricsTests : TestBase
         meterListener.SetMeasurementEventCallback<double>(
             (instrument, measurement, _, _) =>
             {
-                if (instrument.Name == "messaging.consume.duration")
+                if (string.Equals(instrument.Name, "messaging.consume.duration", StringComparison.Ordinal))
                 {
                     duration = measurement;
                 }
@@ -193,7 +193,7 @@ public sealed class MessagingMetricsTests : TestBase
         long? count = null;
         meterListener.InstrumentPublished = (instrument, listener) =>
         {
-            if (instrument.Name == "messaging.consume.errors")
+            if (string.Equals(instrument.Name, "messaging.consume.errors", StringComparison.Ordinal))
             {
                 listener.EnableMeasurementEvents(instrument);
             }
@@ -201,7 +201,7 @@ public sealed class MessagingMetricsTests : TestBase
         meterListener.SetMeasurementEventCallback<long>(
             (instrument, measurement, _, _) =>
             {
-                if (instrument.Name == "messaging.consume.errors")
+                if (string.Equals(instrument.Name, "messaging.consume.errors", StringComparison.Ordinal))
                 {
                     count = measurement;
                 }
@@ -226,7 +226,7 @@ public sealed class MessagingMetricsTests : TestBase
         long? count = null;
         meterListener.InstrumentPublished = (instrument, listener) =>
         {
-            if (instrument.Name == "messaging.subscriber.invocations")
+            if (string.Equals(instrument.Name, "messaging.subscriber.invocations", StringComparison.Ordinal))
             {
                 listener.EnableMeasurementEvents(instrument);
             }
@@ -234,7 +234,7 @@ public sealed class MessagingMetricsTests : TestBase
         meterListener.SetMeasurementEventCallback<long>(
             (instrument, measurement, _, _) =>
             {
-                if (instrument.Name == "messaging.subscriber.invocations")
+                if (string.Equals(instrument.Name, "messaging.subscriber.invocations", StringComparison.Ordinal))
                 {
                     count = measurement;
                 }
@@ -259,7 +259,7 @@ public sealed class MessagingMetricsTests : TestBase
         double? duration = null;
         meterListener.InstrumentPublished = (instrument, listener) =>
         {
-            if (instrument.Name == "messaging.subscriber.duration")
+            if (string.Equals(instrument.Name, "messaging.subscriber.duration", StringComparison.Ordinal))
             {
                 listener.EnableMeasurementEvents(instrument);
             }
@@ -267,7 +267,7 @@ public sealed class MessagingMetricsTests : TestBase
         meterListener.SetMeasurementEventCallback<double>(
             (instrument, measurement, _, _) =>
             {
-                if (instrument.Name == "messaging.subscriber.duration")
+                if (string.Equals(instrument.Name, "messaging.subscriber.duration", StringComparison.Ordinal))
                 {
                     duration = measurement;
                 }
@@ -292,7 +292,7 @@ public sealed class MessagingMetricsTests : TestBase
         long? count = null;
         meterListener.InstrumentPublished = (instrument, listener) =>
         {
-            if (instrument.Name == "messaging.subscriber.errors")
+            if (string.Equals(instrument.Name, "messaging.subscriber.errors", StringComparison.Ordinal))
             {
                 listener.EnableMeasurementEvents(instrument);
             }
@@ -300,7 +300,7 @@ public sealed class MessagingMetricsTests : TestBase
         meterListener.SetMeasurementEventCallback<long>(
             (instrument, measurement, _, _) =>
             {
-                if (instrument.Name == "messaging.subscriber.errors")
+                if (string.Equals(instrument.Name, "messaging.subscriber.errors", StringComparison.Ordinal))
                 {
                     count = measurement;
                 }
@@ -326,7 +326,7 @@ public sealed class MessagingMetricsTests : TestBase
         string? persistenceType = null;
         meterListener.InstrumentPublished = (instrument, listener) =>
         {
-            if (instrument.Name == "messaging.persistence.duration")
+            if (string.Equals(instrument.Name, "messaging.persistence.duration", StringComparison.Ordinal))
             {
                 listener.EnableMeasurementEvents(instrument);
             }
@@ -334,12 +334,12 @@ public sealed class MessagingMetricsTests : TestBase
         meterListener.SetMeasurementEventCallback<double>(
             (instrument, measurement, tags, _) =>
             {
-                if (instrument.Name == "messaging.persistence.duration")
+                if (string.Equals(instrument.Name, "messaging.persistence.duration", StringComparison.Ordinal))
                 {
                     duration = measurement;
                     foreach (var tag in tags)
                     {
-                        if (tag.Key == "messaging.persistence.type")
+                        if (string.Equals(tag.Key, "messaging.persistence.type", StringComparison.Ordinal))
                         {
                             persistenceType = tag.Value?.ToString();
                         }
@@ -368,7 +368,7 @@ public sealed class MessagingMetricsTests : TestBase
         string? persistenceType = null;
         meterListener.InstrumentPublished = (instrument, listener) =>
         {
-            if (instrument.Name == "messaging.persistence.duration")
+            if (string.Equals(instrument.Name, "messaging.persistence.duration", StringComparison.Ordinal))
             {
                 listener.EnableMeasurementEvents(instrument);
             }
@@ -376,12 +376,12 @@ public sealed class MessagingMetricsTests : TestBase
         meterListener.SetMeasurementEventCallback<double>(
             (instrument, measurement, tags, _) =>
             {
-                if (instrument.Name == "messaging.persistence.duration")
+                if (string.Equals(instrument.Name, "messaging.persistence.duration", StringComparison.Ordinal))
                 {
                     duration = measurement;
                     foreach (var tag in tags)
                     {
-                        if (tag.Key == "messaging.persistence.type")
+                        if (string.Equals(tag.Key, "messaging.persistence.type", StringComparison.Ordinal))
                         {
                             persistenceType = tag.Value?.ToString();
                         }
@@ -409,7 +409,7 @@ public sealed class MessagingMetricsTests : TestBase
         long? size = null;
         meterListener.InstrumentPublished = (instrument, listener) =>
         {
-            if (instrument.Name == "messaging.message.size")
+            if (string.Equals(instrument.Name, "messaging.message.size", StringComparison.Ordinal))
             {
                 listener.EnableMeasurementEvents(instrument);
             }
@@ -417,7 +417,7 @@ public sealed class MessagingMetricsTests : TestBase
         meterListener.SetMeasurementEventCallback<long>(
             (instrument, measurement, _, _) =>
             {
-                if (instrument.Name == "messaging.message.size")
+                if (string.Equals(instrument.Name, "messaging.message.size", StringComparison.Ordinal))
                 {
                     size = measurement;
                 }
@@ -457,7 +457,7 @@ public sealed class MessagingMetricsTests : TestBase
         double? duration = null;
         meterListener.InstrumentPublished = (instrument, listener) =>
         {
-            if (instrument.Name == "messaging.publish.duration")
+            if (string.Equals(instrument.Name, "messaging.publish.duration", StringComparison.Ordinal))
             {
                 listener.EnableMeasurementEvents(instrument);
             }
@@ -465,7 +465,7 @@ public sealed class MessagingMetricsTests : TestBase
         meterListener.SetMeasurementEventCallback<double>(
             (instrument, measurement, _, _) =>
             {
-                if (instrument.Name == "messaging.publish.duration")
+                if (string.Equals(instrument.Name, "messaging.publish.duration", StringComparison.Ordinal))
                 {
                     duration = measurement;
                 }
@@ -490,7 +490,7 @@ public sealed class MessagingMetricsTests : TestBase
         double? duration = null;
         meterListener.InstrumentPublished = (instrument, listener) =>
         {
-            if (instrument.Name == "messaging.consume.duration")
+            if (string.Equals(instrument.Name, "messaging.consume.duration", StringComparison.Ordinal))
             {
                 listener.EnableMeasurementEvents(instrument);
             }
@@ -498,7 +498,7 @@ public sealed class MessagingMetricsTests : TestBase
         meterListener.SetMeasurementEventCallback<double>(
             (instrument, measurement, _, _) =>
             {
-                if (instrument.Name == "messaging.consume.duration")
+                if (string.Equals(instrument.Name, "messaging.consume.duration", StringComparison.Ordinal))
                 {
                     duration = measurement;
                 }
@@ -523,7 +523,7 @@ public sealed class MessagingMetricsTests : TestBase
         long? count = null;
         meterListener.InstrumentPublished = (instrument, listener) =>
         {
-            if (instrument.Name == "messaging.consume.messages")
+            if (string.Equals(instrument.Name, "messaging.consume.messages", StringComparison.Ordinal))
             {
                 listener.EnableMeasurementEvents(instrument);
             }
@@ -531,7 +531,7 @@ public sealed class MessagingMetricsTests : TestBase
         meterListener.SetMeasurementEventCallback<long>(
             (instrument, measurement, _, _) =>
             {
-                if (instrument.Name == "messaging.consume.messages")
+                if (string.Equals(instrument.Name, "messaging.consume.messages", StringComparison.Ordinal))
                 {
                     count = measurement;
                 }

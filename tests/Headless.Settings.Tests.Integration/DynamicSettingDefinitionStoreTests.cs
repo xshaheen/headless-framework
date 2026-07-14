@@ -10,7 +10,7 @@ namespace Tests;
 
 public sealed class DynamicSettingDefinitionStoreTests(SettingsTestFixture fixture) : SettingsTestBase(fixture)
 {
-    private static readonly List<SettingDefinition> _SettingDefinitions = TestData.CreateDefinitionFaker().Generate(10);
+    private static readonly List<SettingDefinition> _SettingDefinitions = TestData.CreateDefinitions(10);
 
     [Fact]
     public async Task should_save_defined_settings()
@@ -48,7 +48,10 @@ public sealed class DynamicSettingDefinitionStoreTests(SettingsTestFixture fixtu
     {
         public void Define(ISettingDefinitionContext context)
         {
-            context.Add(_SettingDefinitions.AsReadOnlySpan());
+            foreach (var definition in _SettingDefinitions)
+            {
+                context.Add(definition);
+            }
         }
     }
 }

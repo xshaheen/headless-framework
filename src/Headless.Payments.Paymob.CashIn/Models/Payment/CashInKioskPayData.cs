@@ -6,7 +6,7 @@ namespace Headless.Payments.Paymob.CashIn.Models.Payment;
 public sealed class CashInKioskPayData
 {
     [JsonPropertyName("gateway_integration_pk")]
-    public int GatewayIntegrationPk { get; init; }
+    public long GatewayIntegrationPk { get; init; }
 
     [JsonPropertyName("otp")]
     public required string Otp { get; init; }
@@ -18,7 +18,7 @@ public sealed class CashInKioskPayData
     public required string TxnResponseCode { get; init; }
 
     [JsonPropertyName("bill_reference")]
-    public int BillReference { get; init; }
+    public long BillReference { get; init; }
 
     [JsonPropertyName("message")]
     public required string Message { get; init; }
@@ -26,8 +26,9 @@ public sealed class CashInKioskPayData
     [JsonPropertyName("paid_through")]
     public required string PaidThrough { get; init; }
 
+    /// <summary>The amount due at the kiosk in the smallest currency unit (integer cents).</summary>
     [JsonPropertyName("due_amount")]
-    public int DueAmount { get; init; }
+    public long DueAmount { get; init; }
 
     [JsonPropertyName("biller")]
     public object? Biller { get; init; }

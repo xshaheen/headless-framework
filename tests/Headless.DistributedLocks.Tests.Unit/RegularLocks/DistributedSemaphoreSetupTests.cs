@@ -1,11 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.DistributedLocks;
-using Headless.DistributedLocks.InMemory;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Tests.RegularLocks;
@@ -84,7 +82,7 @@ public sealed class DistributedSemaphoreSetupTests : TestBase
         // given — Action<TOptions, IServiceProvider> overload resolves IServiceProvider at configure time
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSingleton<IMyMarker>(new _MyMarkerImpl());
+        services.AddSingleton<IMyMarker>(new MyMarkerImpl());
 
         // when
         services.AddHeadlessDistributedLocks(setup =>
@@ -153,5 +151,5 @@ public sealed class DistributedSemaphoreSetupTests : TestBase
 
     private interface IMyMarker;
 
-    private sealed class _MyMarkerImpl : IMyMarker;
+    private sealed class MyMarkerImpl : IMyMarker;
 }

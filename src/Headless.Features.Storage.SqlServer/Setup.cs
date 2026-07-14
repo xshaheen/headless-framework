@@ -2,14 +2,15 @@
 
 using FluentValidation;
 using Headless.Checks;
-using Headless.Features;
 using Headless.Features.Repositories;
 using Headless.Features.SqlServer;
 using Headless.Serializer;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Microsoft.Extensions.DependencyInjection;
+namespace Headless.Features;
 
 /// <summary>Extension methods that register the SQL Server features storage provider.</summary>
 [PublicAPI]
@@ -26,10 +27,20 @@ public static class SetupFeaturesSqlServer
         {
             Argument.IsNotNullOrWhiteSpace(connectionString);
 
-            return setup.UseSqlServer(options =>
-            {
-                options.ConnectionString = connectionString;
-            });
+            return setup.UseSqlServer(options => options.ConnectionString = connectionString);
+        }
+
+        /// <summary>Registers the SQL Server features storage provider, binding options from <paramref name="configuration"/>.</summary>
+        /// <param name="configuration">Configuration section to bind to <see cref="SqlServerFeaturesOptions"/>.</param>
+        /// <returns>The same <see cref="HeadlessFeaturesSetupBuilder"/> instance to allow chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configuration"/> is <see langword="null"/>.</exception>
+        public HeadlessFeaturesSetupBuilder UseSqlServer(IConfiguration configuration)
+        {
+            Argument.IsNotNull(configuration);
+
+            setup.RegisterExtension(new SqlServerFeaturesOptionsExtension(configuration));
+
+            return setup;
         }
 
         /// <summary>Registers the SQL Server features storage provider using a configuration delegate.</summary>
@@ -44,14 +55,58 @@ public static class SetupFeaturesSqlServer
 
             return setup;
         }
+
+        /// <summary>Registers the SQL Server features storage provider using a configuration delegate with access to the <see cref="IServiceProvider"/>.</summary>
+        /// <param name="configure">Delegate that configures <see cref="SqlServerFeaturesOptions"/> with service resolution.</param>
+        /// <returns>The same <see cref="HeadlessFeaturesSetupBuilder"/> instance to allow chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
+        public HeadlessFeaturesSetupBuilder UseSqlServer(Action<SqlServerFeaturesOptions, IServiceProvider> configure)
+        {
+            Argument.IsNotNull(configure);
+
+            setup.RegisterExtension(new SqlServerFeaturesOptionsExtension(configure));
+
+            return setup;
+        }
     }
 
-    private sealed class SqlServerFeaturesOptionsExtension(Action<SqlServerFeaturesOptions> configure)
-        : IFeaturesStorageOptionsExtension
+    /// <summary>Wires the SQL Server provider services into the DI container when applied to the features setup builder.</summary>
+    private sealed class SqlServerFeaturesOptionsExtension : IFeaturesStorageOptionsExtension
     {
+        private readonly IConfiguration? _configuration;
+        private readonly Action<SqlServerFeaturesOptions>? _configure;
+        private readonly Action<SqlServerFeaturesOptions, IServiceProvider>? _configureWithServices;
+
+        public SqlServerFeaturesOptionsExtension(IConfiguration configuration)
+        {
+            _configuration = configuration;
+        }
+
+        public SqlServerFeaturesOptionsExtension(Action<SqlServerFeaturesOptions> configure)
+        {
+            _configure = configure;
+        }
+
+        public SqlServerFeaturesOptionsExtension(Action<SqlServerFeaturesOptions, IServiceProvider> configure)
+        {
+            _configureWithServices = configure;
+        }
+
         public void AddServices(IServiceCollection services)
         {
-            services.Configure<SqlServerFeaturesOptions, SqlServerFeaturesOptionsValidator>(configure);
+            if (_configuration is not null)
+            {
+                services.Configure<SqlServerFeaturesOptions, SqlServerFeaturesOptionsValidator>(_configuration);
+            }
+            else if (_configure is not null)
+            {
+                services.Configure<SqlServerFeaturesOptions, SqlServerFeaturesOptionsValidator>(_configure);
+            }
+            else
+            {
+                services.Configure<SqlServerFeaturesOptions, SqlServerFeaturesOptionsValidator>(_configureWithServices);
+            }
+
             services.AddOptions<FeaturesStorageOptions, SqlServerFeaturesStorageOptionsValidator>();
             services.AddInitializerHostedService<SqlServerFeaturesStorageInitializer>();
             services.TryAddSingleton<IJsonSerializer>(_ => new SystemJsonSerializer());

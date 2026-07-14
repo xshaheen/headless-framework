@@ -1,11 +1,12 @@
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
-using Headless.Messaging.Internal;
+using Headless.Messaging.Runtime;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
+#pragma warning disable IDE0060 // Remove unused parameter
 namespace Tests;
 
 public sealed class RuntimeSubscriberTests : TestBase

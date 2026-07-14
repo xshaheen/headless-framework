@@ -2,14 +2,15 @@
 
 using Headless.Abstractions;
 using Headless.Checks;
-using Headless.Core;
+using Headless.DistributedLocks.PostgreSql;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Headless.DistributedLocks.PostgreSql;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.DistributedLocks;
 
 /// <summary>
 /// Provides extension members on <see cref="HeadlessDistributedLocksSetupBuilder"/> to configure the
@@ -40,10 +41,7 @@ public static class SetupPostgreSqlDistributedLocks
         {
             Argument.IsNotNullOrWhiteSpace(connectionString);
 
-            return setup.UsePostgreSql(options =>
-            {
-                options.ConnectionString = connectionString;
-            });
+            return setup.UsePostgreSql(options => options.ConnectionString = connectionString);
         }
 
         /// <summary>

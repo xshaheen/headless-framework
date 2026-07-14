@@ -5,11 +5,5 @@
     "titleBar.activeForeground": "#f0fdfa",
     "titleBar.inactiveBackground": "#0d3194",
     "titleBar.inactiveForeground": "#99f6e4"
-  },
-  "files.exclude": {
-    "**/cache": true
-  },
-  "files.watcherExclude": {
-    "**/cache": true
   }
 }

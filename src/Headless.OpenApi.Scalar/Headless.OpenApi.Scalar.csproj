@@ -1,7 +1,9 @@
 ﻿<Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <RootNamespace>Headless.Api</RootNamespace>
+    <Description>Scalar integration for Headless OpenAPI documentation.</Description>
+    <PackageTags>headless;openapi;scalar;dotnet</PackageTags>
+    <RootNamespace>Headless.OpenApi.Scalar</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Scalar.AspNetCore" />

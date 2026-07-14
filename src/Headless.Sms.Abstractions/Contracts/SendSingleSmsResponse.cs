@@ -57,9 +57,34 @@ public sealed class SendSingleSmsResponse
             FailureKind = failureKind,
         };
     }
+
+    /// <summary>
+    /// Creates a failed response from a caught exception with an explicitly classified kind. The failure
+    /// classification is the single responsibility of <c>SmsFailureKinds.FromException</c> (in
+    /// <c>Headless.Sms.Core</c>), which is Polly-aware; providers pass its result here rather than have this
+    /// contract type re-derive a kind. Surfaces the exception message (falling back to the exception type
+    /// name when the message is empty) so the non-empty-message guarantee of <see cref="Failed(string, SmsFailureKind)"/>
+    /// always holds.
+    /// </summary>
+    /// <param name="exception">The caught exception. Must not be <see langword="null"/>.</param>
+    /// <param name="failureKind">The failure classification derived from the provider's own contract.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="exception"/> is <see langword="null"/>.</exception>
+    public static SendSingleSmsResponse FromException(Exception exception, SmsFailureKind failureKind)
+    {
+        Argument.IsNotNull(exception);
+
+        var message = string.IsNullOrWhiteSpace(exception.Message) ? exception.GetType().Name : exception.Message;
+
+        return Failed(message, failureKind);
+    }
 }
 
 /// <summary>Classifies why an SMS send failed, to inform retry and provider-routing decisions.</summary>
+/// <remarks>
+/// New members may be added in minor versions as providers surface finer-grained failure signals. Consumers that
+/// <see langword="switch"/> on this enum must always handle <see cref="Unknown"/> / the <see langword="default"/> case so a newly added
+/// member degrades to "treat as unknown" rather than falling through unhandled.
+/// </remarks>
 [PublicAPI]
 public enum SmsFailureKind
 {

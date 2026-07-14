@@ -134,6 +134,7 @@ Defines the public coordination contract: node identity, liveness snapshots, mem
 
 - `NodeIdentity`, `NodeId`, and `NodeIncarnation`.
 - `INodeMembership` for register, heartbeat, leave, live reads, snapshot reads, and event watch.
+- Heartbeats are incarnation-fenced: an incarnation that is dead, gracefully left, or pruned is terminal and cannot be revived; the process must register a higher incarnation.
 - `NodeJoined`, `NodeSuspected`, `NodeRecovered`, `NodeLeft`, and `LocalMembershipLost` event contracts.
 - `IMembershipEventSource.WatchAsync(...)` for lifecycle events.
 - `IDeadOwnerReclaimer` — the per-domain reclaim sink driven by the shared dead-owner recovery bridge (carries `ReconcileInterval` and `ReclaimAsync(owners, ct)`, where `owners` is a single owner from the event path or the whole dead set from a reconcile tick so a consumer can collapse the reclaim into one batched write); implemented by each consumer (Jobs, Messaging).
@@ -142,6 +143,8 @@ Defines the public coordination contract: node identity, liveness snapshots, mem
 ### Design Notes
 
 The abstraction is a liveness substrate, not an ownership store. Consumers own their domain rows and stamp `NodeIdentity`.
+
+`HeartbeatAsync()` returns `false` when the local incarnation has been superseded or is terminal. Callers must stop ownership-sensitive work and re-register rather than attempting to resurrect that identity.
 
 ### Installation
 
@@ -169,7 +172,6 @@ Configure through provider setup plus `CoordinationOptions`.
 ### Dependencies
 
 - `Headless.Checks`
-- `FluentValidation`
 
 ### Side Effects
 
@@ -194,7 +196,9 @@ Implements the provider-agnostic membership engine over an `IMembershipStore`.
 
 `RegisterAsync` durably establishes both the cold descriptor and an initial store-clock liveness entry in one guarded write, so a node is `Alive` (and its role/metadata are visible) immediately after register — without waiting for the first heartbeat. The background loop owns every subsequent beat. Registration is incarnation-guarded: a stale or superseded incarnation establishes no liveness.
 
-Self-heartbeat rejection is a local fencing failure. The default `MembershipLostBehavior.StopApplication` asks the host to stop; `StopMembershipOnly` is for hosts that explicitly quiesce every worker.
+Self-heartbeat rejection is a local fencing failure. A heartbeat write is deadline-bounded by the remaining `DeadThreshold` budget, so a continuously failing or hung store call self-fences the node once no write has been confirmed for that threshold; snapshot-read failures do not fence a node whose heartbeats still succeed. The default `MembershipLostBehavior.StopApplication` asks the host to stop; `StopMembershipOnly` is for hosts that explicitly quiesce every worker.
+
+An incarnation is terminal once it leaves, reaches `DeadThreshold`, or its retained liveness entry is pruned. PostgreSQL, SQL Server, and Redis reject later heartbeats for that same incarnation; recovery requires allocating and registering a higher incarnation, so a delayed process cannot resurrect its old ownership identity.
 
 Core also hosts the shared dead-owner recovery bridge — a generic `BackgroundService` parameterized by an `IDeadOwnerReclaimer` that reclaims dead-incarnation resources on `NodeLeft` events plus a periodic `Dead`-only snapshot reconcile (idempotent dedup, `CancellationToken.None` writes). It is internal infrastructure consumed by registering a closed generic from the owning assembly (Jobs, Messaging) via `InternalsVisibleTo`; each closed type yields a distinct hosted service and logger category. Coordination.Core does not register it — the consuming feature does.
 
@@ -226,6 +230,7 @@ Set `HeartbeatInterval < SuspicionThreshold < DeadThreshold`; `DeadRetentionWind
 - `Headless.Core`
 - `Headless.Extensions`
 - `Headless.Hosting`
+- `FluentValidation`
 - `Microsoft.Extensions.Configuration.Abstractions`
 - `Microsoft.Extensions.Hosting.Abstractions`
 - `Microsoft.Extensions.Logging.Abstractions`
@@ -286,7 +291,7 @@ Stores membership in PostgreSQL with the primary connection and server statement
 ### Key Features
 
 - Atomic incarnation allocation with `INSERT ... ON CONFLICT ... RETURNING`.
-- Heartbeat guard rejects stale or impossible incarnations.
+- Heartbeat guard rejects stale, impossible, dead, gracefully left, and pruned incarnations.
 - Liveness classification uses `clock_timestamp()`.
 - DDL initialization uses PostgreSQL advisory locks.
 
@@ -344,6 +349,7 @@ Stores membership in Redis using Lua scripts and Redis server time.
 
 - Incarnation allocation uses persistent `INCR` counters.
 - Heartbeat/read/leave/cleanup scripts use Redis `TIME`.
+- Heartbeats reject dead, gracefully left, and missing/pruned member payloads for the same incarnation.
 - `:known` retains recently dead members so Dead is observable before cleanup.
 - `:known` also mirrors current node generations so snapshot reads do not issue one `GET` per member.
 - Generation counters are not purged by default.
@@ -408,7 +414,7 @@ Stores membership in SQL Server with guarded update/insert statements and server
 ### Key Features
 
 - Atomic incarnation allocation under `UPDLOCK, HOLDLOCK`.
-- Heartbeat guard rejects stale or impossible incarnations.
+- Heartbeat guard rejects stale, impossible, dead, gracefully left, and pruned incarnations.
 - Liveness classification uses `SYSUTCDATETIME()`.
 - Guarded membership writes retry SQL Server deadlock victim error `1205` with a bounded jittered Polly policy.
 - DDL initialization uses `sp_getapplock`.

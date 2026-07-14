@@ -2,6 +2,7 @@
 
 using System.Reflection;
 using System.Text.Encodings.Web;
+using Headless.Constants;
 using Headless.Dashboard.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -57,9 +58,12 @@ public static class SetupMessagingDashboard
                     }
                 );
 
-                // Set up routing and CORS
+                // Endpoints carry RequireCors metadata, so the CORS middleware must always run (an endpoint
+                // with CORS metadata and no middleware throws at request time). The registered policy is empty
+                // by default (same-origin only) and reflects the configured origins when
+                // SetCorsOrigins / SetCorsPolicy was used.
                 dashboardApp.UseRouting();
-                dashboardApp.UseCors("Messaging_Dashboard_CORS");
+                dashboardApp.UseCors("HeadlessMessagingDashboardCORS");
 
                 // Add authentication + authorization middleware
                 if (config.Auth.IsEnabled)
@@ -73,10 +77,7 @@ public static class SetupMessagingDashboard
                 config.CustomMiddleware?.Invoke(dashboardApp);
 
                 // Map Minimal API endpoints
-                dashboardApp.UseEndpoints(endpoints =>
-                {
-                    endpoints.MapMessagingDashboardEndpoints(config);
-                });
+                dashboardApp.UseEndpoints(endpoints => endpoints.MapMessagingDashboardEndpoints(config));
 
                 // Execute post-dashboard middleware
                 config.PostDashboardMiddleware?.Invoke(dashboardApp);
@@ -93,12 +94,11 @@ public static class SetupMessagingDashboard
                             if (file.Exists)
                             {
                                 await using var stream = file.CreateReadStream();
-                                using var reader = new StreamReader(stream);
-                                var htmlContent = await reader.ReadToEndAsync().ConfigureAwait(false);
+                                var htmlContent = await stream.GetAllTextAsync().ConfigureAwait(false);
 
                                 htmlContent = _ReplaceBasePath(htmlContent, context, basePath, config);
 
-                                context.Response.ContentType = "text/html";
+                                context.Response.ContentType = ContentTypes.Texts.Html;
                                 context.Response.StatusCode = 200;
                                 await context.Response.WriteAsync(htmlContent).ConfigureAwait(false);
                             }
@@ -110,7 +110,7 @@ public static class SetupMessagingDashboard
     }
 
     private static string _ReplaceBasePath(
-        string htmlContent,
+        string? htmlContent,
         HttpContext httpContext,
         string basePath,
         MessagingDashboardOptionsBuilder config

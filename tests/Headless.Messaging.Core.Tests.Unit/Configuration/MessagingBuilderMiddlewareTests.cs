@@ -278,9 +278,9 @@ public sealed class MessagingBuilderMiddlewareTests : TestBase
         public ValueTask InvokeAsync(ConsumeContext<OrderPlaced> context, Func<ValueTask> next) => next();
     }
 
-    private sealed class TypedPublishMiddleware : IPublishMiddleware<PublishingContext<OrderPlaced>>
+    private sealed class TypedPublishMiddleware : IPublishMiddleware<PublishContext<OrderPlaced>>
     {
-        public ValueTask InvokeAsync(PublishingContext<OrderPlaced> context, Func<ValueTask> next) => next();
+        public ValueTask InvokeAsync(PublishContext<OrderPlaced> context, Func<ValueTask> next) => next();
     }
 
     private sealed class MiddlewareOrderRecorder

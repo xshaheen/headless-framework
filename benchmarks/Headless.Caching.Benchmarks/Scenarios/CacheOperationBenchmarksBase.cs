@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Globalization;
 using BenchmarkDotNet.Attributes;
 
 namespace Headless.Caching.Benchmarks.Scenarios;
@@ -8,7 +9,11 @@ namespace Headless.Caching.Benchmarks.Scenarios;
 public abstract class CacheOperationBenchmarksBase
 {
     private const int _Seed = 2112;
-    private readonly TimeSpan _expiration = TimeSpan.FromMinutes(1);
+
+    // Must comfortably exceed a full BenchmarkDotNet case (pilot + warmup + actual iterations can pass a minute):
+    // the hot keys are seeded once in GlobalSetup, and a shorter TTL lets them expire mid-case, silently turning
+    // the tail of HotGetAsync into a miss benchmark (bimodal distribution, miss-sized allocations).
+    private readonly TimeSpan _expiration = TimeSpan.FromHours(1);
     private ICacheBenchmarkClient? _client;
     private BenchmarkPayload? _payload;
     private string[] _keys = [];
@@ -30,12 +35,27 @@ public abstract class CacheOperationBenchmarksBase
         var prefix = BenchmarkKeyPrefix.Create(ProviderId, GetType().Name, Guid.NewGuid().ToString("N"));
         _client = CacheBenchmarkClientFactory.Create(ProviderId, prefix);
         _payload = BenchmarkPayloadFactory.Create(PayloadSize, _Seed);
-        _keys = Enumerable.Range(0, KeyCardinality).Select(i => $"common:{i}").ToArray();
+        _keys =
+        [
+            .. Enumerable
+                .Range(0, KeyCardinality)
+                .Select(i => string.Create(CultureInfo.InvariantCulture, $"common:{i}")),
+        ];
 
         // Bounded working sets so the miss/remove loops measure steady-state op cost rather than accumulating an
         // unbounded key space across the millions of invocations BenchmarkDotNet runs per iteration.
-        _missingKeys = Enumerable.Range(0, KeyCardinality).Select(i => $"missing:{i}").ToArray();
-        _removeKeys = Enumerable.Range(0, KeyCardinality).Select(i => $"remove:{i}").ToArray();
+        _missingKeys =
+        [
+            .. Enumerable
+                .Range(0, KeyCardinality)
+                .Select(i => string.Create(CultureInfo.InvariantCulture, $"missing:{i}")),
+        ];
+        _removeKeys =
+        [
+            .. Enumerable
+                .Range(0, KeyCardinality)
+                .Select(i => string.Create(CultureInfo.InvariantCulture, $"remove:{i}")),
+        ];
 
         foreach (var key in _keys)
         {

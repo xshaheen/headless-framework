@@ -26,7 +26,7 @@ public interface IAuditLog<TContext>
     /// <param name="entityId">Optional string representation of the entity's primary key.</param>
     /// <param name="data">Optional payload stored in <c>NewValues</c>.</param>
     /// <param name="success">Whether the operation succeeded.</param>
-    /// <param name="errorCode">Error code when <paramref name="success"/> is <c>false</c>.</param>
+    /// <param name="errorCode">Error code when <paramref name="success"/> is <see langword="false"/>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     Task LogAsync(
         string action,

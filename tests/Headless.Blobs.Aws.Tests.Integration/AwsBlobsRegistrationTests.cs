@@ -10,7 +10,6 @@ using Amazon.Extensions.NETCore.Setup;
 using Amazon.Runtime;
 using Headless.Abstractions;
 using Headless.Blobs;
-using Headless.Blobs.Aws;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -20,20 +19,20 @@ public sealed class AwsBlobsRegistrationTests
 {
     // Dummy AWSOptions so AmazonS3Client construction succeeds without real credentials.
     // No network I/O occurs during construction; errors only surface on actual S3 calls.
-    private static AWSOptions DummyAwsOptions() =>
+    private static AWSOptions _DummyAwsOptions() =>
         new()
         {
             Region = RegionEndpoint.USEast1,
             Credentials = new BasicAWSCredentials("test-access-key", "test-secret-key"),
         };
 
-    private static ServiceCollection BuildBaseServices()
+    private static ServiceCollection _BuildBaseServices()
     {
         var services = new ServiceCollection();
         services.AddLogging();
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IMimeTypeProvider, MimeTypeProvider>();
-        services.TryAddSingleton<IClock, Clock>();
+        services.TryAddSingleton(TimeProvider.System);
 
         return services;
     }
@@ -42,13 +41,13 @@ public sealed class AwsBlobsRegistrationTests
     public async Task default_store_is_injectable_and_named_stores_resolve_via_provider()
     {
         // given
-        var services = BuildBaseServices();
+        var services = _BuildBaseServices();
 
         services.AddHeadlessBlobs(blobs =>
         {
-            blobs.UseAws(options => { }, DummyAwsOptions());
-            blobs.AddNamed("media", instance => instance.UseAws(options => { }, DummyAwsOptions()));
-            blobs.AddNamed("docs", instance => instance.UseAws(options => { }, DummyAwsOptions()));
+            blobs.UseAws(options => { }, _DummyAwsOptions());
+            blobs.AddNamed("media", instance => instance.UseAws(options => { }, _DummyAwsOptions()));
+            blobs.AddNamed("docs", instance => instance.UseAws(options => { }, _DummyAwsOptions()));
         });
 
         await using var serviceProvider = services.BuildServiceProvider();
@@ -70,12 +69,12 @@ public sealed class AwsBlobsRegistrationTests
     public async Task named_stores_are_distinct_instances()
     {
         // given
-        var services = BuildBaseServices();
+        var services = _BuildBaseServices();
 
         services.AddHeadlessBlobs(blobs =>
         {
-            blobs.AddNamed("store-a", instance => instance.UseAws(options => { }, DummyAwsOptions()));
-            blobs.AddNamed("store-b", instance => instance.UseAws(options => { }, DummyAwsOptions()));
+            blobs.AddNamed("store-a", instance => instance.UseAws(options => { }, _DummyAwsOptions()));
+            blobs.AddNamed("store-b", instance => instance.UseAws(options => { }, _DummyAwsOptions()));
         });
 
         await using var serviceProvider = services.BuildServiceProvider();
@@ -94,12 +93,9 @@ public sealed class AwsBlobsRegistrationTests
     public async Task default_store_casts_to_IPresignedUrlBlobStorage()
     {
         // given
-        var services = BuildBaseServices();
+        var services = _BuildBaseServices();
 
-        services.AddHeadlessBlobs(blobs =>
-        {
-            blobs.UseAws(options => { }, DummyAwsOptions());
-        });
+        services.AddHeadlessBlobs(blobs => blobs.UseAws(options => { }, _DummyAwsOptions()));
 
         await using var serviceProvider = services.BuildServiceProvider();
 
@@ -115,12 +111,11 @@ public sealed class AwsBlobsRegistrationTests
     public async Task named_store_resolves_as_keyed_IPresignedUrlBlobStorage()
     {
         // given
-        var services = BuildBaseServices();
+        var services = _BuildBaseServices();
 
         services.AddHeadlessBlobs(blobs =>
-        {
-            blobs.AddNamed("assets", instance => instance.UseAws(options => { }, DummyAwsOptions()));
-        });
+            blobs.AddNamed("assets", instance => instance.UseAws(options => { }, _DummyAwsOptions()))
+        );
 
         await using var serviceProvider = services.BuildServiceProvider();
 
@@ -147,7 +142,7 @@ public sealed class AwsBlobsRegistrationTests
 
         try
         {
-            var services = BuildBaseServices();
+            var services = _BuildBaseServices();
             services.AddHeadlessBlobs(blobs => blobs.UseAws(options => { }));
             await using var serviceProvider = services.BuildServiceProvider();
 
@@ -161,5 +156,43 @@ public sealed class AwsBlobsRegistrationTests
         {
             Environment.SetEnvironmentVariable("AWS_REGION", previousRegion);
         }
+    }
+
+    [Fact]
+    public async Task default_store_registers_resolvable_container_manager()
+    {
+        // given — AWS supports bucket lifecycle, so the default provider registers an IBlobContainerManager as a
+        // separate (DI-resolved) capability, not as a cast from the storage instance.
+        var services = _BuildBaseServices();
+
+        services.AddHeadlessBlobs(blobs => blobs.UseAws(options => { }, _DummyAwsOptions()));
+
+        await using var serviceProvider = services.BuildServiceProvider();
+
+        // when
+        var manager = serviceProvider.GetService<IBlobContainerManager>();
+
+        // then — the capability resolves (client construction is lazy; no network I/O happens here)
+        manager.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task named_store_registers_keyed_container_manager()
+    {
+        // given
+        var services = _BuildBaseServices();
+
+        services.AddHeadlessBlobs(blobs =>
+            blobs.AddNamed("assets", instance => instance.UseAws(options => { }, _DummyAwsOptions()))
+        );
+
+        await using var serviceProvider = services.BuildServiceProvider();
+
+        // when
+        var keyed = serviceProvider.GetRequiredKeyedService<IBlobContainerManager>("assets");
+
+        // then — keyed capability resolves for the named instance, and a named-only setup leaks no unkeyed manager
+        keyed.Should().NotBeNull();
+        serviceProvider.GetService<IBlobContainerManager>().Should().BeNull();
     }
 }

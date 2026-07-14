@@ -36,7 +36,7 @@ public sealed class AmazonSnsBusTransportTests(LocalStackTestFixture fixture) : 
     {
         var logger = NullLogger<AmazonSnsBusTransport>.Instance;
         var options = Options.Create(
-            new AmazonSqsOptions
+            new AmazonSqsMessagingOptions
             {
                 Region = Amazon.RegionEndpoint.USEast1,
                 SnsServiceUrl = fixture.ConnectionString,
@@ -66,11 +66,8 @@ public sealed class AmazonSnsBusTransportTests(LocalStackTestFixture fixture) : 
     /// <inheritdoc />
     protected override async ValueTask DisposeAsyncCore()
     {
-        if (_snsClient is not null)
-        {
-            _snsClient.Dispose();
-            _snsClient = null;
-        }
+        _snsClient?.Dispose();
+        _snsClient = null;
 
         await base.DisposeAsyncCore();
     }
@@ -100,8 +97,10 @@ public sealed class AmazonSnsBusTransportTests(LocalStackTestFixture fixture) : 
     [Fact]
     public override Task should_send_batch_of_messages() => base.should_send_batch_of_messages();
 
+#pragma warning disable xUnit1004 // AWS SNS rejects empty message bodies; this inherited contract is not applicable.
     [Fact(Skip = "AWS SNS does not support empty message bodies")]
     public override Task should_handle_empty_message_body() => base.should_handle_empty_message_body();
+#pragma warning restore xUnit1004
 
     [Fact]
     public override Task should_handle_large_message_body() => base.should_handle_large_message_body();
@@ -140,7 +139,7 @@ public sealed class AmazonSnsBusTransportTests(LocalStackTestFixture fixture) : 
         var message = CreateMessage(messageName: "auto-created-topic");
 
         // when
-        var result = await transport.SendAsync(message);
+        var result = await transport.SendAsync(message, AbortToken);
 
         // then - Should succeed because topic is auto-created
         result.Succeeded.Should().BeTrue();
@@ -161,7 +160,7 @@ public sealed class AmazonSnsBusTransportTests(LocalStackTestFixture fixture) : 
         var message = CreateMessage(messageName: topicName, additionalHeaders: additionalHeaders);
 
         // when
-        var result = await transport.SendAsync(message);
+        var result = await transport.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeTrue();

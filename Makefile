@@ -15,6 +15,7 @@ TEST_RESULTS_DIR ?= $(ARTIFACTS_DIR)/test-results
 COVERAGE_DIR ?= $(ARTIFACTS_DIR)/coverage
 COVERAGE_REPORT_DIR ?= $(COVERAGE_DIR)/report
 COVERAGE_REPORT_TYPES ?= Html;JsonSummary
+DEPENDENCY_AUDIT_DIR ?= $(ARTIFACTS_DIR)/dependency-audit
 PROJECT ?=
 TEST_PROJECT ?=
 TEST_FILTER ?=
@@ -23,18 +24,30 @@ TEST_MODULES ?= tests/**/bin/$(CONFIGURATION)/**/*.Tests.*.dll
 UNIT_TEST_MODULES ?= tests/**/bin/$(CONFIGURATION)/**/*.Tests.Unit.dll
 INTEGRATION_TEST_MODULES ?= tests/**/bin/$(CONFIGURATION)/**/*.Tests.Integration.dll
 MSBUILD_ARGS ?=
+DEPENDENCY_AUDIT_IDLE_TIMEOUT ?= 120
+DEPENDENCY_SECURITY_AUDIT_TIMEOUT ?= 120
+NUGET_ADVISORY_AUDIT_TIMEOUT ?= 90
+QUALITY_SEVERITY ?= info
+QUALITY_DIAGNOSTICS ?=
+QUALITY_FORMAT_ARGS = --no-restore --verify-no-changes --severity "$(QUALITY_SEVERITY)" -v minimal $(if $(QUALITY_DIAGNOSTICS),--diagnostics $(QUALITY_DIAGNOSTICS),)
+QUALITY_BUILD_ARGS = --configuration "$(CONFIGURATION)" --no-restore --no-incremental -v:q -nologo /clp:NoSummary $(MSBUILD_ARGS)
 TEST_MAX_PARALLEL ?= 3
 TEST_TIMEOUT ?= 15m
+DOTNET_OUTDATED_AUDIT_ARGS ?= --no-restore --idle-timeout $(DEPENDENCY_AUDIT_IDLE_TIMEOUT) --output "$(DEPENDENCY_AUDIT_DIR)/outdated.json" --output-format json
+DEPENDENCY_SECURITY_AUDIT_ARGS ?= --timeout-seconds "$(DEPENDENCY_SECURITY_AUDIT_TIMEOUT)" --output-dir "$(DEPENDENCY_AUDIT_DIR)/security" --project "$(PROJECT)" --scan vulnerable --include-transitive --scan deprecated
+NUGET_ADVISORY_AUDIT_ARGS ?= --timeout-seconds "$(NUGET_ADVISORY_AUDIT_TIMEOUT)" --output-dir "$(DEPENDENCY_AUDIT_DIR)/nuget-advisories" --scan vulnerable --include-transitive
 
 COVERAGE_ARGS ?= -p:EnableCodeCoverage=true --coverage-output-format cobertura
+CI_TEST_ARGS ?= --report-trx --coverage --coverage-output-format cobertura
 
 .PHONY: help
 help: ## Show available commands.
-	@awk 'BEGIN {FS = ":.*##"; printf "\nCommands:\n"} /^[a-zA-Z0-9_.-]+:.*##/ { printf "  %-18s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*##"; printf "\nCommands:\n"} /^[a-zA-Z0-9_.-]+:.*##/ { printf "  %-28s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 	@printf "\nExamples:\n"
 	@printf "  make build\n"
 	@printf "  make test-project TEST_PROJECT=tests/Headless.Api.Tests.Unit/Headless.Api.Tests.Unit.csproj\n"
 	@printf "  make test-class CLASS='*ClockTests'\n"
+	@printf "  make quality-analyzers-project PROJECT=src/Headless.Api/Headless.Api.csproj\n"
 	@printf "  make coverage-json\n"
 	@printf "  make pack CONFIGURATION=Release\n\n"
 
@@ -47,12 +60,12 @@ tools: ## Restore repo-pinned .NET tools.
 
 .PHONY: restore
 restore: ## Restore NuGet packages.
-	$(DOTNET) restore "$(SOLUTION)"
+	$(DOTNET) restore "$(SOLUTION)" -p:Configuration="$(CONFIGURATION)"
 
 .PHONY: restore-project
 restore-project: ## Restore one project; preferred for focused project work.
 	@test -n "$(PROJECT)" || (echo "PROJECT is required. Example: make restore-project PROJECT=src/Headless.Api/Headless.Api.csproj" && exit 2)
-	$(DOTNET) restore "$(PROJECT)"
+	$(DOTNET) restore "$(PROJECT)" -p:Configuration="$(CONFIGURATION)"
 
 .PHONY: hooks
 hooks: ## Point git at the committed hooks (per clone/worktree).
@@ -60,11 +73,18 @@ hooks: ## Point git at the committed hooks (per clone/worktree).
 
 .PHONY: hook-pre-commit
 hook-pre-commit: ## Git hook: format staged C# files before commit.
-	@files=(); \
-	while IFS= read -r file; do files+=("$$file"); done < <(git diff --cached --name-only --diff-filter=ACM -- '*.cs'); \
-	if [ "$${#files[@]}" -eq 0 ]; then exit 0; fi; \
-	$(DOTNET) csharpier format "$${files[@]}"; \
-	git add -- "$${files[@]}"
+	@staged=(); safe=(); skipped=(); \
+	while IFS= read -r file; do staged+=("$$file"); done < <(git diff --cached --name-only --diff-filter=ACMR -- '*.cs'); \
+	if [ "$${#staged[@]}" -eq 0 ]; then exit 0; fi; \
+	for file in "$${staged[@]}"; do \
+		if git diff --quiet -- "$$file"; then safe+=("$$file"); else skipped+=("$$file"); fi; \
+	done; \
+	if [ "$${#safe[@]}" -gt 0 ]; then $(DOTNET) csharpier format "$${safe[@]}"; git add -- "$${safe[@]}"; fi; \
+	if [ "$${#skipped[@]}" -gt 0 ]; then \
+		printf '\033[33m[pre-commit]\033[0m skipped auto-format for %d partially-staged file(s) (formatting the whole file would commit unstaged hunks):\n' "$${#skipped[@]}"; \
+		printf '  %s\n' "$${skipped[@]}"; \
+		printf 'Stage the whole file, or run: dotnet csharpier format <file>\n'; \
+	fi
 
 .PHONY: hook-pre-push
 hook-pre-push: hook-pre-push-message hook-format-check hook-build ## Git hook: format-check changed files + incremental build before push.
@@ -82,19 +102,19 @@ hook-pre-push-message:
 hook-format-check: ## Git hook: CSharpier-check only the C# files changed vs upstream.
 	@base=$$(git rev-parse --verify -q '@{upstream}' 2>/dev/null || git merge-base origin/main HEAD 2>/dev/null || true); \
 	if [ -n "$$base" ]; then \
-		files=$$(git diff --name-only --diff-filter=ACM "$$base"...HEAD -- '*.cs'); \
+		files=$$(git -c core.quotePath=false diff --name-only --diff-filter=ACMR "$$base"...HEAD -- '*.cs'); \
 	else \
-		files=$$(git ls-files '*.cs'); \
+		files=$$(git -c core.quotePath=false ls-files '*.cs'); \
 	fi; \
 	if [ -z "$$files" ]; then echo "[pre-push] no changed C# files to check"; exit 0; fi; \
-	echo "$$files" | tr '\n' '\0' | xargs -0 $(DOTNET) csharpier check
+	printf '%s\n' "$$files" | tr '\n' '\0' | xargs -0 $(DOTNET) csharpier check
 
 .PHONY: hook-build
 hook-build: ## Git hook: incremental solution build over warm outputs (no restore, no clean).
 	$(DOTNET) build "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-restore -v:q -nologo /clp:ErrorsOnly $(MSBUILD_ARGS)
 
 .PHONY: ci-build
-ci-build: format-check rebuild pack-built ## CI: check formatting, clean-build, then pack already-built projects.
+ci-build: format-check rebuild ci-test pack-built ## CI: check formatting, clean-build, test with coverage, then pack already-built projects.
 
 .PHONY: build
 build: restore ## Build the solution.
@@ -112,6 +132,30 @@ rebuild-no-restore: ## Build without restore or incremental compilation; use aft
 build-project: restore-project ## Build one project; preferred when working on a specified project.
 	@test -n "$(PROJECT)" || (echo "PROJECT is required. Example: make build-project PROJECT=src/Headless.Api/Headless.Api.csproj" && exit 2)
 	$(DOTNET) build "$(PROJECT)" --configuration "$(CONFIGURATION)" --no-restore -v:q -nologo /clp:ErrorsOnly $(MSBUILD_ARGS)
+
+.PHONY: build-project-no-restore
+build-project-no-restore: ## Build one project without restore; use after restore-project.
+	@test -n "$(PROJECT)" || (echo "PROJECT is required. Example: make build-project-no-restore PROJECT=src/Headless.Api/Headless.Api.csproj" && exit 2)
+	$(DOTNET) build "$(PROJECT)" --configuration "$(CONFIGURATION)" --no-restore -v:q -nologo /clp:ErrorsOnly $(MSBUILD_ARGS)
+
+.PHONY: quality-analyzers
+quality-analyzers: ## Report build warnings/errors and analyzer suggestions without writing changes.
+	@mkdir -p "$(ARTIFACTS_DIR)"
+	@$(DOTNET) restore "$(SOLUTION)" --locked-mode -v:q -nologo
+	@if ! $(DOTNET) build "$(SOLUTION)" $(QUALITY_BUILD_ARGS) 2>&1 | tee "$(ARTIFACTS_DIR)/quality-analyzers.log" | awk '/(^|: )(warning|error) [A-Z]+[0-9]+:/'; then \
+		echo "Build failed. Full output:"; cat "$(ARTIFACTS_DIR)/quality-analyzers.log"; exit 1; \
+	fi
+	@Configuration="$(CONFIGURATION)" $(DOTNET) format analyzers "$(SOLUTION)" $(QUALITY_FORMAT_ARGS)
+
+.PHONY: quality-analyzers-project
+quality-analyzers-project: ## Report build warnings/errors and analyzer suggestions for PROJECT.
+	@test -n "$(PROJECT)" || (echo "PROJECT is required. Example: make quality-analyzers-project PROJECT=src/Headless.Api/Headless.Api.csproj" && exit 2)
+	@mkdir -p "$(ARTIFACTS_DIR)"
+	@$(DOTNET) restore "$(PROJECT)" --locked-mode -v:q -nologo
+	@if ! $(DOTNET) build "$(PROJECT)" $(QUALITY_BUILD_ARGS) 2>&1 | tee "$(ARTIFACTS_DIR)/quality-analyzers-project.log" | awk '/(^|: )(warning|error) [A-Z]+[0-9]+:/'; then \
+		echo "Build failed. Full output:"; cat "$(ARTIFACTS_DIR)/quality-analyzers-project.log"; exit 1; \
+	fi
+	@Configuration="$(CONFIGURATION)" $(DOTNET) format analyzers "$(PROJECT)" $(QUALITY_FORMAT_ARGS)
 
 .PHONY: dashboards
 dashboards: dashboard-jobs dashboard-messaging ## Rebuild every SPA dashboard (npm ci + vite build into wwwroot/dist).
@@ -146,6 +190,11 @@ test: build ## Build, then run all tests. Use TEST_FILTER='--filter-class X' for
 test-fast: ## Run all tests without restore/build. Requires existing $(CONFIGURATION) build outputs.
 	@mkdir -p "$(TEST_RESULTS_DIR)"
 	$(DOTNET) test --solution "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER)
+
+.PHONY: ci-test
+ci-test: ## Run prebuilt unit tests with CI coverage output. Requires existing $(CONFIGURATION) build outputs.
+	@mkdir -p "$(TEST_RESULTS_DIR)"
+	$(DOTNET) test --test-modules "$(UNIT_TEST_MODULES)" --root-directory "$(CURDIR)" --results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER) $(CI_TEST_ARGS)
 
 .PHONY: test-modules
 test-modules: build ## Run prebuilt test DLLs via MTP --test-modules. Override TEST_MODULES if needed.
@@ -220,28 +269,44 @@ coverage-json: coverage-html ## Generate JSON coverage summary at artifacts/cove
 
 .PHONY: coverage-open
 coverage-open: coverage-html ## Generate report and open in browser.
-	open "$(COVERAGE_REPORT_DIR)/index.html"
+	@if command -v open >/dev/null 2>&1; then open "$(COVERAGE_REPORT_DIR)/index.html"; \
+	elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$(COVERAGE_REPORT_DIR)/index.html"; \
+	else echo "Report generated. Open manually: $(COVERAGE_REPORT_DIR)/index.html"; fi
 
 .PHONY: pack
-pack: restore ## Pack NuGet packages with symbols.
+pack: restore ## Pack NuGet packages (symbols are embedded in the assemblies).
 	@mkdir -p "$(PACKAGES_DIR)"
-	$(DOTNET) pack "$(SOLUTION)" --configuration "$(CONFIGURATION)" --include-symbols --output "$(PACKAGES_DIR)" $(MSBUILD_ARGS)
+	$(DOTNET) pack "$(SOLUTION)" --configuration "$(CONFIGURATION)" --output "$(PACKAGES_DIR)" $(MSBUILD_ARGS)
 
 .PHONY: pack-built
 pack-built: ## Pack already-built source projects without restore/build; used by CI.
 	@mkdir -p "$(PACKAGES_DIR)"
 	@for csproj in src/*/*.csproj; do \
-		$(DOTNET) pack "$$csproj" --configuration "$(CONFIGURATION)" --no-restore --no-build --include-symbols --output "$(PACKAGES_DIR)"; \
+		$(DOTNET) pack "$$csproj" --configuration "$(CONFIGURATION)" --no-restore --no-build --output "$(PACKAGES_DIR)" /p:GenerateSBOM=true $(MSBUILD_ARGS); \
 	done
 
 .PHONY: pack-sbom
-pack-sbom: restore ## Pack NuGet packages with symbols and GenerateSBOM=true.
+pack-sbom: restore ## Pack NuGet packages with GenerateSBOM=true.
 	@mkdir -p "$(PACKAGES_DIR)"
-	$(DOTNET) pack "$(SOLUTION)" --configuration "$(CONFIGURATION)" --include-symbols --output "$(PACKAGES_DIR)" /p:GenerateSBOM=true $(MSBUILD_ARGS)
+	$(DOTNET) pack "$(SOLUTION)" --configuration "$(CONFIGURATION)" --output "$(PACKAGES_DIR)" /p:GenerateSBOM=true $(MSBUILD_ARGS)
 
 .PHONY: outdated
 outdated: tools ## Check outdated NuGet dependencies.
 	$(DOTNET) outdated "$(SOLUTION)"
+
+.PHONY: dependency-audit
+dependency-audit: ## Write NuGet outdated dependency JSON report without restore.
+	@mkdir -p "$(DEPENDENCY_AUDIT_DIR)"
+	$(DOTNET) outdated "$(SOLUTION)" $(DOTNET_OUTDATED_AUDIT_ARGS)
+
+.PHONY: dependency-security-audit
+dependency-security-audit: ## Check vulnerable/deprecated NuGet packages for PROJECT without restore; fail on timeout.
+	@test -n "$(PROJECT)" || (echo "PROJECT is required. Example: make dependency-security-audit PROJECT=src/Headless.Api/Headless.Api.csproj" && exit 2)
+	./scripts/audit-nuget-advisories.sh $(DEPENDENCY_SECURITY_AUDIT_ARGS)
+
+.PHONY: nuget-advisory-audit
+nuget-advisory-audit: ## Scan source packages for NuGet vulnerabilities with bounded per-project logs.
+	./scripts/audit-nuget-advisories.sh $(NUGET_ADVISORY_AUDIT_ARGS)
 
 .PHONY: version
 version: tools ## Show MinVer-computed version.

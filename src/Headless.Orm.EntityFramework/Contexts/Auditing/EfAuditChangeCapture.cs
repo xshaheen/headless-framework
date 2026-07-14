@@ -42,7 +42,14 @@ internal sealed class EfAuditChangeCapture(
 
     private readonly ConcurrentDictionary<Type, bool> _entityFilterCache = new();
     private readonly ConcurrentDictionary<(Type Type, string PropertyName), bool> _propertyFilterCache = new();
-    private readonly List<(AuditLogEntryData Data, EntityEntry EntityEntry)> _deferredEntityIds = [];
+
+    // Deferred store-generated value resolution, keyed on the produced data object itself so
+    // interleaved captures on the same scoped instance (e.g. a domain-event handler saving a
+    // second DbContext mid-save) cannot clobber each other's state. Entries intentionally stay
+    // registered after resolution so execution-strategy retries can re-resolve; the table
+    // releases them together with their data objects.
+    private readonly ConditionalWeakTable<AuditLogEntryData, DeferredEntryResolution> _deferredResolutions = [];
+
     private bool _hasLoggedDisabledWarning;
 
     /// <inheritdoc />
@@ -62,7 +69,6 @@ internal sealed class EfAuditChangeCapture(
             return [];
         }
 
-        _deferredEntityIds.Clear();
         List<AuditLogEntryData>? result = null;
 
         foreach (var obj in entries)
@@ -90,16 +96,13 @@ internal sealed class EfAuditChangeCapture(
                 {
                     result ??= [];
                     result.Add(data);
-
-                    // Defer EntityId resolution for Added entities with store-generated keys.
-                    if (entry.State == EntityState.Added)
-                    {
-                        _deferredEntityIds.Add((data, entry));
-                    }
                 }
             }
-            catch (Exception e) when (e is not OptionsValidationException)
+            catch (Exception e)
+                when (e is not OptionsValidationException && opts.CaptureErrorStrategy == CaptureErrorStrategy.Continue)
             {
+                // Continue-only: under CaptureErrorStrategy.Throw the failure propagates so the
+                // save aborts instead of committing an entity change without its audit row.
                 _logger.LogAuditCaptureFailed(e, entry.Metadata.ClrType.FullName);
             }
         }
@@ -110,15 +113,27 @@ internal sealed class EfAuditChangeCapture(
     /// <inheritdoc />
     public void ResolveEntityIds(IReadOnlyList<AuditLogEntryData> entries)
     {
-        foreach (var (data, entityEntry) in _deferredEntityIds)
+        foreach (var data in entries)
         {
-            var (_, entityId) = _GetEntityIdentity(entityEntry);
-            data.EntityId = entityId;
-        }
+            if (!_deferredResolutions.TryGetValue(data, out var resolution))
+            {
+                continue;
+            }
 
-        // Not cleared here — cleared at the start of the next CaptureChanges call.
-        // This allows execution strategy retries to re-resolve after failed attempts
-        // where store-generated keys may differ.
+            if (resolution.ResolveEntityId)
+            {
+                var (_, entityId) = _GetEntityIdentity(resolution.Entry);
+                data.EntityId = entityId;
+            }
+
+            if (resolution.TemporaryValuePatches is not null)
+            {
+                foreach (var patch in resolution.TemporaryValuePatches)
+                {
+                    patch.Target[patch.PropertyName] = patch.Property.CurrentValue;
+                }
+            }
+        }
     }
 
     private void _LogDisabledWarningOnce()
@@ -168,7 +183,7 @@ internal sealed class EfAuditChangeCapture(
 
                 if (byDefault)
                 {
-                    return type.GetCustomAttribute<AuditIgnoreAttribute>() is null;
+                    return !Attribute.IsDefined(type, typeof(AuditIgnoreAttribute));
                 }
 
                 return typeof(IAuditTracked).IsAssignableFrom(type);
@@ -229,6 +244,7 @@ internal sealed class EfAuditChangeCapture(
         var newValues = new Dictionary<string, object?>(StringComparer.Ordinal);
         var changedFields = new List<string>();
         var actionContext = new ActionContext();
+        List<TemporaryValuePatch>? temporaryValuePatches = null;
 
         foreach (var property in entry.Properties)
         {
@@ -290,6 +306,20 @@ internal sealed class EfAuditChangeCapture(
                 property.CurrentValue,
                 property.IsModified
             );
+
+            // Store-generated keys and FKs pointing at just-added principals hold EF temporary
+            // values until SaveChanges runs; remember where the value landed so ResolveEntityIds
+            // can patch in the real value post-save.
+            if (
+                property.IsTemporary
+                && (
+                    changeType is AuditChangeType.Created
+                    || (changeType is AuditChangeType.Updated && property.IsModified)
+                )
+            )
+            {
+                (temporaryValuePatches ??= []).Add(new TemporaryValuePatch(newValues, propertyName, property));
+            }
         }
 
         // Skip updates with no real changed fields
@@ -301,7 +331,7 @@ internal sealed class EfAuditChangeCapture(
         var action = _DetermineAction(changeType.Value, actionContext);
         var (entityType, entityId) = _GetEntityIdentity(entry);
 
-        return new AuditLogEntryData
+        var data = new AuditLogEntryData
         {
             UserId = userId,
             AccountId = accountId,
@@ -316,6 +346,18 @@ internal sealed class EfAuditChangeCapture(
             ChangedFields = changedFields.Count > 0 ? changedFields : null,
             CreatedAt = timestamp,
         };
+
+        // Created entries need EntityId re-resolution once store-generated keys are assigned;
+        // any entry may additionally carry temporary property values that need patching post-save.
+        if (changeType is AuditChangeType.Created || temporaryValuePatches is not null)
+        {
+            _deferredResolutions.Add(
+                data,
+                new DeferredEntryResolution(entry, changeType is AuditChangeType.Created, temporaryValuePatches)
+            );
+        }
+
+        return data;
     }
 
     private static void _CaptureActionFlags(ActionContext context, string propertyName, PropertyEntry property)
@@ -325,7 +367,7 @@ internal sealed class EfAuditChangeCapture(
             return;
         }
 
-        if (propertyName == nameof(IDeleteAudit.IsDeleted))
+        if (string.Equals(propertyName, nameof(IDeleteAudit.IsDeleted), StringComparison.Ordinal))
         {
             var nowDeleted = property.CurrentValue is true;
             var wasDeleted = property.OriginalValue is true;
@@ -335,7 +377,7 @@ internal sealed class EfAuditChangeCapture(
             return;
         }
 
-        if (propertyName == nameof(ISuspendAudit.IsSuspended))
+        if (string.Equals(propertyName, nameof(ISuspendAudit.IsSuspended), StringComparison.Ordinal))
         {
             var nowSuspended = property.CurrentValue is true;
             var wasSuspended = property.OriginalValue is true;
@@ -565,6 +607,18 @@ internal sealed class EfAuditChangeCapture(
         SensitiveDataStrategy? SensitiveStrategy
     );
 
+    private sealed record DeferredEntryResolution(
+        EntityEntry Entry,
+        bool ResolveEntityId,
+        List<TemporaryValuePatch>? TemporaryValuePatches
+    );
+
+    private readonly record struct TemporaryValuePatch(
+        Dictionary<string, object?> Target,
+        string PropertyName,
+        PropertyEntry Property
+    );
+
     private sealed class ActionContext
     {
         public bool IsSoftDeleted { get; set; }
@@ -579,10 +633,12 @@ internal sealed class EfAuditChangeCapture(
 
 internal static partial class EfAuditChangeCaptureLog
 {
+    // Error, not Warning: with CaptureErrorStrategy.Continue this entity's change is about to be
+    // persisted without its audit row — operators must see that in logs.
     [LoggerMessage(
         EventId = 1,
         EventName = "AuditCaptureFailed",
-        Level = LogLevel.Warning,
+        Level = LogLevel.Error,
         Message = "Audit capture failed for entity {EntityType}. Audit entry skipped; entity save continues."
     )]
     public static partial void LogAuditCaptureFailed(this ILogger logger, Exception exception, string? entityType);

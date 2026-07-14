@@ -13,6 +13,7 @@ Enables cloud-native, multi-tenant messaging using Apache Pulsar with geo-replic
 - **Tiered Storage**: Offload old messages to S3/GCS/Azure Blob
 - **Unified Model**: Both streaming and queuing semantics
 - **Schema Registry**: Built-in schema validation and evolution
+- **Host-Cancellable Startup**: Client acquisition and subscription honor host shutdown while preserving the provider timeout.
 
 ## Installation
 
@@ -58,6 +59,8 @@ options.UsePulsar(pulsar =>
 - Topic creation and retention still follow broker configuration for that tenant and namespace.
 - Shared subscriptions favor throughput over strict ordering. Single-threaded consumption gives the most stable order.
 - Topic names, property sizes, and payload limits follow Pulsar broker limits.
+
+**Registration overloads:** `UsePulsar(...)` accepts the standard trio — an `IConfiguration` section, an `Action<PulsarMessagingOptions>` delegate, or an `Action<PulsarMessagingOptions, IServiceProvider>` delegate — plus the service-URL convenience form.
 
 ## Dependencies
 

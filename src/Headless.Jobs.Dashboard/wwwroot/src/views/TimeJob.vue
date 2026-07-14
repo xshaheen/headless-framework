@@ -5,7 +5,7 @@ import type { GetTimeJobResponse } from '@/http/services/types/timeJobService.ty
 import { Status } from '@/http/services/types/base/baseHttpResponse.types'
 import { jobsService } from '@/http/services/jobsService'
 import { useDialog } from '@/composables/useDialog'
-import { ConfirmDialogProps } from '@/components/common/ConfirmDialog.vue'
+import { ConfirmDialogProps } from '@/components/common/confirm-dialog-props'
 import ChainJobsModal from '@/components/ChainJobsModal.vue'
 import JobNotificationHub, { methodName } from '@/hub/jobNotificationHub'
 import { formatDate } from '@/utilities/dateTimeParser'

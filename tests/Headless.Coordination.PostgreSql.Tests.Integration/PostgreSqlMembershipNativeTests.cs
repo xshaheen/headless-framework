@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Coordination;
-using Headless.Coordination.PostgreSql;
 using Headless.Hosting.Initialization;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;

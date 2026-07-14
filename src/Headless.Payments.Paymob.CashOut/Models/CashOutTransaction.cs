@@ -23,8 +23,9 @@ public sealed record CashOutTransaction
     [JsonPropertyName("msisdn")]
     public string? Msisdn { get; init; }
 
+    /// <summary>The disbursed amount in Egyptian Pounds (EGP), mirroring the value sent in the disburse request.</summary>
     [JsonPropertyName("amount")]
-    public double Amount { get; init; }
+    public decimal Amount { get; init; }
 
     [JsonPropertyName("full_name")]
     public string? FullName { get; init; }
@@ -48,8 +49,17 @@ public sealed record CashOutTransaction
     [JsonPropertyName("updated_at")]
     public string? UpdatedAt { get; init; }
 
+    // set (not init): [JsonExtensionData] cannot bind through init-only metadata and fails deserialization
     [JsonExtensionData]
-    public IDictionary<string, object?>? ExtensionData { get; init; }
+    public IDictionary<string, object?>? ExtensionData { get; set; }
+
+    // Msisdn, FullName, and AmanCashingDetails carry recipient PII and are shown as [redacted]; StatusDescription
+    // and ExtensionData (arbitrary provider fields) are omitted entirely. Either way, a failure log that renders
+    // this transaction (see PaymobCashOutLoggerExtensions) cannot leak them.
+    public override string ToString()
+    {
+        return $"CashOutTransaction {{ TransactionId = {TransactionId}, Issuer = {Issuer}, Amount = {Amount}, DisbursementStatus = {DisbursementStatus}, StatusCode = {StatusCode}, CreatedAt = {CreatedAt}, UpdatedAt = {UpdatedAt}, Msisdn = [redacted], FullName = [redacted], AmanCashingDetails = [redacted] }}";
+    }
 
     /// <summary>Returns <see langword="true"/> when the disbursement completed successfully.</summary>
     public bool IsSuccess()

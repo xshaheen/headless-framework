@@ -12,7 +12,8 @@ public sealed partial class HybridCache
 {
     async ValueTask<CacheStoreEntry<T>> IFactoryCacheStore.TryGetEntryAsync<T>(
         string key,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        FactoryCacheReadOptions readOptions
     )
     {
         _ThrowIfDisposed();
@@ -23,55 +24,64 @@ public sealed partial class HybridCache
         CacheStoreEntry<T>? l1StaleCandidate = null;
         var l1SlidingHit = false;
 
-        if (LocalCache is IFactoryCacheStore l1Store)
+        // Per-tier read control: SkipMemoryRead bypasses the L1 read entirely, so the read is served from (or
+        // refreshed against) L2 — no L1 hit, no L1 stale reserve, no L1 miss log. A value still read from L2 is
+        // promoted into L1 below (promotion is a write, governed by SkipMemoryCacheWrite, not by the read skip).
+        if (!readOptions.SkipMemoryRead)
         {
-            var l1Entry = await l1Store.TryGetEntryAsync<T>(key, cancellationToken).ConfigureAwait(false);
-
-            if (l1Entry.IsFresh(now))
+            if (LocalCache is IFactoryCacheStore l1Store)
             {
-                _logger.LogLocalCacheHit(key);
-                Interlocked.Increment(ref _localCacheHits);
+                var l1Entry = await l1Store.TryGetEntryAsync<T>(key, cancellationToken).ConfigureAwait(false);
 
-                if (!l1Entry.SlidingExpiration.HasValue)
+                if (l1Entry.IsFresh(now))
                 {
-                    return l1Entry;
+                    _logger.LogLocalCacheHit(key);
+                    Interlocked.Increment(ref _localCacheHits);
+
+                    if (!l1Entry.SlidingExpiration.HasValue)
+                    {
+                        return l1Entry;
+                    }
+
+                    // Sliding entries need the L2 physical cap for safe re-arm. A local entry may be physically
+                    // capped by DefaultLocalExpiration, so use it only as a no-rearm fallback if L2 is unavailable.
+                    l1SlidingHit = true;
+                    l1StaleCandidate = l1Entry with { SlidingExpiration = null };
                 }
-
-                // Sliding entries need the L2 physical cap for safe re-arm. A local entry may be physically
-                // capped by DefaultLocalExpiration, so use it only as a no-rearm fallback if L2 is unavailable.
-                l1SlidingHit = true;
-                l1StaleCandidate = l1Entry with { SlidingExpiration = null };
+                else if (l1Entry.IsPhysicallyPresent(now))
+                {
+                    l1StaleCandidate = l1Entry;
+                }
             }
-            else if (l1Entry.IsPhysicallyPresent(now))
+            else
             {
-                l1StaleCandidate = l1Entry;
-            }
-        }
-        else
-        {
-            var l1Value = await LocalCache.GetAsync<T>(key, cancellationToken).ConfigureAwait(false);
+                var l1Value = await LocalCache.GetAsync<T>(key, cancellationToken).ConfigureAwait(false);
 
-            if (l1Value.HasValue)
+                if (l1Value.HasValue)
+                {
+                    _logger.LogLocalCacheHit(key);
+                    Interlocked.Increment(ref _localCacheHits);
+                    return new CacheStoreEntry<T>(
+                        Found: true,
+                        IsNull: l1Value.IsNull,
+                        Value: l1Value.Value,
+                        LogicalExpiresAt: null,
+                        PhysicalExpiresAt: null,
+                        SlidingExpiration: null
+                    );
+                }
+            }
+
+            if (!l1SlidingHit)
             {
-                _logger.LogLocalCacheHit(key);
-                Interlocked.Increment(ref _localCacheHits);
-                return new CacheStoreEntry<T>(
-                    Found: true,
-                    IsNull: l1Value.IsNull,
-                    Value: l1Value.Value,
-                    LogicalExpiresAt: null,
-                    PhysicalExpiresAt: null,
-                    SlidingExpiration: null
-                );
+                _logger.LogLocalCacheMiss(key);
             }
         }
 
-        if (!l1SlidingHit)
-        {
-            _logger.LogLocalCacheMiss(key);
-        }
-
-        if (l2Cache is not IFactoryCacheStore l2Store)
+        // Per-tier read control: SkipDistributedRead bypasses the L2 read, so the read is served from whatever L1
+        // yielded (a fresh sliding value with no re-arm, a stale reserve, or a miss that falls through to the
+        // factory). Both flags set therefore reads neither tier and returns a miss, matching SkipCacheRead.
+        if (readOptions.SkipDistributedRead || l2Cache is not IFactoryCacheStore l2Store)
         {
             return l1StaleCandidate ?? CacheStoreEntry<T>.NotFound;
         }
@@ -123,6 +133,36 @@ public sealed partial class HybridCache
         return l2Entry.Found ? l2Entry : l1StaleCandidate ?? CacheStoreEntry<T>.NotFound;
     }
 
+    async ValueTask<CacheStoreEntry<T>[]> IFactoryCacheStore.TryGetAllEntriesAsync<T>(
+        IReadOnlyList<string> keys,
+        CancellationToken cancellationToken,
+        FactoryCacheReadOptions readOptions
+    )
+    {
+        _ThrowIfDisposed();
+        Argument.IsNotNull(keys);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // This path is reached only when a HybridCache is nested as another HybridCache's L2 store — a rare
+        // configuration. Composing the batch faithfully would need per-key timeout kinds (Hard when a key has no L1
+        // fallback, Soft when it does), a per-index serve-stale decision, and a per-index promotion gate, none of
+        // which collapse into one bulk L2 timeout boundary without diverging from the single-key contract. So we
+        // resolve each key SEQUENTIALLY through the single-key primitive, which preserves that contract exactly.
+        // Marker efficiency is still bounded, not O(N): each leaf tier's marker cache is process-local and shared,
+        // so sequential reads warm it once instead of racing it concurrently (the concurrent race was the original
+        // #554 storm). The common non-nested topology never reaches here — the outer HybridCache's L2 is a leaf
+        // store (Redis/InMemory) whose own bulk primitive does the single-prefetch O(1) marker read.
+        var self = (IFactoryCacheStore)this;
+        var result = new CacheStoreEntry<T>[keys.Count];
+
+        for (var i = 0; i < keys.Count; i++)
+        {
+            result[i] = await self.TryGetEntryAsync<T>(keys[i], cancellationToken, readOptions).ConfigureAwait(false);
+        }
+
+        return result;
+    }
+
     // Non-async forwarder: `in` parameters are not allowed on async methods, so copy the descriptor by value.
     ValueTask<bool> IFactoryCacheStore.SetEntryAsync<T>(
         string key,
@@ -150,16 +190,17 @@ public sealed partial class HybridCache
         // against), then detach the L2 write + recovery bookkeeping + publish under CancellationToken.None so a
         // caller token going away cannot abandon the L2 mirror. The descriptor is already captured by value
         // (the SetEntryAsync forwarder copies the `in` parameter), so the lambda owns immutable state.
-        if (options.AllowBackgroundDistributedCacheOperations)
+        if (cacheOptions.AllowBackgroundDistributedCacheOperations)
         {
-            var localWrite = await _WriteSetEntryToLocalAsync(key, entry, cancellationToken).ConfigureAwait(false);
+            var (localCommitted, localPhysicalStamp) = await _WriteSetEntryToLocalAsync(key, entry, cancellationToken)
+                .ConfigureAwait(false);
 
-            if (!localWrite.Committed)
+            if (!localCommitted)
             {
                 return false;
             }
 
-            _RunDetached(() => _SetEntryL2TailAsync(key, entry, localWrite.PhysicalStamp), key);
+            _RunDetached(() => _SetEntryL2TailAsync(key, entry, localPhysicalStamp), key);
 
             return true;
         }
@@ -175,9 +216,10 @@ public sealed partial class HybridCache
             return false;
         }
 
-        var localWriteSync = await _WriteSetEntryToLocalAsync(key, entry, cancellationToken).ConfigureAwait(false);
+        var (committed, physicalStamp) = await _WriteSetEntryToLocalAsync(key, entry, cancellationToken)
+            .ConfigureAwait(false);
 
-        if (!localWriteSync.Committed)
+        if (!committed)
         {
             return false;
         }
@@ -187,7 +229,7 @@ public sealed partial class HybridCache
                 entry,
                 skipL2,
                 l2WriteSucceeded,
-                localWriteSync.PhysicalStamp,
+                physicalStamp,
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -434,7 +476,7 @@ public sealed partial class HybridCache
                 _OpenDistributedCacheCircuit(exception, key);
                 _logger.LogFailedToWriteToL2Cache(exception, key);
 
-                if (options.ReThrowDistributedCacheExceptions)
+                if (cacheOptions.ReThrowDistributedCacheExceptions)
                 {
                     throw;
                 }
@@ -442,31 +484,27 @@ public sealed partial class HybridCache
                 return (SkipL2: false, Succeeded: false, ConditionFailed: false);
             }
         }
-        else
+
+        var expiresIn = (entry.SlidingExpiration is null ? entry.PhysicalExpiresAt : entry.LogicalExpiresAt).Subtract(
+            _GetUtcNow()
+        );
+
+        try
         {
-            var expiresIn = (
-                entry.SlidingExpiration is null ? entry.PhysicalExpiresAt : entry.LogicalExpiresAt
-            ).Subtract(_GetUtcNow());
+            await l2Cache.UpsertAsync(key, entry.IsNull ? default : entry.Value, expiresIn, ct).ConfigureAwait(false);
+            return (SkipL2: false, Succeeded: true, ConditionFailed: false);
+        }
+        catch (Exception exception) when (!FactoryCacheCoordinator.IsCallerCancellation(exception, ct))
+        {
+            _OpenDistributedCacheCircuit(exception, key);
+            _logger.LogFailedToWriteToL2Cache(exception, key);
 
-            try
+            if (cacheOptions.ReThrowDistributedCacheExceptions)
             {
-                await l2Cache
-                    .UpsertAsync(key, entry.IsNull ? default : entry.Value, expiresIn, ct)
-                    .ConfigureAwait(false);
-                return (SkipL2: false, Succeeded: true, ConditionFailed: false);
+                throw;
             }
-            catch (Exception exception) when (!FactoryCacheCoordinator.IsCallerCancellation(exception, ct))
-            {
-                _OpenDistributedCacheCircuit(exception, key);
-                _logger.LogFailedToWriteToL2Cache(exception, key);
 
-                if (options.ReThrowDistributedCacheExceptions)
-                {
-                    throw;
-                }
-
-                return (SkipL2: false, Succeeded: false, ConditionFailed: false);
-            }
+            return (SkipL2: false, Succeeded: false, ConditionFailed: false);
         }
     }
 
@@ -488,8 +526,8 @@ public sealed partial class HybridCache
         }
 
         var now = _GetUtcNow();
-        var localCeiling = options.DefaultLocalExpiration.HasValue
-            ? now.Add(options.DefaultLocalExpiration.Value)
+        var localCeiling = cacheOptions.DefaultLocalExpiration.HasValue
+            ? now.Add(cacheOptions.DefaultLocalExpiration.Value)
             : (DateTime?)null;
 
         // Legacy/unframed L2 entries carry no expiration metadata. Promote them into L1 bounded by the local

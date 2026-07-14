@@ -2,6 +2,7 @@
 
 using System.Data.Common;
 using Headless.AuditLog;
+using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -9,7 +10,7 @@ using Microsoft.Extensions.Hosting;
 namespace Tests;
 
 [Collection<SqlServerAuditLogFixture>]
-public sealed class SqlServerAuditLogAtomicityTests(SqlServerAuditLogFixture fixture)
+public sealed class SqlServerAuditLogAtomicityTests(SqlServerAuditLogFixture fixture) : TestBase
 {
     private const string _Schema = "audit_log_mssql_atomicity";
 
@@ -20,13 +21,11 @@ public sealed class SqlServerAuditLogAtomicityTests(SqlServerAuditLogFixture fix
         await _DropSchemaAsync();
         var accessor = new TestAmbientAccessor();
         using var host = _CreateHost(accessor);
-        await host.StartAsync(TestContext.Current.CancellationToken);
+        await host.StartAsync(AbortToken);
 
         await using var sharedConnection = new SqlConnection(fixture.ConnectionString);
-        await sharedConnection.OpenAsync(TestContext.Current.CancellationToken);
-        await using var sharedTransaction = await sharedConnection.BeginTransactionAsync(
-            TestContext.Current.CancellationToken
-        );
+        await sharedConnection.OpenAsync(AbortToken);
+        await using var sharedTransaction = await sharedConnection.BeginTransactionAsync(AbortToken);
 
         accessor.Connection = sharedConnection;
         accessor.Transaction = (SqlTransaction)sharedTransaction;
@@ -35,12 +34,8 @@ public sealed class SqlServerAuditLogAtomicityTests(SqlServerAuditLogFixture fix
         var store = scope.ServiceProvider.GetRequiredService<IAuditLogStore>();
 
         // when
-        await store.SaveAsync(
-            [_NewEntry(action: "atomicity.rollback")],
-            savingContext: new object(),
-            TestContext.Current.CancellationToken
-        );
-        await sharedTransaction.RollbackAsync(TestContext.Current.CancellationToken);
+        await store.SaveAsync([_NewEntry(action: "atomicity.rollback")], savingContext: new object(), AbortToken);
+        await sharedTransaction.RollbackAsync(AbortToken);
 
         // then — proof of transactional enrollment: row never committed
         var rowCount = await _CountRowsByActionAsync("atomicity.rollback");
@@ -54,13 +49,11 @@ public sealed class SqlServerAuditLogAtomicityTests(SqlServerAuditLogFixture fix
         await _DropSchemaAsync();
         var accessor = new TestAmbientAccessor();
         using var host = _CreateHost(accessor);
-        await host.StartAsync(TestContext.Current.CancellationToken);
+        await host.StartAsync(AbortToken);
 
         await using var sharedConnection = new SqlConnection(fixture.ConnectionString);
-        await sharedConnection.OpenAsync(TestContext.Current.CancellationToken);
-        await using var sharedTransaction = await sharedConnection.BeginTransactionAsync(
-            TestContext.Current.CancellationToken
-        );
+        await sharedConnection.OpenAsync(AbortToken);
+        await using var sharedTransaction = await sharedConnection.BeginTransactionAsync(AbortToken);
 
         accessor.Connection = sharedConnection;
         accessor.Transaction = (SqlTransaction)sharedTransaction;
@@ -69,12 +62,8 @@ public sealed class SqlServerAuditLogAtomicityTests(SqlServerAuditLogFixture fix
         var store = scope.ServiceProvider.GetRequiredService<IAuditLogStore>();
 
         // when
-        await store.SaveAsync(
-            [_NewEntry(action: "atomicity.commit")],
-            savingContext: new object(),
-            TestContext.Current.CancellationToken
-        );
-        await sharedTransaction.CommitAsync(TestContext.Current.CancellationToken);
+        await store.SaveAsync([_NewEntry(action: "atomicity.commit")], savingContext: new object(), AbortToken);
+        await sharedTransaction.CommitAsync(AbortToken);
 
         // then
         var rowCount = await _CountRowsByActionAsync("atomicity.commit");
@@ -88,17 +77,13 @@ public sealed class SqlServerAuditLogAtomicityTests(SqlServerAuditLogFixture fix
         await _DropSchemaAsync();
         var accessor = new TestAmbientAccessor { Connection = null, Transaction = null };
         using var host = _CreateHost(accessor);
-        await host.StartAsync(TestContext.Current.CancellationToken);
+        await host.StartAsync(AbortToken);
 
         await using var scope = host.Services.CreateAsyncScope();
         var store = scope.ServiceProvider.GetRequiredService<IAuditLogStore>();
 
         // when
-        await store.SaveAsync(
-            [_NewEntry(action: "atomicity.standalone")],
-            savingContext: new object(),
-            TestContext.Current.CancellationToken
-        );
+        await store.SaveAsync([_NewEntry(action: "atomicity.standalone")], savingContext: new object(), AbortToken);
 
         // then
         var rowCount = await _CountRowsByActionAsync("atomicity.standalone");
@@ -117,7 +102,7 @@ public sealed class SqlServerAuditLogAtomicityTests(SqlServerAuditLogFixture fix
         var fakeTransaction = new NonSqlTransactionStub(fakeConnection);
         var accessor = new TestAmbientAccessor { Connection = fakeConnection, Transaction = fakeTransaction };
         using var host = _CreateHost(accessor);
-        await host.StartAsync(TestContext.Current.CancellationToken);
+        await host.StartAsync(AbortToken);
 
         await using var scope = host.Services.CreateAsyncScope();
         var store = scope.ServiceProvider.GetRequiredService<IAuditLogStore>();
@@ -126,7 +111,7 @@ public sealed class SqlServerAuditLogAtomicityTests(SqlServerAuditLogFixture fix
         await store.SaveAsync(
             [_NewEntry(action: "atomicity.mismatch_fallback")],
             savingContext: new object(),
-            TestContext.Current.CancellationToken
+            AbortToken
         );
 
         // then — the row is persisted via the fallback path (committed on the store's own connection)
@@ -164,7 +149,7 @@ public sealed class SqlServerAuditLogAtomicityTests(SqlServerAuditLogFixture fix
     private async Task _DropSchemaAsync()
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         await using var command = new SqlCommand(
             $"""
             IF EXISTS (SELECT 1 FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE s.name = N'{_Schema}' AND t.name = N'audit_log')
@@ -174,20 +159,20 @@ public sealed class SqlServerAuditLogAtomicityTests(SqlServerAuditLogFixture fix
             """,
             connection
         );
-        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        await command.ExecuteNonQueryAsync(AbortToken);
     }
 
     private async Task<int> _CountRowsByActionAsync(string action)
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         await using var command = new SqlCommand(
             $"SELECT COUNT(*) FROM [{_Schema}].[audit_log] WHERE [Action] = @action;",
             connection
         );
         command.Parameters.AddWithValue("@action", action);
 
-        return (int)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken))!;
+        return (int)await command.ExecuteScalarAsync(AbortToken);
     }
 
     private sealed class TestAmbientAccessor : IAmbientDbTransactionAccessor

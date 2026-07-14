@@ -10,7 +10,7 @@ namespace Headless.Dashboard.Authentication;
 internal static partial class DashboardSpaHelper
 {
     [GeneratedRegex(@"(?is)<head\b[^>]*>", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
-    internal static partial Regex HeadOpenRegex();
+    internal static partial Regex HeadOpenRegex { get; }
 
     internal static string NormalizeBasePath(string basePath)
     {
@@ -75,7 +75,7 @@ internal static partial class DashboardSpaHelper
     internal static string InjectIntoHead(string htmlContent, string fullInjection)
     {
         // Prefer inject immediately after opening <head ...>
-        var headOpen = HeadOpenRegex().Match(htmlContent);
+        var headOpen = HeadOpenRegex.Match(htmlContent);
         if (headOpen.Success)
         {
             return htmlContent.Insert(headOpen.Index + headOpen.Length, fullInjection);

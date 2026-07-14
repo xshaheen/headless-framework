@@ -10,13 +10,12 @@ using RabbitMQ.Client;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class RabbitMqConsumerClientTests : TestBase
 {
     private readonly IConnectionChannelPool _pool;
     private readonly IConnection _connection;
     private readonly IChannel _channel;
-    private readonly IOptions<RabbitMqOptions> _options;
+    private readonly IOptions<RabbitMqMessagingOptions> _options;
     private readonly IServiceProvider _serviceProvider;
 
     protected override async ValueTask DisposeAsyncCore()
@@ -31,12 +30,22 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         _pool = Substitute.For<IConnectionChannelPool>();
         _connection = Substitute.For<IConnection>();
         _channel = Substitute.For<IChannel>();
-        _options = Options.Create(new RabbitMqOptions { HostName = "localhost", Port = 5672 });
+        _options = Options.Create(
+            new RabbitMqMessagingOptions
+            {
+                HostName = "localhost",
+                Port = 5672,
+                UserName = "test_user",
+                Password = "test_pass",
+            }
+        );
         _serviceProvider = new ServiceCollection().BuildServiceProvider();
 
         _pool.Exchange.Returns("test.exchange");
-        _pool.GetConnectionAsync().Returns(_connection);
-        _connection.CreateChannelAsync(Arg.Any<CreateChannelOptions?>()).Returns(_channel);
+        _pool.GetConnectionAsync(Arg.Any<CancellationToken>()).Returns(_connection);
+        _connection
+            .CreateChannelAsync(Arg.Any<CreateChannelOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(_channel);
     }
 
     [Fact]
@@ -57,7 +66,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
 
         // when
-        await client.ConnectAsync();
+        await client.ConnectAsync(AbortToken);
 
         // then
         await _connection
@@ -68,7 +77,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
             .Received(1)
             .ExchangeDeclareAsync(
                 "test.exchange",
-                RabbitMqOptions.ExchangeType,
+                RabbitMqMessagingOptions.ExchangeType,
                 true,
                 false,
                 null,
@@ -126,11 +135,13 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     {
         // given
         var options = Options.Create(
-            new RabbitMqOptions
+            new RabbitMqMessagingOptions
             {
                 HostName = "localhost",
                 Port = 5672,
-                QueueArguments = new RabbitMqOptions.QueueArgumentsOptions { MessageTTL = 3600000 },
+                UserName = "test_user",
+                Password = "test_pass",
+                QueueArguments = new RabbitMqMessagingOptions.QueueArgumentsOptions { MessageTTL = 3600000 },
             }
         );
         await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, options, _serviceProvider);
@@ -161,7 +172,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         var topics = new[] { "topic1", "topic2", "topic3" };
 
         // when
-        await client.SubscribeAsync(topics);
+        await client.SubscribeAsync(topics, AbortToken);
 
         // then
         await _channel
@@ -173,6 +184,52 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         await _channel
             .Received(1)
             .QueueBindAsync("test-group", "test.exchange", "topic3", null, false, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_propagate_exact_token_through_connection_channel_exchange_queue_and_binding()
+    {
+        await using var client = new RabbitMqConsumerClient(
+            "test-group",
+            1,
+            _pool,
+            _options,
+            _serviceProvider,
+            intentType: IntentType.Queue
+        );
+        using var cts = new CancellationTokenSource();
+
+        await client.SubscribeAsync(["orders.created"], cts.Token);
+
+        await _pool.Received(1).GetConnectionAsync(cts.Token);
+        await _connection.Received(1).CreateChannelAsync(Arg.Any<CreateChannelOptions?>(), cts.Token);
+        await _channel
+            .Received(1)
+            .ExchangeDeclareAsync(
+                "test.exchange",
+                RabbitMqMessagingOptions.ExchangeType,
+                true,
+                false,
+                null,
+                false,
+                false,
+                cts.Token
+            );
+        await _channel
+            .Received(1)
+            .QueueDeclareAsync(
+                "orders.created",
+                true,
+                false,
+                false,
+                Arg.Any<IDictionary<string, object?>>(),
+                false,
+                false,
+                cts.Token
+            );
+        await _channel
+            .Received(1)
+            .QueueBindAsync("orders.created", "test.exchange", "orders.created", null, false, cts.Token);
     }
 
     [Fact]
@@ -215,9 +272,9 @@ public sealed class RabbitMqConsumerClientTests : TestBase
 
         // when
         _channel.IsClosed.Returns(false);
-        await client.ConnectAsync();
+        await client.ConnectAsync(AbortToken);
         _channel.IsClosed.Returns(true);
-        await client.ConnectAsync();
+        await client.ConnectAsync(AbortToken);
 
         // then
         await _connection
@@ -286,7 +343,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
 
         // when
         await client.Invoking(x => x.ConnectAsync()).Should().ThrowAsync<InvalidOperationException>();
-        await client.ConnectAsync().WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+        await client.ConnectAsync(AbortToken).WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
 
         // then
         await _connection
@@ -313,17 +370,19 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     {
         // given
         var options = Options.Create(
-            new RabbitMqOptions
+            new RabbitMqMessagingOptions
             {
                 HostName = "localhost",
                 Port = 5672,
-                QueueArguments = new RabbitMqOptions.QueueArgumentsOptions { QueueMode = "lazy" },
+                UserName = "test_user",
+                Password = "test_pass",
+                QueueArguments = new RabbitMqMessagingOptions.QueueArgumentsOptions { QueueMode = "lazy" },
             }
         );
         await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, options, _serviceProvider);
 
         // when
-        await client.ConnectAsync();
+        await client.ConnectAsync(AbortToken);
 
         // then
         await _channel
@@ -347,17 +406,19 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     {
         // given
         var options = Options.Create(
-            new RabbitMqOptions
+            new RabbitMqMessagingOptions
             {
                 HostName = "localhost",
                 Port = 5672,
-                QueueArguments = new RabbitMqOptions.QueueArgumentsOptions { QueueType = "quorum" },
+                UserName = "test_user",
+                Password = "test_pass",
+                QueueArguments = new RabbitMqMessagingOptions.QueueArgumentsOptions { QueueType = "quorum" },
             }
         );
         await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, options, _serviceProvider);
 
         // when
-        await client.ConnectAsync();
+        await client.ConnectAsync(AbortToken);
 
         // then
         await _channel
@@ -381,11 +442,13 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     {
         // given
         var options = Options.Create(
-            new RabbitMqOptions
+            new RabbitMqMessagingOptions
             {
                 HostName = "localhost",
                 Port = 5672,
-                QueueOptions = new RabbitMqOptions.QueueRabbitOptions
+                UserName = "test_user",
+                Password = "test_pass",
+                QueueOptions = new RabbitMqMessagingOptions.QueueRabbitOptions
                 {
                     Durable = false,
                     Exclusive = true,
@@ -396,7 +459,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, options, _serviceProvider);
 
         // when
-        await client.ConnectAsync();
+        await client.ConnectAsync(AbortToken);
 
         // then
         await _channel
@@ -436,9 +499,9 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     {
         // _consumerTag is null before ListeningAsync — PauseAsync should be a no-op
         await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
-        await client.ConnectAsync();
+        await client.ConnectAsync(AbortToken);
 
-        await client.PauseAsync();
+        await client.PauseAsync(AbortToken);
 
         // BasicCancelAsync should NOT have been called
         _channel.ReceivedCalls().Should().NotContain(c => c.GetMethodInfo().Name == nameof(IChannel.BasicCancelAsync));
@@ -450,7 +513,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
 
         // not paused — ResumeAsync should be no-op, no BasicConsumeAsync call
-        await client.ResumeAsync();
+        await client.ResumeAsync(AbortToken);
 
         _channel.ReceivedCalls().Should().NotContain(c => c.GetMethodInfo().Name == nameof(IChannel.BasicConsumeAsync));
     }
@@ -460,12 +523,12 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     {
         // given
         await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
-        await client.ConnectAsync();
+        await client.ConnectAsync(AbortToken);
 
         // when
-        await client.PauseAsync();
+        await client.PauseAsync(AbortToken);
         _channel.ClearReceivedCalls();
-        await client.PauseAsync(); // second call — should be a no-op
+        await client.PauseAsync(AbortToken); // second call — should be a no-op
 
         // then — no broker interaction on the second call
         _channel.ReceivedCalls().Should().NotContain(c => c.GetMethodInfo().Name == nameof(IChannel.BasicCancelAsync));
@@ -477,12 +540,12 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         // given
         await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
 
-        await client.PauseAsync();
-        await client.ResumeAsync();
+        await client.PauseAsync(AbortToken);
+        await client.ResumeAsync(AbortToken);
         _channel.ClearReceivedCalls();
 
         // when — second resume should be a no-op
-        await client.ResumeAsync();
+        await client.ResumeAsync(AbortToken);
 
         // then
         _channel
@@ -499,7 +562,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         await client.DisposeAsync();
 
         // when — should not throw or interact with channel
-        await client.PauseAsync();
+        await client.PauseAsync(AbortToken);
 
         // then
         _channel.ReceivedCalls().Should().NotContain(c => c.GetMethodInfo().Name == nameof(IChannel.BasicCancelAsync));
@@ -513,7 +576,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         await client.DisposeAsync();
 
         // when — should not throw or interact with channel
-        await client.ResumeAsync();
+        await client.ResumeAsync(AbortToken);
 
         // then
         _channel
@@ -546,7 +609,10 @@ public sealed class RabbitMqConsumerClientTests : TestBase
 
             await client.ResumeAsync(AbortToken);
 
-            await Task.Delay(100, AbortToken);
+            // Deterministic: _ready completes right after BasicConsumeAsync registers, so waiting
+            // on it (instead of a fixed delay) guarantees the resumed startup finished and the
+            // final cancel lands in the keep-alive delay, which completes gracefully.
+            await client.WaitUntilReadyAsync(AbortToken).AsTask().WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
             _channel
                 .ReceivedCalls()

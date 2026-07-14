@@ -42,4 +42,33 @@ internal static partial class PostgreSqlLoggerExtensions
         Message = "Fetched {Count} delayed/queued message(s) for scheduling from {Table}."
     )]
     public static partial void LogSchedulerBatchFetched(this ILogger logger, int count, string table);
+
+    [LoggerMessage(
+        EventId = 5,
+        EventName = "PoisonMessageTerminalMarkFailed",
+        Level = LogLevel.Warning,
+        Message = "Failed to mark poison message {StorageId} terminal in {Table}; the batch proceeds and the row stays leased until its lease expires."
+    )]
+    public static partial void LogPoisonMessageTerminalMarkFailed(
+        this ILogger logger,
+        Guid storageId,
+        string table,
+        Exception exception
+    );
+
+    [LoggerMessage(
+        EventId = 6,
+        EventName = "TrgmExtensionUnavailable",
+        Level = LogLevel.Warning,
+        Message = "Could not ensure the pg_trgm extension (SqlState {SqlState}: {Reason}). Dashboard content (ILIKE) search will be unavailable until a DBA installs pg_trgm. Messaging write/retry paths are unaffected."
+    )]
+    public static partial void LogTrgmExtensionUnavailable(this ILogger logger, string? sqlState, string reason);
+
+    [LoggerMessage(
+        EventId = 7,
+        EventName = "TrgmContentIndexSkipped",
+        Level = LogLevel.Information,
+        Message = "pg_trgm is not installed; skipping the dashboard content trigram indexes. Install pg_trgm to enable dashboard content search. Messaging write/retry paths are unaffected."
+    )]
+    public static partial void LogTrgmContentIndexSkipped(this ILogger logger);
 }

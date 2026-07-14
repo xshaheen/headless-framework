@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Api.Models;
 using Headless.Checks;
 using Headless.Constants;
+using Headless.OpenApi.Nswag.Models;
 using Headless.Primitives;
 using Microsoft.AspNetCore.Http;
 using NJsonSchema;
@@ -11,7 +11,7 @@ using NSwag;
 using NSwag.Generation.Processors;
 using NSwag.Generation.Processors.Contexts;
 
-namespace Headless.Api.OperationProcessors;
+namespace Headless.OpenApi.Nswag.OperationProcessors;
 
 /// <summary>
 /// NSwag operation processor that attaches typed <c>ProblemDetails</c> schemas and concrete examples

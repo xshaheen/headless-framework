@@ -11,7 +11,6 @@ using Headless.Permissions.Models;
 using Headless.Permissions.Requirements;
 using Headless.Permissions.Resources;
 using Headless.Permissions.Seeders;
-using Headless.Permissions.Testing;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -63,10 +62,7 @@ public static class SetupPermissions
         {
             services.AddSingleton<T>();
 
-            services.Configure<PermissionManagementProvidersOptions>(options =>
-            {
-                options.DefinitionProviders.Add<T>();
-            });
+            services.Configure<PermissionManagementProvidersOptions>(options => options.DefinitionProviders.Add<T>());
 
             return services;
         }
@@ -88,19 +84,6 @@ public static class SetupPermissions
                     options.GrantProviders.Add<T>();
                 }
             });
-
-            return services;
-        }
-
-        /// <summary>
-        /// Replaces <see cref="IPermissionManager"/> with <see cref="AlwaysAllowPermissionManager"/> and
-        /// <see cref="IAuthorizationService"/> with <see cref="AlwaysAllowAuthorizationService"/>, bypassing all
-        /// permission and authorization checks. Intended for integration tests only; do not call in production.
-        /// </summary>
-        public IServiceCollection AddAlwaysAllowAuthorization()
-        {
-            services.AddOrReplaceSingleton<IPermissionManager, AlwaysAllowPermissionManager>();
-            services.AddOrReplaceSingleton<IAuthorizationService, AlwaysAllowAuthorizationService>();
 
             return services;
         }

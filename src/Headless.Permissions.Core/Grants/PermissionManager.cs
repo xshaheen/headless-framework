@@ -110,31 +110,22 @@ public sealed class PermissionManager(
     {
         var permission =
             await definitionManager.FindAsync(permissionName, cancellationToken).ConfigureAwait(false)
-            ?? throw new ConflictException(
-                await errorsDescriptor.PermissionIsNotDefined(permissionName).ConfigureAwait(false)
-            );
+            ?? throw new ConflictException(errorsDescriptor.PermissionIsNotDefined(permissionName));
 
         if (!permission.IsEnabled)
         {
-            throw new ConflictException(
-                await errorsDescriptor.PermissionDisabled(permission.Name).ConfigureAwait(false)
-            );
+            throw new ConflictException(errorsDescriptor.PermissionDisabled(permission.Name));
         }
 
         if (permission.Providers.Count != 0 && !permission.Providers.Contains(providerName, StringComparer.Ordinal))
         {
-            throw new ConflictException(
-                await errorsDescriptor.PermissionProviderNotDefined(permission.Name, providerName).ConfigureAwait(false)
-            );
+            throw new ConflictException(errorsDescriptor.PermissionProviderNotDefined(permission.Name, providerName));
         }
 
         var provider =
             grantProviderManager.ValueProviders.FirstOrDefault(m =>
                 string.Equals(m.Name, providerName, StringComparison.Ordinal)
-            )
-            ?? throw new ConflictException(
-                await errorsDescriptor.PermissionsProviderNotFound(providerName).ConfigureAwait(false)
-            );
+            ) ?? throw new ConflictException(errorsDescriptor.PermissionsProviderNotFound(providerName));
 
         await provider.SetAsync(permission, providerKey, isGranted, cancellationToken).ConfigureAwait(false);
     }
@@ -160,18 +151,14 @@ public sealed class PermissionManager(
         if (undefinedPermissions.Count != 0)
         {
             // Maybe they removed from dynamic permission definition store
-            throw new ConflictException(
-                await errorsDescriptor.SomePermissionsAreNotDefined(undefinedPermissions).ConfigureAwait(false)
-            );
+            throw new ConflictException(errorsDescriptor.SomePermissionsAreNotDefined(undefinedPermissions));
         }
 
         var disabledPermissions = definedPermissions.Where(x => !x.IsEnabled).Select(x => x.Name).ToList();
 
         if (disabledPermissions.Count != 0)
         {
-            throw new ConflictException(
-                await errorsDescriptor.SomePermissionsAreDisabled(disabledPermissions).ConfigureAwait(false)
-            );
+            throw new ConflictException(errorsDescriptor.SomePermissionsAreDisabled(disabledPermissions));
         }
 
         // Check if all permissions are granted
@@ -183,19 +170,14 @@ public sealed class PermissionManager(
         if (notDefinedProviderPermissions.Count != 0)
         {
             throw new ConflictException(
-                await errorsDescriptor
-                    .ProviderNotDefinedForSomePermissions(notDefinedProviderPermissions, providerName)
-                    .ConfigureAwait(false)
+                errorsDescriptor.ProviderNotDefinedForSomePermissions(notDefinedProviderPermissions, providerName)
             );
         }
 
         var provider =
             grantProviderManager.ValueProviders.FirstOrDefault(m =>
                 string.Equals(m.Name, providerName, StringComparison.Ordinal)
-            )
-            ?? throw new ConflictException(
-                await errorsDescriptor.PermissionsProviderNotFound(providerName).ConfigureAwait(false)
-            );
+            ) ?? throw new ConflictException(errorsDescriptor.PermissionsProviderNotFound(providerName));
 
         await provider.SetAsync(definedPermissions, providerKey, isGranted, cancellationToken).ConfigureAwait(false);
     }
@@ -246,9 +228,10 @@ public sealed class PermissionManager(
             return result;
         }
 
-        // First pass: check for explicit denials (Prohibited)
-        // AWS IAM-style: explicit deny overrides all grants
-        var explicitDenials = new HashSet<string>(StringComparer.Ordinal);
+        // Evaluate each matching provider exactly once - CheckAsync typically fans out to the distributed
+        // grant cache (per role for the role provider), so the denial and grant passes below share these
+        // results instead of doubling those round-trips per authorization check.
+        var providerGrantsList = new List<(string ProviderName, MultiplePermissionGrantStatusResult Grants)>();
 
         foreach (var provider in grantProviderManager.ValueProviders)
         {
@@ -261,7 +244,16 @@ public sealed class PermissionManager(
                 .CheckAsync(checkNeededPermissions, currentUser, cancellationToken)
                 .ConfigureAwait(false);
 
-            foreach (var (permissionName, providerResult) in providerGrants)
+            providerGrantsList.Add((provider.Name, providerGrants));
+        }
+
+        // First pass: check for explicit denials (Prohibited)
+        // AWS IAM-style: explicit deny overrides all grants
+        var explicitDenials = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var (_, providerGrants) in providerGrantsList)
+        {
+            foreach (var (permissionName, providerResult) in providerGrants.Statuses)
             {
                 if (providerResult.Status is PermissionGrantStatus.Prohibited)
                 {
@@ -270,19 +262,13 @@ public sealed class PermissionManager(
             }
         }
 
-        // Second pass: apply grants only if not explicitly denied
-        foreach (var provider in grantProviderManager.ValueProviders)
+        // Second pass: apply grants only if not explicitly denied. Index results by name once instead of a
+        // linear First() scan per granted permission (quadratic for large permission batches).
+        var resultsByName = result.ToDictionary(x => x.Name, StringComparer.Ordinal);
+
+        foreach (var (grantProviderName, providerGrants) in providerGrantsList)
         {
-            if (providerName is not null && !string.Equals(provider.Name, providerName, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            var providerGrants = await provider
-                .CheckAsync(checkNeededPermissions, currentUser, cancellationToken)
-                .ConfigureAwait(false);
-
-            foreach (var (permissionName, providerResult) in providerGrants)
+            foreach (var (permissionName, providerResult) in providerGrants.Statuses)
             {
                 if (providerResult.Status is not PermissionGrantStatus.Granted)
                 {
@@ -295,10 +281,10 @@ public sealed class PermissionManager(
                     continue;
                 }
 
-                var grant = result.First(x => string.Equals(x.Name, permissionName, StringComparison.Ordinal));
+                var grant = resultsByName[permissionName];
 
                 grant.IsGranted = true;
-                grant.Providers.Add(new GrantPermissionProvider(provider.Name, providerResult.ProviderKeys));
+                grant.AddProvider(new GrantPermissionProvider(grantProviderName, providerResult.ProviderKeys));
             }
         }
 

@@ -1,12 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Redis;
+using Headless.Testing.Tests;
 using StackExchange.Redis;
 
 namespace Tests;
 
 [Collection(nameof(RedisTestFixture))]
-public sealed class HeadlessRedisScriptsLoaderLoadingTests(RedisTestFixture fixture)
+public sealed class HeadlessRedisScriptsLoaderLoadingTests(RedisTestFixture fixture) : TestBase
 {
     [Fact]
     public async Task LoadAsync_should_load_requested_bundle()
@@ -20,7 +21,7 @@ public sealed class HeadlessRedisScriptsLoaderLoadingTests(RedisTestFixture fixt
         ];
 
         // when
-        var act = async () => await loader.LoadAsync(scripts);
+        var act = async () => await loader.LoadAsync(scripts, cancellationToken: AbortToken);
 
         // then
         await act.Should().NotThrowAsync();
@@ -38,8 +39,8 @@ public sealed class HeadlessRedisScriptsLoaderLoadingTests(RedisTestFixture fixt
         ];
 
         // when
-        await loader.LoadAsync(scripts);
-        var act = async () => await loader.LoadAsync(scripts);
+        await loader.LoadAsync(scripts, cancellationToken: AbortToken);
+        var act = async () => await loader.LoadAsync(scripts, cancellationToken: AbortToken);
 
         // then
         await act.Should().NotThrowAsync();
@@ -52,10 +53,15 @@ public sealed class HeadlessRedisScriptsLoaderLoadingTests(RedisTestFixture fixt
         using var loader = new HeadlessRedisScriptsLoader(fixture.ConnectionMultiplexer);
         var db = fixture.ConnectionMultiplexer.GetDatabase();
         var key = (RedisKey)("loader-evaluate-preloaded:" + Guid.NewGuid().ToString("N"));
-        await loader.LoadAsync([TestSetScriptDefinition.Instance]);
+        await loader.LoadAsync([TestSetScriptDefinition.Instance], cancellationToken: AbortToken);
 
         // when
-        var result = await loader.EvaluateAsync(db, TestSetScriptDefinition.Instance, new { key, value = "2" });
+        var result = await loader.EvaluateAsync(
+            db,
+            TestSetScriptDefinition.Instance,
+            new { key, value = "2" },
+            cancellationToken: AbortToken
+        );
 
         // then
         ((int)result)
@@ -71,11 +77,21 @@ public sealed class HeadlessRedisScriptsLoaderLoadingTests(RedisTestFixture fixt
         using var loader = new HeadlessRedisScriptsLoader(fixture.ConnectionMultiplexer);
         var db = fixture.ConnectionMultiplexer.GetDatabase();
         var key = (RedisKey)("loader-eval-after-flush:" + Guid.NewGuid().ToString("N"));
-        await loader.LoadAsync([TestSetScriptDefinition.Instance]);
+        await loader.LoadAsync([TestSetScriptDefinition.Instance], cancellationToken: AbortToken);
 
         var parameters = new { key, value = "1" };
 
-        ((int)await loader.EvaluateAsync(db, TestSetScriptDefinition.Instance, parameters)).Should().Be(1);
+        (
+            (int)
+                await loader.EvaluateAsync(
+                    db,
+                    TestSetScriptDefinition.Instance,
+                    parameters,
+                    cancellationToken: AbortToken
+                )
+        )
+            .Should()
+            .Be(1);
 
         // when — the serving node loses the script from its cache (simulates a promoted replica or a
         // cold/flushed cache). The loader still holds the stale SHA, so the next EVALSHA gets NOSCRIPT.
@@ -85,7 +101,12 @@ public sealed class HeadlessRedisScriptsLoaderLoadingTests(RedisTestFixture fixt
         }
 
         // then — recovery falls back to a full-body EVAL, so the script still runs
-        var result = await loader.EvaluateAsync(db, TestSetScriptDefinition.Instance, parameters);
+        var result = await loader.EvaluateAsync(
+            db,
+            TestSetScriptDefinition.Instance,
+            parameters,
+            cancellationToken: AbortToken
+        );
 
         ((int)result).Should().Be(1);
     }

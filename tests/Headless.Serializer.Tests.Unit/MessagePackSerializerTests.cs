@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Buffers;
+using System.Reflection;
 using Headless.Serializer;
 using MessagePack;
 using MessagePackSerializer = Headless.Serializer.MessagePackSerializer;
@@ -41,6 +42,11 @@ public sealed class MessagePackSerializerTests
     public sealed class DateTimeContainer
     {
         public required DateTime Timestamp { get; init; }
+    }
+
+    public sealed class DateTimeOffsetContainer
+    {
+        public required DateTimeOffset Timestamp { get; init; }
     }
 
     public sealed class GuidContainer
@@ -231,6 +237,63 @@ public sealed class MessagePackSerializerTests
         result.Timestamp.Should().Be(timestamp);
     }
 
+    [Theory]
+    [InlineData(DateTimeKind.Utc)]
+    [InlineData(DateTimeKind.Local)]
+    [InlineData(DateTimeKind.Unspecified)]
+    public void should_round_trip_a_datetime_to_the_same_instant_expressed_as_utc(DateTimeKind kind)
+    {
+        // given
+        // MessagePack's native Timestamp format stores an instant and hands it back as UTC; the original
+        // DateTimeKind is NOT carried on the wire. Assert that contract explicitly, because
+        // `Should().Be(...)` alone cannot: DateTime.Equals compares Ticks and IGNORES Kind, so a test written
+        // that way passes even when the serializer has silently changed the kind.
+        var timestamp = DateTime.SpecifyKind(new DateTime(2025, 6, 15, 10, 30, 45), kind);
+        var container = new DateTimeContainer { Timestamp = timestamp };
+
+        // when
+        var bytes = _serializer.SerializeToBytes(container);
+        var result = _serializer.Deserialize<DateTimeContainer>(bytes!);
+
+        // then
+        result.Should().NotBeNull();
+
+        // Whatever kind went in, UTC comes back — the wire format carries an instant, not a kind.
+        result.Timestamp.Kind.Should().Be(DateTimeKind.Utc);
+
+        // MessagePack's kind handling is exactly the framework's NormalizeToUtc contract (spelled out here
+        // rather than called, so this test does not depend on Headless.Extensions):
+        //   Utc         -> unchanged
+        //   Local       -> converted
+        //   Unspecified -> ASSUMED to already be UTC and stamped in place (NOT converted)
+        // That last arm is deliberately NOT DateTime.ToUniversalTime(), which interprets Unspecified as LOCAL
+        // and would shift the value by the host's UTC offset.
+        var expected = kind switch
+        {
+            DateTimeKind.Utc => timestamp,
+            DateTimeKind.Local => timestamp.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(timestamp, DateTimeKind.Utc),
+        };
+
+        result.Timestamp.Should().Be(expected);
+    }
+
+    [Fact]
+    public void should_round_trip_a_datetimeoffset_preserving_the_instant()
+    {
+        // given — a non-zero offset, so a serializer that drops the offset instead of converting is caught.
+        var instant = new DateTimeOffset(2025, 6, 15, 13, 30, 45, TimeSpan.FromHours(3));
+        var container = new DateTimeOffsetContainer { Timestamp = instant };
+
+        // when
+        var bytes = _serializer.SerializeToBytes(container);
+        var result = _serializer.Deserialize<DateTimeOffsetContainer>(bytes!);
+
+        // then — the same moment in time must survive, whatever offset it is expressed in.
+        result.Should().NotBeNull();
+        result.Timestamp.ToUniversalTime().Should().Be(instant.ToUniversalTime());
+    }
+
     [Fact]
     public void should_handle_guid()
     {
@@ -250,7 +313,7 @@ public sealed class MessagePackSerializerTests
     [Fact]
     public void untrusted_data_serializer_roundtrips()
     {
-        // given — the untrustedData opt-in hardens deserialization; it must not change round-trip correctness.
+        // given — the untrustedData default hardens deserialization; it must not change round-trip correctness.
         var serializer = new MessagePackSerializer(untrustedData: true);
         var person = new Person { Name = "Trusted", Age = 21 };
 
@@ -265,6 +328,46 @@ public sealed class MessagePackSerializerTests
     }
 
     [Fact]
+    public void parameterless_serializer_should_use_untrusted_security_by_default()
+    {
+        // given
+        var serializer = new MessagePackSerializer();
+
+        // when
+        var options = _ReadOptions(serializer);
+
+        // then
+        options.Security.Should().BeSameAs(MessagePackSecurity.UntrustedData);
+    }
+
+    [Fact]
+    public void trusted_data_opt_out_should_use_trusted_security()
+    {
+        // given
+        var serializer = new MessagePackSerializer(untrustedData: false);
+
+        // when
+        var options = _ReadOptions(serializer);
+
+        // then
+        options.Security.Should().BeSameAs(MessagePackSecurity.TrustedData);
+    }
+
+    [Fact]
+    public void supplied_options_should_own_security_level()
+    {
+        // given
+        var suppliedOptions = MessagePackSerializerOptions.Standard.WithSecurity(MessagePackSecurity.TrustedData);
+
+        // when
+        var serializer = new MessagePackSerializer(suppliedOptions);
+        var resolvedOptions = _ReadOptions(serializer);
+
+        // then
+        resolvedOptions.Should().BeSameAs(suppliedOptions);
+    }
+
+    [Fact]
     public void should_deserialize_with_type_parameter()
     {
         // given
@@ -273,15 +376,14 @@ public sealed class MessagePackSerializerTests
 
         // when
 #pragma warning disable CA2263 // Prefer generic
-        var result = _serializer.Deserialize(bytes.AsMemory(), typeof(Person));
+        var result = _serializer.Deserialize<Person>(bytes.AsMemory());
 #pragma warning restore CA2263
 
         // then
         result.Should().NotBeNull();
         result.Should().BeOfType<Person>();
-        var typedResult = (Person)result!;
-        typedResult.Name.Should().Be("TypeTest");
-        typedResult.Age.Should().Be(99);
+        result.Name.Should().Be("TypeTest");
+        result.Age.Should().Be(99);
     }
 
     // Splits the payload across two segments so deserialization runs against a genuinely non-contiguous sequence.
@@ -297,6 +399,17 @@ public sealed class MessagePackSerializerTests
         var second = first.Append(data.AsMemory(mid));
 
         return new ReadOnlySequence<byte>(first, 0, second, second.Memory.Length);
+    }
+
+    private static MessagePackSerializerOptions _ReadOptions(MessagePackSerializer serializer)
+    {
+        var field = typeof(MessagePackSerializer).GetField(
+            "_options",
+            BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly
+        );
+
+        return field?.GetValue(serializer) as MessagePackSerializerOptions
+            ?? throw new InvalidOperationException("Unable to read resolved MessagePack serializer options.");
     }
 
     private sealed class BufferSegment : ReadOnlySequenceSegment<byte>

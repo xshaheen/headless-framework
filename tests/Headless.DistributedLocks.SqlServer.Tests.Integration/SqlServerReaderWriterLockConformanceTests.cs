@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.DistributedLocks;
-using Headless.DistributedLocks.SqlServer;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;

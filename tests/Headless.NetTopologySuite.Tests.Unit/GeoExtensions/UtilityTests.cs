@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.NetTopologySuite;
-using Headless.NetTopologySuite.Constants;
 using NetTopologySuite.Geometries;
 
 namespace Tests.GeoExtensions;
@@ -155,7 +154,7 @@ public sealed class UtilityTests
 
         var result = polygon.Flatten();
 
-        result.Should().HaveCount(1);
+        result.Should().ContainSingle();
         result[0].Should().Be(polygon);
     }
 
@@ -170,7 +169,7 @@ public sealed class UtilityTests
 
         var result = polygon.GetPolygonsOrEmpty();
 
-        result.Should().HaveCount(1);
+        result.Should().ContainSingle();
         result[0].Should().Be(polygon);
     }
 
@@ -211,7 +210,7 @@ public sealed class UtilityTests
 
         var result = point.GetSimpleGeometryOrEmpty();
 
-        result.Should().HaveCount(1);
+        result.Should().ContainSingle();
         result[0].Should().Be(point);
     }
 
@@ -222,7 +221,7 @@ public sealed class UtilityTests
 
         var result = lineString.GetSimpleGeometryOrEmpty();
 
-        result.Should().HaveCount(1);
+        result.Should().ContainSingle();
         result[0].Should().Be(lineString);
     }
 

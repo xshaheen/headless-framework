@@ -11,6 +11,8 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
 
     public int TryGetEntryCalls { get; private set; }
 
+    public int TryGetAllEntriesCalls { get; private set; }
+
     public int SetEntryCalls { get; private set; }
 
     public int RearmCalls { get; private set; }
@@ -24,9 +26,9 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
     public Func<string, int, Entry?>? TryGetEntryOverride { get; set; }
 
     /// <summary>
-    /// Forces a <see cref="SetEntryAsync{T}"/> call to report CAS-lost (return <c>false</c>) without mutating the
+    /// Forces a <see cref="SetEntryAsync{T}"/> call to report CAS-lost (return <see langword="false"/>) without mutating the
     /// stored entry, modelling a concurrent writer winning the compare-and-swap. Invoked with the key and the
-    /// post-increment <see cref="SetEntryCalls"/> count; return <c>false</c> to fail that write, <c>true</c>
+    /// post-increment <see cref="SetEntryCalls"/> count; return <see langword="false"/> to fail that write, <see langword="true"/>
     /// (or leave unset) to commit normally.
     /// </summary>
     public Func<string, int, bool>? SetEntryCommitOverride { get; set; }
@@ -48,6 +50,7 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
         DateTime? eagerRefreshAt = null,
         string? etag = null,
         DateTime? lastModifiedAt = null,
+        DateTime? createdAt = null,
         IReadOnlyCollection<string>? tags = null,
         bool serveStaleImmediately = false
     )
@@ -63,6 +66,7 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
                 EagerRefreshAt: eagerRefreshAt,
                 ETag: etag,
                 LastModifiedAt: lastModifiedAt,
+                CreatedAt: createdAt,
                 Tags: tags,
                 ConcurrencyStamp: Guid.NewGuid().ToString("N"),
                 ServeStaleImmediately: serveStaleImmediately
@@ -78,7 +82,11 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
         }
     }
 
-    public ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(string key, CancellationToken cancellationToken)
+    public ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(
+        string key,
+        CancellationToken cancellationToken,
+        FactoryCacheReadOptions readOptions = default
+    )
     {
         cancellationToken.ThrowIfCancellationRequested();
         TryGetEntryCalls++;
@@ -115,12 +123,34 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
                     EagerRefreshAt = entry.EagerRefreshAt,
                     ETag = entry.ETag,
                     LastModifiedAt = entry.LastModifiedAt,
+                    CreatedAt = entry.CreatedAt,
                     Tags = entry.Tags,
                     ConcurrencyStamp = entry.ConcurrencyStamp,
                     ServeStaleImmediately = entry.ServeStaleImmediately,
                 }
             );
         }
+    }
+
+    public async ValueTask<CacheStoreEntry<T>[]> TryGetAllEntriesAsync<T>(
+        IReadOnlyList<string> keys,
+        CancellationToken cancellationToken,
+        FactoryCacheReadOptions readOptions = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        TryGetAllEntriesCalls++;
+
+        // Position-aligned per-key resolution over the single-key primitive; counts one bulk call regardless of the
+        // number of keys so O(1)-not-O(N) fan-out is observable via TryGetAllEntriesCalls vs TryGetEntryCalls.
+        var result = new CacheStoreEntry<T>[keys.Count];
+
+        for (var i = 0; i < keys.Count; i++)
+        {
+            result[i] = await TryGetEntryAsync<T>(keys[i], cancellationToken);
+        }
+
+        return result;
     }
 
     public ValueTask<bool> SetEntryAsync<T>(
@@ -168,6 +198,7 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
                 EagerRefreshAt: entry.EagerRefreshAt,
                 ETag: entry.ETag,
                 LastModifiedAt: entry.LastModifiedAt,
+                CreatedAt: entry.CreatedAt,
                 Tags: entry.Tags,
                 ConcurrencyStamp: Guid.NewGuid().ToString("N")
             );
@@ -240,6 +271,7 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
         DateTime? EagerRefreshAt = null,
         string? ETag = null,
         DateTime? LastModifiedAt = null,
+        DateTime? CreatedAt = null,
         IReadOnlyCollection<string>? Tags = null,
         string ConcurrencyStamp = "",
         bool ServeStaleImmediately = false

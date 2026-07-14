@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-#pragma warning disable IDE0130 // Namespace does not match folder structure
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Domain;
 
 /// <summary>
@@ -12,6 +11,12 @@ namespace Headless.Domain;
 public interface IDomainEventEmitter
 {
     /// <summary>Appends a domain event to be dispatched within the current unit of work.</summary>
+    /// <remarks>
+    /// This is the infrastructure enqueue contract. Domain code raises events through an aggregate's own
+    /// behavior methods (the base <c>AggregateRoot.AddDomainEvent</c> is <see langword="protected"/>); this
+    /// member stays public so infrastructure that cannot derive from the aggregate — for example the EF Core
+    /// save pipeline injecting lifecycle events — can enqueue across assemblies.
+    /// </remarks>
     /// <param name="domainEvent">The domain event to enqueue.</param>
     void AddDomainEvent(IDomainEvent domainEvent);
 

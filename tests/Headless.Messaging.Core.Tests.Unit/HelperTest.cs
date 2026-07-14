@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Text.RegularExpressions;
 using Headless.Messaging.Internal;
+using Headless.Messaging.Runtime;
 
 namespace Tests;
 
@@ -13,7 +14,7 @@ public sealed class HelperTest
         var typeInfo = typeof(HomeController).GetTypeInfo();
 
         // when
-        var result = Helper.IsController(typeInfo);
+        var result = ControllerTypeDetector.IsController(typeInfo);
 
         // then
         result.Should().BeTrue();
@@ -26,7 +27,7 @@ public sealed class HelperTest
         var typeInfo = typeof(AbstractController).GetTypeInfo();
 
         // when
-        var result = Helper.IsController(typeInfo);
+        var result = ControllerTypeDetector.IsController(typeInfo);
 
         // then
         result.Should().BeFalse();
@@ -43,7 +44,7 @@ public sealed class HelperTest
     public void IsSimpleTypeTest(Type type)
     {
         // when
-        var result = Helper.IsComplexType(type);
+        var result = RuntimeTypeInspection.IsComplexType(type);
 
         // then
         result.Should().BeFalse();
@@ -55,7 +56,7 @@ public sealed class HelperTest
     public void IsComplexTypeTest(Type type)
     {
         // when
-        var result = Helper.IsComplexType(type);
+        var result = RuntimeTypeInspection.IsComplexType(type);
 
         // then
         result.Should().BeTrue();
@@ -70,7 +71,7 @@ public sealed class HelperTest
     [InlineData("192.168.255.255")]
     public void should_return_true_when_ip_is_private(string ipAddress)
     {
-        Helper.IsInnerIp(ipAddress).Should().BeTrue();
+        HostIdentity.IsInnerIp(ipAddress).Should().BeTrue();
     }
 
     [Theory]
@@ -82,7 +83,7 @@ public sealed class HelperTest
     [InlineData("11.0.0.0")]
     public void should_return_false_when_ip_is_public(string ipAddress)
     {
-        Helper.IsInnerIp(ipAddress).Should().BeFalse();
+        HostIdentity.IsInnerIp(ipAddress).Should().BeFalse();
     }
 
     [Theory]
@@ -95,7 +96,7 @@ public sealed class HelperTest
     [InlineData("2001:db8::1")]
     public void should_return_false_when_ip_is_invalid(string ipAddress)
     {
-        Helper.IsInnerIp(ipAddress).Should().BeFalse();
+        HostIdentity.IsInnerIp(ipAddress).Should().BeFalse();
     }
 
     [Theory]
@@ -107,7 +108,7 @@ public sealed class HelperTest
     public void should_convert_wildcard_to_regex_correctly(string wildcard, string testString)
     {
         // when
-        var pattern = Helper.WildcardToRegex(wildcard);
+        var pattern = TransportNaming.WildcardToRegex(wildcard);
         var regex = new Regex(pattern, RegexOptions.None, TimeSpan.FromSeconds(1));
 
         // then
@@ -127,7 +128,7 @@ public sealed class HelperTest
         // returned after handling * and left # as a literal in the resulting regex,
         // which silently broke any pattern combining the two.
         // when
-        var pattern = Helper.WildcardToRegex(wildcard);
+        var pattern = TransportNaming.WildcardToRegex(wildcard);
         var regex = new Regex(pattern, RegexOptions.None, TimeSpan.FromSeconds(1));
 
         // then
@@ -141,7 +142,7 @@ public sealed class HelperTest
         var longWildcard = new string('a', 201);
 
         // when
-        var act = () => Helper.WildcardToRegex(longWildcard);
+        var act = () => TransportNaming.WildcardToRegex(longWildcard);
 
         // then
         act.Should()
@@ -153,10 +154,10 @@ public sealed class HelperTest
     public void should_reject_wildcard_with_too_many_wildcards()
     {
         // given
-        var manyWildcards = string.Join(".", Enumerable.Repeat("*", 11));
+        var manyWildcards = string.Join('.', Enumerable.Repeat("*", 11));
 
         // when
-        var act = () => Helper.WildcardToRegex(manyWildcards);
+        var act = () => TransportNaming.WildcardToRegex(manyWildcards);
 
         // then
         act.Should().Throw<ArgumentException>().WithMessage("MessageName pattern contains too many wildcards*");
@@ -170,7 +171,7 @@ public sealed class HelperTest
     public void should_use_possessive_quantifiers_to_prevent_redos(string wildcard)
     {
         // when
-        var pattern = Helper.WildcardToRegex(wildcard);
+        var pattern = TransportNaming.WildcardToRegex(wildcard);
 
         // then
         // Possessive quantifiers use atomic groups (?>...) which prevent backtracking entirely
@@ -181,7 +182,7 @@ public sealed class HelperTest
     public void should_complete_regex_matching_within_timeout()
     {
         // given - worst-case input designed to exploit backtracking
-        var pattern = Helper.WildcardToRegex("user.*.created");
+        var pattern = TransportNaming.WildcardToRegex("user.*.created");
         var maliciousInput = "user." + new string('a', 100) + ".created";
         var regex = new Regex(pattern, RegexOptions.None, TimeSpan.FromSeconds(1));
 
@@ -198,7 +199,7 @@ public sealed class HelperTest
         // given - pathological input designed to trigger catastrophic backtracking
         // With non-greedy (+?), this would backtrack for seconds
         // With possessive (?>+), this fails instantly (no backtracking)
-        var pattern = Helper.WildcardToRegex("foo.*.bar");
+        var pattern = TransportNaming.WildcardToRegex("foo.*.bar");
         var pathologicalInput = "foo." + new string('a', 1000); // No 'bar' at end
         var regex = new Regex(pattern, RegexOptions.None, TimeSpan.FromSeconds(1));
 
@@ -220,7 +221,7 @@ public sealed class HelperTest
         const string wildcardWithSpecialChars = "user.order[123].items";
 
         // when
-        var pattern = Helper.WildcardToRegex(wildcardWithSpecialChars);
+        var pattern = TransportNaming.WildcardToRegex(wildcardWithSpecialChars);
         var regex = new Regex(pattern, RegexOptions.None, TimeSpan.FromSeconds(1));
 
         // then
@@ -229,6 +230,8 @@ public sealed class HelperTest
     }
 }
 
+#pragma warning disable MA0036 // MA0036: used as a reflection target for the IsController test; making it static (abstract+sealed in IL) would change the test's expectations.
 public sealed class HomeController;
+#pragma warning restore MA0036
 
 public abstract class AbstractController;

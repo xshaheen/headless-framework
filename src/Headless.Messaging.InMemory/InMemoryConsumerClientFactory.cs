@@ -15,13 +15,24 @@ internal sealed class InMemoryConsumerClientFactory(MemoryQueue queue) : IIntent
     /// <param name="groupName">The consumer group name</param>
     /// <param name="groupConcurrent">The concurrency level for the group</param>
     /// <returns>A task that returns the created consumer client</returns>
-    public Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent)
+    public Task<IConsumerClient> CreateAsync(
+        string groupName,
+        byte groupConcurrent,
+        CancellationToken cancellationToken = default
+    )
     {
-        return CreateAsync(groupName, groupConcurrent, IntentType.Bus);
+        return CreateAsync(groupName, groupConcurrent, IntentType.Bus, cancellationToken);
     }
 
-    public Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent, IntentType intentType)
+    public Task<IConsumerClient> CreateAsync(
+        string groupName,
+        byte groupConcurrent,
+        IntentType intentType,
+        CancellationToken cancellationToken = default
+    )
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var client = new InMemoryConsumerClient(queue, groupName, groupConcurrent, intentType);
         return Task.FromResult<IConsumerClient>(client);
     }

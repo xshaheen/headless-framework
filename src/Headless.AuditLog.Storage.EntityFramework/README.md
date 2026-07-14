@@ -10,7 +10,7 @@ Wires the audit log pipeline into EF Core's ChangeTracker so entity mutations ar
 
 - `EfAuditChangeCapture` — scans ChangeTracker before save, produces `AuditLogEntryData` per changed entity.
 - `EfAuditLogStore` — adds `AuditLogEntry` rows to the same `DbContext` so they commit in the same transaction as entity changes.
-- `EfAuditLog<TContext>` — implements `IAuditLog<TContext>` for explicit event logging; resolves `ICurrentUser`, `ICurrentTenant`, `ICorrelationIdProvider`, and `IClock` from DI.
+- `EfAuditLog<TContext>` — implements `IAuditLog<TContext>` for explicit event logging; resolves `ICurrentUser`, `ICurrentTenant`, `ICorrelationIdProvider`, and `TimeProvider` from DI.
 - `EfReadAuditLog<TContext>` — implements `IReadAuditLog<TContext>` using `IDbContextFactory<TContext>` (no-tracking queries).
 - `AuditLogEntry` — EF entity; decorated with `[AuditIgnore]` to prevent recursive capture when `AuditByDefault` is enabled.
 - `AuditLogModelBuilderExtensions.AddHeadlessAuditLog(modelBuilder, options)` — registers and configures the `AuditLogEntry` entity type; idempotent.
@@ -116,6 +116,7 @@ builder.HasKey(e => e.Id); // single-column PK for SQLite
 ## Dependencies
 
 - `Headless.AuditLog.Abstractions`
+- `Headless.AuditLog.Core`
 - `Headless.Orm.EntityFramework`
 - `Microsoft.EntityFrameworkCore`
 

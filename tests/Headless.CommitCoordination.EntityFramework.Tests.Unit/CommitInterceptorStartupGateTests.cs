@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.CommitCoordination;
 using Headless.CommitCoordination.EntityFramework;
+using Headless.Testing.Tests;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,13 +17,13 @@ namespace Tests;
 /// "transactional outbox enabled but the interceptor isn't firing" footgun: it passes when the interceptor is
 /// auto-attached, and fails loud (Warn logs, Strict throws) when a deliberately-unwired DbContext is used.
 /// </summary>
-public sealed class CommitInterceptorStartupGateTests
+public sealed class CommitInterceptorStartupGateTests : TestBase
 {
     [Fact]
     public async Task should_pass_when_the_interceptor_is_attached_via_the_options_configuration()
     {
         await using var connection = new SqliteConnection("DataSource=:memory:");
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
 
         await using var provider = _BuildProvider(connection, wireInterceptor: true);
 
@@ -34,13 +36,9 @@ public sealed class CommitInterceptorStartupGateTests
     public async Task should_throw_in_strict_mode_when_the_interceptor_is_not_attached()
     {
         await using var connection = new SqliteConnection("DataSource=:memory:");
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
 
-        await using var provider = _BuildProvider(
-            connection,
-            wireInterceptor: false,
-            mode: CommitInterceptorProbeMode.Strict
-        );
+        await using var provider = _BuildProvider(connection, wireInterceptor: false, mode: CommitProbeMode.Strict);
 
         // when — the interceptor never fires, so the commit edge is not observed.
         InvalidOperationException? captured = null;
@@ -62,13 +60,9 @@ public sealed class CommitInterceptorStartupGateTests
     public async Task should_not_throw_in_warn_mode_when_the_interceptor_is_not_attached()
     {
         await using var connection = new SqliteConnection("DataSource=:memory:");
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
 
-        await using var provider = _BuildProvider(
-            connection,
-            wireInterceptor: false,
-            mode: CommitInterceptorProbeMode.Warn
-        );
+        await using var provider = _BuildProvider(connection, wireInterceptor: false, mode: CommitProbeMode.Warn);
 
         // when — Warn is the default posture: surface the mis-wire but let the host start (relay recovers).
         // then — no throw. A throw here fails the test.
@@ -83,11 +77,11 @@ public sealed class CommitInterceptorStartupGateTests
         var provider = new SpyServiceProvider();
         var gate = new CommitInterceptorStartupGate<GateTestDbContext>(
             provider,
-            Options.Create(new CommitInterceptorProbeOptions { Mode = CommitInterceptorProbeMode.Disabled }),
+            Options.Create(new CommitInterceptorProbeOptions { Mode = CommitProbeMode.Disabled }),
             NullLogger<CommitInterceptorStartupGate<GateTestDbContext>>.Instance
         );
 
-        await gate.StartingAsync(TestContext.Current.CancellationToken);
+        await gate.StartingAsync(AbortToken);
 
         provider.WasQueried.Should().BeFalse("Disabled mode returns before resolving anything");
     }
@@ -100,11 +94,11 @@ public sealed class CommitInterceptorStartupGateTests
         var provider = new SpyServiceProvider();
         var gate = new CommitInterceptorStartupGate<GateTestDbContext>(
             provider,
-            Options.Create(new CommitInterceptorProbeOptions { Mode = CommitInterceptorProbeMode.Strict }),
+            Options.Create(new CommitInterceptorProbeOptions { Mode = CommitProbeMode.Strict }),
             NullLogger<CommitInterceptorStartupGate<GateTestDbContext>>.Instance
         );
 
-        var act = async () => await gate.StartingAsync(TestContext.Current.CancellationToken);
+        var act = async () => await gate.StartingAsync(AbortToken);
 
         await act.Should().NotThrowAsync("an unreachable database is inconclusive, not a mis-wire");
         provider.WasQueried.Should().BeTrue("the inconclusive path must reach DI/probe resolution before bailing");
@@ -113,7 +107,7 @@ public sealed class CommitInterceptorStartupGateTests
     private static ServiceProvider _BuildProvider(
         SqliteConnection connection,
         bool wireInterceptor,
-        CommitInterceptorProbeMode mode = CommitInterceptorProbeMode.Warn
+        CommitProbeMode mode = CommitProbeMode.Warn
     )
     {
         var services = new ServiceCollection();
@@ -141,7 +135,7 @@ public sealed class CommitInterceptorStartupGateTests
             .OfType<IHostedLifecycleService>()
             .Single(s => s.GetType().Name.StartsWith("CommitInterceptorStartupGate", StringComparison.Ordinal));
 
-        await gate.StartingAsync(TestContext.Current.CancellationToken);
+        await gate.StartingAsync(AbortToken);
     }
 
     private sealed class GateTestDbContext(DbContextOptions<GateTestDbContext> options) : DbContext(options);

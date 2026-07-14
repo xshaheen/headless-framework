@@ -16,7 +16,7 @@ namespace Headless.EntityFramework;
 /// compile-time safe (no runtime cast) and binds only on types that actually own a scope.
 /// </summary>
 /// <remarks>
-/// Only the owned-scope step is centralized: <c>base</c> disposal, runtime teardown, and
+/// Only the owned-scope step is centralized: <see langword="base"/> disposal, runtime teardown, and
 /// <c>GC.SuppressFinalize</c> stay inline in each override (they are trivial, identical, and must remain
 /// analyzer-visible).
 /// </remarks>

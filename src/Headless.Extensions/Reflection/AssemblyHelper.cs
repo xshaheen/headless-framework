@@ -34,6 +34,10 @@ public static class AssemblyHelper
     /// <summary>
     /// Loads every <c>.dll</c> and <c>.exe</c> file found under the given folder into the default load context.
     /// </summary>
+    /// <remarks>
+    /// Use only with trusted, application-owned folders. Every matching managed assembly is loaded into the default
+    /// load context, and later reflection over those assemblies can execute code from them.
+    /// </remarks>
     /// <param name="folderPath">The folder to search for assembly files.</param>
     /// <param name="searchOption">Whether to search only the top directory or recurse into subdirectories.</param>
     /// <returns>The list of loaded assemblies.</returns>
@@ -43,11 +47,9 @@ public static class AssemblyHelper
     /// <exception cref="BadImageFormatException">Thrown when a discovered file is not a valid managed assembly.</exception>
     /// <exception cref="FileLoadException">Thrown when a discovered assembly file is found but cannot be loaded.</exception>
     [RequiresUnreferencedCode("Loading assemblies from path might load types that cannot be statically analyzed.")]
-    public static List<Assembly> LoadAssemblies(string folderPath, SearchOption searchOption)
+    public static IReadOnlyList<Assembly> LoadAssemblies(string folderPath, SearchOption searchOption)
     {
-        return GetAssemblyFiles(folderPath, searchOption)
-            .Select(AssemblyLoadContext.Default.LoadFromAssemblyPath)
-            .ToList();
+        return [.. GetAssemblyFiles(folderPath, searchOption).Select(AssemblyLoadContext.Default.LoadFromAssemblyPath)];
     }
 
     /// <summary>
@@ -155,6 +157,9 @@ public static class AssemblyHelper
     /// For each assembly, finds public types whose name equals <paramref name="typeName"/> and invokes their public
     /// static method named <paramref name="methodName"/> with the supplied <paramref name="parameters"/>.
     /// </summary>
+    /// <remarks>
+    /// Use only with trusted assemblies. Invoking a public static method executes code from the target assembly.
+    /// </remarks>
     /// <param name="assemblies">The assemblies to scan.</param>
     /// <param name="typeName">The exact (case-sensitive) name of the type whose static method is invoked.</param>
     /// <param name="methodName">The name of the public static method to invoke. Missing methods are skipped.</param>
@@ -178,6 +183,9 @@ public static class AssemblyHelper
     /// Finds public types in the assembly whose name equals <paramref name="typeName"/> and invokes their public
     /// static method named <paramref name="methodName"/> with the supplied <paramref name="parameters"/>.
     /// </summary>
+    /// <remarks>
+    /// Use only with trusted assemblies. Invoking a public static method executes code from the target assembly.
+    /// </remarks>
     /// <param name="assembly">The assembly to scan.</param>
     /// <param name="typeName">The exact (case-sensitive) name of the type whose static method is invoked.</param>
     /// <param name="methodName">The name of the public static method to invoke. Missing methods are skipped.</param>

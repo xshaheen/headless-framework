@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch, type R
 import { cronJobService } from '@/http/services/cronJobService'
 import { Status } from '@/http/services/types/base/baseHttpResponse.types'
 import { useDialog } from '@/composables/useDialog'
-import { ConfirmDialogProps } from '@/components/common/ConfirmDialog.vue'
+import { ConfirmDialogProps } from '@/components/common/confirm-dialog-props'
 import PaginationFooter from '@/components/PaginationFooter.vue'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'

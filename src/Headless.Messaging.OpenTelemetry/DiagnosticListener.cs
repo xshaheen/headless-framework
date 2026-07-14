@@ -71,7 +71,7 @@ internal sealed class DiagnosticListener(
                                 activity,
                                 _BuildEnrichmentContext(
                                     MessagingEventKind.Persist,
-                                    eventData.Message.GetId(),
+                                    eventData.Message.Id,
                                     eventData.Operation,
                                     eventData.IntentType,
                                     eventData.Message.Headers,
@@ -86,10 +86,7 @@ internal sealed class DiagnosticListener(
                             _Propagator.Inject(
                                 new PropagationContext(Activity.Current.Context, Baggage.Current),
                                 eventData.Message,
-                                (msg, key, value) =>
-                                {
-                                    msg.Headers[key] = value;
-                                }
+                                (msg, key, value) => msg.Headers[key] = value
                             );
                         }
                     }
@@ -152,7 +149,7 @@ internal sealed class DiagnosticListener(
                     if (activity != null)
                     {
                         activity.SetTag("messaging.system", eventData.BrokerAddress.Name);
-                        activity.SetTag("messaging.message.id", eventData.TransportMessage.GetId());
+                        activity.SetTag("messaging.message.id", eventData.TransportMessage.Id);
                         activity.SetTag("messaging.message.body.size", eventData.TransportMessage.Body.Length);
                         activity.SetTag(
                             "messaging.message.conversation_id",
@@ -186,7 +183,7 @@ internal sealed class DiagnosticListener(
                                 activity,
                                 _BuildEnrichmentContext(
                                     MessagingEventKind.Publish,
-                                    eventData.TransportMessage.GetId(),
+                                    eventData.TransportMessage.Id,
                                     eventData.Operation,
                                     eventData.IntentType,
                                     eventData.TransportMessage.Headers,
@@ -199,10 +196,7 @@ internal sealed class DiagnosticListener(
                         _Propagator.Inject(
                             new PropagationContext(activity.Context, Baggage.Current),
                             eventData.TransportMessage,
-                            (msg, key, value) =>
-                            {
-                                msg.Headers[key] = value;
-                            }
+                            (msg, key, value) => msg.Headers[key] = value
                         );
                     }
                 }
@@ -276,7 +270,7 @@ internal sealed class DiagnosticListener(
                     if (activity != null)
                     {
                         activity.SetTag("messaging.system", eventData.BrokerAddress.Name);
-                        activity.SetTag("messaging.message.id", eventData.TransportMessage.GetId());
+                        activity.SetTag("messaging.message.id", eventData.TransportMessage.Id);
                         activity.SetTag("messaging.message.body.size", eventData.TransportMessage.Body.Length);
                         activity.SetTag("messaging.operation.type", "receive");
                         activity.SetTag("messaging.client.id", eventData.TransportMessage.GetExecutionInstanceId());
@@ -307,7 +301,7 @@ internal sealed class DiagnosticListener(
                                 activity,
                                 _BuildEnrichmentContext(
                                     MessagingEventKind.Consume,
-                                    eventData.TransportMessage.GetId(),
+                                    eventData.TransportMessage.Id,
                                     eventData.Operation,
                                     eventData.IntentType,
                                     eventData.TransportMessage.Headers,
@@ -418,7 +412,7 @@ internal sealed class DiagnosticListener(
                                 activity,
                                 _BuildEnrichmentContext(
                                     MessagingEventKind.SubscriberInvoke,
-                                    eventData.Message.GetId(),
+                                    eventData.Message.Id,
                                     eventData.Operation,
                                     eventData.IntentType,
                                     eventData.Message.Headers,
@@ -530,7 +524,9 @@ internal sealed class DiagnosticListener(
             {
                 try
                 {
+#pragma warning disable MA0045 // _CallEnrichers is intentionally synchronous (fire-and-forget async tail); GetResult() runs only on an already-completed ValueTask to observe exceptions, so it never blocks.
                     vt.GetAwaiter().GetResult();
+#pragma warning restore MA0045
                 }
                 catch (Exception ex)
                 {

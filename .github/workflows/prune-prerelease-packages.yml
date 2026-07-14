@@ -19,14 +19,16 @@ on:
     inputs:
       max-age-days:
         description: "Delete prerelease versions older than this many days"
-        default: "60"
+        type: number
+        default: 60
       keep-latest:
         description: "Always keep this many most-recent prereleases per package"
-        default: "3"
+        type: number
+        default: 3
       dry-run:
         description: "List candidates without deleting"
         type: boolean
-        default: false
+        default: true
 
 permissions:
   contents: read
@@ -40,6 +42,8 @@ jobs:
   prune:
     name: Prune old prereleases
     runs-on: ubuntu-latest
+    environment:
+      name: "Package Prune"
     steps:
       - name: "Delete prerelease versions older than max-age-days"
         env:
@@ -47,25 +51,52 @@ jobs:
           OWNER: ${{ github.repository_owner }}
           MAX_AGE_DAYS: ${{ github.event.inputs.max-age-days || '60' }}
           KEEP_LATEST: ${{ github.event.inputs.keep-latest || '3' }}
-          DRY_RUN: ${{ github.event.inputs.dry-run || 'false' }}
+          DRY_RUN: ${{ github.event.inputs.dry-run || 'true' }}
         shell: bash
         run: |
-          set -uo pipefail
+          set -euo pipefail
+
+          require_non_negative_integer() {
+            local name="$1" value="$2"
+
+            if [[ ! "$value" =~ ^[0-9]+$ ]]; then
+              echo "$name must be a non-negative integer: $value" >&2
+              exit 2
+            fi
+          }
+
+          require_non_negative_integer "max-age-days" "$MAX_AGE_DAYS"
+          require_non_negative_integer "keep-latest" "$KEEP_LATEST"
+
+          if [ "$MAX_AGE_DAYS" -lt 1 ]; then
+            echo "max-age-days must be greater than zero: $MAX_AGE_DAYS" >&2
+            exit 2
+          fi
+
+          case "$DRY_RUN" in
+            true | false) ;;
+            *)
+              echo "dry-run must be true or false: $DRY_RUN" >&2
+              exit 2
+              ;;
+          esac
 
           cutoff=$(date -u -d "${MAX_AGE_DAYS} days ago" +%s)
           echo "Owner=$OWNER  max-age-days=$MAX_AGE_DAYS  keep-latest=$KEEP_LATEST  dry-run=$DRY_RUN"
           echo "Cutoff (UTC): $(date -u -d "@$cutoff")"
 
           deleted=0; kept=0; failed=0
+          err_file="$(mktemp)"
+          trap 'rm -f "$err_file"' EXIT
 
           del() {
             local path="$1" tries=0
             while :; do
-              if gh api -X DELETE "$path" >/dev/null 2>/tmp/err; then sleep 0.35; return 0; fi
-              if grep -qiE "rate limit|secondary rate|abuse" /tmp/err && [ "$tries" -lt 6 ]; then
+              if gh api -X DELETE "$path" >/dev/null 2>"$err_file"; then sleep 0.35; return 0; fi
+              if grep -qiE "rate limit|secondary rate|abuse" "$err_file" && [ "$tries" -lt 6 ]; then
                 tries=$((tries+1)); sleep $((tries*30)); continue
               fi
-              echo "  FAIL $path :: $(tr '\n' ' ' </tmp/err)"; return 1
+              echo "  FAIL $path :: $(tr '\n' ' ' <"$err_file")"; return 1
             done
           }
 
@@ -87,7 +118,7 @@ jobs:
               epoch=$(date -u -d "$ts" +%s 2>/dev/null || echo 0)
               rows+=("$epoch"$'\t'"$rest")
             done
-            IFS=$'\n' rows=($(printf '%s\n' "${rows[@]}" | sort -rn)); unset IFS
+            mapfile -t rows < <(printf '%s\n' "${rows[@]}" | sort -rn)
 
             idx=0
             for line in "${rows[@]}"; do

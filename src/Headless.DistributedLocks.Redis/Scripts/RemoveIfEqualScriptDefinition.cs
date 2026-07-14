@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 using Headless.Redis;
 using StackExchange.Redis;
 
-namespace Headless.DistributedLocks.Redis;
+namespace Headless.DistributedLocks.Redis.Scripts;
 
 /// <summary>Atomically removes a key only if its value matches the expected value.</summary>
 internal sealed class RemoveIfEqualScriptDefinition : RedisScriptDefinition

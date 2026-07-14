@@ -32,7 +32,7 @@ public sealed class NatsConsumerClientHarnessTests(NatsFixture fixture) : Consum
             "test-group",
             1,
             Options.Create(
-                new MessagingNatsOptions
+                new NatsMessagingOptions
                 {
                     Servers = fixture.ConnectionString,
                     EnableSubscriberClientStreamAndSubjectCreation = true,
@@ -62,10 +62,10 @@ public sealed class NatsConsumerClientHarnessTests(NatsFixture fixture) : Consum
     /// </remarks>
     protected override async ValueTask<IReadOnlyList<string>> ResolveSubscriptionTopicsAsync(
         IConsumerClient consumer,
-        IReadOnlyList<string> topics
+        IReadOnlyList<string> messageNames
     )
     {
-        var prefixed = topics.Select(t => $"{_topicPrefix}.{t}").ToList();
+        var prefixed = messageNames.Select(t => $"{_topicPrefix}.{t}").ToList();
         await consumer.FetchMessageNamesAsync(prefixed);
         return prefixed;
     }
@@ -95,7 +95,7 @@ public sealed class NatsConsumerClientHarnessTests(NatsFixture fixture) : Consum
         await using var consumer = await GetConsumerClientAsync();
         var requestedTopics = new[] { $"{_topicPrefix}.topic-1", $"{_topicPrefix}.topic-2", $"{_topicPrefix}.topic-3" };
 
-        var result = await consumer.FetchMessageNamesAsync(requestedTopics);
+        var result = await consumer.FetchMessageNamesAsync(requestedTopics, AbortToken);
 
         result.Should().NotBeNull();
         result.Should().HaveCountGreaterThanOrEqualTo(0);

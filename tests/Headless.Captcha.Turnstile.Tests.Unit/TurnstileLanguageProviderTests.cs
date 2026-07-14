@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Globalization;
 using Headless.Captcha;
 
 namespace Tests;
@@ -17,7 +16,7 @@ public sealed class TurnstileLanguageProviderTests
         {
             CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("fr-FR");
 
-            new CultureInfoTurnstileLanguageCodeProvider().GetLanguageCode().Should().Be("fr-FR");
+            new CultureInfoCaptchaLanguageCodeProvider().GetLanguageCode().Should().Be("fr-FR");
         }
         finally
         {

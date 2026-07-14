@@ -4,6 +4,7 @@
 namespace Headless.DistributedLocks;
 
 /// <summary>Storage contract for atomic distributed reader-writer lock operations.</summary>
+[PublicAPI]
 public interface IDistributedReadWriteLockStorage
 {
     /// <summary>

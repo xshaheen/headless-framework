@@ -1,18 +1,18 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
-using System.Text;
 using Amazon.SimpleEmailV2;
 using Amazon.SimpleEmailV2.Model;
 using Headless.Emails;
 using Headless.Emails.Aws;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
-using NSubstitute;
 
 namespace Tests;
 
-public sealed class AwsSesEmailSenderTests
+public sealed class AwsSesEmailSenderTests : TestBase
 {
+    private const string _MessageId = "ses-message-id-1";
     private readonly IAmazonSimpleEmailServiceV2 _ses = Substitute.For<IAmazonSimpleEmailServiceV2>();
     private readonly AwsSesEmailSender _sender;
 
@@ -26,9 +26,10 @@ public sealed class AwsSesEmailSenderTests
     {
         var captured = _CaptureRequest(HttpStatusCode.OK);
 
-        var result = await _sender.SendAsync(_Request(), TestContext.Current.CancellationToken);
+        var result = await _sender.SendAsync(_Request(), AbortToken);
 
         result.Success.Should().BeTrue();
+        result.ProviderMessageId.Should().Be(_MessageId);
         captured().Content.Simple.Should().NotBeNull();
         captured().Content.Raw.Should().BeNull();
     }
@@ -43,7 +44,7 @@ public sealed class AwsSesEmailSenderTests
             Attachments = [new EmailRequestAttachment { Name = "a.txt", File = new byte[] { 1, 2, 3 } }],
         };
 
-        var result = await _sender.SendAsync(request, TestContext.Current.CancellationToken);
+        var result = await _sender.SendAsync(request, AbortToken);
 
         result.Success.Should().BeTrue();
         captured().Content.Raw.Should().NotBeNull();
@@ -59,7 +60,7 @@ public sealed class AwsSesEmailSenderTests
                 Arg.Do<SendEmailRequest>(r =>
                 {
                     captured = r;
-                    if (r.Content.Raw?.Data is MemoryStream ms)
+                    if (r.Content.Raw?.Data is { } ms)
                     {
                         rawBytes = ms.ToArray();
                     }
@@ -78,7 +79,7 @@ public sealed class AwsSesEmailSenderTests
             Attachments = [new EmailRequestAttachment { Name = "a.txt", File = new byte[] { 1, 2, 3 } }],
         };
 
-        var result = await _sender.SendAsync(request, TestContext.Current.CancellationToken);
+        var result = await _sender.SendAsync(request, AbortToken);
 
         result.Success.Should().BeTrue();
         captured!.Destination.BccAddresses.Should().ContainSingle(a => a.Contains("secret@example.com"));
@@ -90,10 +91,67 @@ public sealed class AwsSesEmailSenderTests
     {
         _CaptureRequest(HttpStatusCode.ServiceUnavailable);
 
-        var result = await _sender.SendAsync(_Request(), TestContext.Current.CancellationToken);
+        var result = await _sender.SendAsync(_Request(), AbortToken);
 
         result.Success.Should().BeFalse();
         result.FailureError.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task ses_typed_exception_should_return_failed_and_surface_the_provider_message()
+    {
+        _ses.SendEmailAsync(Arg.Any<SendEmailRequest>(), Arg.Any<CancellationToken>())
+            .Returns(
+                Task.FromException<SendEmailResponse>(new MessageRejectedException("Email address is not verified"))
+            );
+
+        var result = await _sender.SendAsync(_Request(), AbortToken);
+
+        result.Success.Should().BeFalse();
+        result.FailureError.Should().Be("Email address is not verified");
+        result.ProviderMessageId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task transport_exception_should_return_failed()
+    {
+        _ses.SendEmailAsync(Arg.Any<SendEmailRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<SendEmailResponse>(new HttpRequestException("connection reset")));
+
+        var result = await _sender.SendAsync(_Request(), AbortToken);
+
+        result.Success.Should().BeFalse();
+        result.FailureError.Should().Be("connection reset");
+    }
+
+    [Fact]
+    public async Task operation_canceled_should_propagate()
+    {
+        // Only the CALLER's own cancellation propagates. The sender rethrows under
+        // `when (cancellationToken.IsCancellationRequested)`, so the caller's token must actually be cancelled --
+        // asserting the throw while passing an uncancelled token tests the other branch by accident.
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+        _ses.SendEmailAsync(Arg.Any<SendEmailRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<SendEmailResponse>(new OperationCanceledException()));
+
+        var act = async () => await _sender.SendAsync(_Request(), cancellation.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task provider_side_cancellation_should_return_failed_when_the_caller_did_not_cancel()
+    {
+        // The other side of that guard, previously untested: an AWS SDK internal timeout surfaces as a
+        // TaskCanceledException while the caller's token is untouched. That is a delivery failure, not a
+        // cancellation, so it must become a failed response rather than propagate.
+        _ses.SendEmailAsync(Arg.Any<SendEmailRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<SendEmailResponse>(new TaskCanceledException("SDK timeout")));
+
+        var result = await _sender.SendAsync(_Request(), AbortToken);
+
+        result.Success.Should().BeFalse();
     }
 
     [Fact]
@@ -101,7 +159,7 @@ public sealed class AwsSesEmailSenderTests
     {
         var request = _Request() with { MessageText = null, MessageHtml = null };
 
-        var act = async () => await _sender.SendAsync(request, TestContext.Current.CancellationToken);
+        var act = async () => await _sender.SendAsync(request, AbortToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
         await _ses.DidNotReceive().SendEmailAsync(Arg.Any<SendEmailRequest>(), Arg.Any<CancellationToken>());
@@ -111,7 +169,7 @@ public sealed class AwsSesEmailSenderTests
     {
         SendEmailRequest? captured = null;
         _ses.SendEmailAsync(Arg.Do<SendEmailRequest>(r => captured = r), Arg.Any<CancellationToken>())
-            .Returns(new SendEmailResponse { HttpStatusCode = status });
+            .Returns(new SendEmailResponse { HttpStatusCode = status, MessageId = _MessageId });
         return () => captured!;
     }
 

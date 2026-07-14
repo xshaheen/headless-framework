@@ -20,7 +20,7 @@ public sealed class DatabaseResetOptions
     /// Additional tables to exclude from reset. <c>__EFMigrationsHistory</c> is always excluded
     /// automatically — no need to add it here.
     /// </summary>
-    public List<Table> TablesToIgnore { get; set; } = [];
+    public List<Table> TablesToIgnore { get; init; } = [];
 
     /// <summary>
     /// Factory for creating an <em>unopened</em> <see cref="DbConnection"/>.
@@ -28,4 +28,11 @@ public sealed class DatabaseResetOptions
     /// not needed for standalone <see cref="DatabaseReset"/> usage.
     /// </summary>
     public Func<IServiceProvider, DbConnection>? ConnectionProvider { get; set; }
+
+    /// <summary>
+    /// Optional predicate for provider-specific transient exceptions that are not a
+    /// <see cref="DbException"/>, <see cref="IOException"/>, or <see cref="System.Net.Sockets.SocketException"/>.
+    /// The built-in transient set is always applied before this predicate.
+    /// </summary>
+    public Func<Exception, bool>? AdditionalTransientExceptionFilter { get; set; }
 }

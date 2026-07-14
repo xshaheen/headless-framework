@@ -10,12 +10,23 @@ namespace Headless.DistributedLocks;
 /// (or transaction). Used as the fallback for the optimistic multiplexing lock and as the only path for upgradeable or
 /// transaction-scoped strategies.
 /// </summary>
-internal sealed class DedicatedConnectionOrTransactionDbDistributedLock : IDbDistributedLock
+/// <remarks>
+/// Constructs an instance with full control over transaction scope and keepalive.
+/// </remarks>
+/// <param name="name">The lock name / resource.</param>
+/// <param name="connectionFactory">Factory that creates or returns a <see cref="DatabaseConnection"/>.</param>
+/// <param name="useTransaction">When <see langword="true"/>, begins a transaction on internally-owned connections and uses it to scope the advisory lock.</param>
+/// <param name="keepaliveCadence">Keepalive ping interval for held connections; <see cref="Timeout.InfiniteTimeSpan"/> disables keepalive.</param>
+/// <exception cref="ArgumentNullException">Thrown when <paramref name="name"/> or <paramref name="connectionFactory"/> is <see langword="null"/>.</exception>
+internal sealed class DedicatedConnectionOrTransactionDbDistributedLock(
+    string name,
+    Func<DatabaseConnection> connectionFactory,
+    bool useTransaction,
+    TimeSpan keepaliveCadence
+) : IDbDistributedLock
 {
-    private readonly string _name;
-    private readonly Func<DatabaseConnection> _connectionFactory;
-    private readonly bool _transactionScopedIfPossible;
-    private readonly TimeSpan _keepaliveCadence;
+    private readonly string _name = Argument.IsNotNull(name);
+    private readonly Func<DatabaseConnection> _connectionFactory = Argument.IsNotNull(connectionFactory);
 
     /// <summary>
     /// Constructs an instance that wraps a factory returning an externally-owned connection. The connection
@@ -30,27 +41,6 @@ internal sealed class DedicatedConnectionOrTransactionDbDistributedLock : IDbDis
     )
         // useTransaction is irrelevant for the external-connection flow (it never creates a transaction itself).
         : this(name, externalConnectionFactory, useTransaction: true, keepaliveCadence: Timeout.InfiniteTimeSpan) { }
-
-    /// <summary>
-    /// Constructs an instance with full control over transaction scope and keepalive.
-    /// </summary>
-    /// <param name="name">The lock name / resource.</param>
-    /// <param name="connectionFactory">Factory that creates or returns a <see cref="DatabaseConnection"/>.</param>
-    /// <param name="useTransaction">When <see langword="true"/>, begins a transaction on internally-owned connections and uses it to scope the advisory lock.</param>
-    /// <param name="keepaliveCadence">Keepalive ping interval for held connections; <see cref="Timeout.InfiniteTimeSpan"/> disables keepalive.</param>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="name"/> or <paramref name="connectionFactory"/> is <see langword="null"/>.</exception>
-    public DedicatedConnectionOrTransactionDbDistributedLock(
-        string name,
-        Func<DatabaseConnection> connectionFactory,
-        bool useTransaction,
-        TimeSpan keepaliveCadence
-    )
-    {
-        _name = Argument.IsNotNull(name);
-        _connectionFactory = Argument.IsNotNull(connectionFactory);
-        _transactionScopedIfPossible = useTransaction;
-        _keepaliveCadence = keepaliveCadence;
-    }
 
     /// <summary>
     /// Attempts to acquire the lock by opening a dedicated connection (or reusing the externally-owned one)
@@ -109,7 +99,7 @@ internal sealed class DedicatedConnectionOrTransactionDbDistributedLock : IDbDis
                     await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
                     // For an internally-owned connection, we must create the transaction ourselves.
-                    if (_transactionScopedIfPossible)
+                    if (useTransaction)
                     {
                         await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
                     }
@@ -127,13 +117,13 @@ internal sealed class DedicatedConnectionOrTransactionDbDistributedLock : IDbDis
                     strategy,
                     _name,
                     lockCookie,
-                    transactionScoped: _transactionScopedIfPossible && connection.HasTransaction,
+                    transactionScoped: useTransaction && connection.HasTransaction,
                     connectionResource
                 );
 
-                if (_keepaliveCadence != Timeout.InfiniteTimeSpan)
+                if (keepaliveCadence != Timeout.InfiniteTimeSpan)
                 {
-                    connection.SetKeepaliveCadence(_keepaliveCadence);
+                    connection.SetKeepaliveCadence(keepaliveCadence);
                 }
             }
         }
@@ -158,52 +148,44 @@ internal sealed class DedicatedConnectionOrTransactionDbDistributedLock : IDbDis
             ?? throw new ObjectDisposedException(nameof(contextHandle), "The provided handle is already disposed.");
     }
 
-    private sealed class Handle<TLockCookie> : IDistributedLease
+    private sealed class Handle<TLockCookie>(
+        DatabaseConnection connection,
+        IDbSynchronizationStrategy<TLockCookie> strategy,
+        string name,
+        TLockCookie lockCookie,
+        bool transactionScoped,
+        IAsyncDisposable? connectionResource
+    ) : IDistributedLease
         where TLockCookie : class
     {
 #pragma warning disable CA2213 // Disposed via Interlocked.Exchange in DisposeAsync (the analyzer cannot see that path).
-        private InnerHandle? _innerHandle;
+        private InnerHandle? _innerHandle = new(
+            connection,
+            strategy,
+            name,
+            lockCookie,
+            transactionScoped,
+            connectionResource
+        );
+
 #pragma warning restore CA2213
 
-        public Handle(
-            DatabaseConnection connection,
-            IDbSynchronizationStrategy<TLockCookie> strategy,
-            string name,
-            TLockCookie lockCookie,
-            bool transactionScoped,
-            IAsyncDisposable? connectionResource
-        )
-        {
-            _innerHandle = new InnerHandle(
-                connection,
-                strategy,
-                name,
-                lockCookie,
-                transactionScoped,
-                connectionResource
-            );
-            LeaseId = Guid.NewGuid().ToString("N");
-            Resource = name;
-            DateAcquired = connection.TimeProvider.GetUtcNow();
-        }
-
-        public string LeaseId { get; }
+        public string LeaseId { get; } = Guid.NewGuid().ToString("N");
 
         public long? FencingToken => null;
 
-        public string Resource { get; }
+        public string Resource { get; } = name;
 
         public int RenewalCount => 0;
 
-        public DateTimeOffset DateAcquired { get; }
+        public DateTimeOffset DateAcquired { get; } = connection.TimeProvider.GetUtcNow();
 
         public TimeSpan TimeWaitedForLock => TimeSpan.Zero;
 
         public bool CanObserveLoss => true;
 
         public CancellationToken LostToken =>
-            Volatile.Read(ref _innerHandle)?.LostToken
-            ?? throw new ObjectDisposedException(nameof(Handle<TLockCookie>));
+            Volatile.Read(ref _innerHandle)?.LostToken ?? throw new ObjectDisposedException(nameof(Handle<>));
 
         public DatabaseConnection? Connection => Volatile.Read(ref _innerHandle)?.Connection;
 
@@ -219,38 +201,23 @@ internal sealed class DedicatedConnectionOrTransactionDbDistributedLock : IDbDis
 
         public ValueTask DisposeAsync()
         {
-            return Interlocked.Exchange(ref _innerHandle, null)?.DisposeAsync() ?? default;
+            return Interlocked.Exchange(ref _innerHandle, value: null)?.DisposeAsync() ?? default;
         }
 
-        private sealed class InnerHandle : IAsyncDisposable
+        private sealed class InnerHandle(
+            DatabaseConnection connection,
+            IDbSynchronizationStrategy<TLockCookie> strategy,
+            string name,
+            TLockCookie lockCookie,
+            bool transactionScoped,
+            IAsyncDisposable? connectionResource
+        ) : IAsyncDisposable
         {
             private static readonly object _DisposedSentinel = new();
 
-            private readonly IDbSynchronizationStrategy<TLockCookie> _strategy;
-            private readonly string _name;
-            private readonly TLockCookie _lockCookie;
-            private readonly bool _transactionScoped;
-            private readonly IAsyncDisposable? _connectionResource;
             private object? _connectionMonitoringHandleOrDisposedSentinel;
 
-            public InnerHandle(
-                DatabaseConnection connection,
-                IDbSynchronizationStrategy<TLockCookie> strategy,
-                string name,
-                TLockCookie lockCookie,
-                bool transactionScoped,
-                IAsyncDisposable? connectionResource
-            )
-            {
-                Connection = connection;
-                _strategy = strategy;
-                _name = name;
-                _lockCookie = lockCookie;
-                _transactionScoped = transactionScoped;
-                _connectionResource = connectionResource;
-            }
-
-            public DatabaseConnection Connection { get; }
+            public DatabaseConnection Connection { get; } = connection;
 
             public CancellationToken LostToken
             {
@@ -261,11 +228,13 @@ internal sealed class DedicatedConnectionOrTransactionDbDistributedLock : IDbDis
                     if (existing is null)
                     {
                         var newHandle = Connection.GetConnectionMonitoringHandle();
+#pragma warning disable MA0173 // LazyInitializer.EnsureInitialized cannot dispose the losing racer's IDisposable handle nor model the tri-state disposed sentinel; the hand-rolled CAS is required.
                         existing = Interlocked.CompareExchange(
                             ref _connectionMonitoringHandleOrDisposedSentinel,
                             newHandle,
                             comparand: null
                         );
+#pragma warning restore MA0173
 
                         if (existing is null)
                         {
@@ -308,18 +277,18 @@ internal sealed class DedicatedConnectionOrTransactionDbDistributedLock : IDbDis
                     // scope, a connection that can no longer execute queries has already dropped its advisory locks
                     // server-side, so the explicit unlock is unnecessary and would only fault.
                     var canSkipExplicitRelease =
-                        !Connection.CanExecuteQueries || (_transactionScoped && !Connection.IsExternallyOwned);
+                        !Connection.CanExecuteQueries || (transactionScoped && !Connection.IsExternallyOwned);
 
                     if (!canSkipExplicitRelease)
                     {
-                        await _strategy.ReleaseAsync(Connection, _name, _lockCookie).ConfigureAwait(false);
+                        await strategy.ReleaseAsync(Connection, name, lockCookie).ConfigureAwait(false);
                     }
                 }
                 finally
                 {
-                    if (_connectionResource is not null)
+                    if (connectionResource is not null)
                     {
-                        await _connectionResource.DisposeAsync().ConfigureAwait(false);
+                        await connectionResource.DisposeAsync().ConfigureAwait(false);
                     }
                 }
             }

@@ -1,6 +1,8 @@
 ﻿<Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <Description>Contracts and shared abstractions for Headless background jobs packages.</Description>
+    <PackageTags>headless;jobs;dotnet</PackageTags>
     <RootNamespace>Headless.Jobs</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
@@ -8,15 +10,16 @@
     <InternalsVisibleTo Include="Headless.Jobs.Core" />
     <InternalsVisibleTo Include="Headless.Jobs.Dashboard" />
     <InternalsVisibleTo Include="Headless.Jobs.EntityFramework" />
+    <InternalsVisibleTo Include="Headless.Jobs.EntityFramework.PostgreSql" />
+    <InternalsVisibleTo Include="Headless.Jobs.EntityFramework.SqlServer" />
     <InternalsVisibleTo Include="Headless.Jobs.OpenTelemetry" />
     <!-- Lets NSubstitute proxy internal types. -->
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="NCrontab.Signed" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.CommitCoordination.Abstractions\Headless.CommitCoordination.Abstractions.csproj" />
-    <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
   </ItemGroup>
 </Project>

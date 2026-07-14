@@ -31,10 +31,12 @@ public interface INodeMembership : IMembershipEventSource
     NodeIdentity? Identity { get; }
 
     /// <summary>
-    /// Cancelled when the local process's own membership is lost (superseded incarnation, store eviction,
-    /// or explicit <see cref="LeaveAsync"/>). Use this token to stop ownership-sensitive background work
-    /// without polling. The configured <see cref="CoordinationOptions.MembershipLostBehavior"/> determines
-    /// whether the host is also stopped.
+    /// Cancelled when the local process's own membership is lost: a superseded incarnation, store eviction,
+    /// explicit <see cref="LeaveAsync"/>, or a heartbeat write that could not be confirmed within the
+    /// remaining <see cref="CoordinationOptions.DeadThreshold"/> budget (a hung or continuously failing
+    /// store call self-fences the node even when the store never rejected the write). Use this token to
+    /// stop ownership-sensitive background work without polling. The configured
+    /// <see cref="CoordinationOptions.MembershipLostBehavior"/> determines whether the host is also stopped.
     /// </summary>
     CancellationToken LocalMembershipLostToken { get; }
 
@@ -55,7 +57,7 @@ public interface INodeMembership : IMembershipEventSource
     /// <param name="cancellationToken">Propagates notification that the operation should be cancelled.</param>
     /// <returns>
     /// <see langword="true"/> if the heartbeat was accepted by the store; <see langword="false"/> if the
-    /// local identity has already been superseded and the node should stop.
+    /// local identity has been superseded, declared dead, gracefully left, or pruned, and the node should stop.
     /// </returns>
     ValueTask<bool> HeartbeatAsync(CancellationToken cancellationToken = default);
 

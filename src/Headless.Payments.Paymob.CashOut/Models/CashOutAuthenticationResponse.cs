@@ -31,6 +31,7 @@ public sealed record CashOutAuthenticationResponse
     [JsonPropertyName("expires_in")]
     public int ExpiresIn { get; init; }
 
+    // set (not init): [JsonExtensionData] cannot bind through init-only metadata and fails deserialization
     [JsonExtensionData]
-    public IDictionary<string, object?>? ExtensionData { get; init; }
+    public IDictionary<string, object?>? ExtensionData { get; set; }
 }

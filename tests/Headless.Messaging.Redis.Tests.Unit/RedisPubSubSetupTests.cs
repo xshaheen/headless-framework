@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
 using Headless.Messaging.Redis;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
@@ -41,7 +40,7 @@ public sealed class RedisPubSubSetupTests : TestBase
 
         // when
         await using var provider = services.BuildServiceProvider();
-        var options = provider.GetRequiredService<IOptions<RedisPubSubOptions>>().Value;
+        var options = provider.GetRequiredService<IOptions<RedisPubSubMessagingOptions>>().Value;
 
         // then
         options.Configuration.Should().NotBeNull();
@@ -62,7 +61,7 @@ public sealed class RedisPubSubSetupTests : TestBase
 
         // when
         await using var provider = services.BuildServiceProvider();
-        var options = provider.GetRequiredService<IOptions<RedisPubSubOptions>>().Value;
+        var options = provider.GetRequiredService<IOptions<RedisPubSubMessagingOptions>>().Value;
 
         // then
         options.Configuration!.EndPoints.Should().Contain(e => e.ToString()!.Contains("redis.example.com:6380"));
@@ -73,7 +72,7 @@ public sealed class RedisPubSubSetupTests : TestBase
     {
         // given
         var services = new ServiceCollection();
-        Action<RedisPubSubOptions>? configure = null;
+        Action<RedisPubSubMessagingOptions>? configure = null;
 
         // when
         var action = () => services.AddHeadlessMessaging(setup => setup.UseRedisPubSub(configure!));

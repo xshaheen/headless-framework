@@ -20,10 +20,7 @@ public sealed class SetupTests : TestBase
         services.AddLogging();
 
         // when
-        services.AddHeadlessMessaging(options =>
-        {
-            options.UseKafka("localhost:9092");
-        });
+        services.AddHeadlessMessaging(options => options.UseKafka("localhost:9092"));
 
         var provider = services.BuildServiceProvider();
 
@@ -53,7 +50,7 @@ public sealed class SetupTests : TestBase
         });
 
         var provider = services.BuildServiceProvider();
-        var kafkaOptions = provider.GetRequiredService<IOptions<MessagingKafkaOptions>>().Value;
+        var kafkaOptions = provider.GetRequiredService<IOptions<KafkaMessagingOptions>>().Value;
 
         // then
         kafkaOptions.Servers.Should().Be("broker1:9092,broker2:9092");
@@ -68,10 +65,7 @@ public sealed class SetupTests : TestBase
 
         // when
         var act = () =>
-            services.AddHeadlessMessaging(options =>
-            {
-                options.UseKafka((Action<MessagingKafkaOptions>)null!);
-            });
+            services.AddHeadlessMessaging(options => options.UseKafka((Action<KafkaMessagingOptions>)null!));
 
         // then
         act.Should().Throw<ArgumentNullException>();
@@ -85,10 +79,7 @@ public sealed class SetupTests : TestBase
         services.AddLogging();
 
         // when
-        services.AddHeadlessMessaging(options =>
-        {
-            options.UseKafka("localhost:9092");
-        });
+        services.AddHeadlessMessaging(options => options.UseKafka("localhost:9092"));
 
         var provider = services.BuildServiceProvider();
         var marker = provider.GetService<MessageQueueMarkerService>();
@@ -105,10 +96,7 @@ public sealed class SetupTests : TestBase
         var services = new ServiceCollection();
         services.AddLogging();
 
-        services.AddHeadlessMessaging(options =>
-        {
-            options.UseKafka("localhost:9092");
-        });
+        services.AddHeadlessMessaging(options => options.UseKafka("localhost:9092"));
 
         var provider = services.BuildServiceProvider();
 

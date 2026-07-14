@@ -5,7 +5,7 @@ using Headless.Generator.Primitives;
 using Headless.Reflection;
 using NJsonSchema.Generation;
 
-namespace Headless.Api.Extensions;
+namespace Headless.OpenApi.Nswag.Extensions;
 
 /// <summary>
 /// Extension methods on <c>JsonSchemaGeneratorSettings</c> for registering NJsonSchema type mappers
@@ -47,7 +47,7 @@ public static class NswagSwaggerGenOptionsExtensions
     public static void AddAllPrimitivesSwaggerMappings(this JsonSchemaGeneratorSettings options)
     {
         var assemblies = AssemblyHelper.GetCurrentAssemblies(
-            acceptPredicate: assembly => assembly.GetCustomAttribute<PrimitiveAssemblyAttribute>() is not null,
+            acceptPredicate: assembly => Attribute.IsDefined(assembly, typeof(PrimitiveAssemblyAttribute)),
             excludePredicate: AssemblyHelper.IsSystemAssemblyName
         );
 

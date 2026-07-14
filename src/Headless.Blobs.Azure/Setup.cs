@@ -2,15 +2,17 @@
 
 using Azure.Storage.Blobs;
 using Headless.Abstractions;
+using Headless.Blobs.Azure;
 using Headless.Checks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
-#pragma warning disable CA1708 // multiple extension blocks emit marker members differing only by case
-namespace Headless.Blobs.Azure;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Blobs;
 
 /// <summary>
 /// Extension members that contribute the Azure Blob Storage provider to the Headless blob setup builder.
@@ -27,7 +29,7 @@ namespace Headless.Blobs.Azure;
 /// services.AddHeadlessBlobs(blobs =>
 /// {
 ///     // Default store — uses the ambient BlobServiceClient from DI:
-///     blobs.UseAzure(options => options.AutoCreateContainer = true);
+///     blobs.UseAzure(options => options.MaxBulkParallelism = 8);
 ///
 ///     // Named store — uses a dedicated client for a second account:
 ///     blobs.AddNamed("archive", instance => instance.UseAzure(
@@ -64,7 +66,7 @@ public static class SetupAzureBlob
             setup.RegisterDefaultProvider(services =>
             {
                 services.Configure<AzureStorageOptions, AzureStorageOptionsValidator>(setupAction);
-                services._AddBlobsDefaultCore(clientFactory);
+                _AddBlobsDefaultCore(services, clientFactory);
             });
 
             return setup;
@@ -90,7 +92,7 @@ public static class SetupAzureBlob
             setup.RegisterDefaultProvider(services =>
             {
                 services.Configure<AzureStorageOptions, AzureStorageOptionsValidator>(setupAction);
-                services._AddBlobsDefaultCore(clientFactory);
+                _AddBlobsDefaultCore(services, clientFactory);
             });
 
             return setup;
@@ -116,13 +118,119 @@ public static class SetupAzureBlob
             setup.RegisterDefaultProvider(services =>
             {
                 services.Configure<AzureStorageOptions, AzureStorageOptionsValidator>(configuration);
-                services._AddBlobsDefaultCore(clientFactory);
+                _AddBlobsDefaultCore(services, clientFactory);
             });
 
             return setup;
         }
     }
 
+    private static IServiceCollection _AddBlobsDefaultCore(
+        IServiceCollection services,
+        Func<IServiceProvider, BlobServiceClient>? clientFactory
+    )
+    {
+        // Defensive: this package RESOLVES TimeProvider, so it must also guarantee one exists. Without this,
+        // installing the package standalone (no ServiceDefaults, no sibling that happens to register it) throws
+        // 'No service for type TimeProvider' at resolve time.
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton<IBlobStorage>(sp =>
+        {
+            var mimeTypeProvider = sp.GetRequiredService<IMimeTypeProvider>();
+            var timeProvider = sp.GetRequiredService<TimeProvider>();
+            var options = sp.GetRequiredService<IOptions<AzureStorageOptions>>();
+            var logger = sp.GetService<ILogger<AzureBlobStorage>>() ?? NullLogger<AzureBlobStorage>.Instance;
+            var client = clientFactory is not null ? clientFactory(sp) : sp.GetRequiredService<BlobServiceClient>();
+
+            return new AzureBlobStorage(
+                client,
+                mimeTypeProvider,
+                timeProvider,
+                options,
+                new AzureBlobNamingNormalizer(),
+                logger
+            );
+        });
+
+        // Container lifecycle is a separately-resolved capability (not a cast from IBlobStorage), so the Azure
+        // provider registers a dedicated manager. It shares the storage's BlobServiceClient (ambient DI or the
+        // supplied client factory) but never disposes it (U12 / KTD5).
+        services.AddSingleton<IBlobContainerManager>(sp =>
+        {
+            var options = sp.GetRequiredService<IOptions<AzureStorageOptions>>().Value;
+            var client = clientFactory is not null ? clientFactory(sp) : sp.GetRequiredService<BlobServiceClient>();
+
+            return new AzureBlobContainerManager(
+                client,
+                new AzureBlobNamingNormalizer(),
+                options.ContainerPublicAccessType
+            );
+        });
+
+        return services;
+    }
+
+    internal static IServiceCollection AddBlobsNamedCore(
+        IServiceCollection services,
+        string name,
+        Func<IServiceProvider, BlobServiceClient>? clientFactory
+    )
+    {
+        services.AddKeyedSingleton<IBlobStorage>(
+            name,
+            (sp, _) =>
+            {
+                var mimeTypeProvider = sp.GetRequiredService<IMimeTypeProvider>();
+                var timeProvider = sp.GetRequiredService<TimeProvider>();
+                var options = Options.Create(sp.GetRequiredService<IOptionsMonitor<AzureStorageOptions>>().Get(name));
+                var logger = sp.GetService<ILogger<AzureBlobStorage>>() ?? NullLogger<AzureBlobStorage>.Instance;
+                var client = clientFactory is not null ? clientFactory(sp) : sp.GetRequiredService<BlobServiceClient>();
+
+                return new AzureBlobStorage(
+                    client,
+                    mimeTypeProvider,
+                    timeProvider,
+                    options,
+                    new AzureBlobNamingNormalizer(),
+                    logger
+                );
+            }
+        );
+
+        services.AddKeyedSingleton<IPresignedUrlBlobStorage>(
+            name,
+            (sp, _) => (IPresignedUrlBlobStorage)sp.GetRequiredKeyedService<IBlobStorage>(name)
+        );
+
+        // Keyed container-management capability for this named instance, registered as a separate service (not a
+        // cast from the keyed storage) so it shares the per-instance BlobServiceClient and per-instance options.
+        services.AddKeyedSingleton<IBlobContainerManager>(
+            name,
+            (sp, _) =>
+            {
+                var options = sp.GetRequiredService<IOptionsMonitor<AzureStorageOptions>>().Get(name);
+                var client = clientFactory is not null ? clientFactory(sp) : sp.GetRequiredService<BlobServiceClient>();
+
+                return new AzureBlobContainerManager(
+                    client,
+                    new AzureBlobNamingNormalizer(),
+                    options.ContainerPublicAccessType
+                );
+            }
+        );
+
+        return services;
+    }
+}
+
+/// <summary>
+/// Extension members that contribute the Azure Blob Storage provider as a named store on
+/// <see cref="HeadlessBlobInstanceBuilder"/>. See <see cref="SetupAzureBlob"/> for the client-resolution and
+/// presigned-forwarding behavior.
+/// </summary>
+[PublicAPI]
+public static class SetupAzureBlobNamed
+{
     extension(HeadlessBlobInstanceBuilder instance)
     {
         /// <summary>
@@ -147,7 +255,7 @@ public static class SetupAzureBlob
             instance.RegisterProvider(services =>
             {
                 services.Configure<AzureStorageOptions, AzureStorageOptionsValidator>(setupAction, name);
-                services._AddBlobsNamedCore(name, clientFactory);
+                SetupAzureBlob.AddBlobsNamedCore(services, name, clientFactory);
             });
 
             return instance;
@@ -174,7 +282,7 @@ public static class SetupAzureBlob
             instance.RegisterProvider(services =>
             {
                 services.Configure<AzureStorageOptions, AzureStorageOptionsValidator>(setupAction, name);
-                services._AddBlobsNamedCore(name, clientFactory);
+                SetupAzureBlob.AddBlobsNamedCore(services, name, clientFactory);
             });
 
             return instance;
@@ -201,74 +309,10 @@ public static class SetupAzureBlob
             instance.RegisterProvider(services =>
             {
                 services.Configure<AzureStorageOptions, AzureStorageOptionsValidator>(configuration, name);
-                services._AddBlobsNamedCore(name, clientFactory);
+                SetupAzureBlob.AddBlobsNamedCore(services, name, clientFactory);
             });
 
             return instance;
-        }
-    }
-
-    extension(IServiceCollection services)
-    {
-        private IServiceCollection _AddBlobsDefaultCore(Func<IServiceProvider, BlobServiceClient>? clientFactory)
-        {
-            services.AddSingleton<IBlobStorage>(sp =>
-            {
-                var mimeTypeProvider = sp.GetRequiredService<IMimeTypeProvider>();
-                var clock = sp.GetRequiredService<IClock>();
-                var options = sp.GetRequiredService<IOptions<AzureStorageOptions>>();
-                var logger = sp.GetService<ILogger<AzureBlobStorage>>() ?? NullLogger<AzureBlobStorage>.Instance;
-                var client = clientFactory is not null ? clientFactory(sp) : sp.GetRequiredService<BlobServiceClient>();
-
-                return new AzureBlobStorage(
-                    client,
-                    mimeTypeProvider,
-                    clock,
-                    options,
-                    new AzureBlobNamingNormalizer(),
-                    logger
-                );
-            });
-
-            return services;
-        }
-
-        private IServiceCollection _AddBlobsNamedCore(
-            string name,
-            Func<IServiceProvider, BlobServiceClient>? clientFactory
-        )
-        {
-            services.AddKeyedSingleton<IBlobStorage>(
-                name,
-                (sp, _) =>
-                {
-                    var mimeTypeProvider = sp.GetRequiredService<IMimeTypeProvider>();
-                    var clock = sp.GetRequiredService<IClock>();
-                    var options = Options.Create(
-                        sp.GetRequiredService<IOptionsMonitor<AzureStorageOptions>>().Get(name)
-                    );
-                    var logger = sp.GetService<ILogger<AzureBlobStorage>>() ?? NullLogger<AzureBlobStorage>.Instance;
-                    var client = clientFactory is not null
-                        ? clientFactory(sp)
-                        : sp.GetRequiredService<BlobServiceClient>();
-
-                    return new AzureBlobStorage(
-                        client,
-                        mimeTypeProvider,
-                        clock,
-                        options,
-                        new AzureBlobNamingNormalizer(),
-                        logger
-                    );
-                }
-            );
-
-            services.AddKeyedSingleton<IPresignedUrlBlobStorage>(
-                name,
-                (sp, _) => (IPresignedUrlBlobStorage)sp.GetRequiredKeyedService<IBlobStorage>(name)
-            );
-
-            return services;
         }
     }
 }

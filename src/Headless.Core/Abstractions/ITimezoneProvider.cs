@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.ObjectModel;
 using TimeZoneConverter;
 
 namespace Headless.Abstractions;
@@ -89,7 +90,7 @@ public sealed class TzConvertTimezoneProvider : ITimezoneProvider
     /// <inheritdoc/>
     public IReadOnlyList<TimezoneOption> GetIanaTimezones() => _IanaTimezones.Value;
 
-    private static IReadOnlyList<TimezoneOption> _BuildTimezones(IEnumerable<string> timeZoneIds)
+    private static ReadOnlyCollection<TimezoneOption> _BuildTimezones(IEnumerable<string> timeZoneIds)
     {
         return timeZoneIds
             .Order(StringComparer.Ordinal)

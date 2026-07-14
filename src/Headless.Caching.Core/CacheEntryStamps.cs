@@ -42,7 +42,7 @@ public readonly record struct CacheEntryStamps(
         // jitter is Zero, so effectiveDuration == options.Duration and behavior is unchanged.
         var effectiveDuration =
             options.JitterMaxDuration > TimeSpan.Zero
-                ? options.Duration + new TimeSpan(Random.Shared.NextInt64(options.JitterMaxDuration.Ticks))
+                ? options.Duration + TimeSpan.FromTicks(_GetRandomTicks(options.JitterMaxDuration))
                 : options.Duration;
 
         var logicalExpiresAt = now.Add(effectiveDuration);
@@ -181,4 +181,12 @@ public readonly record struct CacheEntryStamps(
     private static TimeSpan _Max(TimeSpan left, TimeSpan right) => left >= right ? left : right;
 
     private static DateTime _Min(DateTime left, DateTime right) => left <= right ? left : right;
+
+    private static long _GetRandomTicks(TimeSpan exclusiveMax) => (long)(exclusiveMax.Ticks * _GetRandomUnitDouble());
+
+    // Random.Shared, not a CSPRNG: jitter only desynchronizes expiry, so predictability has no security
+    // consequence, and this runs on every jittered write.
+#pragma warning disable CA5394 // Non-security cache-expiry jitter; keep Random.Shared on the hot path.
+    private static double _GetRandomUnitDouble() => Random.Shared.NextDouble();
+#pragma warning restore CA5394
 }

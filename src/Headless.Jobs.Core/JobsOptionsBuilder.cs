@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
@@ -10,7 +11,7 @@ namespace Headless.Jobs;
 
 /// <summary>
 /// Fluent builder for configuring the Jobs subsystem, returned by the operational-store registration
-/// extension (e.g., <c>AddOperationalStore</c>) and passed to optional add-ons such as
+/// extension (e.g., <c>UseEntityFramework</c>) and passed to optional add-ons such as
 /// <c>AddDashboard</c>, <c>AddOpenTelemetryInstrumentation</c>, and <c>AddJobsDiscovery</c>.
 /// </summary>
 /// <typeparam name="TTimeJob">The application's concrete time job entity type.</typeparam>
@@ -83,6 +84,17 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     internal Action<IServiceCollection>? ExternalProviderConfigServiceAction { get; set; }
     internal Action<IServiceCollection>? DashboardServiceAction { get; set; }
     internal Type? JobExceptionHandlerType { get; private set; }
+    internal JobsRetryOptions RetryOptions { get; } = new();
+
+    /// <summary>Configures direct Polly retry behavior and Jobs-owned exhaustion notification.</summary>
+    /// <param name="configure">Action that mutates the retry options.</param>
+    /// <returns>This builder for method chaining.</returns>
+    public JobsOptionsBuilder<TTimeJob, TCronJob> ConfigureRetries(Action<JobsRetryOptions> configure)
+    {
+        Argument.IsNotNull(configure);
+        configure(RetryOptions);
+        return this;
+    }
 
     /// <summary>
     /// Configures the scheduler options (node identity, concurrency, lease duration, and timezone)
@@ -91,7 +103,7 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     /// <param name="schedulerOptionsBuilder">Action that mutates the scheduler options.</param>
     /// <returns>This builder for method chaining.</returns>
     public JobsOptionsBuilder<TTimeJob, TCronJob> ConfigureScheduler(
-        Action<SchedulerOptionsBuilder> schedulerOptionsBuilder
+        Action<SchedulerOptionsBuilder>? schedulerOptionsBuilder
     )
     {
         schedulerOptionsBuilder?.Invoke(SchedulerOptions);
@@ -110,7 +122,7 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     /// </summary>
     /// <param name="configure">Action that mutates the serializer options.</param>
     /// <returns>This builder for method chaining.</returns>
-    public JobsOptionsBuilder<TTimeJob, TCronJob> ConfigureRequestJsonOptions(Action<JsonSerializerOptions> configure)
+    public JobsOptionsBuilder<TTimeJob, TCronJob> ConfigureRequestJsonOptions(Action<JsonSerializerOptions>? configure)
     {
         RequestJsonSerializerOptions ??= new JsonSerializerOptions();
         configure?.Invoke(RequestJsonSerializerOptions);
@@ -159,7 +171,7 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     /// Async factory that receives <c>ITimeJobManager</c> and enqueues initial time jobs.
     /// </param>
     /// <returns>This builder for method chaining.</returns>
-    public JobsOptionsBuilder<TTimeJob, TCronJob> UseJobsSeeder(Func<ITimeJobManager<TTimeJob>, Task> timeSeeder)
+    public JobsOptionsBuilder<TTimeJob, TCronJob> UseJobsSeeder(Func<ITimeJobManager<TTimeJob>, Task>? timeSeeder)
     {
         if (timeSeeder == null)
         {
@@ -183,7 +195,7 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     /// Async factory that receives <c>ICronJobManager</c> and inserts or upserts initial cron job definitions.
     /// </param>
     /// <returns>This builder for method chaining.</returns>
-    public JobsOptionsBuilder<TTimeJob, TCronJob> UseJobsSeeder(Func<ICronJobManager<TCronJob>, Task> cronSeeder)
+    public JobsOptionsBuilder<TTimeJob, TCronJob> UseJobsSeeder(Func<ICronJobManager<TCronJob>, Task>? cronSeeder)
     {
         if (cronSeeder == null)
         {
@@ -262,8 +274,9 @@ public sealed class SchedulerOptionsBuilder
 
     /// <summary>
     /// How long a per-row pickup lease is held before it expires and the row becomes re-claimable. Stamped as
-    /// <c>LockedUntil = now + LeaseDuration</c> on every claim using the injected <see cref="TimeProvider"/>
-    /// (application clock, not the DB server clock — matches Headless.Messaging for InMemory↔SQL parity).
+    /// <c>LockedUntil = now + LeaseDuration</c> on every claim. In-memory storage uses the injected
+    /// <see cref="TimeProvider"/>; relational storage translates the claim expression to the database UTC clock so
+    /// stamping and lease-expiry comparison share one authority without a separate clock query.
     /// <para>
     /// Running jobs slide this lease forward on the <see cref="LeaseRenewalInterval"/> cadence (#316), so
     /// <c>LeaseDuration</c> no longer needs to exceed the longest job runtime — a healthy long job keeps renewing.
@@ -279,7 +292,7 @@ public sealed class SchedulerOptionsBuilder
     /// How often a running job's lease is renewed (slides <c>LockedUntil</c> forward) while it executes, so a
     /// healthy long-running job is never falsely reclaimed (#316). The owning worker's execution loop extends the
     /// lease on this cadence; a job that stops renewing (crashed or wedged) has its lease lapse and is reclaimed
-    /// per its <c>OnNodeDeath</c> policy. <c>null</c> (the default) derives ≈ <see cref="LeaseDuration"/> / 3 so a
+    /// per its <c>OnNodeDeath</c> policy. <see langword="null"/> (the default) derives ≈ <see cref="LeaseDuration"/> / 3 so a
     /// single missed renewal cannot lapse the lease. An explicit value must be positive and strictly less than
     /// <see cref="LeaseDuration"/>; see <see cref="ResolveLeaseRenewalInterval"/>.
     /// </summary>
@@ -292,6 +305,13 @@ public sealed class SchedulerOptionsBuilder
     /// lease TTL.
     /// </summary>
     public TimeSpan FallbackIntervalChecker { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// Maximum time coordinated enqueue side effects may run after the ambient transaction commits. The committed
+    /// job row remains durable when this deadline elapses; the scheduler's fallback poll recovers dispatch while the
+    /// commit thread is released. Defaults to 30 seconds. Must be greater than zero and no more than five minutes.
+    /// </summary>
+    public TimeSpan PostCommitDrainTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
     /// The timezone used when evaluating cron expressions. Defaults to the local machine timezone.

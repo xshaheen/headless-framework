@@ -26,6 +26,7 @@ namespace Headless.Redis;
 /// </remarks>
 // ReSharper disable InconsistentNaming
 #pragma warning disable IDE1006
+[PublicAPI]
 public sealed class HeadlessRedisScriptsLoader(
     IConnectionMultiplexer multiplexer,
     TimeProvider? timeProvider = null,
@@ -104,7 +105,7 @@ public sealed class HeadlessRedisScriptsLoader(
 
                 var missingDefinitions = _GetMissingDefinitions(definitions, state);
 
-                if (missingDefinitions.Count is 0)
+                if (missingDefinitions.Length is 0)
                 {
                     return;
                 }
@@ -148,7 +149,7 @@ public sealed class HeadlessRedisScriptsLoader(
                             .ConfigureAwait(false);
                     }
 
-                    for (var index = 0; index < missingDefinitions.Count; index++)
+                    for (var index = 0; index < missingDefinitions.Length; index++)
                     {
                         var definition = missingDefinitions[index];
                         loadedScripts[definition.GetType()] = new LoadedRedisScript(definition, results[index]);
@@ -266,7 +267,7 @@ public sealed class HeadlessRedisScriptsLoader(
         }
     }
 
-    /// <summary>Returns <c>true</c> when <paramref name="e"/> is a NOSCRIPT error from Redis.</summary>
+    /// <summary>Returns <see langword="true"/> when <paramref name="e"/> is a NOSCRIPT error from Redis.</summary>
     /// <param name="e">The server exception to inspect.</param>
     /// <returns><see langword="true"/> when the exception message starts with <c>NOSCRIPT</c>; otherwise <see langword="false"/>.</returns>
     public static bool IsNoScriptError(RedisServerException e)
@@ -384,12 +385,12 @@ public sealed class HeadlessRedisScriptsLoader(
         return scriptDefinitions.All(scriptDefinition => _GetLoadedScript(scriptDefinition, state) is not null);
     }
 
-    private static IReadOnlyList<RedisScriptDefinition> _GetMissingDefinitions(
-        IReadOnlyList<RedisScriptDefinition> definitions,
+    private static RedisScriptDefinition[] _GetMissingDefinitions(
+        List<RedisScriptDefinition> definitions,
         ScriptsLoadState state
     )
     {
-        return definitions.Where(scriptDefinition => _GetLoadedScript(scriptDefinition, state) is null).ToArray();
+        return [.. definitions.Where(scriptDefinition => _GetLoadedScript(scriptDefinition, state) is null)];
     }
 
     private void _ResetScripts(int expectedVersion)
@@ -433,7 +434,7 @@ public sealed class HeadlessRedisScriptsLoader(
         }
     }
 
-    private static IReadOnlyList<RedisScriptDefinition> _GetDistinctDefinitions(
+    private static List<RedisScriptDefinition> _GetDistinctDefinitions(
         IEnumerable<RedisScriptDefinition> scriptDefinitions
     )
     {

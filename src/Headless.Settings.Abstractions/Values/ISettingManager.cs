@@ -22,9 +22,15 @@ public interface ISettingManager
     /// provider has no value for the setting.
     /// </param>
     /// <param name="cancellationToken">The abort token.</param>
-    /// <returns>The setting value string, or <see langword="null"/> if no provider has a value.</returns>
+    /// <returns>
+    /// A never-<see langword="null"/> <see cref="SettingValue"/>. On a miss its
+    /// <see cref="SettingValue.Value"/> and <see cref="SettingValue.Provider"/> are both
+    /// <see langword="null"/>; otherwise <see cref="SettingValue.Provider"/> identifies the
+    /// resolving provider.
+    /// </returns>
     /// <exception cref="ArgumentNullException"><paramref name="settingName"/> is <see langword="null"/>.</exception>
-    Task<string?> FindAsync(
+    /// <exception cref="Headless.Exceptions.ConflictException">The setting named <paramref name="settingName"/> is not defined.</exception>
+    Task<SettingValue> GetAsync(
         string settingName,
         string? providerName = null,
         string? providerKey = null,
@@ -57,9 +63,9 @@ public interface ISettingManager
     /// to subsequent providers.
     /// </param>
     /// <param name="cancellationToken">The abort token.</param>
-    /// <returns>A list of <see cref="SettingValue"/> instances for all settings served by the provider.</returns>
+    /// <returns>A read-only list of <see cref="SettingValue"/> instances for all settings served by the provider.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="providerName"/> is <see langword="null"/>.</exception>
-    Task<List<SettingValue>> GetAllAsync(
+    Task<IReadOnlyList<SettingValue>> GetAllAsync(
         string providerName,
         string? providerKey = null,
         bool fallback = true,

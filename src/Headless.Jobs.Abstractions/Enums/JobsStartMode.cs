@@ -5,12 +5,17 @@ namespace Headless.Jobs.Enums;
 /// <summary>
 /// Controls when the Jobs scheduler begins processing jobs after the host starts.
 /// </summary>
+/// <remarks>
+/// New members may be added in future versions; consumers assign this enum rather than
+/// <see langword="switch"/>-ing on incoming values, so existing members and their explicit values remain stable.
+/// </remarks>
+[PublicAPI]
 public enum JobsStartMode
 {
     /// <summary>
     /// Job processing begins automatically when the host starts. This is the default.
     /// </summary>
-    Immediate,
+    Immediate = 0,
 
     /// <summary>
     /// Background services are registered but the scheduler does not run its first iteration
@@ -18,5 +23,5 @@ public enum JobsStartMode
     /// Use this mode when job processing should be deferred until after additional application
     /// warm-up work completes.
     /// </summary>
-    Manual,
+    Manual = 1,
 }

@@ -13,6 +13,7 @@ namespace Headless.Imaging;
 /// whose <c>Content</c> is a readable, seekable <see cref="Stream"/> containing the resized bytes.
 /// Callers are responsible for disposing that stream.
 /// </remarks>
+[PublicAPI]
 public sealed class ImageStreamResizeResult : ImageProcessResult<ImageResizeContent<Stream>>
 {
     private ImageStreamResizeResult() { }
@@ -77,6 +78,7 @@ public sealed class ImageStreamResizeResult : ImageProcessResult<ImageResizeCont
 
 /// <summary>Carries the output of a resize operation together with its metadata.</summary>
 /// <typeparam name="TContent">The type that holds the image bytes, typically <see cref="Stream"/>.</typeparam>
+[PublicAPI]
 public sealed class ImageResizeContent<TContent>
 {
     /// <summary>Gets the resized image content. For stream-based results this is a readable, seekable stream.</summary>

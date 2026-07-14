@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Headless.Jobs.Configurations;
 
-public class TimeJobConfigurations<TTimeJob>(string schema = Constants.DefaultSchema)
+public class TimeJobConfigurations<TTimeJob>(string schema = JobDbConstants.DefaultSchema)
     : IEntityTypeConfiguration<TTimeJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
 {
@@ -34,6 +34,13 @@ public class TimeJobConfigurations<TTimeJob>(string schema = Constants.DefaultSc
 
         // Index for scheduler queries: many jobs can share the same status/time
         builder.HasIndex("Status", "ExecutionTime").HasDatabaseName("IX_TimeJob_Status_ExecutionTime");
+
+        // Sweep/reclaim queries filter on lease deadline (Status + LockedUntil) and on ownership
+        // (OwnerId + non-terminal Status); without these the 30s fallback sweep and dead-node reclaim
+        // scan every InProgress/owned row.
+        builder.HasIndex("Status", "LockedUntil").HasDatabaseName("IX_TimeJob_Status_LockedUntil");
+
+        builder.HasIndex("OwnerId", "Status").HasDatabaseName("IX_TimeJob_OwnerId_Status");
 
         builder.ToTable("TimeJobs", schema);
     }

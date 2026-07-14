@@ -2,7 +2,6 @@
 
 using Headless.CommitCoordination;
 using Headless.Messaging;
-using Headless.Messaging.Storage.SqlServer;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -20,10 +19,7 @@ public sealed class SetupTests : TestBase
         services.AddLogging();
 
         // when
-        services.AddHeadlessMessaging(setup =>
-        {
-            setup.UseEntityFramework<TestMessagingDbContext>();
-        });
+        services.AddHeadlessMessaging(setup => setup.UseEntityFramework<TestMessagingDbContext>());
 
         await using var provider = services.BuildServiceProvider();
 

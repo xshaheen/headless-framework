@@ -8,6 +8,8 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace Headless.Jobs.SourceGenerator.Generators;
 
+#pragma warning disable MA0028, MA0076 // Generated source snippets are clearer as interpolated template lines.
+
 /// <summary>
 /// Handles generation of delegate code for JobFunction methods.
 /// </summary>
@@ -68,7 +70,6 @@ internal static class DelegateGenerator
         int maxConcurrency,
         string cronExpression,
         string? assemblyName = null,
-        HashSet<string>? classNameConflicts = null,
         HashSet<string>? typeNameConflicts = null
     )
     {
@@ -79,9 +80,11 @@ internal static class DelegateGenerator
         var asyncFlag = needsAsync ? "async " : "";
         var cronExprFlag = string.IsNullOrEmpty(cronExpression) ? "string.Empty" : $"\"{cronExpression}\"";
 
-        // Generate delegate registration with proper multiline format
+        // Generate delegate registration with proper multiline format. Bind to the named
+        // JobFunctionRegistration record (object initializer) rather than a positional value-tuple so new
+        // per-function knobs stay additive without breaking this baked-in [ModuleInitializer] ABI.
         sb.AppendLine(
-            $"            jobFunctionDelegateDict.TryAdd(\"{functionName}\", ({cronExprFlag}, (JobPriority){functionPriority}, new JobFunctionDelegate({asyncFlag}(cancellationToken, serviceProvider, context) =>"
+            $"            jobFunctionDelegateDict.TryAdd(\"{functionName}\", new JobFunctionRegistration {{ CronExpression = {cronExprFlag}, Priority = (JobPriority){functionPriority}, Delegate = new JobFunctionDelegate({asyncFlag}(cancellationToken, serviceProvider, context) =>"
         );
         sb.AppendLine("            {");
 
@@ -94,11 +97,10 @@ internal static class DelegateGenerator
             parametersList,
             methodInfo,
             assemblyName,
-            classNameConflicts,
             typeNameConflicts
         );
 
-        sb.AppendLine($"            }}), {maxConcurrency}));");
+        sb.AppendLine($"            }}), MaxConcurrency = {maxConcurrency} }});");
 
         return sb.ToString();
     }
@@ -138,7 +140,6 @@ internal static class DelegateGenerator
         List<string> parametersList,
         MethodParameterInfo methodInfo,
         string? assemblyName = null,
-        HashSet<string>? classNameConflicts = null,
         HashSet<string>? typeNameConflicts = null
     )
     {
@@ -150,7 +151,9 @@ internal static class DelegateGenerator
 
         // Use simple class name if in root namespace (due to using statement), otherwise use full name
         var simpleClassName = classDeclaration.Identifier.Text;
-        var useSimpleName = assemblyName != null && classNamespace == assemblyName;
+        var useSimpleName =
+            !string.Equals(assemblyName, b: null, StringComparison.Ordinal)
+            && string.Equals(classNamespace, assemblyName, StringComparison.Ordinal);
 
         string methodCall;
         if (isStatic)
@@ -210,3 +213,5 @@ internal static class DelegateGenerator
         return typeNameConflicts.Contains(simpleName) ? fullTypeName : simpleName;
     }
 }
+
+#pragma warning restore MA0028, MA0076

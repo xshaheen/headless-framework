@@ -5,7 +5,7 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Payments.Paymob.CashIn;
 
-public sealed partial class PaymobCashInBroker(
+internal sealed partial class PaymobCashInBroker(
     HttpClient httpClient,
     IPaymobCashInAuthenticator authenticator,
     IOptionsMonitor<PaymobCashInOptions> options

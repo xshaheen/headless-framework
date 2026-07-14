@@ -25,6 +25,11 @@ namespace Headless.EntityFramework;
 /// with <c>TUserPasskey</c> fixed to <see cref="IdentityUserPasskey{TKey}"/>. Use the nine-type-parameter
 /// variant when you need a custom passkey entity.
 /// </remarks>
+/// <param name="services">
+/// The Headless services bundle injected by the DI container; provides the runtime, current user,
+/// tenant context, and save-pipeline dependencies.
+/// </param>
+/// <param name="options">The EF Core options for this context.</param>
 public abstract class HeadlessIdentityDbContext<
     TUser,
     TRole,
@@ -34,7 +39,7 @@ public abstract class HeadlessIdentityDbContext<
     TUserLogin,
     TRoleClaim,
     TUserToken
->
+>(HeadlessDbContextServices services, DbContextOptions options)
     : HeadlessIdentityDbContext<
         TUser,
         TRole,
@@ -45,7 +50,7 @@ public abstract class HeadlessIdentityDbContext<
         TRoleClaim,
         TUserToken,
         IdentityUserPasskey<TKey>
-    >
+    >(services, options)
     where TUser : IdentityUser<TKey>
     where TRole : IdentityRole<TKey>
     where TKey : IEquatable<TKey>
@@ -53,19 +58,7 @@ public abstract class HeadlessIdentityDbContext<
     where TUserRole : IdentityUserRole<TKey>
     where TUserLogin : IdentityUserLogin<TKey>
     where TRoleClaim : IdentityRoleClaim<TKey>
-    where TUserToken : IdentityUserToken<TKey>
-{
-    /// <summary>
-    /// Initializes a new instance of <see cref="HeadlessIdentityDbContext{TUser,TRole,TKey,TUserClaim,TUserRole,TUserLogin,TRoleClaim,TUserToken}"/>.
-    /// </summary>
-    /// <param name="services">
-    /// The Headless services bundle injected by the DI container; provides the runtime, current user,
-    /// tenant context, and save-pipeline dependencies.
-    /// </param>
-    /// <param name="options">The EF Core options for this context.</param>
-    protected HeadlessIdentityDbContext(HeadlessDbContextServices services, DbContextOptions options)
-        : base(services, options) { }
-}
+    where TUserToken : IdentityUserToken<TKey>;
 
 /// <summary>
 /// Abstract base for an ASP.NET Core Identity <see cref="DbContext"/> that integrates with the full

@@ -1,9 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text.Json;
 using Dapper;
 using Headless.Abstractions;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Internal;
+using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Serialization;
 using Headless.Messaging.Storage.PostgreSql;
@@ -25,6 +26,8 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     private IStorageInitializer? _initializer;
     private IDataStorage? _storage;
     private ISerializer? _serializer;
+    private IOptions<PostgreSqlOptions>? _postgreSqlOptions;
+    private IOptions<MessagingOptions>? _messagingOptions;
 
     /// <inheritdoc />
     protected override DataStorageCapabilities Capabilities =>
@@ -55,6 +58,51 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     {
         _EnsureInitialized();
         return _serializer!;
+    }
+
+    /// <inheritdoc />
+    protected override IDataStorage CreateStorageWithTimeProvider(TimeProvider timeProvider)
+    {
+        _EnsureInitialized();
+        return _CreateStorage(timeProvider);
+    }
+
+    /// <inheritdoc />
+    protected override async Task<DateTime?> GetDatabaseUtcNowAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        return await connection.ExecuteScalarAsync<DateTime>("SELECT statement_timestamp()");
+    }
+
+    /// <inheritdoc />
+    protected override async Task<PersistedLeaseIdentity?> GetPersistedLeaseIdentityAsync(
+        bool published,
+        Guid storageId,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        var tableName = published ? "published" : "received";
+        return await connection.QuerySingleAsync<PersistedLeaseIdentity>(
+            $"""SELECT "LockedUntil", "Owner" FROM messaging.{tableName} WHERE "Id"=@Id""",
+            new { Id = storageId }
+        );
+    }
+
+    private IDataStorage _CreateStorage(TimeProvider timeProvider)
+    {
+        return new PostgreSqlDataStorage(
+            _postgreSqlOptions!,
+            _messagingOptions!,
+            _initializer!,
+            _serializer!,
+            new SequentialGuidGenerator(SequentialGuidType.Version7),
+            timeProvider,
+            NodeMembership,
+            NullLogger<PostgreSqlDataStorage>.Instance
+        );
     }
 
     /// <inheritdoc />
@@ -137,26 +185,17 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
 
         var provider = services.BuildServiceProvider();
 
-        var postgreSqlOptions = provider.GetRequiredService<IOptions<PostgreSqlOptions>>();
-        var messagingOptions = provider.GetRequiredService<IOptions<MessagingOptions>>();
+        _postgreSqlOptions = provider.GetRequiredService<IOptions<PostgreSqlOptions>>();
+        _messagingOptions = provider.GetRequiredService<IOptions<MessagingOptions>>();
         _serializer = provider.GetRequiredService<ISerializer>();
 
         _initializer = new PostgreSqlStorageInitializer(
             NullLogger<PostgreSqlStorageInitializer>.Instance,
-            postgreSqlOptions,
-            messagingOptions
+            _postgreSqlOptions,
+            _messagingOptions
         );
 
-        _storage = new PostgreSqlDataStorage(
-            postgreSqlOptions,
-            messagingOptions,
-            _initializer,
-            provider.GetRequiredService<ISerializer>(),
-            new SequentialGuidGenerator(SequentialGuidType.Version7),
-            TimeProvider.System,
-            NodeMembership,
-            NullLogger<PostgreSqlDataStorage>.Instance
-        );
+        _storage = _CreateStorage(TimeProvider.System);
     }
 
     #region Data Storage Tests
@@ -190,6 +229,14 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     public override Task should_change_publish_state_to_delayed() => base.should_change_publish_state_to_delayed();
 
     [Fact]
+    public override Task should_not_flip_terminal_published_row_back_to_delayed() =>
+        base.should_not_flip_terminal_published_row_back_to_delayed();
+
+    [Fact]
+    public override Task should_ignore_unknown_storage_ids_when_flushing_delayed_state() =>
+        base.should_ignore_unknown_storage_ids_when_flushing_delayed_state();
+
+    [Fact]
     public override Task should_get_published_messages_of_need_retry() =>
         base.should_get_published_messages_of_need_retry();
 
@@ -199,6 +246,10 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
 
     [Fact]
     public override Task should_delete_expired_messages() => base.should_delete_expired_messages();
+
+    [Fact]
+    public override Task should_not_delete_expired_failed_messages_with_pending_retry() =>
+        base.should_not_delete_expired_failed_messages_with_pending_retry();
 
     [Fact]
     public override Task should_delete_published_message() => base.should_delete_published_message();
@@ -250,8 +301,56 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
         base.should_not_return_leased_published_message_until_lease_expires();
 
     [Fact]
+    public override Task should_use_database_clock_when_reclaiming_published_retry_lease() =>
+        base.should_use_database_clock_when_reclaiming_published_retry_lease();
+
+    [Fact]
+    public override Task should_use_database_clock_when_reclaiming_received_retry_lease() =>
+        base.should_use_database_clock_when_reclaiming_received_retry_lease();
+
+    [Fact]
+    public override Task should_use_database_clock_when_fast_forwarding_dead_owner_lease() =>
+        base.should_use_database_clock_when_fast_forwarding_dead_owner_lease();
+
+    [Fact]
+    public override Task should_stamp_retry_lease_from_database_clock() =>
+        base.should_stamp_retry_lease_from_database_clock();
+
+    [Fact]
+    public override Task should_use_application_clock_when_scheduling_published_retry() =>
+        base.should_use_application_clock_when_scheduling_published_retry();
+
+    [Fact]
+    public override Task should_use_application_clock_when_scheduling_received_retry() =>
+        base.should_use_application_clock_when_scheduling_received_retry();
+
+    [Fact]
     public override Task should_reject_mismatched_original_retries() =>
         base.should_reject_mismatched_original_retries();
+
+    [Fact]
+    public override Task should_lease_and_reserve_publish_attempt_in_single_step() =>
+        base.should_lease_and_reserve_publish_attempt_in_single_step();
+
+    [Fact]
+    public override Task should_reject_lease_and_reserve_with_stale_inline_attempts_token() =>
+        base.should_reject_lease_and_reserve_with_stale_inline_attempts_token();
+
+    [Fact]
+    public override Task should_reject_stale_published_lease_generation_writes() =>
+        base.should_reject_stale_published_lease_generation_writes();
+
+    [Fact]
+    public override Task should_reject_stale_received_lease_generation_writes() =>
+        base.should_reject_stale_received_lease_generation_writes();
+
+    [Fact]
+    public override Task should_allow_published_fenced_writes_with_fast_application_clock() =>
+        base.should_allow_published_fenced_writes_with_fast_application_clock();
+
+    [Fact]
+    public override Task should_allow_received_fenced_writes_with_fast_application_clock() =>
+        base.should_allow_received_fenced_writes_with_fast_application_clock();
 
     [Fact]
     public override Task should_report_false_when_received_exception_message_is_already_terminal() =>
@@ -276,6 +375,10 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     [Fact]
     public override Task should_not_return_leased_received_message_until_lease_expires() =>
         base.should_not_return_leased_received_message_until_lease_expires();
+
+    [Fact]
+    public override Task should_return_unstored_snapshot_when_redelivery_hits_active_receive_lease() =>
+        base.should_return_unstored_snapshot_when_redelivery_hits_active_receive_lease();
 
     [Fact]
     public override Task should_handle_concurrent_state_updates_to_same_row() =>
@@ -317,6 +420,86 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     #endregion
 
     #region PostgreSQL-Specific Tests
+
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    public override Task should_stamp_fresh_dispatch_lease_from_database_clock(bool published, bool reserveAttempt) =>
+        base.should_stamp_fresh_dispatch_lease_from_database_clock(published, reserveAttempt);
+
+    [Fact]
+    public async Task should_preserve_sub_second_fresh_dispatch_lease_duration()
+    {
+        var storage = GetStorage();
+        var message = await storage.StoreMessageAsync(
+            "sub-second-database-clock-lease",
+            CreateMessage(),
+            cancellationToken: AbortToken
+        );
+        var leaseDuration = TimeSpan.FromMilliseconds(750);
+
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        var databaseTimeBefore = await connection.ExecuteScalarAsync<DateTime>("SELECT statement_timestamp()");
+
+        (await storage.LeasePublishAsync(message, leaseDuration, AbortToken)).Should().BeTrue();
+
+        var persistedLease = await connection.QuerySingleAsync<PersistedLease>(
+            """SELECT statement_timestamp() AS "DatabaseTimeAfter", "LockedUntil", "Owner" FROM messaging.published WHERE "Id"=@Id""",
+            new { Id = message.StorageId }
+        );
+        persistedLease.LockedUntil.Should().BeOnOrAfter(databaseTimeBefore.Add(leaseDuration));
+        persistedLease.LockedUntil.Should().BeOnOrBefore(persistedLease.DatabaseTimeAfter.Add(leaseDuration));
+    }
+
+    [Fact]
+    public async Task should_preserve_active_receive_lease_when_fast_application_clock_redelivers()
+    {
+        var storage = GetStorage();
+        var origin = CreateMessage();
+        var stored = await storage.StoreReceivedMessageAsync(
+            "fast-clock-redelivery",
+            "fast-clock-group",
+            origin,
+            AbortToken
+        );
+        await storage.ChangeReceiveStateAsync(
+            stored,
+            StatusName.Failed,
+            nextRetryAt: DateTime.UtcNow.AddMinutes(-1),
+            cancellationToken: AbortToken
+        );
+
+        NodeMembership.SetIdentity("fast-clock-redelivery-owner");
+        (await storage.LeaseReceiveAsync(stored, TimeSpan.FromMinutes(5), AbortToken)).Should().BeTrue();
+
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        var before = await connection.QuerySingleAsync<PersistedLease>(
+            """SELECT statement_timestamp() AS "DatabaseTimeAfter", "LockedUntil", "Owner" FROM messaging.received WHERE "Id"=@Id""",
+            new { Id = stored.StorageId }
+        );
+
+        var fastClockStorage = _CreateStorage(
+            new Microsoft.Extensions.Time.Testing.FakeTimeProvider(DateTimeOffset.UtcNow.AddYears(10))
+        );
+        var redelivery = await fastClockStorage.StoreReceivedMessageAsync(
+            "fast-clock-redelivery",
+            "fast-clock-group",
+            origin,
+            AbortToken
+        );
+        var after = await connection.QuerySingleAsync<PersistedLease>(
+            """SELECT statement_timestamp() AS "DatabaseTimeAfter", "LockedUntil", "Owner" FROM messaging.received WHERE "Id"=@Id""",
+            new { Id = stored.StorageId }
+        );
+
+        redelivery.StorageId.Should().NotBe(stored.StorageId, "the active-lease guard must reject the upsert");
+        after.LockedUntil.Should().Be(before.LockedUntil);
+        after.Owner.Should().Be(before.Owner);
+    }
 
     [Fact]
     public async Task should_create_database_schema()
@@ -367,6 +550,226 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
         // then
         monitoringApi.Should().BeOfType<PostgreSqlMonitoringApi>();
         await Task.CompletedTask;
+    }
+
+    [Theory]
+    [InlineData("published")]
+    [InlineData("received")]
+    public async Task should_create_status_name_added_composite_index(string table)
+    {
+        // #508 — the initializer creates the final ("StatusName","Added") dashboard index directly.
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+
+        var indexDef = await connection.QueryFirstOrDefaultAsync<string>(
+            "SELECT indexdef FROM pg_indexes WHERE schemaname = 'messaging' AND indexname = @IndexName",
+            new { IndexName = $"idx_{table}_StatusName_Added" }
+        );
+
+        indexDef.Should().NotBeNull().And.Contain("\"StatusName\", \"Added\"");
+    }
+
+    [Fact]
+    public async Task should_create_queued_partial_index_on_published()
+    {
+        // #509 — partial index for the Queued branch of the delayed scheduler's OR predicate.
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+
+        var indexDef = await connection.QueryFirstOrDefaultAsync<string>(
+            "SELECT indexdef FROM pg_indexes WHERE schemaname = 'messaging' AND indexname = 'idx_published_Version_ExpiresAt_Queued'"
+        );
+
+        indexDef.Should().NotBeNull();
+        indexDef.Should().Contain("\"Version\", \"ExpiresAt\"");
+        indexDef.Should().Contain("WHERE").And.Contain("Queued");
+    }
+
+    [Theory]
+    [InlineData("published")]
+    [InlineData("received")]
+    public async Task should_create_content_trgm_gin_index_when_pg_trgm_available(string table)
+    {
+        // #507 — the container role can CREATE EXTENSION pg_trgm, so the trigram content indexes are
+        // created (happy path). This also proves moving CREATE EXTENSION out of the transaction did not
+        // regress trigram-index creation. Managed-PG graceful degradation is covered by the try/catch +
+        // pg_extension probe in _TryEnsureTrgmExtensionAsync (needs a privilege-restricted role to exercise).
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+
+        var indexDef = await connection.QueryFirstOrDefaultAsync<string>(
+            "SELECT indexdef FROM pg_indexes WHERE schemaname = 'messaging' AND indexname = @IndexName",
+            new { IndexName = $"idx_{table}_Content_trgm" }
+        );
+
+        indexDef.Should().NotBeNull();
+        indexDef.Should().Contain("gin").And.Contain("gin_trgm_ops");
+    }
+
+    [Fact]
+    public async Task should_initialize_core_schema_when_restricted_role_cannot_create_pg_trgm()
+    {
+        await RestrictedPostgreSqlDatabase.ExecuteAsync(
+            fixture.ConnectionString,
+            preinstallTrgm: false,
+            async connectionString =>
+            {
+                var initializer = _CreateInitializer(connectionString);
+
+                await initializer.InitializeAsync(AbortToken);
+
+                await using var connection = new NpgsqlConnection(connectionString);
+                await connection.OpenAsync(AbortToken);
+                var tables = await connection.ExecuteScalarAsync<int>(
+                    new CommandDefinition(
+                        "SELECT COUNT(1) FROM information_schema.tables WHERE table_schema = 'messaging' AND table_name IN ('published', 'received')",
+                        cancellationToken: AbortToken
+                    )
+                );
+                var coreIndexes = await connection.ExecuteScalarAsync<int>(
+                    new CommandDefinition(
+                        "SELECT COUNT(1) FROM pg_indexes WHERE schemaname = 'messaging' AND indexname IN ('idx_published_StatusName_Added', 'idx_received_StatusName_Added')",
+                        cancellationToken: AbortToken
+                    )
+                );
+                var trgmIndexes = await connection.ExecuteScalarAsync<int>(
+                    new CommandDefinition(
+                        "SELECT COUNT(1) FROM pg_indexes WHERE schemaname = 'messaging' AND indexname LIKE 'idx_%_Content_trgm'",
+                        cancellationToken: AbortToken
+                    )
+                );
+
+                tables.Should().Be(2);
+                coreIndexes.Should().Be(2);
+                trgmIndexes.Should().Be(0);
+            },
+            AbortToken
+        );
+    }
+
+    [Fact]
+    public async Task should_create_trgm_indexes_for_restricted_role_when_extension_is_preinstalled()
+    {
+        await RestrictedPostgreSqlDatabase.ExecuteAsync(
+            fixture.ConnectionString,
+            preinstallTrgm: true,
+            async connectionString =>
+            {
+                var initializer = _CreateInitializer(connectionString);
+
+                await initializer.InitializeAsync(AbortToken);
+
+                await using var connection = new NpgsqlConnection(connectionString);
+                await connection.OpenAsync(AbortToken);
+                var trgmIndexes = await connection.ExecuteScalarAsync<int>(
+                    new CommandDefinition(
+                        "SELECT COUNT(1) FROM pg_indexes WHERE schemaname = 'messaging' AND indexname IN ('idx_published_Content_trgm', 'idx_received_Content_trgm')",
+                        cancellationToken: AbortToken
+                    )
+                );
+
+                trgmIndexes.Should().Be(2);
+            },
+            AbortToken
+        );
+    }
+
+    [Theory]
+    [InlineData("published")]
+    [InlineData("received")]
+    public async Task should_terminalize_poison_retry_row_when_content_cannot_deserialize(string tableName)
+    {
+        // given
+        var storage = GetStorage();
+        var id = Guid.NewGuid();
+        var now = TimeProvider.GetUtcNow().UtcDateTime;
+
+        await using (var connection = new NpgsqlConnection(fixture.ConnectionString))
+        {
+            await connection.OpenAsync(AbortToken);
+            await _InsertPoisonRetryRowAsync(connection, tableName, id, now);
+        }
+
+        // when
+        var picked = string.Equals(tableName, "published", StringComparison.Ordinal)
+            ? await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken)
+            : await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken);
+
+        // then
+        picked.Should().NotContain(message => message.StorageId == id);
+
+        await using var assertConnection = new NpgsqlConnection(fixture.ConnectionString);
+        await assertConnection.OpenAsync(AbortToken);
+
+        var statusName = await assertConnection.ExecuteScalarAsync<string>(
+            $"""SELECT "StatusName" FROM messaging.{tableName} WHERE "Id" = @Id""",
+            new { Id = id }
+        );
+        var nextRetryAt = await assertConnection.ExecuteScalarAsync<DateTime?>(
+            $"""SELECT "NextRetryAt" FROM messaging.{tableName} WHERE "Id" = @Id""",
+            new { Id = id }
+        );
+        var lockedUntil = await assertConnection.ExecuteScalarAsync<DateTime?>(
+            $"""SELECT "LockedUntil" FROM messaging.{tableName} WHERE "Id" = @Id""",
+            new { Id = id }
+        );
+        var owner = await assertConnection.ExecuteScalarAsync<string?>(
+            $"""SELECT "Owner" FROM messaging.{tableName} WHERE "Id" = @Id""",
+            new { Id = id }
+        );
+
+        statusName.Should().Be(nameof(StatusName.Failed));
+        nextRetryAt.Should().BeNull();
+        lockedUntil.Should().BeNull();
+        owner.Should().BeNull();
+
+        if (string.Equals(tableName, "received", StringComparison.Ordinal))
+        {
+            var exceptionInfo = await assertConnection.ExecuteScalarAsync<string?>(
+                """SELECT "ExceptionInfo" FROM messaging.received WHERE "Id" = @Id""",
+                new { Id = id }
+            );
+            exceptionInfo.Should().Contain("JsonException");
+        }
+    }
+
+    [Theory]
+    [InlineData("published")]
+    [InlineData("received")]
+    public async Task should_return_healthy_retry_row_when_same_claim_batch_contains_poison(string tableName)
+    {
+        var storage = GetStorage();
+        var serializer = GetSerializer();
+        var poisonId = Guid.NewGuid();
+        var healthyId = Guid.NewGuid();
+        var now = TimeProvider.GetUtcNow().UtcDateTime;
+
+        await using (var connection = new NpgsqlConnection(fixture.ConnectionString))
+        {
+            await connection.OpenAsync(AbortToken);
+            await _InsertPoisonRetryRowAsync(connection, tableName, poisonId, now);
+            await _InsertHealthyRetryRowAsync(
+                connection,
+                tableName,
+                healthyId,
+                serializer.Serialize(CreateMessage("healthy-retry")),
+                now
+            );
+        }
+
+        var picked = string.Equals(tableName, "published", StringComparison.Ordinal)
+            ? await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken)
+            : await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken);
+
+        picked.Select(message => message.StorageId).Should().Contain(healthyId).And.NotContain(poisonId);
+
+        await using var assertConnection = new NpgsqlConnection(fixture.ConnectionString);
+        await assertConnection.OpenAsync(AbortToken);
+        var poisonNextRetryAt = await assertConnection.ExecuteScalarAsync<DateTime?>(
+            $"""SELECT "NextRetryAt" FROM messaging.{tableName} WHERE "Id" = @Id""",
+            new { Id = poisonId }
+        );
+        poisonNextRetryAt.Should().BeNull();
     }
 
     [Theory]
@@ -594,6 +997,15 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
             );
     }
 
+    private PostgreSqlStorageInitializer _CreateInitializer(string connectionString)
+    {
+        return new PostgreSqlStorageInitializer(
+            NullLogger<PostgreSqlStorageInitializer>.Instance,
+            Options.Create(new PostgreSqlOptions { ConnectionString = connectionString }),
+            Options.Create(new MessagingOptions())
+        );
+    }
+
     private static List<string> _CollectNodeTypes(string explainJson)
     {
         var nodeTypes = new List<string>();
@@ -624,6 +1036,96 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
         return indexNames;
     }
 
+    private static async Task _InsertPoisonRetryRowAsync(
+        NpgsqlConnection connection,
+        string tableName,
+        Guid id,
+        DateTime now
+    )
+    {
+        if (string.Equals(tableName, "published", StringComparison.Ordinal))
+        {
+            await connection.ExecuteAsync(
+                """
+                INSERT INTO messaging.published
+                    ("Id", "Version", "Name", "Content", "IntentType", "Retries", "Added", "ExpiresAt", "NextRetryAt", "LockedUntil", "Owner", "StatusName", "MessageId")
+                VALUES
+                    (@Id, 'v1', 'poison-published', 'not-json', 0, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId);
+                """,
+                new
+                {
+                    Id = id,
+                    Now = now,
+                    NextRetryAt = now.AddMinutes(-1),
+                    MessageId = $"poison-{id:N}",
+                }
+            );
+            return;
+        }
+
+        await connection.ExecuteAsync(
+            """
+            INSERT INTO messaging.received
+                ("Id", "Version", "Name", "Group", "Content", "IntentType", "Retries", "Added", "ExpiresAt", "NextRetryAt", "LockedUntil", "Owner", "StatusName", "MessageId", "ExceptionInfo")
+            VALUES
+                (@Id, 'v1', 'poison-received', 'poison-group', 'not-json', 0, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId, NULL);
+            """,
+            new
+            {
+                Id = id,
+                Now = now,
+                NextRetryAt = now.AddMinutes(-1),
+                MessageId = $"poison-{id:N}",
+            }
+        );
+    }
+
+    private static Task _InsertHealthyRetryRowAsync(
+        NpgsqlConnection connection,
+        string tableName,
+        Guid id,
+        string content,
+        DateTime now
+    )
+    {
+        if (string.Equals(tableName, "published", StringComparison.Ordinal))
+        {
+            return connection.ExecuteAsync(
+                """
+                INSERT INTO messaging.published
+                    ("Id", "Version", "Name", "Content", "IntentType", "Retries", "Added", "ExpiresAt", "NextRetryAt", "LockedUntil", "Owner", "StatusName", "MessageId")
+                VALUES
+                    (@Id, 'v1', 'healthy-published', @Content, 0, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId);
+                """,
+                new
+                {
+                    Id = id,
+                    Content = content,
+                    Now = now,
+                    NextRetryAt = now.AddMinutes(-1),
+                    MessageId = $"healthy-{id:N}",
+                }
+            );
+        }
+
+        return connection.ExecuteAsync(
+            """
+            INSERT INTO messaging.received
+                ("Id", "Version", "Name", "Group", "Content", "IntentType", "Retries", "Added", "ExpiresAt", "NextRetryAt", "LockedUntil", "Owner", "StatusName", "MessageId", "ExceptionInfo")
+            VALUES
+                (@Id, 'v1', 'healthy-received', 'healthy-group', @Content, 0, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId, NULL);
+            """,
+            new
+            {
+                Id = id,
+                Content = content,
+                Now = now,
+                NextRetryAt = now.AddMinutes(-1),
+                MessageId = $"healthy-{id:N}",
+            }
+        );
+    }
+
     private static void _WalkPlanForProperty(JsonElement plan, string propertyName, List<string> collector)
     {
         if (plan.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String)
@@ -642,6 +1144,15 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
                 _WalkPlanForProperty(child, propertyName, collector);
             }
         }
+    }
+
+    private sealed class PersistedLease
+    {
+        public required DateTime DatabaseTimeAfter { get; init; }
+
+        public required DateTime LockedUntil { get; init; }
+
+        public string? Owner { get; init; }
     }
 
     #endregion

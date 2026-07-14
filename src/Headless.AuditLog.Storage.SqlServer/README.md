@@ -8,7 +8,7 @@ Provides SQL Server-native audit log storage without pulling Entity Framework in
 
 ## Key Features
 
-- No EF Core dependency — depends only on `Microsoft.Data.SqlClient` and `Headless.AuditLog.Abstractions`.
+- No EF Core dependency — depends only on `Microsoft.Data.SqlClient`, `Headless.AuditLog.Abstractions`, and `Headless.AuditLog.Core`.
 - `SqlServerAuditLogStore` — implements `IAuditLogStore`; enrolls in the consumer's ambient `SqlTransaction` when available; falls back to its own connection otherwise.
 - `SqlServerAuditLog<TContext>` — implements `IAuditLog<TContext>` for explicit event logging.
 - `SqlServerReadAuditLog<TContext>` — implements `IReadAuditLog<TContext>` via parameterized SQL queries using `TOP(@Limit)`.
@@ -16,6 +16,7 @@ Provides SQL Server-native audit log storage without pulling Entity Framework in
 - Batched INSERT: up to 100 rows per command (SQL Server parameter limit is lower than PostgreSQL's).
 - `nvarchar(max)` by default for JSON columns; `NvarcharMax` is the only accepted `AuditLogJsonColumnType` (`Jsonb` and `Json` are rejected at options validation).
 - `SqlServerAuditLogOptions` — `ConnectionString` (required) and `CommandTimeout` (default 30 s).
+- `UseSqlServer` ships the full provider overload trio: `(string connectionString)`, `(IConfiguration configuration)`, `(Action<SqlServerAuditLogOptions>)`, and `(Action<SqlServerAuditLogOptions, IServiceProvider>)`.
 - Same index set as `Headless.AuditLog.Storage.EntityFramework`: tenant+time, tenant+action+time, tenant+entity+time, tenant+actor+time, correlation ID.
 
 ## Design Notes
@@ -64,6 +65,14 @@ setup.UseSqlServer(options =>
 });
 ```
 
+Bind provider options from configuration, or configure with service resolution:
+
+```csharp
+setup.UseSqlServer(builder.Configuration.GetSection("Headless:AuditLog:SqlServer"));
+setup.UseSqlServer((options, sp) =>
+    options.ConnectionString = sp.GetRequiredService<IConfiguration>().GetConnectionString("AuditLog")!);
+```
+
 ## Configuration
 
 `SqlServerAuditLogOptions`:
@@ -78,7 +87,7 @@ setup.UseSqlServer(options =>
 ## Dependencies
 
 - `Headless.AuditLog.Abstractions`
-- `Headless.Hosting`
+- `Headless.AuditLog.Core`
 - `Headless.Serializer`
 - `Microsoft.Data.SqlClient`
 
@@ -89,4 +98,4 @@ setup.UseSqlServer(options =>
 - Registers `IAuditLogStore` as scoped (`SqlServerAuditLogStore`).
 - Registers `IAuditLog<TContext>` as singleton (`SqlServerAuditLog<TContext>`).
 - Registers `IReadAuditLog<TContext>` as singleton (`SqlServerReadAuditLog<TContext>`).
-- Registers `IJsonSerializer`, `IClock`, `ICurrentTenant`, `ICurrentUser`, `ICorrelationIdProvider` as singletons if not already registered.
+- Registers `IJsonSerializer`, `TimeProvider` (`TimeProvider.System`), `ICurrentTenant`, `ICurrentUser`, `ICorrelationIdProvider` as singletons if not already registered.

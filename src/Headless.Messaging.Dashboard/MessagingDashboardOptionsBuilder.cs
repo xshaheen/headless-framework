@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Headless.Dashboard.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Cors.Infrastructure;
@@ -19,6 +20,10 @@ public sealed class MessagingDashboardOptionsBuilder
     /// Authentication configuration (shared with Jobs Dashboard).
     /// </summary>
     internal AuthConfig Auth { get; set; } = new();
+
+    // Tracks whether an authentication mode was explicitly chosen. The dashboard fails closed at startup
+    // (see Validate) when this is false, so it cannot ship publicly by omission.
+    internal bool AuthConfigured { get; private set; }
 
     // Custom Middleware Integration
 
@@ -54,11 +59,26 @@ public sealed class MessagingDashboardOptionsBuilder
     }
 
     /// <summary>
-    /// Configure CORS policy for the dashboard.
+    /// Configure the CORS policy for the dashboard. By default no CORS policy is applied: the dashboard SPA
+    /// is served from the same origin as its API, so no cross-origin access is required. Prefer
+    /// <see cref="SetCorsOrigins"/> for the common cross-origin case.
     /// </summary>
     public MessagingDashboardOptionsBuilder SetCorsPolicy(Action<CorsPolicyBuilder> corsPolicyBuilder)
     {
         CorsPolicyBuilder = corsPolicyBuilder;
+        return this;
+    }
+
+    /// <summary>
+    /// Restricts cross-origin access to the given origins with a credentialed policy. Use this when the
+    /// dashboard SPA is served from a different origin than its API; when they share an origin (the default)
+    /// no CORS configuration is needed.
+    /// </summary>
+    /// <param name="origins">The exact allowed origins, e.g. <c>https://admin.example.com</c>. Must not be empty.</param>
+    public MessagingDashboardOptionsBuilder SetCorsOrigins(params string[] origins)
+    {
+        Argument.IsNotNullOrEmpty(origins);
+        CorsPolicyBuilder = cors => cors.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod().AllowCredentials();
         return this;
     }
 
@@ -77,6 +97,7 @@ public sealed class MessagingDashboardOptionsBuilder
     public MessagingDashboardOptionsBuilder WithNoAuth()
     {
         Auth.Mode = AuthMode.None;
+        AuthConfigured = true;
         return this;
     }
 
@@ -85,6 +106,7 @@ public sealed class MessagingDashboardOptionsBuilder
     {
         Auth.Mode = AuthMode.Basic;
         Auth.BasicCredentials = $"{username}:{password}".ToBase64();
+        AuthConfigured = true;
         return this;
     }
 
@@ -93,6 +115,7 @@ public sealed class MessagingDashboardOptionsBuilder
     {
         Auth.Mode = AuthMode.ApiKey;
         Auth.ApiKey = apiKey;
+        AuthConfigured = true;
         return this;
     }
 
@@ -102,6 +125,7 @@ public sealed class MessagingDashboardOptionsBuilder
     {
         Auth.Mode = AuthMode.Host;
         Auth.HostAuthorizationPolicy = policy;
+        AuthConfigured = true;
         return this;
     }
 
@@ -110,6 +134,7 @@ public sealed class MessagingDashboardOptionsBuilder
     {
         Auth.Mode = AuthMode.Custom;
         Auth.CustomValidator = validator;
+        AuthConfigured = true;
         return this;
     }
 
@@ -123,6 +148,15 @@ public sealed class MessagingDashboardOptionsBuilder
     /// <summary>Validate the configuration.</summary>
     internal void Validate()
     {
+        if (!AuthConfigured)
+        {
+            throw new InvalidOperationException(
+                "Dashboard authentication was not configured. Secure the dashboard with WithBasicAuth, WithApiKey, "
+                    + "WithHostAuthentication, or WithCustomAuth, or call WithNoAuth() to explicitly run it "
+                    + "unauthenticated (development or trusted-network use only)."
+            );
+        }
+
         Auth.Validate();
     }
 }

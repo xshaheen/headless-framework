@@ -203,7 +203,7 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         var recorder = new MiddlewareCallRecorder();
         var services = _CreateServices(recorder);
         services.AddScoped<
-            IPublishMiddleware<PublishingContext<MiddlewarePayload>>,
+            IPublishMiddleware<PublishContext<MiddlewarePayload>>,
             MutatingAfterNextTypedPublishMiddleware
         >();
         var pipeline = _BuildPipeline(services);
@@ -229,10 +229,7 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         var recorder = new MiddlewareCallRecorder();
         var services = _CreateServices(recorder);
         services.AddScoped<IPublishMiddleware<PublishContext>, MutatingAfterNextBusPublishMiddleware>();
-        services.AddScoped<
-            IPublishMiddleware<PublishingContext<MiddlewarePayload>>,
-            ShortCircuitTypedPublishMiddleware
-        >();
+        services.AddScoped<IPublishMiddleware<PublishContext<MiddlewarePayload>>, ShortCircuitTypedPublishMiddleware>();
         var pipeline = _BuildPipeline(services);
 
         // when
@@ -409,9 +406,9 @@ internal sealed class SwallowingOuterCancellationPublishMiddleware(CancellationT
 }
 
 internal sealed class MutatingAfterNextTypedPublishMiddleware(MiddlewareCallRecorder recorder)
-    : IPublishMiddleware<PublishingContext<MiddlewarePayload>>
+    : IPublishMiddleware<PublishContext<MiddlewarePayload>>
 {
-    public async ValueTask InvokeAsync(PublishingContext<MiddlewarePayload> context, Func<ValueTask> next)
+    public async ValueTask InvokeAsync(PublishContext<MiddlewarePayload> context, Func<ValueTask> next)
     {
         await next();
 
@@ -445,9 +442,9 @@ internal sealed class MutatingAfterNextBusPublishMiddleware(MiddlewareCallRecord
 }
 
 internal sealed class ShortCircuitTypedPublishMiddleware(MiddlewareCallRecorder recorder)
-    : IPublishMiddleware<PublishingContext<MiddlewarePayload>>
+    : IPublishMiddleware<PublishContext<MiddlewarePayload>>
 {
-    public ValueTask InvokeAsync(PublishingContext<MiddlewarePayload> context, Func<ValueTask> next)
+    public ValueTask InvokeAsync(PublishContext<MiddlewarePayload> context, Func<ValueTask> next)
     {
         recorder.Record("typed.short-circuit");
         return ValueTask.CompletedTask;

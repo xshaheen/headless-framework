@@ -189,7 +189,7 @@ public abstract class SqlConnectionFactoryTestBase : TestBase
         // then - all return same connection, all open
         connections.Should().HaveCount(parallelCount);
         connections.Should().OnlyContain(c => c.State == ConnectionState.Open);
-        connections.Distinct().Should().HaveCount(1);
+        connections.Distinct().Should().ContainSingle();
     }
 
     /// <summary>

@@ -1,22 +1,21 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
-using Headless.Settings;
 using Headless.Settings.Internal;
 using Headless.Settings.Repositories;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Microsoft.Extensions.DependencyInjection;
+namespace Headless.Settings;
 
 /// <summary>
 /// Provides the <c>UseEntityFramework</c> extension member on <see cref="HeadlessSettingsSetupBuilder"/>
 /// that wires EF Core as the settings storage backend.
 /// </summary>
 [PublicAPI]
-public static class SetupSettings
+public static class SetupSettingsEntityFramework
 {
     extension(HeadlessSettingsSetupBuilder setup)
     {

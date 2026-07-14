@@ -2,10 +2,10 @@
 
 using System.Linq.Expressions;
 using Headless.Checks;
-using Microsoft.EntityFrameworkCore;
+using Headless.Primitives;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Headless.Primitives;
+namespace Microsoft.EntityFrameworkCore;
 
 /// <summary>
 /// Extension members for materializing <see cref="IQueryable{T}"/> results into paginated
@@ -57,16 +57,17 @@ public static class IndexPageExtensions
                 return new IndexPage<T>([], index, size, total);
             }
 
-            var items =
-                index < 0
-                    ? await source
-                        .SkipLast(-(index + 1) * size)
-                        .TakeLast(size)
-                        .ToListAsync(cancellationToken)
-                        .ConfigureAwait(false)
-                    : await source.Skip(index * size).Take(size).ToListAsync(cancellationToken).ConfigureAwait(false);
+            var pageIndex = _GetPageIndex(index, size, total);
+            var skip = _GetSkipCount(pageIndex, size);
 
-            return new IndexPage<T>(items, index, size, total);
+            if (skip is null)
+            {
+                return new([], pageIndex, size, total);
+            }
+
+            var items = await source.Skip(skip.Value).Take(size).ToListAsync(cancellationToken).ConfigureAwait(false);
+
+            return new IndexPage<T>(items, pageIndex, size, total);
         }
 
         /// <summary>
@@ -169,16 +170,21 @@ public static class IndexPageExtensions
 
             var orderQuery = ascending ? source.OrderBy(orderBy) : source.OrderByDescending(orderBy);
 
-            var pagedQuery =
-                index < 0
-                    ? orderQuery.SkipLast(-(index + 1) * size).TakeLast(size)
-                    : orderQuery.Skip(index * size).Take(size);
+            var pageIndex = _GetPageIndex(index, size, total);
+            var skip = _GetSkipCount(pageIndex, size);
+
+            if (skip is null)
+            {
+                return new([], pageIndex, size, total);
+            }
+
+            var pagedQuery = orderQuery.Skip(skip.Value).Take(size);
 
             var projectedQuery = pagedQuery.Select(selector);
 
             var items = await projectedQuery.ToListAsync(cancellationToken).ConfigureAwait(false);
 
-            return new(items, index, size, total);
+            return new(items, pageIndex, size, total);
         }
 
         /// <summary>
@@ -291,14 +297,19 @@ public static class IndexPageExtensions
 
             var orderQuery = ascending ? source.OrderBy(orderBy) : source.OrderByDescending(orderBy);
 
-            var pagedQuery =
-                index < 0
-                    ? orderQuery.SkipLast(-(index + 1) * size).TakeLast(size)
-                    : orderQuery.Skip(index * size).Take(size);
+            var pageIndex = _GetPageIndex(index, size, total);
+            var skip = _GetSkipCount(pageIndex, size);
+
+            if (skip is null)
+            {
+                return new([], pageIndex, size, total);
+            }
+
+            var pagedQuery = orderQuery.Skip(skip.Value).Take(size);
 
             var items = await pagedQuery.ToListAsync(cancellationToken).ConfigureAwait(false);
 
-            return new(items, index, size, total);
+            return new(items, pageIndex, size, total);
         }
 
         /// <summary>
@@ -357,5 +368,27 @@ public static class IndexPageExtensions
                 ? source.ToIndexPageAsync(orderBy, ascending, cancellationToken)
                 : source.ToIndexPageAsync(orderBy, ascending, request.Index, request.Size, cancellationToken);
         }
+    }
+
+    private static int _GetPageIndex(int index, int size, int total)
+    {
+        return index >= 0 || total == 0 ? index : _GetTotalPages(total, size) + index;
+    }
+
+    private static int? _GetSkipCount(int pageIndex, int size)
+    {
+        if (pageIndex < 0)
+        {
+            return null;
+        }
+
+        var skip = (long)pageIndex * size;
+
+        return skip > int.MaxValue ? null : (int)skip;
+    }
+
+    private static int _GetTotalPages(int total, int size)
+    {
+        return (int)Math.Ceiling(total / (decimal)size);
     }
 }

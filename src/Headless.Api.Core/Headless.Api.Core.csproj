@@ -1,6 +1,8 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <Description>Core services, options, and setup primitives for Headless API packages.</Description>
+    <PackageTags>headless;api;dotnet</PackageTags>
     <RootNamespace>Headless.Api</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
@@ -29,7 +31,6 @@
     <ProjectReference Include="..\Headless.Security\Headless.Security.csproj" />
     <ProjectReference Include="..\Headless.Caching.Abstractions\Headless.Caching.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.FluentValidation\Headless.FluentValidation.csproj" />
-    <ProjectReference Include="..\Headless.Api.FluentValidation\Headless.Api.FluentValidation.csproj" />
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
   </ItemGroup>
   <ItemGroup Label="Resources">

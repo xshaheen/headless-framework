@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text.Json.Nodes;
+using Headless.Serializer;
 
 namespace Tests.Extensions;
 

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.Metrics;
 using Headless.DistributedLocks;
 using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
@@ -27,13 +28,15 @@ namespace Tests.CircuitBreaker;
 /// </remarks>
 public sealed class CircuitBreakerIntegrationTests : TestBase
 {
+    private readonly List<IMeterFactory> _meterFactories = [];
+
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
 
     private static string _CircuitKey(string group) => $"{IntentType.Bus:D}:{group}";
 
-    private static CircuitBreakerStateManager _CreateStateManager(
+    private CircuitBreakerStateManager _CreateStateManager(
         int failureThreshold = 3,
         TimeSpan? openDuration = null,
         TimeSpan? maxOpenDuration = null,
@@ -48,13 +51,28 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
             SuccessfulCyclesToResetEscalation = successfulCyclesToResetEscalation,
         };
 
+        // Owned by the test: disposed in DisposeAsyncCore so the meter stays alive for the test.
+        var meterFactory = CircuitBreakerTestHelpers.CreateMeterFactory();
+        _meterFactories.Add(meterFactory);
+
         return new CircuitBreakerStateManager(
             Options.Create(opts),
             new ConsumerCircuitBreakerRegistry(),
             new NullLogger<CircuitBreakerStateManager>(),
-            new CircuitBreakerMetrics(CircuitBreakerTestHelpers.CreateMeterFactory()),
+            new CircuitBreakerMetrics(meterFactory),
             TimeProvider.System
         );
+    }
+
+    protected override async ValueTask DisposeAsyncCore()
+    {
+        foreach (var meterFactory in _meterFactories)
+        {
+            meterFactory.Dispose();
+        }
+
+        _meterFactories.Clear();
+        await base.DisposeAsyncCore().ConfigureAwait(false);
     }
 
     private static MediumMessage _CreateMessage(string? group)
@@ -127,8 +145,8 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         );
 
         // when — 2 failures: still below threshold
-        await sut.ReportFailureAsync(group, new TimeoutException("transient-1"));
-        await sut.ReportFailureAsync(group, new TimeoutException("transient-2"));
+        await sut.ReportFailureAsync(group, new TimeoutException("transient-1"), AbortToken);
+        await sut.ReportFailureAsync(group, new TimeoutException("transient-2"), AbortToken);
 
         // then — circuit still closed
         sut.IsOpen(group).Should().BeFalse();
@@ -136,7 +154,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         pauseCalled.Should().BeFalse();
 
         // when — 3rd failure hits the threshold
-        await sut.ReportFailureAsync(group, new TimeoutException("transient-3"));
+        await sut.ReportFailureAsync(group, new TimeoutException("transient-3"), AbortToken);
 
         // then — circuit opens, pause callback invoked
         sut.IsOpen(group).Should().BeTrue();
@@ -148,7 +166,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         snapshot.Should().NotBeNull();
         snapshot!.State.Should().Be(CircuitBreakerState.Open);
         snapshot.OpenedAt.Should().NotBeNull();
-        snapshot.EscalationLevel.Should().BeGreaterThan(0);
+        snapshot.EscalationLevel.Should().BePositive();
     }
 
     // -------------------------------------------------------------------------
@@ -183,15 +201,15 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         );
 
         // when — trip the circuit
-        await sut.ReportFailureAsync(group, new TimeoutException("fail-1"));
-        await sut.ReportFailureAsync(group, new TimeoutException("fail-2"));
+        await sut.ReportFailureAsync(group, new TimeoutException("fail-1"), AbortToken);
+        await sut.ReportFailureAsync(group, new TimeoutException("fail-2"), AbortToken);
 
         // then — circuit is open, consumer paused
         sut.IsOpen(group).Should().BeTrue();
         pauseCalled.Should().BeTrue();
 
         // when — wait for HalfOpen transition (resume callback fires)
-        await halfOpenTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await halfOpenTcs.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         // then — circuit is HalfOpen (still reports IsOpen=true to prevent new messages)
         sut.IsOpen(group).Should().BeTrue();
@@ -201,7 +219,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         // when — acquire probe and report success (simulating a successful message processing)
         var probeAcquired = sut.TryAcquireHalfOpenProbe(group);
         probeAcquired.Should().BeTrue();
-        await sut.ReportSuccessAsync(group);
+        await sut.ReportSuccessAsync(group, AbortToken);
 
         // then — circuit closes, consumer fully operational
         sut.IsOpen(group).Should().BeFalse();
@@ -209,7 +227,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
 
         // and — a second probe can't be acquired (already closed)
         // verify post-close behavior: new transient failure starts fresh counter
-        await sut.ReportFailureAsync(group, new TimeoutException("post-close-1"));
+        await sut.ReportFailureAsync(group, new TimeoutException("post-close-1"), AbortToken);
         sut.IsOpen(group).Should().BeFalse(); // 1 failure < threshold of 2
     }
 
@@ -240,7 +258,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         );
 
         // trip circuit for openGroup
-        await stateManager.ReportFailureAsync(openCircuitGroup, new TimeoutException("infra down"));
+        await stateManager.ReportFailureAsync(openCircuitGroup, new TimeoutException("infra down"), AbortToken);
         stateManager.IsOpen(openCircuitGroup).Should().BeTrue();
         stateManager.IsOpen(healthyCircuitGroup).Should().BeFalse();
 
@@ -267,9 +285,8 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         _SetupReceivedMessages(dataStorage, openMsg1, healthyMsg, openMsg2);
 
         // when — process retry batch
-        await retryProcessor.ProcessAsync(
-            _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider())
-        );
+        using var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+        await retryProcessor.ProcessAsync(context);
 
         // then — only healthyGroup message was enqueued; openGroup messages skipped
         await dispatcher.Received(1).EnqueueToExecute(healthyMsg, null, Arg.Any<CancellationToken>());
@@ -321,21 +338,20 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         );
 
         // --- Phase 1: Trip the circuit ---
-        await stateManager.ReportFailureAsync(circuitGroup, new TimeoutException("fail-1"));
-        await stateManager.ReportFailureAsync(circuitGroup, new TimeoutException("fail-2"));
+        await stateManager.ReportFailureAsync(circuitGroup, new TimeoutException("fail-1"), AbortToken);
+        await stateManager.ReportFailureAsync(circuitGroup, new TimeoutException("fail-2"), AbortToken);
         stateManager.IsOpen(circuitGroup).Should().BeTrue("circuit should be open after threshold failures");
 
         // --- Phase 2: Retry processor should skip messages while circuit is open ---
         var msg1 = _CreateMessage(group);
         _SetupReceivedMessages(dataStorage, msg1);
 
-        await retryProcessor.ProcessAsync(
-            _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider())
-        );
+        using var context1 = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+        await retryProcessor.ProcessAsync(context1);
         await dispatcher.DidNotReceive().EnqueueToExecute(msg1, null, Arg.Any<CancellationToken>());
 
         // --- Phase 3: Wait for HalfOpen transition ---
-        await halfOpenTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await halfOpenTcs.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         stateManager.GetState(circuitGroup).Should().Be(CircuitBreakerState.HalfOpen);
 
         // --- Phase 4: Probe succeeds, circuit closes ---
@@ -347,10 +363,8 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         dispatcher.ClearReceivedCalls();
         var msg2 = _CreateMessage(group);
         _SetupReceivedMessages(dataStorage, msg2);
-
-        await retryProcessor.ProcessAsync(
-            _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider())
-        );
+        using var context2 = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+        await retryProcessor.ProcessAsync(context2);
         await dispatcher.Received(1).EnqueueToExecute(msg2, null, Arg.Any<CancellationToken>());
     }
 

@@ -70,10 +70,12 @@ public sealed class HttpAbsoluteUrlFactoryTests : TestBase
         httpContext.Request.Host = new HostString("old.com");
         var accessor = Substitute.For<IHttpContextAccessor>();
         accessor.HttpContext.Returns(httpContext);
-        var sut = new HttpAbsoluteUrlFactory(accessor);
 
-        // when
-        sut.Origin = "https://new.example.com";
+        _ = new HttpAbsoluteUrlFactory(accessor)
+        {
+            // when
+            Origin = "https://new.example.com",
+        };
 
         // then
         httpContext.Request.Scheme.Should().Be("https");
@@ -89,10 +91,12 @@ public sealed class HttpAbsoluteUrlFactoryTests : TestBase
         httpContext.Request.Host = new HostString("old.com");
         var accessor = Substitute.For<IHttpContextAccessor>();
         accessor.HttpContext.Returns(httpContext);
-        var sut = new HttpAbsoluteUrlFactory(accessor);
 
-        // when
-        sut.Origin = "https://new.example.com:9443";
+        _ = new HttpAbsoluteUrlFactory(accessor)
+        {
+            // when
+            Origin = "https://new.example.com:9443",
+        };
 
         // then
         httpContext.Request.Scheme.Should().Be("https");

@@ -2,7 +2,8 @@
 
 using Microsoft.Extensions.Logging;
 
-namespace Headless.Tus.Services;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Tus;
 
 internal static partial class TusAzureLoggerExtensions
 {
@@ -52,5 +53,17 @@ internal static partial class TusAzureLoggerExtensions
         this ILogger logger,
         Exception exception,
         string partialFiles
+    );
+
+    [LoggerMessage(
+        EventId = 3250,
+        EventName = "FailedToDeletePartialFileAfterConcat",
+        Level = LogLevel.Warning,
+        Message = "Failed to delete partial file {PartialFileId} after concatenation; the final upload is unaffected"
+    )]
+    public static partial void LogFailedToDeletePartialFileAfterConcat(
+        this ILogger logger,
+        Exception exception,
+        string partialFileId
     );
 }

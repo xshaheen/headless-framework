@@ -5,6 +5,7 @@ using FluentValidation;
 using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Messaging.CircuitBreaker;
+using Headless.Messaging.Registration;
 
 namespace Headless.Messaging.Configuration;
 
@@ -173,8 +174,9 @@ public sealed class MessagingOptions
 
     /// <summary>
     /// Gets or sets a value indicating whether to use distributed storage locking when retrying failed messages.
-    /// When enabled, only one instance in a distributed system will perform message retries, preventing duplicate processing.
-    /// This is essential for clustered deployments to ensure exactly-once retry semantics.
+    /// When enabled, retry processors coordinate pickup through a messaging-keyed distributed lock,
+    /// reducing duplicate retry-pickup work across replicas. Message delivery remains at-least-once and
+    /// consumers must stay idempotent.
     /// Default is false.
     /// </summary>
     public bool UseStorageLock { get; set; }
@@ -229,6 +231,17 @@ public sealed class MessagingOptions
     public TimeSpan OutboxFlushTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
+    /// Gets or sets the maximum end-to-end time messaging shutdown waits for background loops and
+    /// in-flight handlers to observe cancellation. Default is 30 seconds.
+    /// </summary>
+    /// <remarks>
+    /// One monotonic deadline is shared by the consumer-register listener drain, concurrent consumer-client
+    /// disposal, provider-specific in-flight drains, and the dispatcher loop drain. When the deadline expires,
+    /// remaining cleanup continues fault-observed in the background so host shutdown can proceed.
+    /// </remarks>
+    public TimeSpan ShutdownTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
     /// Gets or sets the cadence of the dead-owner recovery reconcile backstop. Default is 1 minute.
     /// </summary>
     /// <remarks>
@@ -244,7 +257,7 @@ public sealed class MessagingOptions
     /// <summary>
     /// Gets the global circuit breaker configuration that applies to all consumer groups.
     /// Individual consumers may override specific properties via
-    /// <see cref="IConsumerBuilderBase{TConsumer, TBuilder}.WithCircuitBreaker"/>.
+    /// <see cref="IConsumerBuilderBase{TConsumer,TBuilder}.WithCircuitBreaker"/>.
     /// </summary>
     public CircuitBreakerOptions CircuitBreaker { get; } = new();
 
@@ -296,6 +309,7 @@ public sealed class MessagingOptions
         target.TransportPublishTimeout = TransportPublishTimeout;
         target.CommandTimeout = CommandTimeout;
         target.OutboxFlushTimeout = OutboxFlushTimeout;
+        target.ShutdownTimeout = ShutdownTimeout;
         target.DeadNodeReconcileInterval = DeadNodeReconcileInterval;
         _CopyJsonSerializerOptions(JsonSerializerOptions, target.JsonSerializerOptions);
         RetryPolicy.CopyTo(target.RetryPolicy);
@@ -351,16 +365,14 @@ public sealed class MessagingOptions
     {
         Argument.IsNotNullOrWhiteSpace(messageName);
 
-        return string.IsNullOrWhiteSpace(MessageNamePrefix)
-            ? messageName
-            : string.Concat(MessageNamePrefix, ".", messageName);
+        return string.IsNullOrWhiteSpace(MessageNamePrefix) ? messageName : $"{MessageNamePrefix}.{messageName}";
     }
 
     internal string ApplyGroupNamePrefix(string group)
     {
         Argument.IsNotNullOrWhiteSpace(group);
 
-        return string.IsNullOrWhiteSpace(GroupNamePrefix) ? group : string.Concat(GroupNamePrefix, ".", group);
+        return string.IsNullOrWhiteSpace(GroupNamePrefix) ? group : $"{GroupNamePrefix}.{group}";
     }
 
     internal static void ValidateMessageName(string messageName)
@@ -451,7 +463,7 @@ public sealed class MessagingOptions
 
         var resolvedGroup =
             !string.IsNullOrWhiteSpace(explicitGroup) ? explicitGroup
-            : !string.IsNullOrWhiteSpace(Conventions.DefaultGroup) ? Conventions.DefaultGroup!
+            : !string.IsNullOrWhiteSpace(Conventions.DefaultGroup) ? Conventions.DefaultGroup
             : IsDefaultGroupNameConfigured ? DefaultGroupName
             : Conventions.GetGroupName(handlerId);
 
@@ -482,6 +494,11 @@ internal sealed class MessagingOptionsValidator : AbstractValidator<MessagingOpt
             .WithMessage("OutboxFlushTimeout must be greater than zero.")
             .LessThanOrEqualTo(TimeSpan.FromMinutes(5))
             .WithMessage("OutboxFlushTimeout must not exceed 5 minutes.");
+        RuleFor(x => x.ShutdownTimeout)
+            .GreaterThan(TimeSpan.Zero)
+            .WithMessage("ShutdownTimeout must be greater than zero.")
+            .LessThanOrEqualTo(TimeSpan.FromMinutes(5))
+            .WithMessage("ShutdownTimeout must not exceed 5 minutes.");
         // No upper bound: the reconcile is a backstop cadence, not a correctness deadline (the per-row
         // LockedUntil floor recovers rows independently), so a long interval is a legitimate choice.
         RuleFor(x => x.DeadNodeReconcileInterval)
@@ -494,6 +511,7 @@ internal sealed class MessagingOptionsValidator : AbstractValidator<MessagingOpt
             .WithMessage("Version must not be empty.")
             .MaximumLength(20)
             .WithMessage("Version must not exceed 20 characters (it is stored in a VARCHAR(20) column).");
+        RuleFor(x => x.SchedulerBatchSize).GreaterThan(0).WithMessage("SchedulerBatchSize must be greater than zero.");
         RuleFor(x => x.RetryBatchSize).GreaterThan(0).WithMessage("RetryBatchSize must be greater than zero.");
         RuleFor(x => x).Custom((_, _) => _ValidateMiddlewareDescriptors(middlewareDescriptorRegistry));
     }
@@ -523,7 +541,7 @@ internal sealed class MessagingOptionsValidator : AbstractValidator<MessagingOpt
         return contextType.IsGenericType
             && (
                 contextType.GetGenericTypeDefinition() == typeof(ConsumeContext<>)
-                || contextType.GetGenericTypeDefinition() == typeof(PublishingContext<>)
+                || contextType.GetGenericTypeDefinition() == typeof(PublishContext<>)
             );
     }
 }

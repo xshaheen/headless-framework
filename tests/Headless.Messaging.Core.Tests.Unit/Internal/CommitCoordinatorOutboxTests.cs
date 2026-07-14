@@ -4,7 +4,6 @@ using System.Data;
 using System.Data.Common;
 using Headless.Abstractions;
 using Headless.CommitCoordination;
-using Headless.Generator.Primitives;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -25,7 +24,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
     [Fact]
     public async Task should_buffer_message_on_commit_coordinator_and_dispatch_after_commit()
     {
-        var transaction = new TestDbTransaction();
+        await using var transaction = new TestDbTransaction();
         var stack = new CommitScopeStack();
         var scope = new CommitScopeFactory(stack).Begin(
             new EmptyServiceProvider(),
@@ -72,7 +71,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
                 new NoopPublishMiddlewarePipeline(),
                 TimeProvider.System,
                 Options.Create(new MessagingOptions()),
-                Microsoft.Extensions.Logging.Abstractions.NullLogger<MessageOutboxBuffer>.Instance
+                NullLogger<MessageOutboxBuffer>.Instance
             );
 
             await writer.PublishAsync(
@@ -142,7 +141,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
                 new NoopPublishMiddlewarePipeline(expectTransactional: false),
                 TimeProvider.System,
                 Options.Create(new MessagingOptions()),
-                Microsoft.Extensions.Logging.Abstractions.NullLogger<MessageOutboxBuffer>.Instance
+                NullLogger<MessageOutboxBuffer>.Instance
             );
 
             await writer.PublishAsync(
@@ -284,6 +283,44 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
             .Which.InnerExceptions.Should()
             .HaveCount(2);
         dispatched.Should().Contain(ok.StorageId);
+    }
+
+    [Fact]
+    public async Task flush_should_parse_offsetless_delayed_sent_time_as_utc()
+    {
+        var coordinator = new CommitCoordinator();
+        var expectedPublishTime = new DateTime(2026, 7, 6, 9, 30, 0, DateTimeKind.Utc);
+        var capturedPublishTimes = new List<DateTime>();
+
+        var dispatcher = Substitute.For<IDispatcher>();
+        dispatcher
+            .EnqueueToScheduler(
+                Arg.Any<MediumMessage>(),
+                Arg.Do<DateTime>(publishTime => capturedPublishTimes.Add(publishTime)),
+                Arg.Any<object?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(Task.CompletedTask);
+
+        var buffer = new MessageOutboxBuffer(
+            coordinator,
+            dispatcher,
+            TimeSpan.FromSeconds(30),
+            new FakeTimeProvider(),
+            NullLogger<MessageOutboxBuffer>.Instance
+        );
+        var delayed = _BuildMessage();
+        delayed.Origin.Headers[Headers.SentTime] = expectedPublishTime.ToString(CultureInfo.InvariantCulture);
+        delayed.Origin.Headers[Headers.DelayTime] = TimeSpan
+            .FromMinutes(30)
+            .ToString("c", CultureInfo.InvariantCulture);
+        buffer.Add(delayed);
+
+        await coordinator.SignalAsync(CommitOutcome.Committed, new EmptyServiceProvider());
+
+        capturedPublishTimes.Should().ContainSingle();
+        capturedPublishTimes[0].Should().Be(expectedPublishTime);
+        capturedPublishTimes[0].Kind.Should().Be(DateTimeKind.Utc);
     }
 
     private static MediumMessage _BuildMessage() =>

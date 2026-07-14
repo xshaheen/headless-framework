@@ -14,6 +14,12 @@ internal sealed class FakeMembershipStore : IMembershipStore
 
     public bool ThrowOnRegister { get; set; }
 
+    public bool ThrowOnHeartbeat { get; set; }
+
+    public bool BlockOnHeartbeat { get; set; }
+
+    public TaskCompletionSource HeartbeatRelease { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
     public bool ThrowOnRead { get; set; }
 
     public bool ThrowOnReadNodeLiveness { get; set; }
@@ -62,12 +68,23 @@ internal sealed class FakeMembershipStore : IMembershipStore
         return ValueTask.CompletedTask;
     }
 
-    public ValueTask<bool> HeartbeatAsync(NodeIdentity identity, CancellationToken cancellationToken = default)
+    public async ValueTask<bool> HeartbeatAsync(NodeIdentity identity, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         Heartbeats.Add(identity);
 
-        return ValueTask.FromResult(HeartbeatAccepted);
+        if (ThrowOnHeartbeat)
+        {
+            throw new InvalidOperationException("heartbeat unavailable");
+        }
+
+        if (BlockOnHeartbeat)
+        {
+            // Intentionally ignore cancellation so the heartbeat service's own deadline wrapper is exercised.
+            await HeartbeatRelease.Task.ConfigureAwait(false);
+        }
+
+        return HeartbeatAccepted;
     }
 
     public async ValueTask LeaveAsync(NodeIdentity identity, CancellationToken cancellationToken = default)
@@ -102,7 +119,7 @@ internal sealed class FakeMembershipStore : IMembershipStore
         // Mirror the real store SPI contract: snapshots are returned sorted by identity.
         IReadOnlyList<NodeLivenessSnapshot> snapshots =
             _snapshots.Count == 0
-                ? Array.Empty<NodeLivenessSnapshot>()
+                ? []
                 : _snapshots
                     .Dequeue()
                     .OrderBy(static snapshot => snapshot.Identity.ToString(), StringComparer.Ordinal)
@@ -142,7 +159,7 @@ internal sealed class FakeMembershipStore : IMembershipStore
         // SPI, where ReadLiveNodesAsync equals filtering ReadLivenessAsync to Alive and ordering by identity.
         IReadOnlyList<NodeIdentity> live =
             _snapshots.Count == 0
-                ? Array.Empty<NodeIdentity>()
+                ? []
                 : _snapshots
                     .Dequeue()
                     .Where(static snapshot => snapshot.State == NodeLivenessState.Alive)

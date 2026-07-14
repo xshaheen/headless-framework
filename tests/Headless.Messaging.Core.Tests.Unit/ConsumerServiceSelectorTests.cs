@@ -4,6 +4,7 @@ using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
+using Headless.Messaging.Runtime;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -36,7 +37,7 @@ public sealed class ConsumerServiceSelectorTests
 
         // then
         candidates.Should().NotBeEmpty();
-        candidates.Should().HaveCount(1);
+        candidates.Should().ContainSingle();
 
         var descriptor = candidates[0];
         descriptor.ServiceTypeInfo.Should().Be(typeof(SelectorTestConsumer).GetTypeInfo());
@@ -251,7 +252,9 @@ public sealed class ConsumerServiceSelectorTests
 
         // then
         candidates.Should().HaveCount(2);
-        var ordersCandidates = candidates.Where(c => c.MessageName == "orders.placed").ToList();
+        var ordersCandidates = candidates
+            .Where(c => string.Equals(c.MessageName, "orders.placed", StringComparison.Ordinal))
+            .ToList();
         ordersCandidates.Should().HaveCount(2);
     }
 
@@ -330,7 +333,7 @@ public sealed class ConsumerServiceSelectorTests
         var candidates = selector.SelectCandidates();
 
         // then
-        candidates.Should().HaveCount(1);
+        candidates.Should().ContainSingle();
         candidates[0].Concurrency.Should().Be(5);
     }
 
@@ -356,7 +359,7 @@ public sealed class ConsumerServiceSelectorTests
         var candidates = selector.SelectCandidates();
 
         // then
-        candidates.Should().HaveCount(1);
+        candidates.Should().ContainSingle();
         candidates[0].Concurrency.Should().Be(1);
     }
 }

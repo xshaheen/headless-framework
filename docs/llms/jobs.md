@@ -1,6 +1,6 @@
 ---
 domain: Jobs (Background Jobs)
-packages: Jobs.Abstractions, Jobs.Core, Jobs.Dashboard, Jobs.SourceGenerator, Jobs.OpenTelemetry, Jobs.EntityFramework
+packages: Jobs.Abstractions, Jobs.Core, Jobs.Dashboard, Jobs.SourceGenerator, Jobs.OpenTelemetry, Jobs.EntityFramework, Jobs.EntityFramework.PostgreSql, Jobs.EntityFramework.SqlServer
 ---
 
 # Jobs (Background Jobs)
@@ -15,6 +15,7 @@ packages: Jobs.Abstractions, Jobs.Core, Jobs.Dashboard, Jobs.SourceGenerator, Jo
     - [Lease Model and Sliding Renewal](#lease-model-and-sliding-renewal)
     - [Distributed Coordination and Node Identity](#distributed-coordination-and-node-identity)
     - [Commit-Coordinated Enqueue (Atomic Enqueue)](#commit-coordinated-enqueue-atomic-enqueue)
+- [Choosing a Provider](#choosing-a-provider)
 - [Headless.Jobs.Abstractions](#headlessjobsabstractions)
     - [Problem Solved](#problem-solved)
     - [Key Features](#key-features)
@@ -35,6 +36,7 @@ packages: Jobs.Abstractions, Jobs.Core, Jobs.Dashboard, Jobs.SourceGenerator, Jo
 - [Headless.Jobs.Dashboard](#headlessjobsdashboard)
     - [Problem Solved](#problem-solved-2)
     - [Key Features](#key-features-2)
+    - [Design Notes](#design-notes-1)
     - [Installation](#installation-2)
     - [Quick Start](#quick-start-2)
     - [Configuration](#configuration-2)
@@ -59,19 +61,37 @@ packages: Jobs.Abstractions, Jobs.Core, Jobs.Dashboard, Jobs.SourceGenerator, Jo
 - [Headless.Jobs.EntityFramework](#headlessjobsentityframework)
     - [Problem Solved](#problem-solved-5)
     - [Key Features](#key-features-5)
-    - [Design Notes](#design-notes-1)
+    - [Design Notes](#design-notes-2)
     - [Installation](#installation-5)
     - [Quick Start](#quick-start-5)
     - [Configuration](#configuration-5)
     - [Dependencies](#dependencies-5)
     - [Side Effects](#side-effects-5)
     - [Error Handling and Retries](#error-handling-and-retries)
+- [Headless.Jobs.EntityFramework.PostgreSql](#headlessjobsentityframeworkpostgresql)
+    - [Problem Solved](#problem-solved-6)
+    - [Key Features](#key-features-6)
+    - [Design Notes](#design-notes-3)
+    - [Installation](#installation-6)
+    - [Quick Start](#quick-start-6)
+    - [Configuration](#configuration-6)
+    - [Dependencies](#dependencies-6)
+    - [Side Effects](#side-effects-6)
+- [Headless.Jobs.EntityFramework.SqlServer](#headlessjobsentityframeworksqlserver)
+    - [Problem Solved](#problem-solved-7)
+    - [Key Features](#key-features-7)
+    - [Design Notes](#design-notes-4)
+    - [Installation](#installation-7)
+    - [Quick Start](#quick-start-7)
+    - [Configuration](#configuration-7)
+    - [Dependencies](#dependencies-7)
+    - [Side Effects](#side-effects-7)
 
 > High-performance background job scheduler for .NET with cron expressions, time-based scheduling, compile-time source-generated registration, and distributed coordination.
 
 ## Quick Orientation
 
-Required packages: `Jobs.Core` + `Jobs.EntityFramework` (persistence) + `Jobs.SourceGenerator` (compile-time job registration).
+Required packages: `Jobs.Core` + `Jobs.EntityFramework` (persistence) + `Jobs.SourceGenerator` (compile-time job registration). Add the PostgreSQL or SQL Server Jobs EF provider package for native atomic claims; otherwise the EF package uses its portable optimistic-CAS fallback.
 
 Optional add-ons:
 - `Jobs.Dashboard` — monitoring UI with authentication (basic, API key, host auth) plus live-cluster node view
@@ -81,6 +101,9 @@ Optional add-ons:
 Minimum wiring (in-memory storage, no persistence):
 
 ```csharp
+using Polly;
+using Polly.Retry;
+
 builder.Services.AddHeadlessJobs(options =>
 {
     options.ConfigureScheduler(scheduler =>
@@ -98,7 +121,7 @@ For durable persistence register a coordination provider first, then add the EF 
 builder.Services.AddHeadlessCoordination(c => c.UseSqlServer(conn));
 builder
     .Services.AddHeadlessJobs()
-    .AddOperationalStore(ef => ef.UseJobsDbContext<JobsDbContext>(db => db.UseSqlServer(conn)));
+    .UseEntityFramework(ef => ef.UseJobsDbContext<JobsDbContext>(db => db.UseSqlServer(conn)));
 ```
 
 Mark job methods with `[JobFunction("name")]` (or `[JobFunction("name", cronExpression: "* * * * *")]` for cron) and add `Jobs.SourceGenerator` for compile-time zero-reflection discovery.
@@ -109,13 +132,14 @@ Mark job methods with `[JobFunction("name")]` (or `[JobFunction("name", cronExpr
 - The registration attribute is `[JobFunction]` (`JobFunctionAttribute` in `Headless.Jobs.Base`). The first positional argument is the function name; `cronExpression` is a named parameter. Add `Headless.Jobs.SourceGenerator` to the project for compile-time registration.
 - Call `AddHeadlessJobs()` on `IServiceCollection`. There is no `app.UseJobs()` call — the scheduler starts automatically through `IHostedService` registered by `AddHeadlessJobs`.
 - Use `Jobs.EntityFramework` for durable persistence. Without it, jobs live in memory and are lost on restart.
-- For the durable operational store, register `AddHeadlessCoordination(c => c.Use…(conn))` BEFORE `AddHeadlessJobs(o => o.AddOperationalStore(…))`. Without coordination, startup throws `InvalidOperationException` naming `AddHeadlessCoordination`.
+- Configure `UsePostgreSqlClaims()` or `UseSqlServerClaims()` inside the existing `UseEntityFramework` builder when the matching provider package is installed. Configure only one. Omitting both deliberately keeps the portable EF optimistic-CAS claim path.
+- For the durable operational store, register `AddHeadlessCoordination(c => c.Use…(conn))` BEFORE `AddHeadlessJobs(o => o.UseEntityFramework(…))`. Without coordination, startup throws `InvalidOperationException` naming `AddHeadlessCoordination`.
 - On the durable path, node identity is `node@incarnation` (store-allocated by Coordination), not `Environment.MachineName`. `SchedulerOptionsBuilder.NodeId` is only a pre-registration display fallback — it is NOT the row owner on the durable path.
 - Running jobs slide their pickup lease forward on the `LeaseRenewalInterval` cadence (default ≈ `LeaseDuration / 3`), so `LeaseDuration` (default 5 min) no longer needs to exceed the longest job runtime. Keep `LeaseDuration` ≥ `FallbackIntervalChecker` to avoid spurious re-claims of rows that are claimed but not yet started.
 - Set `OnNodeDeath = NodeDeathPolicy.MarkFailed` or `Skip` on non-idempotent jobs — default `Retry` will re-run the job after a node crash.
 - Do NOT install a Jobs-specific cache package. Jobs cron-expression caching reuses the host's `ICache` (`Headless.Caching.InMemory`, `.Redis`, or `.Hybrid`). Without a registered `ICache`, cron expressions are read directly from the database.
 - Atomic enqueue: wrap `timeJobManager.AddAsync` / `cronJobManager.AddAsync` inside `db.ExecuteCoordinatedTransactionAsync(...)` to commit domain writes and the job row as one unit. Requires a `Headless.CommitCoordination` provider (`AddPostgreSqlCommitCoordination()` / `AddSqlServerCommitCoordination()`) — a different subsystem from `AddHeadlessCoordination`. The coordinated path throws on any failure; wrap in `try/catch`.
-- Coordinated enqueue capture is synchronous: the `AsyncLocal` scope is captured when `AddAsync` is entered. Do not put `AddAsync` behind an `await` that executes before it — the scope is lost and the enqueue silently falls back to direct insert.
+- Establish commit coordination synchronously before entering asynchronous work. The provided `ExecuteCoordinatedTransactionAsync` helpers do this correctly; once established, the scope flows across awaits inside the operation, so domain writes and message publishes may be awaited before `AddAsync`.
 - Use `[JobsConstructor]` (`JobsConstructorAttribute`) on the constructor the source generator should use when a class has multiple constructors.
 - For testing, call `options.DisableBackgroundServices()` to suppress background scheduler execution.
 - To use `JobsStartMode.Manual`, set `scheduler.StartMode = JobsStartMode.Manual` inside `ConfigureScheduler`.
@@ -154,13 +178,13 @@ public static Task ExecuteAsync(IServiceProvider sp, CancellationToken ct) { ...
 public async Task ExecuteAsync(JobFunctionContext<OrderRequest> context, CancellationToken ct) { ... }
 ```
 
-The first positional argument is the `functionName` string that must match the `Function` property on `TimeJobEntity` or `CronJobEntity`. Priority (`JobPriority.Normal` / `High` / `LongRunning`) and max-concurrency are optional parameters.
+The first positional argument is the `functionName` string that must match the `Function` property on `TimeJobEntity` or `CronJobEntity`. Priority (`JobPriority.Normal` / `High` / `Low` / `LongRunning`) and max-concurrency are optional parameters.
 
 ### Lease Model and Sliding Renewal
 
-Every claim of a job or cron-occurrence row stamps a pickup lease: `LockedUntil = now + SchedulerOptionsBuilder.LeaseDuration` (default 5 minutes). The deadline uses the injected `TimeProvider` (application clock), not the database server clock — this matches `Headless.Messaging` so the in-memory and EF providers share identical pickup semantics and fake clocks work in tests.
+Every claim of a job or cron-occurrence row stamps a pickup lease: `LockedUntil = now + SchedulerOptionsBuilder.LeaseDuration` (default 5 minutes). In-memory uses the injected `TimeProvider`. EF translates `DateTime.UtcNow` inside the claim statement, so lease-expiry comparison and stamping use the database UTC clock without a separate scalar query.
 
-**Sliding lease for running jobs (#316):** a running job renews its lease on the `LeaseRenewalInterval` cadence (defaults to `LeaseDuration / 3`; an explicit value must be positive and strictly less than `LeaseDuration`). On the EF storage path, renewals compare against the **database clock** (`now()`/`GETUTCDATE()`), not a node's local clock, so cross-node clock skew cannot reclaim a healthy renewing job. If a renewal affects zero rows (the row was reclaimed or its owner changed), or if the renewal cannot complete within the cadence (a hung store), the worker cancels that job's `CancellationToken` (cancel-on-loss).
+**Sliding lease for running jobs (#316):** before invoking user code, a job verifies that the current node still owns the row. A running job then renews its lease on the `LeaseRenewalInterval` cadence (defaults to `LeaseDuration / 3`; an explicit value must be positive and strictly less than `LeaseDuration`). On the EF storage path, renewals compare against the **database clock** (`now()`/`GETUTCDATE()`), not a node's local clock, so cross-node clock skew cannot reclaim a healthy renewing job. If a renewal affects zero rows (the row was reclaimed or its owner changed), or if the renewal cannot complete within the cadence (a hung store), the worker cancels that job's `CancellationToken` (cancel-on-loss). If the start-time check loses ownership, user code is not invoked and the row is left `InProgress` for stalled reclaim.
 
 Consequences:
 - `LeaseDuration` no longer needs to exceed the longest job runtime; a healthy long job keeps renewing.
@@ -206,11 +230,25 @@ await db.ExecuteCoordinatedTransactionAsync(
 ```
 
 **Footguns:**
-- Coordinated scope capture is synchronous at the point `AddAsync` is entered. Never put `AddAsync` behind an `await` that executes before it — the `AsyncLocal` scope is lost and the enqueue silently falls back to direct insert that auto-commits even if the outer transaction rolls back.
+- The ambient scope must be established synchronously; do not create a custom async factory that sets `ICurrentCommitCoordinator`. Use `ExecuteCoordinatedTransactionAsync` or a synchronous enlistment API. After enlistment, normal awaits inside the coordinated operation preserve the scope.
 - Coordinated enqueues in one scope must be sequential — the scope's DB connection/transaction is not thread-safe.
 - `AddAsync` / `AddBatchAsync` **throw** on failure (validation, dead/completed transaction, mis-wire). `Update` / `Delete` return `JobResult<T>` and do not throw.
-- A returned entity on the coordinated path means the row was **enlisted** (commits with the transaction), not that dispatch ran. The fallback poll sweep (`FallbackIntervalChecker`, default 30s) recovers a missed post-commit dispatch.
+- A returned entity on the coordinated path means the row was **enlisted** (commits with the transaction), not that dispatch ran. Post-commit side effects are bounded by `PostCommitDrainTimeout` (default 30s; valid range `> 0` through `5m`); timeout releases the commit thread and the fallback poll sweep recovers dispatch.
 - The durable coordinated path needs **two separate registrations**: `AddHeadlessCoordination(...)` (the `Headless.Coordination` distributed-lock/membership subsystem for the operational store) AND a `Add{Provider}CommitCoordination()` (the `Headless.CommitCoordination` transactional scope subsystem). Similar names, different systems.
+
+## Choosing a Provider
+
+The base EF package is the compatibility layer. Native claim packages optimize pickup without changing the scheduler contract, lease rules, descendant stamping, or fallback-window behavior.
+
+| Provider | Use when | Avoid when | Trade-off |
+|---|---|---|---|
+| EF optimistic CAS | The EF database is unsupported by a native package, or contention is low | Many workers regularly race for the same due rows | Zero extra provider package, but losing workers perform failed compare-and-swap work |
+| PostgreSQL atomic claims | PostgreSQL 14+ hosts contend for due work | The operational store is not PostgreSQL | `FOR UPDATE SKIP LOCKED` lets claimers select disjoint unlocked candidates in one update-and-return transaction |
+| SQL Server atomic claims | SQL Server 2019+ or Azure SQL hosts contend for due work | Page-lock contention or escalation dominates and cannot be operationally addressed | `READPAST` skips row locks, but page locks can still block; `ROWLOCK` is not a guarantee |
+
+Native selection belongs inside `UseEntityFramework`; do not add a standalone service registration. Configure exactly one native claim provider. Selecting both is rejected during registration, while selecting neither retains the CAS fallback.
+
+The PostgreSQL and SQL Server packages are EF optimization extensions, not independent persistence providers. `Jobs.EntityFramework` retains job storage, mapping definitions, recovery, the persistence contract, and provider-neutral claim transaction lifecycle primitives. Each extension owns provider-specific claim execution, including SQL, parameters, and locking behavior.
 
 ---
 
@@ -283,7 +321,8 @@ None at the abstractions layer. All configuration is done in `Headless.Jobs.Core
 
 ### Dependencies
 
-None. Zero external NuGet dependencies.
+- `Headless.CommitCoordination.Abstractions`
+- `Microsoft.Extensions.DependencyInjection.Abstractions`
 
 ### Side Effects
 
@@ -303,8 +342,8 @@ Provides reliable background job scheduling with cron expressions, delayed execu
 
 - **`AddHeadlessJobs()`**: single DI entry point; registers managers, background services, and the in-memory persistence provider.
 - **Scheduler background service**: polls for due time jobs and cron occurrences on `FallbackIntervalChecker` cadence (default 30s); also driven by soft-notification signals for near-zero latency.
-- **Custom thread pool** (`JobsTaskScheduler`): bounded by `MaxConcurrency` (default `Environment.ProcessorCount`), with idle-worker timeout.
-- **Sliding lease renewal** (#316): running jobs extend `LockedUntil` on `LeaseRenewalInterval` cadence; cancel-on-loss if the renewal affects zero rows or errors.
+- **Custom thread pool** (`JobsTaskScheduler`): bounds active async executions by `MaxConcurrency` (default `Environment.ProcessorCount`), honors `High` → `Normal` → `Low` dequeue order, and gives `LongRunning` work a dedicated thread.
+- **Sliding lease renewal** (#316): jobs verify ownership immediately before user code starts, then extend `LockedUntil` on `LeaseRenewalInterval` cadence; cancel-on-loss if renewal affects zero rows or errors.
 - **`DisableBackgroundServices()`**: suppresses background execution; only the managers are registered (useful for worker-side-only nodes and test projects).
 - **Seeder API**: `UseJobsSeeder(Func<ITimeJobManager<TTimeJob>, Task>)` and `UseJobsSeeder(Func<ICronJobManager<TCronJob>, Task>)` for startup data seeding; `IgnoreSeedDefinedCronJobs()` to skip auto-seeding of attribute-defined cron jobs.
 - **GZip request payloads**: `UseGZipCompression()` on `JobsOptionsBuilder` compresses serialized request bytes.
@@ -314,9 +353,17 @@ Provides reliable background job scheduling with cron expressions, delayed execu
 
 ### Design Notes
 
-The pickup lease (`LockedUntil`) uses the injected `TimeProvider` (application clock) for the claim predicate, matching `Headless.Messaging`'s in-memory/SQL parity so fake clocks in tests stay honest. The EF operational store separately anchors lease comparison to the **database clock** for renewals — this is an intentional divergence: in-memory stays under the application clock (no DB), EF renewals use the DB clock to defeat cross-node skew on real clusters.
+The in-memory pickup lease uses the injected `TimeProvider`. The EF operational store uses the **database clock** for acquisition, renewal, and reclaim. Claim predicates and stamps are translated into the existing SQL statement, avoiding both cross-node clock skew and a separate clock round trip.
 
 `SchedulerOptionsBuilder.NodeId` is used as the row owner only on the in-memory single-process path (defaults to `Environment.MachineName`). On the durable path this value is overridden by `JobsOwnerIdentityAdapter` which reads the `node@incarnation` string from `Headless.Coordination`; `NodeId` becomes a pre-registration display fallback only.
+
+Jobs remain `Queued` while waiting for worker and per-function concurrency capacity. The worker performs the owned `Queued` → `InProgress` write immediately before execution, then the execution handler performs one more lease check before invoking user code. If ownership expired while queued, the worker skips the delegate instead of starting an unowned job. Because that transition must happen at admission time, each admitted job issues its own single-row claim write — a tick with N co-due functions performs N claim round trips instead of one batched write; this is the deliberate cost of the single-winner fence.
+
+Claiming a chained time job leases its direct children and grandchildren to the same owner while leaving their status `Idle`; each child transitions to `InProgress` only when its `RunCondition` is satisfied. Reclaimed time jobs and cron occurrences preserve `RetryCount`, so execution resumes from the persisted attempt instead of resetting the retry budget.
+
+Only cancellation tied to the job's cancellation token (including `context.RequestCancellation()`) is classified as `Cancelled`. A detected lease loss writes no terminal status — the row stays `InProgress` so the stalled-reclaim sweep recovers it per `OnNodeDeath`. An unrelated `OperationCanceledException` is handled as a failure and follows the configured retry policy.
+
+Cron expressions are evaluated in `SchedulerTimeZone`. A spring-forward occurrence inside an invalid local-time gap is shifted forward by the gap; an ambiguous fall-back occurrence runs once at the later UTC instant (the standard-time offset).
 
 ### Installation
 
@@ -341,6 +388,15 @@ builder.Services.AddHeadlessJobs(options =>
         scheduler.FallbackIntervalChecker = TimeSpan.FromSeconds(30);
     });
     options.SetExceptionHandler<MyJobExceptionHandler>();
+    options.ConfigureRetries(retry =>
+    {
+        retry.RetryStrategy.ShouldHandle = args =>
+            ValueTask.FromResult(args.Outcome.Exception is HttpRequestException);
+        retry.RetryStrategy.Delay = TimeSpan.FromSeconds(30);
+        retry.RetryStrategy.BackoffType = DelayBackoffType.Exponential;
+        retry.RetryStrategy.UseJitter = true;
+        retry.RetryStrategy.MaxDelay = TimeSpan.FromMinutes(5);
+    });
 });
 
 // 2. Define a cron job (requires Jobs.SourceGenerator)
@@ -376,6 +432,7 @@ builder.Services.AddHeadlessJobs(options =>
         scheduler.LeaseDuration = TimeSpan.FromMinutes(5); // default: 5 min
         scheduler.LeaseRenewalInterval = null; // null → LeaseDuration / 3
         scheduler.FallbackIntervalChecker = TimeSpan.FromSeconds(30); // default: 30s
+        scheduler.PostCommitDrainTimeout = TimeSpan.FromSeconds(30); // default: 30s; > 0, max: 5 min
         scheduler.SchedulerTimeZone = TimeZoneInfo.Utc; // default: local
         scheduler.DeadNodeReconcileInterval = TimeSpan.FromMinutes(1); // durable path; default: 1 min
         scheduler.StartMode = JobsStartMode.Immediate; // or Manual
@@ -399,13 +456,18 @@ builder.Services.AddHeadlessJobs(options =>
 ### Dependencies
 
 - `Headless.Jobs.Abstractions`
+- `Headless.Coordination.Abstractions`
+- `Headless.Coordination.Core`
+- `Headless.DistributedLocks.Abstractions`
 - `Headless.Extensions`
+- `NCrontab.Signed`
+- `Polly.Core`
 
 ### Side Effects
 
 - Registers `ITimeJobManager<TimeJobEntity>` and `ICronJobManager<CronJobEntity>` as singletons.
 - Registers background hosted services: `JobsInitializationHostedService` (always), `JobsSchedulerBackgroundService`, `JobsFallbackBackgroundService`, and `JobsExecutionTaskHandler` (unless `DisableBackgroundServices()` is called).
-- Registers `JobsTaskScheduler` (custom thread pool bounded by `MaxConcurrency`).
+- Registers `JobsTaskScheduler` (custom thread pool bounded by active async `MaxConcurrency`).
 - Sets global `CronScheduleCache.TimeZoneInfo` and `JobsHelper` JSON/compression settings.
 
 ---
@@ -421,11 +483,15 @@ Provides operational visibility into the Jobs scheduler — job queues, executio
 ### Key Features
 
 - **Embedded SPA**: served from the host process, no separate deployment.
-- **Authentication options**: `WithBasicAuth(username, password)`, `WithApiKey(apiKey)`, `WithHostAuthentication(policy?)` (delegates to host app's auth), or no auth for public dashboards.
+- **Authentication options**: `WithBasicAuth(username, password)`, `WithApiKey(apiKey)`, `WithHostAuthentication(policy?)` (delegates to host app's auth), or explicit no-auth mode for isolated development dashboards.
 - **Live cluster view**: `GET /api/nodes` returns live node projections from `Headless.Coordination` membership; `NodeJoined` / `NodeLeft` / `NodeSuspected` push updates over SignalR — no polling required.
 - **Error monitoring**: surfaces failed, cancelled, and skipped jobs; retry counts; execution timings; exception messages.
-- **Fluent builder**: `SetBasePath(path)`, `SetBackendDomain(domain)`, `SetCorsPolicy(policy)`.
+- **Fluent builder**: `SetBasePath(path)`, `SetBackendDomain(domain)`, `SetCorsOrigins(origins)`, `SetCorsPolicy(policy)`.
 - **Pair with OpenTelemetry**: Dashboard for operational triage; `Jobs.OpenTelemetry` for trace-level diagnostics.
+
+### Design Notes
+
+The dashboard exposes operational endpoints that can create, update, delete, run, cancel, start, stop, and restart jobs. Authentication must be chosen explicitly — if no auth method (including `WithNoAuth()`) is called, the host fails to start, so the dashboard never ships publicly by omission. Treat `WithNoAuth()` as development-only unless the dashboard is isolated behind trusted network controls; production deployments should use `WithHostAuthentication(...)`, `WithBasicAuth(...)`, or `WithApiKey(...)`. No CORS policy is applied by default (same-origin only); use `SetCorsOrigins(...)` when the SPA is served cross-origin.
 
 ### Installation
 
@@ -436,7 +502,7 @@ dotnet add package Headless.Jobs.Dashboard
 ### Quick Start
 
 ```csharp
-using Headless.Jobs.DependencyInjection;
+using Headless.Jobs;
 
 builder
     .Services.AddHeadlessJobs()
@@ -461,18 +527,18 @@ builder
         // Path and domain
         dashboard.SetBasePath("/jobs");
         dashboard.SetBackendDomain("https://api.example.com");
-        dashboard.SetCorsPolicy("MyPolicy");
+        dashboard.SetCorsOrigins("https://admin.example.com"); // needed only when the SPA is cross-origin
 
-        // Authentication — pick one:
+        // Authentication — required, pick one:
         dashboard.WithBasicAuth("admin", "secret"); // username/password
         dashboard.WithApiKey("my-api-key"); // Bearer token / query param
         dashboard.WithHostAuthentication(); // delegate to host auth
         dashboard.WithHostAuthentication("AdminPolicy"); // host auth + policy
-        // Omitting auth = public dashboard
+        // Or opt out explicitly with dashboard.WithNoAuth() — isolated development environments only.
     });
 ```
 
-Auth detection is automatic: no auth → public; basic auth → username/password login UI; API key → bearer token; host auth → delegates to the host's authentication middleware.
+Auth detection is automatic: explicit `WithNoAuth()` → public; basic auth → username/password login UI; API key → bearer token; host auth → delegates to the host's authentication middleware.
 
 ### Dependencies
 
@@ -485,6 +551,7 @@ Auth detection is automatic: no auth → public; basic auth → username/passwor
 - Mounts dashboard HTTP API and SignalR hub under `SetBasePath` path via `IStartupFilter` (no explicit `app.Use…` call needed).
 - Subscribes to `Headless.Coordination` membership events for live-node push updates.
 - Serves embedded frontend SPA assets; requires Node 22 on `PATH` when building from source (build target `make dashboards`).
+- Exposes mutating operational endpoints; configure authentication and CORS before exposing the dashboard outside an isolated development environment.
 
 ---
 
@@ -620,7 +687,7 @@ Activity tag reference:
 | `headless.jobs.job.id` | `123e4567-…` |
 | `headless.jobs.job.type` | `TimeJob`, `CronJob` |
 | `headless.jobs.job.function` | `ProcessOrder` |
-| `headless.jobs.job.priority` | `Normal`, `High`, `LongRunning` |
+| `headless.jobs.job.priority` | `Normal`, `High`, `Low`, `LongRunning` |
 | `headless.jobs.job.machine` | `web-01` |
 | `headless.jobs.job.parent_id` | parent job GUID |
 | `headless.jobs.job.enqueued_from` | `OrderController.Create (Program.cs:42)` |
@@ -655,10 +722,12 @@ Provides persistence of time jobs and cron occurrences across restarts and acros
 ### Key Features
 
 - **Durable storage**: persists `TimeJobEntity`, `CronJobEntity`, and `CronJobOccurrenceEntity` in EF Core-mapped tables (default schema: `jobs`).
-- **`AddOperationalStore(ef => …)`**: the EF registration extension on `JobsOptionsBuilder`.
+- **`UseEntityFramework(ef => …)`**: the EF registration extension on `JobsOptionsBuilder`.
 - **`UseJobsDbContext<TDbContext>(dbOptions, schema?)`**: registers a dedicated `JobsDbContext` with configurable schema.
 - **`UseApplicationDbContext<TDbContext>(ConfigurationType)`**: shares an existing application `DbContext` instead of a dedicated one.
 - **Database-clock lease authority**: on the EF path, lease renewal comparisons (`LockedUntil`) use the database server clock (`now()`/`GETUTCDATE()`), not the node's `TimeProvider`. Cross-node clock skew cannot reclaim a healthy renewing job.
+- **Atomic chain claims**: a root time-job claim leases its direct children and grandchildren to the same owner in one database update; fallback recovery uses the same tree claim and never steals a live queued lease.
+- **Durable retry state**: root jobs, descendants, and cron occurrences retain their persisted `RetryCount` when projected for execution.
 - **Node identity and recovery**: stamps `node@incarnation` as the row owner; dead-node reclaim driven by `NodeLeft` events plus periodic reconcile (`DeadNodeReconcileInterval`).
 - **Fail-fast coordination check**: startup throws `InvalidOperationException` when no coordination provider is registered.
 - **Cron-expression caching**: reuses the host's `ICache` (optional). No `ICache` → reads from DB, cache invalidation is skipped. Cache failures are fail-open.
@@ -667,9 +736,13 @@ Provides persistence of time jobs and cron occurrences across restarts and acros
 
 ### Design Notes
 
-Lease renewal on the EF path anchors `LockedUntil` comparison to the **database clock** (`now()` on PostgreSQL, `GETUTCDATE()` on SQL Server), not the node's injected `TimeProvider`. This is an intentional divergence from the in-memory path: in-memory has no DB server, so it must use the application clock. On EF, using the DB clock is the only way to guarantee that cross-node clock skew cannot falsely reclaim a renewing job on a cluster where nodes differ by seconds. Callers should not assume the two paths are semantically identical when writing tests that assert precise lease timing.
+Lease acquisition, renewal, and reclaim on the EF path anchor `LockedUntil` to the **database clock** (`now()` on PostgreSQL, `GETUTCDATE()` on SQL Server), not the node's injected `TimeProvider`. Claims translate the clock expression inside the existing update statement; they do not execute a separate scalar query. In-memory has no database server and uses `TimeProvider`, so EF tests must not assume fake application time controls lease deadlines.
 
 The `JobsDbContext<TTimeJob, TCronJob>.DbContextOptions` constructor must be `public` for the EF pool to resolve it at startup. Validation fails fast at DI build time.
+
+Install `Headless.Jobs.EntityFramework.PostgreSql` or `Headless.Jobs.EntityFramework.SqlServer` and select it inside the same `UseEntityFramework` builder to replace the CAS pickup path with a provider-native atomic claim-and-return operation. The scheduler and persistence contract remain database-agnostic. Register exactly one native claim provider; selecting both fails during registration.
+
+These packages are EF optimization extensions, not standalone persistence providers. The base package owns the full persistence contract plus provider-neutral mapping definitions and claim-transaction lifecycle primitives; each extension owns provider-specific claim execution, including SQL, parameters, and locking semantics.
 
 ### Installation
 
@@ -694,7 +767,7 @@ builder
     {
         options.ConfigureScheduler(scheduler => scheduler.SchedulerTimeZone = TimeZoneInfo.Utc);
     })
-    .AddOperationalStore(ef =>
+    .UseEntityFramework(ef =>
     {
         ef.UseJobsDbContext<JobsDbContext>(db => db.UseSqlServer(conn));
     });
@@ -708,7 +781,7 @@ builder.Services.AddHeadlessCaching(setup =>
 Without a registered coordination provider the durable path throws at startup:
 ```
 InvalidOperationException: The durable Jobs operational store requires a coordination provider.
-Register one with AddHeadlessCoordination(...) before AddHeadlessJobs(... AddOperationalStore(...)).
+Register one with AddHeadlessCoordination(...) before AddHeadlessJobs(... UseEntityFramework(...)).
 ```
 
 ### Configuration
@@ -723,7 +796,7 @@ builder
             scheduler.DeadNodeReconcileInterval = TimeSpan.FromMinutes(1); // default: 1 min
         });
     })
-    .AddOperationalStore(ef =>
+    .UseEntityFramework(ef =>
     {
         ef.UseJobsDbContext<JobsDbContext>(db => db.UseSqlServer(conn));
         ef.SetDbContextPoolSize(512); // default: 1024
@@ -753,7 +826,7 @@ builder
 
 #### Retry Configuration
 
-Set `Retries` and `RetryIntervals` (seconds between attempts) on the entity:
+`Retries`, `RetryCount`, and `RetryIntervals` remain the durable retry representation. `Retries` excludes the original execution. `RetryCount` is persisted monotonically before each wait so a recovered process resumes from the consumed budget. Set `Retries` and optional `RetryIntervals` (seconds between attempts) on the entity:
 
 ```csharp
 await timeJobManager.AddAsync(
@@ -775,19 +848,54 @@ await timeJobManager.AddAsync(
 - If `RetryIntervals` is shorter than `Retries`, the last interval is reused.
 - If `RetryIntervals` is null or empty, default is 30 seconds.
 
+Runtime execution uses Polly.Core directly. Configure the reusable pipeline through `JobsOptionsBuilder.ConfigureRetries`:
+
+```csharp
+builder.Services.AddHeadlessJobs(options =>
+{
+    options.ConfigureRetries(retry =>
+    {
+        retry.RetryStrategy = new RetryStrategyOptions
+        {
+            MaxRetryAttempts = int.MaxValue, // optional global cap; row Retries remains durable
+            Delay = TimeSpan.FromSeconds(30),
+            BackoffType = DelayBackoffType.Exponential,
+            UseJitter = true,
+            MaxDelay = TimeSpan.FromMinutes(5),
+            ShouldHandle = args => ValueTask.FromResult(
+                args.Outcome.Exception is TimeoutException or HttpRequestException
+            ),
+        };
+        retry.OnExhaustedTimeout = TimeSpan.FromSeconds(30);
+        retry.OnExhausted = (context, ct) =>
+        {
+            context.ServiceProvider.GetRequiredService<ILogger<Program>>()
+                .LogError(context.Exception, "Job {JobId} exhausted", context.JobId);
+            return Task.CompletedTask;
+        };
+    });
+});
+```
+
+`ShouldHandle` is always explicit; cancellation and `TerminateExecutionException` are excluded by default, and that default classification is exposed as `JobsRetryOptions.DefaultShouldHandle` for reuse when replacing `RetryStrategy`. Per-row `RetryIntervals` override Polly delay generation and retain fixed-schedule/final-interval reuse semantics. Otherwise Polly owns fixed, linear, exponential, jittered, capped, or custom delays. Jobs owns leases, durable counters, scheduling, and terminal state. The exhausted callback runs in a fresh DI scope only after an atomic owned transition to `Failed`; timeout or callback failure is logged and contained. Lease renewal remains active during attempts and delays; lease loss cancels the pipeline and prevents stale writes.
+
+Never serialize `RetryStrategyOptions`, `ResiliencePipeline`, `ResilienceContext`, predicates, delay generators, or delegates.
+
 #### Global Exception Handler
+
+`HandleExceptionAsync` fires once per failed attempt — after each attempt's durable retry state is persisted (and once more at final failure) — not only once per job. Use it for per-attempt side effects (alerting, metrics, log sinks); use `JobsRetryOptions.OnExhausted` for the once-only notification after the retry budget is consumed. Each handler invocation is bounded by `OnExhaustedTimeout`; a hanging handler is logged and orphaned so it cannot stall retry progression.
 
 ```csharp
 public sealed class MyJobExceptionHandler(ILogger<MyJobExceptionHandler> logger)
     : IJobExceptionHandler
 {
-    public Task HandleExceptionAsync(Exception ex, Guid jobId, JobType jobType)
+    public Task HandleExceptionAsync(Exception ex, Guid jobId, JobType jobType, CancellationToken cancellationToken = default)
     {
         logger.LogError(ex, "Job {JobId} ({JobType}) failed", jobId, jobType);
         return Task.CompletedTask;
     }
 
-    public Task HandleCanceledExceptionAsync(Exception ex, Guid jobId, JobType jobType)
+    public Task HandleCanceledExceptionAsync(Exception ex, Guid jobId, JobType jobType, CancellationToken cancellationToken = default)
     {
         logger.LogWarning("Job {JobId} ({JobType}) was cancelled", jobId, jobType);
         return Task.CompletedTask;
@@ -881,7 +989,7 @@ public sealed class LongRunningCronJob
 | `Succeeded` | Completed successfully |
 | `DueDone` | Cron occurrence completed within its due window |
 | `Failed` | Retries exhausted or unhandled exception |
-| `Cancelled` | Token cancelled or `context.RequestCancellation()` called |
+| `Cancelled` | Job token cancelled or `context.RequestCancellation()` called; a detected lease loss instead leaves the row `InProgress` for stalled reclaim |
 | `Skipped` | `TerminateExecutionException` or `SkipIfAlreadyRunning()` |
 
 #### Node-Death Policy (OnNodeDeath)
@@ -927,3 +1035,122 @@ await cronJobManager.AddAsync(
 ```
 
 The claim predicate's lease-expiry re-claim arm is gated on `OnNodeDeath == Retry`, so clock skew cannot speculatively re-run `Skip` or `MarkFailed` jobs.
+
+---
+
+## Headless.Jobs.EntityFramework.PostgreSql
+
+### Problem Solved
+
+Replaces the portable EF select-and-compare-and-swap pickup path with PostgreSQL-native atomic claim-and-return operations under scheduler contention.
+
+This is an optimization extension for `Headless.Jobs.EntityFramework`, not an independent Jobs persistence provider. EF continues to own job storage, mapping definitions, recovery, the public persistence contract, and transaction-lifecycle primitives; this package owns PostgreSQL-specific claim execution, including SQL, parameters, and locking behavior.
+
+### Key Features
+
+- Claims existing time jobs and cron occurrences with `UPDATE ... RETURNING` over a `FOR UPDATE SKIP LOCKED` candidate query.
+- Bounds set-based root and fallback-occurrence selection to 100 winners per transaction; skipped or excess work remains eligible for the next scheduler pass.
+- Creates cron occurrences with `INSERT ... ON CONFLICT DO NOTHING ... RETURNING` to deduplicate each execution-time and cron-job pair.
+- Derives and delimits schema, table, and column identifiers from the EF model while parameterizing runtime values.
+- Claims the root and two supported descendant levels in one transaction and returns work only after commit.
+
+### Design Notes
+
+`SKIP LOCKED` lets concurrent workers move past candidates locked by another claim transaction. The update, descendant stamping, and returned winners share one explicit transaction, so a rolled-back claim exposes no executable work. PostgreSQL 14 or later is the supported baseline; the underlying primitive exists on older releases, but they are outside this package's tested support target.
+
+### Installation
+
+```bash
+dotnet add package Headless.Jobs.EntityFramework.PostgreSql
+```
+
+### Quick Start
+
+```csharp
+using Headless.Jobs;
+using Headless.Jobs.DbContextFactory;
+using Microsoft.EntityFrameworkCore;
+
+builder
+    .Services.AddHeadlessJobs()
+    .UseEntityFramework(ef =>
+    {
+        ef.UseJobsDbContext<JobsDbContext>(db => db.UseNpgsql(connectionString));
+        ef.UsePostgreSqlClaims();
+    });
+```
+
+### Configuration
+
+`UsePostgreSqlClaims()` has no provider-specific options. Configure the `DbContext`, schema, and pool size through the existing Jobs EF builder. Register exactly one native claim provider. Omitting this call keeps the portable EF optimistic-CAS fallback.
+
+### Dependencies
+
+- `Headless.Jobs.EntityFramework`
+- `Npgsql.EntityFrameworkCore.PostgreSQL`
+
+### Side Effects
+
+- Replaces the default Jobs EF claim strategy with the PostgreSQL atomic strategy.
+- Executes provider-native, parameterized SQL against the mapped Jobs tables during pickup.
+- Does not change scheduler cadence, leases, retry policy, or the public persistence contract.
+
+---
+
+## Headless.Jobs.EntityFramework.SqlServer
+
+### Problem Solved
+
+Replaces the portable EF select-and-compare-and-swap pickup path with SQL Server-native atomic claim-and-output operations under scheduler contention.
+
+This is an optimization extension for `Headless.Jobs.EntityFramework`, not an independent Jobs persistence provider. EF continues to own job storage, mapping definitions, recovery, the public persistence contract, and transaction-lifecycle primitives; this package owns SQL Server-specific claim execution, including SQL, parameters, and locking behavior.
+
+### Key Features
+
+- Selects claim candidates with `UPDLOCK`, `READPAST`, and `ROWLOCK`, then returns winners from the same update through `OUTPUT inserted...`.
+- Bounds set-based root and fallback-occurrence selection to 100 winners per transaction to limit lock footprint and escalation risk; skipped or excess work remains eligible for the next scheduler pass.
+- Adds `READCOMMITTEDLOCK` when `READ_COMMITTED_SNAPSHOT` is enabled, as required for `READPAST` under read-committed snapshot isolation.
+- Creates cron occurrences atomically against the unique execution-time and cron-job key.
+- Derives and delimits schema, table, and column identifiers from the EF model while parameterizing runtime values.
+- Claims the root and two supported descendant levels in one transaction and returns work only after commit.
+
+### Design Notes
+
+`READPAST` skips row locks, not page locks. Page locking or lock escalation can therefore block competing claimers even with `ROWLOCK`, which is a preference rather than a guarantee. The package does not change `LOCK_ESCALATION`; operators should measure contention, lock memory, and workload behavior before applying database-level changes. SQL Server 2019 or later and Azure SQL are the supported targets.
+
+### Installation
+
+```bash
+dotnet add package Headless.Jobs.EntityFramework.SqlServer
+```
+
+### Quick Start
+
+```csharp
+using Headless.Jobs;
+using Headless.Jobs.DbContextFactory;
+using Microsoft.EntityFrameworkCore;
+
+builder
+    .Services.AddHeadlessJobs()
+    .UseEntityFramework(ef =>
+    {
+        ef.UseJobsDbContext<JobsDbContext>(db => db.UseSqlServer(connectionString));
+        ef.UseSqlServerClaims();
+    });
+```
+
+### Configuration
+
+`UseSqlServerClaims()` has no provider-specific options. Configure the `DbContext`, schema, and pool size through the existing Jobs EF builder. Register exactly one native claim provider. Omitting this call keeps the portable EF optimistic-CAS fallback. The strategy detects `READ_COMMITTED_SNAPSHOT` and adjusts its locking hints.
+
+### Dependencies
+
+- `Headless.Jobs.EntityFramework`
+- `Microsoft.EntityFrameworkCore.SqlServer`
+
+### Side Effects
+
+- Replaces the default Jobs EF claim strategy with the SQL Server atomic strategy.
+- Executes provider-native, parameterized SQL against the mapped Jobs tables during pickup.
+- Does not change lock-escalation settings, scheduler cadence, leases, retry policy, or the public persistence contract.

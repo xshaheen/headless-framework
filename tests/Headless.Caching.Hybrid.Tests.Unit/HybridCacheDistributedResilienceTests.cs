@@ -17,7 +17,7 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
         // given
         var timeProvider = TimeProvider.System;
         var softTimeout = TimeSpan.FromMilliseconds(50);
-        var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
         using var l2 = new GatedRemoteCache(timeProvider)
         {
             ReadGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
@@ -40,7 +40,7 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
 
         var factoryCalls = 0;
         var task = cache
-            .GetOrAddAsync<int>(
+            .GetOrAddAsync(
                 key,
                 _ =>
                 {
@@ -71,7 +71,7 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
         var timeProvider = TimeProvider.System;
         var softTimeout = TimeSpan.FromMilliseconds(50);
         var hardTimeout = TimeSpan.FromMilliseconds(150);
-        var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
         using var l2 = new GatedRemoteCache(timeProvider)
         {
             ReadGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
@@ -111,10 +111,8 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
         // then
         task.IsCompleted.Should().BeFalse("without a local fallback the L2 read should wait for the hard timeout");
 
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken)
-        );
-        exception.Message.Should().Be("origin unavailable");
+        var act = async () => await task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("origin unavailable");
         factoryCalls.Should().Be(1);
         l2.ReadAttempts.Should()
             .Be(2, "the coordinator performs the normal under-lock re-check before running the factory");
@@ -126,7 +124,7 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
         // given
         var timeProvider = TimeProvider.System;
         var softTimeout = TimeSpan.FromMilliseconds(50);
-        var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
         using var l2 = new GatedRemoteCache(timeProvider)
         {
             ReadGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
@@ -159,7 +157,7 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
     {
         // given
         var circuitDuration = TimeSpan.FromSeconds(5);
-        var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         using var l2 = new TogglableRemoteCache(_timeProvider);
         var cache = _CreateCache(
             l1,
@@ -201,7 +199,7 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
     public async Task should_keep_l1_tag_invalidation_and_trip_circuit_when_l2_marker_bump_fails()
     {
         // given — an entry tagged and present in both tiers
-        var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         using var l2 = new TogglableRemoteCache(_timeProvider);
         var cache = _CreateCache(
             l1,
@@ -244,7 +242,7 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
     {
         // given
         var timeProvider = TimeProvider.System;
-        var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
         using var l2 = new GatedRemoteCache(timeProvider) { ReadFault = new InvalidOperationException("l2 read down") };
         var cache = _CreateCache(
             l1,
@@ -266,7 +264,7 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
     {
         // given
         var timeProvider = TimeProvider.System;
-        var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
         using var l2 = new GatedRemoteCache(timeProvider) { ReadFault = new InvalidOperationException("l2 read down") };
         var cache = _CreateCache(l1, l2, new HybridCacheOptions(), timeProvider);
         await using var _ = cache;
@@ -283,7 +281,7 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
     {
         // given
         var timeProvider = TimeProvider.System;
-        var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
         using var l2 = new GatedRemoteCache(timeProvider)
         {
             WriteFault = new InvalidOperationException("l2 write down"),
@@ -298,7 +296,7 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
 
         // when — the factory produces a value but the L2 store-write faults
         var act = async () =>
-            await cache.GetOrAddAsync<int>(
+            await cache.GetOrAddAsync(
                 Faker.Random.AlphaNumeric(10),
                 _ => new ValueTask<int>(42),
                 TimeSpan.FromMinutes(5),
@@ -314,7 +312,7 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
     {
         // given
         var timeProvider = TimeProvider.System;
-        var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
         using var l2 = new GatedRemoteCache(timeProvider);
         var cache = new HybridCache(
             l1,
@@ -338,7 +336,7 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
     {
         // given
         var timeProvider = TimeProvider.System;
-        var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
         using var l2 = new GatedRemoteCache(timeProvider);
         var cache = new HybridCache(
             l1,
@@ -364,7 +362,7 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
         var localExpiration = TimeSpan.FromSeconds(1);
         var duration = TimeSpan.FromSeconds(2);
         var slidingExpiration = TimeSpan.FromMilliseconds(400);
-        var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         using var l2 = new TogglableRemoteCache(_timeProvider);
         var cache = _CreateCache(
             l1,
@@ -412,6 +410,63 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
 
         skipped.HasValue.Should().BeFalse("the circuit opened on the L2 refresh failure, so L2 reads are skipped");
         l2.ReadAttempts.Should().Be(attemptsBeforeSkippedRead, "an open circuit must not issue the L2 read");
+    }
+
+    [Fact]
+    public async Task should_degrade_prefix_and_count_reads_to_empty_when_l2_read_faults()
+    {
+        // given — an L2 whose prefix/count reads throw (a down store); default policy swallows the fault. The circuit
+        // is disabled (duration 0), so each of the three reads genuinely exercises the fault -> degrade path.
+        var timeProvider = TimeProvider.System;
+        using var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l2 = new ThrowingReadRemoteCache(timeProvider);
+        var cache = _CreateCache(l1, l2, new HybridCacheOptions(), timeProvider);
+        await using var _ = cache;
+
+        var prefix = Faker.Random.AlphaNumeric(6);
+
+        // when / then — each rerouted read degrades to its empty shape instead of surfacing the L2 fault. Before the
+        // fix these calls hit l2Cache directly and threw during an L2 outage.
+        (await cache.GetByPrefixAsync<int>(prefix, AbortToken))
+            .Should()
+            .BeEmpty();
+        (await cache.GetAllKeysByPrefixAsync(prefix, AbortToken)).Should().BeEmpty();
+        (await cache.GetCountAsync(prefix, AbortToken)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_degrade_prefix_and_count_reads_to_empty_when_distributed_circuit_is_open()
+    {
+        // given — a healthy L2 that genuinely holds matching entries, but the distributed circuit is tripped by a
+        // prior read fault, so the rerouted prefix/count reads must skip L2 and degrade instead of throwing.
+        using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l2 = new TogglableRemoteCache(_timeProvider);
+        var cache = _CreateCache(
+            l1,
+            l2,
+            new HybridCacheOptions { DistributedCacheCircuitBreakerDuration = TimeSpan.FromSeconds(30) }
+        );
+        await using var _ = cache;
+
+        var prefix = Faker.Random.AlphaNumeric(6);
+        await l2.UpsertAsync(prefix + "-a", 1, TimeSpan.FromMinutes(5), AbortToken);
+        await l2.UpsertAsync(prefix + "-b", 2, TimeSpan.FromMinutes(5), AbortToken);
+        // Premise: L2 really does hold matching entries, so an empty hybrid result can only come from the open circuit.
+        (await l2.GetCountAsync(prefix, AbortToken))
+            .Should()
+            .Be(2);
+
+        // trip the circuit via a failing L2 read
+        l2.FailReads = true;
+        await cache.GetAsync<int>(prefix + "-a", AbortToken);
+        l2.FailReads = false;
+
+        // when / then — while the circuit is open the three rerouted reads return their empty shape without touching L2
+        (await cache.GetByPrefixAsync<int>(prefix, AbortToken))
+            .Should()
+            .BeEmpty();
+        (await cache.GetAllKeysByPrefixAsync(prefix, AbortToken)).Should().BeEmpty();
+        (await cache.GetCountAsync(prefix, AbortToken)).Should().Be(0);
     }
 
     private static IBus _FaultingPublisher(string message)

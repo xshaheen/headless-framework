@@ -33,6 +33,17 @@ public sealed class InMemoryConsumerClientFactoryTests : TestBase
     }
 
     [Fact]
+    public async Task should_preserve_factory_cancellation()
+    {
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        var act = async () => await _factory.CreateAsync("test-group", 1, cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
     public async Task should_create_client_with_specified_group_name()
     {
         // given
@@ -111,20 +122,26 @@ public sealed class InMemoryConsumerClientFactoryTests : TestBase
         var client1 = await _factory.CreateAsync("group-1", 1);
         var client2 = await _factory.CreateAsync("group-2", 1);
 
-        await client1.SubscribeAsync(["shared-messageName"]);
-        await client2.SubscribeAsync(["shared-messageName"]);
+        await client1.SubscribeAsync(["shared-messageName"], AbortToken);
+        await client2.SubscribeAsync(["shared-messageName"], AbortToken);
 
         var messages1 = new List<object>();
         var messages2 = new List<object>();
+        var client1Processed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var client2Processed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         client1.OnMessageCallback = (msg, _) =>
         {
             messages1.Add(msg);
+            client1Processed.TrySetResult();
+
             return Task.CompletedTask;
         };
         client2.OnMessageCallback = (msg, _) =>
         {
             messages2.Add(msg);
+            client2Processed.TrySetResult();
+
             return Task.CompletedTask;
         };
 
@@ -152,8 +169,6 @@ public sealed class InMemoryConsumerClientFactoryTests : TestBase
             AbortToken
         );
 
-        await Task.Delay(50, AbortToken);
-
         // when - send a message through the shared queue
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
@@ -163,12 +178,13 @@ public sealed class InMemoryConsumerClientFactoryTests : TestBase
         var message = new TransportMessage(headers, ReadOnlyMemory<byte>.Empty);
         _queue.SendBus(message);
 
-        await Task.Delay(100, AbortToken);
+        await Task.WhenAll(client1Processed.Task, client2Processed.Task).WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         await cts.CancelAsync();
+        await Task.WhenAll(listen1, listen2);
 
         // then - both clients should receive the message
-        messages1.Should().HaveCount(1);
-        messages2.Should().HaveCount(1);
+        messages1.Should().ContainSingle();
+        messages2.Should().ContainSingle();
 
         await client1.DisposeAsync();
         await client2.DisposeAsync();

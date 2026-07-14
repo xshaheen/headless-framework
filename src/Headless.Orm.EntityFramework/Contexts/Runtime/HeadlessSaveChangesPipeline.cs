@@ -4,7 +4,6 @@ using System.Data;
 using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 using Headless.AuditLog;
-using Headless.CommitCoordination.EntityFramework;
 using Headless.Domain;
 using Headless.EntityFramework.Contexts.Processors;
 using Microsoft.EntityFrameworkCore;
@@ -33,6 +32,7 @@ namespace Headless.EntityFramework.Contexts.Runtime;
 /// replay-safe. Integration events remain exactly-once via the transactional outbox regardless of path.
 /// </para>
 /// </remarks>
+[PublicAPI]
 public interface IHeadlessSaveChangesPipeline
 {
     /// <summary>
@@ -48,7 +48,7 @@ public interface IHeadlessSaveChangesPipeline
         DbContext context,
         Func<bool, CancellationToken, Task<int>> baseSaveChangesAsync,
         bool acceptAllChangesOnSuccess,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken = default
     );
 
     /// <summary>
@@ -112,7 +112,7 @@ internal sealed partial class HeadlessSaveChangesPipeline(
         DbContext context,
         Func<bool, CancellationToken, Task<int>> baseSaveChangesAsync,
         bool acceptAllChangesOnSuccess,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken = default
     )
     {
         // Materialize once — the framework processors don't add new ChangeTracker entries during
@@ -187,7 +187,7 @@ internal sealed partial class HeadlessSaveChangesPipeline(
     {
         // Single allocation, single ChangeTracker traversal — feeds both _ProcessEntries and the
         // initial audit capture.
-        return context.ChangeTracker.Entries().ToArray();
+        return [.. context.ChangeTracker.Entries()];
     }
 
     private HeadlessSaveEntryContext _ProcessEntries(DbContext context, IReadOnlyList<EntityEntry> entries)

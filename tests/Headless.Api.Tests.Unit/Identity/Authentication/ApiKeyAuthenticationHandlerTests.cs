@@ -50,7 +50,7 @@ public sealed class ApiKeyAuthenticationHandlerTests : TestBase
     }
 
     [Fact]
-    public async Task should_return_success_when_user_already_authenticated()
+    public async Task should_return_no_result_when_user_already_authenticated_without_api_key()
     {
         // given
         var handler = _CreateHandler();
@@ -67,9 +67,8 @@ public sealed class ApiKeyAuthenticationHandlerTests : TestBase
         var result = await handler.AuthenticateAsync();
 
         // then
-        result.Succeeded.Should().BeTrue();
-        result.Ticket.Should().NotBeNull();
-        result.Ticket!.AuthenticationScheme.Should().Be("context.User");
+        result.None.Should().BeTrue();
+        result.Succeeded.Should().BeFalse();
     }
 
     [Fact]
@@ -175,7 +174,10 @@ public sealed class ApiKeyAuthenticationHandlerTests : TestBase
         var handler = _CreateHandler();
         var context = _CreateContext();
         context.Request.Headers["X-Api-Key"] = "invalid-api-key";
-        _apiKeyStore.GetActiveApiKeyUserAsync("invalid-api-key").Returns(ValueTask.FromResult<TestUser?>(null));
+
+        _apiKeyStore
+            .GetActiveApiKeyUserAsync("invalid-api-key", Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<TestUser?>(null));
 
         await handler.InitializeAsync(
             new AuthenticationScheme("ApiKey", null, typeof(ApiKeyAuthenticationHandler<TestUser, string>)),
@@ -198,7 +200,11 @@ public sealed class ApiKeyAuthenticationHandlerTests : TestBase
         var context = _CreateContext();
         var user = new TestUser("user-1", "testuser", "test@example.com");
         context.Request.Headers["X-Api-Key"] = "valid-api-key";
-        _apiKeyStore.GetActiveApiKeyUserAsync("valid-api-key").Returns(ValueTask.FromResult<TestUser?>(user));
+
+        _apiKeyStore
+            .GetActiveApiKeyUserAsync("valid-api-key", Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<TestUser?>(user));
+
         _signInManager.CanSignInAsync(user).Returns(Task.FromResult(false));
 
         await handler.InitializeAsync(
@@ -223,7 +229,9 @@ public sealed class ApiKeyAuthenticationHandlerTests : TestBase
         var context = _CreateContext();
         var user = new TestUser("user-1", "testuser", "test@example.com");
         context.Request.Headers["X-Api-Key"] = "valid-api-key";
-        _apiKeyStore.GetActiveApiKeyUserAsync("valid-api-key").Returns(ValueTask.FromResult<TestUser?>(user));
+        _apiKeyStore
+            .GetActiveApiKeyUserAsync("valid-api-key", Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<TestUser?>(user));
         _signInManager.CanSignInAsync(user).Returns(Task.FromResult(true));
         _userManager.SupportsUserLockout.Returns(true);
         _userManager.IsLockedOutAsync(user).Returns(Task.FromResult(true));
@@ -252,7 +260,9 @@ public sealed class ApiKeyAuthenticationHandlerTests : TestBase
         var principal = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "testuser")]));
 
         context.Request.Headers["X-Api-Key"] = "valid-api-key";
-        _apiKeyStore.GetActiveApiKeyUserAsync("valid-api-key").Returns(ValueTask.FromResult<TestUser?>(user));
+        _apiKeyStore
+            .GetActiveApiKeyUserAsync("valid-api-key", Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<TestUser?>(user));
         _signInManager.CanSignInAsync(user).Returns(Task.FromResult(true));
         _userManager.SupportsUserLockout.Returns(false);
         _signInManager.CreateUserPrincipalAsync(user).Returns(Task.FromResult(principal));
@@ -297,7 +307,9 @@ public sealed class ApiKeyAuthenticationHandlerTests : TestBase
         context.Request.Headers["X-Api-Key"] = "header-api-key";
         context.Request.QueryString = new QueryString("?api_key=query-api-key");
 
-        _apiKeyStore.GetActiveApiKeyUserAsync("header-api-key").Returns(ValueTask.FromResult<TestUser?>(headerUser));
+        _apiKeyStore
+            .GetActiveApiKeyUserAsync("header-api-key", Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<TestUser?>(headerUser));
         _signInManager.CanSignInAsync(headerUser).Returns(Task.FromResult(true));
         _userManager.SupportsUserLockout.Returns(false);
         _signInManager.CreateUserPrincipalAsync(headerUser).Returns(Task.FromResult(principal));

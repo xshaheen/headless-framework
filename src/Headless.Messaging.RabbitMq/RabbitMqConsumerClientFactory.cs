@@ -8,18 +8,27 @@ using Microsoft.Extensions.Options;
 namespace Headless.Messaging.RabbitMq;
 
 internal sealed class RabbitMqConsumerClientFactory(
-    IOptions<RabbitMqOptions> rabbitMqOptions,
+    IOptions<RabbitMqMessagingOptions> rabbitMqOptions,
     IConnectionChannelPool channelPool,
     IServiceProvider serviceProvider,
     IConsumerRegistry? consumerRegistry = null
 ) : IIntentAwareConsumerClientFactory
 {
-    public Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent)
+    public Task<IConsumerClient> CreateAsync(
+        string groupName,
+        byte groupConcurrent,
+        CancellationToken cancellationToken = default
+    )
     {
-        return CreateAsync(groupName, groupConcurrent, IntentType.Bus);
+        return CreateAsync(groupName, groupConcurrent, IntentType.Bus, cancellationToken);
     }
 
-    public async Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent, IntentType intentType)
+    public async Task<IConsumerClient> CreateAsync(
+        string groupName,
+        byte groupConcurrent,
+        IntentType intentType,
+        CancellationToken cancellationToken = default
+    )
     {
         // Resolve outside the broker try/catch so config errors surface as InvalidOperationException,
         // not as a BrokerConnectionException.
@@ -37,11 +46,11 @@ internal sealed class RabbitMqConsumerClientFactory(
                 intentType
             );
 
-            await client.ConnectAsync().ConfigureAwait(false);
+            await client.ConnectAsync(cancellationToken).ConfigureAwait(false);
 
             return client;
         }
-        catch (Exception e)
+        catch (Exception e) when (e is not OperationCanceledException)
         {
             throw new BrokerConnectionException(e);
         }

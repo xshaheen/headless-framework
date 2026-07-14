@@ -8,7 +8,7 @@ Provides SMS sending via Amazon Simple Notification Service (SNS), reusing exist
 
 ## Key Features
 
-- `AwsSnsSmsSender` — `ISmsSender` implementation backed by AWS SNS.
+- `AwsSnsSmsSender` — `ISmsSender` implementation backed by AWS SNS. Single recipient per send; does not implement `IBulkSmsSender` (SNS publishes to one phone number per call).
 - `SenderId` — alphanumeric sender ID displayed to recipients (support varies by country).
 - `MaxPrice` — optional per-message USD price cap; SNS rejects sends that would exceed it.
 - Accepts any AWS credential source: environment, instance metadata, `appsettings.json` via `AWSOptions`, or explicit `BasicAWSCredentials`.
@@ -39,6 +39,13 @@ builder.Services.AddHeadlessSms(setup =>
         awsOptions
     )
 );
+
+// Named instance (keyed ISmsSender + keyed IAmazonSimpleNotificationService, resolvable via ISmsSenderProvider):
+builder.Services.AddHeadlessSms(setup =>
+{
+    setup.UseNoop(); // default (optional)
+    setup.AddNamed("sns", i => i.UseAwsSns(builder.Configuration.GetSection("Sms:Aws"), awsOptions)); // keyed "sns"
+});
 ```
 
 ## Configuration
@@ -68,11 +75,11 @@ builder.Services.AddHeadlessSms(setup =>
 
 ## Dependencies
 
-- `Headless.Sms.Abstractions`
+- `Headless.Sms.Core`
 - `AWSSDK.SimpleNotificationService`
 - `AWSSDK.Extensions.NETCore.Setup`
 
 ## Side Effects
 
-- Registers `IAmazonSimpleNotificationService` if not already registered.
-- Registers `ISmsSender` as singleton (`AwsSnsSmsSender`).
+- Default: registers `IAmazonSimpleNotificationService` via `TryAddAWSService` (no-op if already registered) and `ISmsSender` (`AwsSnsSmsSender`) as an unkeyed singleton. No `IBulkSmsSender` — SNS publishes to one recipient per call.
+- Named (`AddNamed(name, i => i.UseAwsSns(…))`): registers a keyed `IAmazonSimpleNotificationService` (built via `AWSOptions.CreateServiceClient<T>` from the supplied options, the ambient `AWSOptions` in DI, `IConfiguration` `AWS:*` via `GetAWSOptions()`, or SDK defaults — mirroring `TryAddAWSService(null)`, which has no keyed overload) and a keyed `ISmsSender`, both under the instance name.

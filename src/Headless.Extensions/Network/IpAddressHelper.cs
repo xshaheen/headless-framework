@@ -16,7 +16,7 @@ public static class IpAddressHelper
     /// unicast IPv4 addresses contributes all of them to the result.
     /// </summary>
     /// <returns>The list of discovered IPv4 addresses (possibly multiple per interface); empty when no qualifying interface is found.</returns>
-    public static List<IPAddress> GetInterNetworkIpAddresses()
+    public static IReadOnlyList<IPAddress> GetInterNetworkIpAddresses()
     {
         var ipAddresses = NetworkInterface
             .GetAllNetworkInterfaces()

@@ -3,7 +3,6 @@
 using System.Data;
 using Headless.Checks;
 using Headless.Messaging.Configuration;
-using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
@@ -120,7 +119,7 @@ internal sealed class SqlServerMonitoringApi(
                 ? "[Id],[MessageId],[Version],[Name],CAST(NULL AS nvarchar(200)) AS [Group],[Content],[IntentType],[Retries],[Added],[ExpiresAt],[StatusName],[NextRetryAt],[LockedUntil]"
                 : "[Id],[MessageId],[Version],[Name],[Group],[Content],[IntentType],[Retries],[Added],[ExpiresAt],[StatusName],[NextRetryAt],[LockedUntil]";
         var where = string.Empty;
-        if (!string.IsNullOrEmpty(query.StatusName))
+        if (query.StatusName is not null)
         {
             where += " AND [StatusName]=@StatusName";
         }
@@ -154,7 +153,7 @@ internal sealed class SqlServerMonitoringApi(
 
         object[] countSqlParams =
         [
-            new SqlParameter("@StatusName", query.StatusName ?? string.Empty),
+            new SqlParameter("@StatusName", query.StatusName?.ToString("G") ?? string.Empty),
             new SqlParameter("@Group", query.Group ?? string.Empty),
             new SqlParameter("@Name", query.Name ?? string.Empty),
             new SqlParameter("@Content", $"%{_EscapeLike(query.Content)}%"),
@@ -163,7 +162,7 @@ internal sealed class SqlServerMonitoringApi(
 
         object[] pageSqlParams =
         [
-            new SqlParameter("@StatusName", query.StatusName ?? string.Empty),
+            new SqlParameter("@StatusName", query.StatusName?.ToString("G") ?? string.Empty),
             new SqlParameter("@Group", query.Group ?? string.Empty),
             new SqlParameter("@Name", query.Name ?? string.Empty),
             new SqlParameter("@Content", $"%{_EscapeLike(query.Content)}%"),
@@ -217,7 +216,7 @@ internal sealed class SqlServerMonitoringApi(
                                 ExpiresAt = await reader.IsDBNullAsync(index++, ct).ConfigureAwait(false)
                                     ? null
                                     : reader.GetDateTime(index - 1),
-                                StatusName = reader.GetString(index++),
+                                StatusName = Enum.Parse<StatusName>(reader.GetString(index++)),
                                 NextRetryAt = await reader.IsDBNullAsync(index++, ct).ConfigureAwait(false)
                                     ? null
                                     : reader.GetDateTime(index - 1),

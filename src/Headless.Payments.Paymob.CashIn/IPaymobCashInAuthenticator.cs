@@ -14,12 +14,16 @@ namespace Headless.Payments.Paymob.CashIn;
 /// proactively based on <c>TokenRefreshBuffer</c> in <c>PaymobCashInOptions</c>; concurrent callers are
 /// serialised through a semaphore so that only one refresh request is in flight at a time.
 /// </remarks>
+[PublicAPI]
 public interface IPaymobCashInAuthenticator
 {
     /// <summary>Exchanges the configured API key for a new authentication token unconditionally.</summary>
+    /// <param name="cancellationToken">Token to cancel the network call.</param>
     /// <returns>The full authentication response including the bearer token and merchant profile.</returns>
     /// <exception cref="PaymobCashInException">The HTTP request to Paymob failed.</exception>
-    Task<CashInAuthenticationTokenResponse> RequestAuthenticationTokenAsync();
+    Task<CashInAuthenticationTokenResponse> RequestAuthenticationTokenAsync(
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// Returns a valid authentication token, using a cached value when it has not yet expired.

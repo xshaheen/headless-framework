@@ -4,9 +4,9 @@ using Headless.Dashboard.Authentication;
 using Headless.Messaging.Dashboard;
 using Headless.Messaging.Dashboard.GatewayProxy;
 using Headless.Messaging.Dashboard.NodeDiscovery;
-using Headless.Messaging.Internal;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
+using Headless.Messaging.Runtime;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.TestHost;
@@ -36,15 +36,15 @@ public sealed class MonitoringEndpointTests : TestBase
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
 
         await using var app = _CreateTestApp(_dataStorage);
-        await app.StartAsync();
+        await app.StartAsync(AbortToken);
         using var client = app.GetTestClient();
 
         // when
-        var response = await client.GetAsync("/api/stats");
+        var response = await client.GetAsync("/api/stats", AbortToken);
 
         // then
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
-        var body = await response.Content.ReadAsStringAsync();
+        var body = await response.Content.ReadAsStringAsync(AbortToken);
         body.Should().Contain("100"); // PublishedSucceeded
         body.Should().Contain("200"); // ReceivedSucceeded
     }
@@ -56,15 +56,15 @@ public sealed class MonitoringEndpointTests : TestBase
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
 
         await using var app = _CreateTestApp(_dataStorage);
-        await app.StartAsync();
+        await app.StartAsync(AbortToken);
         using var client = app.GetTestClient();
 
         // when
-        var response = await client.GetAsync("/api/nodes");
+        var response = await client.GetAsync("/api/nodes", AbortToken);
 
         // then
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
-        var body = await response.Content.ReadAsStringAsync();
+        var body = await response.Content.ReadAsStringAsync(AbortToken);
         body.Should().Be("[]");
     }
 
@@ -92,19 +92,19 @@ public sealed class MonitoringEndpointTests : TestBase
                 Tags = "api",
             },
         };
-        discoveryProvider.GetNodes().Returns(Task.FromResult<IList<Node>>(nodes));
+        discoveryProvider.GetNodes(null, Arg.Any<CancellationToken>()).Returns(Task.FromResult<IList<Node>>(nodes));
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
 
         await using var app = _CreateTestApp(_dataStorage, discoveryProvider);
-        await app.StartAsync();
+        await app.StartAsync(AbortToken);
         using var client = app.GetTestClient();
 
         // when
-        var response = await client.GetAsync("/api/nodes");
+        var response = await client.GetAsync("/api/nodes", AbortToken);
 
         // then
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
-        var body = await response.Content.ReadAsStringAsync();
+        var body = await response.Content.ReadAsStringAsync(AbortToken);
         body.Should().Contain("node1");
         body.Should().Contain("node2");
     }
@@ -119,15 +119,15 @@ public sealed class MonitoringEndpointTests : TestBase
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
 
         await using var app = _CreateTestApp(_dataStorage, discoveryProvider);
-        await app.StartAsync();
+        await app.StartAsync(AbortToken);
         using var client = app.GetTestClient();
 
         // when
-        var response = await client.GetAsync("/api/list-ns");
+        var response = await client.GetAsync("/api/list-ns", AbortToken);
 
         // then
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
-        var body = await response.Content.ReadAsStringAsync();
+        var body = await response.Content.ReadAsStringAsync(AbortToken);
         body.Should().Contain("default");
         body.Should().Contain("staging");
     }
@@ -141,11 +141,11 @@ public sealed class MonitoringEndpointTests : TestBase
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
 
         await using var app = _CreateTestApp(_dataStorage, discoveryProvider);
-        await app.StartAsync();
+        await app.StartAsync(AbortToken);
         using var client = app.GetTestClient();
 
         // when
-        var response = await client.GetAsync("/api/list-ns");
+        var response = await client.GetAsync("/api/list-ns", AbortToken);
 
         // then
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.NotFound);
@@ -158,15 +158,15 @@ public sealed class MonitoringEndpointTests : TestBase
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
 
         await using var app = _CreateTestApp(_dataStorage);
-        await app.StartAsync();
+        await app.StartAsync(AbortToken);
         using var client = app.GetTestClient();
 
         // when
-        var response = await client.GetAsync("/api/list-svc/default");
+        var response = await client.GetAsync("/api/list-svc/default", AbortToken);
 
         // then
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
-        var body = await response.Content.ReadAsStringAsync();
+        var body = await response.Content.ReadAsStringAsync(AbortToken);
         body.Should().Be("[]");
     }
 
@@ -200,11 +200,11 @@ public sealed class MonitoringEndpointTests : TestBase
 
         appBuilder.Services.AddRouting();
         appBuilder.Services.AddAuthorization();
-        appBuilder.Services.AddCors(o => o.AddPolicy("Messaging_Dashboard_CORS", p => p.AllowAnyOrigin()));
+        appBuilder.Services.AddCors(o => o.AddPolicy("HeadlessMessagingDashboardCORS", p => p.AllowAnyOrigin()));
 
         var app = appBuilder.Build();
         app.UseRouting();
-        app.UseCors("Messaging_Dashboard_CORS");
+        app.UseCors("HeadlessMessagingDashboardCORS");
         app.MapMessagingDashboardEndpoints(config);
 
         return app;

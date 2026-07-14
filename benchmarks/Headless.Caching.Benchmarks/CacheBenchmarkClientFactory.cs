@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Diagnostics.CodeAnalysis;
 using Foundatio.Caching;
 using Headless.Caching.Benchmarks.Adapters;
 using Headless.Caching.Benchmarks.Infrastructure;
@@ -8,15 +7,18 @@ using Headless.Redis;
 using Headless.Serializer;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.Caching.StackExchangeRedis;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 using ZiggyCreatures.Caching.Fusion;
-using ZiggyCreatures.Caching.Fusion.Serialization.SystemTextJson;
 
 namespace Headless.Caching.Benchmarks;
 
+[SuppressMessage(
+    "Performance",
+    "CA1859:Use concrete types when possible for improved performance",
+    Justification = "Factory-owned caches are disposed through the returned benchmark client."
+)]
 [SuppressMessage(
     "Reliability",
     "CA2000:Dispose objects before losing scope",
@@ -175,9 +177,11 @@ internal static class CacheBenchmarkClientFactory
     private static ICacheBenchmarkClient _CreateHeadlessRedis(string keyPrefix)
     {
         var descriptor = _GetDescriptor(BenchmarkProviderIds.HeadlessRedis);
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
         var multiplexer = ConnectionMultiplexer.Connect(_GetRequiredRedisConnectionString());
+#pragma warning restore MA0045
         var scriptsLoader = new HeadlessRedisScriptsLoader(multiplexer);
-        var cache = new Headless.Caching.RedisCache(
+        var cache = new RedisCache(
             new SystemJsonSerializer(),
             TimeProvider.System,
             new RedisCacheOptions
@@ -299,7 +303,15 @@ internal static class CacheBenchmarkClientFactory
     private static ICacheBenchmarkClient _CreateFoundatioRedis(string keyPrefix)
     {
         var descriptor = _GetDescriptor(BenchmarkProviderIds.FoundatioRedis);
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
         var multiplexer = ConnectionMultiplexer.Connect(_GetRequiredRedisConnectionString());
+#pragma warning restore MA0045
+        // #581: Foundatio.Redis 13.0.2 is compiled against StackExchange.Redis 2.x, but Central Package Management
+        // forces SE.Redis 3.x onto the whole benchmark project, so calls into SE.Redis members whose signatures
+        // changed between 2.x and 3.x can throw MissingMethodException at RUNTIME here (the build stays green — the
+        // mismatch is binary, not source). Benchmark-only: no shipped src/ package references Foundatio.Redis.
+        // Resolving it is a version-strategy decision (a Foundatio.Redis built against SE.Redis 3.x, or dropping /
+        // isolating this benchmark lane), not a code change at this call site.
         var cache = new ScopedCacheClient(
             new RedisCacheClient(options => options.ConnectionMultiplexer(multiplexer)),
             keyPrefix
@@ -362,8 +374,9 @@ internal static class CacheBenchmarkClientFactory
         return connectionString;
     }
 
-    private static CacheEntryOptions _CreateHeadlessOptions(TimeSpan duration) =>
-        new()
+    private static CacheEntryOptions _CreateHeadlessOptions(TimeSpan duration)
+    {
+        return new()
         {
             Duration = duration,
             IsFailSafeEnabled = true,
@@ -371,14 +384,19 @@ internal static class CacheBenchmarkClientFactory
             FailSafeThrottleDuration = TimeSpan.FromSeconds(1),
             EagerRefreshThreshold = 0.8f,
         };
+    }
 
-    private static FusionCacheEntryOptions _CreateFusionOptions(TimeSpan duration) =>
-        new FusionCacheEntryOptions(duration)
-            .SetFailSafe(true, TimeSpan.FromMinutes(5), TimeSpan.FromSeconds(1))
+    private static FusionCacheEntryOptions _CreateFusionOptions(TimeSpan duration)
+    {
+        return new FusionCacheEntryOptions(duration)
+            .SetFailSafe(isEnabled: true, TimeSpan.FromMinutes(5), TimeSpan.FromSeconds(1))
             .SetEagerRefresh(0.8f);
+    }
 
-    private static FusionCacheEntryOptions _CreateFusionDistributedOptions(TimeSpan duration) =>
-        _CreateFusionOptions(duration).SetSkipMemoryCache(true);
+    private static FusionCacheEntryOptions _CreateFusionDistributedOptions(TimeSpan duration)
+    {
+        return _CreateFusionOptions(duration).SetSkipMemoryCache(skip: true);
+    }
 
     private sealed class PrefixDistributedCache(string prefix, IDistributedCache inner) : IDistributedCache, IDisposable
     {

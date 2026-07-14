@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
-using Headless.Messaging.Messages;
 using Headless.Messaging.Pulsar;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
@@ -44,7 +43,7 @@ public sealed class PulsarTransportTests : TestBase
         _connectionFactory.CreateProducerAsync("TestTopic").ThrowsAsync(new InvalidOperationException("Expected"));
 
         // when
-        var result = await transport.SendAsync(message);
+        var result = await transport.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeFalse();
@@ -64,7 +63,7 @@ public sealed class PulsarTransportTests : TestBase
             .ThrowsAsync(new InvalidOperationException("Connection failed"));
 
         // when
-        var result = await transport.SendAsync(message);
+        var result = await transport.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeFalse();
@@ -97,7 +96,7 @@ public sealed class PulsarTransportTests : TestBase
             .ThrowsAsync(new InvalidOperationException("Expected"));
 
         // when
-        await transport.SendAsync(message);
+        await transport.SendAsync(message, AbortToken);
 
         // then
         await _connectionFactory.Received(1).CreateProducerAsync("orders.created");

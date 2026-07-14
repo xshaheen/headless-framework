@@ -10,11 +10,33 @@ namespace Tests;
 public sealed class AmazonSqsConsumerClientFactoryTests : TestBase
 {
     [Fact]
+    public async Task should_preserve_factory_cancellation()
+    {
+        var factory = new AmazonSqsConsumerClientFactory(
+            Options.Create(
+                new AmazonSqsMessagingOptions
+                {
+                    Region = Amazon.RegionEndpoint.USEast1,
+                    SqsServiceUrl = "http://localhost:4566",
+                    SnsServiceUrl = "http://localhost:4566",
+                }
+            ),
+            Substitute.For<ILogger<AmazonSqsConsumerClient>>()
+        );
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        var act = async () => await factory.CreateAsync("test-group", 1, cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
     public async Task should_create_consumer_client()
     {
         // given
         var options = Options.Create(
-            new AmazonSqsOptions
+            new AmazonSqsMessagingOptions
             {
                 Region = Amazon.RegionEndpoint.USEast1,
                 SqsServiceUrl = "http://localhost:4566",
@@ -26,7 +48,7 @@ public sealed class AmazonSqsConsumerClientFactoryTests : TestBase
         var factory = new AmazonSqsConsumerClientFactory(options, logger);
 
         // when
-        var client = await factory.CreateAsync("test-group", 5);
+        var client = await factory.CreateAsync("test-group", 5, AbortToken);
 
         // then
         client.Should().NotBeNull();
@@ -40,7 +62,7 @@ public sealed class AmazonSqsConsumerClientFactoryTests : TestBase
     {
         // given
         var options = Options.Create(
-            new AmazonSqsOptions
+            new AmazonSqsMessagingOptions
             {
                 Region = Amazon.RegionEndpoint.USEast1,
                 SqsServiceUrl = "http://localhost:4566",
@@ -52,7 +74,7 @@ public sealed class AmazonSqsConsumerClientFactoryTests : TestBase
         var factory = new AmazonSqsConsumerClientFactory(options, logger);
 
         // when
-        var client = await factory.CreateAsync("my-custom-group", 3);
+        var client = await factory.CreateAsync("my-custom-group", 3, AbortToken);
 
         // then - broker address should contain the group info after connection
         client.Should().NotBeNull();
@@ -66,7 +88,7 @@ public sealed class AmazonSqsConsumerClientFactoryTests : TestBase
     {
         // given
         var options = Options.Create(
-            new AmazonSqsOptions
+            new AmazonSqsMessagingOptions
             {
                 Region = Amazon.RegionEndpoint.USEast1,
                 SqsServiceUrl = "http://localhost:4566",
@@ -78,8 +100,8 @@ public sealed class AmazonSqsConsumerClientFactoryTests : TestBase
         var factory = new AmazonSqsConsumerClientFactory(options, logger);
 
         // when
-        var client1 = await factory.CreateAsync("group-1", 2);
-        var client2 = await factory.CreateAsync("group-2", 4);
+        var client1 = await factory.CreateAsync("group-1", 2, AbortToken);
+        var client2 = await factory.CreateAsync("group-2", 4, AbortToken);
 
         // then
         client1.Should().NotBeSameAs(client2);
@@ -93,7 +115,7 @@ public sealed class AmazonSqsConsumerClientFactoryTests : TestBase
     {
         // given
         var options = Options.Create(
-            new AmazonSqsOptions
+            new AmazonSqsMessagingOptions
             {
                 Region = Amazon.RegionEndpoint.USEast1,
                 SqsServiceUrl = "http://localhost:4566",
@@ -105,7 +127,7 @@ public sealed class AmazonSqsConsumerClientFactoryTests : TestBase
         var factory = new AmazonSqsConsumerClientFactory(options, logger);
 
         // when
-        var client = await factory.CreateAsync("test-group", 10);
+        var client = await factory.CreateAsync("test-group", 10, AbortToken);
 
         // then
         client.Should().NotBeNull();
@@ -119,7 +141,7 @@ public sealed class AmazonSqsConsumerClientFactoryTests : TestBase
     {
         // given
         var options = Options.Create(
-            new AmazonSqsOptions
+            new AmazonSqsMessagingOptions
             {
                 Region = Amazon.RegionEndpoint.USEast1,
                 SqsServiceUrl = "http://localhost:4566",
@@ -131,7 +153,7 @@ public sealed class AmazonSqsConsumerClientFactoryTests : TestBase
         var factory = new AmazonSqsConsumerClientFactory(options, logger);
 
         // when - groupConcurrent = 0 means synchronous processing
-        var client = await factory.CreateAsync("sync-group", 0);
+        var client = await factory.CreateAsync("sync-group", 0, AbortToken);
 
         // then
         client.Should().NotBeNull();

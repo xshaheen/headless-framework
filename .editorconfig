@@ -82,7 +82,7 @@ indent_size = 2
 insert_final_newline = true
 
 # .NET
-[*.{cs,csx,cake,vb,vbx}]
+[*.cs]
 insert_final_newline = true
 
 # Batch Files
@@ -103,175 +103,189 @@ trim_trailing_whitespace = false
 insert_final_newline = false
 
 ##########################################
-# Default .NET Code Style Severities
-# https://docs.microsoft.com/dotnet/fundamentals/code-analysis/configuration-options#scope
+# Analyzer Diagnostic Severities
+#
+# Roslyn analyzer-rule severities, grouped by intent. Families: CA* (NetAnalyzers),
+# RCS* (Roslynator), MA* (Meziantou), VSTHRD*/AsyncFixer*/Asyncify* (async & threading),
+# FAA* (AwesomeAssertions), CS* (compiler). The default below leaves every other rule at
+# its analyzer default; the per-rule lines tune the ones we care about.
 ##########################################
 
-[*.{cs,csx,cake,vb,vbx}]
-# Default Severity for all .NET Code Style rules below
+[*.cs]
+
+# Default severity for all .NET code-analysis rules
 dotnet_analyzer_diagnostic.severity = default
 
-############ .NET Code Style Severities
+# --- Globalization & culture ---
 
-# CA1848: Use the LoggerMessage delegates
-dotnet_diagnostic.ca1848.severity = silent
-# CA1863: Cache a 'CompositeFormat' for repeated use in this formatting operation
-dotnet_diagnostic.ca1863.severity = suggestion
-# CA5394: Do not use insecure randomness
-dotnet_diagnostic.ca5394.severity = suggestion
-# CA1861: Avoid constant arrays as arguments
-dotnet_diagnostic.ca1861.severity = suggestion
-# CA1716: Identifiers should not match keywords
-dotnet_diagnostic.ca1716.severity = silent
-# CA1000: Do not declare static members on generic types
-dotnet_diagnostic.ca1000.severity = suggestion
-# CA2016: Forward the CancellationToken parameter to methods that take one
-dotnet_diagnostic.ca2016.severity = error
-# CA1859: Use concrete types when possible for improved performance
-dotnet_diagnostic.ca1859.severity = suggestion
-# CA1024: Use properties where appropriate
-dotnet_diagnostic.ca1024.severity = suggestion
-# CA1310: Specify StringComparison for correctness
-dotnet_diagnostic.ca1310.severity = suggestion
-# CA1307: Specify StringComparison for clarity
-dotnet_diagnostic.ca1307.severity = suggestion
-# CA1305: Specify IFormatProvider
-dotnet_diagnostic.ca1305.severity = suggestion
-# CA1304: Specify CultureInfo
-dotnet_diagnostic.ca1304.severity = suggestion
 # CA1303: Do not pass literals as localized parameters
-dotnet_diagnostic.ca1303.severity = suggestion
+dotnet_diagnostic.CA1303.severity = suggestion
+# CA1304: Specify CultureInfo
+dotnet_diagnostic.CA1304.severity = suggestion
+# CA1305: Specify IFormatProvider
+dotnet_diagnostic.CA1305.severity = suggestion
+# CA1307: Specify StringComparison for clarity
+dotnet_diagnostic.CA1307.severity = suggestion
 # CA1309: Use ordinal StringComparison
-dotnet_diagnostic.ca1309.severity = suggestion
-# CA1805: Do not initialize unnecessarily.
-dotnet_diagnostic.ca1805.severity = suggestion
+dotnet_diagnostic.CA1309.severity = suggestion
+# CA1310: Specify StringComparison for correctness
+dotnet_diagnostic.CA1310.severity = suggestion
+# MA0006: Use String.Equals instead of equality operator
+dotnet_diagnostic.MA0006.severity = suggestion
+
+# --- Naming ---
+
 # CA1707: Identifiers should not contain underscores
-dotnet_diagnostic.ca1707.severity = warning
+dotnet_diagnostic.CA1707.severity = warning
 # CA1708: Identifiers should differ by more than case
-dotnet_diagnostic.ca1708.severity = warning
-# CA1715: Identifiers should have correct prefix
-dotnet_diagnostic.ca1715.severity = warning
+dotnet_diagnostic.CA1708.severity = warning
 # CA1712: Do not prefix enum values with type name
-dotnet_diagnostic.ca1712.severity = warning
+dotnet_diagnostic.CA1712.severity = warning
+# CA1715: Identifiers should have correct prefix
+dotnet_diagnostic.CA1715.severity = warning
+# CA1716: Identifiers should not match keywords
+dotnet_diagnostic.CA1716.severity = none
 # CA1720: Identifiers should not contain type names
-dotnet_diagnostic.ca1720.severity = suggestion
+dotnet_diagnostic.CA1720.severity = suggestion
 # CA1725: Parameter names should match base declaration
-dotnet_diagnostic.ca1725.severity = suggestion
-# CA2009: Do not call ToImmutableCollection on an ImmutableCollection value
-dotnet_diagnostic.ca2009.severity = warning
-# CA5350: Do Not Use Weak Cryptographic Algorithms
-dotnet_diagnostic.ca5350.severity = warning
-# CA5351 Do Not Use Broken Cryptographic Algorithms
-dotnet_diagnostic.ca5351.severity = warning
-# CA5359: Do not disable certificate validation
-dotnet_diagnostic.ca5359.severity = warning
-# CA5360: Do not call dangerous methods in deserialization
-dotnet_diagnostic.ca5360.severity = warning
-# CA5364: Do not use deprecated security protocols
-dotnet_diagnostic.ca5364.severity = warning
-# CA5379: Ensure key derivation function algorithm is sufficiently strong
-dotnet_diagnostic.ca5379.severity = warning
-# CA5384: Do not use digital signature algorithm (DSA)
-dotnet_diagnostic.ca5384.severity = warning
-# CA5385: Use Rivest–Shamir–Adleman (RSA) algorithm with sufficient key size
-dotnet_diagnostic.ca5385.severity = warning
-# CA1851: Possible multiple enumerations of 'IEnumerable' collection
-dotnet_diagnostic.ca1851.severity = suggestion
+dotnet_diagnostic.CA1725.severity = suggestion
+
+# --- Design & API surface ---
+
+# CA1000: Do not declare static members on generic types
+dotnet_diagnostic.CA1000.severity = suggestion
 # CA1008: Enums should have zero value
-dotnet_diagnostic.ca1008.severity = suggestion
-# CS0184: 'is' expression's given expression is never of the provided type
-dotnet_diagnostic.cs0184.severity = error
-# CA2249: Consider using 'string.Contains' instead of 'string.IndexOf'
-dotnet_diagnostic.ca2249.severity = warning
+dotnet_diagnostic.CA1008.severity = suggestion
 # CA1018: Mark attributes with AttributeUsageAttribute
-dotnet_diagnostic.ca1018.severity = warning
-# CA1047: Do not declare protected member in sealed type
-dotnet_diagnostic.ca1047.severity = warning
-# CA1825: Avoid zero-length array allocations
-dotnet_diagnostic.ca1825.severity = warning
-# CA1827: Do not use Count() or LongCount() when Any() can be used
-dotnet_diagnostic.ca1827.severity = warning
-# CA1826: Do not use Enumerable methods on indexable collections. Instead use the collection directly
-dotnet_diagnostic.ca1826.severity = warning
-# CA1829: Use Length/Count property instead of Count() when available
-dotnet_diagnostic.ca1829.severity = warning
-# CA1831|CA1832|CA1833: Use AsSpan or AsMemory instead of Range-based indexers when appropriate
-dotnet_diagnostic.ca1831.severity = warning
-dotnet_diagnostic.ca1832.severity = warning
-dotnet_diagnostic.ca1833.severity = warning
-# CA1837: Use 'Environment.ProcessId'
-dotnet_diagnostic.ca1837.severity = warning
-# CA1836: Prefer IsEmpty over Count
-dotnet_diagnostic.ca1836.severity = warning
-# CA2011: Avoid infinite recursion
-dotnet_diagnostic.ca2011.severity = warning
-# CA2012: Use ValueTask correctly
-dotnet_diagnostic.ca2012.severity = warning
-# CA1036: A class that implements IComparable<T> or IComparable should override comparison operators
-dotnet_diagnostic.ca1036.severity = suggestion
+dotnet_diagnostic.CA1018.severity = warning
 # CA1019: Define accessors for attribute arguments
-dotnet_diagnostic.ca1019.severity = suggestion
-# CA2227: Collection properties should be read only
-dotnet_diagnostic.ca2227.severity = suggestion
-# CA1028: Enum Storage should be Int32
-dotnet_diagnostic.ca1028.severity = suggestion
+dotnet_diagnostic.CA1019.severity = suggestion
+# CA1024: Use properties where appropriate
+dotnet_diagnostic.CA1024.severity = suggestion
 # CA1027: Mark enums with FlagsAttribute
-dotnet_diagnostic.ca1027.severity = none
+dotnet_diagnostic.CA1027.severity = none
+# CA1028: Enum Storage should be Int32
+dotnet_diagnostic.CA1028.severity = suggestion
+# CA1036: A class that implements IComparable<T> or IComparable should override comparison operators
+dotnet_diagnostic.CA1036.severity = suggestion
+# CA1045: Do not pass types by reference
+dotnet_diagnostic.CA1045.severity = suggestion
+# CA1047: Do not declare protected member in sealed type
+dotnet_diagnostic.CA1047.severity = warning
+# CA2227: Collection properties should be read only
+dotnet_diagnostic.CA2227.severity = silent
 
-############ Tests
+# --- Performance & allocations ---
 
-# FAA0002: Use AwesomeAssertions equivalent
-dotnet_diagnostic.faa0002.severity = warning
+# CA1805: Do not initialize unnecessarily.
+dotnet_diagnostic.CA1805.severity = suggestion
+# CA1823: Avoid unused private fields
+dotnet_diagnostic.CA1823.severity = suggestion
+# CA1825: Avoid zero-length array allocations
+dotnet_diagnostic.CA1825.severity = warning
+# CA1826: Do not use Enumerable methods on indexable collections. Instead use the collection directly
+dotnet_diagnostic.CA1826.severity = warning
+# CA1827: Do not use Count() or LongCount() when Any() can be used
+dotnet_diagnostic.CA1827.severity = warning
+# CA1829: Use Length/Count property instead of Count() when available
+dotnet_diagnostic.CA1829.severity = warning
+# CA1831|CA1832|CA1833: Use AsSpan or AsMemory instead of Range-based indexers when appropriate
+dotnet_diagnostic.CA1831.severity = warning
+dotnet_diagnostic.CA1832.severity = warning
+dotnet_diagnostic.CA1833.severity = warning
+# CA1836: Prefer IsEmpty over Count
+dotnet_diagnostic.CA1836.severity = warning
+# CA1837: Use 'Environment.ProcessId'
+dotnet_diagnostic.CA1837.severity = warning
+# CA1848: Use the LoggerMessage delegates
+dotnet_diagnostic.CA1848.severity = silent
+# CA1851: Possible multiple enumerations of 'IEnumerable' collection
+dotnet_diagnostic.CA1851.severity = suggestion
+# CA1859: Use concrete types when possible for improved performance
+dotnet_diagnostic.CA1859.severity = suggestion
+# CA1861: Avoid constant arrays as arguments
+dotnet_diagnostic.CA1861.severity = suggestion
+# CA1863: Cache a 'CompositeFormat' for repeated use in this formatting operation
+dotnet_diagnostic.CA1863.severity = suggestion
 
-############ Analyzers
+# --- Async & threading ---
+
+dotnet_diagnostic.CA2011.severity = warning
+dotnet_diagnostic.CA2012.severity = warning
+# MA0045: Do not use blocking call (make method async)
+dotnet_diagnostic.MA0045.severity = suggestion
+# MA0079: Forward the CancellationToken using .WithCancellation()
+dotnet_diagnostic.MA0079.severity = warning
+dotnet_diagnostic.MA0080.severity = warning
+dotnet_diagnostic.AsyncFixer02.severity = warning
+dotnet_diagnostic.AsyncFixer03.severity = warning
+dotnet_diagnostic.AsyncFixer04.severity = warning
+dotnet_diagnostic.AsyncFixer05.severity = warning
+dotnet_diagnostic.AsyncifyInvocation.severity = warning
+dotnet_diagnostic.AsyncifyVariable.severity = warning
+# VSTHRD002: Avoid problematic synchronous waits
+dotnet_diagnostic.VSTHRD002.severity = none
+dotnet_diagnostic.VSTHRD100.severity = warning
+dotnet_diagnostic.VSTHRD101.severity = warning
+dotnet_diagnostic.VSTHRD103.severity = warning
+dotnet_diagnostic.VSTHRD107.severity = warning
+dotnet_diagnostic.VSTHRD110.severity = warning
+dotnet_diagnostic.VSTHRD114.severity = warning
+
+# --- Security ---
+
+dotnet_diagnostic.CA5350.severity = warning
+dotnet_diagnostic.CA5351.severity = warning
+dotnet_diagnostic.CA5359.severity = warning
+dotnet_diagnostic.CA5360.severity = warning
+dotnet_diagnostic.CA5364.severity = warning
+dotnet_diagnostic.CA5379.severity = warning
+dotnet_diagnostic.CA5384.severity = warning
+dotnet_diagnostic.CA5385.severity = warning
+# CA5394: Do not use insecure randomness
+dotnet_diagnostic.CA5394.severity = suggestion
+
+# --- Correctness & reliability ---
+
+# CA2009: Do not call ToImmutableCollection on an ImmutableCollection value
+dotnet_diagnostic.CA2009.severity = warning
+dotnet_diagnostic.CA2016.severity = warning
+# CA2249: Consider using 'string.Contains' instead of 'string.IndexOf'
+dotnet_diagnostic.CA2249.severity = warning
+dotnet_diagnostic.CS0184.severity = warning
+# Earlier always-on promotions (correctness/reliability) kept regardless of consumer .editorconfig.
+dotnet_diagnostic.MA0001.severity = warning
+dotnet_diagnostic.MA0002.severity = warning
+dotnet_diagnostic.MA0009.severity = warning
+dotnet_diagnostic.MA0011.severity = warning
+dotnet_diagnostic.MA0012.severity = warning
+dotnet_diagnostic.MA0015.severity = warning
+dotnet_diagnostic.MA0021.severity = warning
+dotnet_diagnostic.MA0022.severity = warning
+dotnet_diagnostic.MA0024.severity = warning
+dotnet_diagnostic.MA0037.severity = error
+dotnet_diagnostic.MA0039.severity = error
+dotnet_diagnostic.MA0047.severity = warning
+
+# --- Style & maintainability ---
 
 # RCS1021: Convert lambda expression body to expression-body
-dotnet_diagnostic.rcs1021.severity = suggestion
-# AsyncFixer02: Long-running or blocking operations inside an async method
-dotnet_diagnostic.asyncfixer02.severity = error
-# VSTHRD103: Call async methods when in an async method
-dotnet_diagnostic.vsthrd103.severity = error
-# AsyncFixer03: Fire & forget async void methods
-dotnet_diagnostic.asyncfixer03.severity = error
-# VSTHRD100: Avoid async void methods
-dotnet_diagnostic.vsthrd100.severity = error
-# VSTHRD101: Avoid unsupported async delegates
-dotnet_diagnostic.vsthrd101.severity = error
-# VSTHRD107: Await Task within using expression
-dotnet_diagnostic.vsthrd107.severity = error
-# AsyncFixer04: Fire & forget async call inside a using block
-dotnet_diagnostic.asyncfixer04.severity = error
-# VSTHRD110: Observe result of async calls
-dotnet_diagnostic.vsthrd110.severity = error
-# VSTHRD002: Avoid problematic synchronous waits
-dotnet_diagnostic.vsthrd002.severity = none
-# MA0045: Do not use blocking call (make method async)
-dotnet_diagnostic.ma0045.severity = suggestion
-# AsyncifyInvocation: Use Task Async
-dotnet_diagnostic.asyncifyinvocation.severity = error
-# AsyncifyVariable: Use Task Async
-dotnet_diagnostic.asyncifyvariable.severity = error
-# MA0025: Implement the functionality (or raise NotSupportedException or PlatformNotSupportedException)
-dotnet_diagnostic.ma0025.severity = suggestion
+dotnet_diagnostic.RCS1021.severity = silent
+# MA0025: Implement the functionality (or raise NotSupportedException)
+# Tests intentionally throw NotImplementedException to exercise exception-handler mapping
+dotnet_diagnostic.MA0025.severity = suggestion
 # MA0026: TO-DO comment
-dotnet_diagnostic.ma0026.severity = suggestion
-# MA0022: Return Task.FromResult instead of returning null
-dotnet_diagnostic.ma0022.severity = error
-# AsyncFixer05: Down-casting from a nested task to an outer task.
-dotnet_diagnostic.asyncfixer05.severity = error
-# VSTHRD114: Avoid returning a null Task
-dotnet_diagnostic.vsthrd114.severity = error
-# MA0079: Forward the CancellationToken using .WithCancellation()
-dotnet_diagnostic.ma0079.severity = warning
-# MA0080: Use a cancellation token using .WithCancellation()
-dotnet_diagnostic.ma0080.severity = error
-# MA0047: Declare types in namespaces
-dotnet_diagnostic.ma0047.severity = suggestion
-# MA0006: Use String.Equals instead of equality operator
-dotnet_diagnostic.ma0006.severity = suggestion
+dotnet_diagnostic.MA0026.severity = suggestion
+# MA0182: Internal type apparently never used — suppressed globally.
+# Systematic false-positive in this framework: internal types are frequently
+# registered via DI across InternalsVisibleTo seams (e.g. Headless.Api.Core types
+# registered in Headless.Api.ServiceDefaults), which the analyzer can't see.
+dotnet_diagnostic.MA0182.severity = none
+# FAA0002: Use AwesomeAssertions equivalent
+dotnet_diagnostic.FAA0002.severity = warning
 
 ##########################################
-# Language Rules
+# Code Style
 # https://docs.microsoft.com/dotnet/fundamentals/code-analysis/style-rules/language-rules
 ##########################################
 
@@ -298,7 +312,7 @@ dotnet_style_object_initializer = true:warning
 dotnet_style_collection_initializer = true:warning
 dotnet_style_explicit_tuple_names = true:warning
 # IDE0033: Use explicitly provided tuple name
-dotnet_diagnostic.ide0033.severity = warning
+dotnet_diagnostic.IDE0033.severity = warning
 dotnet_style_prefer_inferred_tuple_names = true:warning
 dotnet_style_prefer_inferred_anonymous_type_member_names = true:warning
 dotnet_style_prefer_auto_properties = true:warning
@@ -316,7 +330,8 @@ dotnet_style_coalesce_expression = true:suggestion
 dotnet_style_null_propagation = true:suggestion
 csharp_style_prefer_null_check_over_type_check = true:suggestion
 dotnet_style_prefer_is_null_check_over_reference_equality_method = true:suggestion
-############ C# Style Rules
+
+# C# Style Rules
 
 # var preferences
 csharp_style_var_for_built_in_types = true:silent
@@ -357,85 +372,33 @@ csharp_prefer_static_local_function = true:warning
 # Constructor preferences
 csharp_style_prefer_primary_constructors = true:suggestion
 
-##########################################
 # Unnecessary Code Rules
 # https://docs.microsoft.com/dotnet/fundamentals/code-analysis/style-rules/unnecessary-code-rules
-##########################################
-
-# .NET Unnecessary code rules
-[*.{cs,csx,cake,vb,vbx}]
 dotnet_code_quality_unused_parameters = all:suggestion
 dotnet_remove_unnecessary_suppression_exclusions = none:suggestion
 dotnet_style_prefer_collection_expression = true:suggestion
-
 dotnet_style_allow_multiple_blank_lines_experimental = true:silent
 dotnet_style_allow_statement_immediately_after_block_experimental = true:silent
-dotnet_diagnostic.ca1823.severity = suggestion
-
-# C# Unnecessary code rules
-[*.{cs,csx,cake}]
 csharp_style_unused_value_expression_statement_preference = discard_variable:none
 csharp_style_unused_value_assignment_preference = discard_variable:suggestion
 
-##########################################
-# Formatting Rules
-# https://docs.microsoft.com/dotnet/fundamentals/code-analysis/style-rules/formatting-rules
-##########################################
-
 # Organize using directives
+# https://docs.microsoft.com/dotnet/fundamentals/code-analysis/style-rules/formatting-rules
 dotnet_sort_system_directives_first = true
 dotnet_separate_import_directive_groups = false
 csharp_using_directive_placement = outside_namespace:silent
 # Dotnet namespace options
-dotnet_diagnostic.ide0130.severity = suggestion
-
-[*.{cs,csx,cake}]
-# Newline options
-csharp_new_line_before_open_brace = all
-csharp_new_line_before_else = true
-csharp_new_line_before_catch = true
-csharp_new_line_before_finally = true
-csharp_new_line_before_members_in_anonymous_types = true
-csharp_new_line_between_query_expression_clauses = true
-# Indentation options
-csharp_indent_case_contents = true
-csharp_indent_switch_labels = true
-csharp_indent_labels = no_change
-csharp_indent_block_contents = true
-csharp_indent_braces = false
-csharp_indent_case_contents_when_block = false
-# Spacing options
-csharp_space_after_cast = false
-csharp_space_after_keywords_in_control_flow_statements = true
-csharp_space_before_colon_in_inheritance_clause = true
-csharp_space_after_colon_in_inheritance_clause = true
-csharp_space_around_binary_operators = before_and_after
-csharp_space_between_method_declaration_parameter_list_parentheses = false
-csharp_space_between_method_declaration_empty_parameter_list_parentheses = false
-csharp_space_between_method_declaration_name_and_open_parenthesis = false
-csharp_space_between_method_call_parameter_list_parentheses = false
-csharp_space_between_method_call_empty_parameter_list_parentheses = false
-csharp_space_between_method_call_name_and_opening_parenthesis = false
-csharp_space_after_comma = true
-csharp_space_before_comma = false
-csharp_space_after_dot = false
-csharp_space_before_dot = false
-csharp_space_after_semicolon_in_for_statement = true
-csharp_space_before_semicolon_in_for_statement = false
-csharp_space_around_declaration_statements = false
-csharp_space_before_open_square_brackets = false
-csharp_space_between_empty_square_brackets = false
-csharp_space_between_square_brackets = false
-# Wrap options
-csharp_preserve_single_line_statements = false
-csharp_preserve_single_line_blocks = true
+dotnet_diagnostic.IDE0130.severity = suggestion
 
 ##########################################
-# .NET Naming Rules
+# Naming
 # https://docs.microsoft.com/dotnet/fundamentals/code-analysis/style-rules/naming-rules
+#
+# All naming options surface under IDE1006. The per-rule .severity values below only take
+# effect on build when IDE1006 itself is enabled at warning/error, so set it explicitly.
 ##########################################
 
-[*.{cs,csx,cake,vb,vbx}]
+dotnet_diagnostic.IDE1006.severity = warning
 
 # Styles
 
@@ -589,8 +552,60 @@ dotnet_naming_rule.interface_rule.style = prefix_interface_with_i_style
 dotnet_naming_rule.interface_rule.severity = warning
 
 ##########################################
-# ReSharper Rules
+# C# Formatting Rules
+# https://docs.microsoft.com/dotnet/fundamentals/code-analysis/style-rules/formatting-rules
 ##########################################
+
+# Newline options
+csharp_new_line_before_open_brace = all
+csharp_new_line_before_else = true
+csharp_new_line_before_catch = true
+csharp_new_line_before_finally = true
+csharp_new_line_before_members_in_anonymous_types = true
+csharp_new_line_between_query_expression_clauses = true
+# Indentation options
+csharp_indent_case_contents = true
+csharp_indent_switch_labels = true
+csharp_indent_labels = no_change
+csharp_indent_block_contents = true
+csharp_indent_braces = false
+csharp_indent_case_contents_when_block = false
+# Spacing options
+csharp_space_after_cast = false
+csharp_space_after_keywords_in_control_flow_statements = true
+csharp_space_before_colon_in_inheritance_clause = true
+csharp_space_after_colon_in_inheritance_clause = true
+csharp_space_around_binary_operators = before_and_after
+csharp_space_between_method_declaration_parameter_list_parentheses = false
+csharp_space_between_method_declaration_empty_parameter_list_parentheses = false
+csharp_space_between_method_declaration_name_and_open_parenthesis = false
+csharp_space_between_method_call_parameter_list_parentheses = false
+csharp_space_between_method_call_empty_parameter_list_parentheses = false
+csharp_space_between_method_call_name_and_opening_parenthesis = false
+csharp_space_after_comma = true
+csharp_space_before_comma = false
+csharp_space_after_dot = false
+csharp_space_before_dot = false
+csharp_space_after_semicolon_in_for_statement = true
+csharp_space_before_semicolon_in_for_statement = false
+csharp_space_around_declaration_statements = false
+csharp_space_before_open_square_brackets = false
+csharp_space_between_empty_square_brackets = false
+csharp_space_between_square_brackets = false
+# Wrap options
+csharp_preserve_single_line_statements = false
+csharp_preserve_single_line_blocks = true
+
+##########################################
+# ReSharper
+#
+# ReSharper / inspectcode severity alignment.
+# The SDK's Roslyn analyzer severities (Headless.NET.Sdk.Analyzers.editorconfig) are injected via
+# MSBuild and are read by the COMPILER only -- ReSharper / Rider / `jb inspectcode` never see them,
+# so those tools report at each rule's analyzer-default and drown real findings in by-design noise.
+# The resharper_* keys below re-state the intent for the IDE/inspectcode side. They affect
+# ReSharper-based tooling only (zero compiler impact); the SDK build config stays the source of
+# truth for Roslyn (CA*/RCS*/MA*) rule severities. Extend this block per repo as needed.
 
 # XML Docs
 resharper_xmldoc_indent_child_elements = remove_indent
@@ -674,7 +689,6 @@ resharper_arrange_redundant_parentheses_highlighting = hint
 resharper_arrange_this_qualifier_highlighting = hint
 resharper_arrange_type_member_modifiers_highlighting = hint
 resharper_arrange_type_modifiers_highlighting = hint
-resharper_built_in_type_reference_style_for_member_access_highlighting = hint
 resharper_built_in_type_reference_style_highlighting = hint
 resharper_check_namespace_highlighting = warning
 resharper_heap_view_can_avoid_closure_highlighting = hint
@@ -692,9 +706,166 @@ resharper_not_accessed_positional_property_global_highlighting = suggestion
 resharper_razor_layout_not_resolved_highlighting = suggestion
 resharper_redundant_argument_default_value_highlighting = suggestion
 resharper_redundant_base_qualifier_highlighting = warning
+resharper_redundant_suppress_nullable_warning_expression_highlighting = none
 resharper_suggest_var_or_type_built_in_types_highlighting = hint
 resharper_suggest_var_or_type_elsewhere_highlighting = hint
 resharper_suggest_var_or_type_simple_types_highlighting = hint
 resharper_unused_auto_property_accessor_global_highlighting = suggestion
 resharper_unused_auto_property_accessor_local_highlighting = suggestion
 resharper_unused_type_parameter_highlighting = suggestion
+
+##########################################
+# Test projects
+# These rules are relaxed for test code where patterns like mock setup,
+# intentional test fixtures, and cancellation testing are common.
+
+# This mirrors the SDK's injected Headless.NET.Sdk.Tests.editorconfig (which
+# the compiler honors but ReSharper/Rider/inspectcode cannot see).
+##########################################
+
+[tests/**/*.cs]
+
+# --- Async & threading ---
+
+# CA2012: ValueTask should be directly awaited
+# NSubstitute .Returns(ValueTask.FromResult(...)) is a false positive - each call returns fresh ValueTask
+dotnet_diagnostic.CA2012.severity = none
+# AsyncFixer03/VSTHRD100: Async void method
+# Tests may have intentional async void methods for testing reflection
+dotnet_diagnostic.AsyncFixer03.severity = suggestion
+dotnet_diagnostic.VSTHRD100.severity = suggestion
+# EPC13: Task result should be observed
+# Complex async test patterns may intentionally not observe intermediate tasks
+dotnet_diagnostic.EPC13.severity = suggestion
+# MA0045: Do not use blocking calls in sync method
+# Stream tests verify synchronous behavior explicitly
+dotnet_diagnostic.MA0045.severity = suggestion
+# VSTHRD003: Avoid awaiting foreign Tasks
+# Tests capture tasks for later assertion which is valid test pattern
+dotnet_diagnostic.VSTHRD003.severity = none
+
+# --- Disposal & lifecycle ---
+
+# CA1001: Types that own disposable fields should be disposable
+dotnet_diagnostic.CA1001.severity = suggestion
+# CA2000: Dispose objects before losing scope
+# Mock setups delegate lifecycle to consuming code; test-scoped objects cleaned up by test framework
+dotnet_diagnostic.CA2000.severity = suggestion
+# CA2213: Disposable fields should be disposed
+# Mock objects and test fixtures often don't need explicit disposal
+dotnet_diagnostic.CA2213.severity = none
+
+# --- Design & API surface ---
+
+# CA1028: Enum Storage should be Int32
+# Tests may intentionally verify non-Int32 enum backing types
+dotnet_diagnostic.CA1028.severity = none
+# CA2225: Operator overloads have named alternates
+# Generated primitive types and tests don't need named alternates
+dotnet_diagnostic.CA2225.severity = suggestion
+# CA2227: Collection properties should be read only
+# Test fixtures and serializers may intentionally keep extension-data setters
+dotnet_diagnostic.CA2227.severity = none
+# CA2263: Use the generic overload
+# Tests may intentionally test non-generic overloads
+dotnet_diagnostic.CA2263.severity = suggestion
+# MA0096: IComparable without IEquatable
+# Test helper classes focus on comparison behavior only
+dotnet_diagnostic.MA0096.severity = suggestion
+# AL1003: Should not have non-obsolete empty constructors
+# Generated snapshot files from source generators include these
+dotnet_diagnostic.AL1003.severity = none
+
+# --- Correctness & reliability ---
+
+# CA1508: Avoid dead conditional code
+# Tests intentionally verify edge cases like Equals(null) returning false
+dotnet_diagnostic.CA1508.severity = none
+# CA2201: Do not raise reserved exception types
+# Tests verify generic exception handling behavior
+dotnet_diagnostic.CA2201.severity = none
+# ERP022: Unobserved exception in catch block
+# Specific test cleanup may swallow exceptions intentionally
+dotnet_diagnostic.ERP022.severity = suggestion
+# MA0015: Specify the parameter name in ArgumentException
+# Tests intentionally verify exception type without caring about param name
+dotnet_diagnostic.MA0015.severity = suggestion
+
+# --- Security ---
+
+# CA2100: Review SQL queries for security vulnerabilities
+# Test fixtures use parameterized cleanup SQL; no user input involved
+dotnet_diagnostic.CA2100.severity = none
+# CA5398: Avoid hardcoded SslProtocols
+# Tests verify specific TLS protocol configurations work correctly
+dotnet_diagnostic.CA5398.severity = none
+
+# --- Assertions & test frameworks ---
+
+# FAA0002: Use AwesomeAssertions
+# Some tests intentionally use xUnit Assert for specific scenarios
+dotnet_diagnostic.FAA0002.severity = suggestion
+# JSON001: Invalid JSON pattern
+# Tests intentionally use invalid JSON to verify error handling
+dotnet_diagnostic.JSON001.severity = suggestion
+# xUnit1045/xUnit1046: TheoryData type arguments might not be serializable
+# Parameterized tests often use non-serializable types for complex test scenarios
+dotnet_diagnostic.xUnit1045.severity = suggestion
+dotnet_diagnostic.xUnit1046.severity = suggestion
+# xUnit1051: Use TestContext.Current.CancellationToken
+# Tests that test cancellation behavior need manual CancellationTokenSource control
+dotnet_diagnostic.xUnit1051.severity = suggestion
+
+# --- Reflection ---
+
+# REFL009/REFL016/REFL017: Reflection member analysis
+# Tests verify reflection behavior on internal/dynamic members
+dotnet_diagnostic.REFL009.severity = suggestion
+dotnet_diagnostic.REFL016.severity = suggestion
+dotnet_diagnostic.REFL017.severity = suggestion
+
+# --- Performance ---
+
+# MA0176: Optimize Guid creation
+# Guid-creation micro-optimization is irrelevant in test fixtures.
+dotnet_diagnostic.MA0176.severity = none
+
+# --- Naming ---
+
+# IDE1006: Naming rule violation
+# Tests use the snake_case `should_do_thing` method-naming convention for readability.
+dotnet_diagnostic.IDE1006.severity = none
+
+# --- Style & maintainability ---
+
+# CA1822: Member can be static
+# Test fixture classes often have instance methods for reflection testing
+dotnet_diagnostic.CA1822.severity = none
+# CA1873: Logging argument evaluation may be expensive
+# Test assertions often inspect ILogger calls directly; suppress this analyzer for test-only code
+dotnet_diagnostic.CA1873.severity = none
+# IDE0017: Object initialization can be simplified
+# Tests may intentionally test property setters separately from construction
+dotnet_diagnostic.IDE0017.severity = suggestion
+
+# ReSharper - DisposeOnUsingVariable
+# Test objects often managed by test framework or intentionally not disposed
+resharper_dispose_on_using_variable_highlighting = none
+resharper_not_disposed_resource_highlighting = none
+resharper_access_to_disposed_closure_highlighting = none
+resharper_using_statement_resource_initialization_highlighting = none
+# ReSharper AccessToModifiedClosure - Access to modified captured variable
+resharper_access_to_modified_closure_highlighting = none
+# ReSharper - ShortLivedHttpClient
+resharper_short_lived_http_client_highlighting = none
+
+##########################################
+# Non-shipping code (demo / benchmarks / tests)
+##########################################
+
+[{demo,benchmarks,tests}/**/*.cs]
+
+# CA5394: Do not use insecure randomness
+# Random.Shared is used for fake-data generation and timing jitter in demos,
+# benchmarks, and tests — not for anything security-sensitive.
+dotnet_diagnostic.CA5394.severity = none

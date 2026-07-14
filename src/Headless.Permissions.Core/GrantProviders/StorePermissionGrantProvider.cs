@@ -30,7 +30,7 @@ public abstract class StorePermissionGrantProvider(IPermissionGrantStore grantSt
     {
         var result = await CheckAsync([permission], currentUser, cancellationToken).ConfigureAwait(false);
 
-        return result.First().Value;
+        return result.Statuses.Values.First();
     }
 
     public abstract Task<MultiplePermissionGrantStatusResult> CheckAsync(

@@ -1,9 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Imaging.ImageSharp;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Headless.Imaging.ImageSharp;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Imaging;
 
 /// <summary>
 /// Registers the ImageSharp-based resize and compress contributors with the imaging pipeline.
@@ -23,7 +25,7 @@ public static class SetupImageSharp
     {
         builder.Services.Configure<ImageSharpOptions, ImageSharpOptionsValidator>(config);
 
-        return _AddCore(builder);
+        return _AddImageSharpCore(builder);
     }
 
     /// <summary>
@@ -43,7 +45,7 @@ public static class SetupImageSharp
     {
         builder.Services.Configure<ImageSharpOptions, ImageSharpOptionsValidator>(setupAction);
 
-        return _AddCore(builder);
+        return _AddImageSharpCore(builder);
     }
 
     /// <summary>
@@ -62,10 +64,10 @@ public static class SetupImageSharp
     {
         builder.Services.Configure<ImageSharpOptions, ImageSharpOptionsValidator>(setupAction);
 
-        return _AddCore(builder);
+        return _AddImageSharpCore(builder);
     }
 
-    private static AddImagingBuilder _AddCore(AddImagingBuilder builder)
+    private static AddImagingBuilder _AddImageSharpCore(AddImagingBuilder builder)
     {
         builder.Services.AddSingleton<IImageResizerContributor, ImageSharpImageResizerContributor>();
         builder.Services.AddSingleton<IImageCompressorContributor, ImageSharpImageCompressorContributor>();

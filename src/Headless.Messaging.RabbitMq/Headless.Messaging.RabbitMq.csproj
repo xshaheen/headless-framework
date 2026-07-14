@@ -1,7 +1,14 @@
 ﻿<Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <Description>RabbitMQ integration for Headless messaging.</Description>
+    <PackageTags>headless;messaging;rabbitmq;dotnet</PackageTags>
   </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Messaging.RabbitMq.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Messaging.RabbitMq.Tests.Integration" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
+  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="RabbitMQ.Client" />
   </ItemGroup>

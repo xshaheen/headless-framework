@@ -16,7 +16,7 @@ namespace Headless.Captcha;
 [HtmlTargetElement("recaptcha-script-v2", TagStructure = TagStructure.WithoutEndTag)]
 public sealed class ReCaptchaV2ScriptTagHelper(
     IOptionsSnapshot<ReCaptchaOptions> optionsAccessor,
-    IReCaptchaLanguageCodeProvider reCaptchaLanguageCodeProvider
+    ICaptchaLanguageCodeProvider languageCodeProvider
 ) : TagHelper
 {
     /// <summary>When <see langword="true"/> (the default), adds the <c>async</c> attribute to the rendered script tag.</summary>
@@ -32,7 +32,7 @@ public sealed class ReCaptchaV2ScriptTagHelper(
     public string? Onload { get; set; }
 
     /// <summary>
-    /// Maps to the <c>render</c> query parameter. Set to <c>explicit</c> to disable automatic widget
+    /// Maps to the <c>render</c> query parameter. Set to <see langword="explicit"/> to disable automatic widget
     /// rendering, or to a site key to render a specific widget on load.
     /// </summary>
     public string? Render { get; set; }
@@ -64,7 +64,7 @@ public sealed class ReCaptchaV2ScriptTagHelper(
         }
 
         var src = Url.Parse(_options.VerifyBaseUrl.TrimEnd('/') + "/recaptcha/api.js")
-            .SetQueryParam("hl", reCaptchaLanguageCodeProvider.GetLanguageCode())
+            .SetQueryParam("hl", languageCodeProvider.GetLanguageCode())
             .SetQueryParam("onload", string.IsNullOrWhiteSpace(Onload) ? null : Onload)
             .SetQueryParam("render", string.IsNullOrWhiteSpace(Render) ? null : Render)
             .ToString();

@@ -7,16 +7,25 @@ using Microsoft.Extensions.Options;
 namespace Headless.Messaging.Nats;
 
 internal sealed class NatsConsumerClientFactory(
-    IOptions<MessagingNatsOptions> natsOptions,
+    IOptions<NatsMessagingOptions> natsOptions,
     IServiceProvider serviceProvider
 ) : IIntentAwareConsumerClientFactory
 {
-    public Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent)
+    public Task<IConsumerClient> CreateAsync(
+        string groupName,
+        byte groupConcurrent,
+        CancellationToken cancellationToken = default
+    )
     {
-        return CreateAsync(groupName, groupConcurrent, IntentType.Bus);
+        return CreateAsync(groupName, groupConcurrent, IntentType.Bus, cancellationToken);
     }
 
-    public async Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent, IntentType intentType)
+    public async Task<IConsumerClient> CreateAsync(
+        string groupName,
+        byte groupConcurrent,
+        IntentType intentType,
+        CancellationToken cancellationToken = default
+    )
     {
         var client = new NatsConsumerClient(
             groupName,
@@ -27,7 +36,7 @@ internal sealed class NatsConsumerClientFactory(
         );
         try
         {
-            await client.ConnectAsync().ConfigureAwait(false);
+            await client.ConnectAsync(cancellationToken).ConfigureAwait(false);
             return client;
         }
         catch (OperationCanceledException)

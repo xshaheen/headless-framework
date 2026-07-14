@@ -22,4 +22,11 @@ public interface IEmailSenderProvider
     /// <returns>The resolved email sender, or <see langword="null"/>.</returns>
     /// <exception cref="ArgumentException">Thrown when <paramref name="name"/> is <see langword="null"/>, empty, or whitespace.</exception>
     IEmailSender? GetSenderOrNull(string name);
+
+    /// <summary>
+    /// Gets the names of all registered named email sender instances. Use this to validate an
+    /// externally-supplied name before resolving it, rather than probing <see cref="GetSenderOrNull"/> and
+    /// handling <see langword="null"/>. The default (unnamed) sender is not included.
+    /// </summary>
+    IReadOnlySet<string> RegisteredNames { get; }
 }

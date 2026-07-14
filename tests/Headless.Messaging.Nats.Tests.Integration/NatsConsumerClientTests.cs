@@ -2,7 +2,6 @@
 
 using Headless.Messaging;
 using Headless.Messaging.Exceptions;
-using Headless.Messaging.Messages;
 using Headless.Messaging.Nats;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -29,10 +28,10 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
 
         var options = _CreateOptions(enableStreamCreation: false);
         await using var client = new NatsConsumerClient("test-group", 0, options, _serviceProvider);
-        await client.ConnectAsync();
+        await client.ConnectAsync(AbortToken);
 
-        var topics = await client.FetchMessageNamesAsync([subject]);
-        await client.SubscribeAsync(topics);
+        var topics = await client.FetchMessageNamesAsync([subject], AbortToken);
+        await client.SubscribeAsync(topics, AbortToken);
 
         var received = new TaskCompletionSource<(TransportMessage msg, object? sender)>(
             TaskCreationOptions.RunContinuationsAsynchronously
@@ -62,7 +61,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
             transportMsg.Headers[MessagingHeaders.Group].Should().Be("test-group");
 
             // commit should not throw
-            await client.CommitAsync(natsMsg);
+            await client.CommitAsync(natsMsg, AbortToken);
         }
         finally
         {
@@ -80,10 +79,10 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
 
         var options = _CreateOptions(enableStreamCreation: false);
         await using var client = new NatsConsumerClient("test-group", 0, options, _serviceProvider);
-        await client.ConnectAsync();
+        await client.ConnectAsync(AbortToken);
 
-        await client.FetchMessageNamesAsync([subject]);
-        await client.SubscribeAsync([subject]);
+        await client.FetchMessageNamesAsync([subject], AbortToken);
+        await client.SubscribeAsync([subject], AbortToken);
 
         var received = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
         client.OnMessageCallback = (_, sender) =>
@@ -105,7 +104,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
             var natsMsg = await received.Task.WaitAsync(cts.Token);
 
             // then — reject (nak) should not throw
-            await client.RejectAsync(natsMsg);
+            await client.RejectAsync(natsMsg, AbortToken);
         }
         finally
         {
@@ -122,17 +121,17 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
 
         var options = _CreateOptions(enableStreamCreation: true);
         await using var client = new NatsConsumerClient("test-group", 0, options, _serviceProvider);
-        await client.ConnectAsync();
+        await client.ConnectAsync(AbortToken);
 
         // when — FetchMessageNamesAsync with EnableSubscriberClientStreamAndSubjectCreation=true
-        var result = await client.FetchMessageNamesAsync([subject]);
+        var result = await client.FetchMessageNamesAsync([subject], AbortToken);
 
         // then — stream should exist on the NATS server
         result.Should().Contain(subject);
 
         var conn = await fixture.GetConnectionAsync();
         var js = new NatsJSContext(conn);
-        var stream = await js.GetStreamAsync(streamName);
+        var stream = await js.GetStreamAsync(streamName, cancellationToken: AbortToken);
         stream.Should().NotBeNull();
     }
 
@@ -144,27 +143,24 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
         var subject = $"{streamName}.events";
 
         var opts = Options.Create(
-            new MessagingNatsOptions
+            new NatsMessagingOptions
             {
                 Servers = fixture.ConnectionString,
                 EnableSubscriberClientStreamAndSubjectCreation = true,
-                StreamOptions = config =>
-                {
-                    config.Storage = StreamConfigStorage.Memory;
-                },
+                StreamOptions = config => config.Storage = StreamConfigStorage.Memory,
             }
         );
 
         await using var client = new NatsConsumerClient("test-group", 0, opts, _serviceProvider);
-        await client.ConnectAsync();
+        await client.ConnectAsync(AbortToken);
 
         // when
-        await client.FetchMessageNamesAsync([subject]);
+        await client.FetchMessageNamesAsync([subject], AbortToken);
 
         // then — stream should use Memory storage (from callback)
         var conn = await fixture.GetConnectionAsync();
         var js = new NatsJSContext(conn);
-        var stream = await js.GetStreamAsync(streamName);
+        var stream = await js.GetStreamAsync(streamName, cancellationToken: AbortToken);
         var info = stream.Info;
         info.Config.Storage.Should().Be(StreamConfigStorage.Memory);
     }
@@ -179,9 +175,9 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
 
         var options = _CreateOptions(enableStreamCreation: false);
         await using var client = new NatsConsumerClient("test-group", 0, options, _serviceProvider);
-        await client.ConnectAsync();
-        await client.FetchMessageNamesAsync([subject]);
-        await client.SubscribeAsync([subject]);
+        await client.ConnectAsync(AbortToken);
+        await client.FetchMessageNamesAsync([subject], AbortToken);
+        await client.SubscribeAsync([subject], AbortToken);
 
         var received = new TaskCompletionSource<TransportMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
         client.OnMessageCallback = (msg, _) =>
@@ -226,7 +222,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
     {
         // given
         var badOptions = Options.Create(
-            new MessagingNatsOptions
+            new NatsMessagingOptions
             {
                 Servers = "nats://localhost:19999", // no server here
                 ConfigureConnection = o => o with { ConnectTimeout = TimeSpan.FromSeconds(2) },
@@ -251,15 +247,14 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
 
         var options = _CreateOptions(enableStreamCreation: false);
         await using var client = new NatsConsumerClient("test-group", 0, options, _serviceProvider);
-        await client.ConnectAsync();
-        await client.FetchMessageNamesAsync([subject]);
-        await client.SubscribeAsync([subject]);
+        await client.ConnectAsync(AbortToken);
+        await client.FetchMessageNamesAsync([subject], AbortToken);
+        await client.SubscribeAsync([subject], AbortToken);
 
         var messageReceived = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var messageCount = 0;
         client.OnMessageCallback = (_, _) =>
         {
-            // ReSharper disable once AccessToModifiedClosure
             Interlocked.Increment(ref messageCount);
             messageReceived.TrySetResult();
             return Task.CompletedTask;
@@ -296,10 +291,10 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
         }
     }
 
-    private IOptions<MessagingNatsOptions> _CreateOptions(bool enableStreamCreation)
+    private IOptions<NatsMessagingOptions> _CreateOptions(bool enableStreamCreation)
     {
         return Options.Create(
-            new MessagingNatsOptions
+            new NatsMessagingOptions
             {
                 Servers = fixture.ConnectionString,
                 EnableSubscriberClientStreamAndSubjectCreation = enableStreamCreation,
@@ -319,7 +314,8 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
         await js.PublishAsync(
             subject,
             new ReadOnlyMemory<byte>(body),
-            serializer: NatsRawSerializer<ReadOnlyMemory<byte>>.Default
+            serializer: NatsRawSerializer<ReadOnlyMemory<byte>>.Default,
+            cancellationToken: AbortToken
         );
     }
 

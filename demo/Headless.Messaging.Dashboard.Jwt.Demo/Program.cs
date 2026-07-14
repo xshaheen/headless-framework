@@ -2,10 +2,12 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using Demo;
 using Demo.Data;
+using Headless.Messaging;
 using Headless.Messaging.Dashboard;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.Tokens;
+using Polly.Retry;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -51,10 +53,7 @@ builder
 
 const string dashboardPolicy = "DashboardPolicy";
 
-builder.Services.AddAuthorization(options =>
-{
-    options.AddPolicy(dashboardPolicy, policy => policy.RequireAuthenticatedUser());
-});
+builder.Services.AddAuthorizationBuilder().AddPolicy(dashboardPolicy, policy => policy.RequireAuthenticatedUser());
 
 builder.Services.AddHttpClient();
 
@@ -62,7 +61,11 @@ builder.Services.AddHeadlessMessaging(setup =>
 {
     setup.ForMessagesFromAssembly(typeof(Program).Assembly);
     setup.Options.RetryPolicy.MaxPersistedRetries = 0;
-    setup.Options.RetryPolicy.MaxInlineRetries = 0;
+    setup.Options.RetryPolicy.RetryStrategy = new RetryStrategyOptions
+    {
+        MaxRetryAttempts = 0,
+        ShouldHandle = static _ => ValueTask.FromResult(true),
+    };
     setup.UseInMemoryStorage();
     setup.UseInMemory();
     setup.UseDashboard(d => d.WithHostAuthentication(dashboardPolicy));
@@ -77,7 +80,7 @@ app.UseStaticFiles();
 
 app.UseRouting();
 
-app.MapGet("/", () => Results.LocalRedirect("/index.html", true));
+app.MapGet("/", () => Results.LocalRedirect("/index.html", permanent: true));
 
 app.MapPost(
     "/security/createToken",

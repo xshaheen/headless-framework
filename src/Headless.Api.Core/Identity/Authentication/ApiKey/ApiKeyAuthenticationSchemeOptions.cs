@@ -10,7 +10,7 @@ namespace Headless.Api.Identity.Authentication.ApiKey;
 public sealed class ApiKeyAuthenticationSchemeOptions : AuthenticationSchemeOptions
 {
     /// <summary>Default scheme name used when none is specified during registration.</summary>
-    public const string DefaultScheme = "API Key Authentication";
+    public const string DefaultScheme = AuthenticationConstants.Schemas.ApiKey;
 
     /// <summary>Default query-string parameter name (<c>"api_key"</c>).</summary>
     public const string ParamName = "api_key";

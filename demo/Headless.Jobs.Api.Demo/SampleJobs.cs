@@ -7,6 +7,7 @@ public class SampleJobs
     [JobFunction("WebApiSample_HelloWorld")]
     public Task HelloWorldAsync(JobFunctionContext context, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         Console.WriteLine($"[WebApi] Hello from Jobs! Id={context.Id}, ScheduledFor={context.ScheduledFor:O}");
         return Task.CompletedTask;
     }

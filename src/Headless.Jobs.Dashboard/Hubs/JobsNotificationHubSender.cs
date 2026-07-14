@@ -5,22 +5,29 @@ using Headless.Jobs.Entities;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Logging;
 
 namespace Headless.Jobs.Hubs;
 
 internal sealed class JobsNotificationHubSender : IJobsNotificationHubSender, IDisposable
 {
     private readonly IHubContext<JobsNotificationHub> _hubContext;
+    private readonly ILogger<JobsNotificationHubSender> _logger;
     private readonly Timer _timeJobUpdateTimer;
     private int _hasPendingTimeJobUpdate;
     private static readonly TimeSpan _TimeJobUpdateDebounce = TimeSpan.FromMilliseconds(100);
 
-    public JobsNotificationHubSender(IHubContext<JobsNotificationHub> hubContext)
+    public JobsNotificationHubSender(
+        IHubContext<JobsNotificationHub> hubContext,
+        ILogger<JobsNotificationHubSender> logger
+    )
     {
         _hubContext = Argument.IsNotNull(hubContext);
+        _logger = Argument.IsNotNull(logger);
+
         _timeJobUpdateTimer = new Timer(
             _TimeJobUpdateCallback,
-            null,
+            state: null,
             Timeout.InfiniteTimeSpan,
             Timeout.InfiniteTimeSpan
         );
@@ -63,25 +70,37 @@ internal sealed class JobsNotificationHubSender : IJobsNotificationHubSender, ID
 
     public void UpdateActiveThreads(object activeThreads)
     {
-        _ = _hubContext.Clients.All.SendAsync("GetActiveThreadsNotification", activeThreads);
+        _ObserveSend(
+            _hubContext.Clients.All.SendAsync("GetActiveThreadsNotification", activeThreads),
+            "GetActiveThreadsNotification"
+        );
     }
 
-    public void UpdateNextOccurrence(object nextOccurrence)
+    public void UpdateNextOccurrence(object? nextOccurrence)
     {
         if (nextOccurrence != null)
         {
-            _ = _hubContext.Clients.All.SendAsync("GetNextOccurrenceNotification", nextOccurrence);
+            _ObserveSend(
+                _hubContext.Clients.All.SendAsync("GetNextOccurrenceNotification", nextOccurrence),
+                "GetNextOccurrenceNotification"
+            );
         }
     }
 
     public void UpdateHostStatus(object active)
     {
-        _ = _hubContext.Clients.All.SendAsync("GetHostStatusNotification", active);
+        _ObserveSend(
+            _hubContext.Clients.All.SendAsync("GetHostStatusNotification", active),
+            "GetHostStatusNotification"
+        );
     }
 
     public void UpdateHostException(object exceptionMessage)
     {
-        _ = _hubContext.Clients.All.SendAsync("UpdateHostExceptionNotification", exceptionMessage);
+        _ObserveSend(
+            _hubContext.Clients.All.SendAsync("UpdateHostExceptionNotification", exceptionMessage),
+            "UpdateHostExceptionNotification"
+        );
     }
 
     public async Task UpdateNodesAsync(object nodes)
@@ -105,7 +124,7 @@ internal sealed class JobsNotificationHubSender : IJobsNotificationHubSender, ID
             .ConfigureAwait(false);
     }
 
-    public Task UpdateTimeJobFromInternalFunctionContext<TTimeJob>(InternalFunctionContext internalFunctionContext)
+    public Task UpdateTimeJobFromExecutionState<TTimeJob>(JobExecutionState executionState)
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
     {
         // Debounce high-frequency updates into a single notification
@@ -124,28 +143,29 @@ internal sealed class JobsNotificationHubSender : IJobsNotificationHubSender, ID
             return;
         }
 
-        var __ = _hubContext.Clients.All.SendAsync("UpdateTimeJobNotification");
+        _ObserveSend(_hubContext.Clients.All.SendAsync("UpdateTimeJobNotification"), "UpdateTimeJobNotification");
     }
 
-    public Task UpdateCronOccurrenceFromInternalFunctionContext<TCronJob>(
-        InternalFunctionContext internalFunctionContext
-    )
+    public Task UpdateCronOccurrenceFromExecutionState<TCronJob>(JobExecutionState executionState)
         where TCronJob : CronJobEntity, new()
     {
         var updatePayload = new
         {
-            id = internalFunctionContext.JobId,
-            status = internalFunctionContext.Status,
-            cronJobId = internalFunctionContext.ParentId,
-            executedAt = internalFunctionContext.ExecutedAt,
-            elapsedTime = internalFunctionContext.ElapsedTime,
-            retryCount = internalFunctionContext.RetryCount,
-            exceptionMessage = internalFunctionContext.ExceptionDetails,
+            id = executionState.JobId,
+            status = executionState.Status,
+            cronJobId = executionState.ParentId,
+            executedAt = executionState.ExecutedAt,
+            elapsedTime = executionState.ElapsedTime,
+            retryCount = executionState.RetryCount,
+            exceptionMessage = executionState.ExceptionDetails,
         };
 
-        _ = _hubContext
-            .Clients.Group(internalFunctionContext.ParentId?.ToString() ?? string.Empty)
-            .SendAsync("UpdateCronOccurrenceNotification", updatePayload);
+        _ObserveSend(
+            _hubContext
+                .Clients.Group(executionState.ParentId?.ToString() ?? string.Empty)
+                .SendAsync("UpdateCronOccurrenceNotification", updatePayload),
+            "UpdateCronOccurrenceNotification"
+        );
 
         return Task.CompletedTask;
     }
@@ -159,4 +179,41 @@ internal sealed class JobsNotificationHubSender : IJobsNotificationHubSender, ID
     {
         _timeJobUpdateTimer.Dispose();
     }
+
+    private void _ObserveSend(Task sendTask, string methodName)
+    {
+        _ = sendTask.ContinueWith(
+            static (faultedTask, state) =>
+            {
+                var observer = (SendObserver)state!;
+                var exception = faultedTask.Exception?.GetBaseException();
+
+                if (exception is not null)
+                {
+                    observer.Logger.SignalRNotificationSendFailed(exception, observer.MethodName);
+                }
+            },
+            new SendObserver(_logger, methodName),
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default
+        );
+    }
+
+    private readonly record struct SendObserver(ILogger Logger, string MethodName);
+}
+
+internal static partial class JobsNotificationHubSenderLogs
+{
+    [LoggerMessage(
+        EventId = 2010,
+        EventName = "JobsDashboardSignalRNotificationSendFailed",
+        Level = LogLevel.Warning,
+        Message = "Jobs dashboard SignalR notification {MethodName} failed."
+    )]
+    public static partial void SignalRNotificationSendFailed(
+        this ILogger logger,
+        Exception exception,
+        string methodName
+    );
 }

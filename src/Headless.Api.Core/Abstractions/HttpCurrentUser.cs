@@ -2,8 +2,7 @@
 
 using System.Security.Claims;
 using Headless.Abstractions;
-using AccountId = Headless.Primitives.AccountId;
-using UserId = Headless.Primitives.UserId;
+using Headless.Primitives;
 
 namespace Headless.Api.Abstractions;
 
@@ -13,11 +12,11 @@ internal sealed class HttpCurrentUser(ICurrentPrincipalAccessor accessor) : ICur
 
     public ClaimsPrincipal? Principal => accessor.Principal;
 
-    public UserId? UserId => Principal.GetUserId();
+    public UserId? UserId => IsAuthenticated ? Principal.GetUserId() : null;
 
-    public string? AccountType => Principal.GetAccountType();
+    public string? AccountType => IsAuthenticated ? Principal.GetAccountType() : null;
 
-    public AccountId? AccountId => Principal.GetAccountId();
+    public AccountId? AccountId => IsAuthenticated ? Principal.GetAccountId() : null;
 
-    public IReadOnlySet<string> Roles => Principal.GetRoles();
+    public IReadOnlySet<string> Roles => IsAuthenticated ? Principal.GetRoles() : [];
 }

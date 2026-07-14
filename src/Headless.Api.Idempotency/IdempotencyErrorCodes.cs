@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Api;
+namespace Headless.Api.Idempotency;
 
 /// <summary>
 /// Stable machine-readable error codes emitted by the idempotency middleware in

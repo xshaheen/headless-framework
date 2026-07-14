@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.DistributedLocks;
-using Headless.DistributedLocks.Redis;
 using Headless.Redis;
+using Headless.Redis.Testing;
 using Headless.Testing.Tests;
 using StackExchange.Redis;
 
@@ -251,7 +251,7 @@ public sealed class RedisReaderWriterLockStorageTests(RedisTestFixture fixture) 
         var resource = _NewResource();
         var readerId = Guid.NewGuid().ToString("N");
 
-        // when / then - neither call may throw
+        // when & then - neither call may throw
         await fixture.ReaderWriterLockStorage.ReleaseReadAsync(resource, readerId, AbortToken);
         await fixture.ReaderWriterLockStorage.ReleaseReadAsync(resource, readerId, AbortToken);
 

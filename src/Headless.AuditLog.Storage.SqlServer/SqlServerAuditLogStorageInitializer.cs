@@ -91,7 +91,7 @@ internal sealed class SqlServerAuditLogStorageInitializer(
         // an index self-heals on the next start. This matches the PG initializer's per-statement
         // `CREATE INDEX IF NOT EXISTS` behavior.
         var createIndexes = string.Join(
-            "\n",
+            '\n',
             new[]
             {
                 _IndexStatement("ix_audit_log_tenant_time", table, objectName, "[TenantId] ASC, [CreatedAt] ASC"),

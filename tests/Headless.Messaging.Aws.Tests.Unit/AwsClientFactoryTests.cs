@@ -14,7 +14,7 @@ public sealed class AwsClientFactoryTests
     public void should_create_sns_client_with_region()
     {
         // given
-        var options = new AmazonSqsOptions { Region = RegionEndpoint.USWest2 };
+        var options = new AmazonSqsMessagingOptions { Region = RegionEndpoint.USWest2 };
 
         // when
         using var client = AwsClientFactory.CreateSnsClient(options);
@@ -29,7 +29,7 @@ public sealed class AwsClientFactoryTests
     {
         // given
         var credentials = new BasicAWSCredentials("access-key", "secret-key");
-        var options = new AmazonSqsOptions { Region = RegionEndpoint.USWest2, Credentials = credentials };
+        var options = new AmazonSqsMessagingOptions { Region = RegionEndpoint.USWest2, Credentials = credentials };
 
         // when
         using var client = AwsClientFactory.CreateSnsClient(options);
@@ -42,7 +42,11 @@ public sealed class AwsClientFactoryTests
     public void should_create_sns_client_with_service_url()
     {
         // given
-        var options = new AmazonSqsOptions { Region = RegionEndpoint.USEast1, SnsServiceUrl = "http://localhost:4566" };
+        var options = new AmazonSqsMessagingOptions
+        {
+            Region = RegionEndpoint.USEast1,
+            SnsServiceUrl = "http://localhost:4566",
+        };
 
         // when
         using var client = AwsClientFactory.CreateSnsClient(options);
@@ -57,7 +61,7 @@ public sealed class AwsClientFactoryTests
     {
         // given
         var credentials = new BasicAWSCredentials("access-key", "secret-key");
-        var options = new AmazonSqsOptions
+        var options = new AmazonSqsMessagingOptions
         {
             Region = RegionEndpoint.USEast1,
             SnsServiceUrl = "http://localhost:4566",
@@ -75,7 +79,7 @@ public sealed class AwsClientFactoryTests
     public void should_create_sqs_client_with_region()
     {
         // given
-        var options = new AmazonSqsOptions { Region = RegionEndpoint.EUWest1 };
+        var options = new AmazonSqsMessagingOptions { Region = RegionEndpoint.EUWest1 };
 
         // when
         using var client = AwsClientFactory.CreateSqsClient(options);
@@ -90,7 +94,7 @@ public sealed class AwsClientFactoryTests
     {
         // given
         var credentials = new BasicAWSCredentials("access-key", "secret-key");
-        var options = new AmazonSqsOptions { Region = RegionEndpoint.EUWest1, Credentials = credentials };
+        var options = new AmazonSqsMessagingOptions { Region = RegionEndpoint.EUWest1, Credentials = credentials };
 
         // when
         using var client = AwsClientFactory.CreateSqsClient(options);
@@ -103,7 +107,11 @@ public sealed class AwsClientFactoryTests
     public void should_create_sqs_client_with_service_url()
     {
         // given
-        var options = new AmazonSqsOptions { Region = RegionEndpoint.USEast1, SqsServiceUrl = "http://localhost:4566" };
+        var options = new AmazonSqsMessagingOptions
+        {
+            Region = RegionEndpoint.USEast1,
+            SqsServiceUrl = "http://localhost:4566",
+        };
 
         // when
         using var client = AwsClientFactory.CreateSqsClient(options);
@@ -117,7 +125,7 @@ public sealed class AwsClientFactoryTests
     {
         // given
         var credentials = new BasicAWSCredentials("access-key", "secret-key");
-        var options = new AmazonSqsOptions
+        var options = new AmazonSqsMessagingOptions
         {
             Region = RegionEndpoint.USEast1,
             SqsServiceUrl = "http://localhost:4566",
@@ -135,7 +143,7 @@ public sealed class AwsClientFactoryTests
     public void should_ignore_whitespace_service_url()
     {
         // given - whitespace service URL should be treated as null (use region)
-        var options = new AmazonSqsOptions
+        var options = new AmazonSqsMessagingOptions
         {
             Region = RegionEndpoint.USEast1,
             SqsServiceUrl = "   ",

@@ -9,7 +9,6 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-#pragma warning disable CA1708 // multiple extension blocks emit marker members differing only by case
 namespace Headless.Caching;
 
 /// <summary>DI registration extension methods for hybrid cache.</summary>
@@ -62,7 +61,7 @@ public static class SetupHybridCache
                         services.Configure<HybridCacheOptions, HybridCacheOptionsValidator>(setupAction);
                     }
 
-                    services._AddCacheCore();
+                    _AddCacheCore(services);
                 }
             );
 
@@ -84,7 +83,7 @@ public static class SetupHybridCache
                 services =>
                 {
                     services.Configure<HybridCacheOptions, HybridCacheOptionsValidator>(setupAction);
-                    services._AddCacheCore();
+                    _AddCacheCore(services);
                 }
             );
 
@@ -106,7 +105,7 @@ public static class SetupHybridCache
                 services =>
                 {
                     services.Configure<HybridCacheOptions, HybridCacheOptionsValidator>(configuration);
-                    services._AddCacheCore();
+                    _AddCacheCore(services);
                 }
             );
 
@@ -114,127 +113,68 @@ public static class SetupHybridCache
         }
     }
 
-    extension(HeadlessCacheInstanceBuilder instance)
+    internal static IServiceCollection AddNamedCacheCore(IServiceCollection services, string name)
     {
-        /// <summary>
-        /// Uses the hybrid cache for this named instance, resolvable as a keyed <see cref="ICache"/> service
-        /// or through <see cref="ICacheProvider"/>. Tiers are resolved per
-        /// <see cref="HybridCacheOptions.LocalCacheName"/> / <see cref="HybridCacheOptions.RemoteCacheName"/>
-        /// (falling back to the default <see cref="IInMemoryCache"/> / <see cref="IRemoteCache"/> when unset).
-        /// Named instances never touch the default (unkeyed) <see cref="ICache"/> nor the reserved role keys.
-        /// </summary>
-        /// <param name="setupAction">Configuration action for the instance's <see cref="HybridCacheOptions"/>.</param>
-        /// <returns>The instance builder for chaining.</returns>
-        public HeadlessCacheInstanceBuilder UseHybrid(Action<HybridCacheOptions> setupAction)
-        {
-            Argument.IsNotNull(setupAction);
+        services.AddCacheProvider();
 
-            var name = instance.Name;
+        // Auto-register the shared invalidation consumer so this named hybrid receives peer L1 invalidations
+        // by default (idempotent + unconditional; one consumer routes to every hybrid by CacheName).
+        HybridCacheInvalidationConsumerRegistration.TryAddInvalidationConsumer(services);
 
-            instance.RegisterProvider(services =>
-            {
-                services.Configure<HybridCacheOptions, HybridCacheOptionsValidator>(setupAction, name);
-                services.Configure<HybridCacheOptions>(name, options => options.CacheName = name);
-                services._AddNamedCacheCore(name);
-            });
+        services.AddKeyedSingleton<ICache>(
+            name,
+            (provider, _) =>
+                _CreateHybridCache(
+                    provider,
+                    provider.GetRequiredService<IOptionsMonitor<HybridCacheOptions>>().Get(name)
+                )
+        );
 
-            return instance;
-        }
+        // Startup advisor for THIS named instance: it inspects the named options (the default-path advisor in
+        // _AddCacheCore only ever sees the default options). AddSingleton (not TryAddEnumerable) so one advisor
+        // per named instance coexists with the default one instead of being deduped by implementation type.
+        services.AddSingleton<IHostedService>(provider => new HybridCacheBestPracticesAdvisor(
+            provider.GetRequiredService<IOptionsMonitor<HybridCacheOptions>>().Get(name),
+            provider.GetRequiredService<ILogger<HybridCacheBestPracticesAdvisor>>(),
+            instanceName: name
+        ));
 
-        /// <summary>
-        /// Uses the hybrid cache for this named instance with service provider-aware configuration.
-        /// See <see cref="UseHybrid(HeadlessCacheInstanceBuilder, Action{HybridCacheOptions})"/>.
-        /// </summary>
-        /// <param name="setupAction">Configuration action with access to the service provider.</param>
-        /// <returns>The instance builder for chaining.</returns>
-        public HeadlessCacheInstanceBuilder UseHybrid(Action<HybridCacheOptions, IServiceProvider> setupAction)
-        {
-            Argument.IsNotNull(setupAction);
-
-            var name = instance.Name;
-
-            instance.RegisterProvider(services =>
-            {
-                services.Configure<HybridCacheOptions, HybridCacheOptionsValidator>(setupAction, name);
-                services.Configure<HybridCacheOptions>(name, options => options.CacheName = name);
-                services._AddNamedCacheCore(name);
-            });
-
-            return instance;
-        }
-
-        /// <summary>
-        /// Uses the hybrid cache for this named instance, binding the instance's
-        /// <see cref="HybridCacheOptions"/> from configuration.
-        /// </summary>
-        /// <param name="configuration">The configuration section to bind.</param>
-        /// <returns>The instance builder for chaining.</returns>
-        public HeadlessCacheInstanceBuilder UseHybrid(IConfiguration configuration)
-        {
-            Argument.IsNotNull(configuration);
-
-            var name = instance.Name;
-
-            instance.RegisterProvider(services =>
-            {
-                services.Configure<HybridCacheOptions, HybridCacheOptionsValidator>(configuration, name);
-                services.Configure<HybridCacheOptions>(name, options => options.CacheName = name);
-                services._AddNamedCacheCore(name);
-            });
-
-            return instance;
-        }
+        return services;
     }
 
-    extension(IServiceCollection services)
+    private static IServiceCollection _AddCacheCore(IServiceCollection services)
     {
-        private IServiceCollection _AddNamedCacheCore(string name)
-        {
-            services.AddCacheProvider();
+        // Defensive: this package RESOLVES TimeProvider, so it must also guarantee one exists. Without this,
+        // installing the package standalone (no ServiceDefaults, no sibling that happens to register it) throws
+        // 'No service for type TimeProvider' at resolve time.
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddSingletonOptionValue<HybridCacheOptions>();
+        services.TryAddSingleton<HybridCache>(provider =>
+            _CreateHybridCache(provider, provider.GetRequiredService<HybridCacheOptions>())
+        );
+        services.TryAddSingleton(typeof(ICache<>), typeof(Cache<>));
+        services.AddCacheProvider();
 
-            services.AddKeyedSingleton<ICache>(
-                name,
-                (provider, _) =>
-                    _CreateHybridCache(
-                        provider,
-                        provider.GetRequiredService<IOptionsMonitor<HybridCacheOptions>>().Get(name)
-                    )
-            );
+        services.TryAddSingleton<ICache>(provider => provider.GetRequiredService<HybridCache>());
+        services.AddKeyedSingleton(CacheConstants.HybridCacheProvider, (x, _) => x.GetRequiredService<ICache>());
 
-            return services;
-        }
+        // Auto-register the invalidation consumer so peer L1 caches are evicted by default (idempotent +
+        // unconditional, drained by messaging bootstrap in either registration order). Without this the
+        // backplane was silently publish-only.
+        HybridCacheInvalidationConsumerRegistration.TryAddInvalidationConsumer(services);
 
-        private IServiceCollection _AddCacheCore()
-        {
-            services.AddSingletonOptionValue<HybridCacheOptions>();
-            services.TryAddSingleton<HybridCache>(provider =>
-                _CreateHybridCache(provider, provider.GetRequiredService<HybridCacheOptions>())
-            );
-            services.TryAddSingleton(typeof(ICache<>), typeof(Cache<>));
-            services.AddCacheProvider();
-
-            services.TryAddSingleton<ICache>(provider => provider.GetRequiredService<HybridCache>());
-            services.AddKeyedSingleton(CacheConstants.HybridCacheProvider, (x, _) => x.GetRequiredService<ICache>());
-
-            // Startup advisor: logs warnings for questionable-but-valid configurations once at host
-            // startup so operators notice misconfigurations before they see unexpected runtime behavior.
-            // Captures the IServiceCollection at setup time to detect missing consumer registrations;
-            // the collection is fully populated by the time the factory runs (after BuildServiceProvider).
-            var capturedServices = services;
-            services.TryAddEnumerable(
-                ServiceDescriptor.Singleton<IHostedService, HybridCacheBestPracticesAdvisor>(
-                    provider => new HybridCacheBestPracticesAdvisor(
-                        provider.GetRequiredService<HybridCacheOptions>(),
-                        provider.GetRequiredService<ILogger<HybridCacheBestPracticesAdvisor>>(),
-                        invalidationConsumerRegistered: capturedServices.Any(static d =>
-                            d.ServiceType == typeof(IConsume<CacheInvalidationMessage>)
-                        )
-                    )
+        // Startup advisor: logs warnings for questionable-but-valid configurations once at host
+        // startup so operators notice misconfigurations before they see unexpected runtime behavior.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IHostedService, HybridCacheBestPracticesAdvisor>(
+                provider => new HybridCacheBestPracticesAdvisor(
+                    provider.GetRequiredService<HybridCacheOptions>(),
+                    provider.GetRequiredService<ILogger<HybridCacheBestPracticesAdvisor>>()
                 )
-            );
+            )
+        );
 
-            return services;
-        }
+        return services;
     }
 
     private static HybridCache _CreateHybridCache(IServiceProvider provider, HybridCacheOptions options)
@@ -295,5 +235,85 @@ public static class SetupHybridCache
                     + $"that name ({cache.GetType().Name}) does not implement {typeof(TTier).Name}. Register the "
                     + $"named tier with {registrationHint}."
             );
+    }
+}
+
+/// <summary>
+/// Extension members for selecting the hybrid cache as a named cache instance on
+/// <see cref="HeadlessCacheInstanceBuilder"/>.
+/// </summary>
+[PublicAPI]
+public static class SetupHybridCacheNamed
+{
+    extension(HeadlessCacheInstanceBuilder instance)
+    {
+        /// <summary>
+        /// Uses the hybrid cache for this named instance, resolvable as a keyed <see cref="ICache"/> service
+        /// or through <see cref="ICacheProvider"/>. Tiers are resolved per
+        /// <see cref="HybridCacheOptions.LocalCacheName"/> / <see cref="HybridCacheOptions.RemoteCacheName"/>
+        /// (falling back to the default <see cref="IInMemoryCache"/> / <see cref="IRemoteCache"/> when unset).
+        /// Named instances never touch the default (unkeyed) <see cref="ICache"/> nor the reserved role keys.
+        /// </summary>
+        /// <param name="setupAction">Configuration action for the instance's <see cref="HybridCacheOptions"/>.</param>
+        /// <returns>The instance builder for chaining.</returns>
+        public HeadlessCacheInstanceBuilder UseHybrid(Action<HybridCacheOptions> setupAction)
+        {
+            Argument.IsNotNull(setupAction);
+
+            var name = instance.Name;
+
+            instance.RegisterProvider(services =>
+            {
+                services.Configure<HybridCacheOptions, HybridCacheOptionsValidator>(setupAction, name);
+                services.Configure<HybridCacheOptions>(name, options => options.CacheName = name);
+                SetupHybridCache.AddNamedCacheCore(services, name);
+            });
+
+            return instance;
+        }
+
+        /// <summary>
+        /// Uses the hybrid cache for this named instance with service provider-aware configuration.
+        /// See <see cref="UseHybrid(HeadlessCacheInstanceBuilder, Action{HybridCacheOptions})"/>.
+        /// </summary>
+        /// <param name="setupAction">Configuration action with access to the service provider.</param>
+        /// <returns>The instance builder for chaining.</returns>
+        public HeadlessCacheInstanceBuilder UseHybrid(Action<HybridCacheOptions, IServiceProvider> setupAction)
+        {
+            Argument.IsNotNull(setupAction);
+
+            var name = instance.Name;
+
+            instance.RegisterProvider(services =>
+            {
+                services.Configure<HybridCacheOptions, HybridCacheOptionsValidator>(setupAction, name);
+                services.Configure<HybridCacheOptions>(name, options => options.CacheName = name);
+                SetupHybridCache.AddNamedCacheCore(services, name);
+            });
+
+            return instance;
+        }
+
+        /// <summary>
+        /// Uses the hybrid cache for this named instance, binding the instance's
+        /// <see cref="HybridCacheOptions"/> from configuration.
+        /// </summary>
+        /// <param name="configuration">The configuration section to bind.</param>
+        /// <returns>The instance builder for chaining.</returns>
+        public HeadlessCacheInstanceBuilder UseHybrid(IConfiguration configuration)
+        {
+            Argument.IsNotNull(configuration);
+
+            var name = instance.Name;
+
+            instance.RegisterProvider(services =>
+            {
+                services.Configure<HybridCacheOptions, HybridCacheOptionsValidator>(configuration, name);
+                services.Configure<HybridCacheOptions>(name, options => options.CacheName = name);
+                SetupHybridCache.AddNamedCacheCore(services, name);
+            });
+
+            return instance;
+        }
     }
 }

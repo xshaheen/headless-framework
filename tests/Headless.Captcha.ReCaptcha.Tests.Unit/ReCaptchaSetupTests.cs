@@ -14,18 +14,34 @@ public sealed class ReCaptchaSetupTests
     public void v3_default_resolves_unkeyed_and_as_v3_verifier()
     {
         var services = new ServiceCollection();
-        services.AddHeadlessCaptcha(builder =>
-            builder.UseReCaptchaV3(options =>
-            {
-                options.SiteKey = "k";
-                options.SiteSecret = "s";
-            })
-        );
+        services.AddHeadlessCaptcha(builder => builder.UseReCaptchaV3(_ => { }));
 
         using var serviceProvider = services.BuildServiceProvider();
 
         serviceProvider.GetRequiredService<ICaptchaVerifier>().Should().BeAssignableTo<IReCaptchaV3Verifier>();
         serviceProvider.GetRequiredService<IReCaptchaV3Verifier>().Should().NotBeNull();
+    }
+
+    [Fact]
+    public void v3_action_overload_configures_options()
+    {
+        var services = new ServiceCollection();
+        services.AddHeadlessCaptcha(builder =>
+            builder.UseReCaptchaV3(options =>
+            {
+                options.SiteKey = "act-key";
+                options.SiteSecret = "act-secret";
+            })
+        );
+
+        using var serviceProvider = services.BuildServiceProvider();
+
+        var options = serviceProvider
+            .GetRequiredService<IOptionsMonitor<ReCaptchaOptions>>()
+            .Get(CaptchaConstants.ReCaptchaV3Provider);
+
+        options.SiteKey.Should().Be("act-key");
+        options.SiteSecret.Should().Be("act-secret");
     }
 
     [Fact]
@@ -62,13 +78,7 @@ public sealed class ReCaptchaSetupTests
     public void missing_site_key_fails_options_validation()
     {
         var services = new ServiceCollection();
-        services.AddHeadlessCaptcha(builder =>
-            builder.UseReCaptchaV3(options =>
-            {
-                options.SiteKey = "";
-                options.SiteSecret = "s";
-            })
-        );
+        services.AddHeadlessCaptcha(builder => builder.UseReCaptchaV3(_Section("ReCaptchaV3", key: "", secret: "s")));
 
         using var serviceProvider = services.BuildServiceProvider();
 
@@ -84,13 +94,7 @@ public sealed class ReCaptchaSetupTests
     public void missing_site_secret_fails_options_validation()
     {
         var services = new ServiceCollection();
-        services.AddHeadlessCaptcha(builder =>
-            builder.UseReCaptchaV3(options =>
-            {
-                options.SiteKey = "k";
-                options.SiteSecret = "";
-            })
-        );
+        services.AddHeadlessCaptcha(builder => builder.UseReCaptchaV3(_Section("ReCaptchaV3", key: "k", secret: "")));
 
         using var serviceProvider = services.BuildServiceProvider();
 
@@ -105,15 +109,19 @@ public sealed class ReCaptchaSetupTests
     [Fact]
     public void invalid_verify_base_url_fails_options_validation()
     {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    ["ReCaptchaV3:SiteKey"] = "k",
+                    ["ReCaptchaV3:SiteSecret"] = "s",
+                    ["ReCaptchaV3:VerifyBaseUrl"] = "not-a-url",
+                }
+            )
+            .Build();
+
         var services = new ServiceCollection();
-        services.AddHeadlessCaptcha(builder =>
-            builder.UseReCaptchaV3(options =>
-            {
-                options.SiteKey = "k";
-                options.SiteSecret = "s";
-                options.VerifyBaseUrl = "not-a-url";
-            })
-        );
+        services.AddHeadlessCaptcha(builder => builder.UseReCaptchaV3(configuration.GetSection("ReCaptchaV3")));
 
         using var serviceProvider = services.BuildServiceProvider();
 
@@ -129,13 +137,7 @@ public sealed class ReCaptchaSetupTests
     public void v2_default_resolves_as_plain_captcha_verifier()
     {
         var services = new ServiceCollection();
-        services.AddHeadlessCaptcha(builder =>
-            builder.UseReCaptchaV2(options =>
-            {
-                options.SiteKey = "k";
-                options.SiteSecret = "s";
-            })
-        );
+        services.AddHeadlessCaptcha(builder => builder.UseReCaptchaV2(_ => { }));
 
         using var serviceProvider = services.BuildServiceProvider();
 
@@ -147,15 +149,7 @@ public sealed class ReCaptchaSetupTests
     public void v3_service_provider_overload_resolves_verifier()
     {
         var services = new ServiceCollection();
-        services.AddHeadlessCaptcha(builder =>
-            builder.UseReCaptchaV3(
-                (options, _) =>
-                {
-                    options.SiteKey = "k";
-                    options.SiteSecret = "s";
-                }
-            )
-        );
+        services.AddHeadlessCaptcha(builder => builder.UseReCaptchaV3((_, _) => { }));
 
         using var serviceProvider = services.BuildServiceProvider();
 
@@ -166,7 +160,9 @@ public sealed class ReCaptchaSetupTests
     public void v3_named_configuration_overload_resolves_by_name()
     {
         var services = new ServiceCollection();
-        services.AddHeadlessCaptcha(builder => builder.UseReCaptchaV3("v3-named", _Section("ReCaptchaV3", "ck", "cs")));
+        services.AddHeadlessCaptcha(builder =>
+            builder.AddNamed("v3-named", instance => instance.UseReCaptchaV3(_Section("ReCaptchaV3", "ck", "cs")))
+        );
 
         using var serviceProvider = services.BuildServiceProvider();
 
@@ -182,14 +178,7 @@ public sealed class ReCaptchaSetupTests
     {
         var services = new ServiceCollection();
         services.AddHeadlessCaptcha(builder =>
-            builder.UseReCaptchaV3(
-                "v3-sp",
-                (options, _) =>
-                {
-                    options.SiteKey = "k";
-                    options.SiteSecret = "s";
-                }
-            )
+            builder.AddNamed("v3-sp", instance => instance.UseReCaptchaV3((_, _) => { }))
         );
 
         using var serviceProvider = services.BuildServiceProvider();
@@ -224,15 +213,7 @@ public sealed class ReCaptchaSetupTests
     public void v2_service_provider_overload_resolves_verifier()
     {
         var services = new ServiceCollection();
-        services.AddHeadlessCaptcha(builder =>
-            builder.UseReCaptchaV2(
-                (options, _) =>
-                {
-                    options.SiteKey = "k";
-                    options.SiteSecret = "s";
-                }
-            )
-        );
+        services.AddHeadlessCaptcha(builder => builder.UseReCaptchaV2((_, _) => { }));
 
         using var serviceProvider = services.BuildServiceProvider();
 
@@ -244,14 +225,7 @@ public sealed class ReCaptchaSetupTests
     {
         var services = new ServiceCollection();
         services.AddHeadlessCaptcha(builder =>
-            builder.UseReCaptchaV2(
-                "v2-named",
-                options =>
-                {
-                    options.SiteKey = "k";
-                    options.SiteSecret = "s";
-                }
-            )
+            builder.AddNamed("v2-named", instance => instance.UseReCaptchaV2(_ => { }))
         );
 
         using var serviceProvider = services.BuildServiceProvider();
@@ -264,14 +238,7 @@ public sealed class ReCaptchaSetupTests
     {
         var services = new ServiceCollection();
         services.AddHeadlessCaptcha(builder =>
-            builder.UseReCaptchaV2(
-                "v2-sp",
-                (options, _) =>
-                {
-                    options.SiteKey = "k";
-                    options.SiteSecret = "s";
-                }
-            )
+            builder.AddNamed("v2-sp", instance => instance.UseReCaptchaV2((_, _) => { }))
         );
 
         using var serviceProvider = services.BuildServiceProvider();
@@ -283,7 +250,9 @@ public sealed class ReCaptchaSetupTests
     public void v2_named_configuration_overload_resolves_by_name()
     {
         var services = new ServiceCollection();
-        services.AddHeadlessCaptcha(builder => builder.UseReCaptchaV2("v2-cfg", _Section("ReCaptchaV2", "ck", "cs")));
+        services.AddHeadlessCaptcha(builder =>
+            builder.AddNamed("v2-cfg", instance => instance.UseReCaptchaV2(_Section("ReCaptchaV2", "ck", "cs")))
+        );
 
         using var serviceProvider = services.BuildServiceProvider();
 

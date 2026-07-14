@@ -2,7 +2,7 @@ using Headless.Constants;
 using Headless.Imaging;
 using Headless.Imaging.ImageSharp;
 using Headless.Testing.Tests;
-using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests;
 
@@ -12,8 +12,9 @@ public sealed class ImageSharpImageResizerContributorTests : TestBase
 
     public ImageSharpImageResizerContributorTests()
     {
-        var loggerMock = Substitute.For<ILogger<ImageSharpImageResizerContributor>>();
-        _imageResizerContributor = new ImageSharpImageResizerContributor(loggerMock);
+        _imageResizerContributor = new ImageSharpImageResizerContributor(
+            NullLogger<ImageSharpImageResizerContributor>.Instance
+        );
     }
 
     [Fact]

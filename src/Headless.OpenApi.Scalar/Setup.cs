@@ -1,9 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
 using Scalar.AspNetCore;
 
-namespace Headless.Api;
+namespace Headless.OpenApi.Scalar;
 
 /// <summary>
 /// Registration helper for mounting the Scalar API reference UI.

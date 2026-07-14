@@ -1,11 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using AwesomeAssertions;
+using System.Collections.Concurrent;
 using Headless.CommitCoordination;
+using Headless.Testing.Tests;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
-public sealed class CommitScopeFactoryTests
+public sealed class CommitScopeFactoryTests : TestBase
 {
     [Fact]
     public async Task should_restore_parent_current_after_child_scope_disposes()
@@ -138,26 +140,29 @@ public sealed class CommitScopeFactoryTests
     }
 
     [Fact]
-    public void should_run_rollback_callbacks_when_sync_scope_is_disposed_without_signal()
+    public async Task should_run_rollback_callbacks_when_sync_scope_is_disposed_without_signal()
     {
         var stack = new CommitScopeStack();
         var factory = new CommitScopeFactory(stack);
         var services = new EmptyServiceProvider();
+        var rollbackRan = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var calls = 0;
 
-        using (var scope = factory.Begin(services))
+        await using (var scope = factory.Begin(services))
         {
             scope.Coordinator.OnRollback(
                 (_, _) =>
                 {
                     calls++;
+                    rollbackRan.SetResult();
 
                     return ValueTask.CompletedTask;
                 }
             );
         }
 
-        SpinWait.SpinUntil(() => calls == 1, TimeSpan.FromSeconds(5)).Should().BeTrue();
+        await rollbackRan.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        calls.Should().Be(1);
         stack.Current.Should().BeNull();
     }
 
@@ -329,6 +334,37 @@ public sealed class CommitScopeFactoryTests
     }
 
     [Fact]
+    public void signal_source_attach_should_preserve_nested_physical_transaction_capabilities()
+    {
+        var stack = new CommitScopeStack();
+        var factory = new CommitScopeFactory(stack);
+        using var services = new ServiceCollection().BuildServiceProvider();
+        var outerCapability = new TestCapability();
+        var innerCapability = new TestCapability();
+        using var outer = factory.BeginNew(services, [outerCapability]);
+        var scopes = new ConcurrentDictionary<object, ICommitScope>();
+        var key = new object();
+
+        using var inner = CommitSignalSourceAttach.Attach(
+            factory,
+            new CommitCoordinatorBindings
+            {
+                Services = services,
+                Capabilities = [innerCapability],
+                ProviderTransactionKey = key,
+            },
+            scopes,
+            _ => new InvalidOperationException("duplicate"),
+            CancellationToken.None
+        );
+
+        inner.Coordinator.TryGetCapability<TestCapability>(out var resolved).Should().BeTrue();
+        resolved.Should().BeSameAs(innerCapability);
+        outer.Coordinator.TryGetCapability<TestCapability>(out var outerResolved).Should().BeTrue();
+        outerResolved.Should().BeSameAs(outerCapability);
+    }
+
+    [Fact]
     public void pop_handle_should_throw_when_outer_scope_disposed_before_inner()
     {
         var stack = new CommitScopeStack();
@@ -349,4 +385,6 @@ public sealed class CommitScopeFactoryTests
     {
         public void Dispose() { }
     }
+
+    private sealed class TestCapability : ICommitCapability;
 }

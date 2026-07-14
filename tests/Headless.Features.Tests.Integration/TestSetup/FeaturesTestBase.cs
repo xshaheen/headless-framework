@@ -3,9 +3,9 @@
 using Headless.Abstractions;
 using Headless.Caching;
 using Headless.DistributedLocks;
-using Headless.DistributedLocks.Redis;
 using Headless.Domain;
 using Headless.Features;
+using Headless.Messaging;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -63,16 +63,26 @@ public abstract class FeaturesTestBase(FeaturesTestFixture fixture) : TestBase
             setup.UseInMemoryStorage();
         });
 
-        services.AddDbContextFactory<FeaturesTestDbContext>(options => options.UseNpgsql(Fixture.SqlConnectionString));
+        AddFeaturesDbContextFactory(services);
 
         services.AddHeadlessFeatures(setup =>
         {
             setup.ConfigureStorage(ConfigureFeaturesStorage);
-            setup.UseEntityFramework<FeaturesTestDbContext>();
+            UseFeaturesEntityFramework(setup);
         });
     }
 
     protected virtual void ConfigureFeaturesStorage(FeaturesStorageOptions options) { }
+
+    protected virtual void AddFeaturesDbContextFactory(IServiceCollection services)
+    {
+        services.AddDbContextFactory<FeaturesTestDbContext>(options => options.UseNpgsql(Fixture.SqlConnectionString));
+    }
+
+    protected virtual void UseFeaturesEntityFramework(HeadlessFeaturesSetupBuilder setup)
+    {
+        setup.UseEntityFramework<FeaturesTestDbContext>();
+    }
 
     protected sealed class FeaturesTestDbContext(
         DbContextOptions<FeaturesTestDbContext> options,

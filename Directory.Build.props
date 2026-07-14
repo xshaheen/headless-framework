@@ -1,7 +1,11 @@
 <Project>
   <PropertyGroup>
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
-    <LangVersion>latest</LangVersion>
+    <LangVersion>14.0</LangVersion>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <RestoreLockedMode Condition="'$(CI)' == 'true' or '$(ContinuousIntegrationBuild)' == 'true'"
+      >true</RestoreLockedMode>
+    <GenerateSBOM Condition="'$(GenerateSBOM)' == ''">true</GenerateSBOM>
   </PropertyGroup>
   <ItemGroup Label="Package References">
     <PackageReference Include="JetBrains.Annotations" PrivateAssets="all" />

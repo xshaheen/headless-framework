@@ -21,9 +21,12 @@ public sealed class SqlServerConnectionStringChecker(ILogger<SqlServerConnection
     : IConnectionStringChecker
 {
     /// <inheritdoc />
-    public async Task<(bool Connected, bool DatabaseExists)> CheckAsync(string connectionString)
+    public async Task<ConnectionCheckResult> CheckAsync(
+        string connectionString,
+        CancellationToken cancellationToken = default
+    )
     {
-        var result = (Connected: false, DatabaseExists: false);
+        var connected = false;
 
         try
         {
@@ -34,21 +37,20 @@ public sealed class SqlServerConnectionStringChecker(ILogger<SqlServerConnection
 
             await using var conn = new SqlConnection(connString.ConnectionString);
 
-            await conn.OpenAsync().ConfigureAwait(false);
-            result.Connected = true;
+            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+            connected = true;
 
-            await conn.ChangeDatabaseAsync(oldDatabaseName).ConfigureAwait(false);
-            result.DatabaseExists = true;
+            await conn.ChangeDatabaseAsync(oldDatabaseName, cancellationToken).ConfigureAwait(false);
 
             await conn.CloseAsync().ConfigureAwait(false);
 
-            return result;
+            return new ConnectionCheckResult(Connected: true, DatabaseExists: true);
         }
-        catch (Exception e)
+        catch (Exception e) when (e is not OperationCanceledException)
         {
             logger.LogErrorCheckingConnectionString(e);
 
-            return result;
+            return new ConnectionCheckResult(connected, DatabaseExists: false);
         }
     }
 }
@@ -59,7 +61,7 @@ internal static partial class SqlServerConnectionStringCheckerLoggerExtensions
         EventId = 1,
         EventName = "ErrorCheckingConnectionString",
         Level = LogLevel.Warning,
-        Message = "Error checking connection string"
+        Message = "Error while checking connection string"
     )]
     public static partial void LogErrorCheckingConnectionString(this ILogger logger, Exception exception);
 }

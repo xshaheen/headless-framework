@@ -9,7 +9,7 @@ Provides an authoritative PostgreSQL membership provider for multi-instance apps
 ## Key Features
 
 - Atomic incarnation allocation with `INSERT ... ON CONFLICT ... RETURNING`.
-- Equality heartbeat guard rejects stale and impossible incarnations.
+- Heartbeat guard rejects stale, impossible, dead, gracefully left, and pruned incarnations.
 - Liveness classification uses `clock_timestamp()`.
 - DDL initialization uses PostgreSQL advisory locks.
 

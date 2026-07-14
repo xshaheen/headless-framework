@@ -10,25 +10,26 @@ namespace Headless.Sms.Vodafone;
 /// <see cref="Password"/>, and a per-request HMAC-SHA256 signature derived from <see cref="SecureHash"/>.
 /// The signature covers the account id, password, sender name, recipient MSISDN, and SMS text.
 /// </remarks>
+[PublicAPI]
 public sealed class VodafoneSmsOptions
 {
     /// <summary>The Vodafone Egypt SMS submission endpoint. Defaults to the Vodafone Egypt production URL.</summary>
-    public string SendSmsEndpoint { get; init; } = "https://e3len.vodafone.com.eg/web2sms/sms/submit/";
+    public string SendSmsEndpoint { get; set; } = "https://e3len.vodafone.com.eg/web2sms/sms/submit/";
 
     /// <summary>The registered sender name included in the XML request body and the HMAC signature input.</summary>
-    public required string Sender { get; init; }
+    public required string Sender { get; set; }
 
     /// <summary>The Vodafone Egypt account identifier used for authentication and HMAC signature computation.</summary>
-    public required string AccountId { get; init; }
+    public required string AccountId { get; set; }
 
     /// <summary>The Vodafone Egypt account password used for authentication and HMAC signature computation.</summary>
-    public required string Password { get; init; }
+    public required string Password { get; set; }
 
     /// <summary>
     /// The HMAC-SHA256 secret key (as a plain string) used to sign each request. This value is provided
     /// by Vodafone Egypt during account provisioning.
     /// </summary>
-    public required string SecureHash { get; init; }
+    public required string SecureHash { get; set; }
 }
 
 [UsedImplicitly]

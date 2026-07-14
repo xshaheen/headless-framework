@@ -311,7 +311,7 @@ public static class StringExtensions
     )
     {
         // Compare via a single-char span to avoid allocating a one-char string for the non-ordinal path.
-        ReadOnlySpan<char> needle = stackalloc char[1] { suffix };
+        ReadOnlySpan<char> needle = [suffix];
 
         var endsWithChar =
             comparisonType == StringComparison.Ordinal

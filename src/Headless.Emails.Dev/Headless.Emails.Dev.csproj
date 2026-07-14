@@ -1,6 +1,8 @@
 ﻿<Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <Description>Development integration for Headless email delivery.</Description>
+    <PackageTags>headless;emails;dev;dotnet</PackageTags>
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Emails.Core.Tests.Unit" />

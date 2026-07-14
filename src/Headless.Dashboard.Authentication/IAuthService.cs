@@ -17,12 +17,13 @@ public interface IAuthService
     /// Authenticates the current HTTP request against the configured <see cref="AuthMode"/>.
     /// </summary>
     /// <param name="context">The current HTTP context whose headers and user principal are inspected.</param>
+    /// <param name="cancellationToken">Token to cancel the authentication attempt.</param>
     /// <returns>
     /// An <see cref="AuthResult"/> indicating success (with an optional username) or failure
     /// (with an error description). Implementations should not throw — errors are surfaced through
     /// <see cref="AuthResult.Failure"/>.
     /// </returns>
-    Task<AuthResult> AuthenticateAsync(HttpContext context);
+    Task<AuthResult> AuthenticateAsync(HttpContext context, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Returns a snapshot of the current authentication configuration intended for the dashboard

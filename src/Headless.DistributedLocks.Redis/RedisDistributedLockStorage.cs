@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.DistributedLocks.Redis.Scripts;
 using Headless.Redis;
 using Microsoft.Extensions.DependencyInjection;
 using StackExchange.Redis;
@@ -27,8 +28,7 @@ namespace Headless.DistributedLocks.Redis;
 /// to the caller unless explicitly caught by this class.
 /// </para>
 /// </remarks>
-[PublicAPI]
-public sealed class RedisDistributedLockStorage(
+internal sealed class RedisDistributedLockStorage(
     IConnectionMultiplexer multiplexer,
     [FromKeyedServices(RedisDistributedLockServiceKeys.ScriptsLoader)] HeadlessRedisScriptsLoader scriptsLoader
 ) : IDistributedLockStorage
@@ -71,11 +71,18 @@ public sealed class RedisDistributedLockStorage(
         var lockKey = _GetLockKey(key);
         var fenceKey = _GetFenceKey(key);
 
-        var result = await _TryAcquireLockAsync(Db, lockKey, fenceKey, leaseId, ttl, cancellationToken)
+        var (acquired, fencingToken) = await _TryAcquireLockAsync(
+                Db,
+                lockKey,
+                fenceKey,
+                leaseId,
+                ttl,
+                cancellationToken
+            )
             .ConfigureAwait(false);
 
-        return result.Acquired
-            ? new DistributedLockAcquireResult(Acquired: true, result.FencingToken)
+        return acquired
+            ? new DistributedLockAcquireResult(Acquired: true, fencingToken)
             : DistributedLockAcquireResult.Failed;
     }
 
@@ -88,7 +95,7 @@ public sealed class RedisDistributedLockStorage(
     /// <param name="key">The logical resource key.</param>
     /// <param name="expectedId">The lease id the current holder must match. Pass <see langword="null"/> to assert the key is absent.</param>
     /// <param name="newId">The new lease id to set on a successful compare.</param>
-    /// <param name="newTtl">Optional TTL to apply to the key after a successful replace. <see langword="null"/> leaves the key persistent.</param>
+    /// <param name="newTtl">Optional TTL to apply to the key after a successful replace. <see langword="null"/> preserves the existing TTL.</param>
     /// <param name="cancellationToken">Token to cancel the operation before the Redis round-trip is issued.</param>
     /// <returns><see langword="true"/> when the compare-and-swap succeeded; <see langword="false"/> when the stored value did not match.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="key"/> is <see langword="null"/>.</exception>
@@ -359,7 +366,8 @@ public sealed class RedisDistributedLockStorage(
         )
         {
             var logicalKey = _TryGetLogicalKey(key);
-            if (logicalKey is not null && logicalKey.StartsWith(prefix, StringComparison.Ordinal))
+
+            if (logicalKey?.StartsWith(prefix, StringComparison.Ordinal) == true)
             {
                 count++;
             }
@@ -496,7 +504,7 @@ public sealed class RedisDistributedLockStorage(
         {
             var value = await valueTask.ConfigureAwait(false);
             var logicalKey = _TryGetLogicalKey(key);
-            if (value.HasValue && logicalKey is not null && logicalKey.StartsWith(prefix, StringComparison.Ordinal))
+            if (value.HasValue && logicalKey?.StartsWith(prefix, StringComparison.Ordinal) == true)
             {
                 result[logicalKey] = value.ToString();
             }
@@ -532,7 +540,8 @@ public sealed class RedisDistributedLockStorage(
         {
             var value = await valueTask.ConfigureAwait(false);
             var logicalKey = _TryGetLogicalKey(key);
-            if (value.HasValue && logicalKey is not null && logicalKey.StartsWith(prefix, StringComparison.Ordinal))
+
+            if (value.HasValue && logicalKey?.StartsWith(prefix, StringComparison.Ordinal) == true)
             {
                 var ttl = await ttlTask.ConfigureAwait(false);
                 result[logicalKey] = (value.ToString(), ttl);

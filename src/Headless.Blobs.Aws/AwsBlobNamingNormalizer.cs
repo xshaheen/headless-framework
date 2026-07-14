@@ -39,35 +39,24 @@ public sealed partial class AwsBlobNamingNormalizer : IBlobNamingNormalizer
             // Bucket names can't start or end with dots adjacent to a period
             // Bucket names must not be formatted as an IP address (for example, 192.168.5.4).
 
-            containerName = _NotAllowedContainerCharactersRegex().Replace(containerName, string.Empty);
-            containerName = _MultiplePeriodsRegex().Replace(containerName, ".");
-            containerName = _HyphenPeriodRegex().Replace(containerName, string.Empty);
-            containerName = _PeriodHyphenRegex().Replace(containerName, string.Empty);
-            containerName = _HyphenAtTheBeginningRegex().Replace(containerName, string.Empty);
-            containerName = _HyphenAtTheEndRegex().Replace(containerName, string.Empty);
-            containerName = _PeriodAtTheBeginningRegex().Replace(containerName, string.Empty);
-            containerName = _PeriodAtTheEndRegex().Replace(containerName, string.Empty);
+            containerName = NotAllowedContainerCharactersRegex.Replace(containerName, string.Empty);
+            containerName = MultiplePeriodsRegex.Replace(containerName, ".");
+            containerName = HyphenPeriodRegex.Replace(containerName, string.Empty);
+            containerName = PeriodHyphenRegex.Replace(containerName, string.Empty);
+            containerName = HyphenAtTheBeginningRegex.Replace(containerName, string.Empty);
+            containerName = HyphenAtTheEndRegex.Replace(containerName, string.Empty);
+            containerName = PeriodAtTheBeginningRegex.Replace(containerName, string.Empty);
+            containerName = PeriodAtTheEndRegex.Replace(containerName, string.Empty);
 
             // Bucket names must not be formatted as an IP address (e.g. 192.168.5.4). When the whole name is a
             // dotted-quad, drop the dots so it is no longer IP-formatted (192.168.1.1 -> 19216811).
-            if (_IpAddressRegex().IsMatch(containerName))
+            if (IpAddressRegex.IsMatch(containerName))
             {
                 containerName = containerName.Replace(".", string.Empty, StringComparison.Ordinal);
             }
 
-            if (containerName.Length >= 3)
-            {
-                return containerName;
-            }
-
-            var length = containerName.Length;
-
-            for (var i = 0; i < 3 - length; i++)
-            {
-                containerName += "0";
-            }
-
-            return containerName;
+            // Bucket names must be from 3 through 63 characters long.
+            return containerName.Length >= 3 ? containerName : containerName.PadRight(3, '0');
         }
     }
 
@@ -85,31 +74,31 @@ public sealed partial class AwsBlobNamingNormalizer : IBlobNamingNormalizer
     #region Helpers
 
     [GeneratedRegex("[^a-z0-9-.]", RegexOptions.None, 100)]
-    private static partial Regex _NotAllowedContainerCharactersRegex();
+    private static partial Regex NotAllowedContainerCharactersRegex { get; }
 
     [GeneratedRegex(@"\.$", RegexOptions.None, 100)]
-    private static partial Regex _PeriodAtTheEndRegex();
+    private static partial Regex PeriodAtTheEndRegex { get; }
 
     [GeneratedRegex(@"^\.", RegexOptions.None, 100)]
-    private static partial Regex _PeriodAtTheBeginningRegex();
+    private static partial Regex PeriodAtTheBeginningRegex { get; }
 
     [GeneratedRegex(@"\.{2,}", RegexOptions.None, 100)]
-    private static partial Regex _MultiplePeriodsRegex();
+    private static partial Regex MultiplePeriodsRegex { get; }
 
     [GeneratedRegex(@"-\.", RegexOptions.None, 100)]
-    private static partial Regex _HyphenPeriodRegex();
+    private static partial Regex HyphenPeriodRegex { get; }
 
     [GeneratedRegex(@"\.-", RegexOptions.None, 100)]
-    private static partial Regex _PeriodHyphenRegex();
+    private static partial Regex PeriodHyphenRegex { get; }
 
     [GeneratedRegex("^-+", RegexOptions.None, 100)]
-    private static partial Regex _HyphenAtTheBeginningRegex();
+    private static partial Regex HyphenAtTheBeginningRegex { get; }
 
     [GeneratedRegex("-+$", RegexOptions.None, 100)]
-    private static partial Regex _HyphenAtTheEndRegex();
+    private static partial Regex HyphenAtTheEndRegex { get; }
 
     [GeneratedRegex(@"^(?:\d{1,3}\.){3}\d{1,3}$", RegexOptions.ExplicitCapture, 100)]
-    private static partial Regex _IpAddressRegex();
+    private static partial Regex IpAddressRegex { get; }
 
     #endregion
 }

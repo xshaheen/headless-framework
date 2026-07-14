@@ -1,14 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Bogus;
 using Headless.Caching;
 using Headless.DistributedLocks;
-using Headless.DistributedLocks.Redis;
 using Headless.Testing.Testcontainers;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using StackExchange.Redis;
 using Testcontainers.Redis;
-using Xunit;
 
 namespace Tests;
 
@@ -17,7 +15,7 @@ namespace Tests;
 /// so <c>Headless.Caching.Redis</c> and <c>Headless.DistributedLocks.Redis</c> can run against
 /// DIFFERENT Redis instances without cross-contamination.
 /// </summary>
-public sealed class RedisScriptLoaderIsolationTests : IAsyncLifetime
+public sealed class RedisScriptLoaderIsolationTests : TestBase
 {
     private readonly RedisContainer _cacheContainer = new RedisBuilder(TestImages.Redis).Build();
     private readonly RedisContainer _lockContainer = new RedisBuilder(TestImages.Redis).Build();
@@ -25,8 +23,9 @@ public sealed class RedisScriptLoaderIsolationTests : IAsyncLifetime
     private ConnectionMultiplexer _cacheMultiplexer = null!;
     private ConnectionMultiplexer _lockMultiplexer = null!;
 
-    public async ValueTask InitializeAsync()
+    public override async ValueTask InitializeAsync()
     {
+        await base.InitializeAsync();
         await Task.WhenAll(_cacheContainer.StartAsync(), _lockContainer.StartAsync());
 
         var cacheConnStr = _cacheContainer.GetConnectionString() + ",allowAdmin=true";
@@ -39,7 +38,7 @@ public sealed class RedisScriptLoaderIsolationTests : IAsyncLifetime
         await _lockMultiplexer.GetDatabase().ExecuteAsync("FLUSHALL");
     }
 
-    public async ValueTask DisposeAsync()
+    protected override async ValueTask DisposeAsyncCore()
     {
         if (_cacheMultiplexer is not null)
         {
@@ -53,13 +52,14 @@ public sealed class RedisScriptLoaderIsolationTests : IAsyncLifetime
 
         await _cacheContainer.DisposeAsync();
         await _lockContainer.DisposeAsync();
+        await base.DisposeAsyncCore();
     }
 
     [Fact]
     public async Task should_isolate_scripts_per_package_when_registered_against_different_multiplexers()
     {
         // --- arrange ---
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         var faker = new Faker();
 
         var cacheKey = $"isolation-test:{faker.Random.AlphaNumeric(12)}";
@@ -95,11 +95,11 @@ public sealed class RedisScriptLoaderIsolationTests : IAsyncLifetime
         lockHandle.Should().NotBeNull("lock acquire must succeed against container B");
 
         // --- assert: cache key is in container A, NOT in container B ---
-        var cacheDb_A = _cacheMultiplexer.GetDatabase();
-        var cacheDb_B = _lockMultiplexer.GetDatabase();
+        var cacheDbA = _cacheMultiplexer.GetDatabase();
+        var cacheDbB = _lockMultiplexer.GetDatabase();
 
-        var keyInA = await cacheDb_A.KeyExistsAsync(cacheKey);
-        var keyInB = await cacheDb_B.KeyExistsAsync(cacheKey);
+        var keyInA = await cacheDbA.KeyExistsAsync(cacheKey);
+        var keyInB = await cacheDbB.KeyExistsAsync(cacheKey);
         keyInA.Should().BeTrue("cache key must exist in container A (the cache Redis instance)");
         keyInB.Should().BeFalse("cache key must NOT exist in container B (the lock Redis instance)");
 
@@ -114,7 +114,7 @@ public sealed class RedisScriptLoaderIsolationTests : IAsyncLifetime
     }
 
     private static async Task<bool> _KeyExistsByPatternAsync(
-        IConnectionMultiplexer multiplexer,
+        ConnectionMultiplexer multiplexer,
         string pattern,
         CancellationToken ct
     )

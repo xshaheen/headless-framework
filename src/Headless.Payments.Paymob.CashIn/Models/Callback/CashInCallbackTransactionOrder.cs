@@ -9,7 +9,7 @@ namespace Headless.Payments.Paymob.CashIn.Models.Callback;
 public sealed class CashInCallbackTransactionOrder
 {
     [JsonPropertyName("id")]
-    public int Id { get; init; }
+    public long Id { get; init; }
 
     [JsonPropertyName("created_at")]
     [JsonConverter(typeof(AddEgyptZoneOffsetToUnspecifiedDateTimeJsonConverter))]
@@ -19,7 +19,7 @@ public sealed class CashInCallbackTransactionOrder
     public bool DeliveryNeeded { get; init; }
 
     [JsonPropertyName("amount_cents")]
-    public int AmountCents { get; init; }
+    public long AmountCents { get; init; }
 
     [JsonPropertyName("currency")]
     public string? Currency { get; init; }
@@ -40,7 +40,7 @@ public sealed class CashInCallbackTransactionOrder
     public bool IsCanceled { get; init; }
 
     [JsonPropertyName("paid_amount_cents")]
-    public int PaidAmountCents { get; init; }
+    public long PaidAmountCents { get; init; }
 
     [JsonPropertyName("notify_user_with_email")]
     public bool NotifyUserWithEmail { get; init; }
@@ -49,13 +49,13 @@ public sealed class CashInCallbackTransactionOrder
     public string? OrderUrl { get; init; }
 
     [JsonPropertyName("commission_fees")]
-    public int CommissionFees { get; init; }
+    public long CommissionFees { get; init; }
 
     [JsonPropertyName("delivery_fees_cents")]
-    public int DeliveryFeesCents { get; init; }
+    public long DeliveryFeesCents { get; init; }
 
     [JsonPropertyName("delivery_vat_cents")]
-    public int DeliveryVatCents { get; init; }
+    public long DeliveryVatCents { get; init; }
 
     [JsonPropertyName("payment_method")]
     public string? PaymentMethod { get; init; }
@@ -75,21 +75,27 @@ public sealed class CashInCallbackTransactionOrder
     [JsonPropertyName("collector")]
     public CashInCallbackTransactionOrderCollector? Collector { get; init; }
 
+    /// <summary>Opaque Paymob passthrough value; shape is provider-defined and usually <see langword="null"/>.</summary>
     [JsonPropertyName("data")]
     public object? Data { get; init; }
 
+    /// <summary>Opaque Paymob passthrough value; shape is provider-defined and usually <see langword="null"/>.</summary>
     [JsonPropertyName("merchant_staff_tag")]
     public object? MerchantStaffTag { get; init; }
 
+    /// <summary>Opaque Paymob passthrough value; shape is provider-defined and usually <see langword="null"/>.</summary>
     [JsonPropertyName("pickup_data")]
     public object? PickupData { get; init; }
 
+    /// <summary>Your own order reference ID echoed back by Paymob, when one was supplied on order creation.</summary>
     [JsonPropertyName("merchant_order_id")]
     public string? MerchantOrderId { get; init; }
 
+    /// <summary>Opaque Paymob passthrough value; shape is provider-defined and usually <see langword="null"/>.</summary>
     [JsonPropertyName("wallet_notification")]
     public object? WalletNotification { get; init; }
 
+    /// <summary>Order line items as returned by Paymob; elements are opaque provider-defined objects. Never <see langword="null"/>.</summary>
     [JsonPropertyName("items")]
     [field: AllowNull, MaybeNull]
     public IReadOnlyList<object?> Items
@@ -98,6 +104,7 @@ public sealed class CashInCallbackTransactionOrder
         init;
     }
 
+    /// <summary>Delivery status entries as returned by Paymob; elements are opaque provider-defined objects. Never <see langword="null"/>.</summary>
     [JsonPropertyName("delivery_status")]
     [field: AllowNull, MaybeNull]
     public IReadOnlyList<object?> DeliveryStatus
@@ -106,6 +113,7 @@ public sealed class CashInCallbackTransactionOrder
         init;
     }
 
+    /// <summary>Unmodelled JSON fields returned by Paymob, captured so no callback data is lost.</summary>
     [JsonExtensionData]
     public IDictionary<string, object?>? ExtensionData { get; set; }
 }

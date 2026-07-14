@@ -13,7 +13,7 @@ internal interface IJobsOptionsSeeding
     Func<IServiceProvider, Task>? CronSeederAction { get; }
 }
 
-internal class JobsExecutionContext
+internal sealed class JobsExecutionContext
 {
     private long _nextOccurrenceTicks;
     internal Action<IServiceProvider>? ExternalProviderApplicationAction { get; set; }
@@ -21,8 +21,8 @@ internal class JobsExecutionContext
     public string? LastHostExceptionMessage { get; set; }
     internal IJobsOptionsSeeding? OptionsSeeding { get; set; }
 
-    private InternalFunctionContext[] _functions = [];
-    internal InternalFunctionContext[] Functions => Volatile.Read(ref _functions);
+    private JobExecutionState[] _functions = [];
+    internal JobExecutionState[] Functions => Volatile.Read(ref _functions);
 
     public void SetNextPlannedOccurrence(DateTime? dt) =>
         Interlocked.Exchange(ref _nextOccurrenceTicks, dt?.Ticks ?? -1);
@@ -33,16 +33,16 @@ internal class JobsExecutionContext
         return t < 0 ? null : new DateTime(t, DateTimeKind.Utc);
     }
 
-    public void SetFunctions(ReadOnlySpan<InternalFunctionContext> functions)
+    public void SetFunctions(ReadOnlySpan<JobExecutionState> functions)
     {
-        var copy = new InternalFunctionContext[functions.Length];
+        var copy = new JobExecutionState[functions.Length];
         functions.CopyTo(copy.AsSpan());
 
         _CacheFunctionReferences(copy.AsSpan());
         Volatile.Write(ref _functions, copy);
     }
 
-    private static void _CacheFunctionReferences(Span<InternalFunctionContext> functions)
+    private static void _CacheFunctionReferences(Span<JobExecutionState> functions)
     {
         for (var i = 0; i < functions.Length; i++)
         {

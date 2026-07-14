@@ -9,8 +9,8 @@ public sealed class IsBitwiseEqualToTests
     [Fact]
     public void is_bitwise_equal_to_should_return_value_for_equal_primitives()
     {
-        Argument.IsBitwiseEqualTo((byte)7, (byte)7).Should().Be((byte)7);
-        Argument.IsBitwiseEqualTo((short)-3, (short)-3).Should().Be((short)-3);
+        Argument.IsBitwiseEqualTo((byte)7, (byte)7).Should().Be(7);
+        Argument.IsBitwiseEqualTo((short)-3, (short)-3).Should().Be(-3);
         Argument.IsBitwiseEqualTo(42, 42).Should().Be(42);
         Argument.IsBitwiseEqualTo(42L, 42L).Should().Be(42L);
         Argument.IsBitwiseEqualTo(1.5f, 1.5f).Should().Be(1.5f);
@@ -20,7 +20,7 @@ public sealed class IsBitwiseEqualToTests
     [Fact]
     public void is_bitwise_equal_to_should_throw_when_bytes_differ()
     {
-        var value = 42;
+        const int value = 42;
         var action = () => Argument.IsBitwiseEqualTo(value, 43);
 
         action

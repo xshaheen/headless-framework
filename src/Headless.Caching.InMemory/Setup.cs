@@ -7,7 +7,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-#pragma warning disable CA1708 // multiple extension blocks emit marker members differing only by case
 namespace Headless.Caching;
 
 [PublicAPI]
@@ -28,7 +27,7 @@ public static class SetupInMemoryCache
                 services =>
                 {
                     services.Configure<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(setupAction);
-                    services._AddCacheCore(isDefault: true);
+                    _AddCacheCore(services, isDefault: true);
                 }
             );
 
@@ -50,7 +49,7 @@ public static class SetupInMemoryCache
                 services =>
                 {
                     services.Configure<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(setupAction);
-                    services._AddCacheCore(isDefault: true);
+                    _AddCacheCore(services, isDefault: true);
                 }
             );
 
@@ -72,7 +71,7 @@ public static class SetupInMemoryCache
                 services =>
                 {
                     services.Configure<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(configuration);
-                    services._AddCacheCore(isDefault: true);
+                    _AddCacheCore(services, isDefault: true);
                 }
             );
 
@@ -101,7 +100,7 @@ public static class SetupInMemoryCache
                         services.Configure<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(setupAction);
                     }
 
-                    services._AddCacheCore(isDefault: false);
+                    _AddCacheCore(services, isDefault: false);
                 }
             );
 
@@ -123,7 +122,7 @@ public static class SetupInMemoryCache
                 services =>
                 {
                     services.Configure<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(setupAction);
-                    services._AddCacheCore(isDefault: false);
+                    _AddCacheCore(services, isDefault: false);
                 }
             );
 
@@ -145,7 +144,7 @@ public static class SetupInMemoryCache
                 services =>
                 {
                     services.Configure<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(configuration);
-                    services._AddCacheCore(isDefault: false);
+                    _AddCacheCore(services, isDefault: false);
                 }
             );
 
@@ -153,6 +152,59 @@ public static class SetupInMemoryCache
         }
     }
 
+    internal static IServiceCollection AddNamedCacheCore(IServiceCollection services, string name)
+    {
+        services.AddCacheProvider();
+
+        services.AddKeyedSingleton<ICache>(
+            name,
+            (provider, _) =>
+                new InMemoryCache(
+                    provider.GetRequiredService<TimeProvider>(),
+                    provider.GetRequiredService<IOptionsMonitor<InMemoryCacheOptions>>().Get(name),
+                    provider.GetService<ILogger<InMemoryCache>>(),
+                    provider.GetService<ICacheFactoryLockProvider>()
+                )
+        );
+
+        return services;
+    }
+
+    private static IServiceCollection _AddCacheCore(IServiceCollection services, bool isDefault)
+    {
+        // Defensive: this package RESOLVES TimeProvider, so it must also guarantee one exists. Without this,
+        // installing the package standalone (no ServiceDefaults, no sibling that happens to register it) throws
+        // 'No service for type TimeProvider' at resolve time.
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddCacheProvider();
+        services.AddSingletonOptionValue<InMemoryCacheOptions>();
+        services.TryAddSingleton<IInMemoryCache, InMemoryCache>();
+        services.TryAddSingleton(typeof(ICache<>), typeof(Cache<>));
+
+        if (!isDefault)
+        {
+            services.AddKeyedSingleton<ICache>(
+                CacheConstants.MemoryCacheProvider,
+                provider => provider.GetRequiredService<IInMemoryCache>()
+            );
+        }
+        else
+        {
+            services.TryAddSingleton<ICache>(provider => provider.GetRequiredService<IInMemoryCache>());
+            services.AddKeyedSingleton(CacheConstants.MemoryCacheProvider, x => x.GetRequiredService<ICache>());
+        }
+
+        return services;
+    }
+}
+
+/// <summary>
+/// Extension members for selecting the in-memory cache as a named cache instance on
+/// <see cref="HeadlessCacheInstanceBuilder"/>.
+/// </summary>
+[PublicAPI]
+public static class SetupInMemoryCacheNamed
+{
     extension(HeadlessCacheInstanceBuilder instance)
     {
         /// <summary>
@@ -171,7 +223,7 @@ public static class SetupInMemoryCache
             instance.RegisterProvider(services =>
             {
                 services.Configure<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(setupAction, name);
-                services._AddNamedCacheCore(name);
+                SetupInMemoryCache.AddNamedCacheCore(services, name);
             });
 
             return instance;
@@ -192,7 +244,7 @@ public static class SetupInMemoryCache
             instance.RegisterProvider(services =>
             {
                 services.Configure<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(setupAction, name);
-                services._AddNamedCacheCore(name);
+                SetupInMemoryCache.AddNamedCacheCore(services, name);
             });
 
             return instance;
@@ -213,54 +265,10 @@ public static class SetupInMemoryCache
             instance.RegisterProvider(services =>
             {
                 services.Configure<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(configuration, name);
-                services._AddNamedCacheCore(name);
+                SetupInMemoryCache.AddNamedCacheCore(services, name);
             });
 
             return instance;
-        }
-    }
-
-    extension(IServiceCollection services)
-    {
-        private IServiceCollection _AddNamedCacheCore(string name)
-        {
-            services.AddCacheProvider();
-
-            services.AddKeyedSingleton<ICache>(
-                name,
-                (provider, _) =>
-                    new InMemoryCache(
-                        provider.GetRequiredService<TimeProvider>(),
-                        provider.GetRequiredService<IOptionsMonitor<InMemoryCacheOptions>>().Get(name),
-                        provider.GetService<ILogger<InMemoryCache>>(),
-                        provider.GetService<ICacheFactoryLockProvider>()
-                    )
-            );
-
-            return services;
-        }
-
-        private IServiceCollection _AddCacheCore(bool isDefault)
-        {
-            services.AddCacheProvider();
-            services.AddSingletonOptionValue<InMemoryCacheOptions>();
-            services.TryAddSingleton<IInMemoryCache, InMemoryCache>();
-            services.TryAddSingleton(typeof(ICache<>), typeof(Cache<>));
-
-            if (!isDefault)
-            {
-                services.AddKeyedSingleton<ICache>(
-                    CacheConstants.MemoryCacheProvider,
-                    provider => provider.GetRequiredService<IInMemoryCache>()
-                );
-            }
-            else
-            {
-                services.TryAddSingleton<ICache>(provider => provider.GetRequiredService<IInMemoryCache>());
-                services.AddKeyedSingleton(CacheConstants.MemoryCacheProvider, x => x.GetRequiredService<ICache>());
-            }
-
-            return services;
         }
     }
 }

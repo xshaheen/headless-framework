@@ -1,13 +1,17 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data;
 using System.Data.Common;
-using System.Globalization;
 using Headless.Coordination;
 using Headless.Jobs;
 using Headless.Jobs.DbContextFactory;
-using Headless.Jobs.DependencyInjection;
+using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
+using Headless.Messaging;
+using Headless.Messaging.Configuration;
+using Headless.Messaging.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
@@ -34,6 +38,9 @@ public interface IJobsCoordinationFixture
     /// <summary>Wires the EF Core provider for the Jobs store (e.g. <c>db.UseNpgsql(ConnectionString)</c>).</summary>
     void ConfigureStore(DbContextOptionsBuilder db);
 
+    /// <summary>Enables this backend's native claim strategy through the public Jobs EF builder.</summary>
+    void ConfigureClaims(JobsEfCoreOptionBuilder<TimeJobEntity, CronJobEntity> builder);
+
     /// <summary>Creates a new, unopened provider-specific connection (Npgsql / SqlClient).</summary>
     DbConnection CreateConnection();
 
@@ -49,6 +56,15 @@ public interface IJobsCoordinationFixture
     /// <summary>Provider SQL expression for "now in UTC" (Postgres: <c>now()</c>; SqlServer: <c>SYSUTCDATETIME()</c>).</summary>
     string UtcNowSqlExpression { get; }
 
+    /// <summary>
+    /// The server-clock function EF Core emits when it translates a bare <c>DateTime.UtcNow</c> inside an
+    /// expression tree (Postgres: <c>now()</c>; SqlServer: <c>GETUTCDATE()</c>). This is NOT
+    /// <see cref="UtcNowSqlExpression" />: that one is what the harness itself writes in seed SQL, this one is
+    /// what the EF provider chooses. <see cref="JobsDatabaseClockConformanceTests{TFixture}" /> asserts it against
+    /// the SQL the real Jobs lease paths put on the wire.
+    /// </summary>
+    string EfTranslatedDatabaseClockSql { get; }
+
     /// <summary>Provider DDL that drops every Jobs and Coordination table so each test starts empty.</summary>
     string ResetSql { get; }
 
@@ -57,6 +73,9 @@ public interface IJobsCoordinationFixture
 
     /// <summary>Registers this backend's commit-coordination provider (e.g. <c>services.AddPostgreSqlCommitCoordination()</c>).</summary>
     void ConfigureCommitCoordination(IServiceCollection services);
+
+    /// <summary>Wires this backend's relational messaging storage against <see cref="ConnectionString" />.</summary>
+    void ConfigureMessagingStorage(MessagingSetupBuilder setup);
 
     /// <summary>
     /// Opens a provider connection, begins a commit-coordinated transaction, enlists it, and runs
@@ -97,8 +116,51 @@ public static class JobsCoordinationFixtureExtensions
         this IJobsCoordinationFixture fixture,
         string nodeId,
         MembershipLostBehavior lostBehavior = MembershipLostBehavior.StopMembershipOnly,
-        TimeProvider? timeProvider = null
+        TimeProvider? timeProvider = null,
+        TimeSpan? leaseDuration = null,
+        bool useNativeClaims = true
+    ) => _BuildHost<JobsDbContext>(fixture, nodeId, "jobs", lostBehavior, timeProvider, leaseDuration, useNativeClaims);
+
+    /// <summary>Builds a host with a custom Jobs DbContext so provider SQL can be verified against renamed mappings.</summary>
+    public static IHost BuildMappedHost<TDbContext>(this IJobsCoordinationFixture fixture, string nodeId, string schema)
+        where TDbContext : JobsDbContext<TimeJobEntity, CronJobEntity> =>
+        _BuildHost<TDbContext>(fixture, nodeId, schema, MembershipLostBehavior.StopMembershipOnly, null);
+
+    /// <summary>
+    /// Builds a host whose <em>real</em> Jobs DbContext carries <paramref name="interceptor" />, so a test can read
+    /// the SQL the production lease paths actually put on the wire. Native claiming is off: the native strategies
+    /// build raw ADO commands off the underlying connection (bypassing EF's interception pipeline) and spell
+    /// <c>clock_timestamp()</c> / <c>SYSUTCDATETIME()</c> literally in their SQL, so they are not the subject here.
+    /// The EF-translated clock — the one a client-evaluated regression could silently replace — is.
+    /// </summary>
+    public static IHost BuildInterceptedHost(
+        this IJobsCoordinationFixture fixture,
+        string nodeId,
+        IInterceptor interceptor,
+        TimeSpan? leaseDuration = null
+    ) =>
+        _BuildHost<JobsDbContext>(
+            fixture,
+            nodeId,
+            "jobs",
+            MembershipLostBehavior.StopMembershipOnly,
+            timeProvider: null,
+            leaseDuration,
+            useNativeClaims: false,
+            interceptor
+        );
+
+    private static IHost _BuildHost<TDbContext>(
+        IJobsCoordinationFixture fixture,
+        string nodeId,
+        string schema,
+        MembershipLostBehavior lostBehavior,
+        TimeProvider? timeProvider,
+        TimeSpan? leaseDuration = null,
+        bool useNativeClaims = true,
+        IInterceptor? interceptor = null
     )
+        where TDbContext : JobsDbContext<TimeJobEntity, CronJobEntity>
     {
         var builder = Host.CreateApplicationBuilder();
         builder.Logging.SetMinimumLevel(LogLevel.Warning);
@@ -125,9 +187,28 @@ public static class JobsCoordinationFixtureExtensions
             // The scheduler is disabled so it never races the tests' direct persistence calls. Dead-node recovery
             // is driven by the MembershipRecoveryBridge + coordination heartbeat, both of which still run.
             options.DisableBackgroundServices();
-            options.AddOperationalStore(ef =>
-                ef.UseJobsDbContext<JobsDbContext>(fixture.ConfigureStore, schema: "jobs")
-            );
+            if (leaseDuration is not null)
+            {
+                options.ConfigureScheduler(scheduler => scheduler.LeaseDuration = leaseDuration.Value);
+            }
+            options.UseEntityFramework(ef =>
+            {
+                ef.UseJobsDbContext<TDbContext>(
+                    db =>
+                    {
+                        fixture.ConfigureStore(db);
+                        if (interceptor is not null)
+                        {
+                            db.AddInterceptors(interceptor);
+                        }
+                    },
+                    schema
+                );
+                if (useNativeClaims)
+                {
+                    fixture.ConfigureClaims(ef);
+                }
+            });
         });
 
         // Lets a test inject a deliberately skewed clock to prove the EF lease-expiry path reads the DB clock, not
@@ -149,12 +230,33 @@ public static class JobsCoordinationFixtureExtensions
     /// A test time-job function is registered before the host's startup <c>Build()</c> so <c>AddAsync</c> validation
     /// passes (empty cron expression so the startup seeder ignores it).
     /// </summary>
-    public static IHost BuildCoordinatedEnqueueHost(this IJobsCoordinationFixture fixture, string nodeId)
+    public static IHost BuildCoordinatedEnqueueHost(
+        this IJobsCoordinationFixture fixture,
+        string nodeId,
+        bool includeMessaging = false
+    ) => fixture.BuildCoordinatedEnqueueHost<JobsDbContext>(nodeId, includeMessaging: includeMessaging);
+
+    /// <summary>
+    /// Builds the coordinated-enqueue host with a custom Jobs context and optional options instrumentation.
+    /// </summary>
+    public static IHost BuildCoordinatedEnqueueHost<TDbContext>(
+        this IJobsCoordinationFixture fixture,
+        string nodeId,
+        Action<DbContextOptionsBuilder>? configureOptions = null,
+        bool includeMessaging = false
+    )
+        where TDbContext : JobsDbContext<TimeJobEntity, CronJobEntity>
     {
         JobFunctionProvider.RegisterFunctions(
-            new Dictionary<string, (string, JobPriority, JobFunctionDelegate, int)>(StringComparer.Ordinal)
+            new Dictionary<string, JobFunctionRegistration>(StringComparer.Ordinal)
             {
-                [CoordinatedFunctionName] = (string.Empty, JobPriority.LongRunning, (_, _, _) => Task.CompletedTask, 1),
+                [CoordinatedFunctionName] = new JobFunctionRegistration
+                {
+                    CronExpression = string.Empty,
+                    Priority = JobPriority.LongRunning,
+                    Delegate = (_, _, _) => Task.CompletedTask,
+                    MaxConcurrency = 1,
+                },
             }
         );
 
@@ -178,10 +280,26 @@ public static class JobsCoordinationFixtureExtensions
         builder.Services.AddHeadlessJobs(options =>
         {
             options.DisableBackgroundServices();
-            options.AddOperationalStore(ef =>
-                ef.UseJobsDbContext<JobsDbContext>(fixture.ConfigureStore, schema: "jobs")
+            options.UseEntityFramework(ef =>
+                ef.UseJobsDbContext<TDbContext>(
+                    db =>
+                    {
+                        fixture.ConfigureStore(db);
+                        configureOptions?.Invoke(db);
+                    },
+                    schema: "jobs"
+                )
             );
         });
+
+        if (includeMessaging)
+        {
+            builder.Services.AddHeadlessMessaging(setup =>
+            {
+                setup.UseInMemory();
+                fixture.ConfigureMessagingStorage(setup);
+            });
+        }
 
         // AddCommitCoordination wins over the Jobs null-coordinator fallback (AddSingleton over TryAddSingleton),
         // so ICurrentCommitCoordinator resolves to the real scope stack that EnlistCommitCoordination pushes onto.
@@ -234,6 +352,23 @@ public static class JobsCoordinationFixtureExtensions
         CancellationToken cancellationToken
     ) => _CountAsync(fixture, $"SELECT COUNT(*) FROM {fixture.QualifiedCronJobsTable};", cancellationToken);
 
+    /// <summary>Counts CronJobOccurrence rows on an independent connection.</summary>
+    public static Task<int> CountCronOccurrencesAsync(
+        this IJobsCoordinationFixture fixture,
+        CancellationToken cancellationToken
+    ) => _CountAsync(fixture, $"SELECT COUNT(*) FROM {fixture.QualifiedCronJobOccurrencesTable};", cancellationToken);
+
+    /// <summary>Counts published outbox rows on an independent connection (observes committed state only).</summary>
+    public static Task<int> CountPublishedMessagesAsync(
+        this IJobsCoordinationFixture fixture,
+        IServiceProvider services,
+        CancellationToken cancellationToken
+    )
+    {
+        var table = services.GetRequiredService<IStorageInitializer>().GetPublishedTableName();
+        return _CountAsync(fixture, $"SELECT COUNT(*) FROM {table};", cancellationToken);
+    }
+
     private static async Task<int> _CountAsync(
         IJobsCoordinationFixture fixture,
         string sql,
@@ -255,8 +390,15 @@ public static class JobsCoordinationFixtureExtensions
     /// </summary>
     public static async Task CreateJobsSchemaAsync(IHost host, CancellationToken cancellationToken)
     {
+        await CreateJobsSchemaAsync<JobsDbContext>(host, cancellationToken);
+    }
+
+    /// <summary>Creates tables for a custom mapped Jobs DbContext.</summary>
+    public static async Task CreateJobsSchemaAsync<TDbContext>(IHost host, CancellationToken cancellationToken)
+        where TDbContext : DbContext
+    {
         await using var scope = host.Services.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<JobsDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<TDbContext>();
         var creator = (RelationalDatabaseCreator)db.GetService<IDatabaseCreator>();
         await creator.CreateTablesAsync(cancellationToken);
     }
@@ -291,7 +433,7 @@ public static class JobsCoordinationFixtureExtensions
         await using var command = connection.CreateCommand();
         command.CommandText =
             $"INSERT INTO {fixture.QualifiedTimeJobsTable} ({_InsertColumns}) "
-            + $"VALUES (@id, @function, @function, @status, @ownerId, "
+            + "VALUES (@id, @function, @function, @status, @ownerId, "
             + $"{fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, 0, 0, 0, @onNodeDeath, @lockedUntil);";
 
         // Status and OnNodeDeath persist as enum names (HasConversion<string>), so seed the names, not ordinals.
@@ -353,7 +495,7 @@ public static class JobsCoordinationFixtureExtensions
         // distinct execution times when several occurrences of the same cron are seeded together.
         command.CommandText =
             $"INSERT INTO {fixture.QualifiedCronJobOccurrencesTable} ({_CronOccurrenceInsertColumns}) "
-            + $"VALUES (@id, @cronJobId, @status, @ownerId, @executionTime, "
+            + "VALUES (@id, @cronJobId, @status, @ownerId, @executionTime, "
             + $"{fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, 0, 0, @onNodeDeath, @lockedUntil);";
 
         _AddParameter(command, "@id", id);
@@ -394,6 +536,55 @@ public static class JobsCoordinationFixtureExtensions
         return (status, ownerId);
     }
 
+    /// <summary>Reads a CronJobOccurrence's durable owner and lease.</summary>
+    public static async Task<(string? OwnerId, DateTime? LockedUntil)> ReadCronOccurrenceClaimAsync(
+        this IJobsCoordinationFixture fixture,
+        Guid id,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = fixture.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            $"SELECT \"OwnerId\", \"LockedUntil\" FROM {fixture.QualifiedCronJobOccurrencesTable} WHERE \"Id\" = @id;";
+        _AddParameter(command, "@id", id);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            throw new InvalidOperationException($"CronJobOccurrence {id} not found.");
+        }
+
+        var ownerId = await reader.IsDBNullAsync(0, cancellationToken) ? null : reader.GetString(0);
+        var lockedUntil = await reader.IsDBNullAsync(1, cancellationToken) ? (DateTime?)null : reader.GetDateTime(1);
+        return (ownerId, lockedUntil);
+    }
+
+    /// <summary>Reads a CronJobOccurrence's database-stamped lease timestamps.</summary>
+    public static async Task<(DateTime? LockedUntil, DateTime UpdatedAt)> ReadCronOccurrenceClaimTimestampsAsync(
+        this IJobsCoordinationFixture fixture,
+        Guid id,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = fixture.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            $"SELECT \"LockedUntil\", \"UpdatedAt\" FROM {fixture.QualifiedCronJobOccurrencesTable} WHERE \"Id\" = @id;";
+        _AddParameter(command, "@id", id);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            throw new InvalidOperationException($"CronJobOccurrence {id} not found.");
+        }
+
+        var lockedUntil = await reader.IsDBNullAsync(0, cancellationToken) ? (DateTime?)null : reader.GetDateTime(0);
+        return (lockedUntil, reader.GetDateTime(1));
+    }
+
     /// <summary>Reads back a TimeJob's status + owner for assertions.</summary>
     public static async Task<(int Status, string? OwnerId)> ReadTimeJobAsync(
         this IJobsCoordinationFixture fixture,
@@ -401,8 +592,8 @@ public static class JobsCoordinationFixtureExtensions
         CancellationToken cancellationToken
     )
     {
-        var detail = await fixture.ReadTimeJobDetailAsync(id, cancellationToken);
-        return (detail.Status, detail.OwnerId);
+        var (status, ownerId, _, _, _) = await fixture.ReadTimeJobDetailAsync(id, cancellationToken);
+        return (status, ownerId);
     }
 
     /// <summary>
@@ -422,7 +613,7 @@ public static class JobsCoordinationFixtureExtensions
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText =
-            $"SELECT \"Status\", \"OwnerId\", \"LockedUntil\", \"ExceptionMessage\", \"SkippedReason\" "
+            "SELECT \"Status\", \"OwnerId\", \"LockedUntil\", \"ExceptionMessage\", \"SkippedReason\" "
             + $"FROM {fixture.QualifiedTimeJobsTable} WHERE \"Id\" = @id;";
         _AddParameter(command, "@id", id);
 
@@ -443,6 +634,30 @@ public static class JobsCoordinationFixtureExtensions
         return (status, ownerId, lockedUntil, exceptionMessage, skippedReason);
     }
 
+    /// <summary>Reads a TimeJob's database-stamped lease timestamps.</summary>
+    public static async Task<(DateTime? LockedUntil, DateTime UpdatedAt)> ReadTimeJobClaimTimestampsAsync(
+        this IJobsCoordinationFixture fixture,
+        Guid id,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = fixture.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            $"SELECT \"LockedUntil\", \"UpdatedAt\" FROM {fixture.QualifiedTimeJobsTable} WHERE \"Id\" = @id;";
+        _AddParameter(command, "@id", id);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            throw new InvalidOperationException($"TimeJob {id} not found.");
+        }
+
+        var lockedUntil = await reader.IsDBNullAsync(0, cancellationToken) ? (DateTime?)null : reader.GetDateTime(0);
+        return (lockedUntil, reader.GetDateTime(1));
+    }
+
     // Column identifiers are double-quoted: SQL Server accepts ANSI double quotes for delimited identifiers
     // (QUOTED_IDENTIFIER is ON by default for SqlClient), and Postgres requires them for the PascalCase columns.
     private const string _InsertColumns =
@@ -461,7 +676,15 @@ public static class JobsCoordinationFixtureExtensions
     {
         var parameter = command.CreateParameter();
         parameter.ParameterName = name;
-        parameter.Value = value;
+        if (value is DateTime dateTime)
+        {
+            parameter.DbType = DbType.DateTime2;
+            parameter.Value = DateTime.SpecifyKind(dateTime, DateTimeKind.Unspecified);
+        }
+        else
+        {
+            parameter.Value = value;
+        }
         command.Parameters.Add(parameter);
     }
 }

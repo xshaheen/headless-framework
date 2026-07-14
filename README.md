@@ -1,70 +1,103 @@
-<div align="center">
+<p align="center">
+  <img src="assets/banner.svg" alt=".NET Headless Framework" width="100%">
+</p>
 
 # .NET Headless Framework
+
+<div align="center">
 
 **The modular .NET framework that stays out of your way.**
 
 [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4)](https://dotnet.microsoft.com)
 [![GitHub Stars](https://img.shields.io/github/stars/xshaheen/headless-framework?style=social)](https://github.com/xshaheen/headless-framework)
 
-150+ NuGet packages &bull; Abstraction + Provider pattern &bull; Zero lock-in
 
-[Quick Start](#quick-start) &bull; [Packages](#packages) &bull; [Architecture](#architecture) &bull; [Using with AI Agents](#using-headless-with-ai-agents) &bull; [Contributing](#contributing)
+[اللغة: العربية](README.ar.md)
+
+150+ NuGet packages &bull; Abstraction + provider pattern &bull; Explicit infrastructure
+
+[Start Here](#start-here) &bull; [Package Model](#package-model) &bull; [Pick Packages By Job](#pick-packages-by-job) &bull; [Quick Start](#quick-start) &bull; [Packages](#packages) &bull; [Contributing](#contributing)
 
 </div>
 
 ---
 
-## Why Headless?
+## Start Here
 
-Most .NET frameworks force opinions on you — folder structures, ORM choices, messaging transports, cloud providers. **Headless doesn't.**
+Headless Framework is a modular .NET framework for APIs and backend services that need production infrastructure without hiding the infrastructure choices. It gives application code stable contracts for common backend concerns, then lets each service choose the concrete provider it will run on.
 
-Every feature ships as a pair: a thin **abstraction** package (interfaces and contracts) and one or more **provider** packages (concrete implementations). You pick the pieces you need, wire them up, and own the result.
+Use it when a service needs one or more of these building blocks:
 
-- **Composable** — 150+ standalone packages. Use one or use fifty.
-- **Swappable** — Switch from Redis to in-memory caching, or AWS to Azure blob storage, by changing one line.
-- **Explicit** — No hidden conventions, no magic. Every behavior is visible in your code.
-- **Testable** — Every abstraction is mockable. Every provider is integration-tested with Testcontainers.
+- API host defaults: problem details, health endpoints, OpenTelemetry, OpenAPI, forwarded headers, compression, and startup validation.
+- Storage-facing abstractions: caching, blob storage, SQL access, dynamic settings, audit logs, permissions, and feature flags.
+- Distributed runtime primitives: jobs, messaging, distributed locks, coordination, commit coordination, and dashboards.
+- Delivery integrations: email, SMS, push notifications, CAPTCHA, image processing, media indexing, payments, TUS uploads, and serialization.
+- Testing support: in-memory providers, test doubles, ASP.NET Core test hosting, and Testcontainers fixtures.
+
+The framework is not a single platform package and it is not an application template. Start application and library code from the abstraction package, then add the core/runtime package and provider package at the service composition root.
+
+## Package Model
+
+Most feature families follow the same shape:
+
+```text
+Headless.<Feature>.Abstractions  -> contracts application code depends on
+Headless.<Feature>.Core          -> provider-agnostic runtime and setup builder
+Headless.<Feature>.<Provider>    -> concrete backend integration
+Headless.<Feature>.Testing       -> test helpers when the domain has them
+```
+
+That shape keeps provider decisions at the composition root:
+
+- Application code depends on contracts such as `ICache`, `IBlobStorage`, `IEmailSender`, `IDistributedLock`, `ISettingManager`, job managers, or messaging publishers.
+- Provider packages contribute `UseRedis`, `UsePostgreSql`, `UseFileSystem`, `UseAws`, `UseAzure`, and similar setup members.
+- Setup is explicit. A service only registers the domains and providers it actually uses.
+- Local and test providers are first-class for development, but production behavior still depends on the provider's durability, transaction, ordering, locking, and operational limits.
+
+## Pick Packages By Job
+
+| Job | Start With | Add When You Need |
+|-----|------------|-------------------|
+| API contracts and host defaults | `Headless.Api.Abstractions` | `Headless.Api.Core` or `Headless.Api.ServiceDefaults` for runnable API hosts |
+| Cache contracts | `Headless.Caching.Abstractions` | `Headless.Caching.Core` plus one default provider: in-memory, Redis, or hybrid; add named caches when a service needs multiple stores |
+| Blob storage contracts | `Headless.Blobs.Abstractions` | `Headless.Blobs.Core` plus Azure, AWS, Cloudflare R2, filesystem, Redis, or SFTP provider |
+| Background job contracts | `Headless.Jobs.Abstractions` | `Headless.Jobs.Core`, `Headless.Jobs.SourceGenerator`, dashboard, OpenTelemetry, EF Core persistence, and a PostgreSQL or SQL Server native claim provider when contention warrants it |
+| Distributed lock contracts | `Headless.DistributedLocks.Abstractions` | `Headless.DistributedLocks.Core` plus in-memory, Redis, PostgreSQL, or SQL Server provider |
+| Cluster membership contracts | `Headless.Coordination.Abstractions` | `Headless.Coordination.Core` plus Redis, PostgreSQL, or SQL Server provider |
+| Transaction-bound side-effect contracts | `Headless.CommitCoordination.Abstractions` | `Headless.CommitCoordination.Core` plus EF Core, PostgreSQL, SQL Server, in-memory, or durable-work package |
+| Dynamic settings contracts | `Headless.Settings.Abstractions` | `Headless.Settings.Core` plus EF Core, PostgreSQL, or SQL Server storage |
+| Feature flag contracts | `Headless.Features.Abstractions` | `Headless.Features.Core` plus EF Core, PostgreSQL, or SQL Server storage |
+| Permission contracts | `Headless.Permissions.Abstractions` | `Headless.Permissions.Core` plus EF Core, PostgreSQL, SQL Server, or testing provider |
+| Audit log contracts | `Headless.AuditLog.Abstractions` | `Headless.AuditLog.Core` plus EF Core, PostgreSQL, or SQL Server storage |
+| Email contracts | `Headless.Emails.Abstractions` | `Headless.Emails.Core` plus AWS SES, Azure Communication Services, MailKit SMTP, or dev provider |
+| SMS contracts | `Headless.Sms.Abstractions` | `Headless.Sms.Core` plus AWS, Cequens, Connekio, Infobip, Twilio, VictoryLink, Vodafone, or dev provider |
+| Push notification contracts | `Headless.PushNotifications.Abstractions` | `Headless.PushNotifications.Core` plus Firebase or dev provider |
+| Messaging contracts | `Headless.Messaging.Abstractions` | `Headless.Messaging.Core`, bus/queue abstractions, one transport, one durable storage provider when needed, dashboard, testing, and OpenTelemetry packages |
+| Test-only infrastructure | Domain abstraction package | In-memory provider, dev provider, or testing package for that domain |
 
 ## Quick Start
 
+### Start an API Host
+
 ```bash
 dotnet add package Headless.Api.ServiceDefaults
-dotnet add package Headless.Caching.Redis
-dotnet add package Headless.Blobs.Azure
-dotnet add package Headless.Emails.Aws
 ```
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-// Service defaults: OpenTelemetry, OpenAPI, problem details, JSON, health checks, and more.
-// Binds secrets from the "Headless:StringEncryption" and "Headless:StringHash" config sections.
+// OpenTelemetry, OpenAPI, problem details, JSON, health checks, forwarded headers,
+// compression, exception handling, HSTS, status-code pages, and Headless endpoints.
 builder.AddHeadless();
-
-// Caching — pick a provider on the unified setup builder. Swap UseRedis for UseInMemory
-// (or add an L1/L2 tier) without touching call sites.
-var redis = ConnectionMultiplexer.Connect("localhost:6379");
-builder.Services.AddHeadlessCaching(setup =>
-    setup.UseRedis(options => options.ConnectionMultiplexer = redis)
-);
-
-// Blob storage — the Azure provider consumes a BlobServiceClient registered in DI.
-builder.Services.AddSingleton(new BlobServiceClient(builder.Configuration["Azure:Storage:ConnectionString"]));
-builder.Services.AddHeadlessBlobs(blobs =>
-    blobs.UseAzure(options => options.AutoCreateContainer = true)
-);
-
-// Email — AWS SES reads region/credentials from AWSOptions (here, the "AWS:*" config section).
-builder.Services.AddHeadlessEmails(setup =>
-    setup.UseAwsSes(builder.Configuration.GetAWSOptions())
-);
 
 var app = builder.Build();
 
-// Applies the Headless middleware pipeline (forwarded headers, compression, exception handler,
-// HSTS, status-code pages) and maps the health/alive/OpenAPI endpoints.
+// Applies the Headless middleware order: forwarded headers, compression,
+// status-code/problem-details handling, exceptions, HTTPS/HSTS, and no-cache defaults.
 app.UseHeadless();
+
+// Maps Headless operational endpoints such as health, liveness, OpenAPI JSON,
+// and static web assets when enabled.
 app.MapHeadlessEndpoints();
 
 app.Run();
@@ -84,6 +117,89 @@ Generated output includes `AGENTS.md`, architecture guidance, validation command
 ```bash
 ./tools/validate-headless-shop-template.sh
 ```
+
+### Add a Cache
+
+Application code that only consumes a cache should reference `Headless.Caching.Abstractions`. A runnable host adds the runtime package plus one provider. This example uses the in-memory provider for local development and tests.
+
+```bash
+dotnet add package Headless.Caching.Abstractions
+dotnet add package Headless.Caching.Core
+dotnet add package Headless.Caching.InMemory
+```
+
+```csharp
+builder.Services.AddHeadlessCaching(setup =>
+{
+    setup.UseInMemory();
+    setup.AddNamed("sessions", cache => cache.UseInMemory());
+});
+```
+
+Switching to Redis changes the provider package and the setup member, not the consuming code that depends on `ICache`.
+
+```bash
+dotnet add package Headless.Caching.Redis
+```
+
+```csharp
+builder.Services.AddHeadlessCaching(setup =>
+{
+    setup.UseRedis(options =>
+    {
+        options.ConnectionMultiplexer =
+            ConnectionMultiplexer.Connect(builder.Configuration.GetConnectionString("Redis")!);
+    });
+});
+```
+
+### Add Blob Storage
+
+Use named stores when one application needs several storage backends or several instances of the same backend.
+
+```bash
+dotnet add package Headless.Blobs.Abstractions
+dotnet add package Headless.Blobs.Core
+dotnet add package Headless.Blobs.FileSystem
+```
+
+```csharp
+builder.Services.AddHeadlessBlobs(blobs =>
+{
+    blobs.UseFileSystem(options => options.BaseDirectoryPath = "/var/app/blobs");
+    blobs.AddNamed("scratch", store => store.UseFileSystem(options => options.BaseDirectoryPath = "/tmp/app-blobs"));
+});
+```
+
+### Add Messaging When a Service Actually Needs It
+
+Messaging is one package family, not the framework's center of gravity. Add it when the service has cross-process publish/consume, queues, outbox, delayed delivery, or persisted retry requirements.
+
+Start with:
+
+- [`docs/llms/messaging.md`](docs/llms/messaging.md) for the detailed mental model.
+- [`demo/Headless.Messaging.Console.Demo`](demo/Headless.Messaging.Console.Demo) for local in-memory wiring.
+- [`demo/Headless.Messaging.RabbitMq.SqlServer.Demo`](demo/Headless.Messaging.RabbitMq.SqlServer.Demo) or [`demo/Headless.Messaging.Kafka.PostgreSql.Demo`](demo/Headless.Messaging.Kafka.PostgreSql.Demo) for durable examples.
+
+## Production Guidance
+
+Production use is a composition choice, not a global switch:
+
+- Choose durable providers for state that must survive process restart.
+- Use in-memory and dev providers for local development, tests, and isolated demos.
+- Prefer named instances when one service talks to multiple logical stores or senders.
+- Keep provider configuration at the composition root; do not leak concrete provider clients into business code unless the provider option deliberately exposes an SDK type.
+- Read the package README for the domain you install. Each package documents dependencies, side effects, setup requirements, and provider limits.
+- Test the actual provider combination used in production when behavior depends on storage, transactions, locks, ordering, broker delivery, or cloud service semantics.
+
+## Versioning and Compatibility
+
+- Most packages target `.NET 10`.
+- Source generator packages target `netstandard2.0`.
+- The repository pins the .NET SDK in [`global.json`](global.json).
+- Package release notes are published from [GitHub releases](https://github.com/xshaheen/headless-framework/releases).
+
+Check release notes before upgrading, especially for configuration APIs, provider setup, storage schema, retry behavior, and source-generated code.
 
 ## Packages
 
@@ -126,6 +242,7 @@ Property-level audit logging for tracking entity mutations and explicit business
 | Package | Description |
 |---------|-------------|
 | [Headless.AuditLog.Abstractions](src/Headless.AuditLog.Abstractions/README.md) | Audit log contracts and interfaces |
+| [Headless.AuditLog.Core](src/Headless.AuditLog.Core/README.md) | Audit log DI setup, options validation, and provider setup pipeline |
 | [Headless.AuditLog.Storage.EntityFramework](src/Headless.AuditLog.Storage.EntityFramework/README.md) | EF Core audit log persistence |
 | [Headless.AuditLog.Storage.PostgreSql](src/Headless.AuditLog.Storage.PostgreSql/README.md) | PostgreSQL raw audit log storage |
 | [Headless.AuditLog.Storage.SqlServer](src/Headless.AuditLog.Storage.SqlServer/README.md) | SQL Server raw audit log storage |
@@ -167,6 +284,7 @@ Verify CAPTCHA tokens behind one pass/fail abstraction. Compose Google reCAPTCHA
 | Package | Description |
 |---------|-------------|
 | [Headless.Captcha.Abstractions](src/Headless.Captcha.Abstractions/README.md) | CAPTCHA verification interfaces and builder |
+| [Headless.Captcha.Core](src/Headless.Captcha.Core/README.md) | CAPTCHA setup and validation pipeline |
 | [Headless.Captcha.ReCaptcha](src/Headless.Captcha.ReCaptcha/README.md) | Google reCAPTCHA v2/v3 provider |
 | [Headless.Captcha.Turnstile](src/Headless.Captcha.Turnstile/README.md) | Cloudflare Turnstile provider |
 
@@ -278,6 +396,8 @@ Distributed background job scheduling with cron expressions, delayed execution, 
 | [Headless.Jobs.Dashboard](src/Headless.Jobs.Dashboard/README.md) | Web UI for job monitoring |
 | [Headless.Jobs.OpenTelemetry](src/Headless.Jobs.OpenTelemetry/README.md) | Tracing and metrics for job execution |
 | [Headless.Jobs.EntityFramework](src/Headless.Jobs.EntityFramework/README.md) | EF Core job state persistence; uses optional `Headless.Caching.ICache` for cron-expression caching |
+| [Headless.Jobs.EntityFramework.PostgreSql](src/Headless.Jobs.EntityFramework.PostgreSql/README.md) | PostgreSQL atomic claims with `FOR UPDATE SKIP LOCKED` |
+| [Headless.Jobs.EntityFramework.SqlServer](src/Headless.Jobs.EntityFramework.SqlServer/README.md) | SQL Server atomic claims with `UPDLOCK`, `READPAST`, and `ROWLOCK` |
 
 ### OpenAPI
 
@@ -317,6 +437,7 @@ Dynamic, database-backed permission system. Define permissions as code, store as
 |---------|-------------|
 | [Headless.Permissions.Abstractions](src/Headless.Permissions.Abstractions/README.md) | Permission system interfaces |
 | [Headless.Permissions.Core](src/Headless.Permissions.Core/README.md) | Permission system implementation |
+| [Headless.Permissions.Testing](src/Headless.Permissions.Testing/README.md) | Test-only always-allow permission and authorization doubles |
 | [Headless.Permissions.Storage.EntityFramework](src/Headless.Permissions.Storage.EntityFramework/README.md) | EF Core permission storage |
 | [Headless.Permissions.Storage.PostgreSql](src/Headless.Permissions.Storage.PostgreSql/README.md) | PostgreSQL raw-DDL permission storage |
 | [Headless.Permissions.Storage.SqlServer](src/Headless.Permissions.Storage.SqlServer/README.md) | SQL Server raw-DDL permission storage |
@@ -328,6 +449,7 @@ Send push notifications through Firebase Cloud Messaging with a clean abstractio
 | Package | Description |
 |---------|-------------|
 | [Headless.PushNotifications.Abstractions](src/Headless.PushNotifications.Abstractions/README.md) | Push notification interfaces |
+| [Headless.PushNotifications.Core](src/Headless.PushNotifications.Core/README.md) | Unified setup builder for composing named push-notification services |
 | [Headless.PushNotifications.Dev](src/Headless.PushNotifications.Dev/README.md) | Development push provider |
 | [Headless.PushNotifications.Firebase](src/Headless.PushNotifications.Firebase/README.md) | Firebase Cloud Messaging |
 
@@ -401,6 +523,7 @@ Send SMS messages through a unified interface with providers for major regional 
 | Package | Description |
 |---------|-------------|
 | [Headless.Sms.Abstractions](src/Headless.Sms.Abstractions/README.md) | SMS sending interfaces |
+| [Headless.Sms.Core](src/Headless.Sms.Core/README.md) | SMS setup builder and provider selection |
 | [Headless.Sms.Aws](src/Headless.Sms.Aws/README.md) | AWS SNS SMS provider |
 | [Headless.Sms.Cequens](src/Headless.Sms.Cequens/README.md) | Cequens SMS provider |
 | [Headless.Sms.Connekio](src/Headless.Sms.Connekio/README.md) | Connekio SMS provider |
@@ -417,6 +540,7 @@ Lightweight connection factories for raw SQL access when you need to drop below 
 | Package | Description |
 |---------|-------------|
 | [Headless.Sql.Abstractions](src/Headless.Sql.Abstractions/README.md) | SQL connection interfaces |
+| [Headless.Sql.Core](src/Headless.Sql.Core/README.md) | Default scoped ambient current-connection implementation |
 | [Headless.Sql.PostgreSql](src/Headless.Sql.PostgreSql/README.md) | PostgreSQL connection factory |
 | [Headless.Sql.SqlServer](src/Headless.Sql.SqlServer/README.md) | SQL Server connection factory |
 | [Headless.Sql.Sqlite](src/Headless.Sql.Sqlite/README.md) | SQLite connection factory |
@@ -453,23 +577,15 @@ Cross-cutting utilities that don't belong to a specific domain — validation ex
 | [Headless.Generator.Primitives.Abstractions](src/Headless.Generator.Primitives.Abstractions/README.md) | Generator abstractions |
 | [Headless.Hosting](src/Headless.Hosting/README.md) | .NET hosting utilities |
 | [Headless.NetTopologySuite](src/Headless.NetTopologySuite/README.md) | Geospatial utilities |
+| [Headless.Primitives](src/Headless.Primitives/README.md) | Value objects, result pattern, paging models, and domain primitives |
 | [Headless.Redis](src/Headless.Redis/README.md) | Redis utilities |
 | [Headless.Sitemaps](src/Headless.Sitemaps/README.md) | XML sitemap generation |
 | [Headless.Slugs](src/Headless.Slugs/README.md) | URL slug generation |
+| [Headless.Urls](src/Headless.Urls/README.md) | Fluent URL builder and parser |
 
-## Architecture
+## Extending Headless
 
-Every feature follows the **abstraction + provider** pattern:
-
-```
-Headless.*.Abstractions  →  Interfaces and contracts (what)
-Headless.*.<Provider>    →  Concrete implementation (how)
-```
-
-This means you can:
-- **Swap providers** without touching business logic
-- **Mock any dependency** in unit tests
-- **Add your own provider** by implementing the abstraction
+Provider packages are ordinary NuGet packages. To add a custom backend, implement the domain abstraction, expose a `Use{Provider}` setup extension that matches the family builder, and keep concrete provider details at the composition root. See the package README for the closest provider in the same domain before adding a new one.
 
 ## Using Headless with AI Agents
 

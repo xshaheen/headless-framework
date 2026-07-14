@@ -1,7 +1,0 @@
-<Project>
-  <!-- Harness/shared projects: prevent MTP from treating them as test hosts -->
-  <PropertyGroup Condition="'$(IsTestProject)' == 'false'">
-    <IsTestingPlatformApplication>false</IsTestingPlatformApplication>
-    <GenerateRuntimeConfigurationFiles>true</GenerateRuntimeConfigurationFiles>
-  </PropertyGroup>
-</Project>

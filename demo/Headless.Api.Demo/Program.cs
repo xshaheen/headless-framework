@@ -3,7 +3,9 @@
 using Demo;
 using Demo.Endpoints;
 using Headless.Api;
+using Headless.Api.ServiceDefaults;
 using Headless.Constants;
+using Headless.OpenApi.Nswag;
 using Microsoft.AspNetCore.Authentication;
 
 var builder = WebApplication.CreateBuilder(args);

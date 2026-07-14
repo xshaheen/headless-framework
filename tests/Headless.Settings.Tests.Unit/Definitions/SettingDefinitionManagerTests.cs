@@ -132,7 +132,7 @@ public sealed class SettingDefinitionManagerTests : TestBase
 
         // then
         result.Should().HaveCount(2);
-        result.Select(d => d.Name).Should().OnlyHaveUniqueItems();
+        result.Should().OnlyHaveUniqueItems(d => d.Name);
         result.Should().Contain(d => d.Name == "SharedName" && d.DefaultValue == "static");
         result.Should().Contain(d => d.Name == "UniqueDynamic");
     }

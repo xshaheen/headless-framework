@@ -26,8 +26,8 @@ public static class DefaultValueFeatureManagerExtensions
     /// <param name="featureManager">The feature manager.</param>
     /// <param name="fallback">When <see langword="true"/>, falls back to other providers if the default-value provider has no value for a feature.</param>
     /// <param name="cancellationToken">The abort token.</param>
-    /// <returns>A list of <see cref="FeatureValue"/> instances from the <c>DefaultValue</c> provider.</returns>
-    public static Task<List<FeatureValue>> GetAllDefaultAsync(
+    /// <returns>A read-only list of <see cref="FeatureValue"/> instances from the <c>DefaultValue</c> provider.</returns>
+    public static Task<IReadOnlyList<FeatureValue>> GetAllDefaultAsync(
         this IFeatureManager featureManager,
         bool fallback = true,
         CancellationToken cancellationToken = default

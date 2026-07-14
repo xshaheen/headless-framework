@@ -2,7 +2,7 @@
 
 using Headless.Redis;
 
-namespace Headless.Caching;
+namespace Headless.Caching.Scripts;
 
 /// <summary>Atomically increments a value and sets expiration in a single operation.</summary>
 internal sealed class IncrementWithExpireScriptDefinition : RedisScriptDefinition

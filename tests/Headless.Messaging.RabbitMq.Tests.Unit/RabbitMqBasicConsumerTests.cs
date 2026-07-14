@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
-using Headless.Messaging.Messages;
 using Headless.Messaging.RabbitMq;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
@@ -12,7 +11,6 @@ using Headers = Headless.Messaging.Headers;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class RabbitMqBasicConsumerTests : TestBase
 {
     private readonly IChannel _channel = Substitute.For<IChannel>();
@@ -31,6 +29,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         // given
         const byte concurrent = 2;
         const string groupName = "test-group";
+        var consumeFailed = _CreateSignal();
         var exceptionThrown = false;
         var consumeCallCount = 0;
 
@@ -49,7 +48,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             concurrent,
             groupName,
             msgCallback,
-            args => _loggedEvents.Add(args),
+            args => _RecordLog(args, consumeFailed),
             null,
             _serviceProvider
         );
@@ -69,13 +68,12 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             CancellationToken.None
         );
 
-        // Allow async task to complete
-        await Task.Delay(100, AbortToken);
+        await _WaitForSignalAsync(consumeFailed.Task);
 
         // then
         exceptionThrown.Should().BeTrue();
         consumeCallCount.Should().Be(1);
-        _loggedEvents.Should().HaveCount(1);
+        _loggedEvents.Should().ContainSingle();
         _loggedEvents[0].LogType.Should().Be(MqLogType.ConsumeError);
         _loggedEvents[0].Reason.Should().Contain("Error consuming message");
         _loggedEvents[0].Reason.Should().Contain("Simulated consumption error");
@@ -87,6 +85,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         // given
         const byte concurrent = 2;
         const string groupName = "test-group";
+        var consumeFailed = _CreateSignal();
 
         static Task callback(TransportMessage transportMessage, object? o) =>
             throw new InvalidOperationException("Simulated consumption error");
@@ -98,7 +97,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             concurrent,
             groupName,
             callback,
-            args => _loggedEvents.Add(args),
+            args => _RecordLog(args, consumeFailed),
             null,
             _serviceProvider
         );
@@ -118,8 +117,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             CancellationToken.None
         );
 
-        // Allow async task to complete
-        await Task.Delay(100, AbortToken);
+        await _WaitForSignalAsync(consumeFailed.Task);
 
         // then - reject is owned by the framework callback wrapper, not the transport callback shell
         await _channel
@@ -137,6 +135,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         // given
         const byte concurrent = 2;
         const string groupName = "test-group";
+        var consumeFailed = _CreateSignal();
 
         static Task callback(TransportMessage transportMessage, object? o) =>
             throw new InvalidOperationException("Simulated consumption error");
@@ -148,7 +147,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             concurrent,
             groupName,
             callback,
-            args => _loggedEvents.Add(args),
+            args => _RecordLog(args, consumeFailed),
             null,
             _serviceProvider
         );
@@ -168,8 +167,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             CancellationToken.None
         );
 
-        // Allow async task to complete
-        await Task.Delay(100, AbortToken);
+        await _WaitForSignalAsync(consumeFailed.Task);
 
         // then
         await _channel
@@ -186,11 +184,13 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         // given
         const byte concurrent = 2;
         const string groupName = "test-group";
+        var callbackCompleted = _CreateSignal();
         var consumeCallCount = 0;
 
         Task callback(TransportMessage transportMessage, object? o)
         {
             consumeCallCount++;
+            callbackCompleted.TrySetResult();
 
             return Task.CompletedTask;
         }
@@ -219,8 +219,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             CancellationToken.None
         );
 
-        // Allow background task to complete (concurrent mode fires Task.Run)
-        await Task.Delay(200, AbortToken);
+        await _WaitForSignalAsync(callbackCompleted.Task);
 
         // then
         consumeCallCount.Should().Be(1);
@@ -495,7 +494,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         );
 
         // when
-        await consumer.BasicAck(42UL);
+        await consumer.BasicAck(42UL, AbortToken);
 
         // then
         await _channel.Received(1).BasicAckAsync(42UL, false, Arg.Any<CancellationToken>());
@@ -517,7 +516,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         );
 
         // when
-        await consumer.BasicAck(42UL);
+        await consumer.BasicAck(42UL, AbortToken);
 
         // then
         await _channel.DidNotReceive().BasicAckAsync(Arg.Any<ulong>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
@@ -539,7 +538,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         );
 
         // when
-        await consumer.BasicReject(42UL);
+        await consumer.BasicReject(42UL, AbortToken);
 
         // then
         await _channel.Received(1).BasicRejectAsync(42UL, true, Arg.Any<CancellationToken>());
@@ -561,7 +560,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         );
 
         // when
-        await consumer.BasicReject(42UL);
+        await consumer.BasicReject(42UL, AbortToken);
 
         // then
         await _channel
@@ -751,6 +750,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
     {
         // given
         _channel.IsOpen.Returns(true);
+        var consumeFailed = _CreateSignal();
         var callbackInvoked = false;
 
         static List<KeyValuePair<string, string>> throwingBuilder(BasicDeliverEventArgs _, IServiceProvider __)
@@ -767,7 +767,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
                 callbackInvoked = true;
                 return Task.CompletedTask;
             },
-            args => _loggedEvents.Add(args),
+            args => _RecordLog(args, consumeFailed),
             throwingBuilder,
             _serviceProvider
         );
@@ -784,7 +784,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             CancellationToken.None
         );
 
-        await Task.Delay(200, AbortToken);
+        await _WaitForSignalAsync(consumeFailed.Task);
 
         // then — message should be nacked, not left unacked
         callbackInvoked.Should().BeFalse();
@@ -792,6 +792,16 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         _loggedEvents.Should().ContainSingle(e => e.LogType == MqLogType.ConsumeError);
         _loggedEvents[0].Reason.Should().Contain("bad header builder");
     }
+
+    private TaskCompletionSource _CreateSignal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    private void _RecordLog(LogMessageEventArgs args, TaskCompletionSource signal)
+    {
+        _loggedEvents.Add(args);
+        signal.TrySetResult();
+    }
+
+    private async Task _WaitForSignalAsync(Task signal) => await signal.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
     [Fact]
     public async Task should_nack_when_custom_headers_builder_throws_without_concurrent_processing()
@@ -851,9 +861,9 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         );
 
         // when - multiple acks should not block if semaphore is released properly
-        await consumer.BasicAck(1UL);
-        await consumer.BasicAck(2UL);
-        await consumer.BasicAck(3UL);
+        await consumer.BasicAck(1UL, AbortToken);
+        await consumer.BasicAck(2UL, AbortToken);
+        await consumer.BasicAck(3UL, AbortToken);
 
         // then - should complete without deadlock
         await _channel.Received(3).BasicAckAsync(Arg.Any<ulong>(), false, Arg.Any<CancellationToken>());
@@ -875,9 +885,9 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         );
 
         // when - multiple rejects should not block if semaphore is released properly
-        await consumer.BasicReject(1UL);
-        await consumer.BasicReject(2UL);
-        await consumer.BasicReject(3UL);
+        await consumer.BasicReject(1UL, AbortToken);
+        await consumer.BasicReject(2UL, AbortToken);
+        await consumer.BasicReject(3UL, AbortToken);
 
         // then - should complete without deadlock
         await _channel.Received(3).BasicRejectAsync(Arg.Any<ulong>(), true, Arg.Any<CancellationToken>());

@@ -1,9 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
-using Headless.Mediator;
 using Headless.Mediator.Behaviors;
 using Mediator;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests;
@@ -125,6 +125,38 @@ public sealed class LoggingBehaviorsTests
         loggerAction.Should().ThrowExactly<ArgumentNullException>().WithParameterName("logger");
     }
 
+    [Fact]
+    public async Task should_not_log_payload_at_warning_from_critical_request_logging_behavior()
+    {
+        // given
+        var logger = new CapturingLogger<CriticalRequestLoggingBehavior<SensitiveRequest, TestResponse>>();
+        var behavior = new CriticalRequestLoggingBehavior<SensitiveRequest, TestResponse>(
+            new NullCurrentUser(),
+            logger
+        );
+        var response = new TestResponse();
+
+        // when
+        await behavior.Handle(
+            new SensitiveRequest(Password: "hunter2"),
+            async (_, cancellationToken) =>
+            {
+                await Task.Delay(TimeSpan.FromSeconds(1.1), cancellationToken);
+
+                return response;
+            },
+            CancellationToken.None
+        );
+
+        // then: the Warning alert carries type names only; payloads are Debug-only
+        var warning = logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning).Subject;
+        warning.Message.Should().Contain(nameof(SensitiveRequest));
+        warning.Message.Should().NotContain("hunter2");
+
+        var debug = logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Debug).Subject;
+        debug.Message.Should().Contain("hunter2");
+    }
+
     private static MessageHandlerDelegate<TestRequest, TestResponse> _CreateNext(TestResponse response, Action onInvoke)
     {
         return (_, _) =>
@@ -138,4 +170,27 @@ public sealed class LoggingBehaviorsTests
     private sealed record TestRequest : IRequest<TestResponse>;
 
     private sealed record TestResponse;
+
+    private sealed record SensitiveRequest(string Password) : IRequest<TestResponse>;
+
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        public List<(LogLevel Level, EventId EventId, string Message)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
+            Entries.Add((logLevel, eventId, formatter(state, exception)));
+        }
+    }
 }

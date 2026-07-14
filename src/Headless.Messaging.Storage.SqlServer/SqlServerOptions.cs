@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
-using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
+using Headless.Messaging.Runtime;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -14,6 +14,7 @@ namespace Headless.Messaging.Storage.SqlServer;
 /// Extends <c>SqlServerEntityFrameworkMessagingOptions</c> with the raw-ADO connection
 /// string used when the storage is not wired through an EF Core <c>DbContext</c>.
 /// </summary>
+[PublicAPI]
 public sealed class SqlServerOptions : SqlServerEntityFrameworkMessagingOptions
 {
     /// <summary>
@@ -48,8 +49,8 @@ internal sealed class ConfigureSqlServerOptions(IServiceScopeFactory serviceScop
         }
 
         if (
-            Helper.IsUsingType<IOutboxBus>(options.DbContextType)
-            || Helper.IsUsingType<IOutboxQueue>(options.DbContextType)
+            RuntimeTypeInspection.DeclaresFieldOfType<IOutboxBus>(options.DbContextType)
+            || RuntimeTypeInspection.DeclaresFieldOfType<IOutboxQueue>(options.DbContextType)
         )
         {
             throw new InvalidOperationException(

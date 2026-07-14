@@ -2,8 +2,8 @@
 
 using Asp.Versioning.ApiExplorer;
 using Headless.Api.ApiExplorer;
-using Headless.Api.OperationProcessors;
-using Headless.Api.SchemaProcessors;
+using Headless.OpenApi.Nswag.OperationProcessors;
+using Headless.OpenApi.Nswag.SchemaProcessors;
 using Headless.Reflection;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,11 +15,11 @@ using NSwag.AspNetCore;
 using NSwag.Generation.AspNetCore;
 using NSwag.Generation.Processors.Security;
 using AccountId = Headless.Primitives.AccountId;
-using Money = Headless.Primitives.Money;
+using MoneyAmount = Headless.Primitives.MoneyAmount;
 using Month = Headless.Primitives.Month;
 using UserId = Headless.Primitives.UserId;
 
-namespace Headless.Api;
+namespace Headless.OpenApi.Nswag;
 
 /// <summary>
 /// Registration and middleware helpers for NSwag-based OpenAPI document generation and Swagger UI.
@@ -237,10 +237,10 @@ public static class SetupNswag
     /// <remarks>
     /// Mapped types and their resulting schema shapes:
     /// <list type="bullet">
-    ///   <item><description><c>Money</c> / <c>Money?</c> — <c>number</c> (decimal format)</description></item>
+    ///   <item><description><c>MoneyAmount</c> / <c>MoneyAmount?</c> — <c>number</c> (decimal format)</description></item>
     ///   <item><description><c>Month</c> / <c>Month?</c> — <c>integer</c></description></item>
-    ///   <item><description><c>AccountId</c> — <c>string</c></description></item>
-    ///   <item><description><c>UserId</c> — <c>string</c></description></item>
+    ///   <item><description><c>AccountId</c> — <see langword="string"/></description></item>
+    ///   <item><description><c>UserId</c> — <see langword="string"/></description></item>
     /// </list>
     /// This method is called automatically when <see cref="HeadlessNswagOptions.AddPrimitiveMappings"/> is
     /// <see langword="true"/> (the default). Call it directly only when you manage your own
@@ -250,24 +250,24 @@ public static class SetupNswag
     {
         settings.TypeMappers.Add(
             new PrimitiveTypeMapper(
-                typeof(Money),
+                typeof(MoneyAmount),
                 schema =>
                 {
                     schema.Type = JsonObjectType.Number;
                     schema.Format = JsonFormatStrings.Decimal;
-                    schema.Title = "Money";
+                    schema.Title = "MoneyAmount";
                 }
             )
         );
         settings.TypeMappers.Add(
             new PrimitiveTypeMapper(
-                typeof(Money?),
+                typeof(MoneyAmount?),
                 schema =>
                 {
                     schema.Type = JsonObjectType.Number;
                     schema.Format = JsonFormatStrings.Decimal;
                     schema.IsNullableRaw = true;
-                    schema.Title = "Nullable<Money>";
+                    schema.Title = "Nullable<MoneyAmount>";
                 }
             )
         );

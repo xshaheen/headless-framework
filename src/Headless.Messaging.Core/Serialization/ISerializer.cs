@@ -26,10 +26,14 @@ public interface ISerializer
     /// Serializes a <see cref="Message"/> envelope into a <see cref="TransportMessage"/> ready for broker dispatch.
     /// </summary>
     /// <param name="message">The message envelope to serialize.</param>
+    /// <param name="cancellationToken">A token to observe while awaiting the serialization operation.</param>
     /// <returns>
     /// A <see cref="TransportMessage"/> with a headers dictionary and a UTF-8 encoded body.
     /// </returns>
-    ValueTask<TransportMessage> SerializeToTransportMessageAsync(Message message);
+    ValueTask<TransportMessage> SerializeToTransportMessageAsync(
+        Message message,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// Deserializes a JSON string back into a <see cref="Message"/> envelope.
@@ -46,8 +50,13 @@ public interface ISerializer
     /// The expected CLR type of the message payload, or <see langword="null"/> to defer type
     /// resolution to the implementation.
     /// </param>
+    /// <param name="cancellationToken">A token to observe while awaiting the deserialization operation.</param>
     /// <returns>The deserialized <see cref="Message"/> envelope.</returns>
-    ValueTask<Message> DeserializeAsync(TransportMessage transportMessage, Type? valueType);
+    ValueTask<Message> DeserializeAsync(
+        TransportMessage transportMessage,
+        Type? valueType,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// Deserializes a raw value (e.g., a <c>JsonElement</c>) to the specified CLR type.

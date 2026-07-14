@@ -51,7 +51,7 @@ public sealed class RedisStreamsSetupTests : TestBase
 
         // when
         await using var provider = services.BuildServiceProvider();
-        var options = provider.GetRequiredService<IOptions<MessagingRedisOptions>>().Value;
+        var options = provider.GetRequiredService<IOptions<RedisMessagingOptions>>().Value;
 
         // then
         options.ConnectionPoolSize.Should().Be(15);
@@ -68,7 +68,7 @@ public sealed class RedisStreamsSetupTests : TestBase
 
         // when
         await using var provider = services.BuildServiceProvider();
-        var options = provider.GetRequiredService<IOptions<MessagingRedisOptions>>().Value;
+        var options = provider.GetRequiredService<IOptions<RedisMessagingOptions>>().Value;
 
         // then - defaults should be applied
         options.StreamEntriesCount.Should().Be(10);
@@ -119,12 +119,37 @@ public sealed class RedisStreamsSetupTests : TestBase
         busClient.Should().BeOfType<RedisPubSubConsumerClient>();
     }
 
+    [Theory]
+    [InlineData(IntentType.Bus)]
+    [InlineData(IntentType.Queue)]
+    public async Task should_propagate_factory_cancellation_through_intent_selector(IntentType intentType)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(opt =>
+        {
+            opt.UseRedis();
+            opt.UseRedisPubSub();
+        });
+        await using var provider = services.BuildServiceProvider();
+        var factory = provider
+            .GetRequiredService<IConsumerClientFactory>()
+            .Should()
+            .BeAssignableTo<IIntentAwareConsumerClientFactory>()
+            .Subject;
+        var cancellationToken = new CancellationToken(canceled: true);
+
+        var act = async () => await factory.CreateAsync("test-group", 1, intentType, cancellationToken);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
     [Fact]
     public void should_throw_when_configure_action_is_null()
     {
         // given
         var services = new ServiceCollection();
-        Action<MessagingRedisOptions>? nullAction = null;
+        Action<RedisMessagingOptions>? nullAction = null;
 
         // when & then
         var action = () => services.AddHeadlessMessaging(opt => opt.UseRedis(nullAction!));
@@ -148,7 +173,7 @@ public sealed class RedisStreamsSetupTests : TestBase
 
         // when
         await using var provider = services.BuildServiceProvider();
-        var options = provider.GetRequiredService<IOptions<MessagingRedisOptions>>().Value;
+        var options = provider.GetRequiredService<IOptions<RedisMessagingOptions>>().Value;
 
         // then - explicit values should not be overwritten by defaults
         options.ConnectionPoolSize.Should().Be(25);

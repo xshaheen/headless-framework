@@ -16,7 +16,7 @@ namespace Headless.Messaging.RabbitMq;
 /// When <paramref name="concurrent"/> is zero, deliveries are handled sequentially on the calling
 /// thread. On header or body parsing failure the message is nacked with <c>requeue=true</c>.
 /// </remarks>
-public sealed class RabbitMqBasicConsumer(
+internal sealed class RabbitMqBasicConsumer(
     IChannel channel,
     byte concurrent,
     string groupName,
@@ -164,19 +164,19 @@ public sealed class RabbitMqBasicConsumer(
         await msgCallback(message, deliveryTag).ConfigureAwait(false);
     }
 
-    public async Task BasicAck(ulong deliveryTag)
+    public async Task BasicAck(ulong deliveryTag, CancellationToken cancellationToken = default)
     {
         if (Channel.IsOpen)
         {
-            await Channel.BasicAckAsync(deliveryTag, false).ConfigureAwait(false);
+            await Channel.BasicAckAsync(deliveryTag, multiple: false, cancellationToken).ConfigureAwait(false);
         }
     }
 
-    public async Task BasicReject(ulong deliveryTag)
+    public async Task BasicReject(ulong deliveryTag, CancellationToken cancellationToken = default)
     {
         if (Channel.IsOpen)
         {
-            await Channel.BasicRejectAsync(deliveryTag, true).ConfigureAwait(false);
+            await Channel.BasicRejectAsync(deliveryTag, requeue: true, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -187,7 +187,7 @@ public sealed class RabbitMqBasicConsumer(
         var args = new LogMessageEventArgs
         {
             LogType = MqLogType.ConsumerCancelled,
-            Reason = string.Join(",", consumerTags),
+            Reason = string.Join(',', consumerTags),
         };
 
         logCallback(args);

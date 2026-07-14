@@ -41,7 +41,7 @@ public static class AuditIntegrationFixture
         var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
 
-        var clock = new TestClock { TimeProvider = new FakeTimeProvider(Now) };
+        var clock = new FakeTimeProvider(Now);
         var currentTenant = new TestCurrentTenant { Id = TenantId };
         var currentUser = new TestCurrentUser { UserId = new Headless.Primitives.UserId(UserId) };
 
@@ -49,14 +49,11 @@ public static class AuditIntegrationFixture
 
         // Register logging and all Headless infrastructure defaults first
         services.AddLogging();
-        services.AddSingleton<IClock>(clock);
+        services.AddSingleton<TimeProvider>(clock);
         services.AddSingleton<ICurrentTenant>(currentTenant);
         services.AddSingleton<ICurrentUser>(currentUser);
         services.AddSingleton<IGuidGenerator>(new SequentialGuidGenerator(SequentialGuidType.Version7));
         services.AddHeadlessDbContextServices();
-
-        // Audit services
-        services.AddHeadlessAuditLog(configure);
 
         // Keep connection alive with the provider lifetime
         services.AddSingleton(connection);
@@ -66,7 +63,7 @@ public static class AuditIntegrationFixture
             opts.UseSqlite(connection).AddHeadlessExtension();
             configureDbContext?.Invoke(opts);
 
-            // Audit capture resolves IClock, ICurrentUser, ICurrentTenant
+            // Audit capture resolves TimeProvider, ICurrentUser, ICurrentTenant
             // via this.GetService<T>() which hits EF's INTERNAL service provider (populated by
             // IDbContextOptionsExtension.ApplyServices), not the application DI scope.
             // This extension injects the test doubles into EF's internal provider so they win
@@ -83,7 +80,15 @@ public static class AuditIntegrationFixture
                 new TestHeadlessServicesOptionsExtension(clock, currentUser, currentTenant)
             );
         });
-        services.AddHeadlessAuditLog(setup => setup.UseEntityFramework<TContext>());
+        services.AddHeadlessAuditLog(setup =>
+        {
+            if (configure is not null)
+            {
+                setup.ConfigureOptions(configure);
+            }
+
+            setup.UseEntityFramework<TContext>();
+        });
 
         // Run consumer-supplied overrides last so they can swap any default registration.
         configureServices?.Invoke(services);

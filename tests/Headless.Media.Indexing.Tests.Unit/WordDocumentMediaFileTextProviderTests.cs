@@ -3,10 +3,11 @@ using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
 using Headless.Checks;
 using Headless.Media.Indexing;
+using Headless.Testing.Tests;
 
 namespace Tests;
 
-public sealed class WordDocumentMediaFileTextProviderTests
+public sealed class WordDocumentMediaFileTextProviderTests : TestBase
 {
     private readonly WordDocumentMediaFileTextProvider _sut = new();
 
@@ -19,7 +20,7 @@ public sealed class WordDocumentMediaFileTextProviderTests
         await using var fileStream = File.OpenRead(wordFilePath);
 
         // when
-        var result = await _sut.GetTextAsync(fileStream);
+        var result = await _sut.GetTextAsync(fileStream, AbortToken);
 
         // then
         result.Should().Contain("Lorem ipsum dolor"); // Replace with actual expected content
@@ -32,7 +33,7 @@ public sealed class WordDocumentMediaFileTextProviderTests
         await using var stream = _CreateEmptyWordDocument();
 
         // when
-        var result = await _sut.GetTextAsync(stream);
+        var result = await _sut.GetTextAsync(stream, AbortToken);
 
         // then
         result.Should().BeEmpty();
@@ -49,7 +50,7 @@ public sealed class WordDocumentMediaFileTextProviderTests
         Argument.CanWrite(stream);
 
         // when
-        var result = await _sut.GetTextAsync(stream);
+        var result = await _sut.GetTextAsync(stream, AbortToken);
 
         // then
         result.Should().Be($"{expectedText}{Environment.NewLine}");
@@ -67,7 +68,7 @@ public sealed class WordDocumentMediaFileTextProviderTests
         Argument.CanRead(stream);
         Argument.CanWrite(stream);
         // when
-        var result = await _sut.GetTextAsync(stream);
+        var result = await _sut.GetTextAsync(stream, AbortToken);
 
         // then
         result.Should().Be(expectedText);

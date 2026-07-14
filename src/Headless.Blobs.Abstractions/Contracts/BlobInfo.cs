@@ -6,6 +6,7 @@ using System.Diagnostics;
 namespace Headless.Blobs;
 
 /// <summary>Metadata snapshot for a single blob returned by listing or info operations.</summary>
+[PublicAPI]
 [DebuggerDisplay("BlobKey = {BlobKey}, Created = {Created}, Modified = {Modified}, Size = {Size} bytes")]
 public sealed class BlobInfo
 {
@@ -22,11 +23,11 @@ public sealed class BlobInfo
     public required DateTimeOffset Modified { get; init; }
 
     /// <summary>Size of the blob content in bytes.</summary>
-    public long Size { get; init; }
+    public required long Size { get; init; }
 
     /// <summary>
     /// Provider-supplied metadata key/value pairs, or <see langword="null"/> when the provider does not return
     /// metadata (for example SFTP and the S3 list API, which omit per-object metadata from enumeration responses).
     /// </summary>
-    public IReadOnlyDictionary<string, string?>? Metadata { get; init; }
+    public IReadOnlyDictionary<string, string>? Metadata { get; init; }
 }

@@ -19,7 +19,7 @@ public sealed class SshBlobStorageFixture : ICollectionFixture<SshBlobStorageFix
         .WithWaitStrategy(Wait.ForUnixContainer().UntilMessageIsLogged("Server listening on"))
         .Build();
 
-    public SftpClientPool Pool { get; private set; } = null!;
+    internal SftpClientPool Pool { get; private set; } = null!;
 
     public CrossOsNamingNormalizer CrossOsNamingNormalizer { get; } = new();
 

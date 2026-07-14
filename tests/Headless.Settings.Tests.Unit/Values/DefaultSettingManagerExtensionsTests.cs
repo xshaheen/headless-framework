@@ -24,8 +24,8 @@ public sealed class DefaultSettingManagerExtensionsTests : TestBase
         // given
         const string settingName = "TestSetting";
         _settingManager
-            .FindAsync(settingName, SettingValueProviderNames.DefaultValue, null, true, AbortToken)
-            .Returns("true");
+            .GetAsync(settingName, SettingValueProviderNames.DefaultValue, null, true, AbortToken)
+            .Returns(new SettingValue(settingName, "true"));
 
         // when
         var result = await _settingManager.IsTrueDefaultAsync(settingName, cancellationToken: AbortToken);
@@ -34,7 +34,7 @@ public sealed class DefaultSettingManagerExtensionsTests : TestBase
         result.Should().BeTrue();
         await _settingManager
             .Received(1)
-            .FindAsync(settingName, SettingValueProviderNames.DefaultValue, null, true, AbortToken);
+            .GetAsync(settingName, SettingValueProviderNames.DefaultValue, null, true, AbortToken);
     }
 
     [Fact]
@@ -43,8 +43,8 @@ public sealed class DefaultSettingManagerExtensionsTests : TestBase
         // given
         const string settingName = "TestSetting";
         _settingManager
-            .FindAsync(settingName, SettingValueProviderNames.DefaultValue, null, false, AbortToken)
-            .Returns("true");
+            .GetAsync(settingName, SettingValueProviderNames.DefaultValue, null, false, AbortToken)
+            .Returns(new SettingValue(settingName, "true"));
 
         // when
         var result = await _settingManager.IsTrueDefaultAsync(
@@ -57,7 +57,7 @@ public sealed class DefaultSettingManagerExtensionsTests : TestBase
         result.Should().BeTrue();
         await _settingManager
             .Received(1)
-            .FindAsync(settingName, SettingValueProviderNames.DefaultValue, null, false, AbortToken);
+            .GetAsync(settingName, SettingValueProviderNames.DefaultValue, null, false, AbortToken);
     }
 
     #endregion
@@ -70,8 +70,8 @@ public sealed class DefaultSettingManagerExtensionsTests : TestBase
         // given
         const string settingName = "TestSetting";
         _settingManager
-            .FindAsync(settingName, SettingValueProviderNames.DefaultValue, null, true, AbortToken)
-            .Returns("false");
+            .GetAsync(settingName, SettingValueProviderNames.DefaultValue, null, true, AbortToken)
+            .Returns(new SettingValue(settingName, "false"));
 
         // when
         var result = await _settingManager.IsFalseDefaultAsync(settingName, cancellationToken: AbortToken);
@@ -80,12 +80,12 @@ public sealed class DefaultSettingManagerExtensionsTests : TestBase
         result.Should().BeTrue();
         await _settingManager
             .Received(1)
-            .FindAsync(settingName, SettingValueProviderNames.DefaultValue, null, true, AbortToken);
+            .GetAsync(settingName, SettingValueProviderNames.DefaultValue, null, true, AbortToken);
     }
 
     #endregion
 
-    #region FindDefaultAsync<T>
+    #region GetDefaultAsync<T>
 
     [Fact]
     public async Task should_find_typed_from_default_provider()
@@ -96,11 +96,11 @@ public sealed class DefaultSettingManagerExtensionsTests : TestBase
         var json = JsonSerializer.Serialize(testObj, JsonConstants.DefaultInternalJsonOptions);
 
         _settingManager
-            .FindAsync(settingName, SettingValueProviderNames.DefaultValue, null, true, AbortToken)
-            .Returns(json);
+            .GetAsync(settingName, SettingValueProviderNames.DefaultValue, null, true, AbortToken)
+            .Returns(new SettingValue(settingName, json));
 
         // when
-        var result = await _settingManager.FindDefaultAsync<TestSettings>(settingName, cancellationToken: AbortToken);
+        var result = await _settingManager.GetDefaultAsync<TestSettings>(settingName, cancellationToken: AbortToken);
 
         // then
         result.Should().NotBeNull();
@@ -109,7 +109,7 @@ public sealed class DefaultSettingManagerExtensionsTests : TestBase
 
     #endregion
 
-    #region FindDefaultAsync (string)
+    #region GetDefaultAsync (string)
 
     [Fact]
     public async Task should_find_string_from_default_provider()
@@ -119,11 +119,11 @@ public sealed class DefaultSettingManagerExtensionsTests : TestBase
         const string expectedValue = "test-value";
 
         _settingManager
-            .FindAsync(settingName, SettingValueProviderNames.DefaultValue, null, true, AbortToken)
-            .Returns(expectedValue);
+            .GetAsync(settingName, SettingValueProviderNames.DefaultValue, null, true, AbortToken)
+            .Returns(new SettingValue(settingName, expectedValue));
 
         // when
-        var result = await _settingManager.FindDefaultAsync(settingName, cancellationToken: AbortToken);
+        var result = await _settingManager.GetDefaultAsync(settingName, cancellationToken: AbortToken);
 
         // then
         result.Should().Be(expectedValue);
@@ -136,16 +136,16 @@ public sealed class DefaultSettingManagerExtensionsTests : TestBase
         const string settingName = "TestSetting";
 
         _settingManager
-            .FindAsync(settingName, SettingValueProviderNames.DefaultValue, null, false, AbortToken)
-            .Returns("value");
+            .GetAsync(settingName, SettingValueProviderNames.DefaultValue, null, false, AbortToken)
+            .Returns(new SettingValue(settingName, "value"));
 
         // when
-        await _settingManager.FindDefaultAsync(settingName, fallback: false, cancellationToken: AbortToken);
+        await _settingManager.GetDefaultAsync(settingName, fallback: false, cancellationToken: AbortToken);
 
         // then
         await _settingManager
             .Received(1)
-            .FindAsync(settingName, SettingValueProviderNames.DefaultValue, null, false, AbortToken);
+            .GetAsync(settingName, SettingValueProviderNames.DefaultValue, null, false, AbortToken);
     }
 
     #endregion

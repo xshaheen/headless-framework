@@ -204,7 +204,7 @@ public abstract class HeadlessDbContextSaveChangesTestBase<TFixture, TContext> :
         await using var db = scope.ServiceProvider.GetRequiredService<TContext>();
 
         var entity = new HarnessTestEntity { Name = "with-msgs", TenantId = "T1" };
-        entity.AddIntegrationEvent(new HarnessDistributedMessage("hello"));
+        entity.EmitIntegrationEvent(new HarnessDistributedMessage("hello"));
         db.TestEntities.Add(entity);
 
         await using var tx = await db.Database.BeginTransactionAsync(AbortToken);

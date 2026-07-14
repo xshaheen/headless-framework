@@ -13,7 +13,7 @@ internal abstract partial class JobsBaseLoggerInstrumentation(ILogger logger, IJ
     // Live read so telemetry reflects the node@incarnation owner once registration completes (DisplayOwner never throws).
     protected string InstanceIdentifier => ownerIdentity.DisplayOwner;
 
-    public abstract Activity? StartJobActivity(string activityName, InternalFunctionContext context);
+    public abstract Activity? StartJobActivity(string activityName, JobExecutionState context);
 
     public virtual void LogJobEnqueued(string jobType, string functionName, Guid jobId, string? enqueuedFrom = null)
     {

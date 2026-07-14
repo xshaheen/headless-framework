@@ -62,7 +62,7 @@ public sealed class LogSanitizerTests
     public void strips_mixed_dangerous_characters()
     {
         // control + line sep + paragraph sep + lone surrogate + bidi
-        var input = $"a\nb\u2028c\u2029d\uD800e\u202Af";
+        const string input = "a\nb\u2028c\u2029d\uD800e\u202Af";
         LogSanitizer.Sanitize(input).Should().Be("abcdef");
     }
 

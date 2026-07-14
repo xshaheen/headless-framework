@@ -23,6 +23,20 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
     private readonly IGuidGenerator _guidGenerator = Substitute.For<IGuidGenerator>();
 
     [Fact]
+    public async Task should_preserve_existing_expiration_when_replace_ttl_is_null()
+    {
+        await _storage.InsertAsync("resource", "lease-1", TimeSpan.FromMinutes(10), AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMinutes(2));
+
+        var replaced = await _storage.ReplaceIfEqualAsync("resource", "lease-1", "lease-2", newTtl: null, AbortToken);
+
+        replaced.Should().BeTrue();
+        (await _storage.GetExpirationAsync("resource", AbortToken))
+            .Should()
+            .BeCloseTo(TimeSpan.FromMinutes(8), TimeSpan.FromMilliseconds(1));
+    }
+
+    [Fact]
     public async Task should_not_create_monitor_by_default()
     {
         // given
@@ -85,6 +99,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
             AbortToken
         );
         handle.Should().NotBeNull();
+
         await _storage.ReplaceIfEqualAsync(
             options.KeyPrefix + resource,
             handle!.LeaseId,
@@ -92,8 +107,10 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
             TimeSpan.FromSeconds(10),
             AbortToken
         );
+
         var lostSignal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var lostRegistration = handle!.LostToken.Register(
+
+        await using var lostRegistration = handle!.LostToken.Register(
             static state => ((TaskCompletionSource)state!).TrySetResult(),
             lostSignal
         );
@@ -101,7 +118,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         // when
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         ((ICanReceiveLockReleased)provider).OnLockReleased(new DistributedLockReleased(resource, "foreign-lock"));
-        await lostSignal.Task.WaitAsync(TimeSpan.FromMilliseconds(500));
+        await lostSignal.Task.WaitAsync(TimeSpan.FromMilliseconds(500), AbortToken);
         stopwatch.Stop();
 
         // then
@@ -168,7 +185,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         for (var i = 0; i < 20 && !handle!.LostToken.IsCancellationRequested; i++)
         {
             _timeProvider.Advance(TimeSpan.FromSeconds(2));
-            await _DrainUntilAsync(() => handle!.LostToken.IsCancellationRequested);
+            await _DrainUntilAsync(() => handle!.LostToken.IsCancellationRequested, AbortToken);
         }
 
         // then
@@ -220,7 +237,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         for (var i = 0; i < 4; i++)
         {
             _timeProvider.Advance(TimeSpan.FromSeconds(1));
-            await Task.Yield();
+            await _DrainUntilAsync(() => handle!.RenewalCount >= i + 1, AbortToken);
         }
 
         // then - LostToken still not fired (auto-extend kept storage row alive).
@@ -249,7 +266,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         for (var i = 0; i < 5; i++)
         {
             _timeProvider.Advance(TimeSpan.FromSeconds(1));
-            await _DrainUntilAsync(() => handle!.RenewalCount >= i + 1);
+            await _DrainUntilAsync(() => handle!.RenewalCount >= i + 1, AbortToken);
         }
 
         // then - background renewals were recorded.
@@ -314,7 +331,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         var options = new DistributedLockOptions();
         var provider = _CreateProvider(options);
         var resource = Faker.Random.AlphaNumeric(10);
-        var handle = await provider.TryAcquireAsync(
+        await using var handle = await provider.TryAcquireAsync(
             resource,
             new DistributedLockAcquireOptions
             {
@@ -327,11 +344,14 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         var disposalDone = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         handle!.LostToken.Register(() =>
         {
-            _ = Task.Run(async () =>
-            {
-                await handle.DisposeAsync();
-                disposalDone.TrySetResult(true);
-            });
+            _ = Task.Run(
+                async () =>
+                {
+                    await handle.DisposeAsync();
+                    disposalDone.TrySetResult(true);
+                },
+                AbortToken
+            );
         });
         await _storage.ReplaceIfEqualAsync(
             options.KeyPrefix + resource,
@@ -345,8 +365,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         ((ICanReceiveLockReleased)provider).OnLockReleased(new DistributedLockReleased(resource, "foreign-lock"));
 
         // then - dispose path completes in bounded time (no deadlock).
-        var work = Task.Run(async () => await disposalDone.Task);
-        await work.WaitAsync(TimeSpan.FromSeconds(5));
+        await disposalDone.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
     }
 
     [Fact]
@@ -357,7 +376,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         var options = new DistributedLockOptions();
         var provider = _CreateProvider(options);
         var resource = Faker.Random.AlphaNumeric(10);
-        var handle = await provider.TryAcquireAsync(
+        await using var handle = await provider.TryAcquireAsync(
             resource,
             new DistributedLockAcquireOptions
             {
@@ -373,7 +392,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         await provider.ReleaseAsync(resource, handle!.LeaseId, AbortToken);
         ((ICanReceiveLockReleased)provider).OnLockReleased(new DistributedLockReleased(resource, handle.LeaseId));
         _timeProvider.Advance(TimeSpan.FromSeconds(6));
-        await _DrainUntilAsync(() => provider.GetActiveMonitorCount(resource) == 0);
+        await _DrainUntilAsync(() => provider.GetActiveMonitorCount(resource) == 0, AbortToken);
 
         // then - LostToken stays unfired after a monitor cadence opportunity.
         handle.LostToken.IsCancellationRequested.Should().BeFalse();
@@ -438,7 +457,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         for (var i = 0; i < 10 && !handle!.LostToken.IsCancellationRequested; i++)
         {
             _timeProvider.Advance(TimeSpan.FromSeconds(6));
-            await _DrainUntilAsync(() => handle.LostToken.IsCancellationRequested);
+            await _DrainUntilAsync(() => handle.LostToken.IsCancellationRequested, AbortToken);
         }
 
         // then - polling cadence alone (no nudge) was sufficient to detect loss.
@@ -473,7 +492,8 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
             {
                 TimeUntilExpires = TimeSpan.FromSeconds(10),
                 Monitoring = LockMonitoringMode.Monitor,
-            }
+            },
+            AbortToken
         );
         handle.Should().NotBeNull();
 

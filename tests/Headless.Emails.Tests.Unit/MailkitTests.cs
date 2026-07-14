@@ -2,10 +2,11 @@
 
 using Headless.Emails;
 using Headless.Emails.Mailkit;
+using Headless.Testing.Tests;
+using MailKit.Security;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.ObjectPool;
 using Microsoft.Extensions.Options;
-using NSubstitute;
 using SmtpClient = MailKit.Net.Smtp.SmtpClient;
 
 namespace Tests;
@@ -70,7 +71,7 @@ public sealed class SmtpClientPooledObjectPolicyTests
     public void return_should_discard_a_disconnected_client()
     {
         var policy = _Policy(TimeSpan.FromSeconds(5));
-        var client = new SmtpClient();
+        using var client = new SmtpClient();
 
         policy.Return(client).Should().BeFalse();
     }
@@ -85,7 +86,7 @@ public sealed class SmtpClientPooledObjectPolicyTests
     }
 }
 
-public sealed class MailkitEmailSenderTests
+public sealed class MailkitEmailSenderTests : TestBase
 {
     [Fact]
     public async Task missing_body_should_throw_before_touching_the_pool()
@@ -101,9 +102,83 @@ public sealed class MailkitEmailSenderTests
             Subject = "no body",
         };
 
-        var act = async () => await sender.SendAsync(request, TestContext.Current.CancellationToken);
+        var act = async () => await sender.SendAsync(request, AbortToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
         pool.DidNotReceive().Get();
+    }
+
+    [Fact]
+    public async Task connect_transport_fault_should_return_failed()
+    {
+        // A connect-level fault (IOException) must be surfaced as a failed response, not thrown.
+        using var client = new FakeSmtpClient(_ => Task.FromException(new IOException("connection reset")));
+        var sender = _Sender(client);
+
+        var result = await sender.SendAsync(_Request(), AbortToken);
+
+        result.Success.Should().BeFalse();
+        result.FailureError.Should().Be("connection reset");
+    }
+
+    [Fact]
+    public async Task connect_timeout_cancellation_should_return_failed()
+    {
+        // A timeout-CTS-induced cancellation (the caller's token is NOT cancelled) is a delivery failure,
+        // not a caller cancellation, so it is returned rather than thrown.
+        using var client = new FakeSmtpClient(_ => Task.FromException(new OperationCanceledException()));
+        var sender = _Sender(client);
+
+        var result = await sender.SendAsync(_Request(), AbortToken);
+
+        result.Success.Should().BeFalse();
+        result.FailureError.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task caller_cancellation_should_propagate()
+    {
+        // Only the caller's own cancellation propagates as OperationCanceledException.
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+        using var client = new FakeSmtpClient(ct => Task.FromException(new OperationCanceledException(ct)));
+        var sender = _Sender(client);
+
+        var act = async () => await sender.SendAsync(_Request(), cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    private static MailkitEmailSender _Sender(SmtpClient client)
+    {
+        var pool = Substitute.For<ObjectPool<SmtpClient>>();
+        pool.Get().Returns(client);
+        var options = Substitute.For<IOptionsMonitor<MailkitSmtpOptions>>();
+        options
+            .Get(Arg.Any<string>())
+            .Returns(new MailkitSmtpOptions { Server = "smtp.example.com", Timeout = TimeSpan.FromSeconds(5) });
+
+        return new MailkitEmailSender(pool, options, optionsName: null, NullLogger<MailkitEmailSender>.Instance);
+    }
+
+    private static SendSingleEmailRequest _Request() =>
+        new()
+        {
+            From = "from@example.com",
+            Destination = new EmailRequestDestination { ToAddresses = [new EmailRequestAddress("to@example.com")] },
+            Subject = "subject",
+            MessageText = "body",
+        };
+
+    // A test double whose connect step is scripted; no network is touched. A fresh client reports
+    // IsConnected == false, so the sender always reaches ConnectAsync.
+    private sealed class FakeSmtpClient(Func<CancellationToken, Task> onConnect) : SmtpClient
+    {
+        public override Task ConnectAsync(
+            string host,
+            int port = 0,
+            SecureSocketOptions options = SecureSocketOptions.Auto,
+            CancellationToken cancellationToken = default
+        ) => onConnect(cancellationToken);
     }
 }

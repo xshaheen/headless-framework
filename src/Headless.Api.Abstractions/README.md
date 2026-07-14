@@ -1,6 +1,6 @@
 # Headless.Api.Abstractions
 
-Defines core interfaces and contracts for HTTP request context, user identity, and web client information in ASP.NET Core applications.
+Defines core interfaces and contracts for HTTP request context, user identity, web client information, ProblemDetails construction, and absolute-URL building in ASP.NET Core applications.
 
 ## Problem Solved
 
@@ -11,6 +11,8 @@ Provides a standardized abstraction layer for accessing request-scoped context (
 - `IRequestContext` - Unified access to request-scoped information (user, tenant, locale, timezone, correlation ID)
 - `IWebClientInfoProvider` - Client detection (IP address, user agent, device info)
 - `IRequestedApiVersion` - API versioning abstraction
+- `IProblemDetailsCreator` - Contract for building normalized RFC 7807 `ProblemDetails` responses (implemented in `Headless.Api.Core`)
+- `IAbsoluteUrlFactory` - Contract for building absolute URLs from the current request (implemented in `Headless.Api.Core`)
 - Framework constants for HTTP headers and common values
 
 ## Installation
@@ -55,6 +57,7 @@ No configuration required. This package contains interfaces only.
 ## Dependencies
 
 - `Headless.Core`
+- `Microsoft.AspNetCore.App` (framework reference) - required by `IProblemDetailsCreator` (`ProblemDetails`) and `IAbsoluteUrlFactory` (`HttpContext`)
 
 ## Side Effects
 

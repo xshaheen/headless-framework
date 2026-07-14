@@ -3,7 +3,7 @@
 using Headless.Domain;
 using Headless.Exceptions;
 
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.EntityFrameworkCore;
 
 public static partial class QueryableExtensions
@@ -25,7 +25,7 @@ public static partial class QueryableExtensions
         CancellationToken cancellationToken = default
     )
         where TEntity : class, IEntity<TKey>
-        where TKey : notnull, IEquatable<TKey>
+        where TKey : IEquatable<TKey>
     {
         var user = await source.FirstOrDefaultAsync(x => x.Id.Equals(id), cancellationToken).ConfigureAwait(false);
 

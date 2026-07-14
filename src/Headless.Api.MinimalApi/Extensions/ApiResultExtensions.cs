@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Api.Abstractions;
+using Headless.Api.Resources;
 using Microsoft.AspNetCore.Http;
 
 // ReSharper disable once CheckNamespace
@@ -33,7 +34,8 @@ public static class ApiResultExtensions
     /// <returns>An <see cref="IResult"/> representing the HTTP response.</returns>
     public static IResult ToHttpResult<T>(this ApiResult<T> result, IProblemDetailsCreator creator)
     {
-        return result.Match(TypedResults.Ok, error => error.ToHttpResult(creator));
+        // Branch instead of Match: the failure lambda would capture `creator` and allocate on every success response.
+        return result.TryGetValue(out var value) ? TypedResults.Ok(value) : result.Error.ToHttpResult(creator);
     }
 
     /// <summary>
@@ -45,7 +47,8 @@ public static class ApiResultExtensions
     /// <returns>An <see cref="IResult"/> representing the HTTP response.</returns>
     public static IResult ToHttpResult(this ApiResult result, IProblemDetailsCreator creator)
     {
-        return result.Match(TypedResults.NoContent, error => error.ToHttpResult(creator));
+        // Branch instead of Match: the failure lambda would capture `creator` and allocate on every success response.
+        return result.TryGetError(out var error) ? error.ToHttpResult(creator) : TypedResults.NoContent();
     }
 
     /// <summary>
@@ -64,7 +67,7 @@ public static class ApiResultExtensions
             ValidationError e => TypedResults.Problem(creator.UnprocessableEntity(e.ToErrorDescriptorDictionary())),
 
             ForbiddenError e => TypedResults.Problem(
-                creator.Forbidden(error: new ErrorDescriptor("g:forbidden", e.Reason))
+                creator.Forbidden(error: new ErrorDescriptor(GeneralErrorCodes.Forbidden, e.Reason))
             ),
 
             UnauthorizedError => TypedResults.Problem(creator.Unauthorized()),

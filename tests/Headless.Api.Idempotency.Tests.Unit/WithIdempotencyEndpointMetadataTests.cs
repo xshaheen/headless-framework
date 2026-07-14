@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Api;
+using Headless.Api.Idempotency;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 
@@ -15,7 +15,7 @@ public sealed class WithIdempotencyEndpointMetadataTests
 
         builder.WithIdempotency(o => o.IdempotencyKeyExpiration = TimeSpan.FromDays(7));
 
-        builder.CapturedMetadata.Should().HaveCount(1);
+        builder.CapturedMetadata.Should().ContainSingle();
         builder.CapturedMetadata[0].Should().BeOfType<IdempotencyMetadata>();
 
         var probe = new IdempotencyOptions();

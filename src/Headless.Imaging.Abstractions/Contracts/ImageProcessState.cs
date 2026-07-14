@@ -4,6 +4,11 @@
 namespace Headless.Imaging;
 
 /// <summary>Describes the outcome of an image processing operation.</summary>
+/// <remarks>
+/// This value is consumer-observable via <c>ImageProcessResult{T}.State</c>. Additional members may be
+/// added in future versions; callers that switch on it should handle unrecognized values defensively.
+/// </remarks>
+[PublicAPI]
 public enum ImageProcessState
 {
     /// <summary>The image format or MIME type is not supported by any registered contributor.</summary>

@@ -14,13 +14,19 @@ namespace Tests;
 
 public sealed class SettingManagerTests(SettingsTestFixture fixture) : SettingsTestBase(fixture)
 {
-    private static readonly List<SettingDefinition> _Definitions =
-    [
-        new("Setting1", "Value1", displayName: "Display1"),
-        new("Setting2", "Value2", description: "Description2"),
-        new("Setting3", "Value3", isInherited: true),
-        new("Setting4", "Value4", isVisibleToClients: true, isEncrypted: true),
-    ];
+    private static readonly List<SettingDefinition> _Definitions = _CreateDefinitions();
+
+    private static List<SettingDefinition> _CreateDefinitions()
+    {
+        var context = new SettingDefinitionContext(new Dictionary<string, SettingDefinition>(StringComparer.Ordinal));
+
+        context.Add("Setting1", "Value1", displayName: "Display1");
+        context.Add("Setting2", "Value2", description: "Description2");
+        context.Add("Setting3", "Value3", isInherited: true);
+        context.Add("Setting4", "Value4", isVisibleToClients: true, isEncrypted: true);
+
+        return [.. context.GetAll()];
+    }
 
     [Fact]
     public async Task should_get_default_value()
@@ -32,7 +38,7 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture) : SettingsT
         var settingManager = scope.ServiceProvider.GetRequiredService<ISettingManager>();
 
         // when
-        var settingValue = await settingManager.FindDefaultAsync("Setting1", cancellationToken: AbortToken);
+        var settingValue = await settingManager.GetDefaultAsync("Setting1", cancellationToken: AbortToken);
 
         // then
         settingValue.Should().Be("Value1");
@@ -51,7 +57,11 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture) : SettingsT
         var settingValues = await settingManager.GetAllDefaultAsync(cancellationToken: AbortToken);
 
         // then
-        var expected = _Definitions.ConvertAll(x => new SettingValue(x.Name, x.DefaultValue));
+        var expected = _Definitions.ConvertAll(x => new SettingValue(
+            x.Name,
+            x.DefaultValue,
+            new SettingValueProvider(DefaultValueSettingValueProvider.ProviderName, Key: null)
+        ));
         settingValues.Should().BeEquivalentTo(expected);
     }
 
@@ -65,8 +75,8 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture) : SettingsT
         var settingManager = scope.ServiceProvider.GetRequiredService<ISettingManager>();
         var userId = Guid.NewGuid().ToString();
         const string settingName = "NotDefinedSetting";
-        var settingsErrorsProvider = scope.ServiceProvider.GetRequiredService<ISettingsErrorsDescriptor>();
-        var error = await settingsErrorsProvider.NotDefined(settingName);
+        var settingsErrorsProvider = scope.ServiceProvider.GetRequiredService<ISettingErrorsDescriptor>();
+        var error = settingsErrorsProvider.NotDefined(settingName);
 
         // when
         var act = () => settingManager.SetForUserAsync(userId, name: settingName, value: "NewValue");
@@ -97,7 +107,7 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture) : SettingsT
             cancellationToken: AbortToken
         );
 
-        var settingValue = await settingManager.FindForUserAsync(
+        var settingValue = await settingManager.GetForUserAsync(
             userId,
             name: settingName,
             cancellationToken: AbortToken
@@ -127,7 +137,7 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture) : SettingsT
             cancellationToken: AbortToken
         );
 
-        var settingValue = await settingManager.FindForUserAsync(
+        var settingValue = await settingManager.GetForUserAsync(
             userId,
             name: settingName,
             cancellationToken: AbortToken
@@ -162,7 +172,7 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture) : SettingsT
 
         await settingManager.SetForUserAsync(userId, settingName, initialValue, cancellationToken: AbortToken);
 
-        (await settingManager.FindForUserAsync(userId, settingName, cancellationToken: AbortToken))
+        (await settingManager.GetForUserAsync(userId, settingName, cancellationToken: AbortToken))
             .Should()
             .Be(initialValue);
 
@@ -185,7 +195,7 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture) : SettingsT
         await valueRepository.UpdateAsync(updatedRecord, AbortToken);
 
         // then
-        (await settingManager.FindForUserAsync(userId, settingName, cancellationToken: AbortToken))
+        (await settingManager.GetForUserAsync(userId, settingName, cancellationToken: AbortToken))
             .Should()
             .Be(updatedValue);
     }
@@ -214,8 +224,8 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture) : SettingsT
         await dynamicStore2.SaveAsync(AbortToken);
 
         // when: get dynamic settings from host1
-        var host1LocalSetting = await settingManager1.FindDefaultAsync(host1Setting, cancellationToken: AbortToken);
-        var host1DynamicSetting = await settingManager1.FindDefaultAsync(host2Setting, cancellationToken: AbortToken);
+        var host1LocalSetting = await settingManager1.GetDefaultAsync(host1Setting, cancellationToken: AbortToken);
+        var host1DynamicSetting = await settingManager1.GetDefaultAsync(host2Setting, cancellationToken: AbortToken);
 
         // then: dynamic settings should be returned
         host1LocalSetting.Should().Be(host1SettingValue);
@@ -225,8 +235,8 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture) : SettingsT
         await dynamicStore1.SaveAsync(AbortToken);
 
         // when: get dynamic settings from host1
-        var host2LocalSetting = await settingManager2.FindDefaultAsync(host2Setting, cancellationToken: AbortToken);
-        var host2DynamicSetting = await settingManager2.FindDefaultAsync(host1Setting, cancellationToken: AbortToken);
+        var host2LocalSetting = await settingManager2.GetDefaultAsync(host2Setting, cancellationToken: AbortToken);
+        var host2DynamicSetting = await settingManager2.GetDefaultAsync(host1Setting, cancellationToken: AbortToken);
 
         // then: dynamic settings should be returned
         host2LocalSetting.Should().Be(host2SettingValue);
@@ -238,10 +248,10 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture) : SettingsT
 
         // then: dynamic setting value should be changed
 
-        (await settingManager1.FindForUserAsync(userId, host1Setting, cancellationToken: AbortToken))
+        (await settingManager1.GetForUserAsync(userId, host1Setting, cancellationToken: AbortToken))
             .Should()
             .Be("NewValue1");
-        (await settingManager2.FindForUserAsync(userId, host1Setting, cancellationToken: AbortToken))
+        (await settingManager2.GetForUserAsync(userId, host1Setting, cancellationToken: AbortToken))
             .Should()
             .Be("NewValue1");
 
@@ -249,10 +259,10 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture) : SettingsT
         await settingManager2.SetForUserAsync(userId, host2Setting, "NewValue2", cancellationToken: AbortToken);
 
         // then: dynamic setting value should be changed
-        (await settingManager2.FindForUserAsync(userId, host2Setting, cancellationToken: AbortToken))
+        (await settingManager2.GetForUserAsync(userId, host2Setting, cancellationToken: AbortToken))
             .Should()
             .Be("NewValue2");
-        (await settingManager1.FindForUserAsync(userId, host2Setting, cancellationToken: AbortToken))
+        (await settingManager1.GetForUserAsync(userId, host2Setting, cancellationToken: AbortToken))
             .Should()
             .Be("NewValue2");
     }
@@ -272,7 +282,7 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture) : SettingsT
     {
         public void Define(ISettingDefinitionContext context)
         {
-            context.Add(new SettingDefinition("Setting1", "Value1"));
+            context.Add("Setting1", "Value1");
         }
     }
 
@@ -281,7 +291,7 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture) : SettingsT
     {
         public void Define(ISettingDefinitionContext context)
         {
-            context.Add(new SettingDefinition("Setting2", "Value2"));
+            context.Add("Setting2", "Value2");
         }
     }
 

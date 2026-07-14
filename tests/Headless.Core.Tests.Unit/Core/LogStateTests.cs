@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Core;
 using Microsoft.Extensions.Logging;
 
 namespace Tests.Core;

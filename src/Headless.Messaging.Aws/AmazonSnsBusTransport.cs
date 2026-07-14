@@ -10,7 +10,7 @@ namespace Headless.Messaging.Aws;
 
 internal sealed class AmazonSnsBusTransport(
     ILogger<AmazonSnsBusTransport> logger,
-    IOptions<AmazonSqsOptions> sqsOptionsAccessor
+    IOptions<AmazonSqsMessagingOptions> sqsOptionsAccessor
 ) : IBusTransport
 {
     private readonly ILogger _logger = logger;
@@ -26,7 +26,7 @@ internal sealed class AmazonSnsBusTransport(
         {
             await _FetchExistingTopicArns(cancellationToken).ConfigureAwait(false);
 
-            var normalizeForAws = message.GetName().NormalizeForAws();
+            var normalizeForAws = message.Name.NormalizeForAws();
             var (success, arn) = await _TryGetOrCreateTopicArnAsync(normalizeForAws, cancellationToken)
                 .ConfigureAwait(false);
 

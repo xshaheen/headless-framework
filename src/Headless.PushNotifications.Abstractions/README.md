@@ -9,13 +9,15 @@ Provides a provider-agnostic push notification API so application code never dep
 ## Key Features
 
 - `IPushNotificationService` — core sending interface:
-  - `SendToDeviceAsync(clientToken, title, body, data?, ct)` — single-device delivery
-  - `SendMulticastAsync(clientTokens, title, body, data?, ct)` — batch delivery
+  - `SendToDeviceAsync(clientToken, request, ct)` — single-device delivery
+  - `SendMulticastAsync(clientTokens, request, ct)` — batch delivery
+- `PushNotificationRequest` — the notification payload (`required Title`, `required Body`, optional `Data`). Both send methods take one request; new delivery options are added as optional `init` properties rather than new overloads.
+- `IPushNotificationServiceProvider` — resolves named services by name: `GetService(name)` (throws when unregistered) and `GetServiceOrNull(name)` (returns `null`), plus `RegisteredNames` (`IReadOnlySet<string>`) listing the registered named instances (the default is excluded) so an externally supplied name can be validated before resolving. Backed by the container's keyed `IPushNotificationService` registrations; the concrete implementation lives in `Headless.PushNotifications.Core`.
 - `PushNotificationResponse` — single-device outcome with three states (`Success`, `Failure`, `Unregistered`); factory methods `Succeeded`, `Failed`, `Unregistered`; query methods `IsSucceeded()`, `IsFailed()`, `IsUnregistered()`; properties `Token`, `MessageId?`, `FailureError?`, `Status`
 - `PushNotificationResponseStatus` enum — `Success`, `Failure`, `Unregistered`
 - `BatchPushNotificationResponse` — multicast aggregate: `SuccessCount`, `FailureCount`, `Responses` (one per token)
-- `HeadlessPushNotificationsSetupBuilder` — builder used by `AddHeadlessPushNotifications` to select exactly one provider
-- `IPushNotificationsProviderOptionsExtension` — hook implemented by each provider package to register its services; exposed so third-party providers can integrate
+
+> Registration (`AddHeadlessPushNotifications`, `HeadlessPushNotificationsSetupBuilder`, and the `IPushNotificationServiceProvider` implementation) lives in `Headless.PushNotifications.Core`, pulled in transitively by each provider package.
 
 ## Installation
 
@@ -32,10 +34,13 @@ public sealed class NotificationService(IPushNotificationService pushService, IL
     {
         var response = await pushService.SendToDeviceAsync(
             deviceToken,
-            title,
-            message,
-            data: new Dictionary<string, string> { ["orderId"] = "123" },
-            cancellationToken: ct
+            new PushNotificationRequest
+            {
+                Title = title,
+                Body = message,
+                Data = new Dictionary<string, string> { ["orderId"] = "123" },
+            },
+            ct
         );
 
         if (response.IsUnregistered())
@@ -49,9 +54,16 @@ public sealed class NotificationService(IPushNotificationService pushService, IL
         }
     }
 
+    // To route to a named instance, depend on IPushNotificationServiceProvider and resolve by name
+    // (provider.GetService("driver-app")), or inject [FromKeyedServices("driver-app")] IPushNotificationService.
+
     public async Task SendToManyAsync(IReadOnlyList<string> tokens, string title, string message, CancellationToken ct)
     {
-        var result = await pushService.SendMulticastAsync(tokens, title, message, cancellationToken: ct);
+        var result = await pushService.SendMulticastAsync(
+            tokens,
+            new PushNotificationRequest { Title = title, Body = message },
+            ct
+        );
 
         logger.LogInformation("Push sent: {Success}/{Total}", result.SuccessCount, tokens.Count);
 
@@ -71,7 +83,7 @@ None. This is an abstractions-only package.
 
 ## Dependencies
 
-None.
+- `Headless.Checks`
 
 ## Side Effects
 

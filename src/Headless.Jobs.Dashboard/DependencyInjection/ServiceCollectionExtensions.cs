@@ -2,6 +2,7 @@
 
 using System.Reflection;
 using System.Text.Encodings.Web;
+using Headless.Constants;
 using Headless.Dashboard.Authentication;
 using Headless.Jobs.Endpoints;
 using Headless.Jobs.Entities;
@@ -11,9 +12,10 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 
-namespace Headless.Jobs.DependencyInjection;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Jobs;
 
-internal static class ServiceCollectionExtensions
+internal static class JobsDashboardServiceCollectionExtensions
 {
     private const string _EmbeddedFileNamespace = "Headless.Jobs.wwwroot.dist";
 
@@ -57,13 +59,13 @@ internal static class ServiceCollectionExtensions
 
         services.AddAuthorization();
 
+        // Always register the named policy so the CORS middleware (UseCors, unconditional in the pipeline)
+        // can resolve it: the dashboard endpoints carry RequireCors metadata, and an endpoint with CORS
+        // metadata whose middleware never ran throws at request time. When the consumer configured no policy,
+        // register an empty one (no origins) -> same-origin only.
         services.AddCors(options =>
-        {
-            if (config.CorsPolicyBuilder is not null)
-            {
-                options.AddPolicy("Jobs_Dashboard_CORS", config.CorsPolicyBuilder);
-            }
-        });
+            options.AddPolicy("HeadlessJobsDashboardCORS", config.CorsPolicyBuilder ?? (static _ => { }))
+        );
     }
 
     internal static void UseDashboardWithEndpoints<TTimeJob, TCronJob>(
@@ -110,9 +112,12 @@ internal static class ServiceCollectionExtensions
                     }
                 );
 
-                // Set up routing and CORS
+                // Endpoints carry RequireCors metadata, so the CORS middleware must always run (an endpoint
+                // with CORS metadata and no middleware throws at request time). The registered policy is empty
+                // by default (same-origin only) and reflects the configured origins when
+                // SetCorsOrigins / SetCorsPolicy was used.
                 dashboardApp.UseRouting();
-                dashboardApp.UseCors("Jobs_Dashboard_CORS");
+                dashboardApp.UseCors("HeadlessJobsDashboardCORS");
 
                 // Add authentication + authorization middleware
                 if (config.Auth.IsEnabled)
@@ -126,10 +131,7 @@ internal static class ServiceCollectionExtensions
                 config.CustomMiddleware?.Invoke(dashboardApp);
 
                 // Map Minimal API endpoints and SignalR hub
-                dashboardApp.UseEndpoints(endpoints =>
-                {
-                    endpoints.MapDashboardEndpoints<TTimeJob, TCronJob>(config);
-                });
+                dashboardApp.UseEndpoints(endpoints => endpoints.MapDashboardEndpoints<TTimeJob, TCronJob>(config));
 
                 // Execute post-dashboard middleware
                 config.PostDashboardMiddleware?.Invoke(dashboardApp);
@@ -152,7 +154,7 @@ internal static class ServiceCollectionExtensions
                                 // Inject the base tag and other replacements into the HTML
                                 htmlContent = _ReplaceBasePath(htmlContent, context, basePath, config);
 
-                                context.Response.ContentType = "text/html";
+                                context.Response.ContentType = ContentTypes.Texts.Html;
                                 context.Response.StatusCode = 200;
                                 await context.Response.WriteAsync(htmlContent).ConfigureAwait(false);
                             }

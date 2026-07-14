@@ -6,7 +6,7 @@ namespace Headless.Payments.Paymob.CashIn.Models.Orders;
 public sealed class CashInOrderShippingData
 {
     [JsonPropertyName("id")]
-    public int Id { get; init; }
+    public long Id { get; init; }
 
     [JsonPropertyName("first_name")]
     public required string FirstName { get; init; }
@@ -45,10 +45,10 @@ public sealed class CashInOrderShippingData
     public string PostalCode { get; init; } = "NA";
 
     [JsonPropertyName("order_id")]
-    public int OrderId { get; init; }
+    public long OrderId { get; init; }
 
     [JsonPropertyName("order")]
-    public int Order { get; init; }
+    public long Order { get; init; }
 
     [JsonPropertyName("extra_description")]
     public string ExtraDescription { get; init; } = "NA";

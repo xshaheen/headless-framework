@@ -5,20 +5,22 @@ using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
 using Headless.Sms;
 using Headless.Sms.Aws;
-using Headless.Sms.Testing;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute.ExceptionExtensions;
 
 namespace Tests;
 
-public sealed class AwsSnsSmsSenderTests
+public sealed class AwsSnsSmsSenderTests : TestBase
 {
-    private static AwsSnsSmsSender CreateSender(IAmazonSimpleNotificationService client)
+    private static AwsSnsSmsSender _CreateSender(IAmazonSimpleNotificationService client)
     {
-        var options = Options.Create(new AwsSnsSmsOptions { SenderId = "SENDER", MaxPrice = null });
+        var options = new OptionsMonitorWrapper<AwsSnsSmsOptions>(
+            new AwsSnsSmsOptions { SenderId = "SENDER", MaxPrice = null }
+        );
 
-        return new AwsSnsSmsSender(client, options, NullLogger<AwsSnsSmsSender>.Instance);
+        return new AwsSnsSmsSender(client, options, optionsName: null, NullLogger<AwsSnsSmsSender>.Instance);
     }
 
     [Fact]
@@ -29,8 +31,7 @@ public sealed class AwsSnsSmsSenderTests
             .PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>())
             .Returns(new PublishResponse { MessageId = "msg-1", HttpStatusCode = HttpStatusCode.OK });
 
-        var result = await CreateSender(client).SendAsync(SmsRequests.Single());
-
+        var result = await _CreateSender(client).SendAsync(SmsRequests.Single(), AbortToken);
         result.Success.Should().BeTrue();
         result.ProviderMessageId.Should().Be("msg-1");
     }
@@ -43,36 +44,10 @@ public sealed class AwsSnsSmsSenderTests
             .PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>())
             .Returns(new PublishResponse { MessageId = "msg-1", HttpStatusCode = HttpStatusCode.OK });
 
-        await CreateSender(client).SendAsync(SmsRequests.Single(code: 20, number: "1001234567"));
-
+        await _CreateSender(client).SendAsync(SmsRequests.Single(code: 20, number: "1001234567"), AbortToken);
         await client
             .Received(1)
             .PublishAsync(Arg.Is<PublishRequest>(r => r.PhoneNumber == "+201001234567"), Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
-    public async Task should_reject_multiple_destinations_without_calling_aws()
-    {
-        var client = Substitute.For<IAmazonSimpleNotificationService>();
-
-        var result = await CreateSender(client).SendAsync(SmsRequests.Batch("hi", (20, "1"), (20, "2")));
-
-        result.Success.Should().BeFalse();
-        await client.DidNotReceive().PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
-    public async Task should_return_transient_failure_when_the_sdk_throws()
-    {
-        var client = Substitute.For<IAmazonSimpleNotificationService>();
-        client
-            .PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>())
-            .ThrowsAsync(new HttpRequestException("network down"));
-
-        var result = await CreateSender(client).SendAsync(SmsRequests.Single());
-
-        result.Success.Should().BeFalse();
-        result.FailureKind.Should().Be(SmsFailureKind.Transient);
     }
 
     [Fact]
@@ -83,8 +58,47 @@ public sealed class AwsSnsSmsSenderTests
             .PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>())
             .Returns(new PublishResponse { HttpStatusCode = HttpStatusCode.BadRequest });
 
-        var result = await CreateSender(client).SendAsync(SmsRequests.Single());
+        var result = await _CreateSender(client).SendAsync(SmsRequests.Single(), AbortToken);
+        result.Success.Should().BeFalse();
+
+        // SNS signals errors as typed exceptions; a non-throwing non-success status has no documented meaning.
+        result.FailureKind.Should().Be(SmsFailureKind.Unknown);
+    }
+
+    [Theory]
+    [InlineData(nameof(AuthorizationErrorException), SmsFailureKind.AuthFailure)]
+    [InlineData(nameof(InvalidSecurityException), SmsFailureKind.AuthFailure)]
+    [InlineData(nameof(ThrottledException), SmsFailureKind.RateLimited)]
+    [InlineData(nameof(OptedOutException), SmsFailureKind.InvalidRecipient)]
+    [InlineData(nameof(InternalErrorException), SmsFailureKind.Transient)]
+    [InlineData(nameof(InvalidParameterException), SmsFailureKind.Unknown)]
+    public async Task should_classify_failures_from_the_sns_typed_exception_contract(
+        string exceptionKind,
+        SmsFailureKind expected
+    )
+    {
+        var exception = _CreateSnsException(exceptionKind);
+        var client = Substitute.For<IAmazonSimpleNotificationService>();
+        client.PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>()).ThrowsAsync(exception);
+
+        var result = await _CreateSender(client).SendAsync(SmsRequests.Single(), AbortToken);
 
         result.Success.Should().BeFalse();
+        result.FailureError.Should().Be(exception.Message);
+        result.FailureKind.Should().Be(expected);
+    }
+
+    private static AmazonSimpleNotificationServiceException _CreateSnsException(string exceptionKind)
+    {
+        return exceptionKind switch
+        {
+            nameof(AuthorizationErrorException) => new AuthorizationErrorException("denied"),
+            nameof(InvalidSecurityException) => new InvalidSecurityException("bad signature"),
+            nameof(ThrottledException) => new ThrottledException("slow down"),
+            nameof(OptedOutException) => new OptedOutException("recipient opted out"),
+            nameof(InternalErrorException) => new InternalErrorException("internal error"),
+            nameof(InvalidParameterException) => new InvalidParameterException("bad request"),
+            _ => throw new ArgumentOutOfRangeException(nameof(exceptionKind), exceptionKind, message: null),
+        };
     }
 }

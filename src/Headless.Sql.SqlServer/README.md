@@ -10,6 +10,7 @@ Provides the `ISqlConnectionFactory` and `IConnectionStringChecker` implementati
 
 - `SqlServerConnectionFactory` — `ISqlConnectionFactory` implementation; `CreateNewConnectionAsync()` returns a strongly-typed `SqlConnection` (already open); `GetConnectionString()` retrieves the configured string
 - `SqlServerConnectionStringChecker` — `IConnectionStringChecker` that verifies server reachability and database existence by connecting to `master` first, then calling `ChangeDatabaseAsync` to the target
+- `SetupSqlServerSql.AddSqlServerSql(string connectionString)` / `AddSqlServerSql(Func<IServiceProvider, string>)` — one-call registration of the factory, checker, and scoped ambient connection
 
 ## Installation
 
@@ -23,10 +24,9 @@ dotnet add package Headless.Sql.SqlServer
 var builder = WebApplication.CreateBuilder(args);
 
 var connectionString = builder.Configuration.GetConnectionString("Default")!;
-builder.Services.AddSingleton<ISqlConnectionFactory>(new SqlServerConnectionFactory(connectionString));
 
-// Optional: register the health-check helper
-builder.Services.AddSingleton<IConnectionStringChecker, SqlServerConnectionStringChecker>();
+// Registers ISqlConnectionFactory, IConnectionStringChecker, and a scoped ISqlCurrentConnection.
+builder.Services.AddSqlServerSql(connectionString);
 ```
 
 Use in a repository:
@@ -48,21 +48,25 @@ public sealed class ReportRepository(ISqlConnectionFactory connectionFactory)
 
 ## Configuration
 
-Pass the connection string directly to the constructor:
+Resolve the connection string from the service provider with the factory overload:
 
 ```csharp
-services.AddSingleton<ISqlConnectionFactory>(sp =>
+services.AddSqlServerSql(sp =>
 {
     var config = sp.GetRequiredService<IConfiguration>();
-    return new SqlServerConnectionFactory(config.GetConnectionString("SqlServer")!);
+    return config.GetConnectionString("SqlServer")!;
 });
 ```
 
 ## Dependencies
 
+- `Headless.Checks`
 - `Headless.Sql.Abstractions`
+- `Headless.Sql.Core`
 - `Microsoft.Data.SqlClient`
+- `Microsoft.Extensions.DependencyInjection.Abstractions`
+- `Microsoft.Extensions.Logging.Abstractions`
 
 ## Side Effects
 
-None (manual registration required).
+`AddSqlServerSql` registers `ISqlConnectionFactory` and `IConnectionStringChecker` as singletons and `ISqlCurrentConnection` (`DefaultSqlCurrentConnection`) as scoped.

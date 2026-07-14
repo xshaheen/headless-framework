@@ -2,10 +2,9 @@
 
 using Headless.Abstractions;
 using Headless.CommitCoordination;
-using Headless.CommitCoordination.EntityFramework;
-using Headless.Domain;
 using Headless.EntityFramework;
 using Headless.Testing.Helpers;
+using Headless.Testing.Tests;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -22,7 +21,7 @@ namespace Tests;
 /// drained as rollback — silent work loss. These tests use NO explicit <c>AddInterceptors</c> call:
 /// they pass only when the framework wires the interceptor itself.
 /// </summary>
-public sealed class CommitCoordinationInterceptorWiringTests
+public sealed class CommitCoordinationInterceptorWiringTests : TestBase
 {
     [Fact]
     public async Task should_drain_on_commit_work_via_framework_wired_interceptor_without_explicit_add_interceptors()
@@ -51,7 +50,8 @@ public sealed class CommitCoordinationInterceptorWiringTests
                 ctx.Set<WiringRow>().Add(new WiringRow { Name = "committed" });
 
                 return ctx.SaveChangesAsync(ct);
-            }
+            },
+            cancellationToken: AbortToken
         );
 
         drained
@@ -89,7 +89,8 @@ public sealed class CommitCoordinationInterceptorWiringTests
                     await ctx.SaveChangesAsync(ct);
 
                     throw new InvalidOperationException("boom");
-                }
+                },
+                cancellationToken: AbortToken
             );
         }
         catch (InvalidOperationException ex)
@@ -103,43 +104,57 @@ public sealed class CommitCoordinationInterceptorWiringTests
         (await harness.CountRowsAsync()).Should().Be(0);
     }
 
-    private sealed class WiringHarness(SqliteConnection connection, ServiceProvider root) : IAsyncDisposable
+    private sealed class WiringHarness : IAsyncDisposable
     {
-        public ServiceProvider Root => root;
+        // Owned by the harness: the field initializer keeps creation ownership local (CA2000-clean),
+        // and DisposeAsync releases it. The in-memory DB lives only while this connection is open.
+        private readonly SqliteConnection _connection = new("DataSource=:memory:");
+        private ServiceProvider? _root;
+
+        public ServiceProvider Root => _root!;
 
         public static async Task<WiringHarness> CreateAsync()
         {
-            // Shared in-memory SQLite lives only while a connection is open; the harness holds one.
-            var connection = new SqliteConnection("DataSource=:memory:");
-            await connection.OpenAsync();
+            var harness = new WiringHarness();
 
-            var services = new ServiceCollection();
-            services.AddLogging();
-            services.AddSingleton<IClock>(new TestClock { TimeProvider = new FakeTimeProvider() });
-            services.AddSingleton<ICurrentTenant>(new TestCurrentTenant { Id = null });
-            services.AddSingleton<ICurrentUser>(new TestCurrentUser());
-            services.AddSingleton<IGuidGenerator>(new SequentialGuidGenerator(SequentialGuidType.Version7));
-            services.AddRecordingHeadlessDispatcher();
-
-            // The point under test: commit coordination registers its IInterceptor in DI, and
-            // AddHeadlessDbContext is expected to apply it — there is deliberately NO AddInterceptors here.
-            services.AddEntityFrameworkCommitCoordination();
-            services.AddHeadlessDbContext<WiringTestDbContext>(options => options.UseSqlite(connection));
-
-            var root = services.BuildServiceProvider();
-
-            await using (var scope = root.CreateAsyncScope())
+            try
             {
-                var db = scope.ServiceProvider.GetRequiredService<WiringTestDbContext>();
-                await db.Database.EnsureCreatedAsync();
-            }
+                await harness._connection.OpenAsync();
 
-            return new WiringHarness(connection, root);
+                var services = new ServiceCollection();
+                services.AddLogging();
+                services.AddSingleton<TimeProvider>(new FakeTimeProvider());
+                services.AddSingleton<ICurrentTenant>(new TestCurrentTenant { Id = null });
+                services.AddSingleton<ICurrentUser>(new TestCurrentUser());
+                services.AddSingleton<IGuidGenerator>(new SequentialGuidGenerator(SequentialGuidType.Version7));
+                services.AddRecordingHeadlessDispatcher();
+
+                // The point under test: commit coordination registers its IInterceptor in DI, and
+                // AddHeadlessDbContext is expected to apply it — there is deliberately NO AddInterceptors here.
+                services.AddEntityFrameworkCommitCoordination();
+                services.AddHeadlessDbContext<WiringTestDbContext>(options => options.UseSqlite(harness._connection));
+
+                harness._root = services.BuildServiceProvider();
+
+                await using (var scope = harness._root.CreateAsyncScope())
+                {
+                    var db = scope.ServiceProvider.GetRequiredService<WiringTestDbContext>();
+                    await db.Database.EnsureCreatedAsync();
+                }
+
+                return harness;
+            }
+            catch
+            {
+                // Setup failed before the harness was handed back; release what it already owns.
+                await harness.DisposeAsync();
+                throw;
+            }
         }
 
         public async Task<int> CountRowsAsync()
         {
-            await using var scope = root.CreateAsyncScope();
+            await using var scope = _root!.CreateAsyncScope();
             var db = scope.ServiceProvider.GetRequiredService<WiringTestDbContext>();
 
             return await db.Rows.AsNoTracking().CountAsync();
@@ -147,8 +162,12 @@ public sealed class CommitCoordinationInterceptorWiringTests
 
         public async ValueTask DisposeAsync()
         {
-            await root.DisposeAsync();
-            await connection.DisposeAsync();
+            if (_root is not null)
+            {
+                await _root.DisposeAsync();
+            }
+
+            await _connection.DisposeAsync();
         }
     }
 }

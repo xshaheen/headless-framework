@@ -6,7 +6,6 @@ using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
 using Headless.Messaging;
 using Headless.Messaging.Aws;
-using Headless.Messaging.Messages;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -16,9 +15,9 @@ namespace Tests;
 
 public sealed class AmazonSnsBusTransportTests : TestBase
 {
-    private static IOptions<AmazonSqsOptions> _CreateOptions() =>
+    private static IOptions<AmazonSqsMessagingOptions> _CreateOptions() =>
         Options.Create(
-            new AmazonSqsOptions
+            new AmazonSqsMessagingOptions
             {
                 Region = Amazon.RegionEndpoint.USEast1,
                 SqsServiceUrl = "http://localhost:4566",
@@ -46,7 +45,7 @@ public sealed class AmazonSnsBusTransportTests : TestBase
     {
         // given
         var logger = Substitute.For<ILogger<AmazonSnsBusTransport>>();
-        var options = Options.Create(new AmazonSqsOptions { Region = Amazon.RegionEndpoint.USEast1 });
+        var options = Options.Create(new AmazonSqsMessagingOptions { Region = Amazon.RegionEndpoint.USEast1 });
         await using var transport = new AmazonSnsBusTransport(logger, options);
 
         // when
@@ -62,7 +61,7 @@ public sealed class AmazonSnsBusTransportTests : TestBase
     {
         // given
         var logger = Substitute.For<ILogger<AmazonSnsBusTransport>>();
-        var options = Options.Create(new AmazonSqsOptions { Region = Amazon.RegionEndpoint.CNNorth1 });
+        var options = Options.Create(new AmazonSqsMessagingOptions { Region = Amazon.RegionEndpoint.CNNorth1 });
         await using var transport = new AmazonSnsBusTransport(logger, options);
 
         // when
@@ -104,7 +103,7 @@ public sealed class AmazonSnsBusTransportTests : TestBase
         );
 
         // when
-        var result = await transport.SendAsync(message);
+        var result = await transport.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeTrue();
@@ -150,7 +149,7 @@ public sealed class AmazonSnsBusTransportTests : TestBase
         );
 
         // when
-        var result = await transport.SendAsync(message);
+        var result = await transport.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeTrue();
@@ -193,7 +192,7 @@ public sealed class AmazonSnsBusTransportTests : TestBase
         );
 
         // when
-        var result = await transport.SendAsync(message);
+        var result = await transport.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeTrue();
@@ -228,7 +227,7 @@ public sealed class AmazonSnsBusTransportTests : TestBase
         );
 
         // when
-        var result = await transport.SendAsync(message);
+        var result = await transport.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeTrue();
@@ -279,7 +278,7 @@ public sealed class AmazonSnsBusTransportTests : TestBase
         );
 
         // when
-        var result = await transport.SendAsync(message);
+        var result = await transport.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeTrue();
@@ -315,7 +314,7 @@ public sealed class AmazonSnsBusTransportTests : TestBase
         );
 
         // when
-        var result = await transport.SendAsync(message);
+        var result = await transport.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeFalse();
@@ -344,7 +343,7 @@ public sealed class AmazonSnsBusTransportTests : TestBase
         );
 
         // when
-        var result = await transport.SendAsync(message);
+        var result = await transport.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeFalse();
@@ -378,7 +377,7 @@ public sealed class AmazonSnsBusTransportTests : TestBase
         );
 
         // when
-        var result = await transport.SendAsync(message);
+        var result = await transport.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeTrue();
@@ -413,7 +412,7 @@ public sealed class AmazonSnsBusTransportTests : TestBase
         );
 
         // when
-        var result = await transport.SendAsync(message);
+        var result = await transport.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeTrue();
@@ -449,9 +448,9 @@ public sealed class AmazonSnsBusTransportTests : TestBase
         );
 
         // when - send multiple messages
-        await transport.SendAsync(message);
-        await transport.SendAsync(message);
-        await transport.SendAsync(message);
+        await transport.SendAsync(message, AbortToken);
+        await transport.SendAsync(message, AbortToken);
+        await transport.SendAsync(message, AbortToken);
 
         // then - _topicArnMaps is pre-populated, so ListTopicsAsync should never be called
         await snsClient.DidNotReceive().ListTopicsAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>());
@@ -492,7 +491,7 @@ public sealed class AmazonSnsBusTransportTests : TestBase
         );
 
         // when
-        var result = await transport.SendAsync(message);
+        var result = await transport.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeTrue();

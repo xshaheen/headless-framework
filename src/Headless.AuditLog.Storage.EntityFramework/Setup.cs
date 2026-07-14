@@ -1,14 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
-using Headless.AuditLog;
 using Headless.AuditLog.Internal;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Microsoft.Extensions.DependencyInjection;
+namespace Headless.AuditLog;
 
 [PublicAPI]
 public static class SetupAuditLogEntityFramework
@@ -76,7 +75,7 @@ public static class SetupAuditLogEntityFramework
             RuleFor(x => x.Schema).IsValidCrossProviderIdentifier();
             RuleFor(x => x.TableName).IsValidCrossProviderIdentifier();
             RuleFor(x => x.JsonColumnType).IsInEnum().When(x => x.JsonColumnType.HasValue);
-            RuleFor(x => x.CreatedAtColumnType!)
+            RuleFor(x => x.CreatedAtColumnType)
                 .MaximumLength(64)
                 .Matches(@"^[A-Za-z][A-Za-z0-9 ]*(\([0-9]+\))?$")
                 .When(x => !string.IsNullOrEmpty(x.CreatedAtColumnType));

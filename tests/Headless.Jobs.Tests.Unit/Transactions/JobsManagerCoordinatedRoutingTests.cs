@@ -1,17 +1,18 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
-using System.Diagnostics.CodeAnalysis;
+using Headless.Abstractions;
 using Headless.CommitCoordination;
 using Headless.Jobs;
-using Headless.Jobs.DependencyInjection;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Managers;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.Transactions;
 
@@ -20,22 +21,24 @@ namespace Tests.Transactions;
 /// capture fork, the fail-loud cases, and post-commit side-effect deferral. Atomicity itself (rows committing /
 /// discarding with the caller's transaction) is integration-only — see the EF harness conformance suite.
 /// </summary>
-public sealed class JobsManagerCoordinatedRoutingTests
+public sealed class JobsManagerCoordinatedRoutingTests : TestBase
 {
-    private const string FunctionName = "routing-test-fn";
+    private const string _FunctionName = "routing-test-fn";
 
     static JobsManagerCoordinatedRoutingTests()
     {
-        // AddHeadlessJobs normally seeds this from the scheduler options; the manager's cron-expression validation
-        // needs it set or GetNextOccurrenceOrDefault returns null and AddAsync reports a parse failure.
-        CronScheduleCache.TimeZoneInfo = TimeZoneInfo.Utc;
-
         // The manager validates the function exists before routing. No other unit test mutates JobFunctionProvider, so
         // a one-time static registration is stable for this assembly.
         JobFunctionProvider.RegisterFunctions(
-            new Dictionary<string, (string, JobPriority, JobFunctionDelegate, int)>(StringComparer.Ordinal)
+            new Dictionary<string, JobFunctionRegistration>(StringComparer.Ordinal)
             {
-                [FunctionName] = ("0 0 * * *", JobPriority.LongRunning, (_, _, _) => Task.CompletedTask, 1),
+                [_FunctionName] = new JobFunctionRegistration
+                {
+                    CronExpression = "0 0 * * *",
+                    Priority = JobPriority.LongRunning,
+                    Delegate = (_, _, _) => Task.CompletedTask,
+                    MaxConcurrency = 1,
+                },
             }
         );
         JobFunctionProvider.Build();
@@ -46,10 +49,10 @@ public sealed class JobsManagerCoordinatedRoutingTests
     {
         var sut = _CreateSut(CoordinatorMode.None, withWriter: false);
 
-        var result = await sut.Time.AddAsync(_FutureTimeJob(), TestContext.Current.CancellationToken);
+        var result = await sut.Time.AddAsync(_FutureTimeJob(), AbortToken);
 
         result.Should().NotBeNull();
-        await sut.Persistence.Received(1).AddTimeJobs(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
+        await sut.Persistence.Received(1).AddTimeJobsAsync(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
         sut.Scheduler.Received(1).RestartIfNeeded(Arg.Any<DateTime>());
         await sut.Notification.Received(1).AddTimeJobNotifyAsync(Arg.Any<Guid>());
     }
@@ -60,10 +63,10 @@ public sealed class JobsManagerCoordinatedRoutingTests
         // A messaging-only coordinated scope: coordination must not become infectious — fall back to direct insert.
         var sut = _CreateSut(CoordinatorMode.NonRelational, withWriter: true);
 
-        var result = await sut.Time.AddAsync(_FutureTimeJob(), TestContext.Current.CancellationToken);
+        var result = await sut.Time.AddAsync(_FutureTimeJob(), AbortToken);
 
         result.Should().NotBeNull();
-        await sut.Persistence.Received(1).AddTimeJobs(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
+        await sut.Persistence.Received(1).AddTimeJobsAsync(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
         sut.Coordinator!.OnCommitCount.Should().Be(0);
         await sut
             .Writer.DidNotReceive()
@@ -79,10 +82,12 @@ public sealed class JobsManagerCoordinatedRoutingTests
     {
         var sut = _CreateSut(CoordinatorMode.DeadRelational, withWriter: true);
 
-        var act = () => sut.Time.AddAsync(_FutureTimeJob(), TestContext.Current.CancellationToken);
+        var act = () => sut.Time.AddAsync(_FutureTimeJob(), AbortToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
-        await sut.Persistence.DidNotReceive().AddTimeJobs(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
+        await sut
+            .Persistence.DidNotReceive()
+            .AddTimeJobsAsync(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
         await sut
             .Writer.DidNotReceive()
             .WriteTimeJobsAsync(
@@ -98,10 +103,12 @@ public sealed class JobsManagerCoordinatedRoutingTests
         // Live relational coordinator, but the provider cannot write inside the ambient transaction (in-memory shape).
         var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: false);
 
-        var act = () => sut.Time.AddAsync(_FutureTimeJob(), TestContext.Current.CancellationToken);
+        var act = () => sut.Time.AddAsync(_FutureTimeJob(), AbortToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
-        await sut.Persistence.DidNotReceive().AddTimeJobs(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
+        await sut
+            .Persistence.DidNotReceive()
+            .AddTimeJobsAsync(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -109,10 +116,12 @@ public sealed class JobsManagerCoordinatedRoutingTests
     {
         var sut = _CreateSut(CoordinatorMode.DeadRelational, withWriter: true);
 
-        var act = () => sut.Cron.AddAsync(_CronJob(), TestContext.Current.CancellationToken);
+        var act = () => sut.Cron.AddAsync(_CronJob(), AbortToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
-        await sut.Persistence.DidNotReceive().InsertCronJobs(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
+        await sut
+            .Persistence.DidNotReceive()
+            .InsertCronJobsAsync(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
         await sut
             .Writer.DidNotReceive()
             .WriteCronJobsAsync(
@@ -127,10 +136,12 @@ public sealed class JobsManagerCoordinatedRoutingTests
     {
         var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: false);
 
-        var act = () => sut.Cron.AddAsync(_CronJob(), TestContext.Current.CancellationToken);
+        var act = () => sut.Cron.AddAsync(_CronJob(), AbortToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
-        await sut.Persistence.DidNotReceive().InsertCronJobs(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
+        await sut
+            .Persistence.DidNotReceive()
+            .InsertCronJobsAsync(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -139,10 +150,12 @@ public sealed class JobsManagerCoordinatedRoutingTests
         var sut = _CreateSut(CoordinatorMode.DeadRelational, withWriter: true);
         var jobs = new List<TimeJobEntity> { _FutureTimeJob(), _FutureTimeJob() };
 
-        var act = () => sut.Time.AddBatchAsync(jobs, TestContext.Current.CancellationToken);
+        var act = () => sut.Time.AddBatchAsync(jobs, AbortToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
-        await sut.Persistence.DidNotReceive().AddTimeJobs(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
+        await sut
+            .Persistence.DidNotReceive()
+            .AddTimeJobsAsync(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
         await sut
             .Writer.DidNotReceive()
             .WriteTimeJobsAsync(
@@ -158,10 +171,12 @@ public sealed class JobsManagerCoordinatedRoutingTests
         var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: false);
         var jobs = new List<TimeJobEntity> { _FutureTimeJob(), _FutureTimeJob() };
 
-        var act = () => sut.Time.AddBatchAsync(jobs, TestContext.Current.CancellationToken);
+        var act = () => sut.Time.AddBatchAsync(jobs, AbortToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
-        await sut.Persistence.DidNotReceive().AddTimeJobs(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
+        await sut
+            .Persistence.DidNotReceive()
+            .AddTimeJobsAsync(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -170,10 +185,12 @@ public sealed class JobsManagerCoordinatedRoutingTests
         var sut = _CreateSut(CoordinatorMode.DeadRelational, withWriter: true);
         var crons = new List<CronJobEntity> { _CronJob(), _CronJob() };
 
-        var act = () => sut.Cron.AddBatchAsync(crons, TestContext.Current.CancellationToken);
+        var act = () => sut.Cron.AddBatchAsync(crons, AbortToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
-        await sut.Persistence.DidNotReceive().InsertCronJobs(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
+        await sut
+            .Persistence.DidNotReceive()
+            .InsertCronJobsAsync(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
         await sut
             .Writer.DidNotReceive()
             .WriteCronJobsAsync(
@@ -189,10 +206,12 @@ public sealed class JobsManagerCoordinatedRoutingTests
         var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: false);
         var crons = new List<CronJobEntity> { _CronJob(), _CronJob() };
 
-        var act = () => sut.Cron.AddBatchAsync(crons, TestContext.Current.CancellationToken);
+        var act = () => sut.Cron.AddBatchAsync(crons, AbortToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
-        await sut.Persistence.DidNotReceive().InsertCronJobs(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
+        await sut
+            .Persistence.DidNotReceive()
+            .InsertCronJobsAsync(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -201,7 +220,7 @@ public sealed class JobsManagerCoordinatedRoutingTests
         var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true);
         var job = _FutureTimeJob();
 
-        var result = await sut.Time.AddAsync(job, TestContext.Current.CancellationToken);
+        var result = await sut.Time.AddAsync(job, AbortToken);
 
         result.Should().BeSameAs(job);
         await sut
@@ -214,11 +233,13 @@ public sealed class JobsManagerCoordinatedRoutingTests
         sut.Coordinator!.OnCommitCount.Should().Be(1);
 
         // Side effects must NOT have fired synchronously and the row must NOT have gone through the direct insert.
-        await sut.Persistence.DidNotReceive().AddTimeJobs(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
+        await sut
+            .Persistence.DidNotReceive()
+            .AddTimeJobsAsync(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
         sut.Scheduler.DidNotReceive().RestartIfNeeded(Arg.Any<DateTime>());
         await sut.Notification.DidNotReceive().AddTimeJobNotifyAsync(Arg.Any<Guid>());
 
-        await sut.Coordinator.DrainCommitAsync(TestContext.Current.CancellationToken);
+        await sut.Coordinator.DrainCommitAsync(AbortToken);
 
         sut.Scheduler.Received(1).RestartIfNeeded(Arg.Any<DateTime>());
         await sut.Notification.Received(1).AddTimeJobNotifyAsync(job.Id);
@@ -234,19 +255,125 @@ public sealed class JobsManagerCoordinatedRoutingTests
         var boom = new InvalidOperationException("deferred side effect boom");
         sut.Notification.AddTimeJobNotifyAsync(Arg.Any<Guid>()).Returns(Task.FromException(boom));
 
-        await sut.Time.AddAsync(_FutureTimeJob(), TestContext.Current.CancellationToken);
+        await sut.Time.AddAsync(_FutureTimeJob(), AbortToken);
 
-        var drain = () => sut.Coordinator!.DrainCommitAsync(TestContext.Current.CancellationToken);
+        var drain = () => sut.Coordinator!.DrainCommitAsync(AbortToken);
         await drain.Should().NotThrowAsync();
 
         sut.Logger.Entries.Should()
             .ContainSingle(e => e.Level == LogLevel.Warning && ReferenceEquals(e.Exception, boom));
     }
 
-    // Note: the former shutdown-cancellation test was removed with the OCE-on-shutdown branch it covered. The drain
-    // now bounds side effects with its own timeout token (the coordinator always drains with CancellationToken.None),
-    // so a deferred failure is exercised by Deferred_side_effect_failure_is_swallowed_and_logged above. The deferred
-    // timeout path mirrors MessageOutboxBuffer's bounded flush; a deterministic timeout test is a follow-up.
+    [Fact]
+    public async Task Deferred_side_effect_timeout_is_swallowed_and_logged()
+    {
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var timeout = TimeSpan.FromSeconds(5);
+        var sut = _CreateSut(
+            CoordinatorMode.LiveRelational,
+            withWriter: true,
+            dispatcherEnabled: true,
+            timeProvider: timeProvider,
+            postCommitDrainTimeout: timeout
+        );
+        var sideEffectStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        sut.Persistence.AcquireImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
+            .Returns(async callInfo =>
+            {
+                sideEffectStarted.SetResult();
+                await Task.Delay(Timeout.InfiniteTimeSpan, callInfo.ArgAt<CancellationToken>(1));
+                return [];
+            });
+
+        await sut.Time.AddAsync(_ImmediateTimeJob(), AbortToken);
+
+        var drain = sut.Coordinator!.DrainCommitAsync(AbortToken);
+        await sideEffectStarted.Task.WaitAsync(AbortToken);
+        timeProvider.Advance(timeout + TimeSpan.FromTicks(1));
+
+        Func<Task> drainAction = async () => await drain;
+        await drainAction.Should().NotThrowAsync();
+        sut.Logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning && e.Exception == null);
+    }
+
+    [Fact]
+    public async Task Deferred_side_effect_timeout_bounds_work_that_ignores_cancellation()
+    {
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var timeout = TimeSpan.FromSeconds(5);
+        var sut = _CreateSut(
+            CoordinatorMode.LiveRelational,
+            withWriter: true,
+            dispatcherEnabled: true,
+            timeProvider: timeProvider,
+            postCommitDrainTimeout: timeout
+        );
+        var sideEffectStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var neverCompletes = new TaskCompletionSource<TimeJobEntity[]>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        sut.Persistence.AcquireImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                sideEffectStarted.SetResult();
+
+                return neverCompletes.Task;
+            });
+
+        await sut.Time.AddAsync(_ImmediateTimeJob(), AbortToken);
+
+        var drain = sut.Coordinator!.DrainCommitAsync(AbortToken);
+        await sideEffectStarted.Task.WaitAsync(AbortToken);
+        timeProvider.Advance(timeout + TimeSpan.FromTicks(1));
+
+        Func<Task> drainAction = async () => await drain;
+        await drainAction.Should().NotThrowAsync();
+        neverCompletes.Task.IsCompleted.Should().BeFalse();
+        sut.Logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning && e.Exception == null);
+
+        // Release the abandoned task after proving the drain did not retain it, so the late-completion continuation can
+        // dispose its cancellation source before the test exits.
+        neverCompletes.SetResult([]);
+    }
+
+    [Fact]
+    public async Task Deferred_side_effect_fault_after_timeout_is_observed_and_logged()
+    {
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var timeout = TimeSpan.FromSeconds(5);
+        var sut = _CreateSut(
+            CoordinatorMode.LiveRelational,
+            withWriter: true,
+            dispatcherEnabled: true,
+            timeProvider: timeProvider,
+            postCommitDrainTimeout: timeout
+        );
+        var sideEffectStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var lateSideEffect = new TaskCompletionSource<TimeJobEntity[]>();
+        sut.Persistence.AcquireImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                sideEffectStarted.SetResult();
+
+                return lateSideEffect.Task;
+            });
+
+        await sut.Time.AddAsync(_ImmediateTimeJob(), AbortToken);
+
+        var drain = sut.Coordinator!.DrainCommitAsync(AbortToken);
+        await sideEffectStarted.Task.WaitAsync(AbortToken);
+        timeProvider.Advance(timeout + TimeSpan.FromTicks(1));
+        await drain;
+
+        var boom = new InvalidOperationException("late deferred side effect boom");
+        lateSideEffect.SetException(boom);
+
+        sut.Logger.Entries.Should().HaveCount(2);
+        sut.Logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning && e.Exception == null);
+        var lateFaultEntry = sut.Logger.Entries.Single(e => e.Exception != null);
+        lateFaultEntry.Level.Should().Be(LogLevel.Warning);
+        lateFaultEntry.Exception.Should().BeOfType<AggregateException>().Which.InnerExceptions.Should().Contain(boom);
+    }
 
     [Fact]
     public async Task Coordinated_enqueue_registers_no_rollback_callbacks()
@@ -255,7 +382,7 @@ public sealed class JobsManagerCoordinatedRoutingTests
         // never register a rollback callback (which would run side effects for work that was rolled back).
         var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true);
 
-        await sut.Time.AddAsync(_FutureTimeJob(), TestContext.Current.CancellationToken);
+        await sut.Time.AddAsync(_FutureTimeJob(), AbortToken);
 
         sut.Coordinator!.OnCommitCount.Should().Be(1);
         sut.Coordinator.OnRollbackCount.Should().Be(0);
@@ -267,14 +394,14 @@ public sealed class JobsManagerCoordinatedRoutingTests
         var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true, dispatcherEnabled: true);
         sut.Persistence.AcquireImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>()).Returns([]);
 
-        await sut.Time.AddAsync(_ImmediateTimeJob(), TestContext.Current.CancellationToken);
+        await sut.Time.AddAsync(_ImmediateTimeJob(), AbortToken);
 
         // The immediate-acquire probe is part of the deferred side effects, not the synchronous enqueue.
         await sut
             .Persistence.DidNotReceive()
             .AcquireImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>());
 
-        await sut.Coordinator!.DrainCommitAsync(TestContext.Current.CancellationToken);
+        await sut.Coordinator!.DrainCommitAsync(AbortToken);
 
         await sut
             .Persistence.Received(1)
@@ -287,7 +414,7 @@ public sealed class JobsManagerCoordinatedRoutingTests
         var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true);
         var jobs = new List<TimeJobEntity> { _FutureTimeJob(), _FutureTimeJob() };
 
-        var result = await sut.Time.AddBatchAsync(jobs, TestContext.Current.CancellationToken);
+        var result = await sut.Time.AddBatchAsync(jobs, AbortToken);
 
         result.Should().HaveCount(2);
         // R3: the batch reaches the seam as one array in insertion order (AddRange preserves it downstream).
@@ -301,7 +428,7 @@ public sealed class JobsManagerCoordinatedRoutingTests
         sut.Coordinator!.OnCommitCount.Should().Be(1);
         await sut.Notification.DidNotReceive().AddTimeJobsBatchNotifyAsync();
 
-        await sut.Coordinator.DrainCommitAsync(TestContext.Current.CancellationToken);
+        await sut.Coordinator.DrainCommitAsync(AbortToken);
 
         await sut.Notification.Received(1).AddTimeJobsBatchNotifyAsync();
     }
@@ -311,10 +438,10 @@ public sealed class JobsManagerCoordinatedRoutingTests
     {
         var sut = _CreateSut(CoordinatorMode.None, withWriter: false);
 
-        var result = await sut.Cron.AddAsync(_CronJob(), TestContext.Current.CancellationToken);
+        var result = await sut.Cron.AddAsync(_CronJob(), AbortToken);
 
         result.Should().NotBeNull();
-        await sut.Persistence.Received(1).InsertCronJobs(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
+        await sut.Persistence.Received(1).InsertCronJobsAsync(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -323,7 +450,7 @@ public sealed class JobsManagerCoordinatedRoutingTests
         var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true);
         var cron = _CronJob();
 
-        var result = await sut.Cron.AddAsync(cron, TestContext.Current.CancellationToken);
+        var result = await sut.Cron.AddAsync(cron, AbortToken);
 
         result.Should().BeSameAs(cron);
         await sut
@@ -337,10 +464,12 @@ public sealed class JobsManagerCoordinatedRoutingTests
 
         // Cache invalidation + scheduler + notify must be deferred — never on a pre-commit snapshot.
         await sut.Writer.DidNotReceive().InvalidateCronExpressionsCacheAsync();
-        await sut.Persistence.DidNotReceive().InsertCronJobs(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
+        await sut
+            .Persistence.DidNotReceive()
+            .InsertCronJobsAsync(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
         sut.Scheduler.DidNotReceive().RestartIfNeeded(Arg.Any<DateTime>());
 
-        await sut.Coordinator.DrainCommitAsync(TestContext.Current.CancellationToken);
+        await sut.Coordinator.DrainCommitAsync(AbortToken);
 
         await sut.Writer.Received(1).InvalidateCronExpressionsCacheAsync();
         sut.Scheduler.Received(1).RestartIfNeeded(Arg.Any<DateTime>());
@@ -353,7 +482,7 @@ public sealed class JobsManagerCoordinatedRoutingTests
         var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true);
         var crons = new List<CronJobEntity> { _CronJob(), _CronJob() };
 
-        var result = await sut.Cron.AddBatchAsync(crons, TestContext.Current.CancellationToken);
+        var result = await sut.Cron.AddBatchAsync(crons, AbortToken);
 
         result.Should().HaveCount(2);
         // R3: the batch reaches the seam as one array in insertion order (AddRange preserves it downstream).
@@ -368,11 +497,13 @@ public sealed class JobsManagerCoordinatedRoutingTests
 
         // Cache invalidation + scheduler + per-entity notify must be deferred to commit, never on a pre-commit snapshot.
         await sut.Writer.DidNotReceive().InvalidateCronExpressionsCacheAsync();
-        await sut.Persistence.DidNotReceive().InsertCronJobs(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
+        await sut
+            .Persistence.DidNotReceive()
+            .InsertCronJobsAsync(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
         sut.Scheduler.DidNotReceive().RestartIfNeeded(Arg.Any<DateTime>());
         await sut.Notification.DidNotReceive().AddCronJobNotifyAsync(Arg.Any<CronJobEntity>());
 
-        await sut.Coordinator.DrainCommitAsync(TestContext.Current.CancellationToken);
+        await sut.Coordinator.DrainCommitAsync(AbortToken);
 
         // Cache invalidation fires exactly once for the batch; scheduler restarts once; notify fires per entity.
         await sut.Writer.Received(1).InvalidateCronExpressionsCacheAsync();
@@ -399,8 +530,8 @@ public sealed class JobsManagerCoordinatedRoutingTests
         new()
         {
             Id = Guid.NewGuid(),
-            Function = FunctionName,
-            Description = FunctionName,
+            Function = _FunctionName,
+            Description = _FunctionName,
             Request = [],
             ExecutionTime = DateTime.UtcNow.AddHours(1),
         };
@@ -409,8 +540,8 @@ public sealed class JobsManagerCoordinatedRoutingTests
         new()
         {
             Id = Guid.NewGuid(),
-            Function = FunctionName,
-            Description = FunctionName,
+            Function = _FunctionName,
+            Description = _FunctionName,
             Request = [],
             ExecutionTime = DateTime.UtcNow,
         };
@@ -419,8 +550,8 @@ public sealed class JobsManagerCoordinatedRoutingTests
         new()
         {
             Id = Guid.NewGuid(),
-            Function = FunctionName,
-            Description = FunctionName,
+            Function = _FunctionName,
+            Description = _FunctionName,
             // CronScheduleCache parses with IncludingSeconds = true, so the expression has six fields.
             Expression = "0 0 0 * * *",
             Request = [],
@@ -434,7 +565,13 @@ public sealed class JobsManagerCoordinatedRoutingTests
         DeadRelational,
     }
 
-    private static Sut _CreateSut(CoordinatorMode mode, bool withWriter, bool dispatcherEnabled = false)
+    private static Sut _CreateSut(
+        CoordinatorMode mode,
+        bool withWriter,
+        bool dispatcherEnabled = false,
+        TimeProvider? timeProvider = null,
+        TimeSpan? postCommitDrainTimeout = null
+    )
     {
         var persistence = withWriter
             ? Substitute.For<
@@ -466,11 +603,14 @@ public sealed class JobsManagerCoordinatedRoutingTests
         var manager = new JobsManager<TimeJobEntity, CronJobEntity>(
             persistence,
             scheduler,
-            TimeProvider.System,
+            timeProvider ?? TimeProvider.System,
+            new SequentialGuidGenerator(SequentialGuidType.Version7),
             notification,
             new JobsExecutionContext(),
             dispatcher,
             new FakeCurrentCommitCoordinator(coordinator),
+            new CronScheduleCache(TimeZoneInfo.Utc),
+            new SchedulerOptionsBuilder { PostCommitDrainTimeout = postCommitDrainTimeout ?? TimeSpan.FromSeconds(30) },
             logger
         );
 
@@ -533,14 +673,14 @@ public sealed class JobsManagerCoordinatedRoutingTests
         {
             _onCommit.Add(work);
 
-            return _NoopDisposable.Instance;
+            return NoopDisposable.Instance;
         }
 
         public IDisposable OnRollback(Func<CommitContext, CancellationToken, ValueTask> work)
         {
             _onRollback.Add(work);
 
-            return _NoopDisposable.Instance;
+            return NoopDisposable.Instance;
         }
 
         public TBuffer GetOrAdd<TBuffer>(Func<ICommitCoordinator, TBuffer> factory)
@@ -568,7 +708,7 @@ public sealed class JobsManagerCoordinatedRoutingTests
         {
             var context = new CommitContext
             {
-                Services = _EmptyServiceProvider.Instance,
+                Services = EmptyServiceProvider.Instance,
                 Outcome = CommitOutcome.Committed,
             };
 
@@ -578,17 +718,17 @@ public sealed class JobsManagerCoordinatedRoutingTests
             }
         }
 
-        private sealed class _NoopDisposable : IDisposable
+        private sealed class NoopDisposable : IDisposable
         {
-            public static readonly _NoopDisposable Instance = new();
+            public static readonly NoopDisposable Instance = new();
 
             public void Dispose() { }
         }
     }
 
-    private sealed class _EmptyServiceProvider : IServiceProvider
+    private sealed class EmptyServiceProvider : IServiceProvider
     {
-        public static readonly _EmptyServiceProvider Instance = new();
+        public static readonly EmptyServiceProvider Instance = new();
 
         public object? GetService(Type serviceType) => null;
     }
@@ -599,7 +739,7 @@ public sealed class JobsManagerCoordinatedRoutingTests
         public List<(LogLevel Level, Exception? Exception)> Entries { get; } = [];
 
         public IDisposable BeginScope<TState>(TState state)
-            where TState : notnull => _NullScope.Instance;
+            where TState : notnull => NullScope.Instance;
 
         public bool IsEnabled(LogLevel logLevel) => true;
 
@@ -611,9 +751,9 @@ public sealed class JobsManagerCoordinatedRoutingTests
             Func<TState, Exception?, string> formatter
         ) => Entries.Add((logLevel, exception));
 
-        private sealed class _NullScope : IDisposable
+        private sealed class NullScope : IDisposable
         {
-            public static readonly _NullScope Instance = new();
+            public static readonly NullScope Instance = new();
 
             public void Dispose() { }
         }

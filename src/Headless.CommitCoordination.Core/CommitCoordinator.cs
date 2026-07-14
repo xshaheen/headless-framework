@@ -172,13 +172,8 @@ internal sealed partial class CommitCoordinator : ICommitCoordinator
         {
             afterDrain?.Invoke();
         }
-        catch (Exception afterDrainEx)
+        catch (Exception afterDrainEx) when (drainFault is not null)
         {
-            if (drainFault is null)
-            {
-                throw;
-            }
-
             // Re-throw the drain fault through its ExceptionDispatchInfo so the aggregate's first inner carries the
             // original throw site rather than this re-packaging frame, then combine with the cleanup fault.
             try
@@ -354,7 +349,7 @@ internal sealed partial class CommitCoordinator : ICommitCoordinator
         }
     }
 
-    private IDisposable _AddCallback(
+    private CommitCallbackRegistration _AddCallback(
         Func<CommitContext, CancellationToken, ValueTask> work,
         List<CommitCallbackRegistration> target
     )
@@ -434,6 +429,7 @@ internal sealed partial class CommitCoordinator : ICommitCoordinator
             {
                 switch (buffer)
                 {
+                    // ReSharper disable once SuspiciousTypeConversion.Global
                     case IAsyncDisposable asyncDisposable:
                         await asyncDisposable.DisposeAsync().ConfigureAwait(false);
                         break;
@@ -491,6 +487,7 @@ internal sealed partial class CommitCoordinator : ICommitCoordinator
         Level = LogLevel.Warning,
         Message = "Commit scope already {State}; ignoring {Signal} signal."
     )]
+    // ReSharper disable once InconsistentNaming
     private static partial void LogIgnoredRacingSignal(
         ILogger logger,
         CommitCoordinatorState state,
@@ -498,5 +495,6 @@ internal sealed partial class CommitCoordinator : ICommitCoordinator
     );
 
     [LoggerMessage(EventId = 2, Level = LogLevel.Error, Message = "A commit coordination background drain faulted.")]
+    // ReSharper disable once InconsistentNaming
     private static partial void LogBackgroundDrainFaulted(ILogger logger, Exception? exception);
 }

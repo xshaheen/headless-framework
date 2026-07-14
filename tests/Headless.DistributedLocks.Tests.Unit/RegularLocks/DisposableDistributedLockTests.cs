@@ -6,21 +6,20 @@ using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.RegularLocks;
 
-// ReSharper disable AccessToModifiedClosure
 public sealed class DisposableDistributedLockTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
     private readonly IDistributedLock _lockProvider = Substitute.For<IDistributedLock>();
 
     [Fact]
-    public void should_store_resource_and_lock_id()
+    public async Task should_store_resource_and_lock_id()
     {
         // given
         var resource = Faker.Random.AlphaNumeric(10);
         var leaseId = Faker.Random.Guid().ToString();
 
         // when
-        var sut = _CreateLock(resource, leaseId);
+        await using var sut = _CreateLock(resource, leaseId);
 
         // then
         sut.Resource.Should().Be(resource);
@@ -28,7 +27,7 @@ public sealed class DisposableDistributedLockTests : TestBase
     }
 
     [Fact]
-    public void should_store_fencing_token()
+    public async Task should_store_fencing_token()
     {
         // given
         var resource = Faker.Random.AlphaNumeric(10);
@@ -36,14 +35,14 @@ public sealed class DisposableDistributedLockTests : TestBase
         var fencingToken = Faker.Random.Long(1);
 
         // when
-        var sut = _CreateLock(resource, leaseId, fencingToken: fencingToken);
+        await using var sut = _CreateLock(resource, leaseId, fencingToken: fencingToken);
 
         // then
         sut.FencingToken.Should().Be(fencingToken);
     }
 
     [Fact]
-    public void should_store_acquired_at()
+    public async Task should_store_acquired_at()
     {
         // given
         var expectedTime = new DateTimeOffset(2025, 6, 15, 10, 30, 0, TimeSpan.Zero);
@@ -52,14 +51,14 @@ public sealed class DisposableDistributedLockTests : TestBase
         var leaseId = Faker.Random.Guid().ToString();
 
         // when
-        var sut = _CreateLock(resource, leaseId);
+        await using var sut = _CreateLock(resource, leaseId);
 
         // then
         sut.DateAcquired.Should().Be(expectedTime);
     }
 
     [Fact]
-    public void should_store_time_waited_for_lock()
+    public async Task should_store_time_waited_for_lock()
     {
         // given
         var resource = Faker.Random.AlphaNumeric(10);
@@ -67,7 +66,7 @@ public sealed class DisposableDistributedLockTests : TestBase
         var timeWaited = TimeSpan.FromSeconds(5);
 
         // when
-        var sut = _CreateLock(resource, leaseId, timeWaited);
+        await using var sut = _CreateLock(resource, leaseId, timeWaited);
 
         // then
         sut.TimeWaitedForLock.Should().Be(timeWaited);
@@ -79,7 +78,7 @@ public sealed class DisposableDistributedLockTests : TestBase
         // given
         var resource = Faker.Random.AlphaNumeric(10);
         var leaseId = Faker.Random.Guid().ToString();
-        var sut = _CreateLock(resource, leaseId);
+        await using var sut = _CreateLock(resource, leaseId);
 
         // when
         await sut.DisposeAsync();
@@ -94,7 +93,7 @@ public sealed class DisposableDistributedLockTests : TestBase
         // given
         var resource = Faker.Random.AlphaNumeric(10);
         var leaseId = Faker.Random.Guid().ToString();
-        var sut = _CreateLock(resource, leaseId, releaseOnDispose: false);
+        await using var sut = _CreateLock(resource, leaseId, releaseOnDispose: false);
 
         // when
         await sut.DisposeAsync();
@@ -104,10 +103,10 @@ public sealed class DisposableDistributedLockTests : TestBase
     }
 
     [Fact]
-    public void should_return_none_handle_lost_token_when_monitor_is_absent()
+    public async Task should_return_none_handle_lost_token_when_monitor_is_absentAsync()
     {
         // given
-        var sut = _CreateLock(Faker.Random.AlphaNumeric(10), Faker.Random.Guid().ToString());
+        await using var sut = _CreateLock(Faker.Random.AlphaNumeric(10), Faker.Random.Guid().ToString());
 
         // when
         var token = sut.LostToken;
@@ -123,7 +122,7 @@ public sealed class DisposableDistributedLockTests : TestBase
         // given
         var resource = Faker.Random.AlphaNumeric(10);
         var leaseId = Faker.Random.Guid().ToString();
-        var sut = _CreateLock(resource, leaseId, releaseOnDispose: false);
+        await using var sut = _CreateLock(resource, leaseId, releaseOnDispose: false);
 
         // when
         await sut.ReleaseAsync();
@@ -139,7 +138,7 @@ public sealed class DisposableDistributedLockTests : TestBase
         // given
         var resource = Faker.Random.AlphaNumeric(10);
         var leaseId = Faker.Random.Guid().ToString();
-        var sut = _CreateLock(resource, leaseId);
+        await using var sut = _CreateLock(resource, leaseId);
 
         // when
         await sut.DisposeAsync();
@@ -157,7 +156,7 @@ public sealed class DisposableDistributedLockTests : TestBase
         var resource = Faker.Random.AlphaNumeric(10);
         var leaseId = Faker.Random.Guid().ToString();
         var deregisterCount = 0;
-        var sut = _CreateLock(
+        await using var sut = _CreateLock(
             resource,
             leaseId,
             deregisterMonitor: (actualResource, actualLockId) =>
@@ -167,7 +166,11 @@ public sealed class DisposableDistributedLockTests : TestBase
                 Interlocked.Increment(ref deregisterCount);
             }
         );
-        var monitor = new LeaseMonitor(sut, _timeProvider, LoggerFactory.CreateLogger(nameof(LeaseMonitor)));
+        await using var monitor = new LeaseMonitor(
+            sut,
+            _timeProvider,
+            LoggerFactory.CreateLogger(nameof(LeaseMonitor))
+        );
         sut.AttachMonitor(monitor);
         sut.CanObserveLoss.Should().BeTrue();
         var lostToken = sut.LostToken;
@@ -191,7 +194,7 @@ public sealed class DisposableDistributedLockTests : TestBase
         var resource = Faker.Random.AlphaNumeric(10);
         var leaseId = Faker.Random.Guid().ToString();
         _lockProvider.RenewAsync(resource, leaseId, Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(true);
-        var sut = _CreateLock(resource, leaseId, autoExtend: true);
+        await using var sut = _CreateLock(resource, leaseId, autoExtend: true);
 
         // when
         var result = await ((LeaseMonitor.ILeaseHandle)sut).RenewOrValidateLeaseAsync(AbortToken);
@@ -213,7 +216,7 @@ public sealed class DisposableDistributedLockTests : TestBase
         var leaseId = Faker.Random.Guid().ToString();
         _lockProvider.RenewAsync(resource, leaseId, Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(false);
         _lockProvider.GetLeaseIdAsync(resource, Arg.Any<CancellationToken>()).Returns(leaseId);
-        var sut = _CreateLock(resource, leaseId, autoExtend: true);
+        await using var sut = _CreateLock(resource, leaseId, autoExtend: true);
 
         // when
         var result = await ((LeaseMonitor.ILeaseHandle)sut).RenewOrValidateLeaseAsync(AbortToken);
@@ -230,7 +233,7 @@ public sealed class DisposableDistributedLockTests : TestBase
         var leaseId = Faker.Random.Guid().ToString();
         _lockProvider.RenewAsync(resource, leaseId, Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(false);
         _lockProvider.GetLeaseIdAsync(resource, Arg.Any<CancellationToken>()).Returns("foreign-lock");
-        var sut = _CreateLock(resource, leaseId, autoExtend: true);
+        await using var sut = _CreateLock(resource, leaseId, autoExtend: true);
 
         // when
         var result = await ((LeaseMonitor.ILeaseHandle)sut).RenewOrValidateLeaseAsync(AbortToken);
@@ -247,7 +250,7 @@ public sealed class DisposableDistributedLockTests : TestBase
         var leaseId = Faker.Random.Guid().ToString();
         _lockProvider.RenewAsync(resource, leaseId, Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(false);
         _lockProvider.GetLeaseIdAsync(resource, Arg.Any<CancellationToken>()).Returns((string?)null);
-        var sut = _CreateLock(resource, leaseId, autoExtend: true);
+        await using var sut = _CreateLock(resource, leaseId, autoExtend: true);
 
         // when
         var result = await ((LeaseMonitor.ILeaseHandle)sut).RenewOrValidateLeaseAsync(AbortToken);
@@ -263,7 +266,7 @@ public sealed class DisposableDistributedLockTests : TestBase
         var resource = Faker.Random.AlphaNumeric(10);
         var leaseId = Faker.Random.Guid().ToString();
         _lockProvider.GetLeaseIdAsync(resource, Arg.Any<CancellationToken>()).Returns(leaseId);
-        var sut = _CreateLock(resource, leaseId);
+        await using var sut = _CreateLock(resource, leaseId);
 
         // when
         var result = await ((LeaseMonitor.ILeaseHandle)sut).RenewOrValidateLeaseAsync(AbortToken);
@@ -280,7 +283,7 @@ public sealed class DisposableDistributedLockTests : TestBase
         var resource = Faker.Random.AlphaNumeric(10);
         var leaseId = Faker.Random.Guid().ToString();
         _lockProvider.GetLeaseIdAsync(resource, Arg.Any<CancellationToken>()).Returns(leaseId);
-        var sut = _CreateLock(resource, leaseId);
+        await using var sut = _CreateLock(resource, leaseId);
         await using var monitor = new LeaseMonitor(
             sut,
             _timeProvider,
@@ -319,16 +322,16 @@ public sealed class DisposableDistributedLockTests : TestBase
                 ct.Register(() => tcs.TrySetCanceled(ct));
                 return tcs.Task;
             });
-        var sut = _CreateLock(resource, leaseId);
+        await using var sut = _CreateLock(resource, leaseId);
 
         // when - call the iteration with an uncancellable caller token, then advance fake time
         // past the per-iteration deadline.
-        var task = ((LeaseMonitor.ILeaseHandle)sut).RenewOrValidateLeaseAsync(CancellationToken.None);
+        var task = ((LeaseMonitor.ILeaseHandle)sut).RenewOrValidateLeaseAsync(AbortToken);
         await Task.Yield();
         _timeProvider.Advance(TimeSpan.FromSeconds(10));
 
         // then - completes within a bounded real time and classifies as Unknown.
-        var result = await task.WaitAsync(TimeSpan.FromSeconds(5));
+        var result = await task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         result.Should().Be(LeaseMonitor.LeaseState.Unknown);
     }
 
@@ -349,11 +352,15 @@ public sealed class DisposableDistributedLockTests : TestBase
 
                 return blocked.Task;
             });
-        var sut = _CreateLock(resource, leaseId);
-        var monitor = new LeaseMonitor(sut, _timeProvider, LoggerFactory.CreateLogger(nameof(LeaseMonitor)));
+        await using var sut = _CreateLock(resource, leaseId);
+        await using var monitor = new LeaseMonitor(
+            sut,
+            _timeProvider,
+            LoggerFactory.CreateLogger(nameof(LeaseMonitor))
+        );
         sut.AttachMonitor(monitor);
         monitor.TriggerImmediateValidation();
-        await validationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await validationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         // when
         var disposeTask = sut.DisposeAsync().AsTask();
@@ -361,7 +368,7 @@ public sealed class DisposableDistributedLockTests : TestBase
         _timeProvider.Advance(TimeSpan.FromSeconds(10));
 
         // then
-        await disposeTask.WaitAsync(TimeSpan.FromSeconds(5));
+        await disposeTask.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         monitor.MonitoringTask.IsCompleted.Should().BeTrue();
     }
 
@@ -381,18 +388,18 @@ public sealed class DisposableDistributedLockTests : TestBase
 
                 return blocked.Task;
             });
-        var sut = _CreateLock(resource, leaseId);
+        await using var sut = _CreateLock(resource, leaseId);
 
         // when
-        var first = ((LeaseMonitor.ILeaseHandle)sut).RenewOrValidateLeaseAsync(CancellationToken.None);
+        var first = ((LeaseMonitor.ILeaseHandle)sut).RenewOrValidateLeaseAsync(AbortToken);
         await Task.Yield();
         _timeProvider.Advance(TimeSpan.FromSeconds(10));
-        var firstResult = await first.WaitAsync(TimeSpan.FromSeconds(5));
+        var firstResult = await first.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
-        var second = ((LeaseMonitor.ILeaseHandle)sut).RenewOrValidateLeaseAsync(CancellationToken.None);
+        var second = ((LeaseMonitor.ILeaseHandle)sut).RenewOrValidateLeaseAsync(AbortToken);
         await Task.Yield();
         _timeProvider.Advance(TimeSpan.FromSeconds(10));
-        var secondResult = await second.WaitAsync(TimeSpan.FromSeconds(5));
+        var secondResult = await second.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         // then
         firstResult.Should().Be(LeaseMonitor.LeaseState.Unknown);
@@ -415,18 +422,18 @@ public sealed class DisposableDistributedLockTests : TestBase
                 Interlocked.Increment(ref callCount);
                 return probe.Task;
             });
-        var sut = _CreateLock(resource, leaseId);
+        await using var sut = _CreateLock(resource, leaseId);
 
         // when - first iteration times out before storage replies.
-        var first = ((LeaseMonitor.ILeaseHandle)sut).RenewOrValidateLeaseAsync(CancellationToken.None);
+        var first = ((LeaseMonitor.ILeaseHandle)sut).RenewOrValidateLeaseAsync(AbortToken);
         await Task.Yield();
         _timeProvider.Advance(TimeSpan.FromSeconds(10));
-        var firstResult = await first.WaitAsync(TimeSpan.FromSeconds(5));
+        var firstResult = await first.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         probe.SetResult(leaseId);
         var secondResult = await ((LeaseMonitor.ILeaseHandle)sut)
-            .RenewOrValidateLeaseAsync(CancellationToken.None)
-            .WaitAsync(TimeSpan.FromSeconds(5));
+            .RenewOrValidateLeaseAsync(AbortToken)
+            .WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         // then - the completed single-flight result is consumed once instead of being discarded.
         firstResult.Should().Be(LeaseMonitor.LeaseState.Unknown);
@@ -452,9 +459,9 @@ public sealed class DisposableDistributedLockTests : TestBase
         await using var sut = _CreateLock(resource, leaseId);
 
         // when
-        var firstResult = await ((LeaseMonitor.ILeaseHandle)sut).RenewOrValidateLeaseAsync(CancellationToken.None);
+        var firstResult = await ((LeaseMonitor.ILeaseHandle)sut).RenewOrValidateLeaseAsync(AbortToken);
         currentLockId = "foreign-lock";
-        var secondResult = await ((LeaseMonitor.ILeaseHandle)sut).RenewOrValidateLeaseAsync(CancellationToken.None);
+        var secondResult = await ((LeaseMonitor.ILeaseHandle)sut).RenewOrValidateLeaseAsync(AbortToken);
 
         // then - the second probe must hit storage again instead of replaying stale Held.
         firstResult.Should().Be(LeaseMonitor.LeaseState.Held);
@@ -468,7 +475,7 @@ public sealed class DisposableDistributedLockTests : TestBase
         // given
         var resource = Faker.Random.AlphaNumeric(10);
         var leaseId = Faker.Random.Guid().ToString();
-        var sut = _CreateLock(resource, leaseId);
+        await using var sut = _CreateLock(resource, leaseId);
         var expectedDuration = TimeSpan.FromSeconds(30);
 
         // when

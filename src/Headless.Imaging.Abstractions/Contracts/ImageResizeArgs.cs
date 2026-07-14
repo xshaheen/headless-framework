@@ -6,38 +6,23 @@ using Headless.Checks;
 namespace Headless.Imaging;
 
 /// <summary>Parameters that control an image resize operation.</summary>
+[PublicAPI]
 public sealed class ImageResizeArgs
 {
     /// <summary>Gets the target width in pixels, or <c>0</c> when only height is constrained.</summary>
-    /// <exception cref="ArgumentException">Set to a negative value.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Set to a negative value.</exception>
     public int Width
     {
         get;
-        private init
-        {
-            if (value < 0)
-            {
-                throw new ArgumentException("Width cannot be negative!", nameof(value));
-            }
-
-            field = value;
-        }
+        private init => field = Argument.IsPositiveOrZero(value);
     }
 
     /// <summary>Gets the target height in pixels, or <c>0</c> when only width is constrained.</summary>
-    /// <exception cref="ArgumentException">Set to a negative value.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Set to a negative value.</exception>
     public int Height
     {
         get;
-        private init
-        {
-            if (value < 0)
-            {
-                throw new ArgumentException("Height cannot be negative!", nameof(value));
-            }
-
-            field = value;
-        }
+        private init => field = Argument.IsPositiveOrZero(value);
     }
 
     /// <summary>

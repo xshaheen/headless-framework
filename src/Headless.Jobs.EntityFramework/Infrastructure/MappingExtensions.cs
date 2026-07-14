@@ -10,6 +10,18 @@ namespace Headless.Jobs.Infrastructure;
 
 internal static class MappingExtensions
 {
+    internal static TCronJob ProjectCronJob<TCronJob>(JobManagerDispatchContext item, string owner)
+        where TCronJob : CronJobEntity, new() =>
+        new()
+        {
+            Id = item.Id,
+            Function = item.FunctionName,
+            InitIdentifier = owner,
+            Expression = item.Expression,
+            Retries = item.Retries,
+            RetryIntervals = item.RetryIntervals,
+        };
+
     public static Expression<Func<TCronJob, CronJobEntity>> ForCronJobExpressions<TCronJob>()
         where TCronJob : CronJobEntity, new() =>
         e => new CronJobEntity
@@ -28,6 +40,7 @@ internal static class MappingExtensions
             Id = e.Id,
             Function = e.Function,
             Retries = e.Retries,
+            RetryCount = e.RetryCount,
             RetryIntervals = e.RetryIntervals,
             UpdatedAt = e.UpdatedAt,
             ParentId = e.ParentId,
@@ -39,7 +52,9 @@ internal static class MappingExtensions
                     Id = ch.Id,
                     Function = ch.Function,
                     Retries = ch.Retries,
+                    RetryCount = ch.RetryCount,
                     RetryIntervals = ch.RetryIntervals,
+                    ParentId = ch.ParentId,
                     RunCondition = ch.RunCondition,
                     OnNodeDeath = ch.OnNodeDeath,
                     Children = ch
@@ -47,8 +62,10 @@ internal static class MappingExtensions
                         {
                             Function = gch.Function,
                             Retries = gch.Retries,
+                            RetryCount = gch.RetryCount,
                             RetryIntervals = gch.RetryIntervals,
                             Id = gch.Id,
+                            ParentId = gch.ParentId,
                             RunCondition = gch.RunCondition,
                             OnNodeDeath = gch.OnNodeDeath,
                         })
@@ -61,13 +78,15 @@ internal static class MappingExtensions
         TCronJobOccurrence,
         TCronJob
     >()
-        where TCronJob : CronJobEntity, new()
-        where TCronJobOccurrence : CronJobOccurrenceEntity<TCronJob>, new() =>
+        where TCronJobOccurrence : CronJobOccurrenceEntity<TCronJob>, new()
+        where TCronJob : CronJobEntity, new() =>
         e => new CronJobOccurrenceEntity<TCronJob>
         {
             Id = e.Id,
             UpdatedAt = e.UpdatedAt,
             CronJobId = e.CronJobId,
+            RetryCount = e.RetryCount,
+            ExecutionTime = e.ExecutionTime,
             OnNodeDeath = e.OnNodeDeath,
             CronJob = new TCronJob
             {
@@ -82,8 +101,8 @@ internal static class MappingExtensions
     internal static Expression<
         Func<TCronJobOccurrence, CronJobOccurrenceEntity<TCronJob>>
     > ForLatestQueuedCronJobOccurrence<TCronJobOccurrence, TCronJob>()
-        where TCronJob : CronJobEntity, new()
-        where TCronJobOccurrence : CronJobOccurrenceEntity<TCronJob>, new() =>
+        where TCronJobOccurrence : CronJobOccurrenceEntity<TCronJob>, new()
+        where TCronJob : CronJobEntity, new() =>
         e => new CronJobOccurrenceEntity<TCronJob>
         {
             Id = e.Id,
@@ -96,6 +115,7 @@ internal static class MappingExtensions
             // nested stamp below is the load-bearing one — without it a MarkFailed/Skip occurrence degrades to the
             // Retry enum default when re-queued.
             OnNodeDeath = e.OnNodeDeath,
+            RetryCount = e.RetryCount,
             CronJob = new TCronJob
             {
                 Id = e.CronJob.Id,
@@ -109,36 +129,36 @@ internal static class MappingExtensions
 
     internal static void UpdateCronJobOccurrence<TCronJob>(
         this UpdateSettersBuilder<CronJobOccurrenceEntity<TCronJob>> setters,
-        InternalFunctionContext functionContext
+        JobExecutionState functionContext
     )
         where TCronJob : CronJobEntity, new()
     {
-        var propsToUpdate = functionContext.GetPropsToUpdate();
+        var propsToUpdate = functionContext.PropertiesToUpdate;
 
         // STATUS / SKIPPED
-        if (
-            propsToUpdate.Contains(nameof(InternalFunctionContext.Status))
-            && functionContext.Status != JobStatus.Skipped
-        )
+        if (propsToUpdate.Contains(nameof(JobExecutionState.Status)))
         {
-            setters.SetProperty(x => x.Status, functionContext.Status);
-        }
-        else
-        {
-            setters
-                .SetProperty(x => x.Status, functionContext.Status)
-                .SetProperty(x => x.SkippedReason, functionContext.ExceptionDetails);
+            if (functionContext.Status == JobStatus.Skipped)
+            {
+                setters
+                    .SetProperty(x => x.Status, functionContext.Status)
+                    .SetProperty(x => x.SkippedReason, functionContext.ExceptionDetails);
+            }
+            else
+            {
+                setters.SetProperty(x => x.Status, functionContext.Status);
+            }
         }
 
         // EXECUTED_AT
-        if (propsToUpdate.Contains(nameof(InternalFunctionContext.ExecutedAt)))
+        if (propsToUpdate.Contains(nameof(JobExecutionState.ExecutedAt)))
         {
             setters.SetProperty(x => x.ExecutedAt, functionContext.ExecutedAt);
         }
 
         // EXCEPTION DETAILS
         if (
-            propsToUpdate.Contains(nameof(InternalFunctionContext.ExceptionDetails))
+            propsToUpdate.Contains(nameof(JobExecutionState.ExceptionDetails))
             && functionContext.Status != JobStatus.Skipped
         )
         {
@@ -146,25 +166,25 @@ internal static class MappingExtensions
         }
 
         // ELAPSED_TIME
-        if (propsToUpdate.Contains(nameof(InternalFunctionContext.ElapsedTime)))
+        if (propsToUpdate.Contains(nameof(JobExecutionState.ElapsedTime)))
         {
             setters.SetProperty(x => x.ElapsedTime, functionContext.ElapsedTime);
         }
 
         // RETRY COUNT
-        if (propsToUpdate.Contains(nameof(InternalFunctionContext.RetryCount)))
+        if (propsToUpdate.Contains(nameof(JobExecutionState.RetryCount)))
         {
             setters.SetProperty(x => x.RetryCount, functionContext.RetryCount);
         }
 
         // RELEASE LOCK
-        if (propsToUpdate.Contains(nameof(InternalFunctionContext.ReleaseLock)))
+        if (propsToUpdate.Contains(nameof(JobExecutionState.ReleaseLock)))
         {
             setters.SetProperty(x => x.OwnerId, (string?)null).SetProperty(x => x.LockedUntil, (DateTime?)null);
         }
 
         // EXECUTION TIME
-        if (propsToUpdate.Contains(nameof(InternalFunctionContext.ExecutionTime)))
+        if (propsToUpdate.Contains(nameof(JobExecutionState.ExecutionTime)))
         {
             setters.SetProperty(x => x.ExecutionTime, functionContext.ExecutionTime);
         }
@@ -172,37 +192,37 @@ internal static class MappingExtensions
 
     internal static void UpdateTimeJob<TTimeJob>(
         this UpdateSettersBuilder<TTimeJob> setters,
-        InternalFunctionContext functionContext,
+        JobExecutionState functionContext,
         DateTime updatedAt
     )
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
     {
-        var propsToUpdate = functionContext.GetPropsToUpdate();
+        var propsToUpdate = functionContext.PropertiesToUpdate;
 
         // STATUS / SKIPPED
-        if (
-            propsToUpdate.Contains(nameof(InternalFunctionContext.Status))
-            && functionContext.Status != JobStatus.Skipped
-        )
+        if (propsToUpdate.Contains(nameof(JobExecutionState.Status)))
         {
-            setters.SetProperty(x => x.Status, functionContext.Status);
-        }
-        else
-        {
-            setters
-                .SetProperty(x => x.Status, functionContext.Status)
-                .SetProperty(x => x.SkippedReason, functionContext.ExceptionDetails);
+            if (functionContext.Status == JobStatus.Skipped)
+            {
+                setters
+                    .SetProperty(x => x.Status, functionContext.Status)
+                    .SetProperty(x => x.SkippedReason, functionContext.ExceptionDetails);
+            }
+            else
+            {
+                setters.SetProperty(x => x.Status, functionContext.Status);
+            }
         }
 
         // EXECUTED_AT
-        if (propsToUpdate.Contains(nameof(InternalFunctionContext.ExecutedAt)))
+        if (propsToUpdate.Contains(nameof(JobExecutionState.ExecutedAt)))
         {
             setters.SetProperty(x => x.ExecutedAt, functionContext.ExecutedAt);
         }
 
         // EXCEPTION DETAILS
         if (
-            propsToUpdate.Contains(nameof(InternalFunctionContext.ExceptionDetails))
+            propsToUpdate.Contains(nameof(JobExecutionState.ExceptionDetails))
             && functionContext.Status != JobStatus.Skipped
         )
         {
@@ -210,19 +230,19 @@ internal static class MappingExtensions
         }
 
         // ELAPSED_TIME
-        if (propsToUpdate.Contains(nameof(InternalFunctionContext.ElapsedTime)))
+        if (propsToUpdate.Contains(nameof(JobExecutionState.ElapsedTime)))
         {
             setters.SetProperty(x => x.ElapsedTime, functionContext.ElapsedTime);
         }
 
         // RETRY COUNT
-        if (propsToUpdate.Contains(nameof(InternalFunctionContext.RetryCount)))
+        if (propsToUpdate.Contains(nameof(JobExecutionState.RetryCount)))
         {
             setters.SetProperty(x => x.RetryCount, functionContext.RetryCount);
         }
 
         // RELEASE LOCK
-        if (propsToUpdate.Contains(nameof(InternalFunctionContext.ReleaseLock)))
+        if (propsToUpdate.Contains(nameof(JobExecutionState.ReleaseLock)))
         {
             setters.SetProperty(x => x.OwnerId, (string?)null).SetProperty(x => x.LockedUntil, (DateTime?)null);
         }

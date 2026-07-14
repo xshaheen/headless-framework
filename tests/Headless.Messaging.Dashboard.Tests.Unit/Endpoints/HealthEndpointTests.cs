@@ -18,15 +18,15 @@ public sealed class HealthEndpointTests : TestBase
     {
         // given
         await using var app = _CreateTestApp();
-        await app.StartAsync();
+        await app.StartAsync(AbortToken);
         using var client = app.GetTestClient();
 
         // when
-        var response = await client.GetAsync("/api/health");
+        var response = await client.GetAsync("/api/health", AbortToken);
 
         // then
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
-        var body = await response.Content.ReadAsStringAsync();
+        var body = await response.Content.ReadAsStringAsync(AbortToken);
         body.Should().Be("OK");
     }
 
@@ -35,15 +35,15 @@ public sealed class HealthEndpointTests : TestBase
     {
         // given - no auth header set
         await using var app = _CreateTestApp();
-        await app.StartAsync();
+        await app.StartAsync(AbortToken);
         using var client = app.GetTestClient();
 
         // when
-        var response = await client.GetAsync("/api/health");
+        var response = await client.GetAsync("/api/health", AbortToken);
 
         // then - should succeed without auth
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
-        var body = await response.Content.ReadAsStringAsync();
+        var body = await response.Content.ReadAsStringAsync(AbortToken);
         body.Should().Be("OK");
     }
 
@@ -67,11 +67,11 @@ public sealed class HealthEndpointTests : TestBase
 
         builder.Services.AddRouting();
         builder.Services.AddAuthorization();
-        builder.Services.AddCors(o => o.AddPolicy("Messaging_Dashboard_CORS", p => p.AllowAnyOrigin()));
+        builder.Services.AddCors(o => o.AddPolicy("HeadlessMessagingDashboardCORS", p => p.AllowAnyOrigin()));
 
         var app = builder.Build();
         app.UseRouting();
-        app.UseCors("Messaging_Dashboard_CORS");
+        app.UseCors("HeadlessMessagingDashboardCORS");
         app.MapMessagingDashboardEndpoints(config);
 
         return app;

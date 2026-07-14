@@ -73,7 +73,7 @@ public sealed class SetOperationsTests(RedisCacheFixture fixture) : RedisCacheTe
         // then
         result.Should().Be(2);
         var remaining = await cache.GetSetAsync<string>(key, cancellationToken: AbortToken);
-        remaining.Value.Should().HaveCount(1);
+        remaining.Value.Should().ContainSingle();
         remaining.Value.Should().Contain("value3");
     }
 
@@ -88,8 +88,9 @@ public sealed class SetOperationsTests(RedisCacheFixture fixture) : RedisCacheTe
         // when
         var result = await cache.GetSetAsync<string>(key, cancellationToken: AbortToken);
 
-        // then
+        // then - #553: an absent key is NoValue (Value is null), not a non-null empty collection
         result.HasValue.Should().BeFalse();
+        result.Value.Should().BeNull();
     }
 
     [Fact]

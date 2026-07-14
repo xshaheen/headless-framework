@@ -1,10 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
-using System.Runtime.CompilerServices;
-using Headless.Coordination;
 using Headless.Messaging;
-using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
@@ -46,6 +43,26 @@ public abstract class DataStorageTestsBase : TestBase
     /// providers return <see langword="false"/> and the clock-controlled tests are skipped.
     /// </summary>
     protected virtual bool SupportsControllableClock => false;
+
+    /// <summary>
+    /// Creates another storage instance with the supplied application clock when the provider supports
+    /// relational clock-skew conformance testing. Other providers return <see langword="null"/>.
+    /// </summary>
+    protected virtual IDataStorage? CreateStorageWithTimeProvider(TimeProvider timeProvider) => null;
+
+    /// <summary>Reads the provider's current database UTC time for relational clock conformance.</summary>
+    protected virtual Task<DateTime?> GetDatabaseUtcNowAsync(CancellationToken cancellationToken) =>
+        Task.FromResult<DateTime?>(null);
+
+    /// <summary>Reads the persisted lease identity without going through the storage snapshot mapper.</summary>
+    protected virtual Task<PersistedLeaseIdentity?> GetPersistedLeaseIdentityAsync(
+        bool published,
+        Guid storageId,
+        CancellationToken cancellationToken
+    ) => Task.FromResult<PersistedLeaseIdentity?>(null);
+
+    /// <summary>Persisted ownership generation returned by provider-specific test queries.</summary>
+    protected readonly record struct PersistedLeaseIdentity(DateTime LockedUntil, string? Owner);
 
     /// <summary>Controllable membership used by storage-provider conformance tests to stamp the owner identity.</summary>
     protected ControlledNodeMembership NodeMembership { get; } = new();
@@ -138,7 +155,7 @@ public abstract class DataStorageTestsBase : TestBase
         // then
         result.Should().NotBeNull();
         result.StorageId.Should().NotBe(Guid.Empty);
-        result.Origin.GetId().Should().Be("non-numeric-id");
+        result.Origin.Id.Should().Be("non-numeric-id");
     }
 
     public virtual async Task should_store_published_message_with_intent_type()
@@ -390,6 +407,72 @@ public abstract class DataStorageTestsBase : TestBase
         await act.Should().NotThrowAsync();
     }
 
+    public virtual async Task should_not_flip_terminal_published_row_back_to_delayed()
+    {
+        if (!Capabilities.SupportsDelayedScheduling)
+        {
+            Assert.Skip("Storage does not support delayed scheduling");
+        }
+
+        // given — a row sealed terminal (Succeeded, no scheduled retry). The dispatcher's shutdown
+        // flush (DisposeAsync → ChangePublishStateToDelayedAsync) can race a consumer that just
+        // dispatched the same row; once one side seals it, the flush must not resurrect it as Delayed.
+        var storage = GetStorage();
+        var storedMessage = await storage.StoreMessageAsync(
+            "terminal-delayed-guard",
+            CreateMessage(),
+            cancellationToken: AbortToken
+        );
+
+        var sealedFirst = await storage.ChangePublishStateAsync(
+            storedMessage,
+            StatusName.Succeeded,
+            nextRetryAt: null,
+            cancellationToken: AbortToken
+        );
+        sealedFirst.Should().BeTrue("the transition to Succeeded must win against a fresh row");
+
+        // when — the late shutdown flush tries to move the sealed row back to Delayed.
+        await storage.ChangePublishStateToDelayedAsync([storedMessage.StorageId], AbortToken);
+
+        // then — the row must remain terminal: a follow-up state change is still rejected by the
+        // terminal guard (a Delayed row would have accepted it) and the retry pickup never sees it.
+        var lateChange = await storage.ChangePublishStateAsync(
+            storedMessage,
+            StatusName.Scheduled,
+            nextRetryAt: DateTime.UtcNow,
+            cancellationToken: AbortToken
+        );
+        lateChange.Should().BeFalse("the terminal seal must survive a late scheduler flush");
+
+        var retriable = await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken);
+        retriable.Should().NotContain(m => m.StorageId == storedMessage.StorageId);
+    }
+
+    public virtual async Task should_ignore_unknown_storage_ids_when_flushing_delayed_state()
+    {
+        if (!Capabilities.SupportsDelayedScheduling)
+        {
+            Assert.Skip("Storage does not support delayed scheduling");
+        }
+
+        // given — one live row plus an id with no backing row (e.g. the row was pruned between the
+        // dispatcher snapshotting its scheduler queue and the shutdown flush running).
+        var storage = GetStorage();
+        var storedMessage = await storage.StoreMessageAsync(
+            "delayed-unknown-id",
+            CreateMessage(),
+            cancellationToken: AbortToken
+        );
+
+        // when
+        var act = async () =>
+            await storage.ChangePublishStateToDelayedAsync([storedMessage.StorageId, Guid.NewGuid()], AbortToken);
+
+        // then
+        await act.Should().NotThrowAsync("missing rows must be skipped, not faulted on");
+    }
+
     public virtual async Task should_get_published_messages_of_need_retry()
     {
         // given
@@ -431,6 +514,83 @@ public abstract class DataStorageTestsBase : TestBase
 
         // then
         deletedCount.Should().BeGreaterThanOrEqualTo(0);
+    }
+
+    public virtual async Task should_not_delete_expired_failed_messages_with_pending_retry()
+    {
+        if (!Capabilities.SupportsExpiration || !Capabilities.SupportsMonitoringApi)
+        {
+            Assert.Skip("Storage does not support expiration and monitoring roundtrip");
+        }
+
+        // given — Failed rows with a future NextRetryAt are retry-scheduled, not terminal poison.
+        // Expiration cleanup must only delete Failed/Succeeded rows once NextRetryAt is cleared.
+        var storage = GetStorage();
+        var initializer = GetInitializer();
+        var expiredAt = DateTime.UtcNow.AddMinutes(-10);
+        var cleanupCutoff = DateTime.UtcNow.AddMinutes(-1);
+        var nextRetryAt = DateTime.UtcNow.AddMinutes(10);
+
+        var published = await storage.StoreMessageAsync(
+            "retry-expiration-published",
+            CreateMessage(),
+            cancellationToken: AbortToken
+        );
+        published.ExpiresAt = expiredAt;
+
+        var publishedChanged = await storage.ChangePublishStateAsync(
+            published,
+            StatusName.Failed,
+            nextRetryAt: nextRetryAt,
+            cancellationToken: AbortToken
+        );
+        publishedChanged.Should().BeTrue();
+
+        var received = await storage.StoreReceivedMessageAsync(
+            "retry-expiration-received",
+            "retry-expiration-group",
+            CreateMessage(),
+            AbortToken
+        );
+        received.ExpiresAt = expiredAt;
+
+        var receivedChanged = await storage.ChangeReceiveStateAsync(
+            received,
+            StatusName.Failed,
+            nextRetryAt: nextRetryAt,
+            cancellationToken: AbortToken
+        );
+        receivedChanged.Should().BeTrue();
+
+        // when
+        var deletedPublished = await storage.DeleteExpiresAsync(
+            initializer.GetPublishedTableName(),
+            cleanupCutoff,
+            100,
+            AbortToken
+        );
+        var deletedReceived = await storage.DeleteExpiresAsync(
+            initializer.GetReceivedTableName(),
+            cleanupCutoff,
+            100,
+            AbortToken
+        );
+
+        // then
+        deletedPublished.Should().Be(0);
+        deletedReceived.Should().Be(0);
+
+        var persistedPublished = await storage
+            .GetMonitoringApi()
+            .GetPublishedMessageAsync(published.StorageId, AbortToken);
+        persistedPublished.Should().NotBeNull();
+        persistedPublished!.NextRetryAt.Should().NotBeNull().And.BeCloseTo(nextRetryAt, TimeSpan.FromSeconds(1));
+
+        var persistedReceived = await storage
+            .GetMonitoringApi()
+            .GetReceivedMessageAsync(received.StorageId, AbortToken);
+        persistedReceived.Should().NotBeNull();
+        persistedReceived!.NextRetryAt.Should().NotBeNull().And.BeCloseTo(nextRetryAt, TimeSpan.FromSeconds(1));
     }
 
     public virtual async Task should_delete_published_message()
@@ -764,7 +924,7 @@ public abstract class DataStorageTestsBase : TestBase
         );
 
         var leaseWindow = TimeSpan.FromMilliseconds(500);
-        var leased = await storage.LeasePublishAsync(storedMessage, DateTime.UtcNow.Add(leaseWindow), AbortToken);
+        var leased = await storage.LeasePublishAsync(storedMessage, leaseWindow, AbortToken);
 
         leased.Should().BeTrue();
         (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
@@ -798,7 +958,7 @@ public abstract class DataStorageTestsBase : TestBase
         );
 
         var leaseWindow = TimeSpan.FromMilliseconds(500);
-        var leased = await storage.LeaseReceiveAsync(storedMessage, DateTime.UtcNow.Add(leaseWindow), AbortToken);
+        var leased = await storage.LeaseReceiveAsync(storedMessage, leaseWindow, AbortToken);
 
         leased.Should().BeTrue();
         (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken))
@@ -812,17 +972,277 @@ public abstract class DataStorageTestsBase : TestBase
             .Contain(m => m.StorageId == storedMessage.StorageId);
     }
 
+    public virtual async Task should_use_database_clock_when_reclaiming_published_retry_lease()
+    {
+        var fastClockStorage = _CreateRelationalClockSkewStorage();
+
+        var storage = GetStorage();
+        var storedMessage = await storage.StoreMessageAsync(
+            "db-clock-published-retry",
+            CreateMessage(),
+            cancellationToken: AbortToken
+        );
+        await storage.ChangePublishStateAsync(
+            storedMessage,
+            StatusName.Failed,
+            nextRetryAt: DateTime.UtcNow.AddMinutes(-1),
+            cancellationToken: AbortToken
+        );
+        (await storage.LeasePublishAsync(storedMessage, TimeSpan.FromMinutes(30), AbortToken)).Should().BeTrue();
+
+        (await fastClockStorage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
+            .Should()
+            .NotContain(m => m.StorageId == storedMessage.StorageId);
+    }
+
+    public virtual async Task should_stamp_fresh_dispatch_lease_from_database_clock(bool published, bool reserveAttempt)
+    {
+        var skewedStorage = _CreateRelationalClockSkewStorage();
+        var databaseTimeBefore = await GetDatabaseUtcNowAsync(AbortToken);
+        if (databaseTimeBefore is null)
+        {
+            Assert.Skip("Storage does not expose a relational database-clock test seam");
+        }
+
+        var storage = GetStorage();
+        var message = published
+            ? await storage.StoreMessageAsync("db-clock-dispatch-lease", CreateMessage(), cancellationToken: AbortToken)
+            : await storage.StoreReceivedMessageAsync(
+                "db-clock-dispatch-lease",
+                "db-clock-dispatch-group",
+                CreateMessage(),
+                AbortToken
+            );
+        var originalOwner = NodeMembership.SetIdentity($"database-clock-{published}-{reserveAttempt}");
+        var leaseDuration = TimeSpan.FromSeconds(5);
+        message.InlineAttempts = reserveAttempt ? 1 : 0;
+
+        var acquired = (published, reserveAttempt) switch
+        {
+            (true, false) => await skewedStorage.LeasePublishAsync(message, leaseDuration, AbortToken),
+            (true, true) => await skewedStorage.LeasePublishAndReserveAttemptAsync(
+                message,
+                leaseDuration,
+                originalInlineAttempts: 0,
+                AbortToken
+            ),
+            (false, false) => await skewedStorage.LeaseReceiveAsync(message, leaseDuration, AbortToken),
+            (false, true) => await skewedStorage.LeaseReceiveAndReserveAttemptAsync(
+                message,
+                leaseDuration,
+                originalInlineAttempts: 0,
+                AbortToken
+            ),
+        };
+
+        var databaseTimeAfter = await GetDatabaseUtcNowAsync(AbortToken);
+        var persisted = await GetPersistedLeaseIdentityAsync(published, message.StorageId, AbortToken);
+        acquired.Should().BeTrue();
+        databaseTimeAfter.Should().NotBeNull();
+        persisted.Should().NotBeNull();
+        message.LockedUntil.Should().Be(persisted!.Value.LockedUntil);
+        message.Owner.Should().Be(persisted.Value.Owner).And.Be(originalOwner.ToString());
+        message
+            .LockedUntil.Should()
+            .BeOnOrAfter(databaseTimeBefore.Value.Add(leaseDuration))
+            .And.BeOnOrBefore(databaseTimeAfter!.Value.Add(leaseDuration));
+
+        NodeMembership.SetIdentity("database-clock-contender");
+        var reacquired = published
+            ? await skewedStorage.LeasePublishAsync(message, leaseDuration, AbortToken)
+            : await skewedStorage.LeaseReceiveAsync(message, leaseDuration, AbortToken);
+        reacquired.Should().BeFalse("the database-authored lease is still active");
+    }
+
+    public virtual async Task should_use_database_clock_when_reclaiming_received_retry_lease()
+    {
+        var fastClockStorage = _CreateRelationalClockSkewStorage();
+
+        var storage = GetStorage();
+        var storedMessage = await storage.StoreReceivedMessageAsync(
+            "db-clock-received-retry",
+            "db-clock-group",
+            CreateMessage(),
+            AbortToken
+        );
+        await storage.ChangeReceiveStateAsync(
+            storedMessage,
+            StatusName.Failed,
+            nextRetryAt: DateTime.UtcNow.AddMinutes(-1),
+            cancellationToken: AbortToken
+        );
+        (await storage.LeaseReceiveAsync(storedMessage, TimeSpan.FromMinutes(30), AbortToken)).Should().BeTrue();
+
+        (await fastClockStorage.GetReceivedMessagesOfNeedRetryAsync(AbortToken))
+            .Should()
+            .NotContain(m => m.StorageId == storedMessage.StorageId);
+    }
+
+    public virtual async Task should_use_database_clock_when_fast_forwarding_dead_owner_lease()
+    {
+        var fastClockStorage = _CreateRelationalClockSkewStorage();
+
+        var deadOwner = NodeMembership.SetIdentity("db-clock-dead-owner");
+        var storage = GetStorage();
+        var storedMessage = await storage.StoreMessageAsync(
+            "db-clock-dead-owner-reclaim",
+            CreateMessage(),
+            cancellationToken: AbortToken
+        );
+        await storage.ChangePublishStateAsync(
+            storedMessage,
+            StatusName.Failed,
+            nextRetryAt: DateTime.UtcNow.AddMinutes(-1),
+            cancellationToken: AbortToken
+        );
+        (await storage.LeasePublishAsync(storedMessage, TimeSpan.FromMinutes(30), AbortToken)).Should().BeTrue();
+
+        (await fastClockStorage.ReclaimDeadPublishedOwnersAsync([deadOwner.ToString()], AbortToken)).Should().Be(1);
+        (await fastClockStorage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
+            .Should()
+            .Contain(m => m.StorageId == storedMessage.StorageId);
+    }
+
+    public virtual async Task should_stamp_retry_lease_from_database_clock()
+    {
+        var fastClockStorage = _CreateRelationalClockSkewStorage();
+        var storage = GetStorage();
+        var storedMessage = await storage.StoreMessageAsync(
+            "db-clock-retry-stamp",
+            CreateMessage(),
+            cancellationToken: AbortToken
+        );
+        await storage.ChangePublishStateAsync(
+            storedMessage,
+            StatusName.Failed,
+            nextRetryAt: DateTime.UtcNow.AddMinutes(-1),
+            cancellationToken: AbortToken
+        );
+
+        var claimed = (await fastClockStorage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
+            .Should()
+            .ContainSingle(m => m.StorageId == storedMessage.StorageId)
+            .Subject;
+
+        claimed.LockedUntil.Should().BeAfter(DateTime.UtcNow).And.BeBefore(DateTime.UtcNow.AddMinutes(10));
+    }
+
+    public virtual async Task should_use_application_clock_when_scheduling_published_retry()
+    {
+        var (storage, schedulingClock) = _CreateRelationalSchedulingClockStorage();
+        var storedMessage = await storage.StoreMessageAsync(
+            "application-clock-published-retry",
+            CreateMessage(),
+            cancellationToken: AbortToken
+        );
+        await storage.ChangePublishStateAsync(
+            storedMessage,
+            StatusName.Failed,
+            nextRetryAt: schedulingClock.GetUtcNow().UtcDateTime.AddMinutes(1),
+            cancellationToken: AbortToken
+        );
+
+        (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
+            .Should()
+            .NotContain(m => m.StorageId == storedMessage.StorageId);
+
+        schedulingClock.Advance(TimeSpan.FromMinutes(2));
+
+        (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
+            .Should()
+            .ContainSingle(m => m.StorageId == storedMessage.StorageId);
+    }
+
+    public virtual async Task should_use_application_clock_when_scheduling_received_retry()
+    {
+        var (storage, schedulingClock) = _CreateRelationalSchedulingClockStorage();
+        var storedMessage = await storage.StoreReceivedMessageAsync(
+            "application-clock-received-retry",
+            "application-clock-group",
+            CreateMessage(),
+            AbortToken
+        );
+        await storage.ChangeReceiveStateAsync(
+            storedMessage,
+            StatusName.Failed,
+            nextRetryAt: schedulingClock.GetUtcNow().UtcDateTime.AddMinutes(1),
+            cancellationToken: AbortToken
+        );
+
+        (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken))
+            .Should()
+            .NotContain(m => m.StorageId == storedMessage.StorageId);
+
+        schedulingClock.Advance(TimeSpan.FromMinutes(2));
+
+        (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken))
+            .Should()
+            .ContainSingle(m => m.StorageId == storedMessage.StorageId);
+    }
+
+    public virtual async Task should_return_unstored_snapshot_when_redelivery_hits_active_receive_lease()
+    {
+        var storage = GetStorage();
+        var message = CreateMessage();
+        var storedMessage = await storage.StoreReceivedMessageAsync(
+            "active-lease-redelivery",
+            "test-group",
+            message,
+            AbortToken
+        );
+        var now = _Now();
+
+        await storage.ChangeReceiveStateAsync(
+            storedMessage,
+            StatusName.Failed,
+            nextRetryAt: now.AddSeconds(-1),
+            cancellationToken: AbortToken
+        );
+        var leased = await storage.LeaseReceiveAsync(storedMessage, TimeSpan.FromMinutes(5), AbortToken);
+        var beforeRedelivery = Capabilities.SupportsMonitoringApi
+            ? await storage.GetMonitoringApi().GetReceivedMessageAsync(storedMessage.StorageId, AbortToken)
+            : null;
+
+        var redelivery = await storage.StoreReceivedMessageAsync(
+            "active-lease-redelivery",
+            "test-group",
+            message,
+            AbortToken
+        );
+
+        leased.Should().BeTrue();
+        redelivery.StorageId.Should().NotBe(storedMessage.StorageId);
+        redelivery.LockedUntil.Should().BeNull();
+        redelivery.Owner.Should().BeNull();
+        (await storage.LeaseReceiveAsync(redelivery, TimeSpan.FromMinutes(5), AbortToken))
+            .Should()
+            .BeFalse("the guard-blocked upsert returned an unpersisted candidate");
+
+        if (beforeRedelivery is not null)
+        {
+            var afterRedelivery = await storage
+                .GetMonitoringApi()
+                .GetReceivedMessageAsync(storedMessage.StorageId, AbortToken);
+            afterRedelivery.Should().NotBeNull();
+            afterRedelivery!.Content.Should().Be(beforeRedelivery.Content);
+            afterRedelivery.LockedUntil.Should().Be(beforeRedelivery.LockedUntil);
+            afterRedelivery.Owner.Should().Be(beforeRedelivery.Owner);
+            afterRedelivery.Retries.Should().Be(beforeRedelivery.Retries);
+            afterRedelivery.ExceptionInfo.Should().Be(beforeRedelivery.ExceptionInfo);
+        }
+    }
+
     public virtual async Task should_reclaim_published_retry_row_owned_by_dead_node()
     {
         var storage = GetStorage();
         var deadOwner = NodeMembership.SetIdentity("dead-published-owner");
         var deadOwned = await _StoreFailedPublishedMessageAsync("dead-owned-published");
-        var deadLease = await storage.LeasePublishAsync(deadOwned, DateTime.UtcNow.AddHours(1), AbortToken);
+        var deadLease = await storage.LeasePublishAsync(deadOwned, TimeSpan.FromHours(1), AbortToken);
         deadLease.Should().BeTrue("the dead-owned row must be actively leased before reclaim runs");
 
         var liveOwner = NodeMembership.SetIdentity("live-published-owner");
         var liveOwned = await _StoreFailedPublishedMessageAsync("live-owned-published");
-        var liveLease = await storage.LeasePublishAsync(liveOwned, DateTime.UtcNow.AddHours(1), AbortToken);
+        var liveLease = await storage.LeasePublishAsync(liveOwned, TimeSpan.FromHours(1), AbortToken);
         liveLease.Should().BeTrue("the live-owned row must be actively leased before reclaim runs");
 
         (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
@@ -843,12 +1263,12 @@ public abstract class DataStorageTestsBase : TestBase
         var storage = GetStorage();
         var deadOwner = NodeMembership.SetIdentity("dead-received-owner");
         var deadOwned = await _StoreFailedReceivedMessageAsync("dead-owned-received", "dead-group");
-        var deadLease = await storage.LeaseReceiveAsync(deadOwned, DateTime.UtcNow.AddHours(1), AbortToken);
+        var deadLease = await storage.LeaseReceiveAsync(deadOwned, TimeSpan.FromHours(1), AbortToken);
         deadLease.Should().BeTrue("the dead-owned row must be actively leased before reclaim runs");
 
         var liveOwner = NodeMembership.SetIdentity("live-received-owner");
         var liveOwned = await _StoreFailedReceivedMessageAsync("live-owned-received", "live-group");
-        var liveLease = await storage.LeaseReceiveAsync(liveOwned, DateTime.UtcNow.AddHours(1), AbortToken);
+        var liveLease = await storage.LeaseReceiveAsync(liveOwned, TimeSpan.FromHours(1), AbortToken);
         liveLease.Should().BeTrue("the live-owned row must be actively leased before reclaim runs");
 
         (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken))
@@ -896,18 +1316,18 @@ public abstract class DataStorageTestsBase : TestBase
         // Reclaiming the dead set must fence the restart: @8's rows stay untouched.
         var deadOwner = NodeMembership.SetIdentity("restart-node", incarnation: 7);
         var oldPublished = await _StoreFailedPublishedMessageAsync("old-incarnation-published");
-        (await storage.LeasePublishAsync(oldPublished, _FutureLeaseUntil(), AbortToken)).Should().BeTrue();
+        (await storage.LeasePublishAsync(oldPublished, _FutureLease(), AbortToken)).Should().BeTrue();
         var oldReceived = await _StoreFailedReceivedMessageAsync("old-incarnation-received", "old-incarnation-group");
-        (await storage.LeaseReceiveAsync(oldReceived, _FutureLeaseUntil(), AbortToken)).Should().BeTrue();
+        (await storage.LeaseReceiveAsync(oldReceived, _FutureLease(), AbortToken)).Should().BeTrue();
 
         var liveOwner = NodeMembership.SetIdentity("restart-node", incarnation: 8);
         var livePublished = await _StoreFailedPublishedMessageAsync("live-incarnation-published");
-        (await storage.LeasePublishAsync(livePublished, _FutureLeaseUntil(), AbortToken)).Should().BeTrue();
+        (await storage.LeasePublishAsync(livePublished, _FutureLease(), AbortToken)).Should().BeTrue();
         var liveReceived = await _StoreFailedReceivedMessageAsync(
             "live-incarnation-received",
             "live-incarnation-group"
         );
-        (await storage.LeaseReceiveAsync(liveReceived, _FutureLeaseUntil(), AbortToken)).Should().BeTrue();
+        (await storage.LeaseReceiveAsync(liveReceived, _FutureLease(), AbortToken)).Should().BeTrue();
 
         deadOwner.ToString().Should().NotBe(liveOwner.ToString());
         var deadOwners = new[] { deadOwner.ToString() };
@@ -928,7 +1348,7 @@ public abstract class DataStorageTestsBase : TestBase
         var storage = GetStorage();
         var deadOwner = NodeMembership.SetIdentity("terminal-dead-owner");
         var published = await _StoreFailedPublishedMessageAsync("terminal-published");
-        (await storage.LeasePublishAsync(published, _FutureLeaseUntil(), AbortToken)).Should().BeTrue();
+        (await storage.LeasePublishAsync(published, _FutureLease(), AbortToken)).Should().BeTrue();
         (
             await storage.ChangePublishStateAsync(
                 published,
@@ -942,7 +1362,7 @@ public abstract class DataStorageTestsBase : TestBase
             .BeTrue();
 
         var received = await _StoreFailedReceivedMessageAsync("terminal-received", "terminal-group");
-        (await storage.LeaseReceiveAsync(received, _FutureLeaseUntil(), AbortToken)).Should().BeTrue();
+        (await storage.LeaseReceiveAsync(received, _FutureLease(), AbortToken)).Should().BeTrue();
         (
             await storage.ChangeReceiveStateAsync(
                 received,
@@ -976,9 +1396,9 @@ public abstract class DataStorageTestsBase : TestBase
     {
         var storage = GetStorage();
         var published = await _StoreFailedPublishedMessageAsync("owner-null-published");
-        (await storage.LeasePublishAsync(published, _FutureLeaseUntil(), AbortToken)).Should().BeTrue();
+        (await storage.LeasePublishAsync(published, _FutureLease(), AbortToken)).Should().BeTrue();
         var received = await _StoreFailedReceivedMessageAsync("owner-null-received", "owner-null-group");
-        (await storage.LeaseReceiveAsync(received, _FutureLeaseUntil(), AbortToken)).Should().BeTrue();
+        (await storage.LeaseReceiveAsync(received, _FutureLease(), AbortToken)).Should().BeTrue();
 
         (await storage.ReclaimDeadPublishedOwnersAsync([], AbortToken)).Should().Be(0);
         (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
@@ -996,9 +1416,9 @@ public abstract class DataStorageTestsBase : TestBase
         var storage = GetStorage();
         // NodeMembership.Identity is null by default — rows get Owner=NULL when leased
         var published = await _StoreFailedPublishedMessageAsync("null-owner-guard-published");
-        (await storage.LeasePublishAsync(published, _FutureLeaseUntil(), AbortToken)).Should().BeTrue();
+        (await storage.LeasePublishAsync(published, _FutureLease(), AbortToken)).Should().BeTrue();
         var received = await _StoreFailedReceivedMessageAsync("null-owner-guard-received", "null-owner-guard-group");
-        (await storage.LeaseReceiveAsync(received, _FutureLeaseUntil(), AbortToken)).Should().BeTrue();
+        (await storage.LeaseReceiveAsync(received, _FutureLease(), AbortToken)).Should().BeTrue();
 
         // Non-empty list bypasses early-exit guard; WHERE Owner IS NOT NULL must filter null-Owner rows
         (await storage.ReclaimDeadPublishedOwnersAsync(["dead-owner-x"], AbortToken))
@@ -1019,9 +1439,9 @@ public abstract class DataStorageTestsBase : TestBase
         var storage = GetStorage();
         var deadOwner = NodeMembership.SetIdentity("idempotent-dead-owner");
         var published = await _StoreFailedPublishedMessageAsync("idempotent-published");
-        (await storage.LeasePublishAsync(published, _FutureLeaseUntil(), AbortToken)).Should().BeTrue();
+        (await storage.LeasePublishAsync(published, _FutureLease(), AbortToken)).Should().BeTrue();
         var received = await _StoreFailedReceivedMessageAsync("idempotent-received", "idempotent-group");
-        (await storage.LeaseReceiveAsync(received, _FutureLeaseUntil(), AbortToken)).Should().BeTrue();
+        (await storage.LeaseReceiveAsync(received, _FutureLease(), AbortToken)).Should().BeTrue();
 
         var deadOwners = new[] { deadOwner.ToString() };
 
@@ -1046,9 +1466,9 @@ public abstract class DataStorageTestsBase : TestBase
         var storage = GetStorage();
         var deadOwner = NodeMembership.SetIdentity("expired-lease-dead-owner");
         var published = await _StoreFailedPublishedMessageAsync("expired-lease-published");
-        (await storage.LeasePublishAsync(published, DateTime.UtcNow.AddSeconds(-1), AbortToken)).Should().BeTrue();
+        (await storage.LeasePublishAsync(published, TimeSpan.FromSeconds(-1), AbortToken)).Should().BeTrue();
         var received = await _StoreFailedReceivedMessageAsync("expired-lease-received", "expired-lease-group");
-        (await storage.LeaseReceiveAsync(received, DateTime.UtcNow.AddSeconds(-1), AbortToken)).Should().BeTrue();
+        (await storage.LeaseReceiveAsync(received, TimeSpan.FromSeconds(-1), AbortToken)).Should().BeTrue();
 
         var deadOwners = new[] { deadOwner.ToString() };
 
@@ -1151,6 +1571,91 @@ public abstract class DataStorageTestsBase : TestBase
         first.Should().BeTrue();
         second.Should().BeFalse();
     }
+
+    public virtual async Task should_lease_and_reserve_publish_attempt_in_single_step()
+    {
+        var storage = GetStorage();
+        var message = await storage.StoreMessageAsync("lease-reserve", CreateMessage(), cancellationToken: AbortToken);
+        message.InlineAttempts = 1;
+
+        var reserved = await storage.LeasePublishAndReserveAttemptAsync(
+            message,
+            TimeSpan.FromMinutes(5),
+            originalInlineAttempts: 0,
+            AbortToken
+        );
+
+        reserved.Should().BeTrue();
+        message.LockedUntil.Should().NotBeNull("a successful combined write must mirror the lease to the caller");
+
+        // The row is now actively leased: a second combined write must be rejected even with the
+        // correct counter token, while the standalone mid-burst reservation under the held lease
+        // still succeeds.
+        message.InlineAttempts = 2;
+        var contended = await storage.LeasePublishAndReserveAttemptAsync(
+            message,
+            TimeSpan.FromMinutes(5),
+            originalInlineAttempts: 1,
+            AbortToken
+        );
+        contended.Should().BeFalse("an actively leased row must not be re-leased mid-burst");
+
+        var midBurst = await storage.ReservePublishAttemptAsync(message, originalInlineAttempts: 1, AbortToken);
+        midBurst.Should().BeTrue("the lease owner must still be able to reserve the next inline attempt");
+    }
+
+    public virtual async Task should_reject_lease_and_reserve_with_stale_inline_attempts_token()
+    {
+        var storage = GetStorage();
+        var message = await storage.StoreReceivedMessageAsync(
+            "lease-reserve-cas",
+            "test-group",
+            CreateMessage(),
+            AbortToken
+        );
+
+        // First combined write with an already-expired lease leaves the row unleased but advances
+        // the durable InlineAttempts counter to 1.
+        message.InlineAttempts = 1;
+        var first = await storage.LeaseReceiveAndReserveAttemptAsync(
+            message,
+            TimeSpan.FromSeconds(-1),
+            originalInlineAttempts: 0,
+            AbortToken
+        );
+        first.Should().BeTrue();
+
+        // A contender holding a stale counter view (0) must fail the CAS; the current token (1)
+        // must succeed.
+        message.InlineAttempts = 2;
+        var stale = await storage.LeaseReceiveAndReserveAttemptAsync(
+            message,
+            TimeSpan.FromMinutes(5),
+            originalInlineAttempts: 0,
+            AbortToken
+        );
+        stale.Should().BeFalse("the durable InlineAttempts token moved; a stale view must not re-reserve");
+
+        var current = await storage.LeaseReceiveAndReserveAttemptAsync(
+            message,
+            TimeSpan.FromMinutes(5),
+            originalInlineAttempts: 1,
+            AbortToken
+        );
+        current.Should().BeTrue();
+    }
+
+    public virtual Task should_reject_stale_published_lease_generation_writes() =>
+        _ShouldRejectStaleLeaseGenerationWritesAsync(received: false);
+
+    public virtual Task should_reject_stale_received_lease_generation_writes() =>
+        _ShouldRejectStaleLeaseGenerationWritesAsync(received: true);
+
+    public virtual Task should_allow_published_fenced_writes_with_fast_application_clock() =>
+        _ShouldAllowFencedWritesWithFastApplicationClockAsync(received: false);
+
+    public virtual Task should_allow_received_fenced_writes_with_fast_application_clock() =>
+        _ShouldAllowFencedWritesWithFastApplicationClockAsync(received: true);
 
     public virtual async Task should_report_false_when_received_exception_message_is_already_terminal()
     {
@@ -1281,12 +1786,12 @@ public abstract class DataStorageTestsBase : TestBase
         var serializer = GetSerializer();
         const int concurrency = 32;
 
-        await _RunFirstInsertStormAsync(group: null);
-        await _RunFirstInsertStormAsync(group: "g1");
+        await runFirstInsertStormAsync(group: null);
+        await runFirstInsertStormAsync(group: "g1");
 
         return;
 
-        async Task _RunFirstInsertStormAsync(string? group)
+        async Task runFirstInsertStormAsync(string? group)
         {
             var messageId = $"first-insert-storm-{group ?? "null"}-{Guid.NewGuid():N}";
             var message = CreateMessage(messageId);
@@ -1373,12 +1878,12 @@ public abstract class DataStorageTestsBase : TestBase
         var storage = GetStorage();
         const int concurrency = 32;
 
-        await _RunStoreReceivedStormAsync(group: null);
-        await _RunStoreReceivedStormAsync(group: "consume-group");
+        await runStoreReceivedStormAsync(group: null);
+        await runStoreReceivedStormAsync(group: "consume-group");
 
         return;
 
-        async Task _RunStoreReceivedStormAsync(string? group)
+        async Task runStoreReceivedStormAsync(string? group)
         {
             var messageId = $"store-received-storm-{group ?? "null"}-{Guid.NewGuid():N}";
             var sharedMessage = CreateMessage(messageId);
@@ -1587,7 +2092,166 @@ public abstract class DataStorageTestsBase : TestBase
         return stored;
     }
 
+    private async Task _ShouldRejectStaleLeaseGenerationWritesAsync(bool received)
+    {
+        var storage = GetStorage();
+        var stale = received
+            ? await _StoreFailedReceivedMessageAsync("stale-generation-received", "stale-generation-group")
+            : await _StoreFailedPublishedMessageAsync("stale-generation-published");
+
+        NodeMembership.SetIdentity("stale-generation-owner-a");
+        var leaseA = received
+            ? await storage.LeaseReceiveAsync(stale, TimeSpan.FromSeconds(-1), AbortToken)
+            : await storage.LeasePublishAsync(stale, TimeSpan.FromSeconds(-1), AbortToken);
+        leaseA.Should().BeTrue();
+
+        var successor = _CopyMessage(stale);
+        NodeMembership.SetIdentity("stale-generation-owner-b");
+        var leaseB = received
+            ? await storage.LeaseReceiveAsync(successor, TimeSpan.FromMinutes(5), AbortToken)
+            : await storage.LeasePublishAsync(successor, TimeSpan.FromMinutes(5), AbortToken);
+        leaseB.Should().BeTrue();
+        successor.Owner.Should().NotBe(stale.Owner);
+
+        stale.InlineAttempts = 1;
+        var reserved = received
+            ? await storage.ReserveReceiveAttemptAsync(stale, originalInlineAttempts: 0, AbortToken)
+            : await storage.ReservePublishAttemptAsync(stale, originalInlineAttempts: 0, AbortToken);
+        reserved.Should().BeFalse("a prior lease generation must not reserve under its successor's lease");
+
+        foreach (
+            var (state, nextRetryAt) in new[]
+            {
+                (StatusName.Succeeded, (DateTime?)null),
+                (StatusName.Failed, (DateTime?)null),
+                (StatusName.Failed, _Now().AddMinutes(1)),
+            }
+        )
+        {
+            var changed = received
+                ? await storage.ChangeReceiveRetryStateAsync(
+                    stale,
+                    state,
+                    nextRetryAt,
+                    lockedUntil: null,
+                    originalRetries: 0,
+                    originalInlineAttempts: 0,
+                    AbortToken
+                )
+                : await storage.ChangePublishRetryStateAsync(
+                    stale,
+                    state,
+                    nextRetryAt,
+                    lockedUntil: null,
+                    originalRetries: 0,
+                    originalInlineAttempts: 0,
+                    AbortToken
+                );
+
+            changed.Should().BeFalse("a prior lease generation must not write after successor acquisition");
+        }
+    }
+
+    private async Task _ShouldAllowFencedWritesWithFastApplicationClockAsync(bool received)
+    {
+        var storage = _CreateRelationalClockSkewStorage();
+        var message = received
+            ? await storage.StoreReceivedMessageAsync(
+                "fast-clock-fenced-received",
+                "fast-clock-fenced-group",
+                CreateMessage(),
+                AbortToken
+            )
+            : await storage.StoreMessageAsync(
+                "fast-clock-fenced-published",
+                CreateMessage(),
+                cancellationToken: AbortToken
+            );
+
+        NodeMembership.SetIdentity("fast-clock-fenced-owner");
+        var leased = received
+            ? await storage.LeaseReceiveAsync(message, TimeSpan.FromMinutes(5), AbortToken)
+            : await storage.LeasePublishAsync(message, TimeSpan.FromMinutes(5), AbortToken);
+        leased.Should().BeTrue();
+
+        message.InlineAttempts = 1;
+        var reserved = received
+            ? await storage.ReserveReceiveAttemptAsync(message, originalInlineAttempts: 0, AbortToken)
+            : await storage.ReservePublishAttemptAsync(message, originalInlineAttempts: 0, AbortToken);
+        reserved.Should().BeTrue("the active database-clock lease must accept its owner's reservation");
+
+        message.Retries = 1;
+        var changed = received
+            ? await storage.ChangeReceiveRetryStateAsync(
+                message,
+                StatusName.Failed,
+                nextRetryAt: _Now().AddMinutes(1),
+                lockedUntil: null,
+                originalRetries: 0,
+                originalInlineAttempts: 1,
+                AbortToken
+            )
+            : await storage.ChangePublishRetryStateAsync(
+                message,
+                StatusName.Failed,
+                nextRetryAt: _Now().AddMinutes(1),
+                lockedUntil: null,
+                originalRetries: 0,
+                originalInlineAttempts: 1,
+                AbortToken
+            );
+        changed.Should().BeTrue("application clock skew must not reject the active owner's fenced state write");
+    }
+
+    private static MediumMessage _CopyMessage(MediumMessage message) =>
+        new()
+        {
+            StorageId = message.StorageId,
+            Origin = message.Origin,
+            Content = message.Content,
+            IntentType = message.IntentType,
+            Added = message.Added,
+            ExpiresAt = message.ExpiresAt,
+            NextRetryAt = message.NextRetryAt,
+            LockedUntil = message.LockedUntil,
+            Owner = message.Owner,
+            Retries = message.Retries,
+            InlineAttempts = message.InlineAttempts,
+            ExceptionInfo = message.ExceptionInfo,
+        };
+
     private DateTime _Now() => TimeProvider.GetUtcNow().UtcDateTime;
 
-    private DateTime _FutureLeaseUntil() => _Now().AddHours(1);
+    /// <summary>Lease duration long enough that the lease stays live for the whole test.</summary>
+    private static TimeSpan _FutureLease() => TimeSpan.FromHours(1);
+
+    private DateTime _FutureLeaseUntil() => _Now().Add(_FutureLease());
+
+    private IDataStorage _CreateRelationalClockSkewStorage()
+    {
+        var storage = CreateStorageWithTimeProvider(
+            new Microsoft.Extensions.Time.Testing.FakeTimeProvider(DateTimeOffset.UtcNow.AddHours(1))
+        );
+        if (storage is null)
+        {
+            Assert.Skip("Storage does not expose a relational clock-skew test seam");
+        }
+
+        return storage;
+    }
+
+    private (
+        IDataStorage Storage,
+        Microsoft.Extensions.Time.Testing.FakeTimeProvider Clock
+    ) _CreateRelationalSchedulingClockStorage()
+    {
+        var clock = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(DateTimeOffset.UtcNow.AddHours(-1));
+        var storage = CreateStorageWithTimeProvider(clock);
+        if (storage is null)
+        {
+            Assert.Skip("Storage does not expose a relational scheduling-clock test seam");
+        }
+
+        return (storage, clock);
+    }
 }

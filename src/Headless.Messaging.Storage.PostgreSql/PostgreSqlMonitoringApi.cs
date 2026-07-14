@@ -3,7 +3,6 @@
 using System.Data.Common;
 using Headless.Checks;
 using Headless.Messaging.Configuration;
-using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
@@ -144,7 +143,7 @@ internal sealed class PostgreSqlMonitoringApi(
                 : @"""Id"",""MessageId"",""Version"",""Name"",""Group"",""Content"",""IntentType"",""Retries"",""Added"",""ExpiresAt"",""StatusName"",""NextRetryAt"",""LockedUntil""";
         var where = string.Empty;
 
-        if (!string.IsNullOrEmpty(query.StatusName))
+        if (query.StatusName is not null)
         {
             where += " AND \"StatusName\" = @StatusName";
         }
@@ -184,7 +183,7 @@ internal sealed class PostgreSqlMonitoringApi(
 
         object[] sqlParams =
         [
-            new NpgsqlParameter("@StatusName", query.StatusName ?? string.Empty),
+            new NpgsqlParameter("@StatusName", query.StatusName?.ToString("G") ?? string.Empty),
             new NpgsqlParameter("@Group", query.Group ?? string.Empty),
             new NpgsqlParameter("@Name", query.Name ?? string.Empty),
             new NpgsqlParameter("@Content", contentLike),
@@ -236,7 +235,7 @@ internal sealed class PostgreSqlMonitoringApi(
                                 ExpiresAt = await reader.IsDBNullAsync(index++, token).ConfigureAwait(false)
                                     ? null
                                     : reader.GetDateTime(index - 1),
-                                StatusName = reader.GetString(index++),
+                                StatusName = Enum.Parse<StatusName>(reader.GetString(index++)),
                                 NextRetryAt = await reader.IsDBNullAsync(index++, token).ConfigureAwait(false)
                                     ? null
                                     : reader.GetDateTime(index - 1),

@@ -43,5 +43,12 @@ public class MediumMessage
 
     public int Retries { get; set; }
 
+    /// <summary>
+    /// Gets or sets the number of delivery attempts durably reserved in the current inline burst.
+    /// The reservation is written before invoking user code or a transport so crash recovery cannot
+    /// grant a fresh inline budget. It resets to zero when <see cref="Retries"/> advances.
+    /// </summary>
+    public int InlineAttempts { get; set; }
+
     public string? ExceptionInfo { get; set; }
 }

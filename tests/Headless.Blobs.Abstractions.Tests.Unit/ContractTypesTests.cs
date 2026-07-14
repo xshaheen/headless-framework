@@ -2,6 +2,7 @@
 
 using System.Diagnostics;
 using Headless.Blobs;
+using Headless.Primitives;
 using Headless.Testing.Tests;
 
 namespace Tests;
@@ -19,6 +20,7 @@ public sealed class ContractTypesTests : TestBase
             BlobKey = "folder/file.txt",
             Created = DateTimeOffset.UtcNow,
             Modified = DateTimeOffset.UtcNow,
+            Size = 0,
         };
 
         // Assert
@@ -37,6 +39,7 @@ public sealed class ContractTypesTests : TestBase
             BlobKey = "file.txt",
             Created = created,
             Modified = DateTimeOffset.UtcNow,
+            Size = 0,
         };
 
         // Assert
@@ -55,6 +58,7 @@ public sealed class ContractTypesTests : TestBase
             BlobKey = "file.txt",
             Created = DateTimeOffset.UtcNow.AddDays(-1),
             Modified = modified,
+            Size = 0,
         };
 
         // Assert
@@ -81,7 +85,7 @@ public sealed class ContractTypesTests : TestBase
     public void should_store_metadata_when_metadata_is_provided()
     {
         // Arrange
-        var metadata = new Dictionary<string, string?>(StringComparer.Ordinal) { ["contentType"] = "text/plain" };
+        var metadata = new Dictionary<string, string>(StringComparer.Ordinal) { ["contentType"] = "text/plain" };
 
         // Act
         var blobInfo = new BlobInfo
@@ -89,6 +93,7 @@ public sealed class ContractTypesTests : TestBase
             BlobKey = "file.txt",
             Created = DateTimeOffset.UtcNow,
             Modified = DateTimeOffset.UtcNow,
+            Size = 0,
             Metadata = metadata,
         };
 
@@ -105,7 +110,7 @@ public sealed class ContractTypesTests : TestBase
 
         // Assert
         var attribute = type.GetCustomAttributes(typeof(DebuggerDisplayAttribute), false);
-        attribute.Should().HaveCount(1);
+        attribute.Should().ContainSingle();
     }
 
     #endregion
@@ -113,16 +118,16 @@ public sealed class ContractTypesTests : TestBase
     #region BlobUploadRequest Tests
 
     [Fact]
-    public void should_store_filename_when_creating_upload_request()
+    public void should_store_path_when_creating_upload_request()
     {
         // Arrange
         var stream = new MemoryStream();
 
         // Act
-        var request = new BlobUploadRequest(stream, "document.pdf");
+        var request = new BlobUploadRequest("document.pdf", stream);
 
         // Assert
-        request.FileName.Should().Be("document.pdf");
+        request.Path.Should().Be("document.pdf");
     }
 
     [Fact]
@@ -132,7 +137,7 @@ public sealed class ContractTypesTests : TestBase
         var stream = new MemoryStream([1, 2, 3]);
 
         // Act
-        var request = new BlobUploadRequest(stream, "file.bin");
+        var request = new BlobUploadRequest("file.bin", stream);
 
         // Assert
         request.Stream.Should().BeSameAs(stream);
@@ -143,10 +148,10 @@ public sealed class ContractTypesTests : TestBase
     {
         // Arrange
         var stream = new MemoryStream();
-        var metadata = new Dictionary<string, string?>(StringComparer.Ordinal) { ["author"] = "test" };
+        var metadata = new Dictionary<string, string>(StringComparer.Ordinal) { ["author"] = "test" };
 
         // Act
-        var request = new BlobUploadRequest(stream, "file.txt", metadata);
+        var request = new BlobUploadRequest("file.txt", stream, metadata);
 
         // Assert
         request.Metadata.Should().NotBeNull();
@@ -160,7 +165,7 @@ public sealed class ContractTypesTests : TestBase
         var stream = new MemoryStream();
 
         // Act
-        var request = new BlobUploadRequest(stream, "file.txt");
+        var request = new BlobUploadRequest("file.txt", stream);
 
         // Assert
         request.Metadata.Should().BeNull();
@@ -168,207 +173,171 @@ public sealed class ContractTypesTests : TestBase
 
     #endregion
 
-    #region NextPageResult Tests
+    #region BlobQuery Tests
 
     [Fact]
-    public void should_return_has_more_true_when_next_page_exists()
+    public void should_round_trip_properties_when_query_constructed_with_valid_values()
     {
-        // Arrange & Act
-        var result = new NextPageResult
-        {
-            Success = true,
-            HasMore = true,
-            Blobs = [],
-            NextPageFunc = (_, _) => ValueTask.FromResult<INextPageResult>(null!),
-        };
-
-        // Assert
-        result.HasMore.Should().BeTrue();
-    }
-
-    [Fact]
-    public void should_return_has_more_false_when_no_next_page()
-    {
-        // Arrange & Act
-        var result = new NextPageResult
-        {
-            Success = true,
-            HasMore = false,
-            Blobs = [],
-            NextPageFunc = null,
-        };
-
-        // Assert
-        result.HasMore.Should().BeFalse();
-    }
-
-    [Fact]
-    public void should_store_blobs_collection_when_blobs_are_provided()
-    {
-        // Arrange
-        var blobs = new List<BlobInfo>
-        {
-            new()
-            {
-                BlobKey = "file1.txt",
-                Created = DateTimeOffset.UtcNow,
-                Modified = DateTimeOffset.UtcNow,
-            },
-            new()
-            {
-                BlobKey = "file2.txt",
-                Created = DateTimeOffset.UtcNow,
-                Modified = DateTimeOffset.UtcNow,
-            },
-        };
-
         // Act
-        var result = new NextPageResult
-        {
-            Success = true,
-            HasMore = false,
-            Blobs = blobs,
-        };
+        var query = new BlobQuery("bucket", "prefix/sub", pageSize: 25, continuationToken: "token-1");
 
         // Assert
-        result.Blobs.Should().HaveCount(2);
-        result.Blobs.Select(b => b.BlobKey).Should().BeEquivalentTo(["file1.txt", "file2.txt"]);
+        query.Container.Should().Be("bucket");
+        query.Prefix.Should().Be("prefix/sub");
+        query.PageSize.Should().Be(25);
+        query.ContinuationToken.Should().Be("token-1");
+    }
+
+    [Fact]
+    public void should_default_optional_values_when_only_container_provided()
+    {
+        // Act
+        var query = new BlobQuery("bucket");
+
+        // Assert
+        query.Prefix.Should().BeNull();
+        query.PageSize.Should().Be(100);
+        query.ContinuationToken.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void should_throw_when_query_container_is_null_or_blank(string? container)
+    {
+        // Act
+        var act = () => new BlobQuery(container!);
+
+        // Assert
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void should_throw_when_query_prefix_contains_traversal()
+    {
+        // Act
+        var act = () => new BlobQuery("bucket", "../escape");
+
+        // Assert
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void should_throw_when_query_prefix_is_sidecar_suffix()
+    {
+        // Act
+        var act = () => new BlobQuery("bucket", "report.hlmeta");
+
+        // Assert
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-5)]
+    public void should_throw_when_query_page_size_is_not_positive(int pageSize)
+    {
+        // Act
+        var act = () => new BlobQuery("bucket", pageSize: pageSize);
+
+        // Assert
+        act.Should().Throw<ArgumentOutOfRangeException>();
     }
 
     #endregion
 
-    #region PagedFileListResult Tests
+    #region BlobPage Tests
 
     [Fact]
-    public void should_create_empty_result_when_using_empty_static()
+    public void should_have_no_items_and_null_token_when_using_empty_page()
     {
         // Act
-        var result = PagedFileListResult.Empty;
+        var page = BlobPage.Empty;
 
         // Assert
-        result.Blobs.Should().BeEmpty();
-        result.HasMore.Should().BeFalse();
+        page.Items.Should().BeEmpty();
+        page.ContinuationToken.Should().BeNull();
     }
 
     [Fact]
-    public void should_create_result_with_blobs_when_using_constructor()
+    public void should_carry_items_and_token_when_page_constructed()
     {
         // Arrange
-        var blobs = new List<BlobInfo>
-        {
-            new()
-            {
-                BlobKey = "test.txt",
-                Created = DateTimeOffset.UtcNow,
-                Modified = DateTimeOffset.UtcNow,
-            },
-        };
-
-        // Act
-        var result = new PagedFileListResult(blobs);
-
-        // Assert
-        result.Blobs.Should().HaveCount(1);
-        result.HasMore.Should().BeFalse();
-    }
-
-    [Fact]
-    public async Task should_navigate_to_next_page_when_next_page_func_provided()
-    {
-        // Arrange
-        var page1Blobs = new List<BlobInfo>
+        var items = new List<BlobInfo>
         {
             new()
             {
                 BlobKey = "file1.txt",
                 Created = DateTimeOffset.UtcNow,
                 Modified = DateTimeOffset.UtcNow,
+                Size = 0,
             },
         };
-
-        var page2Blobs = new List<BlobInfo>
-        {
-            new()
-            {
-                BlobKey = "file2.txt",
-                Created = DateTimeOffset.UtcNow,
-                Modified = DateTimeOffset.UtcNow,
-            },
-        };
-
-        var result = new PagedFileListResult(
-            page1Blobs,
-            hasMore: true,
-            (_, _) =>
-                ValueTask.FromResult<INextPageResult>(
-                    new NextPageResult
-                    {
-                        Success = true,
-                        HasMore = false,
-                        Blobs = page2Blobs,
-                    }
-                )
-        );
 
         // Act
-        var hasNext = await result.NextPageAsync(AbortToken);
+        var page = new BlobPage(items, "next-token");
 
         // Assert
-        hasNext.Should().BeTrue();
-        result.Blobs.Should().HaveCount(1);
-        result.Blobs.First().BlobKey.Should().Be("file2.txt");
-        result.HasMore.Should().BeFalse();
+        page.Items.Should().ContainSingle();
+        page.Items[0].BlobKey.Should().Be("file1.txt");
+        page.ContinuationToken.Should().Be("next-token");
+    }
+
+    #endregion
+
+    #region BlobBulkResult Tests
+
+    [Fact]
+    public void should_carry_location_identity_and_success_result_when_constructed()
+    {
+        // Arrange
+        var location = new BlobLocation("bucket", "file.txt");
+
+        // Act
+        var result = new BlobBulkResult(location, Result<bool, Exception>.Ok(true));
+
+        // Assert
+        result.Container.Should().Be("bucket");
+        result.Path.Should().Be("file.txt");
+        result.Location.Should().Be(location);
+        result.Result.IsSuccess.Should().BeTrue();
+        result.Result.Value.Should().BeTrue();
     }
 
     [Fact]
-    public async Task should_return_false_when_no_next_page_func()
+    public void should_carry_location_identity_and_failure_result_when_constructed_with_error()
     {
         // Arrange
-        var blobs = new List<BlobInfo>();
-        var result = new PagedFileListResult(blobs);
+        var location = new BlobLocation("bucket", "file.txt");
+        var error = new InvalidOperationException("boom");
 
         // Act
-        var hasNext = await result.NextPageAsync(AbortToken);
+        var result = new BlobBulkResult(location, Result<bool, Exception>.Fail(error));
 
         // Assert
-        hasNext.Should().BeFalse();
+        result.Container.Should().Be("bucket");
+        result.Path.Should().Be("file.txt");
+        result.Location.Should().Be(location);
+        result.Result.IsFailure.Should().BeTrue();
+        result.Result.Error.Should().BeSameAs(error);
     }
 
     [Fact]
-    public async Task should_handle_failed_next_page_when_success_is_false()
+    public void should_carry_raw_identity_without_location_when_input_path_is_invalid()
     {
         // Arrange
-        var initialBlobs = new List<BlobInfo>
-        {
-            new()
-            {
-                BlobKey = "file1.txt",
-                Created = DateTimeOffset.UtcNow,
-                Modified = DateTimeOffset.UtcNow,
-            },
-        };
-
-        var result = new PagedFileListResult(
-            initialBlobs,
-            hasMore: true,
-            (_, _) =>
-                ValueTask.FromResult<INextPageResult>(
-                    new NextPageResult
-                    {
-                        Success = false,
-                        HasMore = false,
-                        Blobs = [],
-                    }
-                )
-        );
+        var error = new InvalidOperationException("Invalid path.");
 
         // Act
-        var hasNext = await result.NextPageAsync(AbortToken);
+        var result = new BlobBulkResult("bucket", "../escape.txt", Result<bool, Exception>.Fail(error));
 
         // Assert
-        hasNext.Should().BeFalse();
-        result.Blobs.Should().BeEmpty();
-        result.HasMore.Should().BeFalse();
+        result.Container.Should().Be("bucket");
+        result.Path.Should().Be("../escape.txt");
+        result.Location.Should().BeNull();
+        result.Result.IsFailure.Should().BeTrue();
+        result.Result.Error.Should().BeSameAs(error);
     }
 
     #endregion

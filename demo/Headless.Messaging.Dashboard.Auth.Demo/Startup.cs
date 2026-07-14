@@ -1,3 +1,4 @@
+using Headless.Messaging;
 using Headless.Messaging.Dashboard;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
@@ -14,12 +15,10 @@ public class Startup
         AddMessagingWithOpenIdAndCustomAuthorization(services);
 
         services.AddCors(x =>
-        {
             x.AddDefaultPolicy(p =>
-            {
-                p.WithOrigins("https://localhost:5001").AllowCredentials().AllowAnyHeader().AllowAnyMethod();
-            });
-        });
+                p.WithOrigins("https://localhost:5001").AllowCredentials().AllowAnyHeader().AllowAnyMethod()
+            )
+        );
 
         services.AddControllers();
     }
@@ -31,10 +30,7 @@ public class Startup
         app.UseAuthentication();
         app.UseAuthorization();
         app.UseCookiePolicy();
-        app.UseEndpoints(endpoints =>
-        {
-            endpoints.MapControllers();
-        });
+        app.UseEndpoints(endpoints => endpoints.MapControllers());
     }
 
     public IServiceCollection AddMessagingWithOpenIdAuthorization(IServiceCollection services)
@@ -134,7 +130,7 @@ public class Startup
             .AddAuthentication(opt => opt.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme)
             .AddScheme<MyDashboardAuthenticationSchemeOptions, MyDashboardAuthenticationHandler>(
                 MyDashboardAuthenticationSchemeDefaults.Scheme,
-                null
+                configureOptions: null
             )
             .AddCookie()
             .AddOpenIdConnect(options =>

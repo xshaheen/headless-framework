@@ -1,12 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Diagnostics.CodeAnalysis;
 using Headless.Caching;
 using Headless.Jobs;
 using Headless.Jobs.DbContextFactory;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Infrastructure;
 using Headless.Jobs.Interfaces;
+using Headless.Testing.Tests;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -14,7 +14,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests.Caching;
 
-public sealed class CronExpressionCacheTests
+public sealed class CronExpressionCacheTests : TestBase
 {
     [Fact]
     public async Task GetAllCronJobExpressions_without_cache_reads_database()
@@ -23,7 +23,7 @@ public sealed class CronExpressionCacheTests
         await fixture.SeedCronJobsAsync(_Cron("daily", "0 0 * * *"));
         var sut = fixture.CreateProvider();
 
-        var result = await sut.GetAllCronJobExpressions(TestContext.Current.CancellationToken);
+        var result = await sut.GetAllCronJobExpressionsAsync(AbortToken);
 
         result.Should().ContainSingle().Which.Expression.Should().Be("0 0 * * *");
     }
@@ -39,7 +39,7 @@ public sealed class CronExpressionCacheTests
         };
         var sut = fixture.CreateProvider(cache);
 
-        var result = await sut.GetAllCronJobExpressions(TestContext.Current.CancellationToken);
+        var result = await sut.GetAllCronJobExpressionsAsync(AbortToken);
 
         result.Should().ContainSingle().Which.Function.Should().Be("cached");
         cache.GetOrAddCalls.Should().Be(1);
@@ -56,7 +56,7 @@ public sealed class CronExpressionCacheTests
         var cache = new RecordingCache { Behavior = CacheBehavior.InvokeFactory };
         var sut = fixture.CreateProvider(cache);
 
-        var result = await sut.GetAllCronJobExpressions(TestContext.Current.CancellationToken);
+        var result = await sut.GetAllCronJobExpressionsAsync(AbortToken);
 
         result.Should().ContainSingle().Which.Function.Should().Be("db");
         cache.GetOrAddCalls.Should().Be(1);
@@ -71,7 +71,7 @@ public sealed class CronExpressionCacheTests
         var cache = new RecordingCache { Behavior = CacheBehavior.ThrowBeforeFactory };
         var sut = fixture.CreateProvider(cache);
 
-        var result = await sut.GetAllCronJobExpressions(TestContext.Current.CancellationToken);
+        var result = await sut.GetAllCronJobExpressionsAsync(AbortToken);
 
         result.Should().ContainSingle().Which.Function.Should().Be("db");
         cache.FactoryCalls.Should().Be(0);
@@ -85,7 +85,7 @@ public sealed class CronExpressionCacheTests
         var cache = new RecordingCache { Behavior = CacheBehavior.ThrowAfterFactory };
         var sut = fixture.CreateProvider(cache);
 
-        var result = await sut.GetAllCronJobExpressions(TestContext.Current.CancellationToken);
+        var result = await sut.GetAllCronJobExpressionsAsync(AbortToken);
 
         result.Should().ContainSingle().Which.Function.Should().Be("db");
         cache.FactoryCalls.Should().Be(1);
@@ -99,7 +99,7 @@ public sealed class CronExpressionCacheTests
         var cache = new RecordingCache { Behavior = CacheBehavior.ReturnNoValue };
         var sut = fixture.CreateProvider(cache);
 
-        var result = await sut.GetAllCronJobExpressions(TestContext.Current.CancellationToken);
+        var result = await sut.GetAllCronJobExpressionsAsync(AbortToken);
 
         // Contract (#6): a cache hit is authoritative. A NoValue hit collapses to [] and never re-queries the DB,
         // even though the DB has rows — providers must never persist a no-value cron entry.
@@ -115,7 +115,7 @@ public sealed class CronExpressionCacheTests
         var cache = new RecordingCache { Behavior = CacheBehavior.ReturnNullValue };
         var sut = fixture.CreateProvider(cache);
 
-        var result = await sut.GetAllCronJobExpressions(TestContext.Current.CancellationToken);
+        var result = await sut.GetAllCronJobExpressionsAsync(AbortToken);
 
         // Contract (#6): HasValue=true with Value=null also collapses to [] with no DB revalidation.
         result.Should().BeEmpty();
@@ -132,17 +132,26 @@ public sealed class CronExpressionCacheTests
         var coordinatedWriteOptions = new DbContextOptionsBuilder<JobsDbContext>()
             .UseSqlite("DataSource=:memory:")
             .Options;
+        var dbContextFactory = new ThrowingDbContextFactory();
+        var ownerIdentity = new TestOwnerIdentity();
+        var schedulerOptions = new SchedulerOptionsBuilder();
         var sut = new JobsEfCorePersistenceProvider<JobsDbContext, TimeJobEntity, CronJobEntity>(
-            new ThrowingDbContextFactory(),
+            dbContextFactory,
             coordinatedWriteOptions,
             TimeProvider.System,
-            new TestOwnerIdentity(),
-            new SchedulerOptionsBuilder(),
+            ownerIdentity,
+            schedulerOptions,
             cache,
+            new EfCoreCasJobsClaimStrategy<JobsDbContext, TimeJobEntity, CronJobEntity>(
+                dbContextFactory,
+                TimeProvider.System,
+                ownerIdentity,
+                schedulerOptions
+            ),
             NullLogger.Instance
         );
 
-        var act = () => sut.GetAllCronJobExpressions(TestContext.Current.CancellationToken);
+        var act = () => sut.GetAllCronJobExpressionsAsync(AbortToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
         cache.FactoryCalls.Should().Be(1);
@@ -162,7 +171,7 @@ public sealed class CronExpressionCacheTests
         };
         var sut = fixture.CreateProvider(cache);
 
-        var result = await sut.GetAllCronJobExpressions(TestContext.Current.CancellationToken);
+        var result = await sut.GetAllCronJobExpressionsAsync(AbortToken);
 
         result.Should().ContainSingle().Which.Function.Should().Be("db");
         cache.FactoryCalls.Should().Be(0);
@@ -182,7 +191,7 @@ public sealed class CronExpressionCacheTests
         await cts.CancelAsync();
 
         // The caller's own token is cancelled, so the cancellation is genuine and must propagate (no DB fallback).
-        var act = () => sut.GetAllCronJobExpressions(cts.Token);
+        var act = () => sut.GetAllCronJobExpressionsAsync(cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
@@ -196,10 +205,10 @@ public sealed class CronExpressionCacheTests
         var cache = new RecordingCache();
         var sut = fixture.CreateProvider(cache);
 
-        await sut.InsertCronJobs([_Cron("new", "0 7 * * *")], TestContext.Current.CancellationToken);
+        await sut.InsertCronJobsAsync([_Cron("new", "0 7 * * *")], AbortToken);
         cronJob.Expression = "0 8 * * *";
-        await sut.UpdateCronJobs([cronJob], TestContext.Current.CancellationToken);
-        await sut.RemoveCronJobs([cronJob.Id], TestContext.Current.CancellationToken);
+        await sut.UpdateCronJobsAsync([cronJob], AbortToken);
+        await sut.RemoveCronJobsAsync([cronJob.Id], AbortToken);
 
         cache.RemovedKeys.Should().Equal("jobs:cron:expressions", "jobs:cron:expressions", "jobs:cron:expressions");
     }
@@ -211,7 +220,7 @@ public sealed class CronExpressionCacheTests
         var cache = new RecordingCache { RemoveException = new InvalidOperationException("cache remove failed") };
         var sut = fixture.CreateProvider(cache);
 
-        var result = await sut.InsertCronJobs([_Cron("new", "0 7 * * *")], TestContext.Current.CancellationToken);
+        var result = await sut.InsertCronJobsAsync([_Cron("new", "0 7 * * *")], AbortToken);
 
         result.Should().Be(1);
         cache.RemoveCalls.Should().Be(1);
@@ -247,7 +256,7 @@ public sealed class CronExpressionCacheTests
         public static async Task<CronCacheFixture> CreateAsync()
         {
             var connection = new SqliteConnection("DataSource=:memory:");
-            await connection.OpenAsync(TestContext.Current.CancellationToken);
+            await connection.OpenAsync(AbortToken);
 
             var services = new ServiceCollection()
                 .AddEntityFrameworkSqlite()
@@ -260,30 +269,42 @@ public sealed class CronExpressionCacheTests
                 .Options;
 
             var fixture = new CronCacheFixture(connection, services, options);
-            await using var dbContext = fixture.CreateDbContext();
-            await dbContext.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+            await using var dbContext = fixture._CreateDbContext();
+            await dbContext.Database.EnsureCreatedAsync(AbortToken);
 
             return fixture;
         }
 
         public JobsEfCorePersistenceProvider<JobsDbContext, TimeJobEntity, CronJobEntity> CreateProvider(
             ICache? cache = null
-        ) =>
-            new(
-                new TestDbContextFactory(_options),
+        )
+        {
+            var dbContextFactory = new TestDbContextFactory(_options);
+            var ownerIdentity = new TestOwnerIdentity();
+            var schedulerOptions = new SchedulerOptionsBuilder();
+
+            return new(
+                dbContextFactory,
                 _options,
                 TimeProvider.System,
-                new TestOwnerIdentity(),
-                new SchedulerOptionsBuilder(),
+                ownerIdentity,
+                schedulerOptions,
                 cache,
+                new EfCoreCasJobsClaimStrategy<JobsDbContext, TimeJobEntity, CronJobEntity>(
+                    dbContextFactory,
+                    TimeProvider.System,
+                    ownerIdentity,
+                    schedulerOptions
+                ),
                 NullLogger.Instance
             );
+        }
 
         public async Task SeedCronJobsAsync(params CronJobEntity[] cronJobs)
         {
-            await using var dbContext = CreateDbContext();
-            await dbContext.Set<CronJobEntity>().AddRangeAsync(cronJobs, TestContext.Current.CancellationToken);
-            await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+            await using var dbContext = _CreateDbContext();
+            await dbContext.Set<CronJobEntity>().AddRangeAsync(cronJobs, AbortToken);
+            await dbContext.SaveChangesAsync(AbortToken);
         }
 
         public async ValueTask DisposeAsync()
@@ -292,7 +313,7 @@ public sealed class CronExpressionCacheTests
             await _services.DisposeAsync();
         }
 
-        private JobsDbContext CreateDbContext() => new(_options);
+        private JobsDbContext _CreateDbContext() => new(_options);
     }
 
     private sealed class TestDbContextFactory(DbContextOptions<JobsDbContext> options)

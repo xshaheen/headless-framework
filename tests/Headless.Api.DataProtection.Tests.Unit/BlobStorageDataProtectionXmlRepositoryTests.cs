@@ -1,14 +1,14 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Xml.Linq;
-using Headless.Api;
+using Headless.Api.DataProtection;
 using Headless.Blobs;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
-// ReSharper disable NotDisposedResource
-public sealed class BlobStorageDataProtectionXmlRepositoryTests
+public sealed class BlobStorageDataProtectionXmlRepositoryTests : TestBase
 {
     #region Constructor Tests
 
@@ -66,23 +66,14 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
     public void should_return_all_xml_elements()
     {
         var storage = Substitute.For<IBlobStorage>();
-        var blobs = new List<BlobInfo>
-        {
-            _CreateBlobInfo("key1.xml"),
-            _CreateBlobInfo("key2.xml"),
-            _CreateBlobInfo("key3.xml"),
-        };
-        _SetupStorageWithBlobs(storage, blobs);
+        _SetupStorageWithBlobs(
+            storage,
+            [_CreateBlobInfo("key1.xml"), _CreateBlobInfo("key2.xml"), _CreateBlobInfo("key3.xml")]
+        );
 
-        storage
-            .OpenReadStreamAsync(Arg.Any<string[]>(), "key1.xml", Arg.Any<CancellationToken>())
-            .Returns(_CreateDownloadResult("<key id=\"1\"/>"));
-        storage
-            .OpenReadStreamAsync(Arg.Any<string[]>(), "key2.xml", Arg.Any<CancellationToken>())
-            .Returns(_CreateDownloadResult("<key id=\"2\"/>"));
-        storage
-            .OpenReadStreamAsync(Arg.Any<string[]>(), "key3.xml", Arg.Any<CancellationToken>())
-            .Returns(_CreateDownloadResult("<key id=\"3\"/>"));
+        _SetupDownload(storage, "key1.xml", "<key id=\"1\"/>");
+        _SetupDownload(storage, "key2.xml", "<key id=\"2\"/>");
+        _SetupDownload(storage, "key3.xml", "<key id=\"3\"/>");
 
         var sut = new BlobStorageDataProtectionXmlRepository(storage);
 
@@ -95,23 +86,16 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
     public void should_skip_files_that_fail_to_download()
     {
         var storage = Substitute.For<IBlobStorage>();
-        var blobs = new List<BlobInfo>
-        {
-            _CreateBlobInfo("key1.xml"),
-            _CreateBlobInfo("key2.xml"),
-            _CreateBlobInfo("key3.xml"),
-        };
-        _SetupStorageWithBlobs(storage, blobs);
+        _SetupStorageWithBlobs(
+            storage,
+            [_CreateBlobInfo("key1.xml"), _CreateBlobInfo("key2.xml"), _CreateBlobInfo("key3.xml")]
+        );
 
+        _SetupDownload(storage, "key1.xml", "<key id=\"1\"/>");
         storage
-            .OpenReadStreamAsync(Arg.Any<string[]>(), "key1.xml", Arg.Any<CancellationToken>())
-            .Returns(_CreateDownloadResult("<key id=\"1\"/>"));
-        storage
-            .OpenReadStreamAsync(Arg.Any<string[]>(), "key2.xml", Arg.Any<CancellationToken>())
+            .OpenReadStreamAsync(Arg.Is<BlobLocation>(l => l.Path == "key2.xml"), Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult<BlobDownloadResult?>(null)); // Download fails
-        storage
-            .OpenReadStreamAsync(Arg.Any<string[]>(), "key3.xml", Arg.Any<CancellationToken>())
-            .Returns(_CreateDownloadResult("<key id=\"3\"/>"));
+        _SetupDownload(storage, "key3.xml", "<key id=\"3\"/>");
 
         var sut = new BlobStorageDataProtectionXmlRepository(storage);
 
@@ -132,79 +116,67 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
 
         await storage
             .Received(1)
-            .GetPagedListAsync(
-                Arg.Is<string[]>(c => c.Length == 1 && c[0] == "DataProtection"),
-                Arg.Any<string?>(),
-                Arg.Any<int>(),
-                Arg.Any<CancellationToken>()
-            );
+            .ListAsync(Arg.Is<BlobQuery>(q => q.Container == "DataProtection"), Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task should_filter_by_xml_extension()
     {
+        // The *.xml filter is now a client-side glob over the listing; non-xml blobs are not loaded.
         var storage = Substitute.For<IBlobStorage>();
-        _SetupEmptyStorage(storage);
+        _SetupStorageWithBlobs(storage, [_CreateBlobInfo("key.xml"), _CreateBlobInfo("ignore.txt")]);
+        _SetupDownload(storage, "key.xml", "<key id=\"1\"/>");
+
         var sut = new BlobStorageDataProtectionXmlRepository(storage);
 
-        _ = sut.GetAllElements();
+        var result = sut.GetAllElements();
 
+        result.Should().ContainSingle();
         await storage
-            .Received(1)
-            .GetPagedListAsync(Arg.Any<string[]>(), "*.xml", Arg.Any<int>(), Arg.Any<CancellationToken>());
+            .DidNotReceive()
+            .OpenReadStreamAsync(Arg.Is<BlobLocation>(l => l.Path == "ignore.txt"), Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public void should_parse_xml_content_correctly()
     {
         var storage = Substitute.For<IBlobStorage>();
-        var blobs = new List<BlobInfo> { _CreateBlobInfo("test-key.xml") };
-        _SetupStorageWithBlobs(storage, blobs);
+        _SetupStorageWithBlobs(storage, [_CreateBlobInfo("test-key.xml")]);
 
-        var xmlContent = """
+        const string xmlContent = """
             <key id="test-123" version="1">
               <creationDate>2026-01-01T00:00:00Z</creationDate>
               <encryptedKey>base64data</encryptedKey>
             </key>
             """;
-        storage
-            .OpenReadStreamAsync(Arg.Any<string[]>(), "test-key.xml", Arg.Any<CancellationToken>())
-            .Returns(_CreateDownloadResult(xmlContent));
+
+        _SetupDownload(storage, "test-key.xml", xmlContent);
 
         var sut = new BlobStorageDataProtectionXmlRepository(storage);
 
         var result = sut.GetAllElements();
 
-        result.Should().HaveCount(1);
+        result.Should().ContainSingle();
         var element = result.First();
         element.Name.LocalName.Should().Be("key");
-        element.Attribute("id")?.Value.Should().Be("test-123");
-        element.Attribute("version")?.Value.Should().Be("1");
-        element.Element("creationDate")?.Value.Should().Be("2026-01-01T00:00:00Z");
-        element.Element("encryptedKey")?.Value.Should().Be("base64data");
+        element.Attribute("id")!.Value.Should().Be("test-123");
+        element.Attribute("version")!.Value.Should().Be("1");
+        element.Element("creationDate")!.Value.Should().Be("2026-01-01T00:00:00Z");
+        element.Element("encryptedKey")!.Value.Should().Be("base64data");
     }
 
     [Fact]
     public void should_skip_malformed_xml_files_gracefully()
     {
         var storage = Substitute.For<IBlobStorage>();
-        var blobs = new List<BlobInfo>
-        {
-            _CreateBlobInfo("valid.xml"),
-            _CreateBlobInfo("malformed.xml"),
-            _CreateBlobInfo("also-valid.xml"),
-        };
-        _SetupStorageWithBlobs(storage, blobs);
+        _SetupStorageWithBlobs(
+            storage,
+            [_CreateBlobInfo("valid.xml"), _CreateBlobInfo("malformed.xml"), _CreateBlobInfo("also-valid.xml")]
+        );
 
-        storage
-            .OpenReadStreamAsync(Arg.Any<string[]>(), "valid.xml", Arg.Any<CancellationToken>())
-            .Returns(_CreateDownloadResult("<key id=\"1\"/>"));
-        storage
-            .OpenReadStreamAsync(Arg.Any<string[]>(), "malformed.xml", Arg.Any<CancellationToken>())
-            .Returns(_CreateDownloadResult("<key id='unclosed'><broken"));
-        storage
-            .OpenReadStreamAsync(Arg.Any<string[]>(), "also-valid.xml", Arg.Any<CancellationToken>())
-            .Returns(_CreateDownloadResult("<key id=\"3\"/>"));
+        _SetupDownload(storage, "valid.xml", "<key id=\"1\"/>");
+        _SetupDownload(storage, "malformed.xml", "<key id='unclosed'><broken");
+        _SetupDownload(storage, "also-valid.xml", "<key id=\"3\"/>");
 
         var sut = new BlobStorageDataProtectionXmlRepository(storage);
 
@@ -219,12 +191,8 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
     public void should_handle_empty_xml_file()
     {
         var storage = Substitute.For<IBlobStorage>();
-        var blobs = new List<BlobInfo> { _CreateBlobInfo("empty.xml") };
-        _SetupStorageWithBlobs(storage, blobs);
-
-        storage
-            .OpenReadStreamAsync(Arg.Any<string[]>(), "empty.xml", Arg.Any<CancellationToken>())
-            .Returns(_CreateDownloadResult(""));
+        _SetupStorageWithBlobs(storage, [_CreateBlobInfo("empty.xml")]);
+        _SetupDownload(storage, "empty.xml", "");
 
         var sut = new BlobStorageDataProtectionXmlRepository(storage);
 
@@ -238,22 +206,20 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
     public void should_not_resolve_external_entities_in_xml()
     {
         var storage = Substitute.For<IBlobStorage>();
-        var blobs = new List<BlobInfo> { _CreateBlobInfo("xxe.xml") };
-        _SetupStorageWithBlobs(storage, blobs);
+        _SetupStorageWithBlobs(storage, [_CreateBlobInfo("xxe.xml")]);
 
         // XXE attack attempt - external entity declaration
         // In .NET 5+, XElement.Load() has DTD processing disabled by default
         // The entity reference will be included literally, not resolved
-        var xxeXml = """
+        const string xxeXml = """
             <?xml version="1.0"?>
             <!DOCTYPE key [
               <!ENTITY xxe SYSTEM "file:///etc/passwd">
             ]>
             <key id="malicious">&xxe;</key>
             """;
-        storage
-            .OpenReadStreamAsync(Arg.Any<string[]>(), "xxe.xml", Arg.Any<CancellationToken>())
-            .Returns(_CreateDownloadResult(xxeXml));
+
+        _SetupDownload(storage, "xxe.xml", xxeXml);
 
         var sut = new BlobStorageDataProtectionXmlRepository(storage);
 
@@ -261,9 +227,9 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
 
         // Modern .NET safely ignores external entities - the key is returned
         // but the entity reference is NOT resolved (no file contents leaked)
-        result.Should().HaveCount(1);
+        result.Should().ContainSingle();
         var element = result.First();
-        element.Attribute("id")?.Value.Should().Be("malicious");
+        element.Attribute("id")?.Value.Should()?.Be("malicious");
         // The value should NOT contain /etc/passwd contents - DTD expansion is disabled
         element.Value.Should().NotContain("root:");
     }
@@ -287,15 +253,7 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
     public async Task should_use_friendly_name_for_filename()
     {
         var storage = Substitute.For<IBlobStorage>();
-        storage
-            .UploadAsync(
-                Arg.Any<string[]>(),
-                Arg.Any<string>(),
-                Arg.Any<Stream>(),
-                Arg.Any<Dictionary<string, string?>?>(),
-                Arg.Any<CancellationToken>()
-            )
-            .Returns(ValueTask.CompletedTask);
+        _SetupUpload(storage);
         var sut = new BlobStorageDataProtectionXmlRepository(storage);
         var element = new XElement("key", new XAttribute("id", "test"));
 
@@ -304,10 +262,9 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
         await storage
             .Received(1)
             .UploadAsync(
-                Arg.Any<string[]>(),
-                "key-123.xml",
+                Arg.Is<BlobLocation>(l => l.Path == "key-123.xml"),
                 Arg.Any<Stream>(),
-                Arg.Any<Dictionary<string, string?>?>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -321,10 +278,9 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
         string? capturedFileName = null;
         storage
             .UploadAsync(
-                Arg.Any<string[]>(),
-                Arg.Do<string>(x => capturedFileName = x),
+                Arg.Do<BlobLocation>(l => capturedFileName = l.Path),
                 Arg.Any<Stream>(),
-                Arg.Any<Dictionary<string, string?>?>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.CompletedTask);
@@ -345,15 +301,7 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
     public async Task should_upload_to_DataProtection_container()
     {
         var storage = Substitute.For<IBlobStorage>();
-        storage
-            .UploadAsync(
-                Arg.Any<string[]>(),
-                Arg.Any<string>(),
-                Arg.Any<Stream>(),
-                Arg.Any<Dictionary<string, string?>?>(),
-                Arg.Any<CancellationToken>()
-            )
-            .Returns(ValueTask.CompletedTask);
+        _SetupUpload(storage);
         var sut = new BlobStorageDataProtectionXmlRepository(storage);
         var element = new XElement("key", new XAttribute("id", "test"));
 
@@ -362,12 +310,48 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
         await storage
             .Received(1)
             .UploadAsync(
-                Arg.Is<string[]>(c => c.Length == 1 && c[0] == "DataProtection"),
-                Arg.Any<string>(),
+                Arg.Is<BlobLocation>(l => l.Container == "DataProtection"),
                 Arg.Any<Stream>(),
-                Arg.Any<Dictionary<string, string?>?>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<CancellationToken>()
             );
+    }
+
+    [Fact]
+    public async Task should_ensure_DataProtection_container_before_upload_when_manager_is_available()
+    {
+        var storage = Substitute.For<IBlobStorage>();
+        var manager = Substitute.For<IBlobContainerManager>();
+        var calls = new List<string>();
+
+        manager
+            .EnsureContainerAsync("DataProtection", Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                calls.Add("ensure");
+                return ValueTask.CompletedTask;
+            });
+
+        storage
+            .UploadAsync(
+                Arg.Any<BlobLocation>(),
+                Arg.Any<Stream>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(_ =>
+            {
+                calls.Add("upload");
+                return ValueTask.CompletedTask;
+            });
+
+        var sut = new BlobStorageDataProtectionXmlRepository(storage, manager);
+
+        sut.StoreElement(new XElement("key", new XAttribute("id", "test")), "test-key");
+
+        calls.Should().Equal("ensure", "upload");
+
+        await manager.Received(1).EnsureContainerAsync("DataProtection", Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -375,20 +359,21 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
     {
         var storage = Substitute.For<IBlobStorage>();
         byte[]? capturedBytes = null;
+        async ValueTask captureUploadAsync(Stream stream)
+        {
+            await using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms, AbortToken);
+            capturedBytes = ms.ToArray();
+        }
+
         storage
             .UploadAsync(
-                Arg.Any<string[]>(),
-                Arg.Any<string>(),
-                Arg.Do<Stream>(s =>
-                {
-                    using var ms = new MemoryStream();
-                    s.CopyTo(ms);
-                    capturedBytes = ms.ToArray();
-                }),
-                Arg.Any<Dictionary<string, string?>?>(),
+                Arg.Any<BlobLocation>(),
+                Arg.Any<Stream>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<CancellationToken>()
             )
-            .Returns(ValueTask.CompletedTask);
+            .Returns(callInfo => captureUploadAsync(callInfo.ArgAt<Stream>(1)));
         var sut = new BlobStorageDataProtectionXmlRepository(storage);
 
         var element = new XElement("key", new XAttribute("id", "test"), new XElement("child", "value"));
@@ -409,10 +394,9 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
         var callCount = 0;
         storage
             .UploadAsync(
-                Arg.Any<string[]>(),
-                Arg.Any<string>(),
+                Arg.Any<BlobLocation>(),
                 Arg.Any<Stream>(),
-                Arg.Any<Dictionary<string, string?>?>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(_ =>
@@ -433,43 +417,234 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
         callCount.Should().Be(2);
     }
 
+    [Fact]
+    public async Task should_retry_when_container_ensure_throws_transient_exception()
+    {
+        // The container ensure runs INSIDE the same resilience pipeline as the upload, so a transient
+        // ensure failure is retried under the same predicate instead of failing the key write outright.
+        var storage = Substitute.For<IBlobStorage>();
+        _SetupUpload(storage);
+        var manager = Substitute.For<IBlobContainerManager>();
+        var ensureCalls = 0;
+        manager
+            .EnsureContainerAsync("DataProtection", Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                ensureCalls++;
+                if (ensureCalls == 1)
+                {
+                    throw new IOException("Simulated transient ensure failure");
+                }
+
+                return ValueTask.CompletedTask;
+            });
+        var sut = new BlobStorageDataProtectionXmlRepository(storage, manager);
+
+        sut.StoreElement(new XElement("key", new XAttribute("id", "test")), "test-key");
+
+        ensureCalls.Should().Be(2);
+        await storage
+            .Received(1)
+            .UploadAsync(
+                Arg.Any<BlobLocation>(),
+                Arg.Any<Stream>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public void should_wrap_terminal_store_failure_with_container_context_when_no_manager()
+    {
+        // Retries exhausted on a transient-shaped failure → the surfaced exception adds the container name and
+        // the no-manager (pre-provisioned) context, with the original backend exception preserved as the inner.
+        var storage = Substitute.For<IBlobStorage>();
+        storage
+            .UploadAsync(
+                Arg.Any<BlobLocation>(),
+                Arg.Any<Stream>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(_ => throw new IOException("Simulated persistent failure"));
+        var sut = new BlobStorageDataProtectionXmlRepository(storage);
+        var element = new XElement("key", new XAttribute("id", "test"));
+
+        var act = () => sut.StoreElement(element, "test-key");
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*'DataProtection'*")
+            .WithMessage("*No IBlobContainerManager*")
+            .WithInnerException<IOException>();
+    }
+
+    [Fact]
+    public async Task should_wrap_non_retried_store_failure_noting_manager_was_wired()
+    {
+        // A non-transient failure is not retried (the predicate only covers IOException/HttpRequestException)
+        // but is still wrapped with the container + manager-was-wired context.
+        var storage = Substitute.For<IBlobStorage>();
+        storage
+            .UploadAsync(
+                Arg.Any<BlobLocation>(),
+                Arg.Any<Stream>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(_ => throw new NotSupportedException("Simulated non-transient failure"));
+        var manager = Substitute.For<IBlobContainerManager>();
+        var sut = new BlobStorageDataProtectionXmlRepository(storage, manager);
+        var element = new XElement("key", new XAttribute("id", "test"));
+
+        var act = () => sut.StoreElement(element, "test-key");
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*'DataProtection'*")
+            .WithMessage("*IBlobContainerManager was wired*")
+            .WithInnerException<NotSupportedException>();
+        await storage
+            .Received(1)
+            .UploadAsync(
+                Arg.Any<BlobLocation>(),
+                Arg.Any<Stream>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
     [Theory]
     [InlineData("../../../etc/passwd")]
     [InlineData("..\\..\\Windows\\System32\\config")]
     [InlineData("foo/../bar/../../../secret")]
-    public async Task should_pass_path_traversal_patterns_to_storage(string maliciousFriendlyName)
+    public void should_reject_path_traversal_friendly_names(string maliciousFriendlyName)
     {
-        // Path traversal patterns in friendlyName - storage abstraction handles validation
-        // This test documents that the repository passes the friendlyName directly to storage
-        // The blob storage implementation is responsible for path validation/sanitization
+        // Path traversal is now rejected at the BlobLocation boundary (the repository constructs a
+        // BlobLocation, whose constructor validates the key) rather than being passed through to storage.
         var storage = Substitute.For<IBlobStorage>();
-        string? capturedFileName = null;
-        storage
-            .UploadAsync(
-                Arg.Any<string[]>(),
-                Arg.Do<string>(x => capturedFileName = x),
-                Arg.Any<Stream>(),
-                Arg.Any<Dictionary<string, string?>?>(),
-                Arg.Any<CancellationToken>()
-            )
-            .Returns(ValueTask.CompletedTask);
+        _SetupUpload(storage);
         var sut = new BlobStorageDataProtectionXmlRepository(storage);
         var element = new XElement("key", new XAttribute("id", "test"));
 
-        sut.StoreElement(element, maliciousFriendlyName);
+        var act = () => sut.StoreElement(element, maliciousFriendlyName);
 
-        // Repository appends .xml to friendlyName and passes to storage
-        // abstraction is responsible for path validation
+        act.Should().Throw<ArgumentException>();
+    }
+
+    #endregion
+
+    #region ProbeWriteAccessAsync Tests
+
+    [Fact]
+    public async Task should_upload_then_delete_sentinel_when_probing_write_access()
+    {
+        // The write probe must exercise the exact write path the key writes use: ensure (when a manager is
+        // wired) → upload the reserved sentinel → delete it.
+        var storage = Substitute.For<IBlobStorage>();
+        var manager = Substitute.For<IBlobContainerManager>();
+        var calls = new List<string>();
+
+        manager
+            .EnsureContainerAsync("DataProtection", Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                calls.Add("ensure");
+                return ValueTask.CompletedTask;
+            });
+        storage
+            .UploadAsync(
+                Arg.Any<BlobLocation>(),
+                Arg.Any<Stream>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(_ =>
+            {
+                calls.Add("upload");
+                return ValueTask.CompletedTask;
+            });
+        storage
+            .DeleteAsync(Arg.Any<BlobLocation>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                calls.Add("delete");
+                return ValueTask.FromResult(true);
+            });
+
+        var sut = new BlobStorageDataProtectionXmlRepository(storage, manager);
+
+        await sut.ProbeWriteAccessAsync(AbortToken);
+
+        calls.Should().Equal("ensure", "upload", "delete");
         await storage
             .Received(1)
             .UploadAsync(
-                Arg.Any<string[]>(),
-                $"{maliciousFriendlyName}.xml",
+                Arg.Is<BlobLocation>(l =>
+                    l.Container == "DataProtection"
+                    && l.Path == BlobStorageDataProtectionXmlRepository.WriteProbeBlobName
+                ),
                 Arg.Any<Stream>(),
-                Arg.Any<Dictionary<string, string?>?>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<CancellationToken>()
             );
-        capturedFileName.Should().Be($"{maliciousFriendlyName}.xml");
+        await storage
+            .Received(1)
+            .DeleteAsync(
+                Arg.Is<BlobLocation>(l => l.Path == BlobStorageDataProtectionXmlRepository.WriteProbeBlobName),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_exclude_write_probe_sentinel_from_GetAllElements()
+    {
+        // A crash between the probe's upload and delete leaves the sentinel behind; the key-ring load must
+        // neither read it nor warn about it.
+        var storage = Substitute.For<IBlobStorage>();
+        _SetupStorageWithBlobs(
+            storage,
+            [_CreateBlobInfo("key1.xml"), _CreateBlobInfo(BlobStorageDataProtectionXmlRepository.WriteProbeBlobName)]
+        );
+        _SetupDownload(storage, "key1.xml", "<key id=\"1\"/>");
+
+        var sut = new BlobStorageDataProtectionXmlRepository(storage);
+
+        var result = sut.GetAllElements();
+
+        result.Should().ContainSingle();
+        result.First().Attribute("id")!.Value.Should().Be("1");
+        await storage
+            .DidNotReceive()
+            .OpenReadStreamAsync(
+                Arg.Is<BlobLocation>(l => l.Path == BlobStorageDataProtectionXmlRepository.WriteProbeBlobName),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_wrap_terminal_write_probe_failure_with_container_context()
+    {
+        // The probe reuses the write path's terminal wrap: container named, manager context, original as inner.
+        var storage = Substitute.For<IBlobStorage>();
+        storage
+            .UploadAsync(
+                Arg.Any<BlobLocation>(),
+                Arg.Any<Stream>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(_ => throw new NotSupportedException("Simulated lost write access"));
+
+        var sut = new BlobStorageDataProtectionXmlRepository(storage);
+
+        var act = async () => await sut.ProbeWriteAccessAsync(AbortToken);
+
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*'DataProtection'*")
+            .WithMessage("*No IBlobContainerManager*")
+            .WithInnerException<InvalidOperationException, NotSupportedException>();
     }
 
     #endregion
@@ -480,10 +655,9 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
     public async Task should_handle_concurrent_GetAllElements_calls()
     {
         var storage = Substitute.For<IBlobStorage>();
-        var blobs = new List<BlobInfo> { _CreateBlobInfo("key1.xml") };
-        _SetupStorageWithBlobs(storage, blobs);
+        _SetupStorageWithBlobs(storage, [_CreateBlobInfo("key1.xml")]);
         storage
-            .OpenReadStreamAsync(Arg.Any<string[]>(), "key1.xml", Arg.Any<CancellationToken>())
+            .OpenReadStreamAsync(Arg.Is<BlobLocation>(l => l.Path == "key1.xml"), Arg.Any<CancellationToken>())
             .Returns(_ => _CreateDownloadResult("<key id=\"1\"/>"));
 
         var sut = new BlobStorageDataProtectionXmlRepository(storage);
@@ -494,7 +668,7 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
 
         foreach (var result in results)
         {
-            result.Should().HaveCount(1);
+            result.Should().ContainSingle();
         }
     }
 
@@ -502,15 +676,7 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
     public async Task should_handle_concurrent_StoreElement_calls()
     {
         var storage = Substitute.For<IBlobStorage>();
-        storage
-            .UploadAsync(
-                Arg.Any<string[]>(),
-                Arg.Any<string>(),
-                Arg.Any<Stream>(),
-                Arg.Any<Dictionary<string, string?>?>(),
-                Arg.Any<CancellationToken>()
-            )
-            .Returns(ValueTask.CompletedTask);
+        _SetupUpload(storage);
         var sut = new BlobStorageDataProtectionXmlRepository(storage);
 
         var tasks = Enumerable
@@ -527,7 +693,7 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
         await Task.WhenAll(tasks);
 
         // If we reach here without exception, the test passes
-        await storage.ReceivedWithAnyArgs(10).UploadAsync(null!, null!, null!, null, CancellationToken.None);
+        await storage.ReceivedWithAnyArgs(10).UploadAsync(default, null!, null, CancellationToken.None);
     }
 
     #endregion
@@ -537,15 +703,34 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
     private static void _SetupEmptyStorage(IBlobStorage storage)
     {
         storage
-            .GetPagedListAsync(Arg.Any<string[]>(), Arg.Any<string?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(ValueTask.FromResult(PagedFileListResult.Empty));
+            .ListAsync(Arg.Any<BlobQuery>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(BlobPage.Empty));
     }
 
-    private static void _SetupStorageWithBlobs(IBlobStorage storage, IReadOnlyCollection<BlobInfo> blobs)
+    private static void _SetupStorageWithBlobs(IBlobStorage storage, IReadOnlyList<BlobInfo> blobs)
     {
         storage
-            .GetPagedListAsync(Arg.Any<string[]>(), Arg.Any<string?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(ValueTask.FromResult(new PagedFileListResult(blobs)));
+            .ListAsync(Arg.Any<BlobQuery>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(new BlobPage(blobs, null)));
+    }
+
+    private static void _SetupUpload(IBlobStorage storage)
+    {
+        storage
+            .UploadAsync(
+                Arg.Any<BlobLocation>(),
+                Arg.Any<Stream>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.CompletedTask);
+    }
+
+    private static void _SetupDownload(IBlobStorage storage, string path, string xmlContent)
+    {
+        storage
+            .OpenReadStreamAsync(Arg.Is<BlobLocation>(l => l.Path == path), Arg.Any<CancellationToken>())
+            .Returns(_ => _CreateDownloadResult(xmlContent));
     }
 
     private static BlobInfo _CreateBlobInfo(string blobKey)

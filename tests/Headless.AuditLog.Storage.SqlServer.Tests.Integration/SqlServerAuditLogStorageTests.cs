@@ -2,6 +2,7 @@
 
 using Headless.AuditLog;
 using Headless.Hosting.Initialization;
+using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -9,7 +10,7 @@ using Microsoft.Extensions.Hosting;
 namespace Tests;
 
 [Collection<SqlServerAuditLogFixture>]
-public sealed class SqlServerAuditLogStorageTests(SqlServerAuditLogFixture fixture)
+public sealed class SqlServerAuditLogStorageTests(SqlServerAuditLogFixture fixture) : TestBase
 {
     private const string _Schema = "audit_log_sql_raw";
 
@@ -21,7 +22,7 @@ public sealed class SqlServerAuditLogStorageTests(SqlServerAuditLogFixture fixtu
         using var host = _CreateHost();
 
         // when
-        await host.StartAsync(TestContext.Current.CancellationToken);
+        await host.StartAsync(AbortToken);
         var initializer = host.Services.GetRequiredService<IEnumerable<IInitializer>>().Single();
         await using var scope = host.Services.CreateAsyncScope();
         var store = scope.ServiceProvider.GetRequiredService<IAuditLogStore>();
@@ -44,12 +45,12 @@ public sealed class SqlServerAuditLogStorageTests(SqlServerAuditLogFixture fixtu
                 },
             ],
             savingContext: new object(),
-            TestContext.Current.CancellationToken
+            AbortToken
         );
         var entries = await reader.QueryAsync(
             action: "entity.created",
             tenantId: "tenant-1",
-            cancellationToken: TestContext.Current.CancellationToken
+            cancellationToken: AbortToken
         );
 
         // then
@@ -68,7 +69,7 @@ public sealed class SqlServerAuditLogStorageTests(SqlServerAuditLogFixture fixtu
         // given — chunk size is 100 rows; 150 forces two chunks
         await _DropSchemaAsync();
         using var host = _CreateHost();
-        await host.StartAsync(TestContext.Current.CancellationToken);
+        await host.StartAsync(AbortToken);
         await using var scope = host.Services.CreateAsyncScope();
         var store = scope.ServiceProvider.GetRequiredService<IAuditLogStore>();
         var reader = scope.ServiceProvider.GetRequiredService<IReadAuditLog<object>>();
@@ -90,12 +91,12 @@ public sealed class SqlServerAuditLogStorageTests(SqlServerAuditLogFixture fixtu
             .ToArray();
 
         // when
-        await store.SaveAsync(entries, savingContext: new object(), TestContext.Current.CancellationToken);
+        await store.SaveAsync(entries, savingContext: new object(), AbortToken);
         var roundTripped = await reader.QueryAsync(
             action: "batch.write",
             tenantId: "tenant-batch",
             limit: totalEntries + 10,
-            cancellationToken: TestContext.Current.CancellationToken
+            cancellationToken: AbortToken
         );
 
         // then
@@ -118,7 +119,7 @@ public sealed class SqlServerAuditLogStorageTests(SqlServerAuditLogFixture fixtu
     private async Task _DropSchemaAsync()
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         await using var command = new SqlCommand(
             $"""
             IF OBJECT_ID(N'{_Schema}.audit_log', N'U') IS NOT NULL DROP TABLE [{_Schema}].[audit_log];
@@ -126,13 +127,13 @@ public sealed class SqlServerAuditLogStorageTests(SqlServerAuditLogFixture fixtu
             """,
             connection
         );
-        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        await command.ExecuteNonQueryAsync(AbortToken);
     }
 
     private async Task<bool> _TableExistsAsync(string tableName)
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         await using var command = new SqlCommand(
             """
             SELECT CASE WHEN EXISTS (
@@ -146,13 +147,13 @@ public sealed class SqlServerAuditLogStorageTests(SqlServerAuditLogFixture fixtu
         command.Parameters.AddWithValue("@schema", _Schema);
         command.Parameters.AddWithValue("@table", tableName);
 
-        return (bool)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken))!;
+        return (bool)await command.ExecuteScalarAsync(AbortToken);
     }
 
     private async Task<string> _JsonColumnTypeAsync(string columnName)
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         await using var command = new SqlCommand(
             """
             SELECT DATA_TYPE
@@ -164,6 +165,6 @@ public sealed class SqlServerAuditLogStorageTests(SqlServerAuditLogFixture fixtu
         command.Parameters.AddWithValue("@schema", _Schema);
         command.Parameters.AddWithValue("@column", columnName);
 
-        return (string)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken))!;
+        return (string)await command.ExecuteScalarAsync(AbortToken);
     }
 }

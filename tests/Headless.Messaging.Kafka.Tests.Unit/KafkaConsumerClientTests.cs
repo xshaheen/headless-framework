@@ -1,20 +1,22 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using Confluent.Kafka;
 using Confluent.Kafka.Admin;
+using Headless.Messaging;
 using Headless.Messaging.Kafka;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class KafkaConsumerClientTests : TestBase
 {
-    private readonly IOptions<MessagingKafkaOptions> _options = Options.Create(
-        new MessagingKafkaOptions { Servers = "localhost:9092" }
+    private readonly IOptions<KafkaMessagingOptions> _options = Options.Create(
+        new KafkaMessagingOptions { Servers = "localhost:9092" }
     );
     private readonly IServiceProvider _serviceProvider = new ServiceCollection().BuildServiceProvider();
 
@@ -33,7 +35,7 @@ public sealed class KafkaConsumerClientTests : TestBase
     public async Task should_sanitize_broker_address_when_credentials_are_present()
     {
         // given
-        var credentialedOptions = Options.Create(new MessagingKafkaOptions { Servers = "user:secret@broker:9092" });
+        var credentialedOptions = Options.Create(new KafkaMessagingOptions { Servers = "user:secret@broker:9092" });
 
         // when
         await using var client = new KafkaConsumerClient("test-group", 1, credentialedOptions, _serviceProvider);
@@ -100,7 +102,7 @@ public sealed class KafkaConsumerClientTests : TestBase
     {
         // given
         var options = Options.Create(
-            new MessagingKafkaOptions
+            new KafkaMessagingOptions
             {
                 Servers = "localhost:9092",
                 MainConfig = { ["allow.auto.create.topics"] = "false" },
@@ -111,7 +113,7 @@ public sealed class KafkaConsumerClientTests : TestBase
 
         // when - FetchMessageNamesAsync will return topics even if admin client fails
         // The topic names are returned regardless of whether topic creation succeeds
-        var result = await client.FetchMessageNamesAsync(["topic1", "topic2"]);
+        var result = await client.FetchMessageNamesAsync(["topic1", "topic2"], AbortToken);
 
         // then
         result.Should().HaveCount(2);
@@ -128,7 +130,7 @@ public sealed class KafkaConsumerClientTests : TestBase
             .CreateTopicsAsync(Arg.Any<IEnumerable<TopicSpecification>>(), Arg.Any<CreateTopicsOptions>())
             .Returns(Task.CompletedTask);
 
-        IConsumerClient client = new KafkaConsumerClient(
+        await using IConsumerClient client = new KafkaConsumerClient(
             "test-group",
             1,
             _options,
@@ -137,7 +139,7 @@ public sealed class KafkaConsumerClientTests : TestBase
         );
 
         // when
-        var result = await client.FetchMessageNamesAsync(["orders.created", "orders.*"]);
+        var result = await client.FetchMessageNamesAsync(["orders.created", "orders.*"], AbortToken);
 
         // then
         result.Should().Contain("orders.created");
@@ -170,7 +172,7 @@ public sealed class KafkaConsumerClientTests : TestBase
     {
         // given
         var optionsWithAutoCreate = Options.Create(
-            new MessagingKafkaOptions
+            new KafkaMessagingOptions
             {
                 Servers = "localhost:9092",
                 MainConfig = { ["allow.auto.create.topics"] = "false" },
@@ -188,7 +190,7 @@ public sealed class KafkaConsumerClientTests : TestBase
         // given
         var customHeaders = new List<KeyValuePair<string, string>> { new("custom-key", "custom-value") };
         var optionsWithCustomHeaders = Options.Create(
-            new MessagingKafkaOptions { Servers = "localhost:9092", CustomHeadersBuilder = (_, _) => customHeaders }
+            new KafkaMessagingOptions { Servers = "localhost:9092", CustomHeadersBuilder = (_, _) => customHeaders }
         );
         await using var client = new KafkaConsumerClient("test-group", 1, optionsWithCustomHeaders, _serviceProvider);
 
@@ -200,9 +202,10 @@ public sealed class KafkaConsumerClientTests : TestBase
     public async Task should_handle_retriable_error_codes()
     {
         // given
-        var options = Options.Create(
-            new MessagingKafkaOptions { Servers = "localhost:9092", RetriableErrorCodes = [ErrorCode.Local_TimedOut] }
-        );
+        var kafkaOptions = new KafkaMessagingOptions { Servers = "localhost:9092" };
+        kafkaOptions.RetriableErrorCodes.Clear();
+        kafkaOptions.RetriableErrorCodes.Add((int)ErrorCode.Local_TimedOut);
+        var options = Options.Create(kafkaOptions);
         await using var client = new KafkaConsumerClient("test-group", 1, options, _serviceProvider);
 
         // then - client created successfully
@@ -214,7 +217,7 @@ public sealed class KafkaConsumerClientTests : TestBase
     {
         // given
         var options = Options.Create(
-            new MessagingKafkaOptions
+            new KafkaMessagingOptions
             {
                 Servers = "localhost:9092",
                 TopicOptions = new KafkaTopicOptions { NumPartitions = 3, ReplicationFactor = 1 },
@@ -260,10 +263,58 @@ public sealed class KafkaConsumerClientTests : TestBase
         };
 
         // when
-        await client.RejectAsync(consumeResult);
+        await client.RejectAsync(consumeResult, AbortToken);
 
         // then
         consumer.Received(1).Seek(consumeResult.TopicPartitionOffset);
+    }
+
+    [Fact]
+    public async Task CommitAsync_should_ignore_offset_after_partition_is_revoked()
+    {
+        // given
+        var consumer = Substitute.For<IConsumer<string, byte[]>>();
+        await using var client = new KafkaConsumerClient(
+            "test-group",
+            1,
+            _options,
+            _serviceProvider,
+            consumerFactory: _ => consumer
+        );
+        client.Connect();
+        var consumeResult = _CreateConsumeResult(17);
+        client.PartitionsAssigned([consumeResult.TopicPartition]);
+
+        // when
+        client.PartitionsRevoked([consumeResult.TopicPartitionOffset]);
+        await client.CommitAsync(consumeResult, AbortToken);
+
+        // then
+        consumer.DidNotReceive().Commit(Arg.Any<ConsumeResult<string, byte[]>>());
+    }
+
+    [Fact]
+    public async Task RejectAsync_should_ignore_offset_after_partition_is_lost()
+    {
+        // given
+        var consumer = Substitute.For<IConsumer<string, byte[]>>();
+        await using var client = new KafkaConsumerClient(
+            "test-group",
+            1,
+            _options,
+            _serviceProvider,
+            consumerFactory: _ => consumer
+        );
+        client.Connect();
+        var consumeResult = _CreateConsumeResult(17);
+        client.PartitionsAssigned([consumeResult.TopicPartition]);
+
+        // when
+        client.PartitionsLost([consumeResult.TopicPartitionOffset]);
+        await client.RejectAsync(consumeResult, AbortToken);
+
+        // then
+        consumer.DidNotReceive().Seek(Arg.Any<TopicPartitionOffset>());
     }
 
     [Fact]
@@ -382,6 +433,228 @@ public sealed class KafkaConsumerClientTests : TestBase
         }
     }
 
+    [Fact]
+    public async Task CommitAsync_should_not_commit_past_inflight_lower_offsets_when_processing_concurrently()
+    {
+        // given
+        var consumer = Substitute.For<IConsumer<string, byte[]>>();
+        var consumeCallCount = 0;
+        consumer
+            .Consume(Arg.Any<TimeSpan>())
+            .Returns(_ =>
+            {
+                var callIndex = Interlocked.Increment(ref consumeCallCount);
+
+                return callIndex switch
+                {
+                    1 => _CreateConsumeResult(100),
+                    2 => _CreateConsumeResult(101),
+                    3 => _CreateConsumeResult(102),
+                    _ => waitAndReturnNull(),
+                };
+
+                static ConsumeResult<string, byte[]> waitAndReturnNull()
+                {
+                    Thread.Sleep(10);
+
+                    return null!;
+                }
+            });
+
+        var committedOffsets = new ConcurrentQueue<long>();
+        consumer
+            .When(c => c.Commit(Arg.Any<IEnumerable<TopicPartitionOffset>>()))
+            .Do(call =>
+            {
+                foreach (var offset in call.Arg<IEnumerable<TopicPartitionOffset>>())
+                {
+                    committedOffsets.Enqueue(offset.Offset.Value);
+                }
+            });
+
+        await using var client = new KafkaConsumerClient(
+            "test-group",
+            3,
+            _options,
+            _serviceProvider,
+            consumerFactory: _ => consumer
+        );
+
+        var releaseOffset100 = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseOffset101 = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var highOffsetCommitted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        client.OnMessageCallback = async (message, sender) =>
+        {
+            var offset = BitConverter.ToInt64(message.Body.Span);
+
+            switch (offset)
+            {
+                case 100:
+                    await releaseOffset100.Task.WaitAsync(AbortToken).ConfigureAwait(false);
+                    await client.CommitAsync(sender).ConfigureAwait(false);
+
+                    break;
+
+                case 101:
+                    await releaseOffset101.Task.WaitAsync(AbortToken).ConfigureAwait(false);
+                    await client.CommitAsync(sender).ConfigureAwait(false);
+
+                    break;
+
+                case 102:
+                    await client.CommitAsync(sender).ConfigureAwait(false);
+                    highOffsetCommitted.TrySetResult();
+
+                    break;
+            }
+        };
+        client.OnLogCallback = _ => { };
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
+
+        try
+        {
+            await highOffsetCommitted.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+
+            committedOffsets.Should().BeEmpty("offset 102 cannot commit while 100 and 101 are still in flight");
+
+            releaseOffset100.TrySetResult();
+            await _WaitUntilAsync(() => committedOffsets.Contains(101), AbortToken);
+            committedOffsets.Should().Equal([101]);
+
+            releaseOffset101.TrySetResult();
+            await _WaitUntilAsync(() => committedOffsets.Contains(103), AbortToken);
+            committedOffsets.Should().Equal([101, 103]);
+
+            consumer.DidNotReceive().Commit(Arg.Any<ConsumeResult<string, byte[]>>());
+        }
+        finally
+        {
+            releaseOffset100.TrySetResult();
+            releaseOffset101.TrySetResult();
+            await cts.CancelAsync();
+            await listeningTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+        }
+    }
+
+    [Fact]
+    public async Task CommitAsync_should_ignore_tracked_delivery_from_before_reassignment()
+    {
+        // given
+        var consumer = Substitute.For<IConsumer<string, byte[]>>();
+        var consumeResult = _CreateConsumeResult(42);
+        var consumeCallCount = 0;
+        consumer
+            .Consume(Arg.Any<TimeSpan>())
+            .Returns(_ =>
+            {
+                if (Interlocked.Increment(ref consumeCallCount) == 1)
+                {
+                    return consumeResult;
+                }
+
+                Thread.Sleep(10);
+                return null!;
+            });
+
+        await using var client = new KafkaConsumerClient(
+            "test-group",
+            2,
+            _options,
+            _serviceProvider,
+            consumerFactory: _ => consumer
+        );
+        client.PartitionsAssigned([consumeResult.TopicPartition]);
+        var capturedSender = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.OnMessageCallback = (_, sender) =>
+        {
+            capturedSender.TrySetResult(sender!);
+            return Task.CompletedTask;
+        };
+        client.OnLogCallback = _ => { };
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
+
+        try
+        {
+            var sender = await capturedSender.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+
+            // when
+            client.PartitionsRevoked([consumeResult.TopicPartitionOffset]);
+            client.PartitionsAssigned([consumeResult.TopicPartition]);
+            await client.CommitAsync(sender, AbortToken);
+
+            // then
+            consumer.DidNotReceive().Commit(Arg.Any<IEnumerable<TopicPartitionOffset>>());
+        }
+        finally
+        {
+            await cts.CancelAsync();
+            await listeningTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+        }
+    }
+
+    [Fact]
+    public async Task RejectAsync_should_ignore_tracked_delivery_from_before_reassignment()
+    {
+        // given
+        var consumer = Substitute.For<IConsumer<string, byte[]>>();
+        var consumeResult = _CreateConsumeResult(42);
+        var consumeCallCount = 0;
+        consumer
+            .Consume(Arg.Any<TimeSpan>())
+            .Returns(_ =>
+            {
+                if (Interlocked.Increment(ref consumeCallCount) == 1)
+                {
+                    return consumeResult;
+                }
+
+                Thread.Sleep(10);
+                return null!;
+            });
+
+        await using var client = new KafkaConsumerClient(
+            "test-group",
+            2,
+            _options,
+            _serviceProvider,
+            consumerFactory: _ => consumer
+        );
+        client.PartitionsAssigned([consumeResult.TopicPartition]);
+        var capturedSender = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.OnMessageCallback = (_, sender) =>
+        {
+            capturedSender.TrySetResult(sender!);
+            return Task.CompletedTask;
+        };
+        client.OnLogCallback = _ => { };
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
+
+        try
+        {
+            var sender = await capturedSender.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+
+            // when
+            client.PartitionsRevoked([consumeResult.TopicPartitionOffset]);
+            client.PartitionsAssigned([consumeResult.TopicPartition]);
+            await client.RejectAsync(sender, AbortToken);
+
+            // then
+            consumer.DidNotReceive().Seek(Arg.Any<TopicPartitionOffset>());
+        }
+        finally
+        {
+            await cts.CancelAsync();
+            await listeningTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+        }
+    }
+
     // -------------------------------------------------------------------------
     // PauseAsync / ResumeAsync
     // -------------------------------------------------------------------------
@@ -393,8 +666,8 @@ public sealed class KafkaConsumerClientTests : TestBase
         await using var client = new KafkaConsumerClient("test-group", 1, _options, _serviceProvider);
 
         // when — no consumer built yet, but should not throw
-        await client.PauseAsync();
-        await client.PauseAsync();
+        await client.PauseAsync(AbortToken);
+        await client.PauseAsync(AbortToken);
 
         // then — no exception
     }
@@ -406,7 +679,7 @@ public sealed class KafkaConsumerClientTests : TestBase
         await using var client = new KafkaConsumerClient("test-group", 1, _options, _serviceProvider);
 
         // when — never paused, resume should be a no-op
-        await client.ResumeAsync();
+        await client.ResumeAsync(AbortToken);
 
         // then — no exception
     }
@@ -418,8 +691,8 @@ public sealed class KafkaConsumerClientTests : TestBase
         await using var client = new KafkaConsumerClient("test-group", 1, _options, _serviceProvider);
 
         // when
-        await client.PauseAsync();
-        await client.ResumeAsync();
+        await client.PauseAsync(AbortToken);
+        await client.ResumeAsync(AbortToken);
 
         // then — no exception, state restored
     }
@@ -432,7 +705,7 @@ public sealed class KafkaConsumerClientTests : TestBase
         await client.DisposeAsync();
 
         // when — should not throw
-        await client.PauseAsync();
+        await client.PauseAsync(AbortToken);
     }
 
     [Fact]
@@ -443,7 +716,7 @@ public sealed class KafkaConsumerClientTests : TestBase
         await client.DisposeAsync();
 
         // when — should not throw
-        await client.ResumeAsync();
+        await client.ResumeAsync(AbortToken);
     }
 
     [Fact]
@@ -453,9 +726,9 @@ public sealed class KafkaConsumerClientTests : TestBase
         await using var client = new KafkaConsumerClient("test-group", 1, _options, _serviceProvider);
 
         // when
-        await client.PauseAsync();
-        await client.ResumeAsync();
-        await client.ResumeAsync(); // second resume is no-op
+        await client.PauseAsync(AbortToken);
+        await client.ResumeAsync(AbortToken);
+        await client.ResumeAsync(AbortToken); // second resume is no-op
 
         // then — no exception
     }
@@ -465,7 +738,7 @@ public sealed class KafkaConsumerClientTests : TestBase
     {
         // given
         var throwingOptions = Options.Create(
-            new MessagingKafkaOptions
+            new KafkaMessagingOptions
             {
                 Servers = "localhost:9092",
                 CustomHeadersBuilder = (_, _) => throw new InvalidOperationException("bad header builder"),
@@ -536,10 +809,12 @@ public sealed class KafkaConsumerClientTests : TestBase
             {
                 await listeningTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
             }
+#pragma warning disable ERP022 // Unobserved exception in generic exception handler
             catch
             {
                 // Expected — mock throws OCE on second Consume call.
             }
+#pragma warning restore ERP022
 
             // then — callback should not be invoked, offset should be seeked back
             callbackInvoked.Should().BeFalse();
@@ -554,10 +829,32 @@ public sealed class KafkaConsumerClientTests : TestBase
             {
                 await listeningTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
             }
+#pragma warning disable ERP022 // Unobserved exception in generic exception handler
             catch
             {
                 // Best-effort cleanup only.
             }
+#pragma warning restore ERP022 // Unobserved exception in generic exception handler
+        }
+    }
+
+    private static ConsumeResult<string, byte[]> _CreateConsumeResult(long offset)
+    {
+        return new ConsumeResult<string, byte[]>
+        {
+            TopicPartitionOffset = new TopicPartitionOffset("orders.created", new Partition(0), new Offset(offset)),
+            Message = new Message<string, byte[]> { Value = BitConverter.GetBytes(offset), Headers = [] },
+        };
+    }
+
+    private static async Task _WaitUntilAsync(Func<bool> predicate, CancellationToken cancellationToken)
+    {
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(TimeSpan.FromSeconds(2));
+
+        while (!predicate())
+        {
+            await Task.Delay(10, timeoutCts.Token).ConfigureAwait(false);
         }
     }
 }

@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.CommitCoordination;
-using Headless.CommitCoordination.PostgreSql;
 using Headless.Testing.Testcontainers;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
@@ -55,10 +54,7 @@ public sealed class PostgreSqlCoordinatedTransactionFixture
         await connection.OpenAsync(cancellationToken);
         await using var command = new NpgsqlCommand("SELECT count(*) FROM probe_rows", connection);
 
-        return Convert.ToInt32(
-            await command.ExecuteScalarAsync(cancellationToken),
-            System.Globalization.CultureInfo.InvariantCulture
-        );
+        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
     }
 
     public async Task ResetAsync(CancellationToken cancellationToken)
@@ -107,7 +103,7 @@ public sealed class PostgreSqlCoordinatedTransactionFixture
                 connection,
                 transaction
             );
-            command.Parameters.AddWithValue("name", name);
+            command.Parameters.AddWithValue(nameof(name), name);
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
     }

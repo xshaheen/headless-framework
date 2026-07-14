@@ -13,7 +13,7 @@ internal sealed class RedisPubSubConsumerClient(
     string groupName,
     byte groupConcurrent,
     IRedisPubSubConnectionProvider connectionProvider,
-    IOptions<RedisPubSubOptions> options,
+    IOptions<RedisPubSubMessagingOptions> options,
     ILogger<RedisPubSubConsumerClient> logger,
     TimeProvider timeProvider
 ) : IConsumerClient
@@ -30,21 +30,28 @@ internal sealed class RedisPubSubConsumerClient(
 
     public BrokerAddress BrokerAddress => new("redis_pubsub", options.Value.DisplayEndpoint);
 
-    public ValueTask<ICollection<string>> FetchMessageNamesAsync(IEnumerable<string> messageNames)
+    public ValueTask<ICollection<string>> FetchMessageNamesAsync(
+        IEnumerable<string> messageNames,
+        CancellationToken cancellationToken = default
+    )
     {
+        cancellationToken.ThrowIfCancellationRequested();
         return ValueTask.FromResult<ICollection<string>>([.. Argument.IsNotNull(messageNames)]);
     }
 
-    public async ValueTask SubscribeAsync(IEnumerable<string> messageNames)
+    public async ValueTask SubscribeAsync(
+        IEnumerable<string> messageNames,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotNull(messageNames);
 
         if (Volatile.Read(ref _disposed) != 0)
         {
-            ObjectDisposedException.ThrowIf(true, this);
+            ObjectDisposedException.ThrowIf(condition: true, instance: this);
         }
 
-        var connection = await connectionProvider.ConnectAsync().ConfigureAwait(false);
+        var connection = await connectionProvider.ConnectAsync(cancellationToken).ConfigureAwait(false);
         var subscriber = connection.GetSubscriber();
 
         foreach (var messageName in Argument.IsNotNull(messageNames).Distinct(StringComparer.Ordinal))
@@ -54,7 +61,19 @@ internal sealed class RedisPubSubConsumerClient(
                 continue;
             }
 
-            var queue = await subscriber.SubscribeAsync(RedisChannel.Literal(messageName)).ConfigureAwait(false);
+            var subscribeTask = subscriber.SubscribeAsync(RedisChannel.Literal(messageName));
+            ChannelMessageQueue queue;
+
+            try
+            {
+                queue = await subscribeTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                _UnsubscribeWhenCompletedAsync(subscribeTask).Forget();
+                throw;
+            }
+
             queue.OnMessage(_DispatchWithConcurrencyAsync);
             _subscriptions.Add(messageName, queue);
         }
@@ -74,13 +93,27 @@ internal sealed class RedisPubSubConsumerClient(
         return new ValueTask(_ready.Task.WaitAsync(cancellationToken));
     }
 
-    public ValueTask CommitAsync(object? sender)
+    private static async Task _UnsubscribeWhenCompletedAsync(Task<ChannelMessageQueue> subscribeTask)
+    {
+        try
+        {
+#pragma warning disable VSTHRD003 // Cleanup intentionally observes an SDK task started by SubscribeAsync.
+            var queue = await subscribeTask.ConfigureAwait(false);
+#pragma warning restore VSTHRD003
+            await queue.UnsubscribeAsync().ConfigureAwait(false);
+        }
+#pragma warning disable ERP022 // Best-effort cleanup for an SDK operation abandoned by caller cancellation.
+        catch { }
+#pragma warning restore ERP022
+    }
+
+    public ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default)
     {
         _ = sender;
         return ValueTask.CompletedTask;
     }
 
-    public ValueTask RejectAsync(object? sender)
+    public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
     {
         _ = sender;
         return ValueTask.CompletedTask;

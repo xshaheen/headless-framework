@@ -18,6 +18,12 @@ internal sealed class PostgreSqlStorageInitializer(
     IOptions<MessagingOptions> messagingOptions
 ) : IStorageInitializer
 {
+    // Timeout budget for schema-init DDL — the CONCURRENTLY index builds/drops, the CREATE EXTENSION
+    // probe, and the advisory-lock waits that gate them. Decoupled from the OLTP CommandTimeout because
+    // these can run for minutes-to-hours on a large table. null (default) => TimeSpan.Zero => Npgsql
+    // CommandTimeout 0 => no timeout (wait indefinitely). See PostgreSqlOptions.DdlCommandTimeout (#510).
+    private TimeSpan _GetDdlCommandTimeout() => postgreSqlOptions.Value.DdlCommandTimeout ?? TimeSpan.Zero;
+
     /// <summary>
     /// Returns the fully-qualified PostgreSQL table name for published outbox messages,
     /// in the form <c>"schema"."published"</c>.
@@ -42,6 +48,14 @@ internal sealed class PostgreSqlStorageInitializer(
     /// Partial indexes for retry pickup and full-text content search are created with
     /// <c>CREATE INDEX CONCURRENTLY</c> after the transaction commits so writers remain
     /// unblocked during startup on hot tables.
+    /// <para>
+    /// The optional <c>pg_trgm</c> extension (which powers the dashboard content trigram search) is
+    /// ensured on a best-effort basis <b>outside</b> the transaction: on managed PostgreSQL
+    /// (AWS RDS, Azure, Neon, Supabase) the application role typically lacks <c>CREATE EXTENSION</c>,
+    /// and a failure there must not roll back the whole schema batch. When <c>pg_trgm</c> is absent the
+    /// trigram content indexes are skipped and dashboard content search is unavailable, but all
+    /// write/retry paths initialize normally. A DBA can pre-install <c>pg_trgm</c> to enable it.
+    /// </para>
     /// </summary>
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
@@ -53,6 +67,13 @@ internal sealed class PostgreSqlStorageInitializer(
         var sql = _CreateDbTablesScript(postgreSqlOptions.Value.Schema);
         await using var connection = postgreSqlOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+        // #507 — ensure pg_trgm BEFORE (and outside) the transactional batch. CREATE EXTENSION needs
+        // superuser / an elevated role that managed PostgreSQL withholds; running it as the first
+        // statement of the transaction meant a permission error rolled back the entire schema batch and
+        // left messaging dead at startup. The extension only powers the dashboard trigram (ILIKE) content
+        // search — never a write or retry-pickup path — so degrade gracefully when it is unavailable.
+        var trgmAvailable = await _TryEnsureTrgmExtensionAsync(connection, cancellationToken).ConfigureAwait(false);
 
         // #6 — serialize concurrent-replica boots on a stable advisory-lock key derived from the schema
         // name (hashtextextended is deterministic across sessions and needs no superuser, unlike
@@ -66,11 +87,14 @@ internal sealed class PostgreSqlStorageInitializer(
         // transaction-scoped advisory lock is released automatically on COMMIT/ROLLBACK.
         await using (var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false))
         {
+            // #510 — the lock WAIT uses the DDL timeout, not the OLTP one: a peer replica can hold this
+            // same key (session-level) across a multi-minute CONCURRENTLY build below, so a 30s wait here
+            // would fail this replica's startup while the peer legitimately builds.
             await connection
                 .ExecuteNonQueryAsync(
                     "SELECT pg_advisory_xact_lock(hashtextextended(@Schema, 0));",
                     transaction: transaction,
-                    commandTimeout: messagingOptions.Value.CommandTimeout,
+                    commandTimeout: _GetDdlCommandTimeout(),
                     sqlParams: lockParams,
                     cancellationToken: cancellationToken
                 )
@@ -94,10 +118,12 @@ internal sealed class PostgreSqlStorageInitializer(
         // so these run on an autocommit connection AFTER the schema/table DDL has committed above.
         // A session-level advisory lock (same key) serializes this phase across replicas so two booters
         // don't race the same CONCURRENTLY build / probe-then-DROP.
+        // #510 — DDL timeout for the same reason as the xact lock above: this session-level lock is held
+        // for the full duration of the CONCURRENTLY phase, so a peer's wait must not expire at the OLTP budget.
         await connection
             .ExecuteNonQueryAsync(
                 "SELECT pg_advisory_lock(hashtextextended(@Schema, 0));",
-                commandTimeout: messagingOptions.Value.CommandTimeout,
+                commandTimeout: _GetDdlCommandTimeout(),
                 sqlParams: lockParams,
                 cancellationToken: cancellationToken
             )
@@ -121,21 +147,31 @@ internal sealed class PostgreSqlStorageInitializer(
                 )
                 .ConfigureAwait(false);
 
-            await _EnsureContentTrgmIndexConcurrentlyAsync(
-                    connection,
-                    GetReceivedTableName(),
-                    indexName: "idx_received_Content_trgm",
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
+            // #507 — the trigram content indexes require pg_trgm (gin_trgm_ops). Skip them (and their
+            // probe-then-DROP repair) when the extension is unavailable so the rest of schema init
+            // completes; dashboard content search stays off until a DBA installs pg_trgm.
+            if (trgmAvailable)
+            {
+                await _EnsureContentTrgmIndexConcurrentlyAsync(
+                        connection,
+                        GetReceivedTableName(),
+                        indexName: "idx_received_Content_trgm",
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
 
-            await _EnsureContentTrgmIndexConcurrentlyAsync(
-                    connection,
-                    GetPublishedTableName(),
-                    indexName: "idx_published_Content_trgm",
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
+                await _EnsureContentTrgmIndexConcurrentlyAsync(
+                        connection,
+                        GetPublishedTableName(),
+                        indexName: "idx_published_Content_trgm",
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                logger.LogTrgmContentIndexSkipped();
+            }
 
             await _EnsureOwnerIndexConcurrentlyAsync(
                     connection,
@@ -170,6 +206,48 @@ internal sealed class PostgreSqlStorageInitializer(
         logger.LogEnsuringTablesCreated();
     }
 
+    /// <summary>
+    /// Best-effort <c>CREATE EXTENSION IF NOT EXISTS pg_trgm</c> on the autocommit connection — never
+    /// inside the schema transaction, so a permission failure cannot roll the batch back — followed by an
+    /// authoritative probe of <c>pg_extension</c>. Returns whether <c>pg_trgm</c> is installed: it may
+    /// already be present (pre-installed by a DBA) even when this role lacks <c>CREATE EXTENSION</c>.
+    /// </summary>
+    private async Task<bool> _TryEnsureTrgmExtensionAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            await connection
+                .ExecuteNonQueryAsync(
+                    "CREATE EXTENSION IF NOT EXISTS pg_trgm;",
+                    commandTimeout: _GetDdlCommandTimeout(),
+                    cancellationToken: cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+        catch (PostgresException ex)
+        {
+            // Managed PostgreSQL (RDS/Azure/Neon/Supabase) restricts CREATE EXTENSION to superusers, and a
+            // self-hosted server may not ship the pg_trgm contrib package at all. Either way the extension
+            // is optional (dashboard content search only) — log and fall through to the probe, which reports
+            // the real state. On an autocommit connection this failed statement does not poison the session,
+            // so the probe below still runs (the whole point of doing this outside the transaction).
+            logger.LogTrgmExtensionUnavailable(ex.SqlState, ex.MessageText);
+        }
+
+        var installed = await connection
+            .ExecuteScalarAsync(
+                "SELECT COUNT(1) FROM pg_extension WHERE extname = 'pg_trgm';",
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return installed > 0;
+    }
+
     private async Task _EnsureRetryPickupIndexConcurrentlyAsync(
         NpgsqlConnection connection,
         string qualifiedTable,
@@ -190,7 +268,7 @@ internal sealed class PostgreSqlStorageInitializer(
         await connection
             .ExecuteNonQueryAsync(
                 createIndex,
-                commandTimeout: messagingOptions.Value.CommandTimeout,
+                commandTimeout: _GetDdlCommandTimeout(),
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
@@ -215,7 +293,7 @@ internal sealed class PostgreSqlStorageInitializer(
         await connection
             .ExecuteNonQueryAsync(
                 createIndex,
-                commandTimeout: messagingOptions.Value.CommandTimeout,
+                commandTimeout: _GetDdlCommandTimeout(),
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
@@ -237,7 +315,7 @@ internal sealed class PostgreSqlStorageInitializer(
         await connection
             .ExecuteNonQueryAsync(
                 createIndex,
-                commandTimeout: messagingOptions.Value.CommandTimeout,
+                commandTimeout: _GetDdlCommandTimeout(),
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
@@ -264,11 +342,9 @@ internal sealed class PostgreSqlStorageInitializer(
             LIMIT 1;
             """;
 
-        await using var probeCommand = new NpgsqlCommand(probeSql, connection)
-        {
-            CommandTimeout = (int)
-                Math.Min(Math.Ceiling(messagingOptions.Value.CommandTimeout.TotalSeconds), int.MaxValue),
-        };
+        await using var probeCommand = new NpgsqlCommand(probeSql, connection);
+        probeCommand.CommandTimeout = (int)
+            Math.Min(Math.Ceiling(messagingOptions.Value.CommandTimeout.TotalSeconds), int.MaxValue);
         probeCommand.Parameters.Add(new NpgsqlParameter("@IndexName", indexName));
         probeCommand.Parameters.Add(new NpgsqlParameter("@Schema", postgreSqlOptions.Value.Schema));
 
@@ -281,10 +357,13 @@ internal sealed class PostgreSqlStorageInitializer(
             // live during the repair.
             var dropSql = $"""DROP INDEX CONCURRENTLY IF EXISTS "{postgreSqlOptions.Value.Schema}"."{indexName}";""";
 
+            // #510 — the repair DROP is itself a CONCURRENTLY op that can run long on a busy table, so it
+            // uses the DDL timeout. The probe SELECT above stays on the OLTP budget: it is a fast catalog
+            // lookup and giving it an unbounded timeout would risk hanging startup on a locked catalog.
             await connection
                 .ExecuteNonQueryAsync(
                     dropSql,
-                    commandTimeout: messagingOptions.Value.CommandTimeout,
+                    commandTimeout: _GetDdlCommandTimeout(),
                     cancellationToken: cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -295,11 +374,14 @@ internal sealed class PostgreSqlStorageInitializer(
 
     private string _CreateDbTablesScript(string schema)
     {
-        var batchSql = $"""
-            -- pg_trgm is required for GIN trigram indexes on the Content column (dashboard search).
-            -- CREATE EXTENSION is idempotent and safe inside a transaction on PostgreSQL 9.1+.
-            CREATE EXTENSION IF NOT EXISTS pg_trgm;
-
+        var batchSql = string.Create(
+            CultureInfo.InvariantCulture,
+            $"""
+            -- #507 — pg_trgm (required by the Content GIN trigram indexes for dashboard search) is NOT
+            -- created here. CREATE EXTENSION needs a privilege managed PostgreSQL withholds, and a failure
+            -- inside this transaction would roll back the whole schema batch. It is instead ensured
+            -- best-effort BEFORE this transaction in _TryEnsureTrgmExtensionAsync; the trigram indexes are
+            -- skipped when it is absent.
             CREATE SCHEMA IF NOT EXISTS "{schema}";
 
             CREATE TABLE IF NOT EXISTS {GetReceivedTableName()}(
@@ -309,7 +391,8 @@ internal sealed class PostgreSqlStorageInitializer(
             	"Group" VARCHAR(200) NULL,
             	"Content" TEXT NULL,
                 "IntentType" SMALLINT NOT NULL,
-            	"Retries" INT NOT NULL,
+                "Retries" INT NOT NULL,
+                "InlineAttempts" INT NOT NULL DEFAULT 0,
             	"Added" TIMESTAMPTZ NOT NULL,
                 "ExpiresAt" TIMESTAMPTZ NULL,
                 "NextRetryAt" TIMESTAMPTZ NULL,
@@ -341,10 +424,11 @@ internal sealed class PostgreSqlStorageInitializer(
             -- take an AccessExclusiveLock and block all writers to the hot retry-pickup path during
             -- every replica boot.
             CREATE INDEX IF NOT EXISTS "idx_received_delayed" ON {GetReceivedTableName()} ("StatusName","ExpiresAt") WHERE "StatusName" = 'Delayed';
-            -- #8 — standalone "StatusName" index so GetStatisticsAsync / per-status COUNTs do an index
-            -- scan instead of a full sequential scan on large tables (existing composite indexes lead
-            -- with ExpiresAt/Version, so they do not serve a bare "StatusName" = '...' predicate).
-            CREATE INDEX IF NOT EXISTS "idx_received_StatusName" ON {GetReceivedTableName()} ("StatusName");
+            -- #508 — ("StatusName","Added") serves BOTH the dashboard hourly-timeline query
+            -- (WHERE "StatusName"=$1 AND "Added" BETWEEN … — a StatusName seek + Added range scan) and the
+            -- per-status COUNTs in GetStatisticsAsync via its "StatusName" prefix. The initializer creates
+            -- the final schema directly; it does not carry migration DDL for superseded index shapes.
+            CREATE INDEX IF NOT EXISTS "idx_received_StatusName_Added" ON {GetReceivedTableName()} ("StatusName","Added");
 
             CREATE TABLE IF NOT EXISTS {GetPublishedTableName()}(
                 "Id" UUID PRIMARY KEY NOT NULL,
@@ -352,7 +436,8 @@ internal sealed class PostgreSqlStorageInitializer(
             	"Name" VARCHAR(200) NOT NULL,
             	"Content" TEXT NULL,
                 "IntentType" SMALLINT NOT NULL,
-            	"Retries" INT NOT NULL,
+                "Retries" INT NOT NULL,
+                "InlineAttempts" INT NOT NULL DEFAULT 0,
             	"Added" TIMESTAMPTZ NOT NULL,
                 "ExpiresAt" TIMESTAMPTZ NULL,
                 "NextRetryAt" TIMESTAMPTZ NULL,
@@ -368,11 +453,17 @@ internal sealed class PostgreSqlStorageInitializer(
             -- retry-pickup index for published is also created post-transaction via
             -- _EnsureRetryPickupIndexConcurrentlyAsync.
             CREATE INDEX IF NOT EXISTS "idx_published_delayed" ON {GetPublishedTableName()} ("StatusName","ExpiresAt") WHERE "StatusName" = 'Delayed';
-            -- #8 — see the received-table note above; standalone "StatusName" index for the
-            -- dashboard statistics COUNTs.
-            CREATE INDEX IF NOT EXISTS "idx_published_StatusName" ON {GetPublishedTableName()} ("StatusName");
+            -- #509 — partial index for the Queued branch of ScheduleMessagesOfDelayedAsync's OR predicate
+            -- (WHERE "Version"=$1 AND ("ExpiresAt"<$2 AND "StatusName"='Queued')). Leading with
+            -- ("Version","ExpiresAt") gives a version seek + ExpiresAt range scan, which the planner can
+            -- bitmap-OR with the Delayed partial index above instead of sequentially scanning a large
+            -- Queued backlog (e.g. accumulated during broker downtime).
+            CREATE INDEX IF NOT EXISTS "idx_published_Version_ExpiresAt_Queued" ON {GetPublishedTableName()} ("Version","ExpiresAt") WHERE "StatusName" = 'Queued';
+            -- #508 — see the received-table note above; create the final dashboard timeline/statistics index.
+            CREATE INDEX IF NOT EXISTS "idx_published_StatusName_Added" ON {GetPublishedTableName()} ("StatusName","Added");
 
-            """;
+            """
+        );
 
         return batchSql;
     }

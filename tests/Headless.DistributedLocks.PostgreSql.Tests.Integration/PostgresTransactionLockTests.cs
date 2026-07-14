@@ -3,7 +3,6 @@
 using System.Collections;
 using System.Data;
 using System.Data.Common;
-using System.Diagnostics.CodeAnalysis;
 using Headless.DistributedLocks;
 using Headless.DistributedLocks.PostgreSql;
 using Headless.Testing.Tests;
@@ -21,22 +20,20 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
     {
         var key = new PostgresAdvisoryLockKey(Faker.Random.Long());
 
-        await using (var connection = await _OpenAsync())
-        await using (var transaction = await connection.BeginTransactionAsync(AbortToken))
-        {
-            await PostgresDistributedLock.AcquireWithTransactionAsync(key, transaction, AbortToken);
+        await using var connection = await _OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync(AbortToken);
+        await PostgresDistributedLock.AcquireWithTransactionAsync(key, transaction, AbortToken);
 
-            (await _CountAdvisoryLocksAsync(key)).Should().BeGreaterThan(0);
+        (await _CountAdvisoryLocksAsync(key)).Should().BePositive();
 
-            await transaction.CommitAsync(AbortToken);
+        await transaction.CommitAsync(AbortToken);
 
-            // Assert release while the holding connection is still open. If we counted after the
-            // `using` block disposed the connection, connection-close would release the lock
-            // regardless of commit/rollback — this proves the xact-lock drops at COMMIT itself.
-            (await _CountAdvisoryLocksAsync(key))
-                .Should()
-                .Be(0);
-        }
+        // then release while the holding connection is still open. If we counted after the
+        // `using` block disposed the connection, connection-close would release the lock
+        // regardless of commit/rollback — this proves the xact-lock drops at COMMIT itself.
+        (await _CountAdvisoryLocksAsync(key))
+            .Should()
+            .Be(0);
     }
 
     [Fact]
@@ -44,21 +41,19 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
     {
         var key = new PostgresAdvisoryLockKey(Faker.Random.Long());
 
-        await using (var connection = await _OpenAsync())
-        await using (var transaction = await connection.BeginTransactionAsync(AbortToken))
-        {
-            await PostgresDistributedLock.AcquireWithTransactionAsync(key, transaction, AbortToken);
+        await using var connection = await _OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync(AbortToken);
+        await PostgresDistributedLock.AcquireWithTransactionAsync(key, transaction, AbortToken);
 
-            (await _CountAdvisoryLocksAsync(key)).Should().BeGreaterThan(0);
+        (await _CountAdvisoryLocksAsync(key)).Should().BePositive();
 
-            await transaction.RollbackAsync(AbortToken);
+        await transaction.RollbackAsync(AbortToken);
 
-            // Assert release while the holding connection is still open so connection-close cannot be
-            // the thing that drops the lock — this proves the xact-lock is released at ROLLBACK itself.
-            (await _CountAdvisoryLocksAsync(key))
-                .Should()
-                .Be(0);
-        }
+        // then release while the holding connection is still open so connection-close cannot be
+        // the thing that drops the lock — this proves the xact-lock is released at ROLLBACK itself.
+        (await _CountAdvisoryLocksAsync(key))
+            .Should()
+            .Be(0);
     }
 
     [Fact]
@@ -217,7 +212,7 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
             var cookie = await strategy.TryAcquireAsync(databaseConnection, resourceName, TimeSpan.Zero, AbortToken);
 
             cookie.Should().NotBeNull();
-            (await _CountAdvisoryLocksAsync(key)).Should().BeGreaterThan(0);
+            (await _CountAdvisoryLocksAsync(key)).Should().BePositive();
         }
 
         (await _CountAdvisoryLocksAsync(key)).Should().Be(0);
@@ -363,7 +358,7 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
 
     private async Task<long> _CountAdvisoryLocksAsync(PostgresAdvisoryLockKey key)
     {
-        var keys = key.Keys;
+        var (key1, key2) = key.Keys;
 
         await using var connection = await _OpenAsync();
         await using var command = connection.CreateCommand();
@@ -378,13 +373,17 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
               AND l.objid = @objId
               AND l.objsubid = @objSubId
             """;
-        command.Parameters.AddWithValue("classId", keys.Key1);
-        command.Parameters.AddWithValue("objId", keys.Key2);
+        command.Parameters.AddWithValue("classId", key1);
+        command.Parameters.AddWithValue("objId", key2);
         command.Parameters.AddWithValue("objSubId", (short)(key.HasSingleKey ? 1 : 2));
 
         return (long)(await command.ExecuteScalarAsync(AbortToken) ?? 0L);
     }
 
+#pragma warning disable CA2000
+    // The fake connection is externally owned, so DatabaseConnection does not dispose it (CA2000 applies here).
+    // isExternallyOwned MUST stay true: the savepoint-failure path under test only runs when the connection is
+    // externally owned; flipping it to false skips the SAVEPOINT entirely and the wrong exception surfaces.
     private sealed class ThrowingSavePointDatabaseConnection()
         : DatabaseConnection(new ThrowingSavePointDbConnection(), isExternallyOwned: true, TimeProvider.System)
     {
@@ -398,6 +397,7 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
             CancellationToken cancellationToken
         ) => throw new NotSupportedException();
     }
+#pragma warning restore CA2000
 
     private sealed class ThrowingSavePointDbConnection : DbConnection
     {
@@ -512,7 +512,7 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
         {
             foreach (var value in values)
             {
-                Add(value!);
+                Add(value);
             }
         }
 
@@ -521,7 +521,7 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
         public override bool Contains(object value) => _parameters.Contains((DbParameter)value);
 
         public override bool Contains(string value) =>
-            _parameters.Exists(parameter => parameter.ParameterName == value);
+            _parameters.Exists(parameter => string.Equals(parameter.ParameterName, value, StringComparison.Ordinal));
 
         public override void CopyTo(Array array, int index) => ((ICollection)_parameters).CopyTo(array, index);
 
@@ -530,7 +530,9 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
         public override int IndexOf(object value) => _parameters.IndexOf((DbParameter)value);
 
         public override int IndexOf(string parameterName) =>
-            _parameters.FindIndex(parameter => parameter.ParameterName == parameterName);
+            _parameters.FindIndex(parameter =>
+                string.Equals(parameter.ParameterName, parameterName, StringComparison.Ordinal)
+            );
 
         public override void Insert(int index, object value) => _parameters.Insert(index, (DbParameter)value);
 

@@ -1,9 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
-using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
@@ -314,7 +312,9 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         received.Should().BeTrue("consumer handler should be invoked");
         subscriber.ReceivedContexts.Should().HaveCountGreaterThanOrEqualTo(1);
 
-        var context = subscriber.ReceivedContexts.First(c => c.Message.Id == message.Id);
+        var context = subscriber.ReceivedContexts.First(c =>
+            string.Equals(c.Message.Id, message.Id, StringComparison.Ordinal)
+        );
         context.MessageId.Should().NotBeNullOrEmpty();
         context.MessageName.Should().Be(ResolveMessageName("test-message"));
     }
@@ -450,7 +450,9 @@ public abstract class MessagingIntegrationTestsBase : TestBase
 
         // then
         received.Should().BeTrue("message with headers should be received");
-        var context = subscriber.ReceivedContexts.FirstOrDefault(c => c.Message.Id == message.Id);
+        var context = subscriber.ReceivedContexts.FirstOrDefault(c =>
+            string.Equals(c.Message.Id, message.Id, StringComparison.Ordinal)
+        );
         context.Should().NotBeNull();
         context!.Headers.Should().ContainKey("CustomHeader");
     }
@@ -544,6 +546,62 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         context.Message.SourceIntent.Should().Be(nameof(IntentType.Queue));
         context.MessageName.Should().Be(ResolveMessageName("callback-response"));
         context.Headers[Headers.Type].Should().Be(nameof(CallbackResponse));
+    }
+
+    public virtual async Task should_publish_typed_null_callback_response()
+    {
+        // given
+        var requestMessageId = $"typed-null-{Guid.NewGuid():N}";
+        var request = new CallbackRequestMessage(Guid.NewGuid().ToString("N"), CallbackRequestMode.TypedNull);
+
+        // when
+        await Publisher.PublishAsync(
+            request,
+            new PublishOptions
+            {
+                MessageId = requestMessageId,
+                MessageName = "callback-request",
+                CallbackName = "callback-response",
+            },
+            AbortToken
+        );
+
+        var callback = await _WaitForStoredCallbackAsync(requestMessageId, TimeSpan.FromSeconds(20));
+
+        // then
+        callback.Should().NotBeNull("the typed-null callback should reach transport and durable receive storage");
+        callback!.Origin.Value.Should().BeNull();
+        callback.Origin.Headers[Headers.Type].Should().Be(nameof(CallbackResponse));
+        callback.Origin.Headers[Headers.CorrelationId].Should().Be(requestMessageId);
+        callback.ExceptionInfo.Should().Contain($"Failed to deserialize message of type {nameof(CallbackResponse)}");
+    }
+
+    public virtual async Task should_publish_headers_only_callback_response()
+    {
+        // given
+        var requestMessageId = $"headers-only-{Guid.NewGuid():N}";
+        var request = new CallbackRequestMessage(Guid.NewGuid().ToString("N"), CallbackRequestMode.HeadersOnly);
+
+        // when
+        await Publisher.PublishAsync(
+            request,
+            new PublishOptions
+            {
+                MessageId = requestMessageId,
+                MessageName = "callback-request",
+                CallbackName = "callback-response",
+            },
+            AbortToken
+        );
+
+        var callback = await _WaitForStoredCallbackAsync(requestMessageId, TimeSpan.FromSeconds(20));
+
+        // then
+        callback.Should().NotBeNull("the headers-only callback should reach transport and durable receive storage");
+        callback!.Origin.Value.Should().BeNull();
+        callback.Origin.Headers[Headers.Type].Should().Be(nameof(Object));
+        callback.Origin.Headers[Headers.CorrelationId].Should().Be(requestMessageId);
+        callback.ExceptionInfo.Should().Contain($"Failed to deserialize message of type {nameof(CallbackResponse)}");
     }
 
     public virtual async Task should_rewrite_callback_when_response_is_set()
@@ -720,8 +778,49 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         attempted.Should().BeTrue("the failing response consumer should have attempted to serialize a response");
         callbackReceived.Should().BeFalse("serialization failure should prevent callback publication");
 
-        var succeeded = await _FindReceivedMessagesAsync(messageId, nameof(StatusName.Succeeded), AbortToken);
+        var succeeded = await _FindReceivedMessagesAsync(messageId, StatusName.Succeeded, AbortToken);
         succeeded.Should().BeEmpty("response serialization failure must not mark the request consume as succeeded");
+    }
+
+    private async Task<MediumMessage?> _WaitForStoredCallbackAsync(string correlationId, TimeSpan timeout)
+    {
+        var monitoringApi = DataStorage.GetMonitoringApi();
+        var timeProvider = ServiceProvider.GetRequiredService<TimeProvider>();
+        var deadline = timeProvider.GetUtcNow() + timeout;
+
+        while (timeProvider.GetUtcNow() < deadline)
+        {
+            var page = await monitoringApi.GetMessagesAsync(
+                new MessageQuery
+                {
+                    MessageType = MessageType.Subscribe,
+                    Name = ResolveMessageName("callback-response"),
+                    CurrentPage = 0,
+                    PageSize = 100,
+                },
+                AbortToken
+            );
+
+            page.TotalItems.Should()
+                .BeLessThan(100, "callback correlation filtering is in-memory; rows beyond one page risk truncation");
+
+            foreach (var candidate in page.Items)
+            {
+                var stored = await monitoringApi.GetReceivedMessageAsync(candidate.StorageId, AbortToken);
+                if (
+                    stored?.ExceptionInfo is not null
+                    && stored.Origin.Headers.TryGetValue(Headers.CorrelationId, out var storedCorrelationId)
+                    && string.Equals(storedCorrelationId, correlationId, StringComparison.Ordinal)
+                )
+                {
+                    return stored;
+                }
+            }
+
+            await timeProvider.Delay(TimeSpan.FromMilliseconds(100), AbortToken);
+        }
+
+        return null;
     }
 
     protected async Task EnsureTestSubscriberReadyAsync(
@@ -751,7 +850,12 @@ public abstract class MessagingIntegrationTestsBase : TestBase
             await Bus.PublishAsync(probe, new PublishOptions { MessageName = messageName }, AbortToken);
 
             var received = await subscriber.WaitForMessageAsync(TimeSpan.FromSeconds(1), AbortToken);
-            if (received && subscriber.ReceivedMessages.Any(message => message.Id == probe.Id))
+            if (
+                received
+                && subscriber.ReceivedMessages.Any(message =>
+                    string.Equals(message.Id, probe.Id, StringComparison.Ordinal)
+                )
+            )
             {
                 subscriber.Clear();
                 return;
@@ -769,12 +873,12 @@ public abstract class MessagingIntegrationTestsBase : TestBase
     {
         return string.IsNullOrWhiteSpace(MessagingOptions.MessageNamePrefix)
             ? messageName
-            : string.Concat(MessagingOptions.MessageNamePrefix, ".", messageName);
+            : $"{MessagingOptions.MessageNamePrefix}.{messageName}";
     }
 
     private async Task<IReadOnlyList<MessageView>> _FindReceivedMessagesAsync(
         string messageId,
-        string statusName,
+        StatusName statusName,
         CancellationToken cancellationToken
     )
     {
@@ -797,7 +901,9 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         page.TotalItems.Should()
             .BeLessThan(100, "MessageId filtering is in-memory; rows beyond one page risk silent truncation");
 
-        return page.Items.Where(message => message.MessageId == messageId).ToArray();
+        return page
+            .Items.Where(message => string.Equals(message.MessageId, messageId, StringComparison.Ordinal))
+            .ToArray();
     }
 }
 

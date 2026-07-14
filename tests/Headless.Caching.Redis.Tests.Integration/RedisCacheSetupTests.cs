@@ -2,13 +2,14 @@
 
 using Headless.Caching;
 using Headless.Hosting.Initialization;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
 namespace Tests;
 
 [Collection(nameof(RedisCacheFixture))]
-public sealed class RedisCacheSetupTests(RedisCacheFixture fixture)
+public sealed class RedisCacheSetupTests(RedisCacheFixture fixture) : TestBase
 {
     [Fact]
     public async Task use_redis_should_register_and_run_script_initializer_on_host_start()
@@ -22,14 +23,14 @@ public sealed class RedisCacheSetupTests(RedisCacheFixture fixture)
         using var host = builder.Build();
 
         // when
-        await host.StartAsync(TestContext.Current.CancellationToken);
+        await host.StartAsync(AbortToken);
         var initializer = host.Services.GetRequiredService<IEnumerable<IInitializer>>().Single();
-        await initializer.WaitForInitializationAsync(TestContext.Current.CancellationToken);
+        await initializer.WaitForInitializationAsync(AbortToken);
 
         // then
         initializer.IsInitialized.Should().BeTrue();
 
-        await host.StopAsync(TestContext.Current.CancellationToken);
+        await host.StopAsync(AbortToken);
     }
 
     [Fact]
@@ -54,7 +55,7 @@ public sealed class RedisCacheSetupTests(RedisCacheFixture fixture)
         using var host = builder.Build();
 
         // when
-        await host.StartAsync(TestContext.Current.CancellationToken);
+        await host.StartAsync(AbortToken);
         var initializers = host.Services.GetRequiredService<IEnumerable<IInitializer>>().ToList();
 
         // then
@@ -62,11 +63,11 @@ public sealed class RedisCacheSetupTests(RedisCacheFixture fixture)
 
         foreach (var initializer in initializers)
         {
-            await initializer.WaitForInitializationAsync(TestContext.Current.CancellationToken);
+            await initializer.WaitForInitializationAsync(AbortToken);
             initializer.IsInitialized.Should().BeTrue();
         }
 
-        await host.StopAsync(TestContext.Current.CancellationToken);
+        await host.StopAsync(AbortToken);
     }
 
     [Fact]
@@ -80,7 +81,7 @@ public sealed class RedisCacheSetupTests(RedisCacheFixture fixture)
         );
 
         using var host = builder.Build();
-        await host.StartAsync(TestContext.Current.CancellationToken);
+        await host.StartAsync(AbortToken);
 
         // when
         var defaultCache = host.Services.GetRequiredService<ICache>();
@@ -95,6 +96,6 @@ public sealed class RedisCacheSetupTests(RedisCacheFixture fixture)
         // then - the generic adapter resolves over the default cache
         host.Services.GetRequiredService<ICache<RedisCacheSetupTests>>().Should().NotBeNull();
 
-        await host.StopAsync(TestContext.Current.CancellationToken);
+        await host.StopAsync(AbortToken);
     }
 }

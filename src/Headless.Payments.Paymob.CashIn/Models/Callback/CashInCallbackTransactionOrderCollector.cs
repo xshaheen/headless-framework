@@ -8,7 +8,7 @@ namespace Headless.Payments.Paymob.CashIn.Models.Callback;
 public sealed class CashInCallbackTransactionOrderCollector
 {
     [JsonPropertyName("id")]
-    public int Id { get; init; }
+    public long Id { get; init; }
 
     [JsonPropertyName("created_at")]
     [JsonConverter(typeof(AddEgyptZoneOffsetToUnspecifiedDateTimeJsonConverter))]
@@ -32,6 +32,7 @@ public sealed class CashInCallbackTransactionOrderCollector
     [JsonPropertyName("street")]
     public string? Street { get; init; }
 
+    /// <summary>Collector phone entries as returned by Paymob; elements are opaque provider-defined objects. Never <see langword="null"/>.</summary>
     [JsonPropertyName("phones")]
     [field: AllowNull, MaybeNull]
     public IReadOnlyList<object?> Phones
@@ -40,6 +41,7 @@ public sealed class CashInCallbackTransactionOrderCollector
         init;
     }
 
+    /// <summary>Collector company-email entries as returned by Paymob; elements are opaque provider-defined objects. Never <see langword="null"/>.</summary>
     [JsonPropertyName("company_emails")]
     [field: AllowNull, MaybeNull]
     public IReadOnlyList<object?> CompanyEmails

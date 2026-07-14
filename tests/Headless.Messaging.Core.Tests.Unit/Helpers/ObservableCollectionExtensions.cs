@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
 namespace Tests.Helpers;
 
 public static class ObservableCollectionExtensions
@@ -10,7 +11,7 @@ public static class ObservableCollectionExtensions
         CancellationToken cancellationToken
     )
     {
-        await collection.WaitForMessages(x => x.Count() == 1, cancellationToken);
+        await collection.WaitForMessages(x => x.Take(2).Count() == 1, cancellationToken);
     }
 
     public static async Task WaitForMessages<T>(

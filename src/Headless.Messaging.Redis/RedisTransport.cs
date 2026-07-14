@@ -7,11 +7,11 @@ namespace Headless.Messaging.Redis;
 
 internal sealed class RedisTransport(
     IRedisStreamManager redis,
-    IOptions<MessagingRedisOptions> options,
+    IOptions<RedisMessagingOptions> options,
     ILogger<RedisTransport> logger
 ) : IQueueTransport
 {
-    private readonly MessagingRedisOptions _options = options.Value;
+    private readonly RedisMessagingOptions _options = options.Value;
 
     public BrokerAddress BrokerAddress => new("redis", _options.DisplayEndpoint);
 
@@ -20,9 +20,9 @@ internal sealed class RedisTransport(
         cancellationToken.ThrowIfCancellationRequested();
         try
         {
-            await redis.PublishAsync(message.GetName(), message.AsStreamEntries()).ConfigureAwait(false);
+            await redis.PublishAsync(message.Name, message.AsStreamEntries(), cancellationToken).ConfigureAwait(false);
 
-            var messageName = message.GetName();
+            var messageName = message.Name;
             logger.MessagePublished(messageName);
 
             return OperateResult.Success;

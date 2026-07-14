@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Hosting;
 
-namespace Headless.Api;
+namespace Headless.Api.ServiceDefaults;
 
 /// <summary>
 /// Startup filter and hosted-lifecycle service that verifies Headless pipeline call-order invariants
@@ -25,14 +25,11 @@ internal sealed class HeadlessServiceDefaultsValidationStartupFilter(
     HeadlessStartupState state
 ) : IStartupFilter, IHostedLifecycleService
 {
-    private readonly HeadlessServiceDefaultsOptions _options = options;
-    private readonly HeadlessStartupState _state = state;
-
     public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next)
     {
         return app =>
         {
-            _Validate(_options, _state);
+            _Validate(options, state);
 
             next(app);
         };
@@ -40,7 +37,7 @@ internal sealed class HeadlessServiceDefaultsValidationStartupFilter(
 
     public Task StartingAsync(CancellationToken cancellationToken)
     {
-        _Validate(_options, _state);
+        _Validate(options, state);
 
         return Task.CompletedTask;
     }

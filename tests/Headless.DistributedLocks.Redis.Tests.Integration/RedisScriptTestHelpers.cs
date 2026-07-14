@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.DistributedLocks.Redis;
+using Headless.DistributedLocks.Redis.Scripts;
 using Headless.Redis;
 using StackExchange.Redis;
 
@@ -26,9 +26,7 @@ internal static class RedisScriptTestHelpers
                     key,
                     value = (RedisValue?)newValue ?? RedisValue.Null,
                     expected = (RedisValue)(expectedValue ?? string.Empty),
-                    expires = newTtl.HasValue
-                        ? (RedisValue)(long)newTtl.Value.TotalMilliseconds
-                        : RedisValue.EmptyString,
+                    expires = newTtl.HasValue ? (long)newTtl.Value.TotalMilliseconds : RedisValue.EmptyString,
                 }
             )
             .ConfigureAwait(false);

@@ -29,7 +29,7 @@ public sealed class PermissionGroupDefinitionTests : TestBase
         var permission = group.AddChild("TestPermission", "Test Permission Display");
 
         // then
-        group.Permissions.Should().HaveCount(1);
+        group.Permissions.Should().ContainSingle();
         group.Permissions.Should().Contain(permission);
         permission.Name.Should().Be("TestPermission");
     }
@@ -61,10 +61,11 @@ public sealed class PermissionGroupDefinitionTests : TestBase
     public void should_set_display_name()
     {
         // given
-        var group = new PermissionGroupDefinition("TestGroup");
-
-        // when
-        group.DisplayName = "Updated Display Name";
+        var group = new PermissionGroupDefinition("TestGroup")
+        {
+            // when
+            DisplayName = "Updated Display Name",
+        };
 
         // then
         group.DisplayName.Should().Be("Updated Display Name");

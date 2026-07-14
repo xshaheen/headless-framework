@@ -1,10 +1,26 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.ComponentModel;
+
 namespace Headless.Coordination;
 
-/// <summary>Provider SPI for store-authoritative membership operations.</summary>
+/// <summary>
+/// Provider SPI for store-authoritative membership operations. Implemented by each coordination backend
+/// (PostgreSQL, SQL Server, Redis) and consumed by the coordination core; application code registers a
+/// provider via <c>AddHeadlessCoordination(setup =&gt; setup.Use…())</c> and never calls this directly.
+/// </summary>
+[PublicAPI]
+[EditorBrowsable(EditorBrowsableState.Never)]
 public interface IMembershipStore
 {
+    /// <summary>
+    /// Allocates the next monotonic incarnation for <paramref name="nodeId"/>. Each allocation strictly
+    /// supersedes every prior incarnation of the same node, so a restarted process fences its own stale
+    /// membership and cannot be confused with the previous run.
+    /// </summary>
+    /// <param name="nodeId">The stable node identifier the incarnation is allocated for.</param>
+    /// <param name="cancellationToken">Token used to cancel the allocation.</param>
+    /// <returns>The freshly allocated, strictly-increasing incarnation for the node.</returns>
     ValueTask<NodeIncarnation> AllocateIncarnationAsync(NodeId nodeId, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -15,8 +31,20 @@ public interface IMembershipStore
     /// </summary>
     ValueTask UpsertDescriptorAsync(NodeDescriptor descriptor, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Refreshes a live current incarnation. Returns <see langword="false"/> when the incarnation is superseded,
+    /// dead, gracefully left, or missing/pruned; implementations must not recreate terminal liveness here.
+    /// </summary>
     ValueTask<bool> HeartbeatAsync(NodeIdentity identity, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Gracefully marks <paramref name="identity"/> as having left the cluster, transitioning its liveness to a
+    /// terminal <em>left</em> state so peers stop treating the incarnation as recoverable ahead of the dead
+    /// threshold. Must be a no-op when the identity is already terminal, superseded, or absent, and must not
+    /// recreate liveness for a stale incarnation.
+    /// </summary>
+    /// <param name="identity">The node incarnation that is leaving.</param>
+    /// <param name="cancellationToken">Token used to cancel the leave.</param>
     ValueTask LeaveAsync(NodeIdentity identity, CancellationToken cancellationToken = default);
 
     /// <summary>Returns a snapshot of every known node's liveness state.</summary>

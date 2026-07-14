@@ -2,20 +2,22 @@ using Headless.Abstractions;
 using Headless.Testing.Helpers;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.Fixture;
 
 /// <summary>
-/// EF options extension that registers test doubles into EF's internal service provider.
-///
+/// <para>EF options extension that registers test doubles into EF's internal service provider.</para>
+/// <para>
 /// When <c>HeadlessDbContext.this.GetService&lt;T&gt;()</c> is called, it resolves from EF's
 /// internal service provider (populated by <c>ApplyServices</c> on each
 /// <c>IDbContextOptionsExtension</c>), NOT from the application DI scope. This extension injects
-/// the test doubles so that <c>IClock</c>, <c>ICurrentUser</c>, <c>ICurrentTenant</c> etc.
+/// the test doubles so that <c>TimeProvider</c>, <c>ICurrentUser</c>, <c>ICurrentTenant</c> etc.
 /// resolve to our controlled implementations.
+/// </para>
 /// </summary>
 internal sealed class TestHeadlessServicesOptionsExtension(
-    TestClock clock,
+    FakeTimeProvider timeProvider,
     TestCurrentUser currentUser,
     TestCurrentTenant currentTenant
 ) : IDbContextOptionsExtension
@@ -24,9 +26,9 @@ internal sealed class TestHeadlessServicesOptionsExtension(
     {
         // Override the defaults registered by AddHeadlessDbContextServices()
         // (which are added by HeadlessDbContextOptionsExtension.ApplyServices).
-        // Register as concrete type AND as interface so EF's provider resolves correctly.
-        services.AddSingleton(clock.TimeProvider);
-        services.AddSingleton<IClock>(clock);
+        // Register as concrete type AND as base type so EF's provider resolves correctly.
+        services.AddSingleton(timeProvider);
+        services.AddSingleton<TimeProvider>(timeProvider);
         services.AddSingleton<ICurrentUser>(currentUser);
         services.AddSingleton<ICurrentTenant>(currentTenant);
     }

@@ -17,7 +17,7 @@ namespace Headless.Settings;
 
 /// <summary>DI registration entry points for the Headless Settings feature.</summary>
 [PublicAPI]
-public static class SetupCoreSettings
+public static class SetupSettings
 {
     extension(IServiceCollection services)
     {
@@ -44,10 +44,7 @@ public static class SetupCoreSettings
         {
             services.AddSingleton<T>();
 
-            services.Configure<SettingManagementProvidersOptions>(options =>
-            {
-                options.DefinitionProviders.Add<T>();
-            });
+            services.Configure<SettingManagementProvidersOptions>(options => options.DefinitionProviders.Add<T>());
 
             return services;
         }
@@ -143,7 +140,7 @@ public static class SetupCoreSettings
 
         services.AddInitializerHostedService<SettingsInitializationBackgroundService>();
 
-        services.TryAddSingleton<ISettingsErrorsDescriptor, DefaultSettingsErrorsDescriptor>();
+        services.TryAddSingleton<ISettingErrorsDescriptor, DefaultSettingErrorsDescriptor>();
         services.TryAddSingleton<ISettingEncryptionService, SettingEncryptionService>();
 
         // Definition Services

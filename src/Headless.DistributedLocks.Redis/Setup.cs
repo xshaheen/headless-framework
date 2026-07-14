@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.DistributedLocks.Redis;
+using Headless.DistributedLocks.Redis.Scripts;
 using Headless.Hosting.Initialization;
 using Headless.Messaging;
 using Headless.Redis;
@@ -9,7 +11,8 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 
-namespace Headless.DistributedLocks.Redis;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.DistributedLocks;
 
 /// <summary>
 /// Extension methods for registering Redis-backed resource locks.

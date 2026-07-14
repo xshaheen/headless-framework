@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
+using System.Net.Sockets;
 using System.Security.Claims;
 using Headless.Checks;
 using Headless.Hosting.Initialization;
@@ -41,9 +42,12 @@ public sealed class HeadlessTestServer<TProgram>(
     private volatile bool _initStarted;
     private DatabaseReset? _databaseReset;
     private DbConnection? _resetConnection;
+    private Func<IServiceProvider, DbConnection>? _resetConnectionProvider;
+    private Func<Exception, bool>? _additionalTransientExceptionFilter;
     private volatile bool _disposed;
 
-    internal Func<DatabaseReset, DbConnection, Task> ResetAction { get; set; } = (r, c) => r.ResetAsync(c);
+    internal Func<DatabaseReset, DbConnection, CancellationToken, Task> ResetAction { get; set; } =
+        (reset, connection, cancellationToken) => reset.ResetAsync(connection, cancellationToken);
 
     /// <summary>The fake time provider registered in the test host.</summary>
     public FakeTimeProvider TimeProvider { get; private set; } = null!;
@@ -144,9 +148,13 @@ public sealed class HeadlessTestServer<TProgram>(
     /// </summary>
     /// <exception cref="InvalidOperationException">
     /// Thrown when <see cref="ConfigureDatabaseReset"/> was not called or
-    /// <see cref="DatabaseResetOptions.ConnectionProvider"/> is <c>null</c>.
+    /// <see cref="DatabaseResetOptions.ConnectionProvider"/> is <see langword="null"/>.
     /// </exception>
-    public async Task ResetDatabaseAsync()
+    /// <param name="cancellationToken">
+    /// Token used to cancel connection opening, retry delays, and waiting for Respawn. When omitted,
+    /// <see cref="TestContext.Current"/> supplies the active test's cancellation token.
+    /// </param>
+    public async Task ResetDatabaseAsync(CancellationToken cancellationToken = default)
     {
         if (_configureDatabaseReset is null)
         {
@@ -155,9 +163,11 @@ public sealed class HeadlessTestServer<TProgram>(
             );
         }
 
+        cancellationToken = DatabaseResetOperation.ResolveCancellationToken(cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
         Ensure.NotDisposed(_disposed, this);
 
-        await _resetGate.WaitAsync().ConfigureAwait(false);
+        await _resetGate.WaitAsync(cancellationToken).ConfigureAwait(false);
 
         try
         {
@@ -175,35 +185,64 @@ public sealed class HeadlessTestServer<TProgram>(
                     );
                 }
 
-                _resetConnection = options.ConnectionProvider(Services);
-                await _resetConnection.OpenAsync().ConfigureAwait(false);
+                _resetConnectionProvider = options.ConnectionProvider;
+                _additionalTransientExceptionFilter = options.AdditionalTransientExceptionFilter;
+                _resetConnection = _resetConnectionProvider(Services);
 
-                _databaseReset = await DatabaseReset.CreateAsync(_resetConnection, options).ConfigureAwait(false);
+                try
+                {
+                    await _resetConnection.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+                    _databaseReset = await DatabaseReset
+                        .CreateAsync(_resetConnection, options, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception initializationException)
+                {
+                    var failedConnection = _resetConnection;
+                    _resetConnection = null;
+
+                    try
+                    {
+                        await failedConnection.DisposeAsync().ConfigureAwait(false);
+                    }
+                    catch (Exception disposalException)
+                    {
+                        // Preserve the initialization failure while retaining cleanup diagnostics.
+                        initializationException.Data["ResetConnectionDisposalException"] = disposalException;
+                    }
+
+                    throw;
+                }
             }
 
-            // Retry for PostgreSQL connection flakiness under high test load
+            // Retry transient database and transport failures under high test load.
             var retries = 3;
+            var replaceConnection = _resetConnection!.State != System.Data.ConnectionState.Open;
+
             while (retries > 0)
             {
                 try
                 {
-                    await ResetAction(_databaseReset, _resetConnection!).ConfigureAwait(false);
+                    if (replaceConnection)
+                    {
+                        await _ReplaceResetConnectionAsync(cancellationToken).ConfigureAwait(false);
+                        replaceConnection = false;
+                    }
+
+                    await ResetAction(_databaseReset, _resetConnection!, cancellationToken).ConfigureAwait(false);
                     break;
                 }
-                catch (DbException) when (retries > 1)
+                catch (Exception ex) when (_IsTransientResetException(ex) && retries > 1)
                 {
                     retries--;
-                    await Task.Delay(TimeSpan.FromMilliseconds(100)).ConfigureAwait(false);
-
-                    // Re-open if closed or broken
-                    if (_resetConnection!.State != System.Data.ConnectionState.Open)
-                    {
-                        await _resetConnection.OpenAsync().ConfigureAwait(false);
-                    }
+                    replaceConnection = true;
+                    await Task.Delay(TimeSpan.FromMilliseconds(100), System.TimeProvider.System, cancellationToken)
+                        .ConfigureAwait(false);
                 }
-                catch (DbException ex)
+                catch (Exception ex) when (_IsTransientResetException(ex))
                 {
-                    // Final attempt failed — surface retry-exhaustion context instead of a bare DbException.
+                    // Surface retry-exhaustion context instead of a provider-specific transport exception.
                     throw new InvalidOperationException("Database reset failed after 3 attempts.", ex);
                 }
             }
@@ -212,6 +251,18 @@ public sealed class HeadlessTestServer<TProgram>(
         {
             _resetGate.Release();
         }
+    }
+
+    private bool _IsTransientResetException(Exception exception) =>
+        exception is DbException or IOException or SocketException
+        || (exception.InnerException is not null && _IsTransientResetException(exception.InnerException))
+        || _additionalTransientExceptionFilter?.Invoke(exception) == true;
+
+    private async Task _ReplaceResetConnectionAsync(CancellationToken cancellationToken)
+    {
+        await _resetConnection!.DisposeAsync().ConfigureAwait(false);
+        _resetConnection = _resetConnectionProvider!(Services);
+        await _resetConnection.OpenAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Creates a DI scope, invokes <paramref name="action"/>, and disposes the scope.</summary>
@@ -329,7 +380,10 @@ public sealed class HeadlessTestServer<TProgram>(
                 catch (OperationCanceledException) when (cts.IsCancellationRequested)
                 {
                     throw new TimeoutException(
-                        $"Initializer '{initializer.GetType().Name}' did not complete within {_initializerTimeout.TotalSeconds:F0}s."
+                        string.Create(
+                            CultureInfo.InvariantCulture,
+                            $"Initializer '{initializer.GetType().Name}' did not complete within {_initializerTimeout.TotalSeconds:F0}s."
+                        )
                     );
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
@@ -352,7 +406,12 @@ public sealed class HeadlessTestServer<TProgram>(
                 }
                 catch (OperationCanceledException) when (cts.IsCancellationRequested)
                 {
-                    throw new TimeoutException($"Readiness check timed out after {timeout.TotalSeconds:F0}s.");
+                    throw new TimeoutException(
+                        string.Create(
+                            CultureInfo.InvariantCulture,
+                            $"Readiness check timed out after {timeout.TotalSeconds:F0}s."
+                        )
+                    );
                 }
             }
 

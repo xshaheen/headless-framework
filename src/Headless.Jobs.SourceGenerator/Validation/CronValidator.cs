@@ -194,7 +194,7 @@ public static class CronValidator
                 break;
             }
 
-            num = num * 10 + digit;
+            num = (num * 10) + digit;
             index++;
         }
 

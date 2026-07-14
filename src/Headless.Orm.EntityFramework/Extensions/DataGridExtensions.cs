@@ -1,29 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.EntityFramework;
+using Headless.Primitives;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Headless.Primitives;
-
-/// <summary>
-/// Contract for data-grid query requests that carry an optional page descriptor and an ordered list
-/// of sort columns.
-/// </summary>
-public interface IDataGridRequest : IHasMultiOrderByRequest
-{
-    /// <summary>Optional page descriptor. When <see langword="null"/> the full result set is returned.</summary>
-    IndexPageRequest? Page { get; }
-}
-
-/// <summary>Base implementation of <see cref="IDataGridRequest"/> with init-only page and order properties.</summary>
-public abstract class DataGridRequest : IDataGridRequest
-{
-    /// <summary>Optional page descriptor.</summary>
-    public IndexPageRequest? Page { get; init; }
-
-    /// <summary>Optional ordered list of sort columns.</summary>
-    public List<OrderBy>? Orders { get; init; }
-}
+namespace Microsoft.EntityFrameworkCore;
 
 /// <summary>Extension method for materializing a data-grid query result.</summary>
 [PublicAPI]

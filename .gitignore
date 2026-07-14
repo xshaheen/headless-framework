@@ -163,6 +163,15 @@ profile.arm.json
 *.msm
 *.msp
 
+# env
+.envrc
+.env
+*.env
+
+# agent scratch artifacts (directory in the main checkout, symlink in worktrees —
+# no trailing slash so the pattern matches both)
+.context
+
 # OS generated files
 .DS_Store
 Thumbs.db

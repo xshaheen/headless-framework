@@ -53,7 +53,7 @@ internal sealed class CommitScopeFactory(CommitScopeStack stack, ILogger<CommitC
         "CA2000:Dispose objects before losing scope",
         Justification = "Ownership of the ambient pop handle is transferred to CommitScope."
     )]
-    private ICommitScope _CreateScope(CommitCoordinator coordinator, IServiceProvider services)
+    private CommitScope _CreateScope(CommitCoordinator coordinator, IServiceProvider services)
     {
         IDisposable? ambientHandle = null;
 

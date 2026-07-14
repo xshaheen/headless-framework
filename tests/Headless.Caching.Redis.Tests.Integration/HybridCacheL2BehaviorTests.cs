@@ -4,6 +4,7 @@ using System.Reflection;
 using Headless.Caching;
 using Headless.Messaging;
 using Headless.Redis;
+using Headless.Redis.Testing;
 using Headless.Serializer;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
@@ -22,13 +23,21 @@ namespace Tests;
 [Collection(nameof(RedisCacheFixture))]
 public sealed class HybridCacheL2BehaviorTests(RedisCacheFixture fixture) : TestBase
 {
+    // The L1/L2 tiers created in _CreateHybrid are owned by the test, NOT by the returned HybridCache:
+    // HybridCache.DisposeAsync deliberately does not dispose injected tiers (in DI the container owns them).
+    // Track them here and dispose at test teardown, after each await-using hybrid is gone. A `using var` on
+    // l1/l2 would dispose them when _CreateHybrid returns — before the test ever touches the hybrid — which
+    // surfaces as ObjectDisposedException on the L1 InMemoryCache.
+    private readonly List<IDisposable> _tierCaches = [];
+
     private HybridCache _CreateHybrid(
         string keyPrefix = "",
         HybridCacheOptions? hybridOptions = null,
-        _CapturingBus? bus = null
+        CapturingBus? bus = null
     )
     {
         var l1 = new InMemoryCache(TimeProvider.System, new InMemoryCacheOptions());
+        _tierCaches.Add(l1);
 
         var redisCacheOptions = new RedisCacheOptions
         {
@@ -43,8 +52,9 @@ public sealed class HybridCacheL2BehaviorTests(RedisCacheFixture fixture) : Test
             fixture.ScriptsLoader,
             LoggerFactory.CreateLogger<RedisCache>()
         );
+        _tierCaches.Add(l2);
 
-        var publisher = (IBus?)bus ?? _NoopBus.Instance;
+        var publisher = (IBus?)bus ?? NoopBus.Instance;
         hybridOptions ??= new HybridCacheOptions();
 
         return new HybridCache(l1, l2, publisher, hybridOptions, NullLogger<HybridCache>.Instance, TimeProvider.System);
@@ -57,7 +67,7 @@ public sealed class HybridCacheL2BehaviorTests(RedisCacheFixture fixture) : Test
     public async Task flush_all_clears_both_tiers_and_new_write_is_visible()
     {
         // given
-        await FlushAsync();
+        await _FlushAsync();
         await using var hybrid = _CreateHybrid("hybrid-flush:");
 
         var key = Faker.Random.AlphaNumeric(12);
@@ -90,7 +100,7 @@ public sealed class HybridCacheL2BehaviorTests(RedisCacheFixture fixture) : Test
     public async Task l1_ttl_is_capped_to_local_expiration_when_l2_ttl_is_longer()
     {
         // given
-        await FlushAsync();
+        await _FlushAsync();
         var hybridOptions = new HybridCacheOptions { DefaultLocalExpiration = TimeSpan.FromSeconds(30) };
         await using var hybrid = _CreateHybrid("hybrid-ttl:", hybridOptions);
 
@@ -121,8 +131,8 @@ public sealed class HybridCacheL2BehaviorTests(RedisCacheFixture fixture) : Test
     public async Task backplane_invalidation_from_node_a_clears_l1_on_node_b()
     {
         // given
-        await FlushAsync();
-        var bus = new _CapturingBus();
+        await _FlushAsync();
+        var bus = new CapturingBus();
 
         await using var hybridA = _CreateHybrid("hybrid-bp:", bus: bus);
         await using var hybridB = _CreateHybrid("hybrid-bp:", bus: bus);
@@ -157,12 +167,26 @@ public sealed class HybridCacheL2BehaviorTests(RedisCacheFixture fixture) : Test
         freshReadOnB.Value.Should().Be("v2", "node B must read the updated value from L2 after L1 invalidation");
     }
 
-    private async Task FlushAsync() => await fixture.ConnectionMultiplexer.FlushAllAsync();
+    private async Task _FlushAsync() => await fixture.ConnectionMultiplexer.FlushAllAsync();
+
+    /// <inheritdoc />
+    protected override async ValueTask DisposeAsyncCore()
+    {
+        // Dispose the L1/L2 tiers created by _CreateHybrid (HybridCache does not own them). Runs after each
+        // test's await-using hybrid has already been disposed. Idempotent: Clear + per-cache Dispose guards.
+        foreach (var cache in _tierCaches)
+        {
+            cache.Dispose();
+        }
+
+        _tierCaches.Clear();
+        await base.DisposeAsyncCore();
+    }
 
     // Minimal in-process backplane bus: routes CacheInvalidationMessage to all attached HybridCache instances.
     // HandleInvalidationAsync is internal (InternalsVisibleTo is not granted to this project) so we invoke it
     // via reflection — the same approach the real infrastructure's message consumer uses, but synchronous here.
-    private sealed class _CapturingBus : IBus
+    private sealed class CapturingBus : IBus
     {
         private readonly List<HybridCache> _subscribers = [];
 
@@ -185,7 +209,10 @@ public sealed class HybridCacheL2BehaviorTests(RedisCacheFixture fixture) : Test
                 // without InternalsVisibleTo being granted to this integration test project.
                 var method = typeof(HybridCache).GetMethod(
                     "HandleInvalidationAsync",
-                    BindingFlags.Instance | BindingFlags.NonPublic
+                    BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+                    null,
+                    [typeof(CacheInvalidationMessage), typeof(CancellationToken)],
+                    null
                 );
                 var task = (ValueTask)method!.Invoke(subscriber, [invalidation, cancellationToken])!;
                 await task.ConfigureAwait(false);
@@ -194,9 +221,9 @@ public sealed class HybridCacheL2BehaviorTests(RedisCacheFixture fixture) : Test
     }
 
     // No-op bus for tests that don't need cross-node invalidation routing.
-    private sealed class _NoopBus : IBus
+    private sealed class NoopBus : IBus
     {
-        public static readonly _NoopBus Instance = new();
+        public static readonly NoopBus Instance = new();
 
         public Task PublishAsync<T>(
             T? message,

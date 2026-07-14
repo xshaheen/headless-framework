@@ -13,11 +13,11 @@ Provides email sending via standard SMTP protocol using MailKit, supporting any 
 - SSL/TLS support: `SecureSocketOptions.StartTls` (default), `SslOnConnect`, `None`, `Auto`
 - Optional authentication (username + password); anonymous SMTP when credentials are omitted
 - Three `UseMailkit` overloads: `IConfiguration`, `Action<MailkitSmtpOptions>`, `Action<MailkitSmtpOptions, IServiceProvider>`
-- `SmtpCommandException` and `SmtpProtocolException` are caught and returned as `Failed()` responses; `AuthenticationException` propagates
+- `SmtpCommandException`, `SmtpProtocolException`, `AuthenticationException`, and connect/TLS/transport faults (`IOException`, socket errors, TLS handshake failures, connect timeouts) are all caught and returned as `Failed()` responses (auth failures additionally logged at critical level; transport faults logged PII-safe by type name); only the caller's own cancellation and argument validation propagate. On success the SMTP server's final response is surfaced as `ProviderMessageId`
 
 ## Design Notes
 
-The pool (`MaxPoolSize`, default 10) amortizes TCP connect + TLS handshake across concurrent sends. Each `SmtpClient` is reconnected (and authenticated if credentials are set) lazily when retrieved from the pool in a disconnected or unauthenticated state; the connect/authenticate phase is bounded by `Timeout` (which otherwise governs only read/write). Authentication failures (`AuthenticationException`) are intentionally re-thrown rather than returned as `Failed()` — they represent configuration errors, not transient delivery failures, and must be surfaced at startup or on first send. A client left connected-but-unauthenticated by such a failure is disposed on return instead of being pooled, so it is never reused with authentication skipped.
+The pool (`MaxPoolSize`, default 10) amortizes TCP connect + TLS handshake across concurrent sends. Each `SmtpClient` is reconnected (and authenticated if credentials are set) lazily when retrieved from the pool in a disconnected or unauthenticated state; the connect/authenticate phase is bounded by `Timeout` (which otherwise governs only read/write). The entire connect/authenticate/send sequence is wrapped so every fault is returned as a failed `SendSingleEmailResponse` per the `IEmailSender` return-not-throw contract: SMTP command/protocol errors, authentication failures (`AuthenticationException`, additionally logged at critical level because they represent configuration errors rather than transient delivery failures), and connect/TLS/transport faults (`IOException`, socket errors, TLS handshake failures). Cancellation is disambiguated by the caller's token: only the caller's own cancellation (`catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)`) propagates, while a connect-timeout cancellation — the timeout-linked CTS fires but the caller's token is not cancelled — is returned as a failure. A client left connected-but-unauthenticated by an auth failure is disposed on return instead of being pooled, so it is never reused with authentication skipped; a later send re-authenticates.
 
 ## Installation
 
@@ -60,7 +60,7 @@ builder.Services.AddHeadlessEmails(setup =>
 // Named instance — each named SMTP sender owns an isolated connection pool (keyed "marketing"):
 builder.Services.AddHeadlessEmails(setup =>
 {
-    setup.UseMailkit(builder.Configuration.GetSection("Smtp")); // default (required)
+    setup.UseMailkit(builder.Configuration.GetSection("Smtp")); // default (optional)
     setup.AddNamed("marketing", i => i.UseMailkit(builder.Configuration.GetSection("MarketingSmtp")));
 });
 ```

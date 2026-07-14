@@ -1,6 +1,6 @@
 ---
 domain: Audit Log
-packages: AuditLog.Abstractions, AuditLog.Storage.EntityFramework, AuditLog.Storage.PostgreSql, AuditLog.Storage.SqlServer
+packages: AuditLog.Abstractions, AuditLog.Core, AuditLog.Storage.EntityFramework, AuditLog.Storage.PostgreSql, AuditLog.Storage.SqlServer
 ---
 
 # Audit Log
@@ -25,43 +25,52 @@ packages: AuditLog.Abstractions, AuditLog.Storage.EntityFramework, AuditLog.Stor
     - [Configuration](#configuration)
     - [Dependencies](#dependencies)
     - [Side Effects](#side-effects)
-- [Headless.AuditLog.Storage.EntityFramework](#headlessauditlogstorageentityframework)
+- [Headless.AuditLog.Core](#headlessauditlogcore)
     - [Problem Solved](#problem-solved-1)
     - [Key Features](#key-features-1)
-    - [Design Notes](#design-notes)
     - [Installation](#installation-1)
     - [Quick Start](#quick-start-1)
     - [Configuration](#configuration-1)
     - [Dependencies](#dependencies-1)
     - [Side Effects](#side-effects-1)
-- [Headless.AuditLog.Storage.PostgreSql](#headlessauditlogstoragepostgresql)
+- [Headless.AuditLog.Storage.EntityFramework](#headlessauditlogstorageentityframework)
     - [Problem Solved](#problem-solved-2)
     - [Key Features](#key-features-2)
-    - [Design Notes](#design-notes-1)
+    - [Design Notes](#design-notes)
     - [Installation](#installation-2)
     - [Quick Start](#quick-start-2)
     - [Configuration](#configuration-2)
     - [Dependencies](#dependencies-2)
     - [Side Effects](#side-effects-2)
-- [Headless.AuditLog.Storage.SqlServer](#headlessauditlogstoragesqlserver)
+- [Headless.AuditLog.Storage.PostgreSql](#headlessauditlogstoragepostgresql)
     - [Problem Solved](#problem-solved-3)
     - [Key Features](#key-features-3)
-    - [Design Notes](#design-notes-2)
+    - [Design Notes](#design-notes-1)
     - [Installation](#installation-3)
     - [Quick Start](#quick-start-3)
     - [Configuration](#configuration-3)
     - [Dependencies](#dependencies-3)
     - [Side Effects](#side-effects-3)
+- [Headless.AuditLog.Storage.SqlServer](#headlessauditlogstoragesqlserver)
+    - [Problem Solved](#problem-solved-4)
+    - [Key Features](#key-features-4)
+    - [Design Notes](#design-notes-2)
+    - [Installation](#installation-4)
+    - [Quick Start](#quick-start-4)
+    - [Configuration](#configuration-4)
+    - [Dependencies](#dependencies-4)
+    - [Side Effects](#side-effects-4)
 
 > Property-level audit logging for entity mutations and explicit business events (PII reveals, cross-tenant access, etc.). EF Core implementation persists audit rows atomically with the originating `SaveChanges`. Raw ADO.NET providers (PostgreSql, SqlServer) create and own the audit table at host startup.
 
 ## Quick Orientation
 
-Install `Headless.AuditLog.Abstractions` plus exactly one storage provider:
+Install `Headless.AuditLog.Core` plus exactly one storage provider:
 
 | Package | Use when |
 |---|---|
-| `Headless.AuditLog.Abstractions` | Always — defines contracts and options. |
+| `Headless.AuditLog.Abstractions` | Contract package pulled by Core and providers; reference directly only when you need contracts without DI setup. |
+| `Headless.AuditLog.Core` | DI setup, options validation, storage options, setup builders, and the exactly-one-provider registration pipeline. |
 | `Headless.AuditLog.Storage.EntityFramework` | You already use EF Core and want audit rows to commit atomically in the same `SaveChanges` transaction. |
 | `Headless.AuditLog.Storage.PostgreSql` | You want zero EF dependency and are on PostgreSQL. |
 | `Headless.AuditLog.Storage.SqlServer` | You want zero EF dependency and are on SQL Server. |
@@ -84,7 +93,7 @@ Code against `IAuditLog<TContext>` and `IReadAuditLog<TContext>` — never refer
 - On SQLite, override the default composite primary key `(CreatedAt, Id)` with a single-column key on `Id` — SQLite cannot autoincrement composite keys.
 - When reading `OldValues` / `NewValues` after a provider round-trip, expect `JsonElement` values; use `GetDecimal()`, `GetBoolean()`, etc. for typed access.
 - Raw providers (PostgreSql, SqlServer) attempt to enroll writes in the consumer's ambient EF transaction when the database drivers match. If there is no ambient transaction, audit rows commit on a separate connection before `SaveChanges` — an entity-save failure then leaves orphan audit rows. Use an explicit transaction on the EF side to guarantee atomicity.
-- `CaptureErrorStrategy` defaults to `Continue`: a capture failure logs an error and lets `SaveChanges` proceed without audit entries for that batch. Set to `Throw` to abort the save when capture fails.
+- `CaptureErrorStrategy` defaults to `Continue`: a capture failure logs an error and lets `SaveChanges` proceed — a per-entity failure skips only that entity's audit entry, a whole-capture failure skips the batch. Set to `Throw` to abort the save when capture fails.
 
 ## Core Concepts
 
@@ -161,19 +170,14 @@ Provides a provider-agnostic audit log API for capturing field-level entity chan
 - `SensitiveValueContext` — passed to `SensitiveValueTransformer`; provides `EntityType`, `PropertyName`, `PropertyClrType`, `Value`.
 - `AuditChangeType` — `Created`, `Updated`, `Deleted`.
 - `AuditLogOptions` — master enable/disable, `AuditByDefault` mode, per-entity/property filters, `CaptureErrorStrategy`, configurable default exclusions, sensitive-value transformer.
-- `AuditLogStorageOptions` — shared storage options: `Schema`, `TableName`, `JsonColumnType`, `CreatedAtColumnType`, `InitializeOnStartup`.
-- `AuditLogJsonColumnType` — `Jsonb`, `Json`, `NvarcharMax`.
 - `IAuditLog<TContext>` — explicit logging of non-mutation events; `TContext` binds the logger to a specific persistence context for multi-context applications.
 - `IReadAuditLog<TContext>` — query abstraction returning `IReadOnlyList<AuditLogEntryData>`; supports filtering by `action`, `entityType`, `entityId`, `userId`, `tenantId`, `from`, `to`, and `limit`.
 - `AuditLogEntryData` — immutable record capturing all fields; `OldValues`/`NewValues` are `Dictionary<string, object?>`.
 - `IAuditLogStore` — storage abstraction called by the change-tracking pipeline; `Save`/`SaveAsync` take the saving `DbContext` and return `IAuditLogStoreEntry` handles.
 - `IAuditLogStoreEntry` — provider handle; orchestrator calls `DiscardPendingChanges()` on failure and `ReleaseAfterCommit()` after success. Both must be idempotent.
 - `IAuditChangeCapture` — scans ChangeTracker entries and produces `AuditLogEntryData` records.
-- `IAuditEntityIdResolver` — patches deferred entity IDs after `SaveChanges` assigns store-generated keys.
+- `IAuditEntityIdResolver` — patches deferred entity IDs and temporary property values (store-generated keys, FKs to just-added principals) after `SaveChanges` assigns real keys.
 - `IAmbientDbTransactionAccessor` — allows raw ADO.NET stores to enroll in the consumer's active `DbConnection`/`DbTransaction` without taking an EF dependency.
-- `IAuditLogStorageOptionsExtension` — setup-time hook for storage provider packages.
-- `HeadlessAuditLogSetupBuilder` — fluent builder passed to `AddHeadlessAuditLog(setup => ...)`; exposes `ConfigureOptions`, `ConfigureStorage`, and `RegisterExtension`.
-- `HeadlessAuditLogBuilder` — returned by `AddHeadlessAuditLog`; provides access to `IServiceCollection` for chaining.
 
 ### Installation
 
@@ -236,6 +240,64 @@ var entries = await readAuditLog.QueryAsync(
 | `DefaultExcludedProperties` | Framework-managed set | Property names skipped during change capture; consumers can add/remove entries. Default set includes `ConcurrencyStamp`, `DateCreated`, `DateUpdated`, `DateDeleted`, `DateSuspended`, `CreatedById`, `UpdatedById`, `DeletedById`, `SuspendedById`. |
 | `CaptureErrorStrategy` | `Continue` | `Continue` logs an error and proceeds; `Throw` aborts the save. |
 
+### Dependencies
+
+- `Headless.Extensions`
+
+### Side Effects
+
+None. This is an abstractions package and registers no services.
+
+---
+
+## Headless.AuditLog.Core
+
+DI setup package for `Headless.AuditLog`: options validation, setup builders, and the exactly-one-storage-provider registration pipeline.
+
+### Problem Solved
+
+Keeps audit-log contracts provider-neutral while centralizing the public `AddHeadlessAuditLog(...)` setup API and provider extension hook in one Core package.
+
+### Key Features
+
+- `SetupAuditLog.AddHeadlessAuditLog(setup => setup.Use...)` — the single public DI entry point in the `Headless.AuditLog` namespace (add `using Headless.AuditLog;`); requires exactly one storage provider. The options-only registration is `internal` (a funnel the builder overload uses to register `AuditLogOptions` once), so a store-less audit log cannot be registered by accident.
+- `HeadlessAuditLogSetupBuilder` — fluent builder passed to `AddHeadlessAuditLog(setup => ...)`; exposes `ConfigureOptions`, `ConfigureStorage`, and `RegisterExtension`.
+- `HeadlessAuditLogBuilder` — returned by `AddHeadlessAuditLog(setup => ...)`; provides access to `IServiceCollection` for chaining.
+- `IAuditLogStorageOptionsExtension` — setup-time hook implemented by storage provider packages.
+- `AuditLogStorageOptions` — shared storage options: `Schema`, `TableName`, `JsonColumnType`, `CreatedAtColumnType`, `InitializeOnStartup`.
+- `AuditLogJsonColumnType` — provider-validated JSON column type enum: `Jsonb`, `Json`, `NvarcharMax`.
+- `AuditLogOptionsValidator` — validates transform-sensitive-data configuration at startup.
+
+### Installation
+
+```bash
+dotnet add package Headless.AuditLog.Core
+```
+
+### Quick Start
+
+```csharp
+services.AddHeadlessAuditLog(setup =>
+{
+    setup.ConfigureOptions(options =>
+    {
+        options.SensitiveDataStrategy = SensitiveDataStrategy.Redact;
+    });
+
+    setup.ConfigureStorage(options =>
+    {
+        options.Schema = "audit";
+        options.TableName = "audit_log";
+    });
+
+    setup.UseEntityFramework<AppDbContext>();
+});
+```
+
+### Configuration
+
+Configure audit behavior through `setup.ConfigureOptions(...)` and storage shape through `setup.ConfigureStorage(...)`. Then select exactly one storage provider by calling the provider extension, such as `UseEntityFramework<TContext>()`, `UsePostgreSql(...)`, or `UseSqlServer(...)`, from the installed storage package.
+
 Storage options (`AuditLogStorageOptions`):
 
 | Option | Default | Description |
@@ -248,13 +310,18 @@ Storage options (`AuditLogStorageOptions`):
 
 ### Dependencies
 
+- `Headless.AuditLog.Abstractions`
+- `Headless.Checks`
 - `Headless.Hosting`
+- `FluentValidation`
 - `Microsoft.Extensions.DependencyInjection.Abstractions`
 - `Microsoft.Extensions.Options`
 
 ### Side Effects
 
-None. This is an abstractions package; it registers `AuditLogOptions` and its validator only when `AddHeadlessAuditLog` is called.
+- Registers `AuditLogOptions` with startup validation.
+- Configures `AuditLogStorageOptions`.
+- Runs the selected storage provider's setup extension.
 
 ---
 
@@ -270,7 +337,7 @@ Wires the audit log pipeline into EF Core's ChangeTracker so entity mutations ar
 
 - `EfAuditChangeCapture` — scans ChangeTracker before save, produces `AuditLogEntryData` per changed entity.
 - `EfAuditLogStore` — adds `AuditLogEntry` rows to the same `DbContext` so they commit in the same transaction as entity changes.
-- `EfAuditLog<TContext>` — implements `IAuditLog<TContext>` for explicit event logging; resolves `ICurrentUser`, `ICurrentTenant`, `ICorrelationIdProvider`, and `IClock` from DI.
+- `EfAuditLog<TContext>` — implements `IAuditLog<TContext>` for explicit event logging; resolves `ICurrentUser`, `ICurrentTenant`, `ICorrelationIdProvider`, and `TimeProvider` from DI.
 - `EfReadAuditLog<TContext>` — implements `IReadAuditLog<TContext>` using `IDbContextFactory<TContext>` (no-tracking queries).
 - `AuditLogEntry` — EF entity; decorated with `[AuditIgnore]` to prevent recursive capture when `AuditByDefault` is enabled.
 - `AuditLogModelBuilderExtensions.AddHeadlessAuditLog(modelBuilder, options)` — registers and configures the `AuditLogEntry` entity type; idempotent.
@@ -380,6 +447,7 @@ builder.HasKey(e => e.Id); // single-column PK for SQLite
 ### Dependencies
 
 - `Headless.AuditLog.Abstractions`
+- `Headless.AuditLog.Core`
 - `Headless.Orm.EntityFramework`
 - `Microsoft.EntityFrameworkCore`
 
@@ -403,7 +471,7 @@ Provides PostgreSQL-native audit log storage without pulling Entity Framework in
 
 ### Key Features
 
-- No EF Core dependency — depends only on `Npgsql` and `Headless.AuditLog.Abstractions`.
+- No EF Core dependency — depends only on `Npgsql`, `Headless.AuditLog.Abstractions`, and `Headless.AuditLog.Core`.
 - `PostgreSqlAuditLogStore` — implements `IAuditLogStore`; enrolls in the consumer's ambient Npgsql transaction when available; falls back to its own connection otherwise.
 - `PostgreSqlAuditLog<TContext>` — implements `IAuditLog<TContext>` for explicit event logging.
 - `PostgreSqlReadAuditLog<TContext>` — implements `IReadAuditLog<TContext>` via parameterized SQL queries.
@@ -411,6 +479,7 @@ Provides PostgreSQL-native audit log storage without pulling Entity Framework in
 - Batched INSERT: up to 500 rows per command (cached per row count to avoid repeated string building).
 - `jsonb` by default for `OldValues`, `NewValues`, and `ChangedFields`; override via `AuditLogStorageOptions.JsonColumnType` (`Jsonb` or `Json` accepted; `NvarcharMax` rejected at options validation time).
 - `PostgreSqlAuditLogOptions` — `ConnectionString` (required) and `CommandTimeout` (default 30 s).
+- `UsePostgreSql` ships the full provider overload trio: `(string connectionString)`, `(IConfiguration configuration)`, `(Action<PostgreSqlAuditLogOptions>)`, and `(Action<PostgreSqlAuditLogOptions, IServiceProvider>)`.
 - Same index set as the EF provider: tenant+time, tenant+action+time, tenant+entity+time, tenant+actor+time, correlation ID.
 
 ### Design Notes
@@ -459,6 +528,14 @@ setup.UsePostgreSql(options =>
 });
 ```
 
+Bind provider options from configuration, or configure with service resolution:
+
+```csharp
+setup.UsePostgreSql(builder.Configuration.GetSection("Headless:AuditLog:PostgreSql"));
+setup.UsePostgreSql((options, sp) =>
+    options.ConnectionString = sp.GetRequiredService<IConfiguration>().GetConnectionString("AuditLog")!);
+```
+
 ### Configuration
 
 `PostgreSqlAuditLogOptions`:
@@ -473,7 +550,7 @@ setup.UsePostgreSql(options =>
 ### Dependencies
 
 - `Headless.AuditLog.Abstractions`
-- `Headless.Hosting`
+- `Headless.AuditLog.Core`
 - `Headless.Serializer`
 - `Npgsql`
 
@@ -484,7 +561,7 @@ setup.UsePostgreSql(options =>
 - Registers `IAuditLogStore` as scoped (`PostgreSqlAuditLogStore`).
 - Registers `IAuditLog<TContext>` as singleton (`PostgreSqlAuditLog<TContext>`).
 - Registers `IReadAuditLog<TContext>` as singleton (`PostgreSqlReadAuditLog<TContext>`).
-- Registers `IJsonSerializer`, `IClock`, `ICurrentTenant`, `ICurrentUser`, `ICorrelationIdProvider` as singletons if not already registered.
+- Registers `IJsonSerializer`, `TimeProvider` (`TimeProvider.System`), `ICurrentTenant`, `ICurrentUser`, `ICorrelationIdProvider` as singletons if not already registered.
 
 ---
 
@@ -498,7 +575,7 @@ Provides SQL Server-native audit log storage without pulling Entity Framework in
 
 ### Key Features
 
-- No EF Core dependency — depends only on `Microsoft.Data.SqlClient` and `Headless.AuditLog.Abstractions`.
+- No EF Core dependency — depends only on `Microsoft.Data.SqlClient`, `Headless.AuditLog.Abstractions`, and `Headless.AuditLog.Core`.
 - `SqlServerAuditLogStore` — implements `IAuditLogStore`; enrolls in the consumer's ambient `SqlTransaction` when available; falls back to its own connection otherwise.
 - `SqlServerAuditLog<TContext>` — implements `IAuditLog<TContext>` for explicit event logging.
 - `SqlServerReadAuditLog<TContext>` — implements `IReadAuditLog<TContext>` via parameterized SQL queries using `TOP(@Limit)`.
@@ -506,6 +583,7 @@ Provides SQL Server-native audit log storage without pulling Entity Framework in
 - Batched INSERT: up to 100 rows per command (SQL Server parameter limit is lower than PostgreSQL's).
 - `nvarchar(max)` by default for JSON columns; `NvarcharMax` is the only accepted `AuditLogJsonColumnType` (PostgreSQL-specific types are rejected at options validation time).
 - `SqlServerAuditLogOptions` — `ConnectionString` (required) and `CommandTimeout` (default 30 s).
+- `UseSqlServer` ships the full provider overload trio: `(string connectionString)`, `(IConfiguration configuration)`, `(Action<SqlServerAuditLogOptions>)`, and `(Action<SqlServerAuditLogOptions, IServiceProvider>)`.
 - Same index set as the EF provider: tenant+time, tenant+action+time, tenant+entity+time, tenant+actor+time, correlation ID.
 
 ### Design Notes
@@ -556,6 +634,14 @@ setup.UseSqlServer(options =>
 });
 ```
 
+Bind provider options from configuration, or configure with service resolution:
+
+```csharp
+setup.UseSqlServer(builder.Configuration.GetSection("Headless:AuditLog:SqlServer"));
+setup.UseSqlServer((options, sp) =>
+    options.ConnectionString = sp.GetRequiredService<IConfiguration>().GetConnectionString("AuditLog")!);
+```
+
 ### Configuration
 
 `SqlServerAuditLogOptions`:
@@ -570,7 +656,7 @@ setup.UseSqlServer(options =>
 ### Dependencies
 
 - `Headless.AuditLog.Abstractions`
-- `Headless.Hosting`
+- `Headless.AuditLog.Core`
 - `Headless.Serializer`
 - `Microsoft.Data.SqlClient`
 
@@ -581,4 +667,4 @@ setup.UseSqlServer(options =>
 - Registers `IAuditLogStore` as scoped (`SqlServerAuditLogStore`).
 - Registers `IAuditLog<TContext>` as singleton (`SqlServerAuditLog<TContext>`).
 - Registers `IReadAuditLog<TContext>` as singleton (`SqlServerReadAuditLog<TContext>`).
-- Registers `IJsonSerializer`, `IClock`, `ICurrentTenant`, `ICurrentUser`, `ICorrelationIdProvider` as singletons if not already registered.
+- Registers `IJsonSerializer`, `TimeProvider` (`TimeProvider.System`), `ICurrentTenant`, `ICurrentUser`, `ICorrelationIdProvider` as singletons if not already registered.

@@ -20,7 +20,7 @@ public sealed class AzureBlobStoragePresignedTests : TestBase
         return new AzureBlobStorage(
             blobServiceClient,
             new MimeTypeProvider(),
-            new Clock(TimeProvider.System),
+            TimeProvider.System,
             new OptionsWrapper<AzureStorageOptions>(new AzureStorageOptions()),
             new AzureBlobNamingNormalizer(),
             NullLogger<AzureBlobStorage>.Instance
@@ -39,7 +39,10 @@ public sealed class AzureBlobStoragePresignedTests : TestBase
         var sut = _CreateStorageWithoutSigningCredentials();
 
         var act = async () =>
-            await sut.GetPresignedDownloadUrlAsync(["mycontainer"], "file.txt", TimeSpan.FromMinutes(5));
+            await sut.GetPresignedDownloadUrlAsync(
+                new BlobLocation("mycontainer", "file.txt"),
+                TimeSpan.FromMinutes(5)
+            );
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Unable to generate a presigned URL*");
     }
@@ -50,7 +53,7 @@ public sealed class AzureBlobStoragePresignedTests : TestBase
         var sut = _CreateStorageWithoutSigningCredentials();
 
         var act = async () =>
-            await sut.GetPresignedUploadUrlAsync(["mycontainer"], "file.txt", TimeSpan.FromMinutes(5));
+            await sut.GetPresignedUploadUrlAsync(new BlobLocation("mycontainer", "file.txt"), TimeSpan.FromMinutes(5));
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Unable to generate a presigned URL*");
     }
@@ -60,7 +63,8 @@ public sealed class AzureBlobStoragePresignedTests : TestBase
     {
         var sut = _CreateStorageWithoutSigningCredentials();
 
-        var act = async () => await sut.GetPresignedDownloadUrlAsync(["mycontainer"], "file.txt", TimeSpan.Zero);
+        var act = async () =>
+            await sut.GetPresignedDownloadUrlAsync(new BlobLocation("mycontainer", "file.txt"), TimeSpan.Zero);
 
         await act.Should().ThrowAsync<ArgumentException>();
     }

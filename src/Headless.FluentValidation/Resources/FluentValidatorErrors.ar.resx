@@ -16,49 +16,106 @@
       PublicKeyToken=b77a5c561934e089
     </value>
   </resheader>
-  <data name="phone_number:local_number" xml:space="preserve">
+  <data name="g:local_phone_number" xml:space="preserve">
     <value>رقم الهاتف الذي تم إدخاله لا يحتوي على جميع المعلومات المطلوب للاتصال به من أي مكان داخل الدولة أو خارجها. الرجاء إدخال رقم الهاتف بالتنسيق الدولي.</value>
   </data>
-  <data name="phone_number:invalid_country_code" xml:space="preserve">
+  <data name="g:invalid_country_code" xml:space="preserve">
     <value>الرقم له رمز اتصال غير صالح للبلد.</value>
   </data>
-  <data name="phone_number:invalid_number" xml:space="preserve">
+  <data name="g:invalid_phone_number" xml:space="preserve">
     <value>"{PropertyValue}" ليس رقم هاتف صالحًا.</value>
   </data>
-  <data name="collection:minimum_elements" xml:space="preserve">
+  <data name="g:minimum_elements" xml:space="preserve">
     <value>يجب أن يحتوي {PropertyName} على {MinElements} من العناصر على الأقل. يحتوي {PropertyName} على {TotalElements}.</value>
   </data>
-  <data name="collection:maximum_elements" xml:space="preserve">
+  <data name="g:maximum_elements" xml:space="preserve">
     <value>يجب ان تحتوي {PropertyName} علي عناصر اقل من {MaxElements}. {PropertyName} تحتوي علي {TotalElements}.</value>
   </data>
-  <data name="collection:unique_elements" xml:space="preserve">
+  <data name="g:unique_elements" xml:space="preserve">
     <value>يجب أن يحتوي {PropertyName} على عناصر غير مكررة. يحتوي {PropertyName} على {TotalDuplicates} من التكرارات.</value>
   </data>
-  <data name="national_id:invalid_egyptian_national_id" xml:space="preserve">
+  <data name="g:invalid_egyptian_national_id" xml:space="preserve">
     <value>الرقم القومي الذي تم إدخاله غير صالح.</value>
   </data>
-  <data name="url:invalid" xml:space="preserve">
+  <data name="g:invalid_url" xml:space="preserve">
     <value>عنوان URL غير صالح.</value>
   </data>
-  <data name="geo:invalid_latitude" xml:space="preserve">
+  <data name="g:invalid_latitude" xml:space="preserve">
     <value>قيمة خط العرض غير صالحة. يجب أن يكون بين -90 و 90.</value>
   </data>
-  <data name="geo:invalid_longitude" xml:space="preserve">
+  <data name="g:invalid_longitude" xml:space="preserve">
     <value>قيمة خط الطول غير صالحة. يجب أن يكون بين 180 و 180.</value>
   </data>
-  <data name="strings:only_numbers" xml:space="preserve">
+  <data name="g:only_numbers" xml:space="preserve">
     <value>يجب أن يحتوي الحقل على أرقام فقط.</value>
   </data>
-  <data name="url:invalid_origin_path" xml:space="preserve">
+  <data name="g:invalid_origin_path" xml:space="preserve">
     <value>اكتب عنوان الموقع فقط، بدون صفحات داخلية أو علامات استفهام أو أجزاء إضافية.</value>
   </data>
-  <data name="url:invalid_origin_trailing_slash" xml:space="preserve">
+  <data name="g:invalid_origin_trailing_slash" xml:space="preserve">
     <value>احذف علامة / من نهاية عنوان الموقع.</value>
   </data>
-  <data name="url:invalid_origin_scheme" xml:space="preserve">
+  <data name="g:invalid_origin_scheme" xml:space="preserve">
     <value>يجب أن يبدأ عنوان الموقع بـ http:// أو https://. القيمة الحالية تبدأ بـ {Scheme}.</value>
   </data>
-  <data name="url:invalid_origin_format" xml:space="preserve">
+  <data name="g:invalid_origin_format" xml:space="preserve">
     <value>عنوان الموقع "{PropertyValue}" غير صحيح. اكتب الرابط كاملًا مثل: https://example.com</value>
+  </data>
+  <data name="g:only_decimals" xml:space="preserve">
+    <value>يجب أن يكون الحقل رقمًا عشريًا صالحًا.</value>
+  </data>
+  <data name="g:invalid_slug" xml:space="preserve">
+    <value>يجب أن يكون الحقل معرّفًا صالحًا (حروف إنجليزية صغيرة وأرقام وشرطات مفردة).</value>
+  </data>
+  <data name="g:invalid_username" xml:space="preserve">
+    <value>يجب أن يكون اسم المستخدم صالحًا (من 3 إلى 30 حرفًا من الأحرف والأرقام و'-' و'_' و'.'، دون أن يبدأ أو ينتهي أو يكرر رمزًا خاصًا).</value>
+  </data>
+  <data name="g:invalid_zip_code" xml:space="preserve">
+    <value>يجب أن يكون الحقل رمزًا بريديًا صالحًا.</value>
+  </data>
+  <data name="g:invalid_hex_color" xml:space="preserve">
+    <value>يجب أن يكون الحقل لونًا سداسيًا صالحًا (مثل "#1a2b3c" أو "1a2b3c").</value>
+  </data>
+  <data name="g:invalid_base64" xml:space="preserve">
+    <value>يجب أن يكون الحقل نصًا مُرمّزًا بصيغة Base64 صالحة.</value>
+  </data>
+  <data name="g:not_trimmed" xml:space="preserve">
+    <value>يجب ألا يبدأ الحقل أو ينتهي بمسافة فارغة.</value>
+  </data>
+  <data name="g:invalid_culture" xml:space="preserve">
+    <value>يجب أن يكون الحقل اسم ثقافة/لغة صالحًا (مثل "en" أو "en-US").</value>
+  </data>
+  <data name="g:contains_scripts" xml:space="preserve">
+    <value>يجب ألا يحتوي الحقل على عناصر برمجية (script).</value>
+  </data>
+  <data name="g:invalid_mobile_number" xml:space="preserve">
+    <value>"{PropertyValue}" ليس رقم هاتف محمول صالحًا.</value>
+  </data>
+  <data name="g:invalid_ipv4" xml:space="preserve">
+    <value>يجب أن يكون الحقل عنوان IPv4 صالحًا.</value>
+  </data>
+  <data name="g:invalid_ipv6" xml:space="preserve">
+    <value>يجب أن يكون الحقل عنوان IPv6 صالحًا.</value>
+  </data>
+  <data name="g:invalid_ip" xml:space="preserve">
+    <value>يجب أن يكون الحقل عنوان IP صالحًا.</value>
+  </data>
+  <data name="g:invalid_enum_name" xml:space="preserve">
+    <value>"{PropertyValue}" قيمة غير صالحة للحقل {PropertyName}.</value>
+  </data>
+  <data name="g:must_be_in_past" xml:space="preserve">
+    <value>يجب أن يكون {PropertyName} تاريخًا في الماضي.</value>
+  </data>
+  <data name="g:must_be_in_future" xml:space="preserve">
+    <value>يجب أن يكون {PropertyName} تاريخًا في المستقبل.</value>
+  </data>
+  <data name="g:must_not_be_in_past" xml:space="preserve">
+    <value>يجب ألا يكون {PropertyName} تاريخًا في الماضي.</value>
+  </data>
+  <data name="g:must_not_be_in_future" xml:space="preserve">
+    <value>يجب ألا يكون {PropertyName} تاريخًا في المستقبل.</value>
+  </data>
+  <data name="g:minimum_age" xml:space="preserve">
+    <value>يجب أن يكون {PropertyName} قبل {MinimumAge} سنوات على الأقل.</value>
   </data>
 </root>

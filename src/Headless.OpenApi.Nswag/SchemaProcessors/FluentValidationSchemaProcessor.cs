@@ -5,8 +5,8 @@ using System.Runtime.CompilerServices;
 using FluentValidation;
 using FluentValidation.Internal;
 using FluentValidation.Validators;
-using Headless.Api.SchemaProcessors.FluentValidation;
-using Headless.Api.SchemaProcessors.FluentValidation.Models;
+using Headless.OpenApi.Nswag.SchemaProcessors.FluentValidation;
+using Headless.OpenApi.Nswag.SchemaProcessors.FluentValidation.Models;
 using Headless.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -14,7 +14,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Namotion.Reflection;
 using NJsonSchema.Generation;
 
-namespace Headless.Api.SchemaProcessors;
+namespace Headless.OpenApi.Nswag.SchemaProcessors;
 
 /// <summary>
 /// NSwag schema processor that translates FluentValidation validator rules into OpenAPI schema
@@ -217,8 +217,8 @@ public sealed class FluentValidationSchemaProcessor(
     private void _AddRulesFromIncludedValidators(SchemaProcessorContext context, IValidator validator)
     {
         // Note: IValidatorDescriptor doesn't return IncludeRules so we need to get validators manually.
-        var includeRules = ValidationExtensions
-            .EmptyIfNull(validator as IEnumerable<IValidationRule>)
+        var includeRules = (validator as IEnumerable<IValidationRule>)
+            .EmptyIfNull()
             .Where(rule => rule.HasNoCondition() && rule is IIncludeRule);
 
         var childAdapters = includeRules
@@ -247,7 +247,7 @@ public sealed class FluentValidationSchemaProcessor(
 
             // Create validation context of generic type
             // Equivalent to: new ValidationContext<object>(null);
-            var validationContext = Activator.CreateInstance(adapterMethod.GetParameters()[0].ParameterType, [null!]);
+            var validationContext = Activator.CreateInstance(adapterMethod.GetParameters()[0].ParameterType, [null]);
 
             if (adapterMethod.Invoke(adapter, [validationContext, null]) is not IValidator includeValidator)
             {

@@ -194,7 +194,7 @@ if (options.Validation.ValidateServiceProviderOnStartup) // default: true
 
 Both checks are cheap, deterministic, and `true` in all envs. A single `bool` is acceptable here precisely *because* it is Tier-1 — there is no meaningful "warn" for a container that won't build.
 
-### Options `ValidateOnStart()` is the framework's reference Tier-1 pipeline (real, `Headless.Hosting/Options/OptionsServiceCollectionExtensions.cs`)
+### Options `ValidateOnStart()` is the framework's reference Tier-1 pipeline (real, `Headless.Hosting/Options/HeadlessOptionsServiceCollectionExtensions.cs`)
 
 ```csharp
 return services

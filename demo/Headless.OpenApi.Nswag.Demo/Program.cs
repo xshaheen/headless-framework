@@ -1,7 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Api;
 using Headless.Constants;
+using Headless.OpenApi.Nswag;
+using Headless.OpenApi.Scalar;
 using Microsoft.IdentityModel.Logging;
 using Microsoft.IdentityModel.Tokens;
 

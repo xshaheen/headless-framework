@@ -1,12 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging.Dashboard;
-using Headless.Messaging.Dashboard.K8s;
+using Microsoft.Extensions.DependencyInjection;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Microsoft.Extensions.DependencyInjection;
+namespace Headless.Messaging.Dashboard.K8s;
 
-/// <summary>Contains extension methods to <see cref="IServiceCollection" /> for configuring consistence services.</summary>
+/// <summary>Contains extension methods to <see cref="IServiceCollection" /> for configuring messaging dashboard services.</summary>
 // ReSharper disable once InconsistentNaming
 public static class SetupK8sDashboard
 {
@@ -15,16 +14,16 @@ public static class SetupK8sDashboard
     /// </summary>
     /// <param name="services">The services available in the application.</param>
     /// <param name="configure">An action to configure the <see cref="MessagingDashboardOptionsBuilder" />.</param>
-    /// <param name="k8SOption">An action to configure the <see cref="K8sDiscoveryOptions" />.</param>
+    /// <param name="configureK8s">An action to configure the <see cref="K8sDiscoveryOptions" />.</param>
     /// <returns>The service collection for chaining.</returns>
     public static IServiceCollection AddMessagingDashboardStandalone(
         this IServiceCollection services,
         Action<MessagingDashboardOptionsBuilder>? configure = null,
-        Action<K8sDiscoveryOptions>? k8SOption = null
+        Action<K8sDiscoveryOptions>? configureK8s = null
     )
     {
         new DashboardOptionsExtension(configure ?? (_ => { })).AddServices(services);
-        new K8sDiscoveryOptionsExtension(k8SOption).AddServices(services);
+        new K8sDiscoveryOptionsExtension(configureK8s).AddServices(services);
         return services;
     }
 }

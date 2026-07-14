@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Messaging.Dashboard;
 
-internal sealed class DashboardOptionsExtension(Action<MessagingDashboardOptionsBuilder> configure)
+internal sealed class DashboardOptionsExtension(Action<MessagingDashboardOptionsBuilder>? configure)
     : IMessagesOptionsExtension
 {
     internal MessagingDashboardOptionsBuilder Builder { get; } = new();
@@ -20,21 +20,32 @@ internal sealed class DashboardOptionsExtension(Action<MessagingDashboardOptions
         Builder.Validate();
 
         services.AddSingleton(Builder);
-        services.AddSingleton(Builder.Auth);
-        services.AddScoped<IAuthService, AuthService>();
+
+        // Register dashboard authentication (AuthConfig value + scoped IAuthService) through the
+        // shared extension, copying the values already materialized on the fluent builder's AuthConfig.
+        var auth = Builder.Auth;
+        services.AddDashboardAuthentication(config =>
+        {
+            config.Mode = auth.Mode;
+            config.BasicCredentials = auth.BasicCredentials;
+            config.ApiKey = auth.ApiKey;
+            config.CustomValidator = auth.CustomValidator;
+            config.SessionTimeoutMinutes = auth.SessionTimeoutMinutes;
+            config.HostAuthorizationPolicy = auth.HostAuthorizationPolicy;
+        });
+
         services.AddSingleton<MessagingMetricsEventListener>();
         services.AddMemoryCache();
 
         services.AddRouting();
         services.AddAuthorization();
 
+        // Always register the named policy so the CORS middleware (UseCors, unconditional in the pipeline)
+        // can resolve it: the dashboard endpoints carry RequireCors metadata and would throw at request time
+        // if the CORS middleware never ran. An unconfigured policy is empty (no origins) -> same-origin only.
         services.AddCors(options =>
-        {
-            if (Builder.CorsPolicyBuilder is not null)
-            {
-                options.AddPolicy("Messaging_Dashboard_CORS", Builder.CorsPolicyBuilder);
-            }
-        });
+            options.AddPolicy("HeadlessMessagingDashboardCORS", Builder.CorsPolicyBuilder ?? (static _ => { }))
+        );
 
         // If using host auth, ensure auth services exist
         if (Builder.Auth.Mode == AuthMode.Host)
@@ -79,7 +90,11 @@ public static class MessagingOptionsExtensions
         /// and all dashboard API endpoints. The dashboard is mounted at the path configured via
         /// <c>SetBasePath</c> (default: <c>/messaging</c>).
         /// </summary>
-        /// <param name="configure">An action to configure the dashboard options.</param>
+        /// <param name="configure">
+        /// An action to configure the dashboard options. An authentication mode must be chosen explicitly
+        /// (<c>WithBasicAuth</c>, <c>WithApiKey</c>, <c>WithHostAuthentication</c>, <c>WithCustomAuth</c>, or an
+        /// explicit <c>WithNoAuth()</c> opt-out) or the host fails to start.
+        /// </param>
         /// <returns>The builder for chaining.</returns>
         /// <exception cref="ArgumentNullException">Thrown when <paramref name="configure"/> is <see langword="null"/>.</exception>
         public MessagingSetupBuilder UseDashboard(Action<MessagingDashboardOptionsBuilder> configure)

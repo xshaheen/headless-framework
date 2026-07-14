@@ -6,6 +6,7 @@ using FluentValidation;
 namespace Headless.Blobs.Aws;
 
 /// <summary>Configuration for the AWS S3 blob storage provider.</summary>
+[PublicAPI]
 public sealed class AwsBlobStorageOptions
 {
     /// <summary>
@@ -25,20 +26,15 @@ public sealed class AwsBlobStorageOptions
     /// Canned ACL applied to every uploaded object. Defaults to <see cref="S3CannedACL.Private"/>. Set to
     /// <see langword="null"/> for backends without ACL support (for example Cloudflare R2).
     /// </summary>
+    /// <remarks>
+    /// This is a deliberate full-fidelity pass-through of the AWS SDK type <see cref="S3CannedACL"/>: the whole
+    /// canned-ACL vocabulary is exposed verbatim so no S3 option is lost behind a lossy Headless wrapper. It
+    /// intentionally couples this option to <c>AWSSDK.S3</c>.
+    /// </remarks>
     public S3CannedACL? CannedAcl { get; set; } = S3CannedACL.Private;
 
     /// <summary>Maximum degree of parallelism for bulk operations. Default is 10.</summary>
     public int MaxBulkParallelism { get; set; } = 10;
-
-    /// <summary>
-    /// When <see langword="true"/> (the default), uploads and copies create the target bucket if it does not
-    /// already exist. The check/create runs at most once per bucket per storage instance. Set to
-    /// <see langword="false"/> for backends whose credentials cannot create buckets (for example Cloudflare R2
-    /// object-scoped tokens); a missing bucket then surfaces as an error from the write operation. Explicit
-    /// <see cref="IBlobStorage.CreateContainerAsync"/> calls ensure the container regardless of this setting
-    /// (the result is cached per instance, so the bucket is not re-probed once ensured).
-    /// </summary>
-    public bool AutoCreateContainer { get; set; } = true;
 }
 
 internal sealed class AwsBlobStorageOptionsValidator : AbstractValidator<AwsBlobStorageOptions>

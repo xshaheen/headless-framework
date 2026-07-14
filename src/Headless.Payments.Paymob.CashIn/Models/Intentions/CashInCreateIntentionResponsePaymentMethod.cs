@@ -5,7 +5,7 @@ namespace Headless.Payments.Paymob.CashIn.Models.Intentions;
 public sealed class CashInCreateIntentionResponsePaymentMethod
 {
     [JsonPropertyName("integration_id")]
-    public required int IntegrationId { get; init; }
+    public required long IntegrationId { get; init; }
 
     [JsonPropertyName("alias")]
     public object? Alias { get; init; }

@@ -1,0 +1,16 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>PostgreSQL atomic claim provider for Headless background jobs using Entity Framework Core.</Description>
+    <PackageTags>headless;jobs;entity-framework;postgresql;dotnet</PackageTags>
+    <RootNamespace>Headless.Jobs</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Jobs.EntityFramework\Headless.Jobs.EntityFramework.csproj" />
+  </ItemGroup>
+</Project>

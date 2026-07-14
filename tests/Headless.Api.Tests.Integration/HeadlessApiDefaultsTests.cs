@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
-using Headless.Api;
+using Headless.Api.ServiceDefaults;
 using Headless.Constants;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
@@ -19,9 +19,8 @@ public sealed class HeadlessApiDefaultsTests : TestBase
     {
         // given
         await using var app = await _CreateAppAsync(application =>
-        {
-            application.MapGet("/data", () => Results.Ok(new { Value = "test" }));
-        });
+            application.MapGet("/data", () => Results.Ok(new { Value = "test" }))
+        );
         using var client = _CreateClient(app);
 
         // when
@@ -45,10 +44,7 @@ public sealed class HeadlessApiDefaultsTests : TestBase
     public async Task should_noop_when_default_endpoints_are_mapped_more_than_once()
     {
         // given
-        await using var app = await _CreateAppAsync(application =>
-        {
-            application.MapHeadlessEndpoints();
-        });
+        await using var app = await _CreateAppAsync(application => application.MapHeadlessEndpoints());
         using var client = _CreateClient(app);
 
         // when
@@ -135,10 +131,7 @@ public sealed class HeadlessApiDefaultsTests : TestBase
     {
         // given
         await using var app = await _CreateAppAsync(
-            application =>
-            {
-                application.MapGet("/origin", (HttpRequest request) => $"{request.Scheme}://{request.Host}");
-            },
+            application => application.MapGet("/origin", (HttpRequest request) => $"{request.Scheme}://{request.Host}"),
             options => options.TrustForwardedHeadersFromAnyProxy = true
         );
         using var client = _CreateClient(app);
@@ -168,7 +161,7 @@ public sealed class HeadlessApiDefaultsTests : TestBase
 
         // then
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        response.Content.Headers.ContentType?.MediaType.Should().Be(ContentTypes.Applications.ProblemJson);
+        response.Content.Headers.ContentType?.MediaType.Should()?.Be(ContentTypes.Applications.ProblemJson);
 
         using var document = JsonDocument.Parse(body);
         var root = document.RootElement;

@@ -2,14 +2,12 @@
 
 using Headless.Messaging;
 using Headless.Messaging.InMemory;
-using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class InMemoryConsumerClientTests : TestBase
 {
     private readonly MemoryQueue _queue;
@@ -46,7 +44,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
         var messageNames = new[] { "messageName-1", "messageName-2", "messageName-3" };
 
         // when
-        await _client.SubscribeAsync(messageNames);
+        await _client.SubscribeAsync(messageNames, AbortToken);
 
         // then - should complete without exception
         _client.Should().NotBeNull();
@@ -66,14 +64,14 @@ public sealed class InMemoryConsumerClientTests : TestBase
     public async Task should_invoke_callback_on_message_received()
     {
         // given
-        await _client.SubscribeAsync(["test-messageName"]);
+        await _client.SubscribeAsync(["test-messageName"], AbortToken);
 
-        TransportMessage? receivedMessage = null;
-        object? receivedSender = null;
+        var received = new TaskCompletionSource<(TransportMessage Message, object? Sender)>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
         _client.OnMessageCallback = (msg, sender) =>
         {
-            receivedMessage = msg;
-            receivedSender = sender;
+            received.TrySetResult((msg, sender));
             return Task.CompletedTask;
         };
 
@@ -97,12 +95,11 @@ public sealed class InMemoryConsumerClientTests : TestBase
         // when
         _queue.SendBus(message);
 
-        await Task.Delay(100, AbortToken);
+        var (receivedMessage, receivedSender) = await received.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         await cts.CancelAsync();
 
         // then
-        receivedMessage.Should().NotBeNull();
-        receivedMessage!.Value.GetId().Should().Be("msg-1");
+        receivedMessage.Id.Should().Be("msg-1");
         receivedSender.Should().BeNull();
     }
 
@@ -110,13 +107,13 @@ public sealed class InMemoryConsumerClientTests : TestBase
     public async Task should_commit_and_release_semaphore()
     {
         // given
-        await _client.SubscribeAsync(["test-messageName"]);
+        await _client.SubscribeAsync(["test-messageName"], AbortToken);
 
-        var commitCalled = false;
+        var committed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _client.OnMessageCallback = async (_, sender) =>
         {
             await _client.CommitAsync(sender);
-            commitCalled = true;
+            committed.SetResult();
         };
 
         using var cts = new CancellationTokenSource();
@@ -138,24 +135,24 @@ public sealed class InMemoryConsumerClientTests : TestBase
         // when
         _queue.SendBus(_CreateTestMessage("msg-1", "test-messageName"));
 
-        await Task.Delay(100, AbortToken);
+        await committed.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         await cts.CancelAsync();
 
         // then
-        commitCalled.Should().BeTrue();
+        committed.Task.IsCompletedSuccessfully.Should().BeTrue();
     }
 
     [Fact]
     public async Task should_reject_and_release_semaphore()
     {
         // given
-        await _client.SubscribeAsync(["test-messageName"]);
+        await _client.SubscribeAsync(["test-messageName"], AbortToken);
 
-        var rejectCalled = false;
+        var rejected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _client.OnMessageCallback = async (_, sender) =>
         {
             await _client.RejectAsync(sender);
-            rejectCalled = true;
+            rejected.SetResult();
         };
 
         using var cts = new CancellationTokenSource();
@@ -176,18 +173,18 @@ public sealed class InMemoryConsumerClientTests : TestBase
         // when
         _queue.SendBus(_CreateTestMessage("msg-1", "test-messageName"));
 
-        await Task.Delay(100, AbortToken);
+        await rejected.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         await cts.CancelAsync();
 
         // then
-        rejectCalled.Should().BeTrue();
+        rejected.Task.IsCompletedSuccessfully.Should().BeTrue();
     }
 
     [Fact]
     public async Task should_stop_listening_on_cancellation()
     {
         // given
-        await _client.SubscribeAsync(["test-messageName"]);
+        await _client.SubscribeAsync(["test-messageName"], AbortToken);
 
         using var cts = new CancellationTokenSource();
         var listenerStopped = false;
@@ -209,9 +206,10 @@ public sealed class InMemoryConsumerClientTests : TestBase
 
         await Task.Delay(50, AbortToken);
 
-        // when
+        // when: awaiting the listener task itself (bounded) instead of a fixed post-cancel
+        // delay keeps the assertion deterministic under CI scheduling pressure
         await cts.CancelAsync();
-        await Task.Delay(100, AbortToken);
+        await listenTask.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         // then
         listenerStopped.Should().BeTrue();
@@ -224,7 +222,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
         var logger = Substitute.For<ILogger<MemoryQueue>>();
         var queue = new MemoryQueue(logger);
         var client = new InMemoryConsumerClient(queue, "dispose-group", 1);
-        await client.SubscribeAsync(["dispose-messageName"]);
+        await client.SubscribeAsync(["dispose-messageName"], AbortToken);
 
         TransportMessage? receivedMessage = null;
         client.OnMessageCallback = (msg, _) =>
@@ -251,7 +249,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
         var queue = new MemoryQueue(logger);
         const byte concurrency = 4;
         var client = new InMemoryConsumerClient(queue, "concurrent-group", concurrency);
-        await client.SubscribeAsync(["concurrent-messageName"]);
+        await client.SubscribeAsync(["concurrent-messageName"], AbortToken);
 
         var processedCount = 0;
         var maxConcurrent = 0;
@@ -324,12 +322,18 @@ public sealed class InMemoryConsumerClientTests : TestBase
         var logger = Substitute.For<ILogger<MemoryQueue>>();
         var queue = new MemoryQueue(logger);
         var client = new InMemoryConsumerClient(queue, "sequential-group", 0);
-        await client.SubscribeAsync(["sequential-messageName"]);
+        await client.SubscribeAsync(["sequential-messageName"], AbortToken);
 
         var processOrder = new List<string>();
+        var allProcessed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         client.OnMessageCallback = (msg, _) =>
         {
-            processOrder.Add(msg.GetId());
+            processOrder.Add(msg.Id);
+            if (processOrder.Count == 3)
+            {
+                allProcessed.TrySetResult();
+            }
+
             return Task.CompletedTask;
         };
 
@@ -353,7 +357,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
         queue.SendBus(_CreateTestMessage("2", "sequential-messageName"));
         queue.SendBus(_CreateTestMessage("3", "sequential-messageName"));
 
-        await Task.Delay(200, AbortToken);
+        await allProcessed.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         await cts.CancelAsync();
         await client.DisposeAsync();
 
@@ -380,12 +384,12 @@ public sealed class InMemoryConsumerClientTests : TestBase
     public async Task should_add_group_header_to_delivered_message()
     {
         // given
-        await _client.SubscribeAsync(["test-messageName"]);
+        await _client.SubscribeAsync(["test-messageName"], AbortToken);
 
-        TransportMessage? receivedMessage = null;
+        var received = new TaskCompletionSource<TransportMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
         _client.OnMessageCallback = (msg, _) =>
         {
-            receivedMessage = msg;
+            received.TrySetResult(msg);
             return Task.CompletedTask;
         };
 
@@ -407,12 +411,11 @@ public sealed class InMemoryConsumerClientTests : TestBase
         // when
         _queue.SendBus(_CreateTestMessage("msg-1", "test-messageName"));
 
-        await Task.Delay(100, AbortToken);
+        var receivedMessage = await received.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         await cts.CancelAsync();
 
         // then
-        receivedMessage.Should().NotBeNull();
-        receivedMessage!.Value.GetGroup().Should().Be("test-group");
+        receivedMessage.GetGroup().Should().Be("test-group");
     }
 
     // -------------------------------------------------------------------------
@@ -423,8 +426,8 @@ public sealed class InMemoryConsumerClientTests : TestBase
     public async Task PauseAsync_is_idempotent_when_called_twice()
     {
         // when
-        await _client.PauseAsync();
-        await _client.PauseAsync();
+        await _client.PauseAsync(AbortToken);
+        await _client.PauseAsync(AbortToken);
 
         // then — no exception
     }
@@ -433,7 +436,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
     public async Task ResumeAsync_is_noop_when_not_paused()
     {
         // when
-        await _client.ResumeAsync();
+        await _client.ResumeAsync(AbortToken);
 
         // then — no exception
     }
@@ -442,8 +445,8 @@ public sealed class InMemoryConsumerClientTests : TestBase
     public async Task PauseAsync_then_ResumeAsync_completes_full_cycle()
     {
         // when
-        await _client.PauseAsync();
-        await _client.ResumeAsync();
+        await _client.PauseAsync(AbortToken);
+        await _client.ResumeAsync(AbortToken);
 
         // then — no exception
     }
@@ -452,12 +455,14 @@ public sealed class InMemoryConsumerClientTests : TestBase
     public async Task PauseAsync_blocks_message_delivery()
     {
         // given
-        await _client.SubscribeAsync(["test-messageName"]);
+        await _client.SubscribeAsync(["test-messageName"], AbortToken);
 
         var receivedCount = 0;
+        var received = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _client.OnMessageCallback = (_, _) =>
         {
             Interlocked.Increment(ref receivedCount);
+            received.TrySetResult();
             return Task.CompletedTask;
         };
 
@@ -484,9 +489,9 @@ public sealed class InMemoryConsumerClientTests : TestBase
         // then — message not delivered while paused
         receivedCount.Should().Be(0);
 
-        // cleanup — resume and cancel
+        // cleanup — resume, then wait for the resumed delivery deterministically
         await _client.ResumeAsync(AbortToken);
-        await Task.Delay(200, AbortToken);
+        await received.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         await cts.CancelAsync();
 
         // message should now have been delivered after resume
@@ -501,7 +506,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
     public async Task should_drain_pending_messages_without_processing()
     {
         // given
-        await _client.SubscribeAsync(["test-messageName"]);
+        await _client.SubscribeAsync(["test-messageName"], AbortToken);
 
         _queue.SendBus(_CreateTestMessage("drain-1", "test-messageName"));
         _queue.SendBus(_CreateTestMessage("drain-2", "test-messageName"));
@@ -545,7 +550,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
         var client = new InMemoryConsumerClient(queue, "disposed-group", 1);
         await client.DisposeAsync();
 
-        // when / then
+        // when & then
         var act = client.DrainPendingMessages;
         act.Should().NotThrow();
     }
@@ -556,7 +561,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
         // given — client created but no messages enqueued
         var act = () => _client.DrainPendingMessages();
 
-        // when / then
+        // when & then
         act.Should().NotThrow();
     }
 

@@ -15,17 +15,14 @@ Provides a provider-agnostic audit log API for capturing field-level entity chan
 - `SensitiveValueContext` — passed to `SensitiveValueTransformer`; provides `EntityType`, `PropertyName`, `PropertyClrType`, `Value`.
 - `AuditChangeType` — `Created`, `Updated`, `Deleted`.
 - `AuditLogOptions` — master enable/disable, `AuditByDefault` mode, per-entity/property filters, `CaptureErrorStrategy`, configurable default exclusions, sensitive-value transformer.
-- `AuditLogStorageOptions` — shared storage options: `Schema`, `TableName`, `JsonColumnType`, `CreatedAtColumnType`, `InitializeOnStartup`.
-- `AuditLogJsonColumnType` — `Jsonb`, `Json`, `NvarcharMax`.
 - `IAuditLog<TContext>` — explicit logging of non-mutation events; `TContext` binds the logger to a specific persistence context for multi-context applications.
 - `IReadAuditLog<TContext>` — query abstraction returning `IReadOnlyList<AuditLogEntryData>`; supports filtering by `action`, `entityType`, `entityId`, `userId`, `tenantId`, `from`, `to`, and `limit`.
 - `AuditLogEntryData` — immutable record capturing all fields; `OldValues`/`NewValues` are `Dictionary<string, object?>`.
 - `IAuditLogStore` — storage abstraction called by the change-tracking pipeline; `Save`/`SaveAsync` take the saving `DbContext` and return `IAuditLogStoreEntry` handles.
 - `IAuditLogStoreEntry` — provider handle; orchestrator calls `DiscardPendingChanges()` on failure and `ReleaseAfterCommit()` after success. Both must be idempotent.
 - `IAuditChangeCapture` — scans ChangeTracker entries and produces `AuditLogEntryData` records.
-- `IAuditEntityIdResolver` — patches deferred entity IDs after `SaveChanges` assigns store-generated keys.
+- `IAuditEntityIdResolver` — patches deferred entity IDs and temporary property values (store-generated keys, FKs to just-added principals) after `SaveChanges` assigns real keys.
 - `IAmbientDbTransactionAccessor` — allows raw ADO.NET stores to enroll in the consumer's active `DbConnection`/`DbTransaction` without taking an EF dependency.
-- `HeadlessAuditLogSetupBuilder` — fluent builder passed to `AddHeadlessAuditLog(setup => ...)`; exposes `ConfigureOptions`, `ConfigureStorage`, and `RegisterExtension`.
 
 ## Installation
 
@@ -75,7 +72,7 @@ var entries = await readAuditLog.QueryAsync(
 );
 ```
 
-> This package registers options only. Add `Headless.AuditLog.Storage.EntityFramework`, `Headless.AuditLog.Storage.PostgreSql`, or `Headless.AuditLog.Storage.SqlServer` for storage.
+> This package defines contracts only. Add `Headless.AuditLog.Core` plus exactly one storage provider for DI setup.
 
 ## Configuration
 
@@ -90,22 +87,10 @@ var entries = await readAuditLog.QueryAsync(
 | `DefaultExcludedProperties` | Framework-managed set | Property names skipped during change capture; consumers can add/remove entries. |
 | `CaptureErrorStrategy` | `Continue` | `Continue` logs an error and proceeds; `Throw` aborts the save. |
 
-Storage options (`AuditLogStorageOptions`):
-
-| Option | Default | Description |
-|---|---|---|
-| `Schema` | `"audit"` | Database schema name. |
-| `TableName` | `"audit_log"` | Table name. |
-| `JsonColumnType` | `null` (provider default) | Override JSON column type: `Jsonb`, `Json`, or `NvarcharMax`. |
-| `CreatedAtColumnType` | `null` (provider default) | Override the timestamp column DDL type string. |
-| `InitializeOnStartup` | `true` | Set `false` to skip DDL at startup (raw providers only). |
-
 ## Dependencies
 
-- `Headless.Hosting`
-- `Microsoft.Extensions.DependencyInjection.Abstractions`
-- `Microsoft.Extensions.Options`
+- `Headless.Extensions`
 
 ## Side Effects
 
-None. This is an abstractions package; it registers `AuditLogOptions` and its validator only when `AddHeadlessAuditLog` is called.
+None. This is an abstractions package and registers no services.

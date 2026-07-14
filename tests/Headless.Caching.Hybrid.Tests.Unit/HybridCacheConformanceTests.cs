@@ -9,19 +9,48 @@ namespace Tests;
 public sealed class HybridCacheConformanceTests : CacheConformanceTestsBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
+    private readonly List<object> _disposables = [];
 
     protected override ICache CreateCache(string keyPrefix)
     {
         var l1Options = new InMemoryCacheOptions { CloneValues = true };
         var l1 = new InMemoryCache(_timeProvider, l1Options);
         var l2Options = new InMemoryCacheOptions { CloneValues = true };
-        var l2 = new InMemoryRemoteCacheAdapter(new InMemoryCache(_timeProvider, l2Options));
+        var l2Inner = new InMemoryCache(_timeProvider, l2Options);
+        var l2 = new InMemoryRemoteCacheAdapter(l2Inner);
         var publisher = Substitute.For<IBus>();
         publisher
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
 
-        return new HybridCache(l1, l2, publisher, new HybridCacheOptions(), timeProvider: _timeProvider);
+        var cache = new HybridCache(l1, l2, publisher, new HybridCacheOptions(), timeProvider: _timeProvider);
+
+        // The conformance base never disposes the cache it requests, so this fixture owns teardown.
+        // Dispose the HybridCache before its backing L1/L2 stores (its dispose may drain into L2).
+        _disposables.Add(cache);
+        _disposables.Add(l1);
+        _disposables.Add(l2Inner);
+
+        return cache;
+    }
+
+    protected override async ValueTask DisposeAsyncCore()
+    {
+        foreach (var disposable in _disposables)
+        {
+            switch (disposable)
+            {
+                case IAsyncDisposable asyncDisposable:
+                    await asyncDisposable.DisposeAsync().ConfigureAwait(false);
+                    break;
+                case IDisposable syncDisposable:
+                    syncDisposable.Dispose();
+                    break;
+            }
+        }
+
+        _disposables.Clear();
+        await base.DisposeAsyncCore().ConfigureAwait(false);
     }
 
     protected override ValueTask AdvancePastExpirationAsync(TimeSpan expiration)
@@ -215,4 +244,32 @@ public sealed class HybridCacheConformanceTests : CacheConformanceTestsBase
     [Fact]
     public override Task should_expire_raw_written_payload_after_duration() =>
         base.should_expire_raw_written_payload_after_duration();
+
+    [Fact]
+    public override Task should_add_only_new_set_members_and_compare_strings_case_sensitively() =>
+        base.should_add_only_new_set_members_and_compare_strings_case_sensitively();
+
+    [Fact]
+    public override Task should_evict_set_members_when_set_add_uses_zero_expiration() =>
+        base.should_evict_set_members_when_set_add_uses_zero_expiration();
+
+    [Fact]
+    public override Task should_return_no_value_from_get_set_when_key_is_absent() =>
+        base.should_return_no_value_from_get_set_when_key_is_absent();
+
+    [Fact]
+    public override Task should_return_no_value_from_get_set_when_page_is_past_live_members() =>
+        base.should_return_no_value_from_get_set_when_page_is_past_live_members();
+
+    [Fact]
+    public override Task should_return_no_value_from_get_set_when_all_members_expired() =>
+        base.should_return_no_value_from_get_set_when_all_members_expired();
+
+    [Fact]
+    public override Task should_keep_zero_total_after_decrementing_to_zero() =>
+        base.should_keep_zero_total_after_decrementing_to_zero();
+
+    [Fact]
+    public override Task should_preserve_ttl_when_set_if_higher_is_a_no_op() =>
+        base.should_preserve_ttl_when_set_if_higher_is_a_no_op();
 }

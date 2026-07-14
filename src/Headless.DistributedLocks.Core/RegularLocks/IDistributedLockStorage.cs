@@ -14,6 +14,7 @@ namespace Headless.DistributedLocks;
 /// compare-and-set atomic operations so the mutual-exclusion guarantee holds under concurrent
 /// callers.
 /// </remarks>
+[PublicAPI]
 public interface IDistributedLockStorage
 {
     /// <summary>

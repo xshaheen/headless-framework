@@ -8,7 +8,7 @@ namespace Headless.Payments.Paymob.CashIn.Models.Orders;
 public sealed class CashInOrderMerchant
 {
     [JsonPropertyName("id")]
-    public int Id { get; init; }
+    public long Id { get; init; }
 
     [JsonPropertyName("created_at")]
     [JsonConverter(typeof(AddEgyptZoneOffsetToUnspecifiedDateTimeJsonConverter))]

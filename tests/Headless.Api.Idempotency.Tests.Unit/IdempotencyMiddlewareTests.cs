@@ -2,8 +2,8 @@
 
 using System.Security.Cryptography;
 using Headless.Abstractions;
-using Headless.Api;
 using Headless.Api.Abstractions;
+using Headless.Api.Idempotency;
 using Headless.Caching;
 using Headless.Constants;
 using Headless.DistributedLocks;
@@ -12,11 +12,10 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using IdempotencyMiddleware = Headless.Api.IdempotencyMiddleware;
+using IdempotencyMiddleware = Headless.Api.Idempotency.IdempotencyMiddleware;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
 {
     // ── pass-through ──────────────────────────────────────────────────────────
@@ -138,7 +137,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
 
         context.Response.Body.Position = 0;
         var responseBytes = new byte[context.Response.Body.Length];
-        _ = await context.Response.Body.ReadAsync(responseBytes);
+        _ = await context.Response.Body.ReadAsync(responseBytes, AbortToken);
         responseBytes.Should().Equal(storedBody);
     }
 
@@ -388,7 +387,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
             {
                 nextCalled = true;
                 ctx.Response.StatusCode = 201;
-                return ctx.Response.Body.WriteAsync("def"u8.ToArray()).AsTask();
+                return ctx.Response.Body.WriteAsync("def"u8.ToArray(), AbortToken).AsTask();
             }
         );
 
@@ -489,7 +488,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
 
         var problemDetailsCreator = Substitute.For<IProblemDetailsCreator>();
         problemDetailsCreator
-            .UnprocessableEntity(Arg.Any<Dictionary<string, List<ErrorDescriptor>>>())
+            .UnprocessableEntity(Arg.Any<IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>>>())
             .Returns(new ProblemDetails { Status = 422 });
 
         var middleware = CreateMiddleware(cache: cache, problemDetailsCreator: problemDetailsCreator);
@@ -509,7 +508,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
         problemDetailsCreator
             .Received(1)
             .UnprocessableEntity(
-                Arg.Is<Dictionary<string, List<ErrorDescriptor>>>(d =>
+                Arg.Is<IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>>>(d =>
                     d.ContainsKey("idempotency_key")
                     && d["idempotency_key"].Any(e => e.Code == "g:idempotency_key_reused")
                 )
@@ -554,7 +553,9 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
             .Conflict(
                 Arg.Is<IReadOnlyCollection<ErrorDescriptor>>(es => es.Any(e => e.Code == "g:idempotency_key_reused"))
             );
-        problemDetailsCreator.DidNotReceive().UnprocessableEntity(Arg.Any<Dictionary<string, List<ErrorDescriptor>>>());
+        problemDetailsCreator
+            .DidNotReceive()
+            .UnprocessableEntity(Arg.Any<IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>>>());
     }
 
     // ── in-flight Reject (AE3) ────────────────────────────────────────────────
@@ -683,7 +684,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
 
         var problemDetailsCreator = Substitute.For<IProblemDetailsCreator>();
         problemDetailsCreator
-            .UnprocessableEntity(Arg.Any<Dictionary<string, List<ErrorDescriptor>>>())
+            .UnprocessableEntity(Arg.Any<IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>>>())
             .Returns(new ProblemDetails { Status = 422 });
 
         var middleware = CreateMiddleware(cache: cache, problemDetailsCreator: problemDetailsCreator);
@@ -694,7 +695,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
         problemDetailsCreator
             .Received(1)
             .UnprocessableEntity(
-                Arg.Is<Dictionary<string, List<ErrorDescriptor>>>(d =>
+                Arg.Is<IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>>>(d =>
                     d.ContainsKey("idempotency_key")
                     && d["idempotency_key"].Any(e => e.Code == "g:idempotency_key_reused")
                 )
@@ -905,7 +906,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
 
         var problemDetailsCreator = Substitute.For<IProblemDetailsCreator>();
         problemDetailsCreator
-            .UnprocessableEntity(Arg.Any<Dictionary<string, List<ErrorDescriptor>>>())
+            .UnprocessableEntity(Arg.Any<IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>>>())
             .Returns(new ProblemDetails { Status = 422 });
 
         var middleware = _CreateMiddlewareWithLock(cache, lockProvider, problemDetailsCreator);
@@ -916,7 +917,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
         problemDetailsCreator
             .Received(1)
             .UnprocessableEntity(
-                Arg.Is<Dictionary<string, List<ErrorDescriptor>>>(d =>
+                Arg.Is<IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>>>(d =>
                     d.ContainsKey("idempotency_key")
                     && d["idempotency_key"].Any(e => e.Code == "g:idempotency_key_reused")
                 )
@@ -1087,7 +1088,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
 
         // then
         nextCalled.Should().BeTrue();
-        context.Response.Headers.ContainsKey(HttpHeaderNames.IdempotentReplayed).Should().BeFalse();
+        context.Response.Headers.Should().NotContainKey(HttpHeaderNames.IdempotentReplayed);
         await cache.DidNotReceive().GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>());
         await cache
             .DidNotReceive()
@@ -1309,10 +1310,10 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
     // ── new behaviors introduced by middleware rewrite ───────────────────────
 
     [Fact]
-    public async Task should_remove_marker_when_finalize_cas_throws()
+    public async Task should_remove_marker_and_preserve_response_when_finalize_cas_throws_in_fail_open_mode()
     {
         // given — TryReplaceIfEqualAsync fails after successful next; middleware must remove the
-        // marker and rethrow so the orphan does not block subsequent retries for the TTL window.
+        // marker and preserve the successful handler response in the default FailOpen mode.
         byte[] body = [1, 2, 3];
 
         var cache = Substitute.For<ICache>();
@@ -1338,6 +1339,53 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
             .Returns<ValueTask<bool>>(_ => throw new InvalidOperationException("cache down"));
 
         var middleware = CreateMiddleware(cache: cache);
+        var context = CreateContext(idempotencyKey: "k1", body: body);
+
+        await middleware.InvokeAsync(
+            context,
+            ctx =>
+            {
+                ctx.Response.StatusCode = 200;
+                return Task.CompletedTask;
+            }
+        );
+
+        context.Response.StatusCode.Should().Be(200);
+        await cache.Received(1).RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_remove_marker_and_throw_when_finalize_cas_throws_in_throw_mode()
+    {
+        // given
+        byte[] body = [1, 2, 3];
+
+        var options = Substitute.For<IOptionsMonitor<IdempotencyOptions>>();
+        options.CurrentValue.Returns(new IdempotencyOptions { OnCacheError = OnCacheErrorBehavior.Throw });
+
+        var cache = Substitute.For<ICache>();
+        cache
+            .GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(CacheValue<IdempotencyRecord>.NoValue);
+        cache
+            .TryInsertAsync(
+                Arg.Any<string>(),
+                Arg.Any<IdempotencyRecord>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(true);
+        cache
+            .TryReplaceIfEqualAsync(
+                Arg.Any<string>(),
+                Arg.Any<IdempotencyRecord?>(),
+                Arg.Any<IdempotencyRecord?>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns<ValueTask<bool>>(_ => throw new InvalidOperationException("cache down"));
+
+        var middleware = CreateMiddleware(options: options, cache: cache);
         var context = CreateContext(idempotencyKey: "k1", body: body);
 
         var act = () =>
@@ -1435,7 +1483,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
 
         var problemDetailsCreator = Substitute.For<IProblemDetailsCreator>();
         problemDetailsCreator
-            .UnprocessableEntity(Arg.Any<Dictionary<string, List<ErrorDescriptor>>>())
+            .UnprocessableEntity(Arg.Any<IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>>>())
             .Returns(new ProblemDetails { Status = 422 });
 
         var middleware = CreateMiddleware(cache: cache, problemDetailsCreator: problemDetailsCreator);
@@ -1447,7 +1495,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
         problemDetailsCreator
             .Received(1)
             .UnprocessableEntity(
-                Arg.Is<Dictionary<string, List<ErrorDescriptor>>>(d =>
+                Arg.Is<IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>>>(d =>
                     d["idempotency_key"].Any(e => e.Code == "g:idempotency_key_reused")
                 )
             );
@@ -1552,12 +1600,12 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
 
         var middleware = CreateMiddleware(cache: cache);
         var context = CreateContext(idempotencyKey: "k1", body: body);
-        context.Response.Headers["Content-Type"] = "text/plain"; // upstream value
+        context.Response.ContentType = "text/plain"; // upstream value
 
         await middleware.InvokeAsync(context, _ => Task.CompletedTask);
 
         // Captured value (application/json) wins; upstream text/plain is cleared.
-        context.Response.Headers["Content-Type"].ToString().Should().Be("application/json");
+        context.Response.ContentType.Should().Be("application/json");
     }
 
     [Fact]

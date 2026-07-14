@@ -22,7 +22,7 @@ public static class EnvironmentVariables
         // ReSharper disable once MemberHidesStaticFromOuterClass
         public const string Environment = "ASPNETCORE_ENVIRONMENT";
 
-        /// <summary>Set to <c>true</c> by official .NET container images to indicate the process runs inside a container (<c>DOTNET_RUNNING_IN_CONTAINER</c>).</summary>
+        /// <summary>Set to <see langword="true"/> by official .NET container images to indicate the process runs inside a container (<c>DOTNET_RUNNING_IN_CONTAINER</c>).</summary>
         public const string DotNetRunningInContainer = "DOTNET_RUNNING_IN_CONTAINER";
     }
 

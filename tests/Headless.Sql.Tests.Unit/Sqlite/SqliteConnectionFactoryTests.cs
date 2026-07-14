@@ -2,6 +2,7 @@
 
 using Headless.Sql;
 using Headless.Sql.Sqlite;
+using Headless.Testing.Tests;
 
 namespace Tests.Sqlite;
 
@@ -9,7 +10,7 @@ namespace Tests.Sqlite;
 /// Unit tests for <see cref="SqliteConnectionFactory"/>.
 /// These are structural tests; integration tests require actual database.
 /// </summary>
-public sealed class SqliteConnectionFactoryTests
+public sealed class SqliteConnectionFactoryTests : TestBase
 {
     [Fact]
     public void should_implement_ISqlConnectionFactory()
@@ -54,7 +55,7 @@ public sealed class SqliteConnectionFactoryTests
     public async Task should_create_open_connection_for_in_memory_database()
     {
         // given
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         const string connectionString = "Data Source=:memory:";
         var sut = new SqliteConnectionFactory(connectionString);
 
@@ -70,7 +71,7 @@ public sealed class SqliteConnectionFactoryTests
     public async Task should_implement_interface_explicitly()
     {
         // given
-        var ct = TestContext.Current.CancellationToken;
+        var ct = AbortToken;
         const string connectionString = "Data Source=:memory:";
         ISqlConnectionFactory sut = new SqliteConnectionFactory(connectionString);
 

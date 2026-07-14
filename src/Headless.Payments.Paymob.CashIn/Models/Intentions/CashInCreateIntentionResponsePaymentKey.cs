@@ -5,7 +5,7 @@ namespace Headless.Payments.Paymob.CashIn.Models.Intentions;
 public class CashInCreateIntentionResponsePaymentKey
 {
     [JsonPropertyName("integration")]
-    public required int Integration { get; init; }
+    public required long Integration { get; init; }
 
     [JsonPropertyName("key")]
     public required string Key { get; init; }
@@ -17,7 +17,7 @@ public class CashInCreateIntentionResponsePaymentKey
     public string? IframeId { get; init; }
 
     [JsonPropertyName("order_id")]
-    public required int OrderId { get; init; }
+    public required long OrderId { get; init; }
 
     [JsonPropertyName("redirection_url")]
     public required string RedirectionUrl { get; init; }

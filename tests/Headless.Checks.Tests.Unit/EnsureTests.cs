@@ -138,7 +138,7 @@ public sealed class EnsureTests
     [Fact]
     public void not_null_should_return_value_when_not_null()
     {
-        var reference = "value";
+        const string reference = "value";
         Ensure.NotNull(reference).Should().Be("value");
         Ensure.NotNull((int?)5).Should().Be(5);
     }
@@ -146,7 +146,7 @@ public sealed class EnsureTests
     [Fact]
     public void not_null_should_throw_when_reference_is_null()
     {
-        string? reference = null;
+        const string? reference = null;
         var action = () => Ensure.NotNull(reference);
         var actionWithMessage = () => Ensure.NotNull(reference, "must be set");
 

@@ -12,12 +12,12 @@ Provides email sending via Azure Communication Services using the unified `IEmai
 - Three authentication modes: connection string, endpoint + access key, and endpoint + managed-identity `TokenCredential`
 - Maps `SendSingleEmailRequest` (From, To/Cc/Bcc, Subject, HTML + plain-text bodies, attachments) to an ACS `EmailMessage`
 - Attachment content type derived from the file name via `EmailAttachmentContentType.Resolve()` (`application/octet-stream` fallback)
-- Both a thrown `RequestFailedException` and a completed-but-failed terminal status map to `SendSingleEmailResponse.Failed(...)`
+- A thrown `RequestFailedException`, any other transport/SDK fault, and a completed-but-failed terminal status all map to a failed `SendSingleEmailResponse` that surfaces the provider's error detail (the rejection message, or the terminal status); a `Succeeded` status carries the ACS operation id as `ProviderMessageId`
 - Non-PII logging on failure (operation id, status, error code — no recipient/sender addresses)
 
 ## Design Notes
 
-The send uses `EmailClient.SendAsync(WaitUntil.Completed, …)`, so the call blocks until ACS reaches a terminal state — matching the contract's "accepted for delivery" success semantics. ACS can complete a long-running send with a non-`Succeeded` status **without throwing**, so the sender inspects `operation.Value.Status` and treats any terminal non-`Succeeded` state as a failure (an exception-only check would report rejected mail as delivered). Only `Succeeded` returns `Succeeded()`; unrelated exceptions (cancellation, argument errors) propagate.
+The send uses `EmailClient.SendAsync(WaitUntil.Completed, …)`, so the call blocks until ACS reaches a terminal state — matching the contract's "accepted for delivery" success semantics. ACS can complete a long-running send with a non-`Succeeded` status **without throwing**, so the sender inspects `operation.Value.Status` and treats any terminal non-`Succeeded` state as a failure (an exception-only check would report rejected mail as delivered). Only `Succeeded` returns `Succeeded()`. Every other outcome is returned as a failed response per the `IEmailSender` return-not-throw contract — a thrown `RequestFailedException` and any other transport/SDK fault both surface the provider's error detail — so only the caller's own cancellation and argument validation propagate.
 
 The package depends on `Azure.Core` (not `Azure.Identity`): supply your own `DefaultAzureCredential` through the delegate overload to keep the dependency surface narrow. The `IConfiguration` overload binds only the connection-string and endpoint + access-key modes. ACS's `senderAddress` is a bare string, so the sender's display name is not honored. No custom retry loop is added — `Azure.Core`'s pipeline already retries 429/5xx honoring `Retry-After`. The sender domain must be verified and linked in the Communication Services resource; managed-domain send limits are low (5/min; custom domains 30/min).
 
@@ -56,7 +56,7 @@ builder.Services.AddHeadlessEmails(setup =>
 // Named instance (keyed IEmailSender + keyed EmailClient, resolvable via IEmailSenderProvider):
 builder.Services.AddHeadlessEmails(setup =>
 {
-    setup.UseNoop(); // default (required)
+    setup.UseNoop(); // default (optional)
     setup.AddNamed("alerts", i => i.UseAzure(builder.Configuration.GetSection("AlertsEmail")));
 });
 ```

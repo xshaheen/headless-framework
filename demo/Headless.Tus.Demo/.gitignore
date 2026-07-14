@@ -1,0 +1,8 @@
+# Vite build output (generated from frontend/ via `npm run build`)
+wwwroot/
+
+# Frontend dependencies
+frontend/node_modules/
+
+# TypeScript incremental build state
+frontend/tsconfig.tsbuildinfo

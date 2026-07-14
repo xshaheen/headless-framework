@@ -8,13 +8,13 @@ namespace Headless.Payments.Paymob.CashIn.Models.Payment;
 public sealed class CashInCashCollectionPayResponse
 {
     [JsonPropertyName("id")]
-    public int Id { get; init; }
+    public long Id { get; init; }
 
     [JsonPropertyName("pending")]
     public required string Pending { get; init; }
 
     [JsonPropertyName("amount_cents")]
-    public int AmountCents { get; init; }
+    public long AmountCents { get; init; }
 
     [JsonPropertyName("success")]
     public required string Success { get; init; }
@@ -35,19 +35,19 @@ public sealed class CashInCashCollectionPayResponse
     public required string IsRefunded { get; init; }
 
     [JsonPropertyName("is_3d_secure")]
-    public required string Is3dSecure { get; init; }
+    public required string Is3DSecure { get; init; }
 
     [JsonPropertyName("integration_id")]
-    public int IntegrationId { get; init; }
+    public long IntegrationId { get; init; }
 
     [JsonPropertyName("profile_id")]
-    public int ProfileId { get; init; }
+    public long ProfileId { get; init; }
 
     [JsonPropertyName("has_parent_transaction")]
     public required string HasParentTransaction { get; init; }
 
     [JsonPropertyName("order")]
-    public int Order { get; init; }
+    public long Order { get; init; }
 
     [JsonPropertyName("created_at")]
     [JsonConverter(typeof(AddEgyptZoneOffsetToUnspecifiedDateTimeJsonConverter))]
@@ -60,7 +60,7 @@ public sealed class CashInCashCollectionPayResponse
     public string? TerminalId { get; init; }
 
     [JsonPropertyName("merchant_commission")]
-    public int MerchantCommission { get; init; }
+    public long MerchantCommission { get; init; }
 
     [JsonPropertyName("is_void")]
     public required string IsVoid { get; init; }
@@ -72,16 +72,16 @@ public sealed class CashInCashCollectionPayResponse
     public required string ErrorOccured { get; init; }
 
     [JsonPropertyName("refunded_amount_cents")]
-    public int RefundedAmountCents { get; init; }
+    public long RefundedAmountCents { get; init; }
 
     [JsonPropertyName("captured_amount")]
-    public int CapturedAmount { get; init; }
+    public long CapturedAmount { get; init; }
 
     [JsonPropertyName("merchant_staff_tag")]
     public required string MerchantStaffTag { get; init; }
 
     [JsonPropertyName("owner")]
-    public int Owner { get; init; }
+    public long Owner { get; init; }
 
     [JsonPropertyName("parent_transaction")]
     public string? ParentTransaction { get; init; }

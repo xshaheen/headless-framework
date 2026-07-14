@@ -9,7 +9,7 @@ namespace Headless.CommitCoordination;
 /// <summary>
 /// Shared attach logic for keyed commit signal sources (EF Core, SQL Server, PostgreSQL). Each provider's signal
 /// source differs only in its duplicate-key wording and its own scope dictionary; the enlist mechanics — own a
-/// child DI scope, begin the coordinator scope, wrap it in a self-evicting <see cref="TrackedCommitScope" />, and
+/// child DI scope, begin an independent coordinator root, wrap it in a self-evicting <see cref="TrackedCommitScope" />, and
 /// reject a duplicate key — are identical. Internal: provider packages call this via <c>InternalsVisibleTo</c>.
 /// </summary>
 internal static class CommitSignalSourceAttach
@@ -22,6 +22,11 @@ internal static class CommitSignalSourceAttach
         CancellationToken cancellationToken
     )
     {
+        // MA0045: this method is synchronous by design (see ICommitSignalSource.Attach) — it pushes the ambient
+        // coordinator onto an AsyncLocal<T> stack in the caller's frame, so making it async would strand that push
+        // in a separate execution context and break ICurrentCommitCoordinator.Current. The error-path Dispose()
+        // calls below therefore stay synchronous.
+#pragma warning disable MA0045
         Argument.IsNotNull(bindings);
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -32,7 +37,11 @@ internal static class CommitSignalSourceAttach
 
         try
         {
-            scope = scopeFactory.Begin(ownedServices.ServiceProvider, bindings.Capabilities);
+            // A signal-source attachment represents one physical transaction. If another transaction is
+            // already ambient, joining it would discard these capabilities and bind durable work to the
+            // outer connection/transaction. Keep physical transactions as independent coordinator roots;
+            // logical child scopes still use ICommitScopeFactory.Begin directly.
+            scope = scopeFactory.BeginNew(ownedServices.ServiceProvider, bindings.Capabilities);
         }
         catch
         {
@@ -63,5 +72,6 @@ internal static class CommitSignalSourceAttach
         // The provider both logs the duplicate and builds the exception, keeping the log+throw decision in one
         // place per provider (its own [LoggerMessage] + message wording).
         throw duplicateFault(key);
+#pragma warning restore MA0045
     }
 }

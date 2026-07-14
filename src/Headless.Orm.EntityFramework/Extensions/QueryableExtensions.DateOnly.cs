@@ -3,9 +3,10 @@
 using System.Linq.Expressions;
 using System.Reflection;
 using Headless.Checks;
+using Headless.EntityFramework;
 using Headless.Linq;
 
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.EntityFrameworkCore;
 
 public static partial class QueryableExtensions
@@ -58,19 +59,45 @@ public static partial class QueryableExtensions
         // Query
         var predicate = greaterThanStartPredicate.And(lessThanEndPredicate);
 
-        var query = queryable
-            .Where(predicate)
-            .Select(propSelector)
-            .Select(date => new { At = date, Month = new DateOnly(date.Year, date.Month, 1) });
+        var filteredDates = queryable.Where(predicate).Select(propSelector);
 
-        var lookup = await query.ToLookupAsync(x => x.Month, x => x.At, cancellationToken: token).ConfigureAwait(false);
+        try
+        {
+            var counts = await filteredDates
+                .GroupBy(static date => new { date.Year, date.Month })
+                .Select(static group => new
+                {
+                    group.Key.Year,
+                    group.Key.Month,
+                    Count = group.Count(),
+                })
+                .ToDictionaryAsync(
+                    static x => new DateOnly(x.Year, x.Month, 1),
+                    static x => x.Count,
+                    cancellationToken: token
+                )
+                .ConfigureAwait(false);
 
-        return from n in Enumerable.Range(1, months)
-            let month = first.AddMonths(n)
-            select new EntityPerDateOnly(month, lookup[month].Count());
+            return from n in Enumerable.Range(1, months)
+                let month = first.AddMonths(n)
+                select new EntityPerDateOnly(month, counts.GetValueOrDefault(month));
+        }
+        catch (InvalidOperationException exception) when (_IsQueryTranslationFailure(exception))
+        {
+            var query = filteredDates.Select(date => new { At = date, Month = new DateOnly(date.Year, date.Month, 1) });
+
+            var lookup = await query
+                .ToLookupAsync(x => x.Month, x => x.At, cancellationToken: token)
+                .ConfigureAwait(false);
+
+            return from n in Enumerable.Range(1, months)
+                let month = first.AddMonths(n)
+                select new EntityPerDateOnly(month, lookup[month].Count());
+        }
+    }
+
+    private static bool _IsQueryTranslationFailure(InvalidOperationException exception)
+    {
+        return exception.Message.Contains("could not be translated", StringComparison.Ordinal);
     }
 }
-
-/// <summary>A month bucket returned by <c>CountPerMonthAsync</c> with a <c>DateOnly</c> date selector.</summary>
-[PublicAPI]
-public sealed record EntityPerDateOnly(DateOnly Date, int Count);

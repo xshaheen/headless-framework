@@ -3,7 +3,8 @@
 using Azure;
 using Azure.Storage.Blobs.Specialized;
 
-namespace Headless.Tus.Services;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Tus;
 
 public sealed partial class TusAzureStore
 {
@@ -16,6 +17,8 @@ public sealed partial class TusAzureStore
     /// <returns><see langword="true"/> if the blob exists; <see langword="false"/> otherwise</returns>
     public async Task<bool> FileExistAsync(string fileId, CancellationToken cancellationToken)
     {
+        await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
+
         var blobClient = _GetBlobClient(fileId);
 
         try
@@ -40,6 +43,8 @@ public sealed partial class TusAzureStore
     /// <returns>declared upload length in bytes, or <see langword="null"/> if not yet known</returns>
     public async Task<long?> GetUploadLengthAsync(string fileId, CancellationToken cancellationToken)
     {
+        await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
+
         var blobInfo = await _GetTusFileInfoAsync(fileId, cancellationToken).ConfigureAwait(false);
 
         return blobInfo?.Metadata.UploadLength;
@@ -61,13 +66,10 @@ public sealed partial class TusAzureStore
     /// </remarks>
     public async Task<long> GetUploadOffsetAsync(string fileId, CancellationToken cancellationToken)
     {
-        var blobInfo = await _GetTusFileInfoAsync(fileId, cancellationToken).ConfigureAwait(false);
+        await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
 
-        if (blobInfo == null)
-        {
-            return 0;
-        }
-
+        // No GetProperties pre-check: _GetCommittedBlocksAsync maps a missing blob (404) to an empty list,
+        // so the offset is 0 either way and this method costs one round-trip instead of two per HEAD/PATCH.
         var blockBlobClient = _containerClient.GetBlockBlobClient(_GetBlobName(fileId));
         var blockList = await _GetCommittedBlocksAsync(blockBlobClient, cancellationToken).ConfigureAwait(false);
 

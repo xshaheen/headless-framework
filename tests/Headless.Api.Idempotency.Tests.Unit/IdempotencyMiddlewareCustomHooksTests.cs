@@ -1,15 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
-using Headless.Api;
+using Headless.Api.Idempotency;
 using Headless.Caching;
-using Headless.Primitives;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
-using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using IdempotencyMiddleware = Headless.Api.IdempotencyMiddleware;
+using IdempotencyMiddleware = Headless.Api.Idempotency.IdempotencyMiddleware;
 
 namespace Tests;
 
@@ -336,12 +334,7 @@ public sealed class IdempotencyMiddlewareCustomHooksTests : IdempotencyMiddlewar
         // Endpoint metadata adds PUT to the methods
         var endpoint = new Endpoint(
             _ => Task.CompletedTask,
-            new EndpointMetadataCollection(
-                new IdempotencyMetadata(o =>
-                {
-                    ((HashSet<string>)o.Methods).Add("PUT");
-                })
-            ),
+            new EndpointMetadataCollection(new IdempotencyMetadata(o => ((HashSet<string>)o.Methods).Add("PUT"))),
             "test"
         );
         context.Features.Set<IEndpointFeature>(new EndpointFeature { Endpoint = endpoint });

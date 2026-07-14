@@ -1,3 +1,4 @@
+using Headless.Messaging;
 using Headless.Messaging.Dashboard;
 
 var builder = WebApplication.CreateBuilder(args);

@@ -81,15 +81,15 @@ builder.Services.AddHeadlessSettings(setup => setup.UseEntityFramework<AppDbCont
 builder.Services.AddSettingDefinitionProvider<AppSettingDefinitionProvider>();
 ```
 
-Define settings via `ISettingDefinitionProvider.Define()`. Read via `ISettingManager.FindAsync()`, write via `SetAsync()`. Provider hierarchy resolves from lowest to highest priority: DefaultValue → Configuration → Global → Tenant → User (User wins).
+Define settings via `ISettingDefinitionProvider.Define()`. Read via `ISettingManager.GetAsync()`, write via `SetAsync()`. Provider hierarchy resolves from lowest to highest priority: DefaultValue → Configuration → Global → Tenant → User (User wins).
 
 ## Agent Instructions
 
 - Use this for **runtime-changeable settings**, not for static configuration. For static config, use `IOptions<T>` / `IConfiguration`.
 - Always install all three packages together. `Headless.Settings.Abstractions` alone gives nothing runnable; `Headless.Settings.Core` requires a storage backend.
-- `ISettingManager` is the primary entry point. Call `FindAsync(name)` to read; `SetAsync(name, value, providerName, providerKey)` to write.
+- `ISettingManager` is the primary entry point. Call `GetAsync(name)` to read; `SetAsync(name, value, providerName, providerKey)` to write. `GetAsync` returns a never-`null` `SettingValue(Name, Value, Provider)`: on a miss both `Value` and `Provider` are `null`; on a hit `Provider` (a `SettingValueProvider(Name, Key)`) identifies the resolving provider and its per-provider key. It still throws `ConflictException` when the setting is undefined.
 - Provider names are constants on `SettingValueProviderNames`: `DefaultValue`, `Configuration`, `Global`, `Tenant`, `User`. Note: the default-value constant is `DefaultValue`, not `Default`.
-- Scoped extension members are available for each provider scope: `FindForTenantAsync` / `SetForTenantAsync`, `FindForUserAsync` / `SetForUserAsync`, `FindGlobalAsync` / `SetGlobalAsync`, `FindDefaultAsync`, `FindInConfigurationAsync`. Use `IsTrueAsync` / `IsFalseAsync` / `FindAsync<T>` / `SetAsync<T>` on `ISettingManager` for typed or boolean reads.
+- Scoped extension members are available for each provider scope: `GetForTenantAsync` / `SetForTenantAsync`, `GetForUserAsync` / `SetForUserAsync`, `GetGlobalAsync` / `SetGlobalAsync`, `GetDefaultAsync`, `GetInConfigurationAsync`. The raw (non-generic) `Get*` scoped helpers return the unwrapped `string?` value; the generic `Get*<T>` helpers deserialize the JSON value to `T`. Use `IsTrueAsync` / `IsFalseAsync` / `GetAsync<T>` / `SetAsync<T>` on `ISettingManager` for typed or boolean reads.
 - For sensitive settings, set `isEncrypted: true` on `SettingDefinition` — Core handles encryption/decryption via `IStringEncryptionService` automatically.
 - Core registers a `SettingsInitializationBackgroundService` hosted service — do not register your own init logic for settings.
 - `AddHeadlessSettings(...)` is the single entry point — it registers the management core automatically alongside the storage provider. Only one storage provider (EF / PostgreSQL / SqlServer) may be registered; a second registration throws at startup.
@@ -98,8 +98,9 @@ Define settings via `ISettingDefinitionProvider.Define()`. Read via `ISettingMan
 - For EF storage: register `AddDbContextFactory<TContext>()` and call `modelBuilder.AddHeadlessSettings(this)` in `OnModelCreating` before calling `setup.UseEntityFramework<TContext>()`. The `(SettingsStorageOptions)` overload exists when you already hold the options object.
 - Required services before `AddHeadlessSettings(...)`: `TimeProvider`, caching (`ICache`), distributed lock (`IDistributedLock`), and `IStringEncryptionService`. The core throws `InvalidOperationException` on startup if encryption is missing.
 - `DeleteAsync(providerName, providerKey)` removes all setting values for a given provider and key — use it when cleaning up a deleted tenant or user.
-- Bypassing `ISettingManager` to write directly to `ISettingValueRecordRepository` will not invalidate cached values. Always write through `ISettingManager`.
-- `SettingDefinition.IsInherited = false` disables fallback for that setting: if no value exists at the requested provider, `null` is returned regardless of lower-priority providers.
+- Both `ISettingManager` and direct `ISettingValueRecordRepository` writes invalidate cached values (the repository removes the affected key after `SaveChangesAsync`). Only writes that bypass the repository entirely (raw SQL, direct `DbContext`) leave the cache stale.
+- `SettingDefinition.IsInherited = false` disables fallback for that setting: if no value exists at the requested provider, `GetAsync` returns a `SettingValue` with a `null` `Value` regardless of lower-priority providers.
+- `SettingDefinition` instances are minted through the `ISettingDefinitionContext.Add(name, ...)` factory (the constructor is `internal`). The factory returns the created definition so you can then mutate `Providers` or `ExtraProperties` on it.
 - Custom value providers must implement `ISettingValueReadProvider` (read-only) or `ISettingValueProvider` (read-write). Register with `services.AddSettingValueProvider<T>()`. The last-registered provider has the highest resolution priority.
 
 ## Core Concepts
@@ -110,7 +111,11 @@ A *setting definition* describes a setting's metadata: its name, default value, 
 
 ### Value Providers and Resolution Order
 
-Setting values are resolved by a chain of `ISettingValueReadProvider` implementations registered in priority order. The five built-in providers, from lowest to highest priority, are: `DefaultValue` (reads `SettingDefinition.DefaultValue`), `Configuration` (reads from `IConfiguration`), `Global` (application-wide store), `Tenant` (tenant-scoped store), and `User` (user-scoped store). `ISettingManager.FindAsync` walks the chain from highest to lowest priority and returns the first non-null result. The last-registered provider has the highest priority. Custom providers added via `services.AddSettingValueProvider<T>()` are appended after `User` and therefore have the highest resolution priority.
+Setting values are resolved by a chain of `ISettingValueReadProvider` implementations registered in priority order. The five built-in providers, from lowest to highest priority, are: `DefaultValue` (reads `SettingDefinition.DefaultValue`), `Configuration` (reads from `IConfiguration`), `Global` (application-wide store), `Tenant` (tenant-scoped store), and `User` (user-scoped store). `ISettingManager.GetAsync` walks the chain from highest to lowest priority and returns the first non-null result wrapped in a `SettingValue` whose `Provider` names the resolving provider. The last-registered provider has the highest priority. Custom providers added via `services.AddSettingValueProvider<T>()` are appended after `User` and therefore have the highest resolution priority.
+
+### Tenancy Model
+
+Settings do **not** carry a first-class `TenantId` column or implement `IMultiTenant`. Tenancy (and every other scope) is expressed uniformly through `ProviderName` / `ProviderKey` on `SettingValueRecord`: a tenant-scoped value is simply `ProviderName == "Tenant"` with the tenant id in `ProviderKey`. This is a deliberate divergence from `PermissionGrantRecord` (which does carry `TenantId`), not drift — one scoping value provider expresses tenant, user, global, and custom scopes without a dedicated column.
 
 ### Static Store vs. Dynamic Store
 
@@ -118,7 +123,7 @@ The *static store* (`IStaticSettingDefinitionStore`) builds the setting catalog 
 
 ### Setting Value Caching
 
-`SettingValueStore` caches resolved setting values to avoid repeated database reads. The cache is backed by the registered `ICache`. When `ISettingManager.SetAsync` or `DeleteAsync` writes or removes a value, `SettingValueStore` updates or evicts the affected cache entries directly through `ICache` (a distributed cache propagates the eviction across nodes via `CacheInvalidationMessage`). Bypassing `ISettingManager` to write values directly to the repository breaks this invalidation path.
+`SettingValueStore` caches resolved setting values to avoid repeated database reads. The cache is backed by the registered `ICache`. When `ISettingManager.SetAsync` or `DeleteAsync` writes or removes a value, `SettingValueStore` updates or evicts the affected cache entries directly through `ICache` (a distributed cache propagates the eviction across nodes via `CacheInvalidationMessage`). Direct `ISettingValueRecordRepository` writes also evict the affected cache entry (removed after `SaveChangesAsync`), so a repository-level write is reflected on the next read. Only writes that bypass the repository entirely (raw SQL, direct `DbContext`) leave the cache stale.
 
 ### Startup Initialization
 
@@ -148,11 +153,12 @@ Provides a storage-independent API for managing application settings with suppor
 - `ISettingDefinitionManager` — looks up and enumerates all registered setting definitions
 - `ISettingDefinitionProvider` — contributes setting definitions at startup via `ISettingDefinitionContext`
 - `SettingDefinition` — describes a setting's name, default value, display metadata, encryption flag, inheritance flag, client-visibility flag, allowed providers, and custom properties
-- `SettingValue` — record returned by `GetAllAsync` carrying the resolved string value
-- `ISettingDefinitionContext` — context passed to `ISettingDefinitionProvider.Define()`; exposes `Add(params ReadOnlySpan<SettingDefinition>)`, `GetOrDefault(name)`, and `GetAll()`
+- `SettingValue` — immutable record `SettingValue(string Name, string? Value, SettingValueProvider? Provider = null)` returned by `GetAsync` and `GetAllAsync`; `Provider` attributes the resolving value provider (or `null` on a miss)
+- `SettingValueProvider` — immutable record `SettingValueProvider(string Name, string? Key)` identifying the provider name and its per-provider key
+- `ISettingDefinitionContext` — context passed to `ISettingDefinitionProvider.Define()`; exposes the factory `Add(name, defaultValue?, displayName?, description?, isVisibleToClients?, isInherited?, isEncrypted?)` (creates, registers, and returns the definition), plus `GetOrDefault(name)` and `GetAll()`
 - `SettingValueProviderNames` — constants `DefaultValue`, `Configuration`, `Global`, `Tenant`, `User` for targeting built-in providers
-- General extension members on `ISettingManager`: `IsTrueAsync`, `IsFalseAsync`, `FindAsync<T>` (deserializes JSON), `SetAsync<T>` (serializes to JSON)
-- Scoped extension members: `FindForTenantAsync` / `SetForTenantAsync` / `GetAllForTenantAsync` (and `*ForCurrentTenant*` variants), equivalent `*ForUser*` / `*ForCurrentUser*` set, `FindGlobalAsync` / `SetGlobalAsync` / `GetAllGlobalAsync`, `FindDefaultAsync` / `GetAllDefaultAsync`, `FindInConfigurationAsync` / `GetAllInConfigurationAsync`
+- General extension members on `ISettingManager`: `IsTrueAsync`, `IsFalseAsync`, `GetAsync<T>` (deserializes JSON), `SetAsync<T>` (serializes to JSON)
+- Scoped extension members: `GetForTenantAsync` / `SetForTenantAsync` / `GetAllForTenantAsync` (and `*ForCurrentTenant*` variants), equivalent `*ForUser*` / `*ForCurrentUser*` set, `GetGlobalAsync` / `SetGlobalAsync` / `GetAllGlobalAsync`, `GetDefaultAsync` / `GetAllDefaultAsync`, `GetInConfigurationAsync` / `GetAllInConfigurationAsync`. The `GetAll*` helpers return `IReadOnlyList<SettingValue>`
 
 ### Installation
 
@@ -197,14 +203,13 @@ public sealed class AppSettingDefinitionProvider : ISettingDefinitionProvider
 {
     public void Define(ISettingDefinitionContext context)
     {
+        context.Add(name: "App.MaxFileSize", defaultValue: "10485760", displayName: "Maximum File Size");
+
         context.Add(
-            new SettingDefinition(name: "App.MaxFileSize", defaultValue: "10485760", displayName: "Maximum File Size"),
-            new SettingDefinition(
-                name: "App.ApiKey",
-                displayName: "API Key",
-                isEncrypted: true,
-                isVisibleToClients: false
-            )
+            name: "App.ApiKey",
+            displayName: "API Key",
+            isEncrypted: true,
+            isVisibleToClients: false
         );
     }
 }
@@ -286,11 +291,9 @@ public sealed class AppSettingDefinitionProvider : ISettingDefinitionProvider
 {
     public void Define(ISettingDefinitionContext context)
     {
-        context.Add(
-            new SettingDefinition(name: "App.MaxFileSize", displayName: "Maximum File Size", defaultValue: "10485760")
-        );
+        context.Add(name: "App.MaxFileSize", displayName: "Maximum File Size", defaultValue: "10485760");
 
-        context.Add(new SettingDefinition(name: "App.ApiKey", displayName: "API Key", isEncrypted: true));
+        context.Add(name: "App.ApiKey", displayName: "API Key", isEncrypted: true);
     }
 }
 ```
@@ -302,8 +305,8 @@ public sealed class ConfigService(ISettingManager settings)
 {
     public async Task<int> GetMaxFileSizeAsync(CancellationToken ct)
     {
-        var value = await settings.FindAsync("App.MaxFileSize", cancellationToken: ct);
-        return int.TryParse(value, out var size) ? size : 10485760;
+        var setting = await settings.GetAsync("App.MaxFileSize", cancellationToken: ct);
+        return int.TryParse(setting.Value, out var size) ? size : 10485760;
     }
 
     public async Task SetTenantApiKeyAsync(string tenantId, string apiKey, CancellationToken ct)

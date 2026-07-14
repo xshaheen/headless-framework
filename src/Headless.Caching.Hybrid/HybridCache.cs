@@ -40,7 +40,7 @@ public sealed partial class HybridCache(
     IInMemoryCache l1Cache,
     IRemoteCache l2Cache,
     IBus publisher,
-    HybridCacheOptions options,
+    HybridCacheOptions cacheOptions,
     ILogger<HybridCache>? logger = null,
     TimeProvider? timeProvider = null,
     ICacheFactoryLockProvider? factoryLockProvider = null
@@ -48,8 +48,8 @@ public sealed partial class HybridCache(
 {
     private readonly ILogger _logger = logger ?? NullLogger<HybridCache>.Instance;
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
-    private readonly string _instanceId = options.InstanceId ?? Guid.NewGuid().ToString("N");
-    private readonly string? _cacheName = options.CacheName;
+    private readonly string _instanceId = cacheOptions.InstanceId ?? Guid.NewGuid().ToString("N");
+    private readonly string? _cacheName = cacheOptions.CacheName;
     private readonly FactoryCacheCoordinator _coordinator = new(
         timeProvider ?? TimeProvider.System,
         logger,
@@ -61,7 +61,7 @@ public sealed partial class HybridCache(
     private int _isDisposed;
 
     /// <inheritdoc />
-    public CacheEntryOptions? DefaultEntryOptions { get; } = options.DefaultEntryOptions;
+    public CacheEntryOptions? DefaultEntryOptions { get; } = cacheOptions.DefaultEntryOptions;
 
     /// <summary>Gets the number of L1 cache hits.</summary>
     public long LocalCacheHits => Interlocked.Read(ref _localCacheHits);
@@ -78,9 +78,9 @@ public sealed partial class HybridCache(
     /// singleton, named keyed instances, or direct construction) and is torn down in DisposeAsync.
     /// </remarks>
     internal HybridCacheRecoveryQueue? RecoveryQueue { get; } =
-        options.EnableAutoRecovery
+        cacheOptions.EnableAutoRecovery
             ? new HybridCacheRecoveryQueue(
-                options,
+                cacheOptions,
                 timeProvider ?? TimeProvider.System,
                 logger ?? NullLogger<HybridCache>.Instance
             )
@@ -247,407 +247,6 @@ public sealed partial class HybridCache(
         _logger.LogUnknownInvalidateCacheMessage();
     }
 
-    #region ICache - Get Operations
-
-    /// <inheritdoc />
-    public async ValueTask<CacheValue<T>> GetOrAddAsync<T>(
-        string key,
-        Func<CancellationToken, ValueTask<T?>> factory,
-        CacheEntryOptions options,
-        CancellationToken cancellationToken = default
-    )
-    {
-        _ThrowIfDisposed();
-        Argument.IsNotNullOrEmpty(key);
-        Argument.IsNotNull(factory);
-
-        cancellationToken.ThrowIfCancellationRequested();
-
-        return await _coordinator.GetOrAddAsync(this, key, factory, options, cancellationToken).ConfigureAwait(false);
-    }
-
-    /// <inheritdoc />
-    public async ValueTask<CacheValue<T>> GetOrAddAsync<T>(
-        string key,
-        Func<CacheFactoryContext<T>, CancellationToken, ValueTask<CacheFactoryResult<T>>> factory,
-        CacheEntryOptions options,
-        CancellationToken cancellationToken = default
-    )
-    {
-        _ThrowIfDisposed();
-        Argument.IsNotNullOrEmpty(key);
-        Argument.IsNotNull(factory);
-
-        cancellationToken.ThrowIfCancellationRequested();
-
-        return await _coordinator.GetOrAddAsync(this, key, factory, options, cancellationToken).ConfigureAwait(false);
-    }
-
-    /// <inheritdoc />
-    public async ValueTask RefreshAsync(string key, CancellationToken cancellationToken = default)
-    {
-        _ThrowIfDisposed();
-        Argument.IsNotNullOrEmpty(key);
-        cancellationToken.ThrowIfCancellationRequested();
-
-        if (_IsDistributedCacheCircuitClosed())
-        {
-            try
-            {
-                await l2Cache.RefreshAsync(key, cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception exception)
-                when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
-            {
-                _OpenDistributedCacheCircuit(exception, key);
-                _logger.LogFailedToRefreshL2Cache(exception, key);
-            }
-        }
-
-        await LocalCache.RefreshAsync(key, cancellationToken).ConfigureAwait(false);
-    }
-
-    /// <inheritdoc />
-    public async ValueTask<CacheValue<T>> GetAsync<T>(string key, CancellationToken cancellationToken = default)
-    {
-        _ThrowIfDisposed();
-        Argument.IsNotNullOrEmpty(key);
-        cancellationToken.ThrowIfCancellationRequested();
-
-        var cacheValue = await LocalCache.GetAsync<T>(key, cancellationToken).ConfigureAwait(false);
-        if (cacheValue.HasValue)
-        {
-            _logger.LogLocalCacheHit(key);
-            Interlocked.Increment(ref _localCacheHits);
-            return cacheValue;
-        }
-
-        _logger.LogLocalCacheMiss(key);
-        var l2Read = await _ReadFromL2Async(
-                key,
-                ct => l2Cache.GetWithExpirationAsync<T>(key, ct),
-                _SelectDistributedReadTimeout(hasLocalFallback: false, softCanDegradeToMiss: true),
-                DistributedCacheTimeoutKind.Soft,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        if (!l2Read.IsSuccess)
-        {
-            if (l2Read.Exception is { } exception)
-            {
-                _logger.LogFailedToReadFromL2Cache(exception, key);
-            }
-
-            return CacheValue<T>.NoValue;
-        }
-
-        cacheValue = l2Read.Value.Value;
-
-        if (cacheValue.HasValue)
-        {
-            var localExpiration = _GetLocalExpiration(l2Read.Value.Expiration);
-            _logger.LogSettingLocalCacheKey(key, localExpiration);
-            await LocalCache
-                .UpsertAsync(key, cacheValue.Value, localExpiration, cancellationToken)
-                .ConfigureAwait(false);
-        }
-
-        return cacheValue;
-    }
-
-    /// <inheritdoc />
-    public async ValueTask<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(
-        IEnumerable<string> cacheKeys,
-        CancellationToken cancellationToken = default
-    )
-    {
-        _ThrowIfDisposed();
-        Argument.IsNotNull(cacheKeys);
-        cancellationToken.ThrowIfCancellationRequested();
-
-        var keysCollection = cacheKeys as ICollection<string> ?? cacheKeys.ToList();
-        if (keysCollection.Count == 0)
-        {
-            return new Dictionary<string, CacheValue<T>>(StringComparer.Ordinal);
-        }
-
-        var localValues = await LocalCache.GetAllAsync<T>(keysCollection, cancellationToken).ConfigureAwait(false);
-
-        // Collect keys that weren't found in local cache
-        var missedKeys = new List<string>(keysCollection.Count);
-        foreach (var kvp in localValues)
-        {
-            if (kvp.Value.HasValue)
-            {
-                _logger.LogLocalCacheHit(kvp.Key);
-            }
-            else
-            {
-                _logger.LogLocalCacheMiss(kvp.Key);
-                missedKeys.Add(kvp.Key);
-            }
-        }
-
-        Interlocked.Add(ref _localCacheHits, keysCollection.Count - missedKeys.Count);
-
-        // All keys found in local cache
-        if (missedKeys.Count == 0)
-        {
-            return localValues;
-        }
-
-        var result = new Dictionary<string, CacheValue<T>>(localValues, StringComparer.Ordinal);
-        var distributedRead = await _ReadFromL2Async(
-                // Diagnostic-only label: _ReadFromL2Async uses this key solely for timeout/circuit log fields, not
-                // for the read itself (the read is the delegate below). A synthetic bulk marker keeps the logs from
-                // looking single-key.
-                $"[bulk:{missedKeys.Count}]",
-                ct => l2Cache.GetAllWithExpirationAsync<T>(missedKeys, ct),
-                _SelectDistributedReadTimeout(hasLocalFallback: false, softCanDegradeToMiss: true),
-                DistributedCacheTimeoutKind.Soft,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        if (!distributedRead.IsSuccess)
-        {
-            // Include a small key sample so operators can identify the affected keys without a single-key flood.
-            var keySample = string.Join(", ", missedKeys.Take(5));
-
-            if (distributedRead.Exception is { } exception)
-            {
-                // Degrade to the partial L1 result, mirroring the single-key GetAsync contract:
-                // an L2 read fault is logged then swallowed so callers always get a best-effort response.
-                _logger.LogFailedBulkL2CacheOperationWithSample(exception, missedKeys.Count, keySample);
-            }
-            else
-            {
-                // Timeout or circuit-open: same degrade contract, but no exception to attach to the log entry.
-                _logger.LogBulkDistributedCacheReadDegradedWithSample(
-                    missedKeys.Count,
-                    distributedRead.Status.ToString(),
-                    keySample
-                );
-            }
-
-            return result;
-        }
-
-        var distributedResults = distributedRead.Value!;
-
-        // Mirror each L2 hit into L1 capped by its exact remaining L2 logical expiration (so the L1 copy never
-        // outlives L2 freshness). The enriched bulk read returns value + expiration in one call — no separate
-        // per-key expiration round-trips needed. Collect the hits first, then fan the L1 upserts out in parallel
-        // (each carries its own capped expiration, so a single shared-expiration batch call cannot be used).
-        List<Task>? localUpserts = null;
-
-        foreach (var kvp in distributedResults)
-        {
-            result[kvp.Key] = kvp.Value.Value;
-
-            if (kvp.Value.Value is { HasValue: true, Value: not null })
-            {
-                var localExpiration = _GetLocalExpiration(kvp.Value.Expiration);
-                _logger.LogSettingLocalCacheKey(kvp.Key, localExpiration);
-                (localUpserts ??= []).Add(
-                    LocalCache.UpsertAsync(kvp.Key, kvp.Value.Value.Value, localExpiration, cancellationToken).AsTask()
-                );
-            }
-        }
-
-        if (localUpserts is not null)
-        {
-            await Task.WhenAll(localUpserts).ConfigureAwait(false);
-        }
-
-        return result;
-    }
-
-    /// <inheritdoc />
-    public async ValueTask<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(
-        string prefix,
-        CancellationToken cancellationToken = default
-    )
-    {
-        _ThrowIfDisposed();
-        Argument.IsNotNull(prefix);
-        cancellationToken.ThrowIfCancellationRequested();
-
-        // For prefix queries, go directly to L2 as L1 may not have all matching keys
-        return await l2Cache.GetByPrefixAsync<T>(prefix, cancellationToken).ConfigureAwait(false);
-    }
-
-    /// <inheritdoc />
-    public async ValueTask<IReadOnlyList<string>> GetAllKeysByPrefixAsync(
-        string prefix,
-        CancellationToken cancellationToken = default
-    )
-    {
-        _ThrowIfDisposed();
-        Argument.IsNotNull(prefix);
-        cancellationToken.ThrowIfCancellationRequested();
-
-        return await l2Cache.GetAllKeysByPrefixAsync(prefix, cancellationToken).ConfigureAwait(false);
-    }
-
-    /// <inheritdoc />
-    public async ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default)
-    {
-        _ThrowIfDisposed();
-        cancellationToken.ThrowIfCancellationRequested();
-
-        return await l2Cache.GetCountAsync(prefix, cancellationToken).ConfigureAwait(false);
-    }
-
-    /// <inheritdoc />
-    public async ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default)
-    {
-        _ThrowIfDisposed();
-        Argument.IsNotNullOrEmpty(key);
-        cancellationToken.ThrowIfCancellationRequested();
-
-        // Check local cache first
-        var localExists = await LocalCache.ExistsAsync(key, cancellationToken).ConfigureAwait(false);
-        if (localExists)
-        {
-            _logger.LogLocalCacheHit(key);
-            Interlocked.Increment(ref _localCacheHits);
-            return true;
-        }
-
-        _logger.LogLocalCacheMiss(key);
-        var l2Read = await _ReadFromL2Async(
-                key,
-                ct => l2Cache.ExistsAsync(key, ct),
-                _SelectDistributedReadTimeout(hasLocalFallback: false, softCanDegradeToMiss: true),
-                DistributedCacheTimeoutKind.Soft,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        if (!l2Read.IsSuccess)
-        {
-            if (l2Read.Exception is { } exception)
-            {
-                _logger.LogFailedToReadFromL2Cache(exception, key);
-            }
-
-            return false;
-        }
-
-        return l2Read.Value;
-    }
-
-    /// <inheritdoc />
-    public async ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default)
-    {
-        _ThrowIfDisposed();
-        Argument.IsNotNullOrEmpty(key);
-        cancellationToken.ThrowIfCancellationRequested();
-
-        // Single L1 lookup: a null return means the key is absent, avoiding a separate ExistsAsync round-trip.
-        var localExpiration = await LocalCache.GetExpirationAsync(key, cancellationToken).ConfigureAwait(false);
-        if (localExpiration is not null)
-        {
-            _logger.LogLocalCacheHit(key);
-            Interlocked.Increment(ref _localCacheHits);
-            return localExpiration;
-        }
-
-        _logger.LogLocalCacheMiss(key);
-        var l2Read = await _ReadFromL2Async(
-                key,
-                ct => l2Cache.GetExpirationAsync(key, ct),
-                _SelectDistributedReadTimeout(hasLocalFallback: false, softCanDegradeToMiss: true),
-                DistributedCacheTimeoutKind.Soft,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        if (!l2Read.IsSuccess)
-        {
-            if (l2Read.Exception is { } exception)
-            {
-                _logger.LogFailedToReadFromL2Cache(exception, key);
-            }
-
-            return null;
-        }
-
-        return l2Read.Value;
-    }
-
-    /// <inheritdoc />
-    public async ValueTask<CacheValue<ICollection<T>>> GetSetAsync<T>(
-        string key,
-        int? pageIndex = null,
-        int pageSize = 100,
-        CancellationToken cancellationToken = default
-    )
-    {
-        _ThrowIfDisposed();
-        Argument.IsNotNullOrEmpty(key);
-        cancellationToken.ThrowIfCancellationRequested();
-
-        var cacheValue = await LocalCache
-            .GetSetAsync<T>(key, pageIndex, pageSize, cancellationToken)
-            .ConfigureAwait(false);
-        if (cacheValue.HasValue)
-        {
-            _logger.LogLocalCacheHit(key);
-            Interlocked.Increment(ref _localCacheHits);
-            return cacheValue;
-        }
-
-        _logger.LogLocalCacheMiss(key);
-        var l2Read = await _ReadFromL2Async(
-                key,
-                async ct =>
-                {
-                    var value = await l2Cache.GetSetAsync<T>(key, pageIndex, pageSize, ct).ConfigureAwait(false);
-
-                    if (!value.HasValue)
-                    {
-                        return new CacheValueWithExpiration<ICollection<T>>(value, null);
-                    }
-
-                    var expiration = await l2Cache.GetExpirationAsync(key, ct).ConfigureAwait(false);
-                    return new CacheValueWithExpiration<ICollection<T>>(value, expiration);
-                },
-                _SelectDistributedReadTimeout(hasLocalFallback: false, softCanDegradeToMiss: true),
-                DistributedCacheTimeoutKind.Soft,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        if (!l2Read.IsSuccess)
-        {
-            if (l2Read.Exception is { } exception)
-            {
-                _logger.LogFailedToReadFromL2Cache(exception, key);
-            }
-
-            return CacheValue<ICollection<T>>.NoValue;
-        }
-
-        cacheValue = l2Read.Value.Value;
-
-        if (cacheValue.HasValue)
-        {
-            var localExpiration = _GetLocalExpiration(l2Read.Value.Expiration);
-            _logger.LogSettingLocalCacheKey(key, localExpiration);
-            // Use UpsertAsync to replace any existing L1 data (not SetAddAsync which would merge)
-            await LocalCache
-                .UpsertAsync(key, cacheValue.Value!, localExpiration, cancellationToken)
-                .ConfigureAwait(false);
-        }
-
-        return cacheValue;
-    }
-
-    #endregion
-
     #region Private Helpers
 
     private async ValueTask _PublishInvalidationAsync(
@@ -694,7 +293,7 @@ public sealed partial class HybridCache(
             // Fail loud after the log + recovery queueing: self-healing still happens (the queued item replays),
             // but the caller is also informed of the backplane outage. On detached background publish paths this
             // re-throw is observed and logged by the fire-and-forget fault net rather than surfacing to a caller.
-            if (options.ReThrowBackplaneExceptions)
+            if (cacheOptions.ReThrowBackplaneExceptions)
             {
                 throw;
             }
@@ -771,14 +370,14 @@ public sealed partial class HybridCache(
 
     private TimeSpan? _GetLocalExpiration(TimeSpan? expiration)
     {
-        if (!options.DefaultLocalExpiration.HasValue)
+        if (!cacheOptions.DefaultLocalExpiration.HasValue)
         {
             return expiration;
         }
 
-        return expiration.HasValue && expiration.Value < options.DefaultLocalExpiration.Value
+        return expiration < cacheOptions.DefaultLocalExpiration.Value
             ? expiration
-            : options.DefaultLocalExpiration;
+            : cacheOptions.DefaultLocalExpiration;
     }
 
     #endregion
@@ -804,33 +403,4 @@ public sealed partial class HybridCache(
     }
 
     #endregion
-}
-
-internal static partial class HybridCacheLoggerExtensions
-{
-    [LoggerMessage(
-        EventId = 21,
-        EventName = "FailedBulkL2CacheOperationWithSample",
-        Level = LogLevel.Warning,
-        Message = "Failed to perform a bulk L2 cache operation for {KeyCount} key(s); degrading to partial L1 result (sample: {KeySample})"
-    )]
-    public static partial void LogFailedBulkL2CacheOperationWithSample(
-        this ILogger logger,
-        Exception exception,
-        int keyCount,
-        string keySample
-    );
-
-    [LoggerMessage(
-        EventId = 22,
-        EventName = "BulkDistributedCacheReadDegradedWithSample",
-        Level = LogLevel.Warning,
-        Message = "Bulk L2 cache read for {KeyCount} key(s) did not complete ({Reason}); degrading to partial L1 result (sample: {KeySample})"
-    )]
-    public static partial void LogBulkDistributedCacheReadDegradedWithSample(
-        this ILogger logger,
-        int keyCount,
-        string reason,
-        string keySample
-    );
 }

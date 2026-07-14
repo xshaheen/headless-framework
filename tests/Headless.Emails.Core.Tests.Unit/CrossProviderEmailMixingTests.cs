@@ -1,12 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Globalization;
 using Amazon;
 using Amazon.Extensions.NETCore.Setup;
 using Amazon.Runtime;
 using Headless.Emails;
 using Headless.Emails.Aws;
-using Headless.Emails.Azure;
 using Headless.Emails.Dev;
 using Headless.Emails.Mailkit;
 using Microsoft.Extensions.Configuration;

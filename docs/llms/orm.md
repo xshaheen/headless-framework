@@ -159,7 +159,7 @@ Change Data Capture (e.g. Debezium) is an advanced alternative that bypasses thi
 | **Auditing** | Automatic via `ICreateAudit`, `IUpdateAudit`, `IDeleteAudit`, `ISuspendAudit` | None |
 | **Events** | Domain events (in-process) + integration events (outbox) | None |
 | **Transactions** | EF Core execution strategy + `ExecuteTransactionAsync` / `ExecuteCoordinatedTransactionAsync` | Couchbase Transactions via `ExecuteTransactionAsync(Func<AttemptContext, Task<bool>>)` |
-| **DI** | `AddHeadlessDbContext<TDbContext>(...)` | Manual: `IBucketContextProvider`, `ICouchbaseClustersProvider` resolved from DI |
+| **DI** | `AddHeadlessDbContext<TDbContext>(...)` | `AddHeadlessCouchbase()` for the framework providers; the consumer supplies `ICouchbaseClusterOptionsProvider` + `ICouchbaseTransactionConfigProvider` |
 
 `Headless.Orm.EntityFramework.Messaging` is an add-on to `Headless.Orm.EntityFramework`, not a competing provider. It does not appear in the table above.
 
@@ -188,7 +188,7 @@ Provides a framework-aware base `DbContext` with conventions for auditing, soft 
 - `IHeadlessDbContextBuilder` returned by `AddHeadlessDbContextServices(...)` for chaining event tiers
 - Runtime guard that fails the save with a remediation message when an entity emits events but the matching tier is not registered
 - Resilient transaction helpers: `ExecuteTransactionAsync(...)` (wraps in EF execution strategy), `ExecuteCoordinatedTransactionAsync(...)` (also enlists commit coordination for outbox/jobs drain)
-- Value converters: `MoneyValueConverter`, `MonthValueConverter`, `AccountIdValueConverter`, `UserIdValueConverter`, `LocaleValueConverter`, `NormalizeDateTimeValueConverter`, `JsonValueConverter`, `ExtraPropertiesValueConverter`
+- Value converters: `MoneyAmountValueConverter`, `MonthValueConverter`, `AccountIdValueConverter`, `UserIdValueConverter`, `LocaleValueConverter`, `NormalizeDateTimeValueConverter`, `JsonValueConverter`, `ExtraPropertiesValueConverter`
 - `DataGridExtensions` for pagination and ordering on `IQueryable<T>`
 - `IDbContextFactory<TDbContext>` auto-registered as singleton via `HeadlessDbContextFactory<TDbContext>`
 
@@ -197,7 +197,9 @@ Provides a framework-aware base `DbContext` with conventions for auditing, soft 
 - **Not poolable by design.** `HeadlessDbContext` holds a private `HeadlessDbContextRuntime` that captures the request-scoped outbox dispatcher (`IHeadlessOutboxDispatcher`) and audit persistence (`IHeadlessAuditPersistence`). Pooling reuses a prior request's unit of work — a captive-dependency correctness bug. The two-argument constructor also violates EF's single-`DbContextOptions` pooling contract. For read-heavy hot paths that don't need the write pipeline, use a plain `DbContext` with `AddDbContextPool` alongside the write-side `HeadlessDbContext`.
 - **Client-side Guid generation is intentional.** The key is available before `SaveChanges`, so it can be used for foreign keys, outbox rows, and domain events in the same unit of work. The `Version7` (time-ordered) and `SqlServer` comb strategies ensure monotonic insertion order per provider, limiting index fragmentation.
 - **Synchronous enlist in commit coordination.** The save pipeline opens its transaction and synchronously enlists it in commit coordination so the ambient coordinator carries the live EF transaction. An `AsyncLocal` push inside an `async` helper does not flow back to the caller, making synchronous enlistment the only correct approach. This is why `AddHeadlessDbContextServices` always calls `AddEntityFrameworkCommitCoordination()` — the enlist is harmless when nothing is enlisted.
+- **Unknown commit outcomes are not replayed.** `ExecuteCoordinatedTransactionAsync` lets the EF execution strategy retry failures before commit starts. Once `CommitAsync` begins, an exception is surfaced without replay because the database may already have committed; reconcile with a client-generated key or another durable idempotency key before retrying the business operation.
 - **Domain-event at-most-once guard.** The pipeline runs domain-event publication inside the EF execution strategy. A guard ensures handlers are invoked only on the first attempt and are not re-invoked on a replay. Because publication precedes commit, a handler can run on an attempt that ultimately fails to commit — keep domain-event side effects idempotent. Under a caller-managed transaction driven by your own retry loop, each `SaveChanges` is a fresh invocation with a fresh guard, so handlers can publish again; idempotency is the right defensive posture regardless.
+- **Negative index pagination is page-from-end.** `ToIndexPageAsync(index: -1, size: N)` returns the final page, not just the last `N` rows, and normalizes the returned `IndexPage.Index` to the actual zero-based page index. EF queries use `Skip`/`Take` so providers can translate the slice to SQL.
 
 ### Installation
 
@@ -359,10 +361,10 @@ Custom processors are inserted before the terminal lifecycle and message-collect
 #### Value Converters
 
 ```csharp
-modelBuilder.Entity<Order>().Property(o => o.Total).HasConversion<MoneyValueConverter>();
+modelBuilder.Entity<Order>().Property(o => o.Total).HasConversion<MoneyAmountValueConverter>();
 
 // Or apply globally across all matching CLR types:
-configurationBuilder.Properties<Money>().HaveConversion<MoneyValueConverter>();
+configurationBuilder.Properties<MoneyAmount>().HaveConversion<MoneyAmountValueConverter>();
 ```
 
 ### Dependencies
@@ -382,7 +384,7 @@ configurationBuilder.Properties<Money>().HaveConversion<MoneyValueConverter>();
 - Registers `EntityFrameworkCommitCoordination` (EF interceptor + ambient commit coordinator) via `AddEntityFrameworkCommitCoordination()`
 - `.AddDomainEvents()` registers `ILocalEventBus` (via `services.AddHeadlessLocalEventBus()`); `.AddIntegrationEventOutbox()` (from `Headless.Orm.EntityFramework.Messaging`) registers `IHeadlessOutboxDispatcher`; neither is registered by default
 - Registers `TenantWriteGuardOptions` and `ITenantWriteGuardBypass` (always; guard is disabled by default)
-- Registers via `TryAddSingleton`: `IClock`, keyed `IGuidGenerator` strategies (`Version7` and `SqlServer`) plus an unkeyed `Version7` default, `ICurrentTenantAccessor`, `ICurrentUser` (`NullCurrentUser`), `ICorrelationIdProvider`, `TimeProvider.System`
+- Registers via `TryAddSingleton`: `TimeProvider.System`, keyed `IGuidGenerator` strategies (`Version7` and `SqlServer`) plus an unkeyed `Version7` default, `ICurrentTenantAccessor`, `ICurrentUser` (`NullCurrentUser`), `ICorrelationIdProvider`
 - Registers `ICurrentTenant` (`CurrentTenant`), replacing only the framework-fallback `NullCurrentTenant` while preserving consumer-provided tenant implementations
 - Replaces `ICompiledQueryCacheKeyGenerator` so tenant-scoped queries share compiled plans correctly
 - Registers `IAmbientDbTransactionAccessor` and `IAuditChangeCapture` (`EfAuditChangeCapture`) for audit-log integration
@@ -472,6 +474,7 @@ Provides a typed context model over Couchbase buckets with helper APIs for docum
 - `ICouchbaseClusterOptionsProvider` — consumer-supplied cluster connection options per cluster key
 - `ICouchbaseTransactionConfigProvider` — consumer-supplied transaction configuration per cluster key
 - `CouchbaseEventingFunctionsSeeder` — seeds eventing functions from embedded resources
+- `SetupCouchbase.AddHeadlessCouchbase()` — registers the framework-owned providers (`ICouchbaseClustersProvider`, `IBucketContextProvider`, `ICouchbaseManager`, `ICouchbaseAssemblyCollectionsReader`) in one call
 
 ### Installation
 
@@ -524,12 +527,12 @@ await context.ExecuteTransactionAsync(async attempt =>
 - Use `ICouchbaseManager` during application startup or `IInitializer` to bootstrap scopes, collections, and indexes idempotently.
 
 ```csharp
-// Supply cluster options
+// Supply the two application-specific providers (or register the shipped defaults):
 services.AddSingleton<ICouchbaseClusterOptionsProvider, MyClusterOptionsProvider>();
 services.AddSingleton<ICouchbaseTransactionConfigProvider, MyTransactionConfigProvider>();
-services.AddSingleton<IBucketContextProvider, BucketContextProvider>();
-services.AddSingleton<ICouchbaseClustersProvider, CouchbaseClustersProvider>();
-services.AddSingleton<ICouchbaseManager, CouchbaseManager>();
+
+// Register the framework-owned providers in one call:
+services.AddHeadlessCouchbase();
 ```
 
 ### Dependencies
@@ -544,6 +547,14 @@ services.AddSingleton<ICouchbaseManager, CouchbaseManager>();
 
 ### Side Effects
 
+- `AddHeadlessCouchbase()` registers `ICouchbaseClustersProvider`, `IBucketContextProvider`, `ICouchbaseManager`, and `ICouchbaseAssemblyCollectionsReader` as singletons via `TryAdd` (a consumer's own registration wins). It does not register `ICouchbaseClusterOptionsProvider` or `ICouchbaseTransactionConfigProvider` — those remain the consumer's responsibility.
 - Cluster connections are lazily initialized and statically cached by `clusterKey` in `CouchbaseClustersProvider`. Each cluster waits up to 1 minute for readiness on first access; a readiness failure is logged but does not throw (operations fail at call time).
 - `CouchbaseManager` caches scope/collection specs per `clusterKey + bucketName` in-memory to reduce repeated `GetAllScopesAsync` calls; cache is invalidated on scope creation.
 - `CouchbaseBucketContext.ExecuteTransactionAsync` emits `Information` logs on success and `Error` logs on failure via structured logging.
+
+### Cancellation (Couchbase)
+
+- The async provider seams (`ICouchbaseClusterOptionsProvider.GetAsync`, `ICouchbaseTransactionConfigProvider.GetAsync`, `ICouchbaseClustersProvider.GetClusterAsync`, `IBucketContextProvider.GetAsync`) and `CouchbaseBucketContext.ExecuteTransactionAsync` accept an optional trailing `CancellationToken`.
+- Because clusters are created once and statically cached by `clusterKey`, the token passed to `GetClusterAsync` governs only the connection attempt that first materializes a cluster; callers that receive an already-cached cluster complete without observing the token.
+- `ICluster.BucketAsync` exposes no cancellation overload, so `IBucketContextProvider.GetAsync` honors the token before opening the bucket, not during.
+- The Couchbase transactions SDK (`Transactions.RunAsync`) exposes no `CancellationToken` hook, so `ExecuteTransactionAsync` observes the token only before the transaction begins; once the SDK transaction loop starts it runs to completion, SDK timeout, or failure. Bound in-transaction duration with `PerTransactionConfig` (timeout / durability) instead.

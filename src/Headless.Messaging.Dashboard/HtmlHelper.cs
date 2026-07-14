@@ -2,11 +2,11 @@
 
 using System.Reflection;
 using System.Runtime.CompilerServices;
-using Headless.Messaging.Internal;
+using Headless.Messaging.Runtime;
 
 namespace Headless.Messaging.Dashboard;
 
-public static class HtmlHelper
+internal static class HtmlHelper
 {
     public static string MethodEscaped(MethodInfo method)
     {
@@ -106,7 +106,7 @@ public static class HtmlHelper
             return _WrapKeyword(type.Name.ToLowerInvariant());
         }
 
-        if (Helper.IsComplexType(type))
+        if (RuntimeTypeInspection.IsComplexType(type))
         {
             return _WrapType(type.Name);
         }

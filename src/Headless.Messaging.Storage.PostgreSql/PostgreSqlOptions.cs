@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
-using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
+using Headless.Messaging.Runtime;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
@@ -28,6 +28,24 @@ public sealed class PostgreSqlOptions : PostgreSqlEntityFrameworkMessagingOption
     /// Gets or sets the Npgsql data source that will be used to store database entities.
     /// </summary>
     public NpgsqlDataSource? DataSource { get; set; }
+
+    /// <summary>
+    /// Gets or sets the command timeout applied to schema-initialization DDL — the
+    /// <c>CREATE INDEX CONCURRENTLY</c> / <c>DROP INDEX CONCURRENTLY</c> builds, the
+    /// <c>CREATE EXTENSION</c> probe, and the advisory-lock waits that gate them.
+    /// <para>
+    /// These operations can legitimately run for minutes-to-hours on a large table, far longer than
+    /// the OLTP <c>MessagingOptions.CommandTimeout</c> (~30s) used for query/write paths. On timeout
+    /// PostgreSQL marks a <c>CONCURRENTLY</c> index <c>INVALID</c> and the next boot must repair it, so
+    /// this value is deliberately decoupled from the OLTP budget.
+    /// </para>
+    /// <para>
+    /// Default <see langword="null" /> means <b>no timeout</b> (wait indefinitely): the DDL runs with an
+    /// Npgsql <c>CommandTimeout</c> of <c>0</c>. Set a finite value to cap startup DDL. <see cref="TimeSpan.Zero"/>
+    /// is also treated as "no timeout". A negative value is rejected at validation time.
+    /// </para>
+    /// </summary>
+    public TimeSpan? DdlCommandTimeout { get; set; }
 
     /// <summary>
     /// Creates an Npgsql connection from the configured data source.
@@ -63,6 +81,12 @@ internal sealed class PostgreSqlOptionsValidator : AbstractValidator<PostgreSqlO
             );
 
         RuleFor(x => x.OwnerColumnMaxLength).GreaterThanOrEqualTo(DataStorageConstants.MinimumOwnerColumnMaxLength);
+
+        // A negative DDL timeout is meaningless; null/Zero already express "no timeout".
+        RuleFor(x => x.DdlCommandTimeout!.Value)
+            .GreaterThanOrEqualTo(TimeSpan.Zero)
+            .When(x => x.DdlCommandTimeout is not null)
+            .WithMessage("DdlCommandTimeout must be greater than or equal to zero (zero or null means no timeout).");
     }
 }
 
@@ -77,8 +101,8 @@ internal sealed class ConfigurePostgreSqlOptions(IServiceScopeFactory serviceSco
         }
 
         if (
-            Helper.IsUsingType<IOutboxBus>(options.DbContextType)
-            || Helper.IsUsingType<IOutboxQueue>(options.DbContextType)
+            RuntimeTypeInspection.DeclaresFieldOfType<IOutboxBus>(options.DbContextType)
+            || RuntimeTypeInspection.DeclaresFieldOfType<IOutboxQueue>(options.DbContextType)
         )
         {
             throw new InvalidOperationException(
@@ -111,7 +135,7 @@ internal sealed class ConfigurePostgreSqlOptions(IServiceScopeFactory serviceSco
         if (options.DataSource is null && string.IsNullOrWhiteSpace(options.ConnectionString))
         {
             throw new InvalidOperationException(
-                $"Failed to resolve a DataSource or ConnectionString from the EF Core provider extension "
+                "Failed to resolve a DataSource or ConnectionString from the EF Core provider extension "
                     + $"'{extension.GetType().FullName}' for DbContext '{options.DbContextType.FullName}'. The reflected "
                     + $"properties '{nameof(options.DataSource)}'/'{nameof(options.ConnectionString)}' returned null — "
                     + "the Npgsql EF Core provider may have renamed or restructured them."

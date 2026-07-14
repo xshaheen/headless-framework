@@ -13,6 +13,7 @@ Provides a lightweight, no-infrastructure message queue for local development, t
 - **Testing Friendly**: Deterministic, synchronous behavior
 - **Same API**: Identical interface to production transports
 - **Thread-Safe**: Concurrent producer/consumer support
+- **Uniform Cancellation**: Consumer startup implements the same host-cancellable contract as broker-backed providers.
 
 ## Design Notes
 
@@ -25,6 +26,7 @@ Provides a lightweight, no-infrastructure message queue for local development, t
 - Publishing to an unbound message name still fails fast. `InMemory` is intentionally strict so tests and local development do not silently hide invalid publish targets or missing consumer registration.
 - Single-threaded consumption preserves queue order. Higher `ConsumerThreadCount` can reorder concurrent handlers.
 - Payload size is limited by process memory.
+- Each consumer group buffers at most 65,536 pending messages. When the buffer is full (for example, a paused or stalled consumer), further deliveries to that group are dropped and reported through the transport log callback instead of growing memory without bound.
 
 ## Installation
 

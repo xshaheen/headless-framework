@@ -30,7 +30,7 @@ public sealed class SetupTests
         provider.GetRequiredService<IQueueTransport>().Should().BeOfType<AzureServiceBusQueueTransport>();
         provider.GetRequiredService<IConsumerClientFactory>().Should().BeOfType<AzureServiceBusConsumerClientFactory>();
         provider
-            .GetRequiredService<IOptions<AzureServiceBusOptions>>()
+            .GetRequiredService<IOptions<AzureServiceBusMessagingOptions>>()
             .Value.ConnectionString.Should()
             .Contain("mynamespace");
     }

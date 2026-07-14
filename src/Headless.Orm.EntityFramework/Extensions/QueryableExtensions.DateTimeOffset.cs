@@ -3,13 +3,11 @@
 using System.Linq.Expressions;
 using System.Reflection;
 using Headless.Checks;
+using Headless.EntityFramework;
 using Headless.Linq;
 
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.EntityFrameworkCore;
-
-/// <summary>A month bucket returned by <c>CountPerMonthAsync</c> with a <c>DateTimeOffset</c> date selector.</summary>
-public sealed record EntityPerDateTimeOffset(DateTimeOffset Date, int Count);
 
 public static partial class QueryableExtensions
 {
@@ -63,19 +61,44 @@ public static partial class QueryableExtensions
         // Query
         var predicate = greaterThanStartPredicate.And(lessThanEndPredicate);
 
-        var query = queryable
-            .Where(predicate)
-            .Select(propSelector)
-            .Select(date => new
+        var filteredDates = queryable.Where(predicate).Select(propSelector);
+
+        try
+        {
+            var counts = await filteredDates
+                .GroupBy(static date => new { date.Year, date.Month })
+                .Select(static group => new
+                {
+                    group.Key.Year,
+                    group.Key.Month,
+                    Count = group.Count(),
+                })
+                .ToDictionaryAsync(
+                    x => new DateTimeOffset(x.Year, x.Month, 1, 0, 0, 0, start.Offset),
+                    static x => x.Count,
+                    cancellationToken: token
+                )
+                .ConfigureAwait(false);
+
+            return from n in Enumerable.Range(1, months)
+                let month = first.AddMonths(n)
+                select new EntityPerDateTimeOffset(month, counts.GetValueOrDefault(month));
+        }
+        catch (InvalidOperationException exception) when (_IsQueryTranslationFailure(exception))
+        {
+            var query = filteredDates.Select(date => new
             {
                 At = date,
                 Month = new DateTimeOffset(date.Year, date.Month, 1, 0, 0, 0, start.Offset),
             });
 
-        var lookup = await query.ToLookupAsync(x => x.Month, x => x.At, cancellationToken: token).ConfigureAwait(false);
+            var lookup = await query
+                .ToLookupAsync(x => x.Month, x => x.At, cancellationToken: token)
+                .ConfigureAwait(false);
 
-        return from n in Enumerable.Range(1, months)
-            let month = first.AddMonths(n)
-            select new EntityPerDateTimeOffset(month, lookup[month].Count());
+            return from n in Enumerable.Range(1, months)
+                let month = first.AddMonths(n)
+                select new EntityPerDateTimeOffset(month, lookup[month].Count());
+        }
     }
 }

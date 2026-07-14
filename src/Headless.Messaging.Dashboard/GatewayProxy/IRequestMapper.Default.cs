@@ -6,7 +6,7 @@ using Microsoft.Extensions.Primitives;
 
 namespace Headless.Messaging.Dashboard.GatewayProxy;
 
-public class RequestMapper : IRequestMapper
+internal sealed class RequestMapper : IRequestMapper
 {
     private const string _SchemeDelimiter = "://";
     private readonly string[] _unsupportedHeaders = ["host", "cookie"];
@@ -112,9 +112,7 @@ public class RequestMapper : IRequestMapper
     {
         await using (stream)
         {
-            await using var memStream = new MemoryStream();
-            await stream.CopyToAsync(memStream).ConfigureAwait(false);
-            return memStream.ToArray();
+            return await stream.GetAllBytesAsync().ConfigureAwait(false);
         }
     }
 

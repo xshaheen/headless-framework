@@ -110,7 +110,7 @@ internal sealed class SqlServerFencingTokenSource(IOptions<SqlServerDistributedL
             await SqlServerDistributedLocksStorageInitializer
                 .EnsureSequenceAsync(connection, options.Value, cancellationToken)
                 .ConfigureAwait(false);
-            Volatile.Write(ref _sequenceEnsured, true);
+            Volatile.Write(ref _sequenceEnsured, value: true);
         }
         finally
         {

@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
+using Headless.Checks;
 using Headless.Messaging;
-using Headless.Messaging.Internal;
+using Headless.Messaging.Runtime;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -31,6 +32,7 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
         );
 
         var consumed = await probe.WaitForMessageAsync(AbortToken);
+        await middlewareProbe.WaitUntilExecutedAsync(AbortToken);
 
         consumed.Message.Id.Should().Be("first");
         consumed.MessageName.Should().Be("runtime.integration");
@@ -79,7 +81,7 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
     [Fact]
     public async Task should_restart_consumers_for_runtime_subscription_added_after_consumer_register_is_ready()
     {
-        var blocker = new BlockingProcessingServer();
+        await using var blocker = new BlockingProcessingServer();
         await using var provider = _CreateProvider(blocker);
         var bootstrapper = provider.GetRequiredService<IBootstrapper>();
         var runtimeSubscriber = provider.GetRequiredService<IRuntimeSubscriber>();
@@ -163,16 +165,16 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
     {
         public async ValueTask InvokeAsync(ConsumeContext context, Func<ValueTask> next)
         {
-            probe.ExecutingCount++;
+            probe.RecordExecuting();
 
             try
             {
                 await next().ConfigureAwait(false);
-                probe.ExecutedCount++;
+                probe.RecordExecuted();
             }
             catch
             {
-                probe.ExceptionCount++;
+                probe.RecordException();
                 throw;
             }
         }
@@ -180,9 +182,35 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
 
     private sealed class RecordingConsumeMiddlewareProbe
     {
-        public int ExecutingCount { get; set; }
-        public int ExecutedCount { get; set; }
-        public int ExceptionCount { get; set; }
+        private readonly TaskCompletionSource _executed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _executingCount;
+        private int _executedCount;
+        private int _exceptionCount;
+
+        public int ExecutingCount => Volatile.Read(ref _executingCount);
+        public int ExecutedCount => Volatile.Read(ref _executedCount);
+        public int ExceptionCount => Volatile.Read(ref _exceptionCount);
+
+        public void RecordExecuting()
+        {
+            Interlocked.Increment(ref _executingCount);
+        }
+
+        public void RecordExecuted()
+        {
+            Interlocked.Increment(ref _executedCount);
+            _executed.TrySetResult();
+        }
+
+        public void RecordException()
+        {
+            Interlocked.Increment(ref _exceptionCount);
+        }
+
+        public Task WaitUntilExecutedAsync(CancellationToken cancellationToken)
+        {
+            return _executed.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
+        }
     }
 
     private sealed class RecordingRuntimeProbe
@@ -199,6 +227,7 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
             CancellationToken cancellationToken
         )
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var dependency = services.GetRequiredService<ScopedRuntimeDependency>();
             ScopedDependencyIds.Enqueue(dependency.Id);
             _messageReceived.TrySetResult(context);
@@ -225,6 +254,7 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
             CancellationToken cancellationToken
         )
         {
+            Argument.IsNotNull(services);
             _started.TrySetResult();
             await _release.Task.WaitAsync(cancellationToken);
             ProcessedMessageIds.Enqueue(context.Message.Id);

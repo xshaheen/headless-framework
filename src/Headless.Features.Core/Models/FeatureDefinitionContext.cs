@@ -23,7 +23,7 @@ public sealed class FeatureDefinitionContext : IFeatureDefinitionContext
     {
         Argument.IsNotNull(name);
 
-        return AddGroup(new FeatureGroupDefinition(name, displayName));
+        return _AddGroup(new FeatureGroupDefinition(name, displayName));
     }
 
     /// <summary>Registers the provided <paramref name="definition"/> as a feature group.</summary>
@@ -31,7 +31,7 @@ public sealed class FeatureDefinitionContext : IFeatureDefinitionContext
     /// <returns>The registered <see cref="FeatureGroupDefinition"/>.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="definition"/> is <see langword="null"/>.</exception>
     /// <exception cref="InvalidOperationException">A feature group with the same name already exists.</exception>
-    public FeatureGroupDefinition AddGroup(FeatureGroupDefinition definition)
+    private FeatureGroupDefinition _AddGroup(FeatureGroupDefinition definition)
     {
         Argument.IsNotNull(definition);
 

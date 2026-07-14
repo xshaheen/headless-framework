@@ -7,6 +7,7 @@ using Headless.Settings;
 using Headless.Settings.Entities;
 using Headless.Settings.Repositories;
 using Headless.Settings.Seeders;
+using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,7 +16,7 @@ using Microsoft.Extensions.Hosting;
 namespace Tests;
 
 [Collection<SqlServerSettingsFixture>]
-public sealed class SqlServerSettingsStorageTests(SqlServerSettingsFixture fixture)
+public sealed class SqlServerSettingsStorageTests(SqlServerSettingsFixture fixture) : TestBase
 {
     private const string _Schema = "settings_sql_raw";
 
@@ -27,17 +28,17 @@ public sealed class SqlServerSettingsStorageTests(SqlServerSettingsFixture fixtu
         using var host = _CreateHost();
 
         // when
-        await host.StartAsync(TestContext.Current.CancellationToken);
+        await host.StartAsync(AbortToken);
         var initializer = host
             .Services.GetRequiredService<IEnumerable<IInitializer>>()
             .Single(x => x is not SettingsInitializationBackgroundService);
         var repository = host.Services.GetRequiredService<ISettingValueRecordRepository>();
         var record = new SettingValueRecord(Guid.NewGuid(), "Theme", "Dark", "Global");
-        await repository.InsertAsync(record, TestContext.Current.CancellationToken);
-        var stored = await repository.FindAsync("Theme", "Global", null, TestContext.Current.CancellationToken);
+        await repository.InsertAsync(record, AbortToken);
+        var stored = await repository.FindAsync("Theme", "Global", null, AbortToken);
         var changed = new SettingValueRecord(record.Id, "Theme", "Light", "Global");
-        await repository.UpdateAsync(changed, TestContext.Current.CancellationToken);
-        var updated = await repository.FindAsync("Theme", "Global", null, TestContext.Current.CancellationToken);
+        await repository.UpdateAsync(changed, AbortToken);
+        var updated = await repository.FindAsync("Theme", "Global", null, AbortToken);
 
         // then
         initializer.IsInitialized.Should().BeTrue();
@@ -62,7 +63,7 @@ public sealed class SqlServerSettingsStorageTests(SqlServerSettingsFixture fixtu
         using var host = _CreateHost();
 
         // when
-        await host.StartAsync(TestContext.Current.CancellationToken);
+        await host.StartAsync(AbortToken);
 
         // then
         (await _IndexExistsAsync("SettingDefinitions", "IX_SettingDefinitions_Name"))
@@ -77,11 +78,11 @@ public sealed class SqlServerSettingsStorageTests(SqlServerSettingsFixture fixtu
         // given
         await _DropSchemaAsync();
         using var host = _CreateHost();
-        await host.StartAsync(TestContext.Current.CancellationToken);
+        await host.StartAsync(AbortToken);
         var repository = host.Services.GetRequiredService<ISettingValueRecordRepository>();
 
         // when
-        var values = await repository.GetListAsync([], "Global", null, TestContext.Current.CancellationToken);
+        var values = await repository.GetListAsync([], "Global", null, AbortToken);
 
         // then
         values.Should().BeEmpty();
@@ -93,14 +94,14 @@ public sealed class SqlServerSettingsStorageTests(SqlServerSettingsFixture fixtu
         // given
         await _DropSchemaAsync();
         using var host = _CreateHost();
-        await host.StartAsync(TestContext.Current.CancellationToken);
+        await host.StartAsync(AbortToken);
         await _BulkInsertSettingValuesAsync(totalRows: 2101);
         var repository = host.Services.GetRequiredService<ISettingValueRecordRepository>();
-        var stored = await repository.GetListAsync("Global", "bulk", TestContext.Current.CancellationToken);
+        var stored = await repository.GetListAsync("Global", "bulk", AbortToken);
 
         // when
-        await repository.DeleteAsync(stored, TestContext.Current.CancellationToken);
-        var remaining = await repository.GetListAsync("Global", "bulk", TestContext.Current.CancellationToken);
+        await repository.DeleteAsync(stored, AbortToken);
+        var remaining = await repository.GetListAsync("Global", "bulk", AbortToken);
 
         // then
         stored.Should().HaveCount(2101);
@@ -133,7 +134,7 @@ public sealed class SqlServerSettingsStorageTests(SqlServerSettingsFixture fixtu
     private async Task _DropSchemaAsync()
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         await using var command = new SqlCommand(
             $"""
             IF OBJECT_ID(N'{_Schema}.SettingValues', N'U') IS NOT NULL DROP TABLE [{_Schema}].[SettingValues];
@@ -144,13 +145,13 @@ public sealed class SqlServerSettingsStorageTests(SqlServerSettingsFixture fixtu
             """,
             connection
         );
-        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        await command.ExecuteNonQueryAsync(AbortToken);
     }
 
     private async Task<bool> _TableExistsAsync(string tableName)
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         await using var command = new SqlCommand(
             """
             SELECT CASE WHEN EXISTS (
@@ -164,13 +165,13 @@ public sealed class SqlServerSettingsStorageTests(SqlServerSettingsFixture fixtu
         command.Parameters.AddWithValue("@schema", _Schema);
         command.Parameters.AddWithValue("@table", tableName);
 
-        return (bool)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken))!;
+        return (bool)await command.ExecuteScalarAsync(AbortToken);
     }
 
     private async Task<bool> _IndexExistsAsync(string tableName, string indexName)
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         await using var command = new SqlCommand(
             """
             SELECT CASE WHEN EXISTS (
@@ -184,13 +185,13 @@ public sealed class SqlServerSettingsStorageTests(SqlServerSettingsFixture fixtu
         command.Parameters.AddWithValue("@qualifiedTable", $"{_Schema}.{tableName}");
         command.Parameters.AddWithValue("@index", indexName);
 
-        return (bool)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken))!;
+        return (bool)await command.ExecuteScalarAsync(AbortToken);
     }
 
     private async Task _CreateTablesWithoutIndexesAsync()
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         await using var command = new SqlCommand(
             $"""
             IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = N'{_Schema}') EXEC(N'CREATE SCHEMA [{_Schema}]');
@@ -222,7 +223,7 @@ public sealed class SqlServerSettingsStorageTests(SqlServerSettingsFixture fixtu
             """,
             connection
         );
-        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        await command.ExecuteNonQueryAsync(AbortToken);
     }
 
     private async Task _BulkInsertSettingValuesAsync(int totalRows)
@@ -241,7 +242,7 @@ public sealed class SqlServerSettingsStorageTests(SqlServerSettingsFixture fixtu
         }
 
         await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         using var bulkCopy = new SqlBulkCopy(connection);
 
         bulkCopy.DestinationTableName = $"[{_Schema}].[SettingValues]";
@@ -252,6 +253,6 @@ public sealed class SqlServerSettingsStorageTests(SqlServerSettingsFixture fixtu
         bulkCopy.ColumnMappings.Add("ProviderKey", "ProviderKey");
         bulkCopy.ColumnMappings.Add("DateCreated", "DateCreated");
 
-        await bulkCopy.WriteToServerAsync(table, TestContext.Current.CancellationToken);
+        await bulkCopy.WriteToServerAsync(table, AbortToken);
     }
 }

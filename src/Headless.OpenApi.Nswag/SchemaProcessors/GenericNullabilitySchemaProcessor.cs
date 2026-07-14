@@ -4,7 +4,7 @@ using System.Reflection;
 using Namotion.Reflection;
 using NJsonSchema.Generation;
 
-namespace Headless.Api.SchemaProcessors;
+namespace Headless.OpenApi.Nswag.SchemaProcessors;
 
 /// <summary>
 /// Fixes nullability detection for generic type parameters (e.g., <c>T?</c> in <c>DataEnvelope&lt;T&gt;</c>).
@@ -13,7 +13,7 @@ namespace Headless.Api.SchemaProcessors;
 /// <para>
 /// <b>Problem:</b> NSwag/NJsonSchema cannot detect nullability annotations on generic type
 /// arguments. Given <c>DataEnvelope&lt;string?&gt;</c>, the property of type <c>T</c> is not
-/// marked as nullable in the generated OpenAPI schema because <c>string?</c> and <c>string</c>
+/// marked as nullable in the generated OpenAPI schema because <c>string?</c> and <see langword="string"/>
 /// are the same CLR type at runtime — the nullable annotation only exists in metadata at the
 /// usage site, which NJsonSchema does not propagate to the generic type's property schemas.
 /// </para>
@@ -28,7 +28,7 @@ namespace Headless.Api.SchemaProcessors;
 /// <b>Conflict resolution:</b> When the same generic type is instantiated with both nullable and
 /// non-nullable arguments (e.g., <c>Wrapper&lt;string?&gt;</c> and <c>Wrapper&lt;string&gt;</c>),
 /// they share a single runtime type and schema definition. The nullable variant wins because the
-/// processor only ever sets <c>IsNullableRaw = true</c>, never <c>false</c> — so once any
+/// processor only ever sets <c>IsNullableRaw = true</c>, never <see langword="false"/> — so once any
 /// instantiation marks a property as nullable, subsequent non-nullable instantiations leave it
 /// unchanged.
 /// </para>

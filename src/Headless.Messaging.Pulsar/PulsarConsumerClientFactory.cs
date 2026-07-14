@@ -11,12 +11,12 @@ namespace Headless.Messaging.Pulsar;
 internal sealed class PulsarConsumerClientFactory : IIntentAwareConsumerClientFactory
 {
     private readonly IConnectionFactory _connection;
-    private readonly IOptions<MessagingPulsarOptions> _pulsarOptions;
+    private readonly IOptions<PulsarMessagingOptions> _pulsarOptions;
 
     public PulsarConsumerClientFactory(
         IConnectionFactory connection,
         ILoggerFactory loggerFactory,
-        IOptions<MessagingPulsarOptions> pulsarOptions
+        IOptions<PulsarMessagingOptions> pulsarOptions
     )
     {
         _connection = connection;
@@ -28,16 +28,25 @@ internal sealed class PulsarConsumerClientFactory : IIntentAwareConsumerClientFa
         }
     }
 
-    public Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent)
+    public Task<IConsumerClient> CreateAsync(
+        string groupName,
+        byte groupConcurrent,
+        CancellationToken cancellationToken = default
+    )
     {
-        return CreateAsync(groupName, groupConcurrent, IntentType.Bus);
+        return CreateAsync(groupName, groupConcurrent, IntentType.Bus, cancellationToken);
     }
 
-    public Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent, IntentType intentType)
+    public async Task<IConsumerClient> CreateAsync(
+        string groupName,
+        byte groupConcurrent,
+        IntentType intentType,
+        CancellationToken cancellationToken = default
+    )
     {
         try
         {
-            var client = _connection.RentClient();
+            var client = await _connection.RentClientAsync(cancellationToken).ConfigureAwait(false);
             var consumerClient = new PulsarConsumerClient(
                 _pulsarOptions,
                 client,
@@ -45,9 +54,9 @@ internal sealed class PulsarConsumerClientFactory : IIntentAwareConsumerClientFa
                 groupConcurrent,
                 intentType
             );
-            return Task.FromResult<IConsumerClient>(consumerClient);
+            return consumerClient;
         }
-        catch (Exception e)
+        catch (Exception e) when (e is not OperationCanceledException)
         {
             throw new BrokerConnectionException(e);
         }

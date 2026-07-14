@@ -8,7 +8,7 @@ Provides PostgreSQL-native audit log storage without pulling Entity Framework in
 
 ## Key Features
 
-- No EF Core dependency — depends only on `Npgsql` and `Headless.AuditLog.Abstractions`.
+- No EF Core dependency — depends only on `Npgsql`, `Headless.AuditLog.Abstractions`, and `Headless.AuditLog.Core`.
 - `PostgreSqlAuditLogStore` — implements `IAuditLogStore`; enrolls in the consumer's ambient Npgsql transaction when available; falls back to its own connection otherwise.
 - `PostgreSqlAuditLog<TContext>` — implements `IAuditLog<TContext>` for explicit event logging.
 - `PostgreSqlReadAuditLog<TContext>` — implements `IReadAuditLog<TContext>` via parameterized SQL queries.
@@ -16,6 +16,7 @@ Provides PostgreSQL-native audit log storage without pulling Entity Framework in
 - Batched INSERT: up to 500 rows per command (cached per row count).
 - `jsonb` by default for JSON columns; override via `AuditLogStorageOptions.JsonColumnType` (`Jsonb` or `Json` accepted; `NvarcharMax` rejected at options validation).
 - `PostgreSqlAuditLogOptions` — `ConnectionString` (required) and `CommandTimeout` (default 30 s).
+- `UsePostgreSql` ships the full provider overload trio: `(string connectionString)`, `(IConfiguration configuration)`, `(Action<PostgreSqlAuditLogOptions>)`, and `(Action<PostgreSqlAuditLogOptions, IServiceProvider>)`.
 - Same index set as `Headless.AuditLog.Storage.EntityFramework`: tenant+time, tenant+action+time, tenant+entity+time, tenant+actor+time, correlation ID.
 
 ## Design Notes
@@ -64,6 +65,14 @@ setup.UsePostgreSql(options =>
 });
 ```
 
+Bind provider options from configuration, or configure with service resolution:
+
+```csharp
+setup.UsePostgreSql(builder.Configuration.GetSection("Headless:AuditLog:PostgreSql"));
+setup.UsePostgreSql((options, sp) =>
+    options.ConnectionString = sp.GetRequiredService<IConfiguration>().GetConnectionString("AuditLog")!);
+```
+
 ## Configuration
 
 `PostgreSqlAuditLogOptions`:
@@ -78,7 +87,7 @@ setup.UsePostgreSql(options =>
 ## Dependencies
 
 - `Headless.AuditLog.Abstractions`
-- `Headless.Hosting`
+- `Headless.AuditLog.Core`
 - `Headless.Serializer`
 - `Npgsql`
 
@@ -89,4 +98,4 @@ setup.UsePostgreSql(options =>
 - Registers `IAuditLogStore` as scoped (`PostgreSqlAuditLogStore`).
 - Registers `IAuditLog<TContext>` as singleton (`PostgreSqlAuditLog<TContext>`).
 - Registers `IReadAuditLog<TContext>` as singleton (`PostgreSqlReadAuditLog<TContext>`).
-- Registers `IJsonSerializer`, `IClock`, `ICurrentTenant`, `ICurrentUser`, `ICorrelationIdProvider` as singletons if not already registered.
+- Registers `IJsonSerializer`, `TimeProvider` (`TimeProvider.System`), `ICurrentTenant`, `ICurrentUser`, `ICorrelationIdProvider` as singletons if not already registered.

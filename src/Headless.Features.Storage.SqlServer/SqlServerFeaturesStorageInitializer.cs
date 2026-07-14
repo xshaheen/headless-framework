@@ -33,10 +33,8 @@ internal sealed class SqlServerFeaturesStorageInitializer(
     {
         await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new SqlCommand(_CreateScript(storageOptions.Value), connection)
-        {
-            CommandTimeout = (int)providerOptions.Value.CommandTimeout.TotalSeconds,
-        };
+        await using var command = new SqlCommand(_CreateScript(storageOptions.Value), connection);
+        command.CommandTimeout = (int)providerOptions.Value.CommandTimeout.TotalSeconds;
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -122,6 +120,8 @@ internal sealed class SqlServerFeaturesStorageInitializer(
                         [Value] nvarchar({FeatureValueRecordConstants.ValueMaxLength}) NOT NULL,
                         [ProviderName] nvarchar({FeatureValueRecordConstants.ProviderNameMaxLength}) NOT NULL,
                         [ProviderKey] nvarchar({FeatureValueRecordConstants.ProviderKeyMaxLength}) NULL,
+                        [DateCreated] datetimeoffset NOT NULL,
+                        [DateUpdated] datetimeoffset NULL,
                         CONSTRAINT [PK_{options.FeatureValuesTableName}] PRIMARY KEY CLUSTERED ([Id] ASC)
                     );
                 END;

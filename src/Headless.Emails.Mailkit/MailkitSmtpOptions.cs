@@ -13,6 +13,7 @@ namespace Headless.Emails.Mailkit;
 /// overloads mutate an already-constructed instance inside the options delegate, which <c>init</c>-only setters
 /// disallow. Do not change these back to <c>init</c>.
 /// </remarks>
+[PublicAPI]
 public sealed class MailkitSmtpOptions
 {
     /// <summary>The SMTP server hostname or IP address.</summary>
@@ -36,6 +37,11 @@ public sealed class MailkitSmtpOptions
     /// The TLS/SSL negotiation strategy. Defaults to <see cref="SecureSocketOptions.StartTls"/>
     /// (opportunistic upgrade on port 587).
     /// </summary>
+    /// <remarks>
+    /// This is a deliberate full-fidelity pass-through of the MailKit type <see cref="SecureSocketOptions"/>: the
+    /// whole TLS-negotiation vocabulary is exposed verbatim so no MailKit option is lost behind a lossy Headless
+    /// wrapper. It intentionally couples this option to <c>MailKit</c>.
+    /// </remarks>
     public SecureSocketOptions SocketOptions { get; set; } = SecureSocketOptions.StartTls;
 
     /// <summary>

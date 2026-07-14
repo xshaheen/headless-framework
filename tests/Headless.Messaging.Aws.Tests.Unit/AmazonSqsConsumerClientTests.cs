@@ -5,7 +5,6 @@ using Amazon.SQS;
 using Amazon.SQS.Model;
 using Headless.Messaging;
 using Headless.Messaging.Aws;
-using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
@@ -15,12 +14,11 @@ using SqsMessage = Amazon.SQS.Model.Message;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class AmazonSqsConsumerClientTests : TestBase
 {
-    private static IOptions<AmazonSqsOptions> _CreateOptions() =>
+    private static IOptions<AmazonSqsMessagingOptions> _CreateOptions() =>
         Options.Create(
-            new AmazonSqsOptions
+            new AmazonSqsMessagingOptions
             {
                 Region = Amazon.RegionEndpoint.USEast1,
                 SqsServiceUrl = "http://localhost:4566",
@@ -56,14 +54,15 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         ILogger<AmazonSqsConsumerClient> logger,
         LogLevel level,
         int eventId,
-        Exception? exception = null
+        Exception? exception = null,
+        string? messageContains = null
     )
     {
         var matchingCalls = logger
             .ReceivedCalls()
             .Where(call =>
             {
-                if (call.GetMethodInfo().Name != nameof(ILogger.Log))
+                if (!string.Equals(call.GetMethodInfo().Name, nameof(ILogger.Log), StringComparison.Ordinal))
                 {
                     return false;
                 }
@@ -74,7 +73,11 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
                     && loggedLevel == level
                     && arguments[1] is EventId loggedEventId
                     && loggedEventId.Id == eventId
-                    && (exception is null || Equals(arguments[3], exception));
+                    && (exception is null || Equals(arguments[3], exception))
+                    && (
+                        messageContains is null
+                        || arguments[2]?.ToString()?.Contains(messageContains, StringComparison.Ordinal) == true
+                    );
             })
             .ToList();
 
@@ -87,7 +90,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
             .ReceivedCalls()
             .Where(call =>
             {
-                if (call.GetMethodInfo().Name != nameof(ILogger.Log))
+                if (!string.Equals(call.GetMethodInfo().Name, nameof(ILogger.Log), StringComparison.Ordinal))
                 {
                     return false;
                 }
@@ -117,11 +120,34 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         _SetPrivateFields(client, sqsClient, string.Empty);
 
         // when
-        await client.SubscribeAsync(["https://sqs.local/orders"]);
+        await client.SubscribeAsync(["https://sqs.local/orders"], AbortToken);
 
         // then
         await sqsClient.DidNotReceive().CreateQueueAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
         await sqsClient.DidNotReceive().CreateQueueAsync(Arg.Any<CreateQueueRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task queue_intent_fetch_should_propagate_exact_token()
+    {
+        var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
+        await using var client = new AmazonSqsConsumerClient(
+            "test-group",
+            1,
+            _CreateOptions(),
+            logger,
+            IntentType.Queue
+        );
+        var sqsClient = Substitute.For<IAmazonSQS>();
+        sqsClient
+            .CreateQueueAsync(Arg.Any<CreateQueueRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new CreateQueueResponse { QueueUrl = "https://sqs.local/orders" });
+        _SetPrivateFields(client, sqsClient, string.Empty);
+        using var cts = new CancellationTokenSource();
+
+        await client.FetchMessageNamesAsync(["orders"], cts.Token);
+
+        await sqsClient.Received(1).CreateQueueAsync(Arg.Any<CreateQueueRequest>(), cts.Token);
     }
 
     [Fact]
@@ -271,7 +297,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task should_handle_invalid_message_structure_and_reject()
+    public async Task should_release_invalid_message_structure_for_redrive_after_three_seconds()
     {
         // given
         var options = _CreateOptions();
@@ -327,7 +353,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         messageReceived.Should().BeFalse("invalid messages should not be processed");
 
         // Verify error was logged
-        _AssertLoggedEvent(logger, LogLevel.Error, 4201);
+        _AssertLoggedEvent(logger, LogLevel.Error, 4201, messageContains: "configure an SQS redrive policy");
 
         // Verify message was rejected
         await sqsClient
@@ -517,7 +543,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         const string receiptHandle = "test-receipt-handle-123";
 
         // when
-        await client.CommitAsync(receiptHandle);
+        await client.CommitAsync(receiptHandle, AbortToken);
 
         // then
         await sqsClient
@@ -538,7 +564,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         const string receiptHandle = "test-receipt-handle-456";
 
         // when
-        await client.RejectAsync(receiptHandle);
+        await client.RejectAsync(receiptHandle, AbortToken);
 
         // then - verify visibility timeout is changed to 3 seconds for retry
         await sqsClient
@@ -775,7 +801,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         _SetPrivateFields(client, sqsClient, "http://test-queue");
 
         // when
-        await client.CommitAsync("invalid-receipt");
+        await client.CommitAsync("invalid-receipt", AbortToken);
 
         // then
         logCallbackInvoked.Should().BeTrue();
@@ -810,7 +836,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         _SetPrivateFields(client, sqsClient, "http://test-queue");
 
         // when
-        await client.RejectAsync("expired-receipt");
+        await client.RejectAsync("expired-receipt", AbortToken);
 
         // then
         logCallbackInvoked.Should().BeTrue();
@@ -836,7 +862,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task should_handle_json_deserialization_error()
+    public async Task should_release_json_deserialization_error_for_redrive_after_three_seconds()
     {
         // given
         var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
@@ -888,7 +914,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
 
         // then
         callbackInvoked.Should().BeFalse("invalid JSON should not be processed");
-        _AssertLoggedEvent(logger, LogLevel.Error, 4200);
+        _AssertLoggedEvent(logger, LogLevel.Error, 4200, messageContains: "configure an SQS redrive policy");
 
         await sqsClient
             .Received(1)
@@ -907,8 +933,8 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         await using var client = new AmazonSqsConsumerClient("test-group", 1, _CreateOptions(), logger);
 
         // when
-        await client.PauseAsync();
-        await client.PauseAsync();
+        await client.PauseAsync(AbortToken);
+        await client.PauseAsync(AbortToken);
 
         // then — no exception
     }
@@ -921,7 +947,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         await using var client = new AmazonSqsConsumerClient("test-group", 1, _CreateOptions(), logger);
 
         // when
-        await client.ResumeAsync();
+        await client.ResumeAsync(AbortToken);
 
         // then — no exception
     }
@@ -934,8 +960,8 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         await using var client = new AmazonSqsConsumerClient("test-group", 1, _CreateOptions(), logger);
 
         // when
-        await client.PauseAsync();
-        await client.ResumeAsync();
+        await client.PauseAsync(AbortToken);
+        await client.ResumeAsync(AbortToken);
 
         // then — no exception
     }
@@ -960,7 +986,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         _SetPrivateFields(client, sqsClient, "http://test");
 
         // when — pause, then start listening
-        await client.PauseAsync();
+        await client.PauseAsync(AbortToken);
 
         using var cts = new CancellationTokenSource();
         var listenTask = Task.Run(
@@ -988,7 +1014,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         await listenTask;
 
         // after resume, polling should have started
-        receiveCount.Should().BeGreaterThan(0);
+        receiveCount.Should().BePositive();
     }
 
     [Fact]

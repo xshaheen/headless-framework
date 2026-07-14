@@ -7,6 +7,7 @@ using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
+using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Serialization;
 using Headless.Messaging.Storage.SqlServer;
@@ -38,10 +39,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
             x.Schema = "messaging";
             x.Version = "v1"; // Must match MessagingOptions.Version for retry queries
         });
-        services.Configure<MessagingOptions>(x =>
-        {
-            x.Version = "v1";
-        });
+        services.Configure<MessagingOptions>(x => x.Version = "v1");
         services.AddSingleton<IStorageInitializer, SqlServerStorageInitializer>();
         services.AddSingleton<ISerializer, JsonUtf8Serializer>();
 
@@ -241,7 +239,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
     [Fact]
     public async Task should_handle_empty_array_for_delayed_state_change()
     {
-        // when / then - should not throw
+        // when & then - should not throw
         await _storage.ChangePublishStateToDelayedAsync([], AbortToken);
     }
 

@@ -24,7 +24,7 @@ public sealed class RetryCountTagEnricherTests : TestBase
         };
 
         // when
-        await _enricher.Enrich(activity, context);
+        await _enricher.Enrich(activity, context, AbortToken);
 
         // then
         activity.GetTagItem(MessagingTags.RetryCount).Should().Be(3);
@@ -43,7 +43,7 @@ public sealed class RetryCountTagEnricherTests : TestBase
         };
 
         // when
-        await _enricher.Enrich(activity, context);
+        await _enricher.Enrich(activity, context, AbortToken);
 
         // then
         activity.GetTagItem(MessagingTags.RetryCount).Should().BeNull();
@@ -62,7 +62,7 @@ public sealed class RetryCountTagEnricherTests : TestBase
         };
 
         // when
-        await _enricher.Enrich(activity, context);
+        await _enricher.Enrich(activity, context, AbortToken);
 
         // then
         activity.GetTagItem(MessagingTags.RetryCount).Should().BeNull();

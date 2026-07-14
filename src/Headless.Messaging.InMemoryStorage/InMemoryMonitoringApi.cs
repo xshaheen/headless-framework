@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Primitives;
@@ -160,11 +159,9 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
         {
             var expression = storage.PublishedMessages.Values.Where(x => true);
 
-            if (!string.IsNullOrEmpty(query.StatusName))
+            if (query.StatusName is not null)
             {
-                expression = expression.Where(x =>
-                    x.StatusName.ToString().Equals(query.StatusName, StringComparison.OrdinalIgnoreCase)
-                );
+                expression = expression.Where(x => x.StatusName == query.StatusName);
             }
 
             if (!string.IsNullOrEmpty(query.Name))
@@ -195,14 +192,14 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
                 {
                     Added = x.Added,
                     StorageId = x.StorageId,
-                    MessageId = x.Origin.GetId(),
+                    MessageId = x.Origin.Id,
                     Version = "N/A",
                     Content = x.Content,
                     IntentType = x.IntentType,
                     ExpiresAt = x.ExpiresAt,
                     Name = x.Name,
                     Retries = x.Retries,
-                    StatusName = x.StatusName.ToString(),
+                    StatusName = x.StatusName,
                     NextRetryAt = x.NextRetryAt,
                     LockedUntil = x.LockedUntil,
                 })
@@ -216,11 +213,9 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
         {
             var expression = storage.ReceivedMessages.Values.Where(x => true);
 
-            if (!string.IsNullOrEmpty(query.StatusName))
+            if (query.StatusName is not null)
             {
-                expression = expression.Where(x =>
-                    x.StatusName.ToString().Equals(query.StatusName, StringComparison.OrdinalIgnoreCase)
-                );
+                expression = expression.Where(x => x.StatusName == query.StatusName);
             }
 
             if (!string.IsNullOrEmpty(query.Name))
@@ -231,7 +226,7 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
             if (!string.IsNullOrEmpty(query.Group))
             {
                 expression = expression.Where(x =>
-                    x.Group is not null && x.Group.Equals(query.Group, StringComparison.OrdinalIgnoreCase)
+                    x.Group?.Equals(query.Group, StringComparison.OrdinalIgnoreCase) == true
                 );
             }
 
@@ -257,14 +252,14 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
                     Added = x.Added,
                     Group = x.Group,
                     StorageId = x.StorageId,
-                    MessageId = x.Origin.GetId(),
+                    MessageId = x.Origin.Id,
                     Version = "N/A",
                     Content = x.Content,
                     IntentType = x.IntentType,
                     ExpiresAt = x.ExpiresAt,
                     Name = x.Name,
                     Retries = x.Retries,
-                    StatusName = x.StatusName.ToString(),
+                    StatusName = x.StatusName,
                     NextRetryAt = x.NextRetryAt,
                     LockedUntil = x.LockedUntil,
                 })
@@ -316,26 +311,26 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
             StringComparer.Ordinal
         );
 
-        Dictionary<string, int> valuesMap;
-
-        if (type == MessageType.Publish)
-        {
-            valuesMap = storage
-                .PublishedMessages.Values.Where(x =>
-                    string.Equals(x.StatusName.ToString(), statusName, StringComparison.Ordinal)
-                )
-                .GroupBy(x => x.Added.ToString("yyyy-MM-dd-HH", CultureInfo.InvariantCulture), StringComparer.Ordinal)
-                .ToDictionary(x => x.Key, x => x.Count(), StringComparer.Ordinal);
-        }
-        else
-        {
-            valuesMap = storage
-                .ReceivedMessages.Values.Where(x =>
-                    string.Equals(x.StatusName.ToString(), statusName, StringComparison.Ordinal)
-                )
-                .GroupBy(x => x.Added.ToString("yyyy-MM-dd-HH", CultureInfo.InvariantCulture), StringComparer.Ordinal)
-                .ToDictionary(x => x.Key, x => x.Count(), StringComparer.Ordinal);
-        }
+        var valuesMap =
+            type == MessageType.Publish
+                ? storage
+                    .PublishedMessages.Values.Where(x =>
+                        string.Equals(x.StatusName.ToString(), statusName, StringComparison.Ordinal)
+                    )
+                    .GroupBy(
+                        x => x.Added.ToString("yyyy-MM-dd-HH", CultureInfo.InvariantCulture),
+                        StringComparer.Ordinal
+                    )
+                    .ToDictionary(x => x.Key, x => x.Count(), StringComparer.Ordinal)
+                : storage
+                    .ReceivedMessages.Values.Where(x =>
+                        string.Equals(x.StatusName.ToString(), statusName, StringComparison.Ordinal)
+                    )
+                    .GroupBy(
+                        x => x.Added.ToString("yyyy-MM-dd-HH", CultureInfo.InvariantCulture),
+                        StringComparer.Ordinal
+                    )
+                    .ToDictionary(x => x.Key, x => x.Count(), StringComparer.Ordinal);
 
         foreach (var key in keyMaps.Keys)
         {

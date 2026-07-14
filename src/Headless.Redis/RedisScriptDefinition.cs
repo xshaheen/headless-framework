@@ -13,6 +13,7 @@ namespace Headless.Redis;
 /// scripts by concrete type and rejects multiple instances of the same type to avoid ambiguous script
 /// source or parameter contracts.
 /// </remarks>
+[PublicAPI]
 public abstract class RedisScriptDefinition
 {
     private readonly LuaScript _script;

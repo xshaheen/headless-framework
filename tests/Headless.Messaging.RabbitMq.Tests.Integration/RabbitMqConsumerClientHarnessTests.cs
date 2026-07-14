@@ -19,7 +19,7 @@ public sealed class RabbitMqConsumerClientHarnessTests(RabbitMqFixture fixture) 
     {
         var messagingOptions = Options.Create(new MessagingOptions { Version = "v1" });
         var rabbitOptions = Options.Create(
-            new RabbitMqOptions
+            new RabbitMqMessagingOptions
             {
                 HostName = fixture.HostName,
                 Port = fixture.Port,
@@ -65,10 +65,14 @@ public sealed class RabbitMqConsumerClientHarnessTests(RabbitMqFixture fixture) 
     public override Task should_receive_messages_via_listen_callback() =>
         base.should_receive_messages_via_listen_callback();
 
+#pragma warning disable xUnit1004 // Test methods should not be skipped
     [Fact(Skip = "RabbitMQ commit requires a real delivery tag from a broker-delivered message.")]
+#pragma warning restore xUnit1004
     public override Task should_commit_message_successfully() => Task.CompletedTask;
 
+#pragma warning disable xUnit1004 // Test methods should not be skipped
     [Fact(Skip = "RabbitMQ reject requires a real delivery tag from a broker-delivered message.")]
+#pragma warning restore xUnit1004
     public override Task should_reject_message_successfully() => Task.CompletedTask;
 
     [Fact]

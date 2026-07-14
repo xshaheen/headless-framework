@@ -7,9 +7,11 @@ using Azure.Storage.Blobs.Specialized;
 using Headless.Checks;
 using Headless.Tus.Models;
 using tusdotnet.Interfaces;
+using tusdotnet.Models;
 using tusdotnet.Models.Concatenation;
 
-namespace Headless.Tus.Services;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Tus;
 
 public sealed partial class TusAzureStore : ITusConcatenationStore
 {
@@ -25,6 +27,8 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
     /// </returns>
     public async Task<FileConcat?> GetUploadConcatAsync(string fileId, CancellationToken cancellationToken)
     {
+        await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
+
         var blobClient = _GetBlobClient(fileId);
         var tusFile = await _GetTusFileInfoAsync(blobClient, fileId, cancellationToken).ConfigureAwait(false);
 
@@ -66,7 +70,8 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
             var blobMetadata = TusAzureMetadata.FromTus(metadata);
 
             blobMetadata.DateCreated = _timeProvider.GetUtcNow();
-            blobMetadata.UploadLength = uploadLength;
+            // Same Creation-Defer-Length contract as CreateFileAsync: -1 means "length not yet known".
+            blobMetadata.UploadLength = uploadLength >= 0 ? uploadLength : null;
             blobMetadata.ConcatType = "partial";
 
             await blobClient
@@ -112,9 +117,9 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
     /// </remarks>
     /// <exception cref="ArgumentNullException">thrown if <paramref name="partialFiles"/> is null</exception>
     /// <exception cref="ArgumentException">thrown if <paramref name="partialFiles"/> is empty</exception>
-    /// <exception cref="InvalidOperationException">
-    /// thrown if any partial file does not exist, is not a partial upload, or has not been fully
-    /// uploaded
+    /// <exception cref="TusStoreException">
+    /// thrown if any partial file id is invalid, does not exist, is not a partial upload, or has
+    /// not been fully uploaded
     /// </exception>
     public async Task<string> CreateFinalFileAsync(
         string[] partialFiles,
@@ -220,6 +225,12 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
             blobMetadata.ConcatType = "final";
             blobMetadata.PartialUploads = partialFiles;
 
+            // A concat final persists tus_partial_uploads (comma-joined ids, unbounded count) on top of
+            // the verbatim Upload-Metadata, so the composed metadata can exceed Azure's 8 KB cap even
+            // though each part passed its own guard. Fail with an actionable message instead of the
+            // opaque Azure 400 the commit below would otherwise raise.
+            blobMetadata.EnsureWithinAzureMetadataLimit();
+
             // Commit all blocks to create the final file, applying the same content-type/HTTP headers the
             // regular and partial create paths set (CreateFileAsync / CreatePartialFileAsync).
             _EnsureWithinBlockLimit(blockIds.Count);
@@ -235,6 +246,11 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
                 .ConfigureAwait(false);
 
             _logger.LogCreatedFinalFile(fileId, partialFiles.Length, totalSize);
+
+            if (_options.DeletePartialFilesOnConcat)
+            {
+                await _DeletePartialFilesBestEffortAsync(partialFiles).ConfigureAwait(false);
+            }
 
             return fileId;
         }
@@ -277,30 +293,52 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
             .ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Deletes the partial uploads that formed a final upload. Best-effort on
+    /// <c>CancellationToken.None</c>: the final blob is already committed, so a failed or aborted
+    /// deletion must neither fail the request nor stop the remaining deletions.
+    /// </summary>
+    private async Task _DeletePartialFilesBestEffortAsync(string[] partialFiles)
+    {
+        // The same partial may be listed multiple times in one Upload-Concat; delete each once.
+        foreach (var partialFileId in partialFiles.Distinct(StringComparer.Ordinal))
+        {
+            try
+            {
+                await DeleteFileAsync(partialFileId, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception e)
+            {
+                _logger.LogFailedToDeletePartialFileAfterConcat(e, partialFileId);
+            }
+        }
+    }
+
     private async Task _ValidatePartialFilesAsync(string[] partialFiles, CancellationToken cancellationToken)
     {
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-
+        // The tus Concatenation extension explicitly allows a partial to "be used multiple times to
+        // form a final resource", including repeated entries in one Upload-Concat list — each
+        // occurrence is copied again, so no duplicate check here.
+        //
+        // All failures throw TusStoreException (tusdotnet maps it to 400 + message): these are
+        // client-caused states, and tusdotnet's own UploadConcatForConcatenateFiles requirement
+        // pre-validates them per request — reaching one here means a TOCTOU race or store-direct use.
         foreach (var partialFileId in partialFiles)
         {
-            // Reject duplicates: a partial listed twice would have its blocks copied twice into the final blob.
-            if (!seen.Add(partialFileId))
-            {
-                throw new InvalidOperationException($"Partial file {partialFileId} is listed more than once");
-            }
+            await _EnsureValidFileIdAsync(partialFileId).ConfigureAwait(false);
 
             var blobClient = _GetBlobClient(partialFileId);
 
             var blobInfo =
                 await _GetTusFileInfoAsync(blobClient, partialFileId, cancellationToken).ConfigureAwait(false)
-                ?? throw new InvalidOperationException($"Partial file {partialFileId} does not exist");
+                ?? throw new TusStoreException($"Partial file {partialFileId} does not exist");
 
             // Verify it's a partial file
             var concatType = blobInfo.Metadata.ConcatType;
 
             if (!string.Equals(concatType, "partial", StringComparison.Ordinal))
             {
-                throw new InvalidOperationException($"File {partialFileId} is not a partial file");
+                throw new TusStoreException($"File {partialFileId} is not a partial file");
             }
 
             // Verify the partial file is complete
@@ -308,7 +346,7 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
 
             if (!uploadLength.HasValue)
             {
-                throw new InvalidOperationException($"Partial file {partialFileId} has no upload length");
+                throw new TusStoreException($"Partial file {partialFileId} has no upload length");
             }
 
             if (blobInfo.CurrentContentLength < uploadLength.Value)
@@ -316,7 +354,7 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
                 FormattableString message =
                     $"Partial file {partialFileId} is incomplete ({blobInfo.CurrentContentLength}/{uploadLength.Value} bytes)";
 
-                throw new InvalidOperationException(message.ToString(CultureInfo.InvariantCulture));
+                throw new TusStoreException(message.ToString(CultureInfo.InvariantCulture));
             }
         }
     }

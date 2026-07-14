@@ -65,7 +65,7 @@ public sealed class PostgresContentionWakeTests(PostgresDistributedLockFixture f
     private async Task _WaitForHeldLockAsync(string keyMaterial)
     {
         var key = PostgresAdvisoryLockKey.FromString(keyMaterial, allowHashing: true);
-        var keys = key.Keys;
+        var (key1, key2) = key.Keys;
 
         using var timeout = TimeProvider.System.CreateCancellationTokenSource(TimeSpan.FromSeconds(10));
 
@@ -86,8 +86,8 @@ public sealed class PostgresContentionWakeTests(PostgresDistributedLockFixture f
                   AND l.objid = @objId
                   AND l.objsubid = @objSubId
                 """;
-            command.Parameters.AddWithValue("classId", keys.Key1);
-            command.Parameters.AddWithValue("objId", keys.Key2);
+            command.Parameters.AddWithValue("classId", key1);
+            command.Parameters.AddWithValue("objId", key2);
             command.Parameters.AddWithValue("objSubId", (short)(key.HasSingleKey ? 1 : 2));
 
             var held = (long)(await command.ExecuteScalarAsync(AbortToken) ?? 0L);

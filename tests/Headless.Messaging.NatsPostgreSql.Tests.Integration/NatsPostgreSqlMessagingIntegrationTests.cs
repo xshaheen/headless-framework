@@ -4,7 +4,6 @@ using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
-using Headless.Messaging.Storage.PostgreSql;
 using Microsoft.Extensions.DependencyInjection;
 using NATS.Client.JetStream.Models;
 using Tests.Helpers;
@@ -89,6 +88,14 @@ public sealed class NatsPostgreSqlMessagingIntegrationTests(NatsPostgreSqlFixtur
     [Fact]
     public override Task should_publish_callback_response_for_queue_request() =>
         base.should_publish_callback_response_for_queue_request();
+
+    [Fact]
+    public override Task should_publish_typed_null_callback_response() =>
+        base.should_publish_typed_null_callback_response();
+
+    [Fact]
+    public override Task should_publish_headers_only_callback_response() =>
+        base.should_publish_headers_only_callback_response();
 
     [Fact]
     public override Task should_rewrite_callback_when_response_is_set() =>
@@ -227,7 +234,7 @@ public sealed class NatsPostgreSqlMessagingIntegrationTests(NatsPostgreSqlFixtur
             new MessageQuery
             {
                 MessageType = MessageType.Publish,
-                StatusName = "Succeeded",
+                StatusName = StatusName.Succeeded,
                 CurrentPage = 0,
                 PageSize = 50,
             },
@@ -238,7 +245,7 @@ public sealed class NatsPostgreSqlMessagingIntegrationTests(NatsPostgreSqlFixtur
             new MessageQuery
             {
                 MessageType = MessageType.Subscribe,
-                StatusName = "Succeeded",
+                StatusName = StatusName.Succeeded,
                 CurrentPage = 0,
                 PageSize = 50,
             },

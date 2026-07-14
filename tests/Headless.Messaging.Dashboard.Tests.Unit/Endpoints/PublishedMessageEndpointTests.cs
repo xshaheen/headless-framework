@@ -49,15 +49,15 @@ public sealed class PublishedMessageEndpointTests : TestBase
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
 
         await using var app = _CreateTestApp(_dataStorage);
-        await app.StartAsync();
+        await app.StartAsync(AbortToken);
         using var client = app.GetTestClient();
 
         // when
-        var response = await client.GetAsync($"/api/published/message/{messageId}");
+        var response = await client.GetAsync($"/api/published/message/{messageId}", AbortToken);
 
         // then
         response.StatusCode.Should().NotBe(HttpStatusCode.NotFound);
-        var payload = await response.Content.ReadFromJsonAsync<Dictionary<string, object?>>();
+        var payload = await response.Content.ReadFromJsonAsync<Dictionary<string, object?>>(AbortToken);
         payload.Should().ContainKey("storageId");
         payload.Should().ContainKey("messageId");
         payload.Should().ContainKey("intentType");
@@ -75,11 +75,11 @@ public sealed class PublishedMessageEndpointTests : TestBase
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
 
         await using var app = _CreateTestApp(_dataStorage);
-        await app.StartAsync();
+        await app.StartAsync(AbortToken);
         using var client = app.GetTestClient();
 
         // when
-        var response = await client.GetAsync($"/api/published/message/{messageId}");
+        var response = await client.GetAsync($"/api/published/message/{messageId}", AbortToken);
 
         // then
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -101,7 +101,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
                     Content = "{\"key\":\"value\"}",
                     Added = new DateTime(2026, 03, 24, 10, 00, 00, DateTimeKind.Utc),
                     Retries = 2,
-                    StatusName = "Succeeded",
+                    StatusName = StatusName.Succeeded,
                 },
             ],
             index: 1,
@@ -150,7 +150,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
             .GetMessagesAsync(
                 Arg.Is<MessageQuery>(query =>
                     query.MessageType == MessageType.Publish
-                    && query.StatusName == "Succeeded"
+                    && query.StatusName == StatusName.Succeeded
                     && query.IntentType == IntentType.Queue
                     && query.CurrentPage == 1
                     && query.PageSize == 20
@@ -185,7 +185,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
             .GetMessagesAsync(
                 Arg.Is<MessageQuery>(query =>
                     query.MessageType == MessageType.Publish
-                    && query.StatusName == "Succeeded"
+                    && query.StatusName == StatusName.Succeeded
                     && query.IntentType == null
                     && query.CurrentPage == 1
                     && query.PageSize == 20
@@ -273,11 +273,11 @@ public sealed class PublishedMessageEndpointTests : TestBase
 
         appBuilder.Services.AddRouting();
         appBuilder.Services.AddAuthorization();
-        appBuilder.Services.AddCors(o => o.AddPolicy("Messaging_Dashboard_CORS", p => p.AllowAnyOrigin()));
+        appBuilder.Services.AddCors(o => o.AddPolicy("HeadlessMessagingDashboardCORS", p => p.AllowAnyOrigin()));
 
         var app = appBuilder.Build();
         app.UseRouting();
-        app.UseCors("Messaging_Dashboard_CORS");
+        app.UseCors("HeadlessMessagingDashboardCORS");
         app.MapMessagingDashboardEndpoints(config);
 
         return app;

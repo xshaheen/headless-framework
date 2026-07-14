@@ -3,6 +3,11 @@
 namespace Headless.Coordination;
 
 /// <summary>Store-classified liveness state for a current node incarnation.</summary>
+/// <remarks>
+/// Additional members may be added in future versions, so consumers that switch on this enum should include a
+/// default branch and treat an unrecognized value conservatively — as if <see cref="Suspected"/> — rather than
+/// assuming the node is <see cref="Alive"/>.
+/// </remarks>
 [PublicAPI]
 public enum NodeLivenessState
 {

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging.Configuration;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -7,18 +8,30 @@ using Microsoft.Extensions.Options;
 namespace Headless.Messaging.Redis;
 
 internal sealed class RedisConsumerClientFactory(
-    IOptions<MessagingRedisOptions> redisOptions,
+    IOptions<RedisMessagingOptions> redisOptions,
+    IOptions<MessagingOptions> messagingOptions,
     IRedisStreamManager redis,
     ILogger<RedisConsumerClient> logger
 ) : IIntentAwareConsumerClientFactory
 {
-    public Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent)
+    public Task<IConsumerClient> CreateAsync(
+        string groupName,
+        byte groupConcurrent,
+        CancellationToken cancellationToken = default
+    )
     {
-        return CreateAsync(groupName, groupConcurrent, IntentType.Queue);
+        return CreateAsync(groupName, groupConcurrent, IntentType.Queue, cancellationToken);
     }
 
-    public Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent, IntentType intentType)
+    public Task<IConsumerClient> CreateAsync(
+        string groupName,
+        byte groupConcurrent,
+        IntentType intentType,
+        CancellationToken cancellationToken = default
+    )
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         if (intentType == IntentType.Bus)
         {
             throw new NotSupportedException(
@@ -26,7 +39,14 @@ internal sealed class RedisConsumerClientFactory(
             );
         }
 
-        var client = new RedisConsumerClient(groupName, groupConcurrent, redis, redisOptions, logger);
+        var client = new RedisConsumerClient(
+            groupName,
+            groupConcurrent,
+            redis,
+            redisOptions,
+            logger,
+            messagingOptions.Value.RetryPolicy.DispatchTimeout
+        );
         return Task.FromResult<IConsumerClient>(client);
     }
 }

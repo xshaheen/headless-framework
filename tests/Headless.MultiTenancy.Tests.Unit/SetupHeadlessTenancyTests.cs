@@ -26,7 +26,11 @@ public sealed class SetupHeadlessTenancyTests
         builder
             .Services.Where(descriptor =>
                 descriptor.ServiceType == typeof(IHostedService)
-                && descriptor.ImplementationType?.Name == "HeadlessTenancyStartupValidator"
+                && string.Equals(
+                    descriptor.ImplementationType?.Name,
+                    "HeadlessTenancyStartupValidator",
+                    StringComparison.Ordinal
+                )
             )
             .Should()
             .ContainSingle();
@@ -66,7 +70,9 @@ public sealed class SetupHeadlessTenancyTests
         var hostedService = (IHostedLifecycleService)
             provider
                 .GetServices<IHostedService>()
-                .Single(service => service.GetType().Name == "HeadlessTenancyStartupValidator");
+                .Single(service =>
+                    string.Equals(service.GetType().Name, "HeadlessTenancyStartupValidator", StringComparison.Ordinal)
+                );
 
         // when — validation runs in StartingAsync so it fires before any other hosted service's StartAsync.
         var act = () => hostedService.StartingAsync(CancellationToken.None);
@@ -95,7 +101,9 @@ public sealed class SetupHeadlessTenancyTests
         var hostedService = (IHostedLifecycleService)
             provider
                 .GetServices<IHostedService>()
-                .Single(service => service.GetType().Name == "HeadlessTenancyStartupValidator");
+                .Single(service =>
+                    string.Equals(service.GetType().Name, "HeadlessTenancyStartupValidator", StringComparison.Ordinal)
+                );
 
         // when
         var act = () => hostedService.StartingAsync(CancellationToken.None);
@@ -213,7 +221,9 @@ public sealed class SetupHeadlessTenancyTests
         var hostedService = (IHostedLifecycleService)
             provider
                 .GetServices<IHostedService>()
-                .Single(service => service.GetType().Name == "HeadlessTenancyStartupValidator");
+                .Single(service =>
+                    string.Equals(service.GetType().Name, "HeadlessTenancyStartupValidator", StringComparison.Ordinal)
+                );
 
         // when
         var act = () => hostedService.StartingAsync(CancellationToken.None);
@@ -239,7 +249,9 @@ public sealed class SetupHeadlessTenancyTests
         var hostedService = (IHostedLifecycleService)
             provider
                 .GetServices<IHostedService>()
-                .Single(service => service.GetType().Name == "HeadlessTenancyStartupValidator");
+                .Single(service =>
+                    string.Equals(service.GetType().Name, "HeadlessTenancyStartupValidator", StringComparison.Ordinal)
+                );
 
         // when
         var act = () => hostedService.StartingAsync(CancellationToken.None);
@@ -247,6 +259,61 @@ public sealed class SetupHeadlessTenancyTests
         // then — the structured diagnostics are recoverable from the typed exception, not just the message
         var exception = (await act.Should().ThrowAsync<HeadlessTenancyValidationException>()).Which;
         exception.Diagnostics.Should().ContainSingle().Which.Code.Should().Be("HEADLESS_TEST");
+    }
+
+    [Fact]
+    public async Task should_not_run_validators_when_startup_cancellation_is_already_requested()
+    {
+        // given
+        var builder = Host.CreateApplicationBuilder();
+        var validator = new CountingValidator();
+        builder.Services.AddSingleton<IHeadlessTenancyValidator>(validator);
+        builder.AddHeadlessTenancy(_ => { });
+
+        await using var provider = builder.Services.BuildServiceProvider();
+        var hostedService = (IHostedLifecycleService)
+            provider
+                .GetServices<IHostedService>()
+                .Single(service =>
+                    string.Equals(service.GetType().Name, "HeadlessTenancyStartupValidator", StringComparison.Ordinal)
+                );
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        // when
+        var act = () => hostedService.StartingAsync(cts.Token);
+
+        // then
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        validator.Calls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_propagate_validator_cancellation_without_synthetic_diagnostic()
+    {
+        // given
+        var builder = Host.CreateApplicationBuilder();
+        var cancellation = new CancellationToken(canceled: true);
+        builder.Services.AddSingleton<IHeadlessTenancyValidator>(new CancelingValidator(cancellation));
+        builder.Services.AddSingleton<IHeadlessTenancyValidator>(
+            new TestValidator("HEADLESS_OTHER", "Other seam failed.")
+        );
+        builder.AddHeadlessTenancy(_ => { });
+
+        await using var provider = builder.Services.BuildServiceProvider();
+        var hostedService = (IHostedLifecycleService)
+            provider
+                .GetServices<IHostedService>()
+                .Single(service =>
+                    string.Equals(service.GetType().Name, "HeadlessTenancyStartupValidator", StringComparison.Ordinal)
+                );
+
+        // when
+        var act = () => hostedService.StartingAsync(CancellationToken.None);
+
+        // then
+        var exception = (await act.Should().ThrowAsync<OperationCanceledException>()).Which;
+        exception.CancellationToken.Should().Be(cancellation);
     }
 
     [Fact]
@@ -260,6 +327,47 @@ public sealed class SetupHeadlessTenancyTests
         var manifest = services.GetOrAddTenantPostureManifest();
 
         // then — the factory descriptor is replaced by a single instance descriptor holding the returned manifest
+        services
+            .Where(descriptor => descriptor.ServiceType == typeof(TenantPostureManifest))
+            .Should()
+            .ContainSingle()
+            .Which.ImplementationInstance.Should()
+            .BeSameAs(manifest);
+    }
+
+    [Fact]
+    public void should_return_pre_registered_manifest_instance_without_adding_a_second_descriptor()
+    {
+        // given — a consumer pre-registers a manifest instance before AddHeadlessTenancy runs
+        var services = new ServiceCollection();
+        var custom = new TenantPostureManifest();
+        services.AddSingleton(custom);
+
+        // when
+        var manifest = services.GetOrAddTenantPostureManifest();
+
+        // then — the consumer's instance is reused, not shadowed by a second registration
+        manifest.Should().BeSameAs(custom);
+        services.Where(descriptor => descriptor.ServiceType == typeof(TenantPostureManifest)).Should().ContainSingle();
+    }
+
+    [Fact]
+    public void should_discard_pre_registered_instance_when_a_later_factory_registration_exists()
+    {
+        // given — pins the documented footgun: reconciliation inspects the LAST registration, so an
+        // instance followed by a factory loses both the instance and any posture recorded on it
+        var services = new ServiceCollection();
+        var custom = new TenantPostureManifest();
+        custom.RecordSeam("Http", TenantPostureStatus.Enforcing);
+        services.AddSingleton(custom);
+        services.AddSingleton<TenantPostureManifest>(_ => new TenantPostureManifest());
+
+        // when
+        var manifest = services.GetOrAddTenantPostureManifest();
+
+        // then — a fresh manifest replaces all prior registrations; the recorded posture is gone
+        manifest.Should().NotBeSameAs(custom);
+        manifest.GetSeam("Http").Should().BeNull();
         services
             .Where(descriptor => descriptor.ServiceType == typeof(TenantPostureManifest))
             .Should()
@@ -300,8 +408,8 @@ public sealed class SetupHeadlessTenancyTests
         // when — an out-of-range cast must fail loudly instead of silently down-ranking the seam
         var act = () => manifest.RecordSeam("Seam", (TenantPostureStatus)99);
 
-        // then
-        act.Should().Throw<ArgumentOutOfRangeException>();
+        // then — Argument.IsInEnum surfaces an undefined enum value as InvalidEnumArgumentException
+        act.Should().Throw<System.ComponentModel.InvalidEnumArgumentException>();
     }
 
     [Theory]
@@ -334,6 +442,26 @@ public sealed class SetupHeadlessTenancyTests
         public IEnumerable<HeadlessTenancyDiagnostic> Validate(HeadlessTenancyValidationContext context)
         {
             throw new InvalidOperationException(message);
+        }
+    }
+
+    private sealed class CancelingValidator(CancellationToken cancellationToken) : IHeadlessTenancyValidator
+    {
+        public IEnumerable<HeadlessTenancyDiagnostic> Validate(HeadlessTenancyValidationContext context)
+        {
+            throw new OperationCanceledException(cancellationToken);
+        }
+    }
+
+    private sealed class CountingValidator : IHeadlessTenancyValidator
+    {
+        public int Calls { get; private set; }
+
+        public IEnumerable<HeadlessTenancyDiagnostic> Validate(HeadlessTenancyValidationContext context)
+        {
+            Calls++;
+
+            return [];
         }
     }
 }

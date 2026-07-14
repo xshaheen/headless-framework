@@ -28,7 +28,7 @@ public sealed class PostgreSqlStorageTest(PostgreSqlTestFixture fixture) : IAsyn
         connection.Open();
 
         const string databaseName = "messages_test";
-        var sql = $@"SELECT datname FROM pg_database WHERE datname = '{databaseName}'";
+        var sql = $"SELECT datname FROM pg_database WHERE datname = '{databaseName}'";
         var result = connection.QueryFirstOrDefault<string>(sql);
         result.Should().NotBeNull();
         databaseName.Equals(result, StringComparison.OrdinalIgnoreCase).Should().BeTrue();

@@ -23,7 +23,7 @@ public static class BrokerAddressDisplay
         }
 
         return string.Join(
-            ",",
+            ',',
             endpoints.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(Format)
         );
     }
@@ -62,9 +62,12 @@ public static class BrokerAddressDisplay
         return endpoint switch
         {
             DnsEndPoint dnsEndPoint => dnsEndPoint.Port > 0
-                ? $"{dnsEndPoint.Host}:{dnsEndPoint.Port}"
+                ? string.Create(CultureInfo.InvariantCulture, $"{dnsEndPoint.Host}:{dnsEndPoint.Port}")
                 : dnsEndPoint.Host,
-            IPEndPoint ipEndPoint => $"{ipEndPoint.Address}:{ipEndPoint.Port}",
+            IPEndPoint ipEndPoint => string.Create(
+                CultureInfo.InvariantCulture,
+                $"{ipEndPoint.Address}:{ipEndPoint.Port}"
+            ),
             _ => endpoint.ToString() ?? string.Empty,
         };
     }

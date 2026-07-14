@@ -16,6 +16,7 @@ using Microsoft.Extensions.Options;
 using Npgsql;
 using NpgsqlTypes;
 
+#pragma warning disable RCS1084 // Use coalesce expression instead of conditional expression
 namespace Headless.Messaging.Storage.PostgreSql;
 
 /// <summary>
@@ -41,7 +42,7 @@ internal sealed class PostgreSqlDataStorage(
     /// paths that pass <c>@OriginalRetries</c>.
     /// </summary>
     private const string _TerminalRowGuardWithRetries =
-        "NOT (\"StatusName\" IN ('Succeeded','Failed') AND \"NextRetryAt\" IS NULL) AND (@OriginalRetries IS NULL OR \"Retries\"=@OriginalRetries)";
+        "NOT (\"StatusName\" IN ('Succeeded','Failed') AND \"NextRetryAt\" IS NULL) AND (@OriginalRetries IS NULL OR \"Retries\"=@OriginalRetries) AND (@OriginalInlineAttempts IS NULL OR \"InlineAttempts\"=@OriginalInlineAttempts)";
 
     /// <summary>
     /// Reusable WHERE-clause fragment for paths that do not supply <c>@OriginalRetries</c>
@@ -65,7 +66,6 @@ internal sealed class PostgreSqlDataStorage(
 
     private readonly string _publishedTable = initializer.GetPublishedTableName();
     private readonly string _receivedTable = initializer.GetReceivedTableName();
-    private readonly INodeMembership _nodeMembership = nodeMembership;
 
     /// <summary>
     /// Returns the monitoring API for querying message statistics and dashboard data against this PostgreSQL storage.
@@ -89,7 +89,8 @@ internal sealed class PostgreSqlDataStorage(
             return;
         }
 
-        var sql = $"UPDATE {_publishedTable} SET \"StatusName\"=@StatusName WHERE \"Id\" = ANY(@Ids);";
+        var sql =
+            $"UPDATE {_publishedTable} SET \"StatusName\"=@StatusName WHERE \"Id\" = ANY(@Ids) AND {_TerminalRowGuardSimple};";
 
         object[] sqlParams =
         [
@@ -132,9 +133,37 @@ internal sealed class PostgreSqlDataStorage(
             nextRetryAt,
             lockedUntil,
             originalRetries,
+            originalInlineAttempts: null,
             cancellationToken
         );
     }
+
+    public ValueTask<bool> ChangePublishRetryStateAsync(
+        MediumMessage message,
+        StatusName state,
+        DateTime? nextRetryAt,
+        DateTime? lockedUntil,
+        int originalRetries,
+        int originalInlineAttempts,
+        CancellationToken cancellationToken = default
+    ) =>
+        _ChangeMessageStateAsync(
+            _publishedTable,
+            message,
+            state,
+            transaction: null,
+            nextRetryAt,
+            lockedUntil,
+            originalRetries,
+            originalInlineAttempts,
+            cancellationToken
+        );
+
+    public ValueTask<bool> ReservePublishAttemptAsync(
+        MediumMessage message,
+        int originalInlineAttempts,
+        CancellationToken cancellationToken = default
+    ) => _ReserveAttemptAsync(_publishedTable, message, originalInlineAttempts, cancellationToken);
 
     /// <summary>
     /// Acquires a dispatch lease on a published message by setting <c>LockedUntil</c> and <c>Owner</c>.
@@ -143,22 +172,80 @@ internal sealed class PostgreSqlDataStorage(
     /// <returns><see langword="true"/> if the lease was acquired; <see langword="false"/> if another node already holds it.</returns>
     public ValueTask<bool> LeasePublishAsync(
         MediumMessage message,
-        DateTime lockedUntil,
+        TimeSpan leaseDuration,
         CancellationToken cancellationToken = default
-    ) => _LeaseMessageAsync(_publishedTable, message, lockedUntil, cancellationToken);
+    ) => _LeaseMessageAsync(_publishedTable, message, leaseDuration, cancellationToken);
+
+    public ValueTask<bool> LeasePublishAndReserveAttemptAsync(
+        MediumMessage message,
+        TimeSpan leaseDuration,
+        int originalInlineAttempts,
+        CancellationToken cancellationToken = default
+    ) =>
+        _LeaseAndReserveAttemptAsync(
+            _publishedTable,
+            message,
+            leaseDuration,
+            originalInlineAttempts,
+            cancellationToken
+        );
 
     /// <summary>
     /// Updates the status of a received message, including writing <c>ExceptionInfo</c> when the
     /// message faulted. Respects the terminal-row guard — permanently completed rows are not mutated.
     /// </summary>
     /// <returns><see langword="true"/> if a row was updated; <see langword="false"/> if the guard blocked it.</returns>
-    public async ValueTask<bool> ChangeReceiveStateAsync(
+    public ValueTask<bool> ChangeReceiveStateAsync(
         MediumMessage message,
         StatusName state,
         DateTime? nextRetryAt = null,
         DateTime? lockedUntil = null,
         int? originalRetries = null,
         CancellationToken cancellationToken = default
+    ) =>
+        _ChangeReceiveStateAsync(
+            message,
+            state,
+            nextRetryAt,
+            lockedUntil,
+            originalRetries,
+            originalInlineAttempts: null,
+            cancellationToken
+        );
+
+    public ValueTask<bool> ChangeReceiveRetryStateAsync(
+        MediumMessage message,
+        StatusName state,
+        DateTime? nextRetryAt,
+        DateTime? lockedUntil,
+        int originalRetries,
+        int originalInlineAttempts,
+        CancellationToken cancellationToken = default
+    ) =>
+        _ChangeReceiveStateAsync(
+            message,
+            state,
+            nextRetryAt,
+            lockedUntil,
+            originalRetries,
+            originalInlineAttempts,
+            cancellationToken
+        );
+
+    public ValueTask<bool> ReserveReceiveAttemptAsync(
+        MediumMessage message,
+        int originalInlineAttempts,
+        CancellationToken cancellationToken = default
+    ) => _ReserveAttemptAsync(_receivedTable, message, originalInlineAttempts, cancellationToken);
+
+    private async ValueTask<bool> _ChangeReceiveStateAsync(
+        MediumMessage message,
+        StatusName state,
+        DateTime? nextRetryAt,
+        DateTime? lockedUntil,
+        int? originalRetries,
+        int? originalInlineAttempts,
+        CancellationToken cancellationToken
     )
     {
         // NOTE: ChangeReceiveStateAsync does not call _ChangeMessageStateAsync because the receive
@@ -173,23 +260,33 @@ internal sealed class PostgreSqlDataStorage(
         // processor can rewrite it on the next pickup. The plan's stricter form would block
         // that, breaking the persisted-retry flow.
         var sql =
-            $"UPDATE {_receivedTable} SET \"Content\"=@Content,\"Retries\"=@Retries,\"ExpiresAt\"=@ExpiresAt,\"NextRetryAt\"=@NextRetryAt,\"LockedUntil\"=@LockedUntil,\"Owner\"=@Owner,\"StatusName\"=@StatusName,\"ExceptionInfo\"=@ExceptionInfo WHERE \"Id\"=@Id AND {_TerminalRowGuardWithRetries}";
+            $"UPDATE {_receivedTable} SET \"Content\"=@Content,\"Retries\"=@Retries,\"InlineAttempts\"=@InlineAttempts,\"ExpiresAt\"=@ExpiresAt,\"NextRetryAt\"=@NextRetryAt,\"LockedUntil\"=@LockedUntil,\"Owner\"=@Owner,\"StatusName\"=@StatusName,\"ExceptionInfo\"=@ExceptionInfo WHERE \"Id\"=@Id AND {_TerminalRowGuardWithRetries} AND (@OriginalInlineAttempts IS NULL OR (\"LockedUntil\" IS NOT DISTINCT FROM @OriginalLockedUntil AND \"Owner\" IS NOT DISTINCT FROM @OriginalOwner AND \"LockedUntil\">statement_timestamp()))";
 
         object[] sqlParams =
         [
             new NpgsqlParameter("@Id", message.StorageId),
             new NpgsqlParameter("@Content", serializer.Serialize(message.Origin)),
             new NpgsqlParameter("@Retries", message.Retries),
-            new NpgsqlParameter("@ExpiresAt", message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value),
+            new NpgsqlParameter("@InlineAttempts", message.InlineAttempts),
+            new NpgsqlParameter("@ExpiresAt", message.ExpiresAt.ToUtcParameterValue()),
             new NpgsqlParameter("@NextRetryAt", nextRetryAt.ToUtcParameterValue()),
             new NpgsqlParameter("@LockedUntil", lockedUntil.ToUtcParameterValue()),
             new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar)
             {
-                Value = _nodeMembership.GetOwnerParameterValue(lockedUntil),
+                Value = nodeMembership.GetOwnerParameterValue(lockedUntil),
             },
             new NpgsqlParameter("@OriginalRetries", NpgsqlDbType.Integer)
             {
                 Value = originalRetries ?? (object)DBNull.Value,
+            },
+            new NpgsqlParameter("@OriginalInlineAttempts", NpgsqlDbType.Integer)
+            {
+                Value = originalInlineAttempts ?? (object)DBNull.Value,
+            },
+            new NpgsqlParameter("@OriginalLockedUntil", message.LockedUntil.ToUtcParameterValue()),
+            new NpgsqlParameter("@OriginalOwner", NpgsqlDbType.Varchar)
+            {
+                Value = message.Owner ?? (object)DBNull.Value,
             },
             new NpgsqlParameter("@StatusName", state.ToString("G")),
             new NpgsqlParameter("@ExceptionInfo", message.ExceptionInfo ?? (object)DBNull.Value),
@@ -215,9 +312,17 @@ internal sealed class PostgreSqlDataStorage(
     /// <returns><see langword="true"/> if the lease was acquired; <see langword="false"/> if another node already holds it.</returns>
     public ValueTask<bool> LeaseReceiveAsync(
         MediumMessage message,
-        DateTime lockedUntil,
+        TimeSpan leaseDuration,
         CancellationToken cancellationToken = default
-    ) => _LeaseMessageAsync(_receivedTable, message, lockedUntil, cancellationToken);
+    ) => _LeaseMessageAsync(_receivedTable, message, leaseDuration, cancellationToken);
+
+    public ValueTask<bool> LeaseReceiveAndReserveAttemptAsync(
+        MediumMessage message,
+        TimeSpan leaseDuration,
+        int originalInlineAttempts,
+        CancellationToken cancellationToken = default
+    ) =>
+        _LeaseAndReserveAttemptAsync(_receivedTable, message, leaseDuration, originalInlineAttempts, cancellationToken);
 
     /// <summary>
     /// Persists a published outbox message to the <c>published</c> table. When <paramref name="transaction"/>
@@ -236,8 +341,8 @@ internal sealed class PostgreSqlDataStorage(
     )
     {
         var sql =
-            $"INSERT INTO {_publishedTable} (\"Id\",\"Version\",\"Name\",\"Content\",\"IntentType\",\"Retries\",\"Added\",\"ExpiresAt\",\"NextRetryAt\",\"LockedUntil\",\"Owner\",\"StatusName\",\"MessageId\")"
-            + $"VALUES(@Id,'{messagingOptions.Value.Version}',@Name,@Content,@IntentType,@Retries,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@Owner,@StatusName,@MessageId);";
+            $"INSERT INTO {_publishedTable} (\"Id\",\"Version\",\"Name\",\"Content\",\"IntentType\",\"Retries\",\"InlineAttempts\",\"Added\",\"ExpiresAt\",\"NextRetryAt\",\"LockedUntil\",\"Owner\",\"StatusName\",\"MessageId\")"
+            + $"VALUES(@Id,'{messagingOptions.Value.Version}',@Name,@Content,@IntentType,@Retries,@InlineAttempts,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@Owner,@StatusName,@MessageId);";
 
         var added = timeProvider.GetUtcNow().UtcDateTime;
         var stored = new MediumMessage
@@ -252,6 +357,7 @@ internal sealed class PostgreSqlDataStorage(
             LockedUntil = null,
             Owner = null,
             Retries = 0,
+            InlineAttempts = 0,
         };
 
         object[] sqlParams =
@@ -261,13 +367,14 @@ internal sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@Content", stored.Content),
             new NpgsqlParameter("@IntentType", (short)stored.IntentType),
             new NpgsqlParameter("@Retries", stored.Retries),
+            new NpgsqlParameter("@InlineAttempts", stored.InlineAttempts),
             new NpgsqlParameter("@Added", stored.Added),
-            new NpgsqlParameter("@ExpiresAt", stored.ExpiresAt.HasValue ? stored.ExpiresAt.Value : DBNull.Value),
+            new NpgsqlParameter("@ExpiresAt", stored.ExpiresAt.ToUtcParameterValue()),
             new NpgsqlParameter("@NextRetryAt", stored.NextRetryAt.ToUtcParameterValue()),
             new NpgsqlParameter("@LockedUntil", stored.LockedUntil.ToUtcParameterValue()),
             new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar) { Value = DBNull.Value },
             new NpgsqlParameter("@StatusName", nameof(StatusName.Scheduled)),
-            new NpgsqlParameter("@MessageId", message.Origin.GetId()),
+            new NpgsqlParameter("@MessageId", message.Origin.Id),
         ];
 
         if (transaction == null)
@@ -397,6 +504,7 @@ internal sealed class PostgreSqlDataStorage(
             ),
             new NpgsqlParameter("@IntentType", (short)message.IntentType),
             new NpgsqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxPersistedRetries),
+            new NpgsqlParameter("@InlineAttempts", message.InlineAttempts),
             new NpgsqlParameter("@Added", timeProvider.GetUtcNow().UtcDateTime),
             new NpgsqlParameter(
                 "@ExpiresAt",
@@ -406,11 +514,8 @@ internal sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@LockedUntil", DBNull.Value),
             new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar) { Value = DBNull.Value },
             new NpgsqlParameter("@StatusName", nameof(StatusName.Failed)),
-            new NpgsqlParameter("@MessageId", message.Origin.GetId()),
+            new NpgsqlParameter("@MessageId", message.Origin.Id),
             new NpgsqlParameter("@ExceptionInfo", exceptionInfo ?? (object)DBNull.Value),
-            // #4 — active-lease guard uses the injected TimeProvider (not DB now()) so all lease math
-            // shares one clock domain; keeps the guard testable with a fake clock.
-            new NpgsqlParameter("@Now", timeProvider.GetUtcNow().UtcDateTime),
         ];
 
         var rowId = await _StoreReceivedMessage(sqlParams, cancellationToken).ConfigureAwait(false);
@@ -444,6 +549,7 @@ internal sealed class PostgreSqlDataStorage(
             LockedUntil = null,
             Owner = null,
             Retries = 0,
+            InlineAttempts = 0,
         };
 
         object[] sqlParams =
@@ -454,20 +560,15 @@ internal sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@Content", mediumMessage.Content),
             new NpgsqlParameter("@IntentType", (short)mediumMessage.IntentType),
             new NpgsqlParameter("@Retries", mediumMessage.Retries),
+            new NpgsqlParameter("@InlineAttempts", mediumMessage.InlineAttempts),
             new NpgsqlParameter("@Added", mediumMessage.Added),
-            new NpgsqlParameter(
-                "@ExpiresAt",
-                mediumMessage.ExpiresAt.HasValue ? mediumMessage.ExpiresAt.Value : DBNull.Value
-            ),
+            new NpgsqlParameter("@ExpiresAt", mediumMessage.ExpiresAt.ToUtcParameterValue()),
             new NpgsqlParameter("@NextRetryAt", mediumMessage.NextRetryAt.ToUtcParameterValue()),
             new NpgsqlParameter("@LockedUntil", mediumMessage.LockedUntil.ToUtcParameterValue()),
             new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar) { Value = DBNull.Value },
             new NpgsqlParameter("@StatusName", nameof(StatusName.Scheduled)),
-            new NpgsqlParameter("@MessageId", message.Origin.GetId()),
+            new NpgsqlParameter("@MessageId", message.Origin.Id),
             new NpgsqlParameter("@ExceptionInfo", DBNull.Value),
-            // #4 — active-lease guard uses the injected TimeProvider (not DB now()) so all lease math
-            // shares one clock domain; keeps the guard testable with a fake clock.
-            new NpgsqlParameter("@Now", timeProvider.GetUtcNow().UtcDateTime),
         ];
 
         // #5 — adopt the authoritative persisted row id. On a concurrent redelivery that takes the ON
@@ -690,7 +791,7 @@ internal sealed class PostgreSqlDataStorage(
     )
     {
         var sql =
-            $"SELECT \"Id\",\"Content\",\"IntentType\",\"Retries\",\"Added\",\"ExpiresAt\" FROM {_publishedTable} WHERE \"Version\"=@Version "
+            $"SELECT \"Id\",\"Content\",\"IntentType\",\"Retries\",\"InlineAttempts\",\"Added\",\"ExpiresAt\" FROM {_publishedTable} WHERE \"Version\"=@Version "
             + $"AND ((\"ExpiresAt\"< @TwoMinutesLater AND \"StatusName\" = '{nameof(StatusName.Delayed)}') OR (\"ExpiresAt\"< @OneMinutesAgo AND \"StatusName\" = '{nameof(StatusName.Queued)}')) FOR UPDATE SKIP LOCKED LIMIT @BatchSize;";
 
         var sqlParams = new object[]
@@ -708,6 +809,7 @@ internal sealed class PostgreSqlDataStorage(
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
+        var poisonMessages = new List<PoisonMessage>();
         var messageList = await connection
             .ExecuteReaderAsync(
                 sql,
@@ -729,10 +831,11 @@ internal sealed class PostgreSqlDataStorage(
                                 Content = content,
                                 IntentType = (IntentType)reader.GetInt16(2),
                                 Retries = reader.GetInt32(3),
-                                Added = reader.GetDateTime(4),
-                                ExpiresAt = await reader.IsDBNullAsync(5, token).ConfigureAwait(false)
+                                InlineAttempts = reader.GetInt32(4),
+                                Added = reader.GetDateTime(5),
+                                ExpiresAt = await reader.IsDBNullAsync(6, token).ConfigureAwait(false)
                                     ? null
-                                    : reader.GetDateTime(5),
+                                    : reader.GetDateTime(6),
                             };
                         }
 #pragma warning disable CA1031 // deliberately broad: one un-deserializable row must not abort the schedule batch (#3)
@@ -740,6 +843,7 @@ internal sealed class PostgreSqlDataStorage(
 #pragma warning restore CA1031
                         {
                             logger.LogPoisonMessageSkipped(storageId, _publishedTable, ex);
+                            poisonMessages.Add(_CreatePoisonMessage(storageId, ex));
                             continue;
                         }
 
@@ -757,6 +861,15 @@ internal sealed class PostgreSqlDataStorage(
 
         logger.LogSchedulerBatchFetched(messageList.Count, _publishedTable);
 
+        await _MarkPoisonMessagesTerminalAsync(
+                connection,
+                transaction,
+                _publishedTable,
+                poisonMessages,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
         await scheduleTask(transaction, messageList).ConfigureAwait(false);
 
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
@@ -765,6 +878,39 @@ internal sealed class PostgreSqlDataStorage(
     // NOTE: ChangeReceiveStateAsync does not call this helper because the receive path additionally
     // writes ExceptionInfo, a column absent from the published table schema. Keep these two methods
     // in sync when adding columns.
+    private async ValueTask<bool> _ReserveAttemptAsync(
+        string tableName,
+        MediumMessage message,
+        int originalInlineAttempts,
+        CancellationToken cancellationToken
+    )
+    {
+        var sql =
+            $"UPDATE {tableName} SET \"InlineAttempts\"=@InlineAttempts WHERE \"Id\"=@Id AND {_TerminalRowGuardWithRetries} AND \"LockedUntil\" IS NOT DISTINCT FROM @LockedUntil AND \"Owner\" IS NOT DISTINCT FROM @CurrentOwner AND \"LockedUntil\">statement_timestamp()";
+        object[] sqlParams =
+        [
+            new NpgsqlParameter("@Id", message.StorageId),
+            new NpgsqlParameter("@InlineAttempts", message.InlineAttempts),
+            new NpgsqlParameter("@OriginalRetries", message.Retries),
+            new NpgsqlParameter("@OriginalInlineAttempts", originalInlineAttempts),
+            new NpgsqlParameter("@LockedUntil", message.LockedUntil.ToUtcParameterValue()),
+            new NpgsqlParameter("@CurrentOwner", NpgsqlDbType.Varchar)
+            {
+                Value = message.Owner ?? (object)DBNull.Value,
+            },
+        ];
+        await using var connection = postgreSqlOptions.Value.CreateConnection();
+        var affected = await connection
+            .ExecuteNonQueryAsync(
+                sql,
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                sqlParams: sqlParams,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
+        return affected > 0;
+    }
+
     private async ValueTask<bool> _ChangeMessageStateAsync(
         string tableName,
         MediumMessage message,
@@ -773,27 +919,38 @@ internal sealed class PostgreSqlDataStorage(
         DateTime? nextRetryAt,
         DateTime? lockedUntil,
         int? originalRetries,
+        int? originalInlineAttempts,
         CancellationToken cancellationToken
     )
     {
         var sql =
-            $"UPDATE {tableName} SET \"Content\"=@Content,\"Retries\"=@Retries,\"ExpiresAt\"=@ExpiresAt,\"NextRetryAt\"=@NextRetryAt,\"LockedUntil\"=@LockedUntil,\"Owner\"=@Owner,\"StatusName\"=@StatusName WHERE \"Id\"=@Id AND {_TerminalRowGuardWithRetries}";
+            $"UPDATE {tableName} SET \"Content\"=@Content,\"Retries\"=@Retries,\"InlineAttempts\"=@InlineAttempts,\"ExpiresAt\"=@ExpiresAt,\"NextRetryAt\"=@NextRetryAt,\"LockedUntil\"=@LockedUntil,\"Owner\"=@Owner,\"StatusName\"=@StatusName WHERE \"Id\"=@Id AND {_TerminalRowGuardWithRetries} AND (@OriginalInlineAttempts IS NULL OR (\"LockedUntil\" IS NOT DISTINCT FROM @OriginalLockedUntil AND \"Owner\" IS NOT DISTINCT FROM @OriginalOwner AND \"LockedUntil\">statement_timestamp()))";
 
         object[] sqlParams =
         [
             new NpgsqlParameter("@Id", message.StorageId),
             new NpgsqlParameter("@Content", serializer.Serialize(message.Origin)),
             new NpgsqlParameter("@Retries", message.Retries),
-            new NpgsqlParameter("@ExpiresAt", message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value),
+            new NpgsqlParameter("@InlineAttempts", message.InlineAttempts),
+            new NpgsqlParameter("@ExpiresAt", message.ExpiresAt.ToUtcParameterValue()),
             new NpgsqlParameter("@NextRetryAt", nextRetryAt.ToUtcParameterValue()),
             new NpgsqlParameter("@LockedUntil", lockedUntil.ToUtcParameterValue()),
             new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar)
             {
-                Value = _nodeMembership.GetOwnerParameterValue(lockedUntil),
+                Value = nodeMembership.GetOwnerParameterValue(lockedUntil),
             },
             new NpgsqlParameter("@OriginalRetries", NpgsqlDbType.Integer)
             {
                 Value = originalRetries ?? (object)DBNull.Value,
+            },
+            new NpgsqlParameter("@OriginalInlineAttempts", NpgsqlDbType.Integer)
+            {
+                Value = originalInlineAttempts ?? (object)DBNull.Value,
+            },
+            new NpgsqlParameter("@OriginalLockedUntil", message.LockedUntil.ToUtcParameterValue()),
+            new NpgsqlParameter("@OriginalOwner", NpgsqlDbType.Varchar)
+            {
+                Value = message.Owner ?? (object)DBNull.Value,
             },
             new NpgsqlParameter("@StatusName", state.ToString("G")),
         ];
@@ -881,15 +1038,19 @@ internal sealed class PostgreSqlDataStorage(
         // `ON CONFLICT ON CONSTRAINT` would error out against it).
         // #3 — additionally skip rows whose lease is still active (LockedUntil in the future). A
         // redelivered message that arrives while the row is being dispatched would otherwise
-        // overwrite LockedUntil = NULL and Retries = 0, releasing the active pickup lease
-        // mid-attempt and letting the retry processor re-pick the row while the inline retry loop
-        // is still in flight. Mirrors the matching guard in SqlServerDataStorage._StoreReceivedMessage.
+        // overwrite LockedUntil = NULL, releasing the active pickup lease mid-attempt and letting
+        // the retry processor re-pick the row while the inline retry burst is still in flight.
+        // Ownership time is the DATABASE's: the guard compares against statement_timestamp(), the same
+        // clock that wrote "LockedUntil" in _LeaseAndReserveAttemptAsync. Sampling the app clock here
+        // instead would let a node running ahead of the server see a live lease as expired and CLEAR it.
+        // The DO UPDATE SET list deliberately excludes "Retries" and "InlineAttempts" so a benign
+        // redelivery collapse never resets the durable retry counters.
+        // Mirrors the matching guard in SqlServerDataStorage._StoreReceivedMessage.
         var sql = $"""
-            INSERT INTO {_receivedTable}("Id","Version","Name","Group","Content","IntentType","Retries","Added","ExpiresAt","NextRetryAt","LockedUntil","Owner","StatusName","MessageId","ExceptionInfo")
-            VALUES(@Id,'{messagingOptions.Value.Version}',@Name,@Group,@Content,@IntentType,@Retries,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@Owner,@StatusName,@MessageId,@ExceptionInfo)
+            INSERT INTO {_receivedTable}("Id","Version","Name","Group","Content","IntentType","Retries","InlineAttempts","Added","ExpiresAt","NextRetryAt","LockedUntil","Owner","StatusName","MessageId","ExceptionInfo")
+            VALUES(@Id,'{messagingOptions.Value.Version}',@Name,@Group,@Content,@IntentType,@Retries,@InlineAttempts,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@Owner,@StatusName,@MessageId,@ExceptionInfo)
             ON CONFLICT ("Version", "MessageId", (COALESCE("Group", '')), "IntentType") DO UPDATE SET
                 "StatusName"=EXCLUDED."StatusName",
-                "Retries"=EXCLUDED."Retries",
                 "ExpiresAt"=EXCLUDED."ExpiresAt",
                 "NextRetryAt"=EXCLUDED."NextRetryAt",
                 "LockedUntil"=EXCLUDED."LockedUntil",
@@ -899,7 +1060,7 @@ internal sealed class PostgreSqlDataStorage(
             WHERE NOT ({_receivedTable}."StatusName" IN ('{nameof(StatusName.Succeeded)}','{nameof(
                 StatusName.Failed
             )}') AND {_receivedTable}."NextRetryAt" IS NULL)
-              AND ({_receivedTable}."LockedUntil" IS NULL OR {_receivedTable}."LockedUntil" <= @Now)
+              AND ({_receivedTable}."LockedUntil" IS NULL OR {_receivedTable}."LockedUntil" <= statement_timestamp())
             RETURNING "Id"
             """;
 
@@ -917,46 +1078,113 @@ internal sealed class PostgreSqlDataStorage(
             .ConfigureAwait(false);
     }
 
-    private async ValueTask<bool> _LeaseMessageAsync(
+    private async ValueTask<bool> _LeaseAndReserveAttemptAsync(
         string tableName,
         MediumMessage message,
-        DateTime lockedUntil,
-        CancellationToken cancellationToken = default
+        TimeSpan leaseDuration,
+        int originalInlineAttempts,
+        CancellationToken cancellationToken
     )
     {
-        // #15 — explicit lease-contention predicate: only acquire the lease when the row is unleased
-        // OR its existing lease has expired. Mirrors the matching guard in SqlServerDataStorage._LeaseMessageAsync.
-        var sql =
-            $"UPDATE {tableName} SET \"LockedUntil\"=@LockedUntil,\"Owner\"=@Owner WHERE \"Id\"=@Id "
-            + "AND (\"LockedUntil\" IS NULL OR \"LockedUntil\" <= @Now) "
-            + $"AND {_TerminalRowGuardSimple}";
+        // Fresh-dispatch fast path: acquire the lease AND reserve the next inline attempt in one
+        // statement (one round trip instead of the _LeaseMessageAsync + _ReserveAttemptAsync pair).
+        // Combines the lease-contention predicate (#15) with the durable-counter CAS from
+        // _ReserveAttemptAsync; no owner match is required because this path is TAKING the lease.
+        // Ownership time is the database's: one statement-stable snapshot supplies both the expiry
+        // comparison and the new deadline. Returning the stored identity keeps the caller's fence
+        // byte-for-byte aligned with durable state.
+        var sql = $"""
+            WITH clock AS (SELECT statement_timestamp() AS now)
+            UPDATE {tableName} AS message
+            SET "LockedUntil"=clock.now + (@LeaseSeconds * INTERVAL '1 second'),
+                "Owner"=@Owner,
+                "InlineAttempts"=@InlineAttempts
+            FROM clock
+            WHERE message."Id"=@Id
+              AND (message."LockedUntil" IS NULL OR message."LockedUntil" <= clock.now)
+              AND {_TerminalRowGuardWithRetries}
+            RETURNING message."LockedUntil",message."Owner"
+            """;
 
-        var owner = _nodeMembership.GetOwnerTag();
+        var owner = nodeMembership.GetOwnerTag();
         object[] sqlParams =
         [
             new NpgsqlParameter("@Id", message.StorageId),
-            new NpgsqlParameter("@LockedUntil", ((DateTime?)lockedUntil).ToUtcParameterValue()),
+            new NpgsqlParameter("@LeaseSeconds", leaseDuration.TotalSeconds),
             new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar) { Value = owner ?? (object)DBNull.Value },
-            new NpgsqlParameter("@Now", timeProvider.GetUtcNow().UtcDateTime),
+            new NpgsqlParameter("@InlineAttempts", message.InlineAttempts),
+            new NpgsqlParameter("@OriginalRetries", message.Retries),
+            new NpgsqlParameter("@OriginalInlineAttempts", originalInlineAttempts),
         ];
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
-        var affectedRows = await connection
-            .ExecuteNonQueryAsync(
+        var storedLease = await connection
+            .ExecuteReaderAsync(
                 sql,
+                LeaseDeadlineReader.ReadAsync,
                 commandTimeout: messagingOptions.Value.CommandTimeout,
                 sqlParams: sqlParams,
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
 
-        if (affectedRows > 0)
+        return _ApplyStoredLease(message, storedLease);
+    }
+
+    private async ValueTask<bool> _LeaseMessageAsync(
+        string tableName,
+        MediumMessage message,
+        TimeSpan leaseDuration,
+        CancellationToken cancellationToken = default
+    )
+    {
+        // #15 — explicit lease-contention predicate: only acquire the lease when the row is unleased
+        // OR its existing lease has expired. Mirrors the matching guard in SqlServerDataStorage._LeaseMessageAsync.
+        // Ownership time is the database's — see _LeaseAndReserveAttemptAsync.
+        var sql = $"""
+            WITH clock AS (SELECT statement_timestamp() AS now)
+            UPDATE {tableName} AS message
+            SET "LockedUntil"=clock.now + (@LeaseSeconds * INTERVAL '1 second'),
+                "Owner"=@Owner
+            FROM clock
+            WHERE message."Id"=@Id
+              AND (message."LockedUntil" IS NULL OR message."LockedUntil" <= clock.now)
+              AND {_TerminalRowGuardSimple}
+            RETURNING message."LockedUntil",message."Owner"
+            """;
+
+        var owner = nodeMembership.GetOwnerTag();
+        object[] sqlParams =
+        [
+            new NpgsqlParameter("@Id", message.StorageId),
+            new NpgsqlParameter("@LeaseSeconds", leaseDuration.TotalSeconds),
+            new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar) { Value = owner ?? (object)DBNull.Value },
+        ];
+
+        await using var connection = postgreSqlOptions.Value.CreateConnection();
+        var storedLease = await connection
+            .ExecuteReaderAsync(
+                sql,
+                LeaseDeadlineReader.ReadAsync,
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                sqlParams: sqlParams,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return _ApplyStoredLease(message, storedLease);
+    }
+
+    private static bool _ApplyStoredLease(MediumMessage message, (DateTime LockedUntil, string? Owner)? storedLease)
+    {
+        if (storedLease is not { } lease)
         {
-            message.LockedUntil = ((DateTime?)lockedUntil).ToUtcOrSelf();
-            message.Owner = owner;
+            return false;
         }
 
-        return affectedRows > 0;
+        message.LockedUntil = lease.LockedUntil;
+        message.Owner = lease.Owner;
+        return true;
     }
 
     private async ValueTask<IEnumerable<MediumMessage>> _GetMessagesOfNeedRetryAsync(
@@ -971,46 +1199,55 @@ internal sealed class PostgreSqlDataStorage(
         // "LockedUntil IS NULL" filter and lease the same row — double-dispatch.
         //
         // FOR UPDATE SKIP LOCKED on the inner SELECT preserves the "skip rows another replica
-        // is mid-claim on" behaviour. The UPDATE then assigns @NewLease = now + DispatchTimeout
+        // is mid-claim on" behaviour. The UPDATE then assigns database time + DispatchTimeout
         // so subsequent pickup polls (anywhere) see the row as leased until the dispatch
         // attempt completes (or the lease expires).
         //
-        // Use the injected TimeProvider rather than the DB server clock (now()) so InMemory and
-        // SQL providers share identical pickup semantics — keeps tests with a fake clock honest
-        // and avoids subtle drift between application time and DB time.
-        var sql = $"""
-            UPDATE {tableName} SET "LockedUntil" = @NewLease, "Owner" = @Owner
-            WHERE "Id" IN (
-                SELECT "Id" FROM {tableName}
+        // NextRetryAt is scheduling state written from the injected TimeProvider, so its due
+        // predicate uses that same authority. Lease expiry and stamping remain on one statement-
+        // time database snapshot, keeping every replica on one ownership authority without a
+        // clock query.
+        var sql = string.Create(
+            CultureInfo.InvariantCulture,
+            $"""
+            WITH candidates AS (
+                SELECT message."Id"
+                FROM {tableName} AS message
                 WHERE "Retries" <= @Retries
                   AND "Version" = @Version
                   AND "NextRetryAt" IS NOT NULL AND "NextRetryAt" <= @Now
-                  AND ("LockedUntil" IS NULL OR "LockedUntil" <= @Now)
+                  AND ("LockedUntil" IS NULL OR "LockedUntil" <= statement_timestamp())
                   AND {_TerminalRowGuardSimple}
                 ORDER BY "NextRetryAt"
                 LIMIT {messagingOptions.Value.RetryBatchSize}
                 FOR UPDATE SKIP LOCKED
             )
-            RETURNING "Id","Content","IntentType","Retries","Added","NextRetryAt","LockedUntil","Owner";
-            """;
-
-        var now = timeProvider.GetUtcNow().UtcDateTime;
-        var newLease = now.Add(messagingOptions.Value.RetryPolicy.DispatchTimeout);
+            UPDATE {tableName} AS message
+            SET "LockedUntil" = statement_timestamp() + (@LeaseSeconds * INTERVAL '1 second'),
+                "Owner" = @Owner
+            FROM candidates
+            WHERE message."Id" = candidates."Id"
+            RETURNING message."Id",message."Content",message."IntentType",message."Retries",message."InlineAttempts",message."Added",message."NextRetryAt",message."LockedUntil",message."Owner";
+            """
+        );
 
         object[] sqlParams =
         [
             new NpgsqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxPersistedRetries),
             new NpgsqlParameter("@Version", messagingOptions.Value.Version),
-            new NpgsqlParameter("@Now", now),
-            new NpgsqlParameter("@NewLease", newLease),
+            new NpgsqlParameter("@Now", timeProvider.GetUtcNow().UtcDateTime),
+            new NpgsqlParameter("@LeaseSeconds", messagingOptions.Value.RetryPolicy.DispatchTimeout.TotalSeconds),
             new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar)
             {
-                Value = _nodeMembership.GetOwnerTag() ?? (object)DBNull.Value,
+                Value = nodeMembership.GetOwnerTag() ?? (object)DBNull.Value,
             },
         ];
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
+        var poisonMessages = new List<PoisonMessage>();
         var result = await connection
             .ExecuteReaderAsync(
                 sql,
@@ -1032,25 +1269,25 @@ internal sealed class PostgreSqlDataStorage(
                                 Content = content,
                                 IntentType = (IntentType)reader.GetInt16(2),
                                 Retries = reader.GetInt32(3),
-                                Added = reader.GetDateTime(4),
-                                NextRetryAt = await reader.IsDBNullAsync(5, token).ConfigureAwait(false)
-                                    ? null
-                                    : reader.GetDateTime(5),
-                                LockedUntil = await reader.IsDBNullAsync(6, token).ConfigureAwait(false)
+                                InlineAttempts = reader.GetInt32(4),
+                                Added = reader.GetDateTime(5),
+                                NextRetryAt = await reader.IsDBNullAsync(6, token).ConfigureAwait(false)
                                     ? null
                                     : reader.GetDateTime(6),
-                                Owner = await reader.IsDBNullAsync(7, token).ConfigureAwait(false)
+                                LockedUntil = await reader.IsDBNullAsync(7, token).ConfigureAwait(false)
                                     ? null
-                                    : reader.GetString(7),
+                                    : reader.GetDateTime(7),
+                                Owner = await reader.IsDBNullAsync(8, token).ConfigureAwait(false)
+                                    ? null
+                                    : reader.GetString(8),
                             };
                         }
 #pragma warning disable CA1031 // deliberately broad: one un-deserializable row must not abort/starve the batch (#3)
                         catch (Exception ex)
 #pragma warning restore CA1031
                         {
-                            // #3 — poison row: skip so the rest of the leased batch still dispatches. The row stays
-                            // leased until LockedUntil expires, then is re-picked and re-skipped (no head-of-line stall).
                             logger.LogPoisonMessageSkipped(storageId, tableName, ex);
+                            poisonMessages.Add(_CreatePoisonMessage(storageId, ex));
                             continue;
                         }
 
@@ -1059,13 +1296,129 @@ internal sealed class PostgreSqlDataStorage(
 
                     return messages;
                 },
+                transaction: transaction,
                 commandTimeout: messagingOptions.Value.CommandTimeout,
                 sqlParams: sqlParams,
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
 
+        await _MarkPoisonMessagesTerminalAsync(connection, transaction, tableName, poisonMessages, cancellationToken)
+            .ConfigureAwait(false);
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
         return result;
+    }
+
+    private async ValueTask _MarkPoisonMessagesTerminalAsync(
+        DbConnection connection,
+        DbTransaction? transaction,
+        string tableName,
+        IReadOnlyList<PoisonMessage> poisonMessages,
+        CancellationToken cancellationToken
+    )
+    {
+        if (poisonMessages.Count == 0)
+        {
+            return;
+        }
+
+        var expiresAt = timeProvider
+            .GetUtcNow()
+            .UtcDateTime.AddSeconds(messagingOptions.Value.FailedMessageExpiredAfter);
+        var isReceivedTable = string.Equals(tableName, _receivedTable, StringComparison.Ordinal);
+        var ids = poisonMessages.Select(message => message.StorageId).ToArray();
+        var sql = isReceivedTable
+            ? $"""
+                UPDATE {tableName} AS target
+                SET "StatusName"=@StatusName,"NextRetryAt"=NULL,"LockedUntil"=NULL,"Owner"=NULL,
+                    "ExpiresAt"=@ExpiresAt,"ExceptionInfo"=poison."ExceptionInfo"
+                FROM unnest(@Ids::uuid[], @ExceptionInfos::text[]) AS poison("Id", "ExceptionInfo")
+                WHERE target."Id"=poison."Id" AND {_TerminalRowGuardSimple};
+                """
+            : $"""
+                UPDATE {tableName}
+                SET "StatusName"=@StatusName,"NextRetryAt"=NULL,"LockedUntil"=NULL,"Owner"=NULL,"ExpiresAt"=@ExpiresAt
+                WHERE "Id"=ANY(@Ids) AND {_TerminalRowGuardSimple};
+                """;
+        var sqlParams = new List<object>
+        {
+            new NpgsqlParameter("@Ids", ids) { DataTypeName = "uuid[]" },
+            new NpgsqlParameter("@StatusName", nameof(StatusName.Failed)),
+            new NpgsqlParameter("@ExpiresAt", expiresAt),
+        };
+        if (isReceivedTable)
+        {
+            sqlParams.Add(
+                new NpgsqlParameter(
+                    "@ExceptionInfos",
+                    poisonMessages.Select(message => message.ExceptionInfo).ToArray()
+                )
+                {
+                    DataTypeName = "text[]",
+                }
+            );
+        }
+
+        // PostgreSQL aborts the transaction after any statement failure. One savepoint around the batched
+        // terminal mark lets the healthy rows' claim commit while the failed poison batch remains leased.
+        const string savepointName = "headless_poison_mark_batch";
+        if (transaction is not null)
+        {
+            await connection
+                .ExecuteNonQueryAsync(
+                    $"SAVEPOINT {savepointName};",
+                    transaction: transaction,
+                    commandTimeout: messagingOptions.Value.CommandTimeout,
+                    cancellationToken: cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+
+        try
+        {
+            await connection
+                .ExecuteNonQueryAsync(
+                    sql,
+                    transaction: transaction,
+                    commandTimeout: messagingOptions.Value.CommandTimeout,
+                    sqlParams: [.. sqlParams],
+                    cancellationToken: cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            if (transaction is not null)
+            {
+                await connection
+                    .ExecuteNonQueryAsync(
+                        $"RELEASE SAVEPOINT {savepointName};",
+                        transaction: transaction,
+                        commandTimeout: messagingOptions.Value.CommandTimeout,
+                        cancellationToken: cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            foreach (var poisonMessage in poisonMessages)
+            {
+                logger.LogPoisonMessageTerminalMarkFailed(poisonMessage.StorageId, tableName, ex);
+            }
+
+            if (transaction is not null)
+            {
+                await connection
+                    .ExecuteNonQueryAsync(
+                        $"ROLLBACK TO SAVEPOINT {savepointName};",
+                        transaction: transaction,
+                        commandTimeout: messagingOptions.Value.CommandTimeout,
+                        cancellationToken: cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+        }
     }
 
     private async ValueTask<int> _ReclaimDeadOwnersAsync(
@@ -1081,16 +1434,15 @@ internal sealed class PostgreSqlDataStorage(
             return 0;
         }
 
-        var now = timeProvider.GetUtcNow().UtcDateTime;
         // Intentionally version-agnostic: reclaim only shortens leases on rows owned by dead
         // node incarnations, then the normal version-filtered pickup path decides what this
         // service version is allowed to dispatch.
         var sql = $"""
-            UPDATE {tableName}
-            SET "LockedUntil" = @Now
+            UPDATE {tableName} AS message
+            SET "LockedUntil" = statement_timestamp()
             WHERE "Owner" IS NOT NULL
               AND "Owner" = ANY(@DeadOwners)
-              AND "LockedUntil" > @Now
+              AND "LockedUntil" > statement_timestamp()
               AND {_TerminalRowGuardSimple};
             """;
 
@@ -1099,16 +1451,14 @@ internal sealed class PostgreSqlDataStorage(
             .ExecuteNonQueryAsync(
                 sql,
                 commandTimeout: messagingOptions.Value.CommandTimeout,
-                sqlParams:
-                [
-                    new NpgsqlParameter("@Now", now),
-                    new NpgsqlParameter("@DeadOwners", NpgsqlDbType.Array | NpgsqlDbType.Varchar)
-                    {
-                        Value = deadOwners.ToArray(),
-                    },
-                ],
+                sqlParams: [new NpgsqlParameter("@DeadOwners", deadOwners.ToArray()) { DataTypeName = "varchar[]" }],
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
     }
+
+    private static PoisonMessage _CreatePoisonMessage(Guid storageId, Exception exception) =>
+        new(storageId, $"{exception.GetType().FullName}: {exception.Message}");
+
+    private readonly record struct PoisonMessage(Guid StorageId, string ExceptionInfo);
 }

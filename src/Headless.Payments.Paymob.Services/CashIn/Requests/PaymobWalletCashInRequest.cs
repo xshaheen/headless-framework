@@ -17,7 +17,15 @@ public sealed record PaymobWalletCashInRequest(
     decimal Amount,
     string WalletPhoneNumber,
     PaymobCashInCustomerData Customer,
-    int WalletIntegrationId,
+    long WalletIntegrationId,
     string? MerchantOrderId = null,
     int ExpirationSeconds = 60 * 60
-);
+)
+{
+    // WalletPhoneNumber and Customer carry PII; both are redacted so a failure log that renders this
+    // request (see PaymobCashInLoggerExtensions) cannot leak them.
+    public override string ToString()
+    {
+        return $"PaymobWalletCashInRequest {{ Amount = {Amount}, WalletIntegrationId = {WalletIntegrationId}, MerchantOrderId = {MerchantOrderId}, ExpirationSeconds = {ExpirationSeconds}, WalletPhoneNumber = [redacted], Customer = [redacted] }}";
+    }
+}

@@ -10,30 +10,30 @@ public partial class JobsLeaseAndNodeDeathPolicy : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)
     {
-        migrationBuilder.RenameColumn(name: "LockedAt", schema: "jobs", table: "TimeJobs", newName: "LockedUntil");
+        migrationBuilder.RenameColumn(name: "LockedAt", table: "TimeJobs", newName: "LockedUntil", schema: "jobs");
 
-        migrationBuilder.RenameColumn(name: "LockHolder", schema: "jobs", table: "TimeJobs", newName: "OwnerId");
+        migrationBuilder.RenameColumn(name: "LockHolder", table: "TimeJobs", newName: "OwnerId", schema: "jobs");
 
         migrationBuilder.RenameColumn(
             name: "LockedAt",
-            schema: "jobs",
             table: "CronJobOccurrences",
-            newName: "LockedUntil"
+            newName: "LockedUntil",
+            schema: "jobs"
         );
 
         migrationBuilder.RenameColumn(
             name: "LockHolder",
-            schema: "jobs",
             table: "CronJobOccurrences",
-            newName: "OwnerId"
+            newName: "OwnerId",
+            schema: "jobs"
         );
 
         migrationBuilder.AlterColumn<string>(
             name: "Status",
-            schema: "jobs",
             table: "TimeJobs",
             type: "character varying(32)",
             maxLength: 32,
+            schema: "jobs",
             nullable: false,
             oldClrType: typeof(int),
             oldType: "integer"
@@ -41,10 +41,10 @@ public partial class JobsLeaseAndNodeDeathPolicy : Migration
 
         migrationBuilder.AlterColumn<string>(
             name: "RunCondition",
-            schema: "jobs",
             table: "TimeJobs",
             type: "character varying(32)",
             maxLength: 32,
+            schema: "jobs",
             nullable: true,
             oldClrType: typeof(int),
             oldType: "integer",
@@ -53,20 +53,20 @@ public partial class JobsLeaseAndNodeDeathPolicy : Migration
 
         migrationBuilder.AddColumn<string>(
             name: "OnNodeDeath",
-            schema: "jobs",
             table: "TimeJobs",
             type: "character varying(32)",
             maxLength: 32,
+            schema: "jobs",
             nullable: false,
             defaultValue: "Retry"
         );
 
         migrationBuilder.AlterColumn<string>(
             name: "Status",
-            schema: "jobs",
             table: "CronJobOccurrences",
             type: "character varying(32)",
             maxLength: 32,
+            schema: "jobs",
             nullable: false,
             oldClrType: typeof(int),
             oldType: "integer"
@@ -74,10 +74,10 @@ public partial class JobsLeaseAndNodeDeathPolicy : Migration
 
         migrationBuilder.AddColumn<string>(
             name: "OnNodeDeath",
-            schema: "jobs",
             table: "CronJobOccurrences",
             type: "character varying(32)",
             maxLength: 32,
+            schema: "jobs",
             nullable: false,
             defaultValue: "Retry"
         );
@@ -85,33 +85,33 @@ public partial class JobsLeaseAndNodeDeathPolicy : Migration
 
     protected override void Down(MigrationBuilder migrationBuilder)
     {
-        migrationBuilder.DropColumn(name: "OnNodeDeath", schema: "jobs", table: "TimeJobs");
+        migrationBuilder.DropColumn(name: "OnNodeDeath", table: "TimeJobs", schema: "jobs");
 
-        migrationBuilder.DropColumn(name: "OnNodeDeath", schema: "jobs", table: "CronJobOccurrences");
+        migrationBuilder.DropColumn(name: "OnNodeDeath", table: "CronJobOccurrences", schema: "jobs");
 
-        migrationBuilder.RenameColumn(name: "OwnerId", schema: "jobs", table: "TimeJobs", newName: "LockHolder");
+        migrationBuilder.RenameColumn(name: "OwnerId", table: "TimeJobs", newName: "LockHolder", schema: "jobs");
 
-        migrationBuilder.RenameColumn(name: "LockedUntil", schema: "jobs", table: "TimeJobs", newName: "LockedAt");
+        migrationBuilder.RenameColumn(name: "LockedUntil", table: "TimeJobs", newName: "LockedAt", schema: "jobs");
 
         migrationBuilder.RenameColumn(
             name: "OwnerId",
-            schema: "jobs",
             table: "CronJobOccurrences",
-            newName: "LockHolder"
+            newName: "LockHolder",
+            schema: "jobs"
         );
 
         migrationBuilder.RenameColumn(
             name: "LockedUntil",
-            schema: "jobs",
             table: "CronJobOccurrences",
-            newName: "LockedAt"
+            newName: "LockedAt",
+            schema: "jobs"
         );
 
         migrationBuilder.AlterColumn<int>(
             name: "Status",
-            schema: "jobs",
             table: "TimeJobs",
             type: "integer",
+            schema: "jobs",
             nullable: false,
             oldClrType: typeof(string),
             oldType: "character varying(32)",
@@ -120,9 +120,9 @@ public partial class JobsLeaseAndNodeDeathPolicy : Migration
 
         migrationBuilder.AlterColumn<int>(
             name: "RunCondition",
-            schema: "jobs",
             table: "TimeJobs",
             type: "integer",
+            schema: "jobs",
             nullable: true,
             oldClrType: typeof(string),
             oldType: "character varying(32)",
@@ -132,9 +132,9 @@ public partial class JobsLeaseAndNodeDeathPolicy : Migration
 
         migrationBuilder.AlterColumn<int>(
             name: "Status",
-            schema: "jobs",
             table: "CronJobOccurrences",
             type: "integer",
+            schema: "jobs",
             nullable: false,
             oldClrType: typeof(string),
             oldType: "character varying(32)",

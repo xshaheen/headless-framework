@@ -6,10 +6,10 @@ using Headless.Dashboard.Authentication;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Dashboard.GatewayProxy;
 using Headless.Messaging.Dashboard.NodeDiscovery;
-using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
+using Headless.Messaging.Runtime;
 using Headless.Messaging.Transport;
 using Headless.Primitives;
 using Microsoft.AspNetCore.Builder;
@@ -37,7 +37,7 @@ public static class MessagingDashboardEndpoints
             .WithName("Messaging_GetAuthInfo")
             .WithSummary("Get authentication configuration")
             .WithTags("Messaging Dashboard")
-            .RequireCors("Messaging_Dashboard_CORS")
+            .RequireCors("HeadlessMessagingDashboardCORS")
             .AllowAnonymous();
 
         endpoints
@@ -45,7 +45,7 @@ public static class MessagingDashboardEndpoints
             .WithName("Messaging_ValidateAuth")
             .WithSummary("Validate authentication credentials")
             .WithTags("Messaging Dashboard")
-            .RequireCors("Messaging_Dashboard_CORS")
+            .RequireCors("HeadlessMessagingDashboardCORS")
             .AllowAnonymous();
 
         // Always-anonymous endpoints
@@ -54,7 +54,7 @@ public static class MessagingDashboardEndpoints
             .WithName("Messaging_Health")
             .WithSummary("Health check endpoint")
             .WithTags("Messaging Dashboard")
-            .RequireCors("Messaging_Dashboard_CORS")
+            .RequireCors("HeadlessMessagingDashboardCORS")
             .AllowAnonymous();
 
         endpoints
@@ -62,14 +62,14 @@ public static class MessagingDashboardEndpoints
             .WithName("Messaging_PingServices")
             .WithSummary("Ping a registered node to measure latency")
             .WithTags("Messaging Dashboard")
-            .RequireCors("Messaging_Dashboard_CORS")
+            .RequireCors("HeadlessMessagingDashboardCORS")
             .AllowAnonymous();
 
         // Protected API group with gateway proxy filter
         var apiGroup = endpoints
             .MapGroup("/api")
             .WithTags("Messaging Dashboard")
-            .RequireCors("Messaging_Dashboard_CORS")
+            .RequireCors("HeadlessMessagingDashboardCORS")
             .AddEndpointFilter<GatewayProxyEndpointFilter>();
 
         // Apply host auth if configured
@@ -228,7 +228,7 @@ public static class MessagingDashboardEndpoints
         );
     }
 
-    private static async Task<IResult> _Stats(IServiceProvider sp)
+    private static async Task<IResult> _Stats(IServiceProvider sp, HttpContext httpContext)
     {
         var dataStorage = sp.GetRequiredService<IDataStorage>();
         var monitoringApi = dataStorage.GetMonitoringApi();
@@ -250,7 +250,9 @@ public static class MessagingDashboardEndpoints
             if (sp.GetService<ConsulDiscoveryOptions>() != null)
             {
                 var discoveryProvider = sp.GetRequiredService<INodeDiscoveryProvider>();
-                var nodes = await discoveryProvider.GetNodes().ConfigureAwait(false);
+                var nodes = await discoveryProvider
+                    .GetNodes(cancellationToken: httpContext.RequestAborted)
+                    .ConfigureAwait(false);
                 result.Servers = nodes.Count;
             }
         }
@@ -275,7 +277,7 @@ public static class MessagingDashboardEndpoints
         var ss = await monitoringApi.HourlySucceededJobs(MessageType.Subscribe).ConfigureAwait(false);
         var sf = await monitoringApi.HourlyFailedJobs(MessageType.Subscribe).ConfigureAwait(false);
 
-        var dayHour = ps.Keys.OrderBy(x => x).Select(x => new DateTimeOffset(x).ToUnixTimeSeconds());
+        var dayHour = ps.Keys.Order().Select(x => new DateTimeOffset(x).ToUnixTimeSeconds());
 
         var result = new
         {
@@ -306,8 +308,8 @@ public static class MessagingDashboardEndpoints
             new
             {
                 StorageId = message.StorageId.ToString("D"),
-                MessageId = message.Origin.GetId(),
-                Name = message.Origin.GetName(),
+                MessageId = message.Origin.Id,
+                message.Origin.Name,
                 message.IntentType,
                 message.Content,
                 message.Added,
@@ -332,8 +334,8 @@ public static class MessagingDashboardEndpoints
             new
             {
                 StorageId = message.StorageId.ToString("D"),
-                MessageId = message.Origin.GetId(),
-                Name = message.Origin.GetName(),
+                MessageId = message.Origin.Id,
+                message.Origin.Name,
                 Group = message.Origin.GetGroup(),
                 message.IntentType,
                 message.Content,
@@ -459,7 +461,9 @@ public static class MessagingDashboardEndpoints
                 continue;
             }
 
-            await dispatcher.EnqueueToExecute(message, null, httpContext.RequestAborted).ConfigureAwait(false);
+            await dispatcher
+                .EnqueueToExecute(message, descriptor: null, cancellationToken: httpContext.RequestAborted)
+                .ConfigureAwait(false);
             requeued.Add(message.StorageId);
         }
 
@@ -501,6 +505,14 @@ public static class MessagingDashboardEndpoints
     {
         var pageSize = Math.Clamp(perPage, 1, _MaxPageSize);
 
+        if (!_TryParseStatusFilter(status, out var statusFilter))
+        {
+            // An unrecognized status matches no rows (the persisted status set is fixed).
+            return Results.Json(
+                _MapMessagePage(new IndexPage<MessageView>([], currentPage - 1, pageSize, totalItems: 0))
+            );
+        }
+
         var dataStorage = sp.GetRequiredService<IDataStorage>();
         var monitoringApi = dataStorage.GetMonitoringApi();
 
@@ -510,7 +522,7 @@ public static class MessagingDashboardEndpoints
             Name = name ?? string.Empty,
             Content = content ?? string.Empty,
             IntentType = intentType,
-            StatusName = status,
+            StatusName = statusFilter,
             CurrentPage = currentPage - 1,
             PageSize = pageSize,
         };
@@ -532,6 +544,14 @@ public static class MessagingDashboardEndpoints
     {
         var pageSize = Math.Clamp(perPage, 1, _MaxPageSize);
 
+        if (!_TryParseStatusFilter(status, out var statusFilter))
+        {
+            // An unrecognized status matches no rows (the persisted status set is fixed).
+            return Results.Json(
+                _MapMessagePage(new IndexPage<MessageView>([], currentPage - 1, pageSize, totalItems: 0))
+            );
+        }
+
         var dataStorage = sp.GetRequiredService<IDataStorage>();
         var monitoringApi = dataStorage.GetMonitoringApi();
 
@@ -542,7 +562,7 @@ public static class MessagingDashboardEndpoints
             Name = name ?? string.Empty,
             Content = content ?? string.Empty,
             IntentType = intentType,
-            StatusName = status,
+            StatusName = statusFilter,
             CurrentPage = currentPage - 1,
             PageSize = pageSize,
         };
@@ -599,10 +619,19 @@ public static class MessagingDashboardEndpoints
             message.Added,
             message.ExpiresAt,
             message.Retries,
-            message.StatusName,
+            // Serialize the status as its enum name (e.g. "Succeeded") so the dashboard SPA wire shape is
+            // unchanged now that MessageView.StatusName is a StatusName enum rather than a string.
+            StatusName = message.StatusName.ToString("G"),
             message.NextRetryAt,
             message.LockedUntil,
         };
+    }
+
+    private static bool _TryParseStatusFilter(string status, out StatusName statusFilter)
+    {
+        // Accept the enum member names case-insensitively (route segment). Reject numeric/undefined values so an
+        // unknown status short-circuits to an empty page instead of falling through to an unfiltered query.
+        return Enum.TryParse(status, ignoreCase: true, out statusFilter) && Enum.IsDefined(statusFilter);
     }
 
     private static object _MapMessagePage(IndexPage<MessageView> page)
@@ -664,7 +693,7 @@ public static class MessagingDashboardEndpoints
         }
     }
 
-    private static async Task<IResult> _Nodes(IServiceProvider sp)
+    private static async Task<IResult> _Nodes(IServiceProvider sp, HttpContext httpContext)
     {
         var discoveryProvider = sp.GetService<INodeDiscoveryProvider>();
         if (discoveryProvider == null)
@@ -672,7 +701,8 @@ public static class MessagingDashboardEndpoints
             return Results.Json(new List<Node>());
         }
 
-        var result = await discoveryProvider.GetNodes().ConfigureAwait(false) ?? [];
+        var result =
+            await discoveryProvider.GetNodes(cancellationToken: httpContext.RequestAborted).ConfigureAwait(false) ?? [];
         return Results.Json(result);
     }
 
@@ -693,7 +723,7 @@ public static class MessagingDashboardEndpoints
         return Results.Json(nsList);
     }
 
-    private static async Task<IResult> _ListServices(string @namespace, IServiceProvider sp)
+    private static async Task<IResult> _ListServices(string @namespace, IServiceProvider sp, HttpContext httpContext)
     {
         var discoveryProvider = sp.GetService<INodeDiscoveryProvider>();
         if (discoveryProvider == null)
@@ -701,7 +731,12 @@ public static class MessagingDashboardEndpoints
             return Results.Json(new List<Node>());
         }
 
-        var result = await discoveryProvider.ListServices(@namespace).ConfigureAwait(false);
+        var result = discoveryProvider is ICancellableNodeDiscoveryProvider cancellableDiscoveryProvider
+            ? await cancellableDiscoveryProvider
+                .ListServices(@namespace, httpContext.RequestAborted)
+                .ConfigureAwait(false)
+            : await discoveryProvider.ListServices(@namespace).ConfigureAwait(false);
+
         return Results.Json(result);
     }
 
@@ -709,7 +744,8 @@ public static class MessagingDashboardEndpoints
         string? endpoint,
         IServiceProvider sp,
         IHttpClientFactory httpClientFactory,
-        MessagingDashboardOptionsBuilder config
+        MessagingDashboardOptionsBuilder config,
+        HttpContext httpContext
     )
     {
         if (string.IsNullOrWhiteSpace(endpoint))
@@ -723,10 +759,18 @@ public static class MessagingDashboardEndpoints
             return Results.BadRequest("Node discovery is not configured.");
         }
 
-        var nodes = await discoveryProvider.GetNodes().ConfigureAwait(false);
+        var nodes = await discoveryProvider
+            .GetNodes(cancellationToken: httpContext.RequestAborted)
+            .ConfigureAwait(false);
         var isRegistered = nodes.Any(n =>
-            endpoint.StartsWith($"http://{n.Address}:{n.Port}", StringComparison.OrdinalIgnoreCase)
-            || endpoint.StartsWith($"https://{n.Address}:{n.Port}", StringComparison.OrdinalIgnoreCase)
+            endpoint.StartsWith(
+                string.Create(CultureInfo.InvariantCulture, $"http://{n.Address}:{n.Port}"),
+                StringComparison.OrdinalIgnoreCase
+            )
+            || endpoint.StartsWith(
+                string.Create(CultureInfo.InvariantCulture, $"https://{n.Address}:{n.Port}"),
+                StringComparison.OrdinalIgnoreCase
+            )
         );
 
         if (!isRegistered)
@@ -743,7 +787,7 @@ public static class MessagingDashboardEndpoints
             var response = await httpClient.GetStringAsync(healthEndpoint).ConfigureAwait(false);
             sw.Stop();
 
-            if (response == "OK")
+            if (string.Equals(response, "OK", StringComparison.Ordinal))
             {
                 return Results.Text(sw.ElapsedMilliseconds.ToString("D", CultureInfo.InvariantCulture));
             }
@@ -773,7 +817,7 @@ internal sealed class WarpResult
 
     public required List<SubInfo> Values { get; set; }
 
-    public class SubInfo
+    internal sealed class SubInfo
     {
         public required string MessageName { get; set; }
 

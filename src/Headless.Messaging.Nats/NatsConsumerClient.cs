@@ -1,8 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.Globalization;
+using System.Net.Sockets;
 using Headless.Checks;
+using Headless.Messaging.Exceptions;
 using Headless.Messaging.Internal;
+using Headless.Messaging.Runtime;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -15,15 +19,18 @@ namespace Headless.Messaging.Nats;
 internal sealed class NatsConsumerClient(
     string name,
     byte groupConcurrent,
-    IOptions<MessagingNatsOptions> options,
+    IOptions<NatsMessagingOptions> options,
     IServiceProvider serviceProvider,
     Func<string, ConsumerConfig, CancellationToken, Task<INatsJSConsumer>>? consumerFactory = null,
-    IntentType intentType = IntentType.Bus
+    IntentType intentType = IntentType.Bus,
+    TimeProvider? timeProvider = null,
+    Func<NatsConnection, Task>? connect = null,
+    Func<NatsConnection, ValueTask>? disposeConnection = null
 ) : IConsumerClient
 {
     private readonly Lock _receiveLock = new();
-    private readonly MessagingNatsOptions _natsOptions = Argument.IsNotNull(options.Value);
-    private readonly TimeProvider _timeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
+    private readonly NatsMessagingOptions _natsOptions = Argument.IsNotNull(options.Value);
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
     private readonly SemaphoreSlim? _semaphore = groupConcurrent > 0 ? new SemaphoreSlim(groupConcurrent) : null;
 
@@ -38,7 +45,10 @@ internal sealed class NatsConsumerClient(
     private readonly ConsumerPauseGate _pauseGate = new();
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
+#pragma warning disable CA2213 // Disposal is deferred until the tokenless SDK connection attempt settles.
     private NatsConnection? _connection;
+#pragma warning restore CA2213
+    private Task? _connectTask;
     private NatsJSContext? _jsContext;
     private ReceiveTokenState _receiveTokenState = new();
     private IEnumerable<string>? _subscribedMessageNames;
@@ -50,25 +60,34 @@ internal sealed class NatsConsumerClient(
 
     public BrokerAddress BrokerAddress => new("nats", BrokerAddressDisplay.FormatMany(_natsOptions.Servers));
 
-    public async Task ConnectAsync()
+    public async Task ConnectAsync(CancellationToken cancellationToken = default)
     {
-        // Consumer connections disable reconnect so failures propagate to the
-        // circuit breaker instead of being silently retried by the NATS client.
+        // Consumer connections disable client-side reconnect (MaxReconnectRetry = 0): a genuine connection
+        // failure surfaces out of the consume loop and terminates the listener, so the consumer register's
+        // health watchdog rebuilds it on a fresh connection instead of the NATS client silently retrying on a
+        // possibly-stale socket. The circuit breaker is per-message and never observes connection-level faults.
         var opts = _natsOptions.BuildNatsOpts() with
         {
             MaxReconnectRetry = 0,
         };
 
-        _connection = new NatsConnection(opts);
-        await _connection.ConnectAsync().ConfigureAwait(false);
-        _jsContext = new NatsJSContext(_connection);
+        var connection = new NatsConnection(opts);
+        _connection = connection;
+        var connectTask = connect?.Invoke(connection) ?? connection.ConnectAsync().AsTask();
+        _connectTask = connectTask;
+
+        await connectTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+        _jsContext = new NatsJSContext(connection);
     }
 
-    public async ValueTask<ICollection<string>> FetchMessageNamesAsync(IEnumerable<string> messageNames)
+    public async ValueTask<ICollection<string>> FetchMessageNamesAsync(
+        IEnumerable<string> messageNames,
+        CancellationToken cancellationToken = default
+    )
     {
         // Materialize once: the source is consumed by GroupBy and the return value, so a lazy
         // input would otherwise be enumerated twice.
-        var names = messageNames as IReadOnlyList<string> ?? messageNames.ToList();
+        var names = messageNames.AsIReadOnlyList();
 
         if (!_natsOptions.EnableSubscriberClientStreamAndSubjectCreation)
         {
@@ -81,10 +100,39 @@ internal sealed class NatsConsumerClient(
 
         foreach (var streamGroup in streamGroups)
         {
+            var subjects = new HashSet<string>(
+                BuildStreamSubjects(streamGroup, _ResolveShardedMessageNames(streamGroup)),
+                StringComparer.Ordinal
+            );
+
+            using var cts = _natsOptions.StreamCreateTimeout.ToCancellationTokenSource(cancellationToken);
+
+            // Several consumer groups can normalize to the same stream name, and each group only knows its
+            // own subjects. CreateOrUpdateStream REPLACES the subject list, so union with whatever the stream
+            // already carries (from an earlier group, or a pre-provisioned stream) to avoid clobbering them.
+            try
+            {
+                var existing = await _jsContext!
+                    .GetStreamAsync(streamGroup.Key, cancellationToken: cts.Token)
+                    .ConfigureAwait(false);
+
+                if (existing.Info.Config.Subjects is { } existingSubjects)
+                {
+                    subjects.UnionWith(existingSubjects);
+                }
+            }
+            catch (NatsJSApiException ex) when (ex.Error.Code == 404)
+            {
+                // Stream does not exist yet; it will be created below.
+            }
+
             var config = new StreamConfig
             {
                 Name = streamGroup.Key,
-                Subjects = [.. BuildStreamSubjects(streamGroup, _ResolveShardedMessageNames(streamGroup))],
+                // JetStream rejects a stream whose subject list contains overlapping entries, so drop any
+                // exact subject already covered by a '.>' wildcard in the union (e.g. a pre-provisioned
+                // 'prefix.>' catch-all subsumes the exact 'prefix.foo' subjects).
+                Subjects = [.. _PruneOverlappingSubjects(subjects)],
                 NoAck = false,
                 // File storage is the production default. Override via StreamOptions
                 // for dev/testing: config.Storage = StreamConfigStorage.Memory;
@@ -93,7 +141,6 @@ internal sealed class NatsConsumerClient(
 
             _natsOptions.StreamOptions?.Invoke(config);
 
-            using var cts = new CancellationTokenSource(_natsOptions.StreamCreateTimeout);
             await _jsContext!.CreateOrUpdateStreamAsync(config, cts.Token).ConfigureAwait(false);
         }
 
@@ -108,8 +155,8 @@ internal sealed class NatsConsumerClient(
     internal static string BuildDurableName(string groupName, string subject, IntentType intentType)
     {
         return intentType == IntentType.Queue
-            ? Helper.Normalized("queue-" + subject)
-            : Helper.Normalized(groupName + "-" + subject);
+            ? TransportNaming.Normalize("queue-" + subject)
+            : TransportNaming.Normalize(groupName + "-" + subject);
     }
 
     internal static IReadOnlyList<string> BuildConsumerSubjects(
@@ -120,10 +167,7 @@ internal sealed class NatsConsumerClient(
     // The JetStream stream config and the consumer FilterSubjects must cover exactly the same subject
     // set, so both derive from one method: the base subject plus, for sharded names, the 'base.>'
     // wildcard, de-duplicated. (Verified output-equivalent to the prior two near-duplicate methods.)
-    private static IReadOnlyList<string> _BuildSubjects(
-        IEnumerable<string> messageNames,
-        ISet<string> shardedMessageNames
-    )
+    private static List<string> _BuildSubjects(IEnumerable<string> messageNames, ISet<string> shardedMessageNames)
     {
         Argument.IsNotNull(messageNames);
         Argument.IsNotNull(shardedMessageNames);
@@ -151,9 +195,38 @@ internal sealed class NatsConsumerClient(
         return subjects;
     }
 
-    public ValueTask SubscribeAsync(IEnumerable<string> messageNames)
+    // Removes subjects subsumed by a broader '.>' wildcard in the same set. JetStream rejects a stream config
+    // whose subject list overlaps (e.g. "a.b.>" together with "a.b.foo"), so a union that mixes a catch-all
+    // wildcard with the exact leaf subjects it already covers must be collapsed to the wildcard alone. A bare
+    // token equal to the wildcard's base (e.g. "a.b" vs "a.b.>") is NOT subsumed and is kept.
+    private static List<string> _PruneOverlappingSubjects(IEnumerable<string> subjects)
+    {
+        var all = subjects.Distinct(StringComparer.Ordinal).ToList();
+
+        var wildcardBases = all.Where(s => s.EndsWith(".>", StringComparison.Ordinal))
+            .Select(s => s[..^1]) // "a.b.>" -> "a.b."
+            .ToList();
+
+        if (wildcardBases.Count == 0)
+        {
+            return all;
+        }
+
+        return
+        [
+            .. all.Where(s =>
+                !wildcardBases.Exists(prefix =>
+                    !string.Equals(s, prefix + ">", StringComparison.Ordinal)
+                    && s.StartsWith(prefix, StringComparison.Ordinal)
+                )
+            ),
+        ];
+    }
+
+    public ValueTask SubscribeAsync(IEnumerable<string> messageNames, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNull(messageNames);
+        cancellationToken.ThrowIfCancellationRequested();
 
         _subscribedMessageNames = messageNames.ToList();
 
@@ -162,6 +235,8 @@ internal sealed class NatsConsumerClient(
 
     public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
+        using var listeningCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
         var streamGroups = _subscribedMessageNames!.GroupBy(
             x => _natsOptions.NormalizeStreamName(x),
             StringComparer.Ordinal
@@ -171,7 +246,7 @@ internal sealed class NatsConsumerClient(
 
         foreach (var streamGroup in streamGroups)
         {
-            var groupName = Helper.Normalized(name);
+            var groupName = TransportNaming.Normalize(name);
             var shardedMessageNames = _ResolveShardedMessageNames(streamGroup);
 
             foreach (var subject in BuildConsumerSubjects(streamGroup, shardedMessageNames))
@@ -189,9 +264,11 @@ internal sealed class NatsConsumerClient(
 
                 var startupReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 startupTasks.Add(startupReady.Task);
+#pragma warning disable AsyncFixer04 // Every subject task is joined below, including the startup-failure path.
                 tasks.Add(
-                    _ConsumeSubjectAsync(streamGroup.Key, consumerConfig, timeout, startupReady, cancellationToken)
+                    _ConsumeSubjectAsync(streamGroup.Key, consumerConfig, timeout, startupReady, listeningCts.Token)
                 );
+#pragma warning restore AsyncFixer04
             }
         }
 
@@ -201,10 +278,39 @@ internal sealed class NatsConsumerClient(
         }
         else
         {
-            await Task.WhenAll(startupTasks).ConfigureAwait(false);
+            try
+            {
+                await Task.WhenAll(startupTasks).ConfigureAwait(false);
+            }
+            catch
+            {
+                await listeningCts.CancelAsync().ConfigureAwait(false);
+
+                // A sibling subject may already be using the linked token. Join all loops before the
+                // token source leaves scope, while preserving the original startup failure.
+                try
+                {
+                    await Task.WhenAll(tasks).ConfigureAwait(false);
+                }
+#pragma warning disable ERP022 // The outer startup exception is the actionable failure and is rethrown below.
+                catch { }
+#pragma warning restore ERP022
+
+                throw;
+            }
+
             _ready.TrySetResult();
         }
 
+        if (tasks.Count == 0)
+        {
+            return;
+        }
+
+        // A subject loop only completes on shutdown or an unrecoverable failure. Stop its sibling
+        // loops when either happens so Task.WhenAll cannot hide the failure behind still-running subjects.
+        _ = await Task.WhenAny(tasks).ConfigureAwait(false);
+        await listeningCts.CancelAsync().ConfigureAwait(false);
         await Task.WhenAll(tasks).ConfigureAwait(false);
     }
 
@@ -241,6 +347,38 @@ internal sealed class NatsConsumerClient(
         var retryDelay = TimeSpan.FromSeconds(1);
         var nextOpts = timeout > TimeSpan.Zero ? new NatsJSNextOpts { Expires = timeout } : null;
         var readyReported = false;
+        var maxConsecutiveFailures = _natsOptions.MaxConsecutiveConsumeFailures;
+        var consecutiveFailures = 0;
+
+        // Escalates a run of consecutive consume-loop failures into a supervised restart. The counter resets
+        // on any forward progress (a successful consumer bind or fetch), so only a genuinely stuck loop — e.g.
+        // a dead, non-reconnecting connection whose error is not one of the classified connection-failure
+        // types — ever trips it. Surfaces a BrokerConnectionException (which the consumer register treats as a
+        // terminal broker fault), faulting startupReady and logging the ConnectError itself so both the
+        // inner-loop and outer-loop call sites terminate identically.
+        void RecordConsumeFailureOrThrow(Exception failure)
+        {
+            if (++consecutiveFailures < maxConsecutiveFailures)
+            {
+                return;
+            }
+
+            var terminal = new BrokerConnectionException(failure);
+
+            startupReady.TrySetException(terminal);
+            OnLogCallback?.Invoke(
+                new LogMessageEventArgs
+                {
+                    LogType = MqLogType.ConnectError,
+                    Reason = string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"NATS consume loop for stream '{streamName}' failed {consecutiveFailures} times consecutively, terminating listener for supervised restart: {failure}"
+                    ),
+                }
+            );
+
+            throw terminal;
+        }
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -251,6 +389,10 @@ internal sealed class NatsConsumerClient(
                     : await _jsContext!
                         .CreateOrUpdateConsumerAsync(streamName, consumerConfig, cancellationToken)
                         .ConfigureAwait(false);
+
+                // Binding the consumer is forward progress: clear any failure streak so a single later
+                // fetch blip cannot inherit an almost-tripped counter and force a spurious restart.
+                consecutiveFailures = 0;
 
                 if (!readyReported)
                 {
@@ -285,6 +427,8 @@ internal sealed class NatsConsumerClient(
                     }
                     catch (NatsJSApiException ex)
                     {
+                        RecordConsumeFailureOrThrow(ex);
+
                         OnLogCallback?.Invoke(
                             new LogMessageEventArgs
                             {
@@ -297,8 +441,16 @@ internal sealed class NatsConsumerClient(
                         await _timeProvider.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
                         continue;
                     }
+                    catch (Exception ex) when (_IsConnectionFailure(ex))
+                    {
+                        // Reconnect is deliberately owned by ConsumerRegister. Let the receive loop
+                        // terminate so its health watchdog can replace this failed client.
+                        throw;
+                    }
                     catch (Exception ex)
                     {
+                        RecordConsumeFailureOrThrow(ex);
+
                         OnLogCallback?.Invoke(
                             new LogMessageEventArgs
                             {
@@ -312,12 +464,15 @@ internal sealed class NatsConsumerClient(
                         continue;
                     }
 
+                    // A returned fetch (a message or an Expires heartbeat) proves the connection is alive.
+                    consecutiveFailures = 0;
+                    retryDelay = TimeSpan.FromSeconds(1);
+
                     if (msg is null)
                     {
                         continue;
                     }
 
-                    retryDelay = TimeSpan.FromSeconds(1);
                     await _DispatchMessageAsync(msg, cancellationToken).ConfigureAwait(false);
                 }
             }
@@ -326,8 +481,32 @@ internal sealed class NatsConsumerClient(
                 startupReady.TrySetCanceled(cancellationToken);
                 break;
             }
+            catch (BrokerConnectionException)
+            {
+                // Raised by the consecutive-failure cap, which already faulted startupReady and logged the
+                // ConnectError. The NATS SDK never throws this framework type, so catching it here uniquely
+                // matches the cap signal; propagate so the listener terminates and the consumer register
+                // rebuilds this client on a fresh connection.
+                throw;
+            }
+            catch (Exception ex) when (_IsConnectionFailure(ex))
+            {
+                startupReady.TrySetException(ex);
+                OnLogCallback?.Invoke(
+                    new LogMessageEventArgs
+                    {
+                        LogType = MqLogType.ConnectError,
+                        Reason =
+                            $"NATS connection failed for stream '{streamName}', terminating listener for supervised restart: {ex}",
+                    }
+                );
+
+                throw;
+            }
             catch (Exception ex)
             {
+                RecordConsumeFailureOrThrow(ex);
+
                 OnLogCallback?.Invoke(
                     new LogMessageEventArgs
                     {
@@ -340,6 +519,14 @@ internal sealed class NatsConsumerClient(
                 await _timeProvider.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
             }
         }
+    }
+
+    private static bool _IsConnectionFailure(Exception exception)
+    {
+        return exception
+            is NatsConnectionFailedException
+                or NatsJSConnectionException
+                or NatsException { InnerException: SocketException or IOException };
     }
 
     private async ValueTask _DispatchMessageAsync(
@@ -410,11 +597,55 @@ internal sealed class NatsConsumerClient(
         );
     }
 
+    /// <summary>
+    /// Doubles the reconnect backoff, then returns a jittered delay within <c>[floor, 30s]</c>.
+    /// </summary>
+    /// <remarks>
+    /// Jitter is not cosmetic here: without it, a fleet of consumers that all lose the connection at the same
+    /// instant (a broker restart) retries in lockstep at exactly 1s/2s/4s/8s/16s/30s and hammers the broker in
+    /// synchronized waves. The AWS SQS, Pulsar and Redis transports all jitter their equivalent loops.
+    /// <para>
+    /// Three properties must hold together, and the obvious implementations each break one of them. Adding jitter
+    /// on top of the capped value overshoots the 30s ceiling. Clamping that additive result back down to the
+    /// ceiling collapses every caller to exactly 30s once the exponential curve saturates — killing the spread at
+    /// precisely the moment the herd is largest. Subtracting jitter unconditionally undercuts the <paramref
+    /// name="floor"/>, which callers use to guarantee a minimum wait.
+    /// </para>
+    /// <para>
+    /// So the jitter band is computed explicitly and is always non-degenerate: normally it spreads DOWN from the
+    /// capped value (<c>[0.75x, 1x]</c>), and when the floor is what pins the delay — leaving no room below — it
+    /// spreads UP from the floor instead, still bounded by the ceiling. The result is therefore never above 30s,
+    /// never below the floor, and never a single lockstep value. That last case matters: a JetStream API error
+    /// hits every consumer at once, so the floor path is itself a herd and needs the spread as much as the
+    /// reconnect path does.
+    /// </para>
+    /// </remarks>
     internal static TimeSpan NextBackoff(TimeSpan current, TimeSpan floor = default)
     {
         var ceiling = TimeSpan.FromSeconds(30);
         var next = TimeSpan.FromTicks(Math.Min(current.Ticks * 2, ceiling.Ticks));
-        return floor > next ? floor : next;
+        var capped = floor > next ? floor : next;
+
+        var jitterBudget = TimeSpan.FromTicks(capped.Ticks / 4);
+        var lower = capped - jitterBudget < floor ? floor : capped - jitterBudget;
+
+        // When the floor pins the delay there is no room to jitter downward, so spread upward instead — still
+        // capped by the ceiling, so the "never above 30s" guarantee holds in every branch.
+        var upper =
+            lower < capped ? capped
+            : capped + jitterBudget > ceiling ? ceiling
+            : capped + jitterBudget;
+
+        if (upper <= lower)
+        {
+            return lower;
+        }
+
+#pragma warning disable CA5394 // Non-security jitter for retry backoff; cryptographic RNG is unnecessary here.
+        var offsetMs = Random.Shared.Next(0, (int)Math.Max(1, (upper - lower).TotalMilliseconds));
+#pragma warning restore CA5394
+
+        return lower + TimeSpan.FromMilliseconds(offsetMs);
     }
 
     private async Task _ProcessMessageAsync(INatsJSMsg<ReadOnlyMemory<byte>> msg)
@@ -471,13 +702,13 @@ internal sealed class NatsConsumerClient(
         await onMessage(message, msg).ConfigureAwait(false);
     }
 
-    public async ValueTask CommitAsync(object? sender)
+    public async ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default)
     {
         try
         {
             if (sender is INatsJSMsg<ReadOnlyMemory<byte>> msg)
             {
-                await msg.AckAsync().ConfigureAwait(false);
+                await msg.AckAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
             }
         }
         catch (Exception ex)
@@ -492,13 +723,13 @@ internal sealed class NatsConsumerClient(
         }
     }
 
-    public async ValueTask RejectAsync(object? sender)
+    public async ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
     {
         try
         {
             if (sender is INatsJSMsg<ReadOnlyMemory<byte>> msg)
             {
-                await msg.NakAsync().ConfigureAwait(false);
+                await msg.NakAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
             }
         }
         catch (Exception ex)
@@ -546,7 +777,7 @@ internal sealed class NatsConsumerClient(
             return;
         }
 
-        _CancelReceives();
+        await _CancelReceives().ConfigureAwait(false);
     }
 
     public async ValueTask ResumeAsync(CancellationToken cancellationToken = default)
@@ -569,7 +800,12 @@ internal sealed class NatsConsumerClient(
         }
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
+    {
+        return ShutdownAsync(_ShutdownDrainTimeout);
+    }
+
+    public async ValueTask ShutdownAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
         {
@@ -577,8 +813,8 @@ internal sealed class NatsConsumerClient(
         }
 
         _pauseGate.Release();
-        _ready.TrySetCanceled();
-        _CancelReceives();
+        _ready.TrySetCanceled(CancellationToken.None);
+        await _CancelReceives().ConfigureAwait(false);
 
         // Drain in-flight concurrent handlers before disposing the semaphore and connection, so a
         // running handler does not Ack/Nak on a disposed connection. Bounded so a stuck handler cannot
@@ -589,7 +825,14 @@ internal sealed class NatsConsumerClient(
         {
             try
             {
-                await Task.WhenAll(inFlight).WaitAsync(_ShutdownDrainTimeout).ConfigureAwait(false);
+                if (timeout <= TimeSpan.Zero)
+                {
+                    throw new TimeoutException("The shared messaging shutdown deadline has expired.");
+                }
+
+                await Task.WhenAll(inFlight)
+                    .WaitAsync(timeout, _timeProvider, CancellationToken.None)
+                    .ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -618,10 +861,59 @@ internal sealed class NatsConsumerClient(
         receiveTokenStateToDispose?.Dispose();
         _semaphore?.Dispose();
 
-        if (_connection is not null)
+        if (_connection is { } connection)
         {
-            await _connection.DisposeAsync().ConfigureAwait(false);
+            // A tokenless NATS connection attempt cannot be canceled. Do not make caller cancellation
+            // wait for it, but retain ownership until it settles so disposal cannot race socket setup.
+            if (_connectTask?.IsCompleted != false)
+            {
+                await _DisposeConnectionAsync(connection).ConfigureAwait(false);
+            }
+            else
+            {
+                _DisposeConnectionAfterConnectAsync(connection, _connectTask).Forget();
+            }
         }
+    }
+
+    private async Task _DisposeConnectionAfterConnectAsync(NatsConnection connection, Task? connectTask)
+    {
+        if (connectTask is not null)
+        {
+            try
+            {
+#pragma warning disable VSTHRD003 // This client owns and drains the SDK task started by ConnectAsync.
+                await connectTask.ConfigureAwait(false);
+#pragma warning restore VSTHRD003
+            }
+#pragma warning disable ERP022 // The original ConnectAsync caller observes the failure; cleanup must continue.
+            catch
+            {
+                // The original ConnectAsync caller observes the connection failure or cancellation.
+                // Disposal still owns the connection and must run after the attempt reaches a terminal state.
+            }
+#pragma warning restore ERP022
+        }
+
+        try
+        {
+            await _DisposeConnectionAsync(connection).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            OnLogCallback?.Invoke(
+                new LogMessageEventArgs
+                {
+                    LogType = MqLogType.ExceptionReceived,
+                    Reason = $"Failed to dispose NATS connection after connection attempt settled: {ex}",
+                }
+            );
+        }
+    }
+
+    private ValueTask _DisposeConnectionAsync(NatsConnection connection)
+    {
+        return disposeConnection?.Invoke(connection) ?? connection.DisposeAsync();
     }
 
     private ReceiveTokenLease _AcquireReceiveLease(CancellationToken cancellationToken)
@@ -644,7 +936,7 @@ internal sealed class NatsConsumerClient(
         }
     }
 
-    private void _CancelReceives()
+    private async Task _CancelReceives()
     {
         ReceiveTokenState receiveTokenState;
         lock (_receiveLock)
@@ -654,7 +946,7 @@ internal sealed class NatsConsumerClient(
 
         try
         {
-            receiveTokenState.Source.Cancel();
+            await receiveTokenState.Source.CancelAsync().ConfigureAwait(false);
         }
         catch (ObjectDisposedException)
         {
@@ -687,7 +979,7 @@ internal sealed class NatsConsumerClient(
         lock (_receiveLock)
         {
             receiveTokenState.RefCount--;
-            shouldDispose = receiveTokenState.RefCount == 0 && receiveTokenState.Retired;
+            shouldDispose = receiveTokenState is { RefCount: 0, Retired: true };
         }
 
         if (shouldDispose)
@@ -746,10 +1038,6 @@ internal sealed class NatsConsumerClient(
         CancellationToken cancellationToken
     ) : IDisposable
     {
-#pragma warning disable CA2213 // _owner is a parent reference, not owned by this lease
-        private readonly NatsConsumerClient _owner = owner;
-#pragma warning restore CA2213
-        private readonly ReceiveTokenState _receiveTokenState = receiveTokenState;
         private int _disposed;
 
         public CancellationToken Token { get; } = receiveTokenState.GetLinkedToken(cancellationToken);
@@ -761,7 +1049,7 @@ internal sealed class NatsConsumerClient(
                 return;
             }
 
-            _owner._ReleaseReceiveTokenState(_receiveTokenState);
+            owner._ReleaseReceiveTokenState(receiveTokenState);
         }
     }
 }

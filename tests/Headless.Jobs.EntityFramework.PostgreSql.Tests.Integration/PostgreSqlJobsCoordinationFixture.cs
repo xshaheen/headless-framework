@@ -2,9 +2,11 @@
 
 using System.Data.Common;
 using Headless.CommitCoordination;
-using Headless.CommitCoordination.PostgreSql;
 using Headless.Coordination;
-using Headless.Coordination.PostgreSql;
+using Headless.Jobs;
+using Headless.Jobs.Entities;
+using Headless.Messaging;
+using Headless.Messaging.Configuration;
 using Headless.Testing.Testcontainers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,7 +17,7 @@ namespace Tests;
 
 /// <summary>
 /// One Testcontainers Postgres instance shared by every test, backing both the Jobs operational store (schema
-/// <c>jobs</c>) and the Coordination Postgres provider (its own <c>coordination_*</c> tables in <c>public</c>).
+/// <c>jobs</c>) and the Coordination Postgres provider (its own <c>coordination_*</c> tables in <see langword="public"/>).
 /// Serialized at the collection level because tests reset the whole database between runs.
 /// </summary>
 [UsedImplicitly]
@@ -35,8 +37,13 @@ public sealed class PostgreSqlJobsCoordinationFixture
 
     public string UtcNowSqlExpression => "now()";
 
+    // Npgsql translates a bare DateTime.UtcNow inside an expression tree to the server's now().
+    public string EfTranslatedDatabaseClockSql => "now()";
+
     public string ResetSql =>
         "DROP SCHEMA IF EXISTS jobs CASCADE;"
+        + "DROP SCHEMA IF EXISTS messaging CASCADE;"
+        + "DROP TABLE IF EXISTS jobs_probe;"
         + "DROP TABLE IF EXISTS coordination_liveness, coordination_descriptor, coordination_node_generation CASCADE;";
 
     protected override PostgreSqlBuilder Configure()
@@ -53,9 +60,14 @@ public sealed class PostgreSqlJobsCoordinationFixture
 
     public void ConfigureStore(DbContextOptionsBuilder db) => db.UseNpgsql(ConnectionString);
 
+    public void ConfigureClaims(JobsEfCoreOptionBuilder<TimeJobEntity, CronJobEntity> builder) =>
+        builder.UsePostgreSqlClaims();
+
     public DbConnection CreateConnection() => new NpgsqlConnection(ConnectionString);
 
     public void ConfigureCommitCoordination(IServiceCollection services) => services.AddPostgreSqlCommitCoordination();
+
+    public void ConfigureMessagingStorage(MessagingSetupBuilder setup) => setup.UsePostgreSql(ConnectionString);
 
     public async Task RunCoordinatedTransactionAsync(
         IServiceProvider services,

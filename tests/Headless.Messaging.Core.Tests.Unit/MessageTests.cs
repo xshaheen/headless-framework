@@ -75,7 +75,7 @@ public sealed class MessageTests : TestBase
         var message = new Message(headers, null);
 
         // when
-        var result = message.GetId();
+        var result = message.Id;
 
         // then
         result.Should().Be(messageId);
@@ -90,7 +90,7 @@ public sealed class MessageTests : TestBase
         var message = new Message(headers, null);
 
         // when
-        var result = message.GetName();
+        var result = message.Name;
 
         // then
         result.Should().Be(messageName);
@@ -268,7 +268,7 @@ public sealed class MessageTests : TestBase
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.Exception] = "OldException" };
         var message = new Message(headers, null);
 #pragma warning disable MA0015 // ReSharper disable once NotResolvedInText
-        var exception = new ArgumentException(@"New error", "testParam");
+        var exception = new ArgumentException("New error", "testParam");
 #pragma warning restore MA0015
 
         // when
@@ -320,7 +320,7 @@ public sealed class MessageTests : TestBase
         };
 
         // then
-        message.Headers.ContainsKey("Test").Should().BeTrue();
-        message.Headers.ContainsKey("test").Should().BeFalse();
+        message.Headers.Should().ContainKey("Test");
+        message.Headers.Should().NotContainKey("test");
     }
 }

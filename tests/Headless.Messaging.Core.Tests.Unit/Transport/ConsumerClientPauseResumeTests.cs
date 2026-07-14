@@ -2,7 +2,6 @@
 
 using System.Reflection;
 using Headless.Messaging;
-using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;
 
 namespace Tests.Transport;
@@ -43,7 +42,7 @@ public sealed class ConsumerClientPauseResumeTests
     public async Task pause_async_should_complete_without_throwing()
     {
         // given
-        IConsumerClient client = new MinimalConsumerClient();
+        await using IConsumerClient client = new MinimalConsumerClient();
 
         // when
         var act = async () => await client.PauseAsync();
@@ -56,7 +55,7 @@ public sealed class ConsumerClientPauseResumeTests
     public async Task resume_async_should_complete_without_throwing()
     {
         // given
-        IConsumerClient client = new MinimalConsumerClient();
+        await using IConsumerClient client = new MinimalConsumerClient();
 
         // when
         var act = async () => await client.ResumeAsync();
@@ -69,7 +68,7 @@ public sealed class ConsumerClientPauseResumeTests
     public async Task pause_async_is_idempotent_when_called_multiple_times()
     {
         // given
-        IConsumerClient client = new MinimalConsumerClient();
+        await using IConsumerClient client = new MinimalConsumerClient();
 
         // when
         var act = async () =>
@@ -87,7 +86,7 @@ public sealed class ConsumerClientPauseResumeTests
     public async Task resume_async_is_idempotent_when_called_multiple_times()
     {
         // given
-        IConsumerClient client = new MinimalConsumerClient();
+        await using IConsumerClient client = new MinimalConsumerClient();
 
         // when
         var act = async () =>
@@ -105,7 +104,7 @@ public sealed class ConsumerClientPauseResumeTests
     public async Task pause_async_accepts_cancellation_token()
     {
         // given
-        IConsumerClient client = new MinimalConsumerClient();
+        await using IConsumerClient client = new MinimalConsumerClient();
         using var cts = new CancellationTokenSource();
 
         // when
@@ -119,7 +118,7 @@ public sealed class ConsumerClientPauseResumeTests
     public async Task resume_async_accepts_cancellation_token()
     {
         // given
-        IConsumerClient client = new MinimalConsumerClient();
+        await using IConsumerClient client = new MinimalConsumerClient();
         using var cts = new CancellationTokenSource();
 
         // when
@@ -142,14 +141,17 @@ public sealed class ConsumerClientPauseResumeTests
 
         public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
 
-        public ValueTask SubscribeAsync(IEnumerable<string> topics) => ValueTask.CompletedTask;
+        public ValueTask SubscribeAsync(IEnumerable<string> topics, CancellationToken cancellationToken = default) =>
+            ValueTask.CompletedTask;
 
         public ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
             ValueTask.CompletedTask;
 
-        public ValueTask CommitAsync(object? sender) => ValueTask.CompletedTask;
+        public ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default) =>
+            ValueTask.CompletedTask;
 
-        public ValueTask RejectAsync(object? sender) => ValueTask.CompletedTask;
+        public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default) =>
+            ValueTask.CompletedTask;
 
         public ValueTask PauseAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
 

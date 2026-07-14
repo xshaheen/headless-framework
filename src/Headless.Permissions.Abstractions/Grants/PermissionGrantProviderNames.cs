@@ -6,6 +6,7 @@ namespace Headless.Permissions.Grants;
 /// Canonical names of the built-in grant providers. Use these constants as the <c>providerName</c> argument
 /// to <see cref="IPermissionManager"/> instead of hard-coding the literal strings.
 /// </summary>
+[PublicAPI]
 public static class PermissionGrantProviderNames
 {
     /// <summary>Grants attached to a role; the <c>providerKey</c> is the role name.</summary>

@@ -6,6 +6,7 @@ using Headless.Features.Entities;
 using Headless.Features.Repositories;
 using Headless.Features.Seeders;
 using Headless.Hosting.Initialization;
+using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -13,7 +14,7 @@ using Microsoft.Extensions.Hosting;
 namespace Tests;
 
 [Collection<SqlServerFeaturesFixture>]
-public sealed class SqlServerFeaturesStorageTests(SqlServerFeaturesFixture fixture)
+public sealed class SqlServerFeaturesStorageTests(SqlServerFeaturesFixture fixture) : TestBase
 {
     private const string _Schema = "features_sql_raw";
 
@@ -25,7 +26,7 @@ public sealed class SqlServerFeaturesStorageTests(SqlServerFeaturesFixture fixtu
         using var host = _CreateHost();
 
         // when
-        await host.StartAsync(TestContext.Current.CancellationToken);
+        await host.StartAsync(AbortToken);
         var initializer = host
             .Services.GetRequiredService<IEnumerable<IInitializer>>()
             .Single(x => x is not FeaturesInitializationBackgroundService);
@@ -41,16 +42,11 @@ public sealed class SqlServerFeaturesStorageTests(SqlServerFeaturesFixture fixtu
             "Checkout enabled"
         );
 
-        await valueRepository.InsertAsync(record, TestContext.Current.CancellationToken);
-        await definitionRepository.SaveAsync([group], [], [], [feature], [], [], TestContext.Current.CancellationToken);
-        var stored = await valueRepository.FindAsync(
-            "Checkout.Enabled",
-            "Edition",
-            "pro",
-            TestContext.Current.CancellationToken
-        );
-        var storedGroups = await definitionRepository.GetGroupsListAsync(TestContext.Current.CancellationToken);
-        var storedFeatures = await definitionRepository.GetFeaturesListAsync(TestContext.Current.CancellationToken);
+        await valueRepository.InsertAsync(record, AbortToken);
+        await definitionRepository.SaveAsync([group], [], [], [feature], [], [], AbortToken);
+        var stored = await valueRepository.FindAsync("Checkout.Enabled", "Edition", "pro", AbortToken);
+        var storedGroups = await definitionRepository.GetGroupsListAsync(AbortToken);
+        var storedFeatures = await definitionRepository.GetFeaturesListAsync(AbortToken);
 
         // then
         initializer.IsInitialized.Should().BeTrue();
@@ -69,7 +65,7 @@ public sealed class SqlServerFeaturesStorageTests(SqlServerFeaturesFixture fixtu
         // given — chunk size is 100 rows; 150 forces two chunks
         await _DropSchemaAsync();
         using var host = _CreateHost();
-        await host.StartAsync(TestContext.Current.CancellationToken);
+        await host.StartAsync(AbortToken);
         var definitionRepository = host.Services.GetRequiredService<IFeatureDefinitionRecordRepository>();
 
         const int totalGroups = 150;
@@ -90,9 +86,9 @@ public sealed class SqlServerFeaturesStorageTests(SqlServerFeaturesFixture fixtu
             .ToList();
 
         // when
-        await definitionRepository.SaveAsync(groups, [], [], features, [], [], TestContext.Current.CancellationToken);
-        var storedGroups = await definitionRepository.GetGroupsListAsync(TestContext.Current.CancellationToken);
-        var storedFeatures = await definitionRepository.GetFeaturesListAsync(TestContext.Current.CancellationToken);
+        await definitionRepository.SaveAsync(groups, [], [], features, [], [], AbortToken);
+        var storedGroups = await definitionRepository.GetGroupsListAsync(AbortToken);
+        var storedFeatures = await definitionRepository.GetFeaturesListAsync(AbortToken);
 
         // then
         storedGroups.Should().HaveCount(totalGroups);
@@ -110,7 +106,7 @@ public sealed class SqlServerFeaturesStorageTests(SqlServerFeaturesFixture fixtu
         using var host = _CreateHost();
 
         // when
-        await host.StartAsync(TestContext.Current.CancellationToken);
+        await host.StartAsync(AbortToken);
 
         // then
         (await _IndexExistsAsync("FeatureGroupDefinitions", "IX_FeatureGroupDefinitions_Name"))
@@ -128,14 +124,14 @@ public sealed class SqlServerFeaturesStorageTests(SqlServerFeaturesFixture fixtu
         // given
         await _DropSchemaAsync();
         using var host = _CreateHost();
-        await host.StartAsync(TestContext.Current.CancellationToken);
+        await host.StartAsync(AbortToken);
         await _BulkInsertFeatureValuesAsync(totalRows: 2101);
         var valueRepository = host.Services.GetRequiredService<IFeatureValueRecordRepository>();
-        var stored = await valueRepository.GetListAsync("Edition", "bulk", TestContext.Current.CancellationToken);
+        var stored = await valueRepository.GetListAsync("Edition", "bulk", AbortToken);
 
         // when
-        await valueRepository.DeleteAsync(stored, TestContext.Current.CancellationToken);
-        var remaining = await valueRepository.GetListAsync("Edition", "bulk", TestContext.Current.CancellationToken);
+        await valueRepository.DeleteAsync(stored, AbortToken);
+        var remaining = await valueRepository.GetListAsync("Edition", "bulk", AbortToken);
 
         // then
         stored.Should().HaveCount(2101);
@@ -159,7 +155,7 @@ public sealed class SqlServerFeaturesStorageTests(SqlServerFeaturesFixture fixtu
     private async Task _DropSchemaAsync()
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         await using var command = new SqlCommand(
             $"""
             IF OBJECT_ID(N'{_Schema}.FeatureValues', N'U') IS NOT NULL DROP TABLE [{_Schema}].[FeatureValues];
@@ -170,13 +166,13 @@ public sealed class SqlServerFeaturesStorageTests(SqlServerFeaturesFixture fixtu
             """,
             connection
         );
-        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        await command.ExecuteNonQueryAsync(AbortToken);
     }
 
     private async Task<bool> _TableExistsAsync(string tableName)
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         await using var command = new SqlCommand(
             """
             SELECT CASE WHEN EXISTS (
@@ -190,13 +186,13 @@ public sealed class SqlServerFeaturesStorageTests(SqlServerFeaturesFixture fixtu
         command.Parameters.AddWithValue("@schema", _Schema);
         command.Parameters.AddWithValue("@table", tableName);
 
-        return (bool)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken))!;
+        return (bool)await command.ExecuteScalarAsync(AbortToken);
     }
 
     private async Task<bool> _IndexExistsAsync(string tableName, string indexName)
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         await using var command = new SqlCommand(
             """
             SELECT CASE WHEN EXISTS (
@@ -210,13 +206,13 @@ public sealed class SqlServerFeaturesStorageTests(SqlServerFeaturesFixture fixtu
         command.Parameters.AddWithValue("@qualifiedTable", $"{_Schema}.{tableName}");
         command.Parameters.AddWithValue("@index", indexName);
 
-        return (bool)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken))!;
+        return (bool)await command.ExecuteScalarAsync(AbortToken);
     }
 
     private async Task _CreateTablesWithoutIndexesAsync()
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         await using var command = new SqlCommand(
             $"""
             IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = N'{_Schema}') EXEC(N'CREATE SCHEMA [{_Schema}]');
@@ -255,7 +251,7 @@ public sealed class SqlServerFeaturesStorageTests(SqlServerFeaturesFixture fixtu
             """,
             connection
         );
-        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        await command.ExecuteNonQueryAsync(AbortToken);
     }
 
     private async Task _BulkInsertFeatureValuesAsync(int totalRows)
@@ -266,14 +262,17 @@ public sealed class SqlServerFeaturesStorageTests(SqlServerFeaturesFixture fixtu
         table.Columns.Add("Value", typeof(string));
         table.Columns.Add("ProviderName", typeof(string));
         table.Columns.Add("ProviderKey", typeof(string));
+        table.Columns.Add("DateCreated", typeof(DateTimeOffset));
+
+        var dateCreated = TimeProvider.System.GetUtcNow();
 
         for (var i = 0; i < totalRows; i++)
         {
-            table.Rows.Add(Guid.NewGuid(), $"Feature_{i:D4}", "true", "Edition", "bulk");
+            table.Rows.Add(Guid.NewGuid(), $"Feature_{i:D4}", "true", "Edition", "bulk", dateCreated);
         }
 
         await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         using var bulkCopy = new SqlBulkCopy(connection);
         bulkCopy.DestinationTableName = $"[{_Schema}].[FeatureValues]";
         bulkCopy.ColumnMappings.Add("Id", "Id");
@@ -281,7 +280,8 @@ public sealed class SqlServerFeaturesStorageTests(SqlServerFeaturesFixture fixtu
         bulkCopy.ColumnMappings.Add("Value", "Value");
         bulkCopy.ColumnMappings.Add("ProviderName", "ProviderName");
         bulkCopy.ColumnMappings.Add("ProviderKey", "ProviderKey");
+        bulkCopy.ColumnMappings.Add("DateCreated", "DateCreated");
 
-        await bulkCopy.WriteToServerAsync(table, TestContext.Current.CancellationToken);
+        await bulkCopy.WriteToServerAsync(table, AbortToken);
     }
 }

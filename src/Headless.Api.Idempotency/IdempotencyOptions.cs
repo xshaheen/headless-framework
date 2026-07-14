@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Api;
+namespace Headless.Api.Idempotency;
 
 /// <summary>
 /// Configures the behavior of the idempotency middleware: key derivation, TTL, in-flight
@@ -262,7 +262,7 @@ internal sealed class IdempotencyOptionsValidator : AbstractValidator<Idempotenc
 /// <see cref="InFlightStrategy.WaitAndReplay"/> but no
 /// <see cref="IDistributedLock"/> is registered.
 /// </summary>
-internal sealed class IdempotencyOptionsDIValidator(IServiceProvider serviceProvider)
+internal sealed class IdempotencyOptionsDiValidator(IServiceProvider serviceProvider)
     : IValidateOptions<IdempotencyOptions>
 {
     public ValidateOptionsResult Validate(string? name, IdempotencyOptions options)

@@ -45,6 +45,11 @@ public sealed class AzureCommunicationEmailOptions
     /// <see cref="Endpoint"/>. Supply your own credential via the <c>UseAzure</c> delegate overload —
     /// it cannot be bound from configuration.
     /// </summary>
+    /// <remarks>
+    /// This is a deliberate full-fidelity pass-through of the Azure SDK type <see cref="TokenCredential"/>: the
+    /// entire Azure.Identity credential family is accepted verbatim so no auth mode is lost behind a lossy
+    /// Headless wrapper. It intentionally couples this option to <c>Azure.Core</c>.
+    /// </remarks>
     public TokenCredential? TokenCredential { get; set; }
 
     /// <summary>Returns a diagnostics-safe description that never includes the connection string or access key.</summary>

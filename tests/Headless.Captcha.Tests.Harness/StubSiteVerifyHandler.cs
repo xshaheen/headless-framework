@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
-using System.Net.Http;
-using System.Text;
 
 namespace Tests;
 
@@ -56,13 +54,11 @@ public sealed class StubSiteVerifyHandler : HttpMessageHandler
             chosen = _responses.Dequeue();
             _last = chosen;
         }
-        else if (_last is { } last)
-        {
-            chosen = last;
-        }
         else
         {
-            throw new InvalidOperationException("No stubbed siteverify response was enqueued.");
+            chosen = _last is { } last
+                ? last
+                : throw new InvalidOperationException("No stubbed siteverify response was enqueued.");
         }
 
         return new HttpResponseMessage(chosen.Status)

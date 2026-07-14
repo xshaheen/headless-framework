@@ -1,5 +1,5 @@
 using Headless.Abstractions;
-using Headless.Core;
+using Headless.Coordination;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Messages;
@@ -28,6 +28,8 @@ public sealed class PostgreSqlDeduplicationTest(PostgreSqlTestFixture fixture) :
         services.AddSingleton(TimeProvider.System);
         // PostgreSqlDataStorage resolves a keyed IGuidGenerator (SequentialGuidType.Version7) for native uuid PKs.
         services.AddHeadlessGuidGenerator();
+        // PostgreSqlDataStorage takes INodeMembership (owner tracking); tests don't exercise membership.
+        services.AddSingleton<INodeMembership, NullNodeMembership>();
         services.AddSingleton<IDataStorage, PostgreSqlDataStorage>();
 
         var provider = services.BuildServiceProvider();

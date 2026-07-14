@@ -9,7 +9,7 @@ namespace Tests;
 
 public sealed class SettingDefinitionRecordRepositoryTests(SettingsTestFixture fixture) : SettingsTestBase(fixture)
 {
-    private static readonly List<SettingDefinition> _Definition = TestData.CreateDefinitionFaker().Generate(2);
+    private static readonly List<SettingDefinition> _Definition = TestData.CreateDefinitions(2);
 
     [Fact]
     public async Task should_save_defined_settings()

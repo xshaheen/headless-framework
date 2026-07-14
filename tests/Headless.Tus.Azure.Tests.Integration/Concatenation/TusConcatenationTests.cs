@@ -2,8 +2,7 @@
 
 using Azure.Storage.Blobs;
 using Headless.Testing.Tests;
-using Headless.Tus.Options;
-using Headless.Tus.Services;
+using Headless.Tus;
 using Tests.TestSetup;
 using tusdotnet.Models.Concatenation;
 using TusAzureMetadata = Headless.Tus.Models.TusAzureMetadata;
@@ -14,20 +13,21 @@ namespace Tests.Concatenation;
 public sealed class TusConcatenationTests : TestBase
 {
     private readonly TusAzureStore _store;
+    private readonly BlobServiceClient _blobServiceClient;
     private readonly BlobContainerClient _containerClient;
     private const string _ContainerName = "tuscontainer";
     private const string _BlobPrefix = "tusfiles/";
 
     public TusConcatenationTests(TusAzureFixture fixture)
     {
-        var blobServiceClient = new BlobServiceClient(
+        _blobServiceClient = new BlobServiceClient(
             fixture.Container.GetConnectionString(),
             new BlobClientOptions(BlobClientOptions.ServiceVersion.V2024_11_04)
         );
 
         var storeOptions = new TusAzureStoreOptions { ContainerName = _ContainerName, BlobPrefix = _BlobPrefix };
-        _containerClient = blobServiceClient.GetBlobContainerClient(_ContainerName);
-        _store = new TusAzureStore(blobServiceClient, storeOptions, loggerFactory: LoggerFactory);
+        _containerClient = _blobServiceClient.GetBlobContainerClient(_ContainerName);
+        _store = new TusAzureStore(_blobServiceClient, storeOptions, loggerFactory: LoggerFactory);
     }
 
     /* CreatePartialFileAsync */
@@ -149,14 +149,14 @@ public sealed class TusConcatenationTests : TestBase
     public async Task should_throw_when_create_final_file_with_nonexistent_partial()
     {
         // given
-        const string nonExistentPartialId = "nonexistent-partial-id";
+        var nonExistentPartialId = Guid.NewGuid().ToString("n");
 
         // when
         var act = async () => await _store.CreateFinalFileAsync([nonExistentPartialId], metadata: null, AbortToken);
 
         // then
         await act.Should()
-            .ThrowAsync<InvalidOperationException>()
+            .ThrowAsync<tusdotnet.Models.TusStoreException>()
             .WithMessage($"Partial file {nonExistentPartialId} does not exist");
     }
 
@@ -172,7 +172,7 @@ public sealed class TusConcatenationTests : TestBase
 
         // then
         await act.Should()
-            .ThrowAsync<InvalidOperationException>()
+            .ThrowAsync<tusdotnet.Models.TusStoreException>()
             .WithMessage($"File {regularFileId} is not a partial file");
     }
 
@@ -194,7 +194,7 @@ public sealed class TusConcatenationTests : TestBase
 
         // then
         await act.Should()
-            .ThrowAsync<InvalidOperationException>()
+            .ThrowAsync<tusdotnet.Models.TusStoreException>()
             .WithMessage($"Partial file {partialId} is incomplete*");
     }
 
@@ -267,7 +267,7 @@ public sealed class TusConcatenationTests : TestBase
     public async Task should_return_null_for_nonexistent_file()
     {
         // given
-        const string nonExistentFileId = "nonexistent-file-id";
+        var nonExistentFileId = Guid.NewGuid().ToString("n");
 
         // when
         var concat = await _store.GetUploadConcatAsync(nonExistentFileId, AbortToken);
@@ -343,6 +343,98 @@ public sealed class TusConcatenationTests : TestBase
         await blobClient.DownloadToAsync(downloadStream, AbortToken);
 
         downloadStream.ToArray().Should().BeEquivalentTo(data);
+    }
+
+    [Fact]
+    public async Task should_allow_same_partial_multiple_times_in_final_file()
+    {
+        // given - the tus spec: partials "MAY however be used multiple times to form a final
+        // resource", including repeated entries in one Upload-Concat list
+        var data = Faker.Random.Bytes(400);
+        var partialId = await _store.CreatePartialFileAsync(data.Length, metadata: null, AbortToken);
+
+        await using (var stream = new MemoryStream(data))
+        {
+            await _store.AppendDataAsync(partialId, stream, AbortToken);
+        }
+
+        // when - the same partial is listed twice
+        var finalFileId = await _store.CreateFinalFileAsync([partialId, partialId], metadata: null, AbortToken);
+
+        // then - its content appears twice, in order
+        var blobClient = _containerClient.GetBlobClient(_BlobPrefix + finalFileId);
+        await using var downloadStream = new MemoryStream();
+        await blobClient.DownloadToAsync(downloadStream, AbortToken);
+
+        downloadStream.ToArray().Should().BeEquivalentTo(data.Concat(data).ToArray());
+        (await _store.GetUploadLengthAsync(finalFileId, AbortToken)).Should().Be(data.Length * 2);
+    }
+
+    [Fact]
+    public async Task should_delete_partials_after_concat_when_enabled()
+    {
+        // given - a store with DeletePartialFilesOnConcat enabled on the same container
+        var deletingStore = new TusAzureStore(
+            _blobServiceClient,
+            new TusAzureStoreOptions
+            {
+                ContainerName = _ContainerName,
+                BlobPrefix = _BlobPrefix,
+                DeletePartialFilesOnConcat = true,
+            },
+            loggerFactory: LoggerFactory
+        );
+
+        var data1 = Faker.Random.Bytes(300);
+        var data2 = Faker.Random.Bytes(200);
+        var partial1 = await deletingStore.CreatePartialFileAsync(data1.Length, metadata: null, AbortToken);
+        var partial2 = await deletingStore.CreatePartialFileAsync(data2.Length, metadata: null, AbortToken);
+
+        await using (var stream = new MemoryStream(data1))
+        {
+            await deletingStore.AppendDataAsync(partial1, stream, AbortToken);
+        }
+
+        await using (var stream = new MemoryStream(data2))
+        {
+            await deletingStore.AppendDataAsync(partial2, stream, AbortToken);
+        }
+
+        // when
+        var finalFileId = await deletingStore.CreateFinalFileAsync([partial1, partial2], metadata: null, AbortToken);
+
+        // then - the final upload is durable and intact
+        var blobClient = _containerClient.GetBlobClient(_BlobPrefix + finalFileId);
+        await using var downloadStream = new MemoryStream();
+        await blobClient.DownloadToAsync(downloadStream, AbortToken);
+        downloadStream.ToArray().Should().BeEquivalentTo(data1.Concat(data2).ToArray());
+
+        // and the partials are gone
+        (await deletingStore.FileExistAsync(partial1, AbortToken))
+            .Should()
+            .BeFalse();
+        (await deletingStore.FileExistAsync(partial2, AbortToken)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_keep_partials_after_concat_by_default()
+    {
+        // given
+        var data = Faker.Random.Bytes(250);
+        var partialId = await _store.CreatePartialFileAsync(data.Length, metadata: null, AbortToken);
+
+        await using (var stream = new MemoryStream(data))
+        {
+            await _store.AppendDataAsync(partialId, stream, AbortToken);
+        }
+
+        // when
+        _ = await _store.CreateFinalFileAsync([partialId], metadata: null, AbortToken);
+
+        // then - the spec allows reusing partials for multiple finals; the default keeps them
+        (await _store.FileExistAsync(partialId, AbortToken))
+            .Should()
+            .BeTrue();
     }
 
     [Fact]

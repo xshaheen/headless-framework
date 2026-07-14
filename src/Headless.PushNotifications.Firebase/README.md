@@ -9,6 +9,7 @@ Delivers push notifications to Android (FCM), iOS (via FCM-to-APNs bridge), and 
 ## Key Features
 
 - FCM-backed `IPushNotificationService` implementation (`FcmPushNotificationService`)
+- Selectable as the default (`setup.UseFirebase(…)`) or as a named instance (`setup.AddNamed("name", i => i.UseFirebase(…))`), each isolating its own options, retry pipeline, and `FirebaseApp`
 - Single-device (`SendToDeviceAsync`) and multicast (`SendMulticastAsync`) delivery
 - Automatic chunking of multicast sends into batches of ≤ 500 tokens (FCM hard limit)
 - Custom data payload support (with reserved-key enforcement)
@@ -22,8 +23,10 @@ Delivers push notifications to Android (FCM), iOS (via FCM-to-APNs bridge), and 
 
 The Firebase Admin SDK `FirebaseApp` is created **lazily on the first send**, not at DI registration time. This means:
 - Registration has no observable side effects (no credentials are loaded, no HTTP calls are made).
-- Multiple hosts in the same process can coexist with different credentials — each registration generates a uniquely-named `FirebaseApp`.
+- Multiple hosts (default plus named instances) in the same process coexist with different credentials — each registration generates a uniquely-named `FirebaseApp`.
 - Configuration errors in `FirebaseOptions.Json` (malformed JSON, wrong credential type) surface as exceptions on the first call, not at startup. Supply the `IConfiguration` overload so the options validator catches missing `Json` at startup instead.
+
+Each named instance reads its own options snapshot (`IOptionsMonitor<FirebaseOptions>.Get(name)`) and its own retry pipeline (keyed `Headless:FcmRetry:{name}`); the default reads the unnamed options and the `Headless:FcmRetry` pipeline. Keyed DI does not cascade the key to constructor dependencies, so a keyed sender never reads `CurrentValue` (which binds the default) — the sender is registered through an explicit factory that passes its own name.
 
 Android messages are sent with `Priority.High`; iOS messages include an APNs badge count of 1. These are hardcoded defaults — the `data` payload provides the only customization surface exposed by this abstraction.
 
@@ -40,17 +43,27 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Recommended: bind from configuration so the options validator runs at startup.
 builder.Services.AddHeadlessPushNotifications(setup => setup.UseFirebase(builder.Configuration.GetSection("Firebase")));
+
+// Multiple Firebase projects, one per app:
+builder.Services.AddHeadlessPushNotifications(setup =>
+{
+    setup.UseFirebase(builder.Configuration.GetSection("Firebase:Primary"));             // default
+    setup.AddNamed("driver-app", i => i.UseFirebase(builder.Configuration.GetSection("Firebase:Driver")));
+});
 ```
 
 Sending:
 
 ```csharp
 var response = await pushService.SendToDeviceAsync(
-    clientToken: deviceToken,
-    title: "Order shipped",
-    body: "Your order #1234 is on its way.",
-    data: new Dictionary<string, string> { ["orderId"] = "1234" },
-    cancellationToken: ct
+    deviceToken,
+    new PushNotificationRequest
+    {
+        Title = "Order shipped",
+        Body = "Your order #1234 is on its way.",
+        Data = new Dictionary<string, string> { ["orderId"] = "1234" },
+    },
+    ct
 );
 
 if (response.IsUnregistered())
@@ -138,18 +151,19 @@ builder.Services.AddHeadlessPushNotifications(setup =>
 - Initial delay: 1s
 - Exponential sequence: 1s → 2s → 4s → 8s → 16s → 32s, capped at `MaxDelay` (default 60s)
 - Jitter: ±25% (when `UseJitter = true`)
-- Retry pipeline key: `"Headless:FcmRetry"` (registered via Polly's `AddResiliencePipeline`)
+- Retry pipeline key: `"Headless:FcmRetry"` for the default, `"Headless:FcmRetry:{name}"` per named instance (registered via Polly's `AddResiliencePipeline`)
 
 ## Dependencies
 
-- `Headless.PushNotifications.Abstractions`
+- `Headless.PushNotifications.Core`
+- `Headless.Hosting`
 - `FirebaseAdmin`
 - `Microsoft.Extensions.Http.Resilience`
 - `Polly.Core`
 
 ## Side Effects
 
-- Registers `IPushNotificationService` as singleton (`FcmPushNotificationService`)
-- Registers a `ResiliencePipeline` named `"Headless:FcmRetry"` (via Polly)
+- Registers `IPushNotificationService` as singleton (`FcmPushNotificationService`) for the default, or a keyed singleton under the instance name for a named instance
+- Registers a `ResiliencePipeline` named `"Headless:FcmRetry"` (default) or `"Headless:FcmRetry:{name}"` (per named instance) via Polly
 - Registers `TimeProvider.System` as singleton (if not already registered)
 - The Firebase Admin SDK `FirebaseApp` is created lazily on first send; registration has no network side effects

@@ -7,7 +7,7 @@ namespace Headless.Messaging.AzureServiceBus.Producer;
 /// </summary>
 /// <remarks>
 /// The default implementation returns the descriptor registered via
-/// <see cref="AzureServiceBusOptions.ConfigureCustomProducer{T}"/> when one matches the message
+/// <see cref="AzureServiceBusMessagingOptions.ConfigureCustomProducer{T}"/> when one matches the message
 /// type, and falls back to the global topic path otherwise.
 /// </remarks>
 public interface IServiceBusProducerDescriptorFactory

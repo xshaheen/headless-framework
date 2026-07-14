@@ -59,7 +59,8 @@ public sealed class DistributedLockExtensionsTests : TestBase
             {
                 workExecuted = true;
                 return Task.CompletedTask;
-            }
+            },
+            cancellationToken: AbortToken
         );
 
         // then
@@ -87,7 +88,8 @@ public sealed class DistributedLockExtensionsTests : TestBase
             {
                 workExecuted = true;
                 return Task.CompletedTask;
-            }
+            },
+            cancellationToken: AbortToken
         );
 
         // then
@@ -268,6 +270,238 @@ public sealed class DistributedLockExtensionsTests : TestBase
                     o != null && o.Monitoring == LockMonitoringMode.Monitor && o.ReleaseOnDispose
                 ),
                 Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task release_extension_should_throw_when_provider_is_null()
+    {
+        // given
+        IDistributedLock provider = null!;
+        var distributedLock = Substitute.For<IDistributedLease>();
+
+        // when
+        var act = async () => await provider.ReleaseAsync(distributedLock, AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<ArgumentNullException>().WithParameterName("provider");
+    }
+
+    [Fact]
+    public async Task should_pass_state_to_async_state_work_and_dispose_handle()
+    {
+        // given
+        var provider = Substitute.For<IDistributedLock>();
+        var distributedLock = Substitute.For<IDistributedLease>();
+        provider
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IDistributedLease?>(distributedLock));
+        var observedState = 0;
+
+        // when — the TState overload avoids a closure; the state must flow into the work delegate
+        var result = await provider.TryUsingAsync(
+            "resource",
+            42,
+            state =>
+            {
+                observedState = state;
+                return Task.CompletedTask;
+            },
+            options: null,
+            AbortToken
+        );
+
+        // then
+        result.Should().BeTrue();
+        observedState.Should().Be(42);
+        await distributedLock.Received(1).DisposeAsync();
+    }
+
+    [Fact]
+    public async Task should_not_run_async_state_work_when_lock_not_acquired()
+    {
+        // given
+        var provider = Substitute.For<IDistributedLock>();
+        provider
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IDistributedLease?>(null));
+        var workExecuted = false;
+
+        // when
+        var result = await provider.TryUsingAsync(
+            "resource",
+            42,
+            _ =>
+            {
+                workExecuted = true;
+                return Task.CompletedTask;
+            },
+            options: null,
+            AbortToken
+        );
+
+        // then
+        result.Should().BeFalse();
+        workExecuted.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_link_lost_token_into_async_state_work_when_loss_observable()
+    {
+        // given — a monitored handle whose LostToken we control; the state+token overload must
+        // hand the work a token linked to lease loss, exactly like the stateless overload.
+        var provider = Substitute.For<IDistributedLock>();
+        var distributedLock = Substitute.For<IDistributedLease>();
+        using var leaseLostCts = new CancellationTokenSource();
+        distributedLock.CanObserveLoss.Returns(true);
+        distributedLock.LostToken.Returns(leaseLostCts.Token);
+        provider
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IDistributedLease?>(distributedLock));
+
+        var observedState = 0;
+        var observedToken = CancellationToken.None;
+        var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // when
+        var task = provider.TryUsingAsync(
+            "resource",
+            42,
+            async (state, ct) =>
+            {
+                observedState = state;
+                observedToken = ct;
+                started.SetResult(true);
+                try
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+                }
+                catch (OperationCanceledException) { }
+            },
+            new DistributedLockAcquireOptions { Monitoring = LockMonitoringMode.Monitor },
+            AbortToken
+        );
+
+        await started.Task;
+        await leaseLostCts.CancelAsync();
+        var result = await task;
+
+        // then
+        result.Should().BeTrue();
+        observedState.Should().Be(42);
+        observedToken.IsCancellationRequested.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_pass_bare_caller_token_when_loss_not_observable()
+    {
+        // given — an unmonitored handle (CanObserveLoss = false); the token-receiving overload
+        // must pass the caller's token through unchanged instead of allocating a linked source.
+        var provider = Substitute.For<IDistributedLock>();
+        var distributedLock = Substitute.For<IDistributedLease>();
+        distributedLock.CanObserveLoss.Returns(false);
+        provider
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IDistributedLease?>(distributedLock));
+
+        var callerToken = AbortToken;
+        var observedToken = CancellationToken.None;
+
+        // when
+        var result = await provider.TryUsingAsync(
+            "resource",
+            ct =>
+            {
+                observedToken = ct;
+                return Task.CompletedTask;
+            },
+            options: null,
+            callerToken
+        );
+
+        // then
+        result.Should().BeTrue();
+        observedToken.Should().Be(callerToken);
+    }
+
+    [Fact]
+    public async Task should_map_timespan_arguments_into_options_for_sync_work()
+    {
+        // given
+        var provider = Substitute.For<IDistributedLock>();
+        var distributedLock = Substitute.For<IDistributedLease>();
+        provider
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IDistributedLease?>(distributedLock));
+        var workExecuted = false;
+        var timeUntilExpires = TimeSpan.FromMinutes(3);
+        var acquireTimeout = TimeSpan.FromSeconds(7);
+
+        // when — the TimeSpan convenience overload builds the options itself
+        var result = await provider.TryUsingAsync(
+            "resource",
+            () => workExecuted = true,
+            timeUntilExpires,
+            acquireTimeout,
+            AbortToken
+        );
+
+        // then — sync work cannot observe loss, so monitoring is forced off
+        result.Should().BeTrue();
+        workExecuted.Should().BeTrue();
+        await provider
+            .Received(1)
+            .TryAcquireAsync(
+                "resource",
+                Arg.Is<DistributedLockAcquireOptions?>(o =>
+                    o != null
+                    && o.TimeUntilExpires == timeUntilExpires
+                    && o.AcquireTimeout == acquireTimeout
+                    && o.ReleaseOnDispose
+                    && o.Monitoring == LockMonitoringMode.None
+                ),
+                AbortToken
+            );
+    }
+
+    [Fact]
+    public async Task should_map_timespan_arguments_into_options_for_sync_state_work()
+    {
+        // given
+        var provider = Substitute.For<IDistributedLock>();
+        var distributedLock = Substitute.For<IDistributedLease>();
+        provider
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IDistributedLease?>(distributedLock));
+        var observedState = 0;
+        var timeUntilExpires = TimeSpan.FromMinutes(3);
+        var acquireTimeout = TimeSpan.FromSeconds(7);
+
+        // when
+        var result = await provider.TryUsingAsync(
+            "resource",
+            42,
+            state => observedState = state,
+            timeUntilExpires,
+            acquireTimeout,
+            AbortToken
+        );
+
+        // then
+        result.Should().BeTrue();
+        observedState.Should().Be(42);
+        await provider
+            .Received(1)
+            .TryAcquireAsync(
+                "resource",
+                Arg.Is<DistributedLockAcquireOptions?>(o =>
+                    o != null
+                    && o.TimeUntilExpires == timeUntilExpires
+                    && o.AcquireTimeout == acquireTimeout
+                    && o.ReleaseOnDispose
+                    && o.Monitoring == LockMonitoringMode.None
+                ),
+                AbortToken
             );
     }
 }

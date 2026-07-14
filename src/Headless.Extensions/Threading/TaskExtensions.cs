@@ -319,9 +319,9 @@ public static class HeadlessTaskExtensions
 
             // No Task.Run hop needed: awaiting timeProvider.Delay yields, and ConfigureAwait(false) resumes the
             // action on the thread pool. Argument.IsPositive guarantees delay > 0, so the await always runs.
-            return _DelayedAsync(delay, action, timeProvider, cancellationToken);
+            return delayedAsync(delay, action, timeProvider, cancellationToken);
 
-            static async Task _DelayedAsync(
+            static async Task delayedAsync(
                 TimeSpan delay,
                 Func<CancellationToken, Task> action,
                 TimeProvider timeProvider,

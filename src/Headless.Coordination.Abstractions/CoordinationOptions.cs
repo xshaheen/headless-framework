@@ -1,10 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text.RegularExpressions;
-using FluentValidation;
-
 namespace Headless.Coordination;
 
+/// <summary>
+/// Shared, provider-agnostic options for Headless coordination: cluster identity, key prefixing, heartbeat and
+/// liveness thresholds, dead-record retention, and the behavior applied when the local node loses its membership.
+/// Bound via <c>AddHeadlessCoordination(setup =&gt; setup.Configure(...))</c>; provider packages layer their own
+/// options (connection string, schema) on top.
+/// </summary>
 [PublicAPI]
 public sealed class CoordinationOptions
 {
@@ -49,7 +52,7 @@ public sealed class CoordinationOptions
     /// Arbitrary key/value pairs written to the node descriptor on <see cref="INodeMembership.RegisterAsync"/>.
     /// Useful for service-discovery metadata (e.g. datacenter, version).
     /// </summary>
-    public Dictionary<string, string> Metadata { get; set; } = new(StringComparer.Ordinal);
+    public Dictionary<string, string> Metadata { get; } = new(StringComparer.Ordinal);
 
     /// <summary>
     /// How often the heartbeat background service calls <see cref="INodeMembership.HeartbeatAsync"/>.
@@ -85,31 +88,4 @@ public sealed class CoordinationOptions
     /// another node has superseded this incarnation or the store evicted the heartbeat).
     /// </summary>
     public MembershipLostBehavior MembershipLostBehavior { get; set; } = MembershipLostBehavior.StopApplication;
-}
-
-internal sealed partial class CoordinationOptionsValidator : AbstractValidator<CoordinationOptions>
-{
-    public CoordinationOptionsValidator()
-    {
-        RuleFor(x => x.KeyPrefix).NotEmpty();
-
-        RuleFor(x => x.ClusterName)
-            .NotEmpty()
-            .Matches(ClusterNameRegex)
-            .WithMessage("ClusterName may only contain letters, digits, '.', '_', ':', or '-'.");
-
-        RuleFor(x => x.ConfiguredNodeId).Must(x => x is null || !string.IsNullOrWhiteSpace(x));
-        RuleFor(x => x.HeartbeatInterval).GreaterThan(TimeSpan.Zero).LessThan(x => x.SuspicionThreshold);
-        RuleFor(x => x.SuspicionThreshold).LessThan(x => x.DeadThreshold);
-        RuleFor(x => x.DeadThreshold).GreaterThan(TimeSpan.Zero);
-
-        RuleFor(x => x.DeadRetentionWindow)
-            .Must((options, value) => value >= options.HeartbeatInterval * 2)
-            .WithMessage("DeadRetentionWindow must be at least twice HeartbeatInterval.");
-    }
-
-    // Cluster names flow into Redis hash-tag keys and relational lock/identifier strings; restrict them to a
-    // safe identifier set so quotes and control characters can never reach those surfaces.
-    [GeneratedRegex("^[A-Za-z0-9._:-]+$", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
-    private static partial Regex ClusterNameRegex { get; }
 }

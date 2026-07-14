@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 using Headless.Redis;
 using StackExchange.Redis;
 
-namespace Headless.DistributedLocks.Redis;
+namespace Headless.DistributedLocks.Redis.Scripts;
 
 /// <summary>Atomically replaces a value only if it matches the expected value.</summary>
 internal sealed class ReplaceIfEqualScriptDefinition : RedisScriptDefinition
@@ -21,7 +21,7 @@ internal sealed class ReplaceIfEqualScriptDefinition : RedisScriptDefinition
               if (@expires ~= nil and @expires ~= '') then
                 return redis.call('set', @key, @value, 'PX', @expires) and 1 or 0
               else
-                return redis.call('set', @key, @value) and 1 or 0
+                return redis.call('set', @key, @value, 'KEEPTTL') and 1 or 0
               end
             else
               return -1

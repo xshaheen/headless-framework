@@ -159,7 +159,7 @@ internal sealed class CircularBuffer<T> : ICollection<T>
 
     public bool Contains(T item)
     {
-        throw new NotImplementedException();
+        throw new NotSupportedException();
     }
 
     public void CopyTo(T[] array, int arrayIndex)
@@ -184,7 +184,7 @@ internal sealed class CircularBuffer<T> : ICollection<T>
 
     public bool Remove(T item)
     {
-        throw new NotImplementedException();
+        throw new NotSupportedException();
     }
 
     #endregion

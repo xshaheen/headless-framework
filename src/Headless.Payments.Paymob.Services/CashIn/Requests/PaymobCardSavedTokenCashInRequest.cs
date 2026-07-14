@@ -14,8 +14,16 @@ namespace Headless.Payments.Paymob.Services.CashIn.Requests;
 public sealed record PaymobCardSavedTokenCashInRequest(
     decimal Amount,
     PaymobCashInCustomerData Customer,
-    int SavedTokenIntegrationId,
+    long SavedTokenIntegrationId,
     string CardToken,
     string? MerchantOrderId = null,
     int ExpirationSeconds = 60 * 60
-);
+)
+{
+    // CardToken is a reusable payment credential and Customer carries PII; both are redacted so a failure
+    // log that renders this request (see PaymobCashInLoggerExtensions) cannot leak them.
+    public override string ToString()
+    {
+        return $"PaymobCardSavedTokenCashInRequest {{ Amount = {Amount}, SavedTokenIntegrationId = {SavedTokenIntegrationId}, MerchantOrderId = {MerchantOrderId}, ExpirationSeconds = {ExpirationSeconds}, CardToken = [redacted], Customer = [redacted] }}";
+    }
+}

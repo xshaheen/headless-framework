@@ -6,6 +6,7 @@ using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
+using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Retry;
 using Headless.Testing.Tests;
@@ -14,6 +15,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Tests.Helpers;
 
+#pragma warning disable MA0015 // Specify the parameter name in ArgumentException
 namespace Tests;
 
 public sealed class SubscribeExecutorRetryTests : TestBase
@@ -42,7 +44,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
     private static ConsumerExecutorDescriptor _CreateDescriptor()
     {
         var consumeMethod = typeof(IConsume<CancellationExecutorTestMessage>).GetMethod(
-            nameof(IConsume<CancellationExecutorTestMessage>.ConsumeAsync),
+            nameof(IConsume<>.ConsumeAsync),
             BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
             null,
             [typeof(ConsumeContext<CancellationExecutorTestMessage>), typeof(CancellationToken)],
@@ -76,7 +78,29 @@ public sealed class SubscribeExecutorRetryTests : TestBase
     )
     {
         storage
-            .LeaseReceiveAsync(Arg.Any<MediumMessage>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .LeaseReceiveAsync(Arg.Any<MediumMessage>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(true));
+        storage
+            .LeaseReceiveAndReserveAttemptAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(true));
+        storage
+            .ReserveReceiveAttemptAsync(Arg.Any<MediumMessage>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(true));
+        storage
+            .ChangeReceiveRetryStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(ValueTask.FromResult(true));
 
         var services = new ServiceCollection();
@@ -134,12 +158,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             storage,
             new MessagingOptions
             {
-                RetryPolicy =
-                {
-                    MaxInlineRetries = 4,
-                    MaxPersistedRetries = 0,
-                    BackoffStrategy = new ZeroDelayRetryBackoffStrategy(),
-                },
+                RetryPolicy = { RetryStrategy = TestRetryStrategies.ZeroDelay(4), MaxPersistedRetries = 0 },
             }
         );
 
@@ -194,9 +213,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             {
                 RetryPolicy =
                 {
-                    MaxInlineRetries = 1,
+                    RetryStrategy = TestRetryStrategies.FixedDelay(1, TimeSpan.FromMilliseconds(40)),
                     MaxPersistedRetries = 0,
-                    BackoffStrategy = new FixedDelayRetryBackoffStrategy(TimeSpan.FromMilliseconds(40)),
                 },
             }
         );
@@ -242,9 +260,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             {
                 RetryPolicy =
                 {
-                    MaxInlineRetries = 0,
+                    RetryStrategy = TestRetryStrategies.FixedDelay(0, TimeSpan.FromSeconds(5)),
                     MaxPersistedRetries = 1,
-                    BackoffStrategy = new FixedDelayRetryBackoffStrategy(TimeSpan.FromSeconds(5)),
                 },
             }
         );
@@ -258,12 +275,13 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         result.Succeeded.Should().BeFalse();
         await storage
             .Received(1)
-            .ChangeReceiveStateAsync(
+            .ChangeReceiveRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 StatusName.Failed,
                 Arg.Is<DateTime?>(value => value.HasValue),
                 Arg.Any<DateTime?>(),
-                Arg.Is<int?>(value => value == 0),
+                Arg.Is<int>(value => value == 0),
+                Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -305,9 +323,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             {
                 RetryPolicy =
                 {
-                    MaxInlineRetries = 0,
+                    RetryStrategy = TestRetryStrategies.ZeroDelay(0),
                     MaxPersistedRetries = 0,
-                    BackoffStrategy = new ZeroDelayRetryBackoffStrategy(),
                     OnExhausted = (info, _) =>
                     {
                         observed = info.ServiceProvider.GetRequiredService<ScopedMarker>();
@@ -358,12 +375,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             storage,
             new MessagingOptions
             {
-                RetryPolicy =
-                {
-                    MaxInlineRetries = 3,
-                    MaxPersistedRetries = 4,
-                    BackoffStrategy = new PermanentForArgumentExceptionStrategy(),
-                },
+                RetryPolicy = { RetryStrategy = TestRetryStrategies.PermanentArgument(3), MaxPersistedRetries = 4 },
             }
         );
 
@@ -378,12 +390,13 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         message.Retries.Should().Be(0, "permanent failures must not advance the retry counter");
         await storage
             .Received(1)
-            .ChangeReceiveStateAsync(
+            .ChangeReceiveRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 StatusName.Failed,
                 Arg.Is<DateTime?>(v => v == null),
                 Arg.Any<DateTime?>(),
-                Arg.Any<int?>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -418,9 +431,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             {
                 RetryPolicy =
                 {
-                    MaxInlineRetries = 0,
+                    RetryStrategy = TestRetryStrategies.ZeroDelay(0),
                     MaxPersistedRetries = 0,
-                    BackoffStrategy = new ZeroDelayRetryBackoffStrategy(),
                     OnExhausted = (_, _) =>
                     {
                         callbackInvoked = true;
@@ -429,6 +441,17 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 },
             }
         );
+        storage
+            .ChangeReceiveRetryStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(false));
 
         // when
         await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), CancellationToken.None);
@@ -448,12 +471,21 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         var executor = _CreateExecutor(
             invoker,
             storage,
-            new MessagingOptions { RetryPolicy = { MaxInlineRetries = 0, MaxPersistedRetries = 0 } }
+            new MessagingOptions
+            {
+                RetryPolicy = { RetryStrategy = TestRetryStrategies.ZeroDelay(0), MaxPersistedRetries = 0 },
+            }
         );
 
-        // Override the happy-path lease stub from _CreateExecutor so the lease returns false.
+        // Override the happy-path stub from _CreateExecutor so the fresh-dispatch combined
+        // lease+reserve write reports lease contention.
         storage
-            .LeaseReceiveAsync(Arg.Any<MediumMessage>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .LeaseReceiveAndReserveAttemptAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(ValueTask.FromResult(false));
 
         // when
@@ -490,9 +522,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         {
             RetryPolicy =
             {
-                MaxInlineRetries = 2,
+                RetryStrategy = TestRetryStrategies.FixedDelay(2, TimeSpan.FromSeconds(1)),
                 MaxPersistedRetries = 1,
-                BackoffStrategy = new FixedDelayRetryBackoffStrategy(TimeSpan.FromSeconds(1)),
                 InitialDispatchGrace = TimeSpan.FromSeconds(5),
             },
         };
@@ -536,12 +567,13 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         result.Succeeded.Should().BeTrue();
         await storage
             .Received(1)
-            .ChangeReceiveStateAsync(
+            .ChangeReceiveRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 StatusName.Scheduled,
-                Arg.Is<DateTime?>(v => v.HasValue && v.Value > nowBefore.Add(options.RetryPolicy.InitialDispatchGrace)),
+                Arg.Is<DateTime?>(v => v > nowBefore.Add(options.RetryPolicy.InitialDispatchGrace)),
                 Arg.Any<DateTime?>(),
-                Arg.Any<int?>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -550,7 +582,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
     public async Task should_increment_retries_by_one_when_persisted_path_routes_via_change_receive_state()
     {
         // #11 — positive counterpart to the inline-path invariant: when the inline budget is fully
-        // consumed (MaxInlineRetries = 0) and the persisted budget still has slots, ResolveNextState
+        // consumed (MaxRetryAttempts = 0) and the persisted budget still has slots, ResolveNextState
         // routes through persistence and the executor MUST increment MediumMessage.Retries by
         // exactly one. Without the increment the persisted budget would never be consumed and
         // OnExhausted would never fire.
@@ -578,9 +610,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             {
                 RetryPolicy =
                 {
-                    MaxInlineRetries = 0,
+                    RetryStrategy = TestRetryStrategies.FixedDelay(0, TimeSpan.FromSeconds(5)),
                     MaxPersistedRetries = 5,
-                    BackoffStrategy = new FixedDelayRetryBackoffStrategy(TimeSpan.FromSeconds(5)),
                 },
             }
         );
@@ -602,12 +633,13 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             );
         await storage
             .Received(1)
-            .ChangeReceiveStateAsync(
+            .ChangeReceiveRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 StatusName.Failed,
                 Arg.Is<DateTime?>(v => v.HasValue),
                 Arg.Any<DateTime?>(),
-                Arg.Is<int?>(v => v == startingRetries),
+                Arg.Is<int>(v => v == startingRetries),
+                Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -644,11 +676,10 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             {
                 RetryPolicy =
                 {
-                    MaxInlineRetries = 3,
+                    RetryStrategy = TestRetryStrategies.FixedDelay(3, TimeSpan.FromMilliseconds(1)),
                     MaxPersistedRetries = 5,
                     // Default strategy — relies on RetryExceptionClassifier to detect permanent
                     // failures. The classifier sees the wrapped exception and must unwrap it.
-                    BackoffStrategy = new FixedIntervalBackoffStrategy(TimeSpan.FromMilliseconds(1)),
                     OnExhausted = (_, _) =>
                     {
                         callbackInvoked = true;
@@ -670,14 +701,126 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         callbackInvoked.Should().BeFalse("Stop path skips OnExhausted — only Exhausted fires it");
         await storage
             .Received(1)
-            .ChangeReceiveStateAsync(
+            .ChangeReceiveRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 StatusName.Failed,
                 Arg.Is<DateTime?>(v => v == null),
                 Arg.Any<DateTime?>(),
-                Arg.Any<int?>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
             );
+    }
+
+    [Fact]
+    public async Task should_not_invoke_consumer_when_recovery_finds_reserved_inline_budget_consumed()
+    {
+        var storage = Substitute.For<IDataStorage>();
+        storage
+            .ChangeReceiveStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(true));
+        var invoker = Substitute.For<ISubscribeInvoker>();
+        var options = new MessagingOptions
+        {
+            RetryPolicy =
+            {
+                RetryStrategy = TestRetryStrategies.ZeroDelay(2),
+                MaxPersistedRetries = 1,
+                DispatchTimeout = TimeSpan.FromSeconds(17),
+            },
+        };
+        var executor = _CreateExecutor(invoker, storage, options);
+        var message = _CreateMediumMessage();
+        message.InlineAttempts = 3;
+
+        await executor.ExecuteAsync(message, _EmptyScope, _CreateDescriptor(), CancellationToken.None);
+
+        await invoker.DidNotReceiveWithAnyArgs().InvokeAsync(default!, AbortToken);
+        message.Retries.Should().Be(1);
+        message.InlineAttempts.Should().Be(0);
+        await storage
+            .Received(1)
+            .ChangeReceiveRetryStateAsync(
+                Arg.Is<MediumMessage>(value => value.Retries == 1 && value.InlineAttempts == 0),
+                StatusName.Failed,
+                Arg.Is<DateTime?>(value => value.HasValue),
+                Arg.Is<DateTime?>(value => value == null),
+                Arg.Is(0),
+                Arg.Is(3),
+                Arg.Any<CancellationToken>()
+            );
+        await storage
+            .Received(1)
+            .LeaseReceiveAsync(message, options.RetryPolicy.DispatchTimeout, Arg.Any<CancellationToken>());
+        await storage
+            .DidNotReceiveWithAnyArgs()
+            .LeaseReceiveAndReserveAttemptAsync(default!, default, default, AbortToken);
+        await storage.DidNotReceiveWithAnyArgs().ReserveReceiveAttemptAsync(default!, default, AbortToken);
+    }
+
+    [Fact]
+    public async Task should_not_invoke_consumer_or_write_state_when_attempt_reservation_is_lost()
+    {
+        var storage = Substitute.For<IDataStorage>();
+        var invoker = Substitute.For<ISubscribeInvoker>();
+        var executor = _CreateExecutor(invoker, storage, new MessagingOptions());
+        storage
+            .ReserveReceiveAttemptAsync(Arg.Any<MediumMessage>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(false));
+        var message = _CreateMediumMessage();
+        // Storage already acquired this lease. Its absolute expiry is deliberately behind the
+        // application clock: core must reserve under the returned identity without reacquiring.
+        message.LockedUntil = DateTime.UnixEpoch.AddMinutes(1);
+        message.Owner = "store-owner";
+
+        var result = await executor.ExecuteAsync(message, _EmptyScope, _CreateDescriptor(), CancellationToken.None);
+
+        result.Succeeded.Should().BeTrue();
+        message.InlineAttempts.Should().Be(0);
+        await invoker.DidNotReceiveWithAnyArgs().InvokeAsync(default!, AbortToken);
+        await storage
+            .DidNotReceiveWithAnyArgs()
+            .ChangeReceiveRetryStateAsync(default!, default, default, default, default, default, AbortToken);
+        await storage.DidNotReceiveWithAnyArgs().LeaseReceiveAsync(default!, default, AbortToken);
+        await storage
+            .DidNotReceiveWithAnyArgs()
+            .LeaseReceiveAndReserveAttemptAsync(default!, default, default, AbortToken);
+    }
+
+    [Fact]
+    public async Task should_issue_single_combined_storage_write_before_fresh_consume()
+    {
+        var storage = Substitute.For<IDataStorage>();
+        var invoker = Substitute.For<ISubscribeInvoker>();
+        invoker
+            .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new ConsumerExecutedResult(null, null, Guid.NewGuid().ToString(), null, null)));
+        var options = new MessagingOptions { RetryPolicy = { DispatchTimeout = TimeSpan.FromSeconds(17) } };
+        var executor = _CreateExecutor(invoker, storage, options);
+        var message = _CreateMediumMessage();
+
+        var result = await executor.ExecuteAsync(message, _EmptyScope, _CreateDescriptor(), CancellationToken.None);
+
+        // A fresh (never-leased) consume must pay exactly one pre-attempt storage write: the
+        // combined lease+reserve statement, never the two-step lease-then-reserve pair.
+        result.Succeeded.Should().BeTrue();
+        await storage
+            .Received(1)
+            .LeaseReceiveAndReserveAttemptAsync(
+                Arg.Any<MediumMessage>(),
+                options.RetryPolicy.DispatchTimeout,
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            );
+        await storage.DidNotReceiveWithAnyArgs().LeaseReceiveAsync(default!, default, AbortToken);
+        await storage.DidNotReceiveWithAnyArgs().ReserveReceiveAttemptAsync(default!, default, AbortToken);
     }
 
     private sealed class ScopedMarker;

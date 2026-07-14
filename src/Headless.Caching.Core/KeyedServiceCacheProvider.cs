@@ -9,8 +9,11 @@ namespace Headless.Caching;
 /// <see cref="ICacheProvider"/> over the container's keyed <see cref="ICache"/> registrations — resolves both
 /// named instances (added through the name-taking setup overloads) and the reserved role keys.
 /// </summary>
-internal sealed class KeyedServiceCacheProvider(IServiceProvider serviceProvider) : ICacheProvider
+internal sealed class KeyedServiceCacheProvider(IServiceProvider serviceProvider, IReadOnlySet<string> registeredNames)
+    : ICacheProvider
 {
+    public IReadOnlySet<string> RegisteredNames { get; } = registeredNames;
+
     public ICache GetCache(string name)
     {
         Argument.IsNotNullOrEmpty(name);

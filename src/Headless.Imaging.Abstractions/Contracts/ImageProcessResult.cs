@@ -5,6 +5,7 @@ namespace Headless.Imaging;
 
 /// <summary>Base class for the result of an image processing operation.</summary>
 /// <typeparam name="T">The type of the processed result, such as a <see cref="Stream"/>.</typeparam>
+[PublicAPI]
 public abstract class ImageProcessResult<T>
 {
     protected const string FailedError = "The image processing failed.";

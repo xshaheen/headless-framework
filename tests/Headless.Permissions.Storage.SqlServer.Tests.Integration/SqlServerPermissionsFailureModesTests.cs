@@ -3,6 +3,7 @@
 using Headless.Hosting.Initialization;
 using Headless.Permissions;
 using Headless.Permissions.Seeders;
+using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -10,7 +11,7 @@ using Microsoft.Extensions.Hosting;
 namespace Tests;
 
 [Collection<SqlServerPermissionsFixture>]
-public sealed class SqlServerPermissionsFailureModesTests(SqlServerPermissionsFixture fixture)
+public sealed class SqlServerPermissionsFailureModesTests(SqlServerPermissionsFixture fixture) : TestBase
 {
     [Fact]
     public async Task should_throw_and_keep_initializer_unmarked_when_database_unreachable()
@@ -23,7 +24,7 @@ public sealed class SqlServerPermissionsFailureModesTests(SqlServerPermissionsFi
 
         // when / then — wrapped in HostFailedToStartException by the host pipeline; inner is SqlException
         await FluentActions
-            .Awaiting(() => host.StartAsync(TestContext.Current.CancellationToken))
+            .Awaiting(() => host.StartAsync(AbortToken))
             .Should()
             .ThrowAsync<Exception>()
             .Where(e => e is SqlException || e.InnerException is SqlException);
@@ -34,7 +35,7 @@ public sealed class SqlServerPermissionsFailureModesTests(SqlServerPermissionsFi
         initializer.IsInitialized.Should().BeFalse();
 
         await FluentActions
-            .Awaiting(() => initializer.WaitForInitializationAsync(TestContext.Current.CancellationToken))
+            .Awaiting(() => initializer.WaitForInitializationAsync(AbortToken))
             .Should()
             .ThrowAsync<SqlException>();
     }
@@ -54,7 +55,7 @@ public sealed class SqlServerPermissionsFailureModesTests(SqlServerPermissionsFi
         try
         {
             // when — start all hosts in parallel
-            var startTasks = hosts.Select(h => h.StartAsync(TestContext.Current.CancellationToken)).ToArray();
+            var startTasks = hosts.Select(h => h.StartAsync(AbortToken)).ToArray();
             await Task.WhenAll(startTasks);
 
             // then — all initializers report ready, exactly one of each table exists, and the
@@ -99,7 +100,7 @@ public sealed class SqlServerPermissionsFailureModesTests(SqlServerPermissionsFi
     private async Task _DropSchemaAsync(string schema)
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         await using var command = new SqlCommand(
             $"""
             IF OBJECT_ID(N'{schema}.PermissionGrants', N'U') IS NOT NULL DROP TABLE [{schema}].[PermissionGrants];
@@ -111,13 +112,13 @@ public sealed class SqlServerPermissionsFailureModesTests(SqlServerPermissionsFi
             """,
             connection
         );
-        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        await command.ExecuteNonQueryAsync(AbortToken);
     }
 
     private async Task<int> _CountTablesAsync(string schema, string table)
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         await using var command = new SqlCommand(
             """
             SELECT COUNT(*)
@@ -129,16 +130,13 @@ public sealed class SqlServerPermissionsFailureModesTests(SqlServerPermissionsFi
         command.Parameters.AddWithValue("@schema", schema);
         command.Parameters.AddWithValue("@table", table);
 
-        return Convert.ToInt32(
-            await command.ExecuteScalarAsync(TestContext.Current.CancellationToken),
-            CultureInfo.InvariantCulture
-        );
+        return Convert.ToInt32(await command.ExecuteScalarAsync(AbortToken), CultureInfo.InvariantCulture);
     }
 
     private async Task<int> _CountIndexesAsync(string schema)
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         // Nonclustered indexes only (type = 2) across the schema — excludes the clustered PKs so the
         // count matches the 5 CREATE [UNIQUE] INDEX statements in SqlServerPermissionsStorageInitializer.
         await using var command = new SqlCommand(
@@ -153,9 +151,6 @@ public sealed class SqlServerPermissionsFailureModesTests(SqlServerPermissionsFi
         );
         command.Parameters.AddWithValue("@schema", schema);
 
-        return Convert.ToInt32(
-            await command.ExecuteScalarAsync(TestContext.Current.CancellationToken),
-            CultureInfo.InvariantCulture
-        );
+        return Convert.ToInt32(await command.ExecuteScalarAsync(AbortToken), CultureInfo.InvariantCulture);
     }
 }

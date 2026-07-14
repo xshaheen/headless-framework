@@ -12,8 +12,8 @@ namespace Tests;
 public sealed class KafkaConnectionPoolTests : TestBase
 {
     private readonly ILogger<KafkaConnectionPool> _logger = NullLogger<KafkaConnectionPool>.Instance;
-    private readonly IOptions<MessagingKafkaOptions> _options = Options.Create(
-        new MessagingKafkaOptions { Servers = "localhost:9092" }
+    private readonly IOptions<KafkaMessagingOptions> _options = Options.Create(
+        new KafkaMessagingOptions { Servers = "localhost:9092" }
     );
 
     [Fact]
@@ -30,7 +30,7 @@ public sealed class KafkaConnectionPoolTests : TestBase
     public void should_sanitize_servers_address_when_credentials_are_present()
     {
         // given
-        var credentialedOptions = Options.Create(new MessagingKafkaOptions { Servers = "user:secret@broker:9092" });
+        var credentialedOptions = Options.Create(new KafkaMessagingOptions { Servers = "user:secret@broker:9092" });
 
         // when
         using var pool = new KafkaConnectionPool(_logger, credentialedOptions);
@@ -59,7 +59,7 @@ public sealed class KafkaConnectionPoolTests : TestBase
     {
         // given
         var smallPoolOptions = Options.Create(
-            new MessagingKafkaOptions { Servers = "localhost:9092", ConnectionPoolSize = 1 }
+            new KafkaMessagingOptions { Servers = "localhost:9092", ConnectionPoolSize = 1 }
         );
         using var pool = new KafkaConnectionPool(_logger, smallPoolOptions);
 
@@ -116,7 +116,7 @@ public sealed class KafkaConnectionPoolTests : TestBase
     {
         // given - pool with invalid servers to test creation path
         var invalidOptions = Options.Create(
-            new MessagingKafkaOptions { Servers = "invalid-host:9092", MainConfig = { ["socket.timeout.ms"] = "100" } }
+            new KafkaMessagingOptions { Servers = "invalid-host:9092", MainConfig = { ["socket.timeout.ms"] = "100" } }
         );
         using var pool = new KafkaConnectionPool(_logger, invalidOptions);
 
@@ -139,7 +139,9 @@ public sealed class KafkaConnectionPoolTests : TestBase
         Parallel.ForEach(producers, producer => pool.Return(producer));
 
         // then - at least some should be returned successfully, some may be disposed
-        var returnedCount = producers.Count(p => !p.ReceivedCalls().Any(c => c.GetMethodInfo().Name == "Dispose"));
+        var returnedCount = producers.Count(p =>
+            !p.ReceivedCalls().Any(c => string.Equals(c.GetMethodInfo().Name, "Dispose", StringComparison.Ordinal))
+        );
         returnedCount.Should().BeLessThanOrEqualTo(10); // max pool size
     }
 
@@ -148,7 +150,7 @@ public sealed class KafkaConnectionPoolTests : TestBase
     {
         // given
         var smallPoolOptions = Options.Create(
-            new MessagingKafkaOptions { Servers = "localhost:9092", ConnectionPoolSize = 2 }
+            new KafkaMessagingOptions { Servers = "localhost:9092", ConnectionPoolSize = 2 }
         );
         using var pool = new KafkaConnectionPool(_logger, smallPoolOptions);
 

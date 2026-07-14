@@ -12,8 +12,9 @@ internal sealed class RedisConsumerClient(
     string groupId,
     byte groupConcurrent,
     IRedisStreamManager redis,
-    IOptions<MessagingRedisOptions> options,
+    IOptions<RedisMessagingOptions> options,
     ILogger<RedisConsumerClient> logger,
+    TimeSpan? stalePendingClaimMinIdleTime = null,
     TimeProvider? timeProvider = null
 ) : IConsumerClient
 {
@@ -21,6 +22,8 @@ internal sealed class RedisConsumerClient(
     private readonly ConsumerPauseGate _pauseGate = new();
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
+    private readonly TimeSpan _stalePendingClaimMinIdleTime = stalePendingClaimMinIdleTime ?? TimeSpan.FromMinutes(5);
+    private readonly string _consumerName = $"{groupId}:{Environment.MachineName}:{Guid.NewGuid():N}";
     private int _disposed;
     private string[] _messageNames = null!;
 
@@ -30,7 +33,10 @@ internal sealed class RedisConsumerClient(
 
     public BrokerAddress BrokerAddress => new("redis", options.Value.DisplayEndpoint);
 
-    public async ValueTask SubscribeAsync(IEnumerable<string> messageNames)
+    public async ValueTask SubscribeAsync(
+        IEnumerable<string> messageNames,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotNull(messageNames);
 
@@ -38,7 +44,9 @@ internal sealed class RedisConsumerClient(
 
         foreach (var messageName in arr)
         {
-            await redis.CreateStreamWithConsumerGroupAsync(messageName, groupId).ConfigureAwait(false);
+            await redis
+                .CreateStreamWithConsumerGroupAsync(messageName, groupId, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         _messageNames = arr;
@@ -64,16 +72,26 @@ internal sealed class RedisConsumerClient(
         }
     }
 
-    public async ValueTask CommitAsync(object? sender)
+    public async ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default)
     {
-        var (stream, group, id) = ((string stream, string group, string id))sender!;
+        if (!_TryGetDelivery(sender, out var delivery))
+        {
+            return;
+        }
 
-        await redis.Ack(stream, group, id).ConfigureAwait(false);
+        await redis.Ack(delivery.Stream, delivery.Group, delivery.Id, cancellationToken).ConfigureAwait(false);
     }
 
-    public ValueTask RejectAsync(object? sender)
+    public async ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
     {
-        return ValueTask.CompletedTask;
+        if (sender is not RedisConsumerDelivery delivery)
+        {
+            return;
+        }
+
+        await redis
+            .RequeueAndAck(delivery.Stream, delivery.Group, delivery.Id, delivery.Entries, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async ValueTask PauseAsync(CancellationToken cancellationToken = default) =>
@@ -113,18 +131,40 @@ internal sealed class RedisConsumerClient(
     private async Task _ListeningForMessagesAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
         //first time, we want to read our pending messages, in case we crashed and are recovering.
-        var pendingMsgs = redis.PollStreamsPendingMessagesAsync(_messageNames, groupId, timeout, cancellationToken);
+        var pendingMsgs = redis.PollStreamsPendingMessagesAsync(
+            _messageNames,
+            groupId,
+            _consumerName,
+            timeout,
+            cancellationToken
+        );
 
         await _ConsumeMessages(pendingMsgs, StreamPosition.Beginning, cancellationToken).ConfigureAwait(false);
 
+        var stalePendingMsgs = redis.PollStreamsStalePendingMessagesAsync(
+            _messageNames,
+            groupId,
+            _consumerName,
+            _stalePendingClaimMinIdleTime,
+            timeout,
+            cancellationToken
+        );
+        _ObserveBackgroundHandler(_ConsumeMessages(stalePendingMsgs, StreamPosition.Beginning, cancellationToken));
+
         //Once we consumed our history, we can start getting new messages.
-        var newMsgs = redis.PollStreamsLatestMessagesAsync(_messageNames, groupId, timeout, cancellationToken);
+        var newMsgs = redis.PollStreamsLatestMessagesAsync(
+            _messageNames,
+            groupId,
+            _consumerName,
+            timeout,
+            cancellationToken
+        );
 
         _ObserveBackgroundHandler(_ConsumeMessages(newMsgs, StreamPosition.NewMessages, cancellationToken));
     }
 
     private async Task _ConsumeMessages(
-        IAsyncEnumerable<IEnumerable<RedisStream>> streamsSet,
+        IAsyncEnumerable<IEnumerable<RedisStreamMessages>> streamsSet,
         RedisValue position,
         CancellationToken cancellationToken
     )
@@ -169,7 +209,7 @@ internal sealed class RedisConsumerClient(
             }
         }
 
-        async Task consumeAsync(RedisValue position, RedisStream stream, StreamEntry entry)
+        async Task consumeAsync(RedisValue position, RedisStreamMessages stream, StreamEntry entry)
         {
             try
             {
@@ -191,14 +231,14 @@ internal sealed class RedisConsumerClient(
                     try
                     {
                         var onError = options.Value.OnConsumeError?.Invoke(
-                            new MessagingRedisOptions.ConsumeErrorContext(ex, entry)
+                            new RedisMessagingOptions.ConsumeErrorContext(ex, entry)
                         );
 
                         await (onError ?? Task.CompletedTask).ConfigureAwait(false);
                     }
                     catch (Exception onError)
                     {
-                        logger.RedisConsumeErrorCallbackFailed(onError, nameof(MessagingRedisOptions.OnConsumeError));
+                        logger.RedisConsumeErrorCallbackFailed(onError, nameof(RedisMessagingOptions.OnConsumeError));
                     }
                     finally
                     {
@@ -208,7 +248,10 @@ internal sealed class RedisConsumerClient(
                     return;
                 }
 
-                await OnMessageCallback!(message, (stream.Key.ToString(), groupId, entry.Id.ToString()))
+                await OnMessageCallback!(
+                    message,
+                    new RedisConsumerDelivery(stream.Key.ToString(), groupId, entry.Id.ToString(), [.. entry.Values])
+                )
                     .ConfigureAwait(false);
             }
             finally
@@ -238,7 +281,27 @@ internal sealed class RedisConsumerClient(
             TaskScheduler.Default
         );
     }
+
+    private static bool _TryGetDelivery(object? sender, out RedisConsumerDelivery delivery)
+    {
+        switch (sender)
+        {
+            case RedisConsumerDelivery redisDelivery:
+                delivery = redisDelivery;
+                return true;
+
+            case (string stream, string group, string id):
+                delivery = new RedisConsumerDelivery(stream, group, id, []);
+                return true;
+
+            default:
+                delivery = default;
+                return false;
+        }
+    }
 }
+
+internal readonly record struct RedisConsumerDelivery(string Stream, string Group, string Id, NameValueEntry[] Entries);
 
 internal static partial class RedisConsumerClientLog
 {

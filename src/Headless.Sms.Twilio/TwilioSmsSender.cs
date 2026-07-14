@@ -18,11 +18,14 @@ namespace Headless.Sms.Twilio;
 /// </remarks>
 internal sealed class TwilioSmsSender(
     ITwilioRestClient client,
-    IOptions<TwilioSmsOptions> optionsAccessor,
+    IOptionsMonitor<TwilioSmsOptions> optionsMonitor,
+    string? optionsName,
     ILogger<TwilioSmsSender> logger
 ) : ISmsSender
 {
-    private readonly TwilioSmsOptions _options = optionsAccessor.Value;
+    // Snapshot for this instance's options name — never CurrentValue, which binds the default options and
+    // would bleed configuration across keyed instances.
+    private readonly TwilioSmsOptions _options = optionsMonitor.Get(optionsName);
 
     public async ValueTask<SendSingleSmsResponse> SendAsync(
         SendSingleSmsRequest request,
@@ -30,19 +33,18 @@ internal sealed class TwilioSmsSender(
     )
     {
         Argument.IsNotNull(request);
-        Argument.IsNotEmpty(request.Destinations);
+        Argument.IsNotNull(request.Destination);
         Argument.IsNotEmpty(request.Text);
-
-        if (request.Destinations.Count > 1)
-        {
-            return SendSingleSmsResponse.Failed("Twilio only supports sending to one destination at a time");
-        }
 
         try
         {
+            // The Twilio SDK (7.x) does not accept a CancellationToken on its send path, so cancellation can
+            // only be honored up to the point of dispatch.
+            cancellationToken.ThrowIfCancellationRequested();
+
             var response = await MessageResource
                 .CreateAsync(
-                    to: new PhoneNumber(request.Destinations[0].ToString(hasPlusPrefix: true)),
+                    to: new PhoneNumber(request.Destination.ToString(hasPlusPrefix: true)),
                     from: new PhoneNumber(_options.PhoneNumber),
                     body: request.Text,
                     maxPrice: _options.MaxPrice,
@@ -55,7 +57,7 @@ internal sealed class TwilioSmsSender(
                 return SendSingleSmsResponse.Succeeded(response.Sid);
             }
 
-            logger.LogFailedToSendSms(request.Destinations.Count, response.ErrorCode);
+            logger.LogFailedToSendSms(destinationCount: 1, response.ErrorCode);
 
             return SendSingleSmsResponse.Failed(
                 response.ErrorMessage
@@ -68,9 +70,9 @@ internal sealed class TwilioSmsSender(
         }
         catch (Exception e)
         {
-            logger.LogSmsSendException(e, request.Destinations.Count);
+            logger.LogSmsSendException(e, destinationCount: 1);
 
-            return SendSingleSmsResponse.Failed(e.Message, SmsFailureKind.Transient);
+            return SendSingleSmsResponse.FromException(e, SmsFailureKinds.FromException(e));
         }
     }
 }

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.DistributedLocks.Redis.Scripts;
 using Headless.Redis;
 using Microsoft.Extensions.DependencyInjection;
 using StackExchange.Redis;
@@ -40,8 +41,7 @@ namespace Headless.DistributedLocks.Redis;
 /// to the caller unless explicitly caught by this class.
 /// </para>
 /// </remarks>
-[PublicAPI]
-public sealed class RedisDistributedReadWriteLockStorage(
+internal sealed class RedisDistributedReadWriteLockStorage(
     IConnectionMultiplexer multiplexer,
     [FromKeyedServices(RedisDistributedLockServiceKeys.ScriptsLoader)] HeadlessRedisScriptsLoader scriptsLoader
 ) : IDistributedReadWriteLockStorage
@@ -69,7 +69,7 @@ public sealed class RedisDistributedReadWriteLockStorage(
         CancellationToken cancellationToken = default
     )
     {
-        var keys = _GetKeys(resource);
+        var (writerKey, readerKey) = _GetKeys(resource);
         _ValidateLockId(leaseId);
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -77,7 +77,7 @@ public sealed class RedisDistributedReadWriteLockStorage(
             .EvaluateAsync(
                 Db,
                 TryAcquireReadLockScriptDefinition.Instance,
-                _GetReadLockParameters(keys.WriterKey, keys.ReaderKey, leaseId, ttl),
+                _GetReadLockParameters(writerKey, readerKey, leaseId, ttl),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -106,7 +106,7 @@ public sealed class RedisDistributedReadWriteLockStorage(
         CancellationToken cancellationToken = default
     )
     {
-        var keys = _GetKeys(resource);
+        var (writerKey, readerKey) = _GetKeys(resource);
         _ValidateLockId(leaseId);
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -114,7 +114,7 @@ public sealed class RedisDistributedReadWriteLockStorage(
             .EvaluateAsync(
                 Db,
                 TryExtendReadLockScriptDefinition.Instance,
-                _GetReadLockParameters(keys.WriterKey, keys.ReaderKey, leaseId, ttl),
+                _GetReadLockParameters(writerKey, readerKey, leaseId, ttl),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -139,7 +139,7 @@ public sealed class RedisDistributedReadWriteLockStorage(
         CancellationToken cancellationToken = default
     )
     {
-        var keys = _GetKeys(resource);
+        var (_, readerKey) = _GetKeys(resource);
         _ValidateLockId(leaseId);
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -147,7 +147,7 @@ public sealed class RedisDistributedReadWriteLockStorage(
             .EvaluateAsync(
                 Db,
                 ReleaseReadLockScriptDefinition.Instance,
-                _GetReaderOnlyLockParameters(keys.ReaderKey, leaseId, ttl: null),
+                _GetReaderOnlyLockParameters(readerKey, leaseId, ttl: null),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -180,7 +180,7 @@ public sealed class RedisDistributedReadWriteLockStorage(
         CancellationToken cancellationToken = default
     )
     {
-        var keys = _GetKeys(resource);
+        var (writerKey, readerKey) = _GetKeys(resource);
         _ValidateLockId(leaseId);
         Argument.IsNotNullOrEmpty(waitingId);
         cancellationToken.ThrowIfCancellationRequested();
@@ -189,7 +189,7 @@ public sealed class RedisDistributedReadWriteLockStorage(
             .EvaluateAsync(
                 Db,
                 TryAcquireWriteLockScriptDefinition.Instance,
-                _GetWriteLockParameters(keys.WriterKey, keys.ReaderKey, leaseId, waitingId, ttl, markerTtl),
+                _GetWriteLockParameters(writerKey, readerKey, leaseId, waitingId, ttl, markerTtl),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -218,7 +218,7 @@ public sealed class RedisDistributedReadWriteLockStorage(
         CancellationToken cancellationToken = default
     )
     {
-        var keys = _GetKeys(resource);
+        var (writerKey, _) = _GetKeys(resource);
         _ValidateLockId(leaseId);
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -226,7 +226,7 @@ public sealed class RedisDistributedReadWriteLockStorage(
             .EvaluateAsync(
                 Db,
                 TryExtendWriteLockScriptDefinition.Instance,
-                _GetWriterOnlyLockParameters(keys.WriterKey, leaseId, ttl),
+                _GetWriterOnlyLockParameters(writerKey, leaseId, ttl),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -253,7 +253,7 @@ public sealed class RedisDistributedReadWriteLockStorage(
         CancellationToken cancellationToken = default
     )
     {
-        var keys = _GetKeys(resource);
+        var (writerKey, _) = _GetKeys(resource);
         _ValidateLockId(leaseId);
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -262,7 +262,7 @@ public sealed class RedisDistributedReadWriteLockStorage(
                 Db,
                 ReleaseWriteLockScriptDefinition.Instance,
                 _GetWriterOnlyLockParameters(
-                    keys.WriterKey,
+                    writerKey,
                     leaseId,
                     ttl: null,
                     DistributedLockCoreHelpers.GetWriterWaitingId(leaseId)
@@ -299,11 +299,11 @@ public sealed class RedisDistributedReadWriteLockStorage(
         CancellationToken cancellationToken = default
     )
     {
-        var keys = _GetKeys(resource);
+        var (_, readerKey) = _GetKeys(resource);
         _ValidateLockId(leaseId);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return await Db.HashExistsAsync(keys.ReaderKey, leaseId).WaitAsync(cancellationToken).ConfigureAwait(false);
+        return await Db.HashExistsAsync(readerKey, leaseId).WaitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -325,11 +325,11 @@ public sealed class RedisDistributedReadWriteLockStorage(
         CancellationToken cancellationToken = default
     )
     {
-        var keys = _GetKeys(resource);
+        var (writerKey, _) = _GetKeys(resource);
         _ValidateLockId(leaseId);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var value = await Db.StringGetAsync(keys.WriterKey).WaitAsync(cancellationToken).ConfigureAwait(false);
+        var value = await Db.StringGetAsync(writerKey).WaitAsync(cancellationToken).ConfigureAwait(false);
 
         return value.HasValue && string.Equals(value.ToString(), leaseId, StringComparison.Ordinal);
     }
@@ -347,10 +347,10 @@ public sealed class RedisDistributedReadWriteLockStorage(
     /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> fires (eagerly or during the await).</exception>
     public async ValueTask<bool> IsReadLockedAsync(string resource, CancellationToken cancellationToken = default)
     {
-        var keys = _GetKeys(resource);
+        var (_, readerKey) = _GetKeys(resource);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return await Db.HashLengthAsync(keys.ReaderKey).WaitAsync(cancellationToken).ConfigureAwait(false) > 0;
+        return await Db.HashLengthAsync(readerKey).WaitAsync(cancellationToken).ConfigureAwait(false) > 0;
     }
 
     /// <summary>
@@ -366,10 +366,10 @@ public sealed class RedisDistributedReadWriteLockStorage(
     /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> fires (eagerly or during the await).</exception>
     public async ValueTask<bool> IsWriteLockedAsync(string resource, CancellationToken cancellationToken = default)
     {
-        var keys = _GetKeys(resource);
+        var (writerKey, _) = _GetKeys(resource);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var value = await Db.StringGetAsync(keys.WriterKey).WaitAsync(cancellationToken).ConfigureAwait(false);
+        var value = await Db.StringGetAsync(writerKey).WaitAsync(cancellationToken).ConfigureAwait(false);
 
         return value.HasValue
             && !value.ToString().EndsWith(DistributedLockCoreHelpers.WriterWaitingSuffix, StringComparison.Ordinal);
@@ -388,10 +388,10 @@ public sealed class RedisDistributedReadWriteLockStorage(
     /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> fires (eagerly or during the await).</exception>
     public async ValueTask<long> GetReaderCountAsync(string resource, CancellationToken cancellationToken = default)
     {
-        var keys = _GetKeys(resource);
+        var (_, readerKey) = _GetKeys(resource);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return await Db.HashLengthAsync(keys.ReaderKey).WaitAsync(cancellationToken).ConfigureAwait(false);
+        return await Db.HashLengthAsync(readerKey).WaitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static (RedisKey WriterKey, RedisKey ReaderKey) _GetKeys(string resource)

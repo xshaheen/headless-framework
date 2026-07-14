@@ -1,6 +1,6 @@
 ---
 domain: SQL
-packages: Sql.Abstractions, Sql.PostgreSql, Sql.SqlServer, Sql.Sqlite
+packages: Sql.Abstractions, Sql.Core, Sql.PostgreSql, Sql.SqlServer, Sql.Sqlite
 ---
 
 # SQL
@@ -22,47 +22,56 @@ packages: Sql.Abstractions, Sql.PostgreSql, Sql.SqlServer, Sql.Sqlite
     - [Configuration](#configuration)
     - [Dependencies](#dependencies)
     - [Side Effects](#side-effects)
-- [Headless.Sql.PostgreSql](#headlesssqlpostgresql)
+- [Headless.Sql.Core](#headlesssqlcore)
     - [Problem Solved](#problem-solved-1)
     - [Key Features](#key-features-1)
-    - [Design Notes](#design-notes)
     - [Installation](#installation-1)
     - [Quick Start](#quick-start-1)
-    - [Configuration](#configuration-1)
     - [Dependencies](#dependencies-1)
     - [Side Effects](#side-effects-1)
-- [Headless.Sql.SqlServer](#headlesssqlsqlserver)
+- [Headless.Sql.PostgreSql](#headlesssqlpostgresql)
     - [Problem Solved](#problem-solved-2)
     - [Key Features](#key-features-2)
+    - [Design Notes](#design-notes)
     - [Installation](#installation-2)
     - [Quick Start](#quick-start-2)
-    - [Configuration](#configuration-2)
+    - [Configuration](#configuration-1)
     - [Dependencies](#dependencies-2)
     - [Side Effects](#side-effects-2)
-- [Headless.Sql.Sqlite](#headlesssqlsqlite)
+- [Headless.Sql.SqlServer](#headlesssqlsqlserver)
     - [Problem Solved](#problem-solved-3)
     - [Key Features](#key-features-3)
-    - [Design Notes](#design-notes-1)
     - [Installation](#installation-3)
     - [Quick Start](#quick-start-3)
-    - [Configuration](#configuration-3)
+    - [Configuration](#configuration-2)
     - [Dependencies](#dependencies-3)
     - [Side Effects](#side-effects-3)
+- [Headless.Sql.Sqlite](#headlesssqlsqlite)
+    - [Problem Solved](#problem-solved-4)
+    - [Key Features](#key-features-4)
+    - [Design Notes](#design-notes-1)
+    - [Installation](#installation-4)
+    - [Quick Start](#quick-start-4)
+    - [Configuration](#configuration-3)
+    - [Dependencies](#dependencies-4)
+    - [Side Effects](#side-effects-4)
 
 > Provider-agnostic SQL connection factory for raw SQL / Dapper scenarios with PostgreSQL, SQL Server, and SQLite backends.
 
 ## Quick Orientation
 
-Install `Headless.Sql.Abstractions` plus one provider package:
+Install `Headless.Sql.Abstractions` plus one provider package. Add `Headless.Sql.Core` when you need the default scoped `ISqlCurrentConnection` implementation:
 
 - `Headless.Sql.PostgreSql` — wraps Npgsql; returns `NpgsqlConnection`
 - `Headless.Sql.SqlServer` — wraps `Microsoft.Data.SqlClient`; returns `SqlConnection`
 - `Headless.Sql.Sqlite` — wraps `Microsoft.Data.Sqlite`; returns `SqliteConnection`
 
-There are no `AddSql*()` convenience methods. Register the factory manually:
+Each provider package ships a single `Add{Provider}Sql` registration extension that wires the connection factory, the connection-string checker, and a scoped `ISqlCurrentConnection` in one call:
 
 ```csharp
-builder.Services.AddSingleton<ISqlConnectionFactory>(new NpgsqlConnectionFactory(connectionString));
+builder.Services.AddPostgreSqlSql(connectionString);
+// or resolve the connection string from the service provider:
+builder.Services.AddPostgreSqlSql(sp => sp.GetRequiredService<ISecrets>().SqlConnectionString);
 ```
 
 Inject `ISqlConnectionFactory` and call `CreateNewConnectionAsync()` to get an already-open `DbConnection`. Pair with Dapper or raw ADO.NET — this layer does not provide query helpers.
@@ -74,10 +83,10 @@ Inject `ISqlConnectionFactory` and call `CreateNewConnectionAsync()` to get an a
 - Do **not** construct connections directly (`new NpgsqlConnection(cs)` / `new SqlConnection(cs)`). Always go through the factory so the connection string is centralized and the factory can be swapped in tests.
 - Connections returned by `CreateNewConnectionAsync()` are **already open** — calling `OpenAsync()` on them again throws an `InvalidOperationException`.
 - Always dispose connections with `await using` — they are `IAsyncDisposable`. Holding an open connection unnecessarily may exhaust the connection pool.
-- `ISqlCurrentConnection` / `DefaultSqlCurrentConnection` provide an ambient, lazy-open connection for unit-of-work patterns. Inject as scoped, not singleton.
-- `IConnectionStringChecker` is for health checks and startup validation; register the provider implementation (e.g., `NpgsqlConnectionStringChecker`) and inject `IConnectionStringChecker`. Note: `SqliteConnectionStringChecker` always returns `DatabaseExists = true` when connected (SQLite creates the file on open).
-- For in-process integration tests, register `SqliteConnectionFactory` with `"Data Source=:memory:"` — it needs no external server.
-- There is no per-package `AddSql*()` extension. Manual `AddSingleton<ISqlConnectionFactory>(...)` registration is the only pattern.
+- `ISqlCurrentConnection` defines an ambient, lazy-open connection for unit-of-work patterns. `Headless.Sql.Core` provides `DefaultSqlCurrentConnection`; the provider `Add{Provider}Sql` extensions register it as scoped for you.
+- `IConnectionStringChecker` is for health checks and startup validation; `Add{Provider}Sql` registers the provider implementation, or register it yourself and inject `IConnectionStringChecker`. Note: `SqliteConnectionStringChecker` always returns `DatabaseExists = true` when connected (SQLite creates the file on open).
+- For in-process integration tests, call `AddSqliteSql("Data Source=:memory:")` — it needs no external server.
+- Each provider package ships `Add{Provider}Sql(string connectionString)` and `Add{Provider}Sql(Func<IServiceProvider, string>)` on `IServiceCollection` (e.g. `AddPostgreSqlSql`, `AddSqlServerSql`, `AddSqliteSql`). Each registers `ISqlConnectionFactory` (singleton), `IConnectionStringChecker` (singleton), and `ISqlCurrentConnection` → `DefaultSqlCurrentConnection` (scoped). The factory and checker use the same connection string.
 
 ## Core Concepts
 
@@ -106,11 +115,11 @@ public interface ISqlCurrentConnection : IAsyncDisposable
 }
 ```
 
-`DefaultSqlCurrentConnection` lazily opens one connection per instance, protects concurrent callers with an `AsyncLock`, and re-opens if the connection drops. Register it as **scoped** — one instance per request/scope — so it is disposed at the end of each unit of work.
+`Headless.Sql.Core` provides `DefaultSqlCurrentConnection`, which lazily opens one connection per instance, protects concurrent callers with an `AsyncLock`, and re-opens if the connection drops. Register it as **scoped** — one instance per request/scope — so it is disposed at the end of each unit of work.
 
 ### Connection string checker
 
-`IConnectionStringChecker` returns `(bool Connected, bool DatabaseExists)`. The `Connected` flag indicates whether the server is reachable; `DatabaseExists` indicates whether the target database exists. Use this in health checks or startup validation. Behavior differs by provider:
+`IConnectionStringChecker.CheckAsync` returns a `ConnectionCheckResult` readonly record struct (`Connected`, `DatabaseExists`) and accepts an optional `CancellationToken`. The `Connected` flag indicates whether the server is reachable; `DatabaseExists` indicates whether the target database exists. A cancelled token throws `OperationCanceledException`; all other connection errors are logged and surfaced through the result. Use this in health checks or startup validation. Behavior differs by provider:
 
 - **PostgreSQL**: connects to `postgres` system database first, then calls `ChangeDatabaseAsync` to verify the target database.
 - **SQL Server**: connects to `master`, then calls `ChangeDatabaseAsync` to verify the target database.
@@ -137,8 +146,7 @@ Application code that works with raw SQL should not depend on a specific ADO.NET
 
 - `ISqlConnectionFactory` — create and manage database connections; `GetConnectionString()` retrieves the configured string; `CreateNewConnectionAsync()` returns an already-open `DbConnection`
 - `ISqlCurrentConnection` — ambient connection for unit-of-work scopes; lazy-opens on first call, re-opens on drop
-- `DefaultSqlCurrentConnection` — concrete thread-safe implementation of `ISqlCurrentConnection` backed by `AsyncLock`
-- `IConnectionStringChecker` — validate server reachability and database existence; returns `(bool Connected, bool DatabaseExists)`
+- `IConnectionStringChecker` — validate server reachability and database existence; `CheckAsync(connectionString, cancellationToken)` returns a `ConnectionCheckResult` record struct (`Connected`, `DatabaseExists`)
 
 ### Installation
 
@@ -167,11 +175,7 @@ public sealed class OrderRepository(ISqlConnectionFactory connectionFactory)
 }
 ```
 
-Register `DefaultSqlCurrentConnection` as scoped when you need a shared ambient connection within a unit of work:
-
-```csharp
-builder.Services.AddScoped<ISqlCurrentConnection, DefaultSqlCurrentConnection>();
-```
+Add `Headless.Sql.Core` when you need the default scoped `ISqlCurrentConnection` implementation.
 
 ### Configuration
 
@@ -179,14 +183,55 @@ None. This is an abstractions-only package.
 
 ### Dependencies
 
-- `Headless.Hosting`
-- `Nito.AsyncEx` (transitively, via `DefaultSqlCurrentConnection`)
+None.
 
 ### Side Effects
 
 None. This is an abstractions package — it registers no services.
 
 ---
+
+## Headless.Sql.Core
+
+Default implementation package for provider-agnostic SQL helpers.
+
+### Problem Solved
+
+Keeps `Headless.Sql.Abstractions` limited to interfaces while providing a reusable scoped ambient connection implementation for unit-of-work patterns.
+
+### Key Features
+
+- `DefaultSqlCurrentConnection` — concrete thread-safe implementation of `ISqlCurrentConnection` backed by `AsyncLock`.
+- Lazily opens one connection per scope and reuses it until disposal.
+- Reopens the underlying connection if it is observed closed.
+
+### Installation
+
+```bash
+dotnet add package Headless.Sql.Core
+```
+
+### Quick Start
+
+```csharp
+builder.Services.AddScoped<ISqlCurrentConnection, DefaultSqlCurrentConnection>();
+```
+
+### Configuration
+
+None. Register `DefaultSqlCurrentConnection` explicitly as a scoped `ISqlCurrentConnection`, and register one provider-specific `ISqlConnectionFactory` from `Headless.Sql.PostgreSql`, `Headless.Sql.SqlServer`, or `Headless.Sql.Sqlite`.
+
+### Dependencies
+
+- `Headless.Sql.Abstractions`
+- `Nito.AsyncEx`
+
+### Side Effects
+
+None. Register services explicitly.
+
+---
+
 ## Headless.Sql.PostgreSql
 
 PostgreSQL connection factory backed by Npgsql.
@@ -199,6 +244,7 @@ Provides the `ISqlConnectionFactory` and `IConnectionStringChecker` implementati
 
 - `NpgsqlConnectionFactory` — `ISqlConnectionFactory` implementation; `CreateNewConnectionAsync()` returns a strongly-typed `NpgsqlConnection` (already open); `GetConnectionString()` retrieves the configured string
 - `NpgsqlConnectionStringChecker` — `IConnectionStringChecker` that verifies server reachability and database existence by connecting to `postgres` first, then calling `ChangeDatabaseAsync` to the target
+- `SetupPostgreSqlSql.AddPostgreSqlSql(string connectionString)` / `AddPostgreSqlSql(Func<IServiceProvider, string>)` — one-call registration of the factory, checker, and scoped ambient connection
 
 ### Design Notes
 
@@ -218,10 +264,9 @@ dotnet add package Headless.Sql.PostgreSql
 var builder = WebApplication.CreateBuilder(args);
 
 var connectionString = builder.Configuration.GetConnectionString("Default")!;
-builder.Services.AddSingleton<ISqlConnectionFactory>(new NpgsqlConnectionFactory(connectionString));
 
-// Optional: register the health-check helper
-builder.Services.AddSingleton<IConnectionStringChecker, NpgsqlConnectionStringChecker>();
+// Registers ISqlConnectionFactory, IConnectionStringChecker, and a scoped ISqlCurrentConnection.
+builder.Services.AddPostgreSqlSql(connectionString);
 ```
 
 Use in a repository (always inject `ISqlConnectionFactory`, not the concrete type):
@@ -243,24 +288,28 @@ public sealed class ReportRepository(ISqlConnectionFactory connectionFactory)
 
 ### Configuration
 
-Pass the connection string directly to the constructor:
+Resolve the connection string from the service provider with the factory overload:
 
 ```csharp
-services.AddSingleton<ISqlConnectionFactory>(sp =>
+services.AddPostgreSqlSql(sp =>
 {
     var config = sp.GetRequiredService<IConfiguration>();
-    return new NpgsqlConnectionFactory(config.GetConnectionString("Postgres")!);
+    return config.GetConnectionString("Postgres")!;
 });
 ```
 
 ### Dependencies
 
+- `Headless.Checks`
 - `Headless.Sql.Abstractions`
+- `Headless.Sql.Core`
+- `Microsoft.Extensions.DependencyInjection.Abstractions`
+- `Microsoft.Extensions.Logging.Abstractions`
 - `Npgsql`
 
 ### Side Effects
 
-None (manual registration required).
+`AddPostgreSqlSql` registers `ISqlConnectionFactory` and `IConnectionStringChecker` as singletons and `ISqlCurrentConnection` (`DefaultSqlCurrentConnection`) as scoped.
 
 ---
 ## Headless.Sql.SqlServer
@@ -275,6 +324,7 @@ Provides the `ISqlConnectionFactory` and `IConnectionStringChecker` implementati
 
 - `SqlServerConnectionFactory` — `ISqlConnectionFactory` implementation; `CreateNewConnectionAsync()` returns a strongly-typed `SqlConnection` (already open); `GetConnectionString()` retrieves the configured string
 - `SqlServerConnectionStringChecker` — `IConnectionStringChecker` that verifies server reachability and database existence by connecting to `master` first, then calling `ChangeDatabaseAsync` to the target
+- `SetupSqlServerSql.AddSqlServerSql(string connectionString)` / `AddSqlServerSql(Func<IServiceProvider, string>)` — one-call registration of the factory, checker, and scoped ambient connection
 
 ### Installation
 
@@ -288,10 +338,9 @@ dotnet add package Headless.Sql.SqlServer
 var builder = WebApplication.CreateBuilder(args);
 
 var connectionString = builder.Configuration.GetConnectionString("Default")!;
-builder.Services.AddSingleton<ISqlConnectionFactory>(new SqlServerConnectionFactory(connectionString));
 
-// Optional: register the health-check helper
-builder.Services.AddSingleton<IConnectionStringChecker, SqlServerConnectionStringChecker>();
+// Registers ISqlConnectionFactory, IConnectionStringChecker, and a scoped ISqlCurrentConnection.
+builder.Services.AddSqlServerSql(connectionString);
 ```
 
 Use in a repository:
@@ -313,24 +362,28 @@ public sealed class ReportRepository(ISqlConnectionFactory connectionFactory)
 
 ### Configuration
 
-Pass the connection string directly to the constructor:
+Resolve the connection string from the service provider with the factory overload:
 
 ```csharp
-services.AddSingleton<ISqlConnectionFactory>(sp =>
+services.AddSqlServerSql(sp =>
 {
     var config = sp.GetRequiredService<IConfiguration>();
-    return new SqlServerConnectionFactory(config.GetConnectionString("SqlServer")!);
+    return config.GetConnectionString("SqlServer")!;
 });
 ```
 
 ### Dependencies
 
+- `Headless.Checks`
 - `Headless.Sql.Abstractions`
+- `Headless.Sql.Core`
 - `Microsoft.Data.SqlClient`
+- `Microsoft.Extensions.DependencyInjection.Abstractions`
+- `Microsoft.Extensions.Logging.Abstractions`
 
 ### Side Effects
 
-None (manual registration required).
+`AddSqlServerSql` registers `ISqlConnectionFactory` and `IConnectionStringChecker` as singletons and `ISqlCurrentConnection` (`DefaultSqlCurrentConnection`) as scoped.
 
 ---
 ## Headless.Sql.Sqlite
@@ -345,10 +398,11 @@ Provides the `ISqlConnectionFactory` and `IConnectionStringChecker` implementati
 
 - `SqliteConnectionFactory` — `ISqlConnectionFactory` implementation; `CreateNewConnectionAsync()` returns a strongly-typed `SqliteConnection` (already open); `GetConnectionString()` retrieves the configured string
 - `SqliteConnectionStringChecker` — `IConnectionStringChecker` that opens the SQLite database and reports both `Connected` and `DatabaseExists` as `true` on success (SQLite creates the file on open, so the two flags are always identical)
+- `SetupSqliteSql.AddSqliteSql(string connectionString)` / `AddSqliteSql(Func<IServiceProvider, string>)` — one-call registration of the factory, checker, and scoped ambient connection
 
 ### Design Notes
 
-`SqliteConnectionStringChecker` differs from the PostgreSQL and SQL Server implementations: because SQLite creates the database file when the connection opens, there is no meaningful distinction between "server reachable" and "database exists". Both tuple fields are set to `true` together on a successful open, or both remain `false` on failure.
+`SqliteConnectionStringChecker` differs from the PostgreSQL and SQL Server implementations: because SQLite creates the database file when the connection opens, there is no meaningful distinction between "server reachable" and "database exists". Both `ConnectionCheckResult` fields are set to `true` together on a successful open, or both remain `false` on failure.
 
 For in-process testing, prefer `"Data Source=:memory:"` — the database is private to the connection and disappears when the connection closes.
 
@@ -362,13 +416,10 @@ dotnet add package Headless.Sql.Sqlite
 
 ```csharp
 // In-process tests (no server required):
-services.AddSingleton<ISqlConnectionFactory>(new SqliteConnectionFactory("Data Source=:memory:"));
+services.AddSqliteSql("Data Source=:memory:");
 
 // File-based embedded database:
-services.AddSingleton<ISqlConnectionFactory>(new SqliteConnectionFactory("Data Source=app.db"));
-
-// Optional: register the health-check helper
-services.AddSingleton<IConnectionStringChecker, SqliteConnectionStringChecker>();
+services.AddSqliteSql("Data Source=app.db");
 ```
 
 Use in a repository:
@@ -390,13 +441,17 @@ public sealed class CacheRepository(ISqlConnectionFactory connectionFactory)
 
 ### Configuration
 
-Pass the connection string directly to the constructor. SQLite connection strings use `Data Source=<path>` or `Data Source=:memory:`.
+Pass the connection string to `AddSqliteSql`. SQLite connection strings use `Data Source=<path>` or `Data Source=:memory:`.
 
 ### Dependencies
 
+- `Headless.Checks`
 - `Headless.Sql.Abstractions`
+- `Headless.Sql.Core`
 - `Microsoft.Data.Sqlite`
+- `Microsoft.Extensions.DependencyInjection.Abstractions`
+- `Microsoft.Extensions.Logging.Abstractions`
 
 ### Side Effects
 
-None (manual registration required). For file-based databases, SQLite creates the `.db` file on the first connection open if it does not exist.
+`AddSqliteSql` registers `ISqlConnectionFactory` and `IConnectionStringChecker` as singletons and `ISqlCurrentConnection` (`DefaultSqlCurrentConnection`) as scoped. For file-based databases, SQLite creates the `.db` file on the first connection open if it does not exist.

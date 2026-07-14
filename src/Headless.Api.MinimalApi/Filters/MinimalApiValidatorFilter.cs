@@ -3,12 +3,14 @@
 using FluentValidation;
 using FluentValidation.Results;
 using Headless.Api.Abstractions;
+using Headless.Api.Resources;
 using Headless.Primitives;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Microsoft.AspNetCore.Builder;
+namespace Headless.Api;
 
 /// <summary>
 /// Endpoint filter that runs all registered <see cref="IValidator{T}"/> implementations for
@@ -52,7 +54,7 @@ public sealed class MinimalApiValidatorFilter<TRequest> : IEndpointFilter
 
         // Materialize once: the DI-resolved enumerable is consumed by the emptiness check and the validation
         // loop, so enumerating it twice (Any() + ToList()) would re-run a lazy source.
-        var validatorList = validators as IList<IValidator<TRequest>> ?? validators.ToList();
+        var validatorList = validators.AsIList();
 
         if (validatorList.Count == 0)
         {
@@ -60,7 +62,19 @@ public sealed class MinimalApiValidatorFilter<TRequest> : IEndpointFilter
         }
 
         var requestType = typeof(TRequest);
-        var request = context.Arguments.OfType<TRequest>().FirstOrDefault(request => request?.GetType() == requestType);
+
+        // Manual scan instead of OfType().FirstOrDefault(predicate): avoids two iterator allocations
+        // and a closure on every validated request. Exact-type match (not subtype) is intentional.
+        TRequest? request = default;
+
+        foreach (var argument in context.Arguments)
+        {
+            if (argument is TRequest candidate && candidate.GetType() == requestType)
+            {
+                request = candidate;
+                break;
+            }
+        }
 
         if (request is null)
         {
@@ -69,7 +83,7 @@ public sealed class MinimalApiValidatorFilter<TRequest> : IEndpointFilter
             return TypedResults.Problem(
                 creator.BadRequest(
                     error: new ErrorDescriptor(
-                        "g:invalid_request_type",
+                        GeneralErrorCodes.InvalidRequestType,
                         "Invalid request type configured for this endpoint."
                     )
                 )

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging.Runtime;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.Internal;
@@ -51,10 +52,7 @@ internal sealed class RuntimeSubscriber(
                 result.MessageName,
                 result.Group,
                 result.HandlerId,
-                async () =>
-                {
-                    await UnsubscribeAsync(result.SubscriptionId!, CancellationToken.None).ConfigureAwait(false);
-                }
+                async () => await UnsubscribeAsync(result.SubscriptionId!, CancellationToken.None).ConfigureAwait(false)
             );
         }
         finally

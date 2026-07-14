@@ -5,7 +5,7 @@ using Headless.Messaging.Messages;
 
 namespace Headless.Messaging.Internal;
 
-public sealed class ScheduledMediumMessageQueue(TimeProvider timeProvider) : IDisposable
+internal sealed class ScheduledMediumMessageQueue(TimeProvider timeProvider) : IDisposable
 {
     private readonly SortedSet<(long, MediumMessage)> _queue = new(
         Comparer<(long, MediumMessage)>.Create(
@@ -17,18 +17,28 @@ public sealed class ScheduledMediumMessageQueue(TimeProvider timeProvider) : IDi
         )
     );
 
-    private readonly SemaphoreSlim _semaphore = new(0);
+    private readonly SemaphoreSlim _changedSignal = new(0);
     private readonly Lock _lock = new();
     private bool _isDisposed;
 
     public void Enqueue(MediumMessage message, long sendTime)
     {
+        var shouldSignal = false;
+
         lock (_lock)
         {
-            _queue.Add((sendTime, message));
+            var previousEarliest = _queue.Count > 0 ? _queue.Min.Item1 : (long?)null;
+
+            if (_queue.Add((sendTime, message)))
+            {
+                shouldSignal = previousEarliest is null || sendTime < previousEarliest.Value;
+            }
         }
 
-        _semaphore.Release();
+        if (shouldSignal)
+        {
+            _changedSignal.Release();
+        }
     }
 
     public int Count
@@ -59,33 +69,19 @@ public sealed class ScheduledMediumMessageQueue(TimeProvider timeProvider) : IDi
     {
         while (!cancellationToken.IsCancellationRequested)
         {
-            await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
-
-            (long, MediumMessage)? nextItem = null;
-
-            lock (_lock)
-            {
-                if (_queue.Count > 0)
-                {
-                    var topMessage = _queue.First();
-                    var timeLeft = topMessage.Item1 - timeProvider.GetUtcNow().UtcDateTime.Ticks;
-                    if (timeLeft < 500000) // 50ms
-                    {
-                        nextItem = topMessage;
-                        _queue.Remove(topMessage);
-                    }
-                }
-            }
+            var nextItem = _TryDequeueDueMessage(out var delay);
 
             if (nextItem is not null)
             {
-                yield return nextItem.Value.Item2;
+                yield return nextItem;
+            }
+            else if (delay is not null)
+            {
+                await _WaitUntilDueOrChangedAsync(delay.Value, cancellationToken).ConfigureAwait(false);
             }
             else
             {
-                // Re-release the semaphore if no item is ready yet
-                _semaphore.Release();
-                await timeProvider.Delay(TimeSpan.FromMilliseconds(50), cancellationToken).ConfigureAwait(false);
+                await _changedSignal.WaitAsync(cancellationToken).ConfigureAwait(false);
             }
         }
     }
@@ -105,7 +101,7 @@ public sealed class ScheduledMediumMessageQueue(TimeProvider timeProvider) : IDi
 
         if (disposing)
         {
-            _semaphore.Dispose();
+            _changedSignal.Dispose();
         }
 
         _isDisposed = true;
@@ -121,5 +117,42 @@ public sealed class ScheduledMediumMessageQueue(TimeProvider timeProvider) : IDi
                 "ScheduledMediumMessageQueue was not disposed. Call Dispose() to release SemaphoreSlim."
             );
         }
+    }
+
+    private MediumMessage? _TryDequeueDueMessage(out TimeSpan? delay)
+    {
+        lock (_lock)
+        {
+            if (_queue.Count == 0)
+            {
+                delay = null;
+                return null;
+            }
+
+            var topMessage = _queue.Min;
+            var ticksUntilDue = topMessage.Item1 - timeProvider.GetUtcNow().UtcDateTime.Ticks;
+
+            if (ticksUntilDue > 0)
+            {
+                delay = TimeSpan.FromTicks(ticksUntilDue);
+                return null;
+            }
+
+            _queue.Remove(topMessage);
+            delay = null;
+
+            return topMessage.Item2;
+        }
+    }
+
+    private async Task _WaitUntilDueOrChangedAsync(TimeSpan delay, CancellationToken cancellationToken)
+    {
+        using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var delayTask = timeProvider.Delay(delay, waitCts.Token);
+        var signalTask = _changedSignal.WaitAsync(waitCts.Token);
+        var completedTask = await Task.WhenAny(delayTask, signalTask).ConfigureAwait(false);
+        await waitCts.CancelAsync().ConfigureAwait(false);
+
+        await completedTask.ConfigureAwait(false);
     }
 }

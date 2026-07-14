@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.ComponentModel;
 using Headless.Checks;
 
 namespace Headless.DistributedLocks.InMemory;
@@ -27,6 +28,7 @@ namespace Headless.DistributedLocks.InMemory;
 /// </remarks>
 /// <param name="timeProvider">The time source used to compute and evaluate TTL expiry timestamps.</param>
 [PublicAPI]
+[EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class InMemoryDistributedReadWriteLockStorage(TimeProvider timeProvider)
     : IDistributedReadWriteLockStorage
 {
@@ -138,10 +140,9 @@ public sealed class InMemoryDistributedReadWriteLockStorage(TimeProvider timePro
 
             // Readers must always carry a finite TTL: a null ttl keeps the existing finite expiry rather than
             // promoting the lease to infinite, which would let a zombie reader block writers forever.
-            state.Readers[leaseId] = existing with
-            {
-                Expiration = _ExtendExpiration(existing.Expiration, _GetExpiration(ttl), allowInfinite: false),
-            };
+            state.Readers[leaseId] = new LeaseEntry(
+                Expiration: _ExtendExpiration(existing.Expiration, _GetExpiration(ttl), allowInfinite: false)
+            );
 
             return ValueTask.FromResult(true);
         }

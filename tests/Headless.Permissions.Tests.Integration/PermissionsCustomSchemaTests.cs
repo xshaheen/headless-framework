@@ -168,7 +168,7 @@ public sealed class PermissionsCustomSchemaTests(PermissionsTestFixture fixture)
             """,
             connection
         );
-        command.Parameters.AddWithValue("schema", schema);
+        command.Parameters.AddWithValue(nameof(schema), schema);
         command.Parameters.AddWithValue("table", tableName);
 
         return (bool)(await command.ExecuteScalarAsync(AbortToken))!;

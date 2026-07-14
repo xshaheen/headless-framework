@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.ComponentModel;
 using System.Diagnostics;
 using Headless.Abstractions;
 using Headless.Checks;
@@ -40,7 +41,13 @@ namespace Headless.DistributedLocks;
 /// <c>LockReleasedConsumer</c> can fan release signals out to multiple providers without coupling
 /// to concrete types.
 /// </para>
+/// <para>
+/// This concrete type is DI-only plumbing: resolve <see cref="IDistributedLock"/> instead of constructing it.
+/// It stays public solely so tests can build a real provider over an in-memory storage backend, and is hidden
+/// from IntelliSense via <see cref="EditorBrowsableAttribute"/>.
+/// </para>
 /// </remarks>
+[EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class DistributedLock(
     IDistributedLockStorage storage,
     IOutboxBus? outboxBus,
@@ -98,6 +105,12 @@ public sealed class DistributedLock(
     private readonly int _maxResourceNameLength = lockOptions.MaxResourceNameLength;
     private readonly int? _maxConcurrentWaitingResources = lockOptions.MaxConcurrentWaitingResources;
     private readonly int? _maxWaitersPerResource = lockOptions.MaxWaitersPerResource;
+
+    /// <inheritdoc />
+    public TimeProvider TimeProvider => timeProvider;
+
+    /// <inheritdoc />
+    public ILogger Logger => logger;
 
     /// <summary>
     /// The lease TTL applied when <see cref="DistributedLockAcquireOptions.TimeUntilExpires"/> is
@@ -481,7 +494,10 @@ public sealed class DistributedLock(
                 // Prevent unbounded waiters per resource (DoS protection)
                 if (_maxWaitersPerResource is { } max)
                 {
-                    Ensure.True(existing.RefCount < max, $"Maximum waiters per resource ({max}) exceeded");
+                    Ensure.True(
+                        existing.RefCount < max,
+                        string.Create(CultureInfo.InvariantCulture, $"Maximum waiters per resource ({max}) exceeded")
+                    );
                 }
 
                 existing.Increment();
@@ -494,7 +510,10 @@ public sealed class DistributedLock(
             {
                 Ensure.True(
                     _autoResetEvents.Count < maxResources,
-                    $"Maximum concurrent waiting resources ({maxResources}) exceeded"
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"Maximum concurrent waiting resources ({maxResources}) exceeded"
+                    )
                 );
             }
 

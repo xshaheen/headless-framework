@@ -88,8 +88,7 @@ public sealed class HttpRequestContextTests : TestBase
         // given
         var fixedTime = new DateTimeOffset(2024, 6, 15, 10, 30, 0, TimeSpan.Zero);
         var timeProvider = new FakeTimeProvider(fixedTime);
-        var clock = new TestClock(timeProvider);
-        var sut = _CreateSut(clock: clock);
+        var sut = _CreateSut(timeProvider: timeProvider);
 
         // when
         var result = sut.DateStarted;
@@ -240,7 +239,7 @@ public sealed class HttpRequestContextTests : TestBase
         ICurrentLocale? currentLocale = null,
         ICurrentTimeZone? currentTimeZone = null,
         IWebClientInfoProvider? webClientInfoProvider = null,
-        IClock? clock = null
+        TimeProvider? timeProvider = null
     )
     {
         if (accessor is null)
@@ -254,7 +253,7 @@ public sealed class HttpRequestContextTests : TestBase
         currentLocale ??= Substitute.For<ICurrentLocale>();
         currentTimeZone ??= Substitute.For<ICurrentTimeZone>();
         webClientInfoProvider ??= Substitute.For<IWebClientInfoProvider>();
-        clock ??= new TestClock(new FakeTimeProvider(DateTimeOffset.UtcNow));
+        timeProvider ??= new FakeTimeProvider(DateTimeOffset.UtcNow);
 
         return new HttpRequestContext(
             accessor,
@@ -263,7 +262,7 @@ public sealed class HttpRequestContextTests : TestBase
             currentLocale,
             currentTimeZone,
             webClientInfoProvider,
-            clock
+            timeProvider
         );
     }
 

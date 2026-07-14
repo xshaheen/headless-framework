@@ -4,13 +4,13 @@ Core contracts shared by the messaging runtime, transport providers, storage pro
 
 ## Problem Solved
 
-Defines the stable message envelope, consume context, consumer contract, publisher contracts, retry contracts, and common options used by the intent-specific bus and queue packages.
+Defines the stable message envelope, consume context, consumer contract, publisher contracts, and common options used by the intent-specific bus and queue packages.
 
 ## Key Features
 
 - `IConsume<TMessage>` with `ConsumeContext<TMessage>` for type-safe handlers.
 - `IntentType` for broadcast bus versus point-to-point queue delivery.
-- `Message`, `TransportMessage`, headers, publish option base types, and retry primitives.
+- `Message`, `TransportMessage`, headers, and publish option base types.
 - `IRuntimeSubscriber` for scoped runtime delegate subscriptions.
 - Intent-specific publisher contracts: `IBus`, `IQueue`, `IOutboxBus`, and `IOutboxQueue`.
 
@@ -53,6 +53,8 @@ Callback delivery is at-least-once — make response consumers idempotent (dedup
 ## Configuration
 
 None. This package only defines contracts.
+
+Retry configuration is owned by `Headless.Messaging.Core`, which exposes Polly.Core contracts directly. This abstractions package intentionally defines no retry strategy or decision wrapper.
 
 ## Dependencies
 

@@ -8,7 +8,7 @@ Provides SMS sending via Infobip's REST API, a global messaging platform with de
 
 ## Key Features
 
-- `InfobipSmsSender` — `ISmsSender` implementation backed by the Infobip REST API.
+- `InfobipSmsSender` — implements `ISmsSender` (single recipient) and `IBulkSmsSender` (multi-recipient bulk, with per-recipient message ids), backed by the Infobip REST API.
 - API key authentication via HTTP `Authorization` header.
 - `BasePath` — Infobip-assigned base URL for your account (varies per account; not a shared endpoint).
 - `Sender` — alphanumeric or numeric sender shown to recipients.
@@ -37,6 +37,13 @@ builder.Services.AddHeadlessSms(setup =>
         options.Sender = "MyApp";
     })
 );
+
+// Named instance — an isolated HttpClient and options (keyed "marketing"):
+builder.Services.AddHeadlessSms(setup =>
+{
+    setup.UseInfobip(builder.Configuration.GetSection("Sms:Infobip")); // default (optional)
+    setup.AddNamed("marketing", i => i.UseInfobip(builder.Configuration.GetSection("Sms:InfobipBulk")));
+});
 ```
 
 ## Configuration
@@ -65,10 +72,10 @@ builder.Services.AddHeadlessSms(setup =>
 
 ## Dependencies
 
-- `Headless.Sms.Abstractions`
+- `Headless.Sms.Core`
 - `Microsoft.Extensions.Http.Resilience`
 
 ## Side Effects
 
-- Registers `ISmsSender` as singleton (`InfobipSmsSender`).
-- Registers a named `HttpClient` (`Headless:InfobipSms`) with a standard resilience handler (retry disabled).
+- Default: registers `ISmsSender` (`InfobipSmsSender`) and `IBulkSmsSender` (forwarding to the same instance) as unkeyed singletons, plus a named `HttpClient` (`Headless:InfobipSms`) with a standard resilience handler (retry disabled).
+- Named (`AddNamed(name, i => i.UseInfobip(…))`): registers a keyed `ISmsSender` and keyed `IBulkSmsSender` (same instance), named options, and a per-name `HttpClient` (`Headless:InfobipSms:{name}`) with its own resilience pipeline.

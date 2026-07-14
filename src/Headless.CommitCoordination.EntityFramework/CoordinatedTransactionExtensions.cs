@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
-using Headless.CommitCoordination.EntityFramework;
+using System.Runtime.ExceptionServices;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.EntityFrameworkCore;
@@ -16,11 +16,12 @@ namespace Microsoft.EntityFrameworkCore;
 /// A plain <see cref="DbContext"/> cannot expose the scope that resolved it, so these overloads require an
 /// explicit <c>IServiceProvider</c> (the request scope) for the post-commit drain. A
 /// <c>HeadlessDbContext</c> self-sources its scope, so its overloads omit the parameter. The block runs
-/// inside the context's execution strategy (retry-safe); the enlist lives inside the retried delegate so a
-/// retried attempt discards its buffer and the next attempt opens a fresh transaction and coordinator.
+/// inside the context's execution strategy. Failures before commit starts may retry with a fresh transaction and
+/// coordinator. Once commit starts, any exception is surfaced without replay because the database outcome may be
+/// unknown; use client-generated keys or another idempotency key to reconcile that outcome safely.
 /// </remarks>
 [PublicAPI]
-public static class CoordinatedTransactionExtensions
+public static class HeadlessEntityFrameworkCoordinatedTransactionExtensions
 {
     /// <summary>
     /// Executes <paramref name="operation"/> inside a resilient, commit-coordinated transaction.
@@ -36,33 +37,18 @@ public static class CoordinatedTransactionExtensions
         IServiceProvider services,
         IsolationLevel isolation = IsolationLevel.ReadCommitted,
         CancellationToken cancellationToken = default
-    )
-    {
-        var state = (Operation: operation, Isolation: isolation, Context: context, Services: services);
-
-        return context
-            .Database.CreateExecutionStrategy()
-            .ExecuteAsync(
-                state,
-                static async (state, ct) =>
-                {
-                    var transaction = await state
-                        .Context.Database.BeginTransactionAsync(state.Isolation, ct)
-                        .ConfigureAwait(false);
-
-                    await using (transaction.ConfigureAwait(false))
-                    {
-                        await using var _ = state
-                            .Context.Database.EnlistCommitCoordination(transaction, state.Services, ct)
-                            .ConfigureAwait(false);
-
-                        await state.Operation(state.Context, ct).ConfigureAwait(false);
-                        await transaction.CommitAsync(ct).ConfigureAwait(false);
-                    }
-                },
-                cancellationToken
-            );
-    }
+    ) =>
+        _ExecuteCoreAsync(
+            context,
+            async (dbContext, ct) =>
+            {
+                await operation(dbContext, ct).ConfigureAwait(false);
+                return true;
+            },
+            services,
+            isolation,
+            cancellationToken
+        );
 
     /// <inheritdoc cref="ExecuteCoordinatedTransactionAsync(DbContext, Func{DbContext, CancellationToken, Task}, IServiceProvider, IsolationLevel, CancellationToken)"/>
     /// <typeparam name="TArg">Type of the argument passed to <paramref name="operation"/>.</typeparam>
@@ -74,33 +60,18 @@ public static class CoordinatedTransactionExtensions
         IServiceProvider services,
         IsolationLevel isolation = IsolationLevel.ReadCommitted,
         CancellationToken cancellationToken = default
-    )
-    {
-        var state = (Operation: operation, Arg: arg, Isolation: isolation, Context: context, Services: services);
-
-        return context
-            .Database.CreateExecutionStrategy()
-            .ExecuteAsync(
-                state,
-                static async (state, ct) =>
-                {
-                    var transaction = await state
-                        .Context.Database.BeginTransactionAsync(state.Isolation, ct)
-                        .ConfigureAwait(false);
-
-                    await using (transaction.ConfigureAwait(false))
-                    {
-                        await using var _ = state
-                            .Context.Database.EnlistCommitCoordination(transaction, state.Services, ct)
-                            .ConfigureAwait(false);
-
-                        await state.Operation(state.Arg, state.Context, ct).ConfigureAwait(false);
-                        await transaction.CommitAsync(ct).ConfigureAwait(false);
-                    }
-                },
-                cancellationToken
-            );
-    }
+    ) =>
+        _ExecuteCoreAsync(
+            context,
+            async (dbContext, ct) =>
+            {
+                await operation(arg, dbContext, ct).ConfigureAwait(false);
+                return true;
+            },
+            services,
+            isolation,
+            cancellationToken
+        );
 
     /// <summary>
     /// Executes <paramref name="operation"/> inside a resilient, commit-coordinated transaction and returns its result.
@@ -118,35 +89,7 @@ public static class CoordinatedTransactionExtensions
         IServiceProvider services,
         IsolationLevel isolation = IsolationLevel.ReadCommitted,
         CancellationToken cancellationToken = default
-    )
-    {
-        var state = (Operation: operation, Isolation: isolation, Context: context, Services: services);
-
-        return context
-            .Database.CreateExecutionStrategy()
-            .ExecuteAsync(
-                state,
-                static async (state, ct) =>
-                {
-                    var transaction = await state
-                        .Context.Database.BeginTransactionAsync(state.Isolation, ct)
-                        .ConfigureAwait(false);
-
-                    await using (transaction.ConfigureAwait(false))
-                    {
-                        await using var _ = state
-                            .Context.Database.EnlistCommitCoordination(transaction, state.Services, ct)
-                            .ConfigureAwait(false);
-
-                        var result = await state.Operation(state.Context, ct).ConfigureAwait(false);
-                        await transaction.CommitAsync(ct).ConfigureAwait(false);
-
-                        return result;
-                    }
-                },
-                cancellationToken
-            );
-    }
+    ) => _ExecuteCoreAsync(context, operation, services, isolation, cancellationToken);
 
     /// <inheritdoc cref="ExecuteCoordinatedTransactionAsync{TResult}(DbContext, Func{DbContext, CancellationToken, Task{TResult}}, IServiceProvider, IsolationLevel, CancellationToken)"/>
     /// <typeparam name="TArg">Type of the argument passed to <paramref name="operation"/>.</typeparam>
@@ -158,33 +101,59 @@ public static class CoordinatedTransactionExtensions
         IServiceProvider services,
         IsolationLevel isolation = IsolationLevel.ReadCommitted,
         CancellationToken cancellationToken = default
+    ) =>
+        _ExecuteCoreAsync(
+            context,
+            (dbContext, ct) => operation(arg, dbContext, ct),
+            services,
+            isolation,
+            cancellationToken
+        );
+
+    private static async Task<TResult> _ExecuteCoreAsync<TResult>(
+        DbContext context,
+        Func<DbContext, CancellationToken, Task<TResult>> operation,
+        IServiceProvider services,
+        IsolationLevel isolation,
+        CancellationToken cancellationToken
     )
     {
-        var state = (Operation: operation, Arg: arg, Isolation: isolation, Context: context, Services: services);
+        var state = (Operation: operation, Isolation: isolation, Context: context, Services: services);
 
-        return context
+        var (result, error) = await context
             .Database.CreateExecutionStrategy()
             .ExecuteAsync(
                 state,
                 static async (state, ct) =>
                 {
-                    var transaction = await state
-                        .Context.Database.BeginTransactionAsync(state.Isolation, ct)
-                        .ConfigureAwait(false);
-
-                    await using (transaction.ConfigureAwait(false))
+                    var commitStarted = false;
+                    var result = default(TResult)!;
+                    try
                     {
+                        await using var transaction = await state
+                            .Context.Database.BeginTransactionAsync(state.Isolation, ct)
+                            .ConfigureAwait(false);
                         await using var _ = state
                             .Context.Database.EnlistCommitCoordination(transaction, state.Services, ct)
                             .ConfigureAwait(false);
 
-                        var result = await state.Operation(state.Arg, state.Context, ct).ConfigureAwait(false);
+                        result = await state.Operation(state.Context, ct).ConfigureAwait(false);
+                        commitStarted = true;
                         await transaction.CommitAsync(ct).ConfigureAwait(false);
 
-                        return result;
+                        return (Result: result, Error: (ExceptionDispatchInfo?)null);
+                    }
+                    catch (Exception ex) when (commitStarted)
+                    {
+                        return (Result: result, Error: ExceptionDispatchInfo.Capture(ex));
                     }
                 },
                 cancellationToken
-            );
+            )
+            .ConfigureAwait(false);
+
+        error?.Throw();
+
+        return result;
     }
 }

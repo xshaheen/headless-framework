@@ -182,5 +182,6 @@ internal sealed partial class PostgreSqlSettingsStorageInitializer(
         Level = LogLevel.Information,
         Message = "PostgreSql settings initializer absorbed a concurrent-DDL race (SqlState={SqlState}): {Detail}. Treating schema as initialized."
     )]
+    // ReSharper disable once InconsistentNaming
     private static partial void LogSchemaRaceObserved(ILogger logger, string sqlState, string detail);
 }

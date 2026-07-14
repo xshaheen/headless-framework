@@ -3,8 +3,7 @@
 using System.Security.Cryptography;
 using Azure.Storage.Blobs;
 using Headless.Testing.Tests;
-using Headless.Tus.Options;
-using Headless.Tus.Services;
+using Headless.Tus;
 using Tests.TestSetup;
 
 namespace Tests.Checksum;
@@ -93,19 +92,73 @@ public sealed class ChecksumRoundTripTests : TestBase
         (await _store.GetUploadOffsetAsync(fileId, AbortToken)).Should().Be(0);
     }
 
-    /// <summary>
-    /// Wraps <paramref name="content"/> in tusdotnet's internal <c>ChecksumAwareStream</c> (the only thing
-    /// the store's <c>GetUploadChecksumInfo()</c> recognizes) so <c>AppendDataAsync</c> runs the hashing
-    /// path. The type is internal to tusdotnet, hence reflection; only its <c>Algorithm</c> is read here.
-    /// </summary>
+    [Fact]
+    public async Task should_accept_a_new_append_at_the_old_offset_after_a_failed_verification()
+    {
+        // given - a 460 flow: staged chunk discarded because the digest did not match
+        var content = Faker.Random.Bytes(4_000);
+        var fileId = await _store.CreateFileAsync(content.Length, metadata: null, AbortToken);
+
+        await using (var body = _CreateChecksumAwareStream(content, SHA256.HashData(content)))
+        {
+            await _store.AppendDataAsync(fileId, body, AbortToken);
+        }
+
+        (await _store.VerifyChecksumAsync(fileId, "sha256", SHA256.HashData(Faker.Random.Bytes(64)), AbortToken))
+            .Should()
+            .BeFalse();
+
+        // when - the client retries the chunk at the unchanged offset, this time verifying clean
+        var retryContent = Faker.Random.Bytes(4_000);
+        var retryDigest = SHA256.HashData(retryContent);
+
+        await using (var body = _CreateChecksumAwareStream(retryContent, retryDigest))
+        {
+            await _store.AppendDataAsync(fileId, body, AbortToken);
+        }
+
+        var verified = await _store.VerifyChecksumAsync(fileId, "sha256", retryDigest, AbortToken);
+
+        // then - the retried chunk (not the discarded one) is the committed content
+        verified.Should().BeTrue();
+        (await _store.GetUploadOffsetAsync(fileId, AbortToken)).Should().Be(retryContent.Length);
+
+        var blobClient = _containerClient.GetBlobClient(_BlobPrefix + fileId);
+        await using var downloaded = new MemoryStream();
+        await blobClient.DownloadToAsync(downloaded, AbortToken);
+        downloaded.ToArray().Should().BeEquivalentTo(retryContent);
+    }
+
+    [Fact]
+    public async Task should_commit_a_chunk_spanning_hundreds_of_staged_blocks()
+    {
+        // given - 60 KB at a 256-byte chunk size stages ~235 blocks in one append. The staged-block
+        // tracking must stay constant-size in blob metadata (Azure caps total metadata at 8 KB, and
+        // a comma-joined ID list would exceed it at ~211 blocks and wedge the upload).
+        var content = Faker.Random.Bytes(60_000);
+        var digest = SHA256.HashData(content);
+        var fileId = await _store.CreateFileAsync(content.Length, metadata: null, AbortToken);
+
+        // when
+        await using (var body = _CreateChecksumAwareStream(content, digest))
+        {
+            await _store.AppendDataAsync(fileId, body, AbortToken);
+        }
+
+        var verified = await _store.VerifyChecksumAsync(fileId, "sha256", digest, AbortToken);
+
+        // then - all staged blocks are reconstructed and committed in order
+        verified.Should().BeTrue();
+        (await _store.GetUploadOffsetAsync(fileId, AbortToken)).Should().Be(content.Length);
+
+        var blobClient = _containerClient.GetBlobClient(_BlobPrefix + fileId);
+        await using var downloaded = new MemoryStream();
+        await blobClient.DownloadToAsync(downloaded, AbortToken);
+        downloaded.ToArray().Should().BeEquivalentTo(content);
+    }
+
     private static Stream _CreateChecksumAwareStream(byte[] content, byte[] digest)
     {
-        var checksum = new tusdotnet.Models.Checksum($"sha256 {Convert.ToBase64String(digest)}");
-        var streamType = typeof(tusdotnet.Models.Checksum).Assembly.GetType(
-            "tusdotnet.Models.Streams.ChecksumAwareStream",
-            throwOnError: true
-        )!;
-
-        return (Stream)Activator.CreateInstance(streamType, new MemoryStream(content), checksum)!;
+        return ChecksumTestStreams.CreateChecksumAware(content, digest, "sha256");
     }
 }

@@ -2,6 +2,7 @@
 
 using Headless.DistributedLocks.Redis;
 using Headless.Redis;
+using Headless.Redis.Testing;
 using Headless.Testing.Testcontainers;
 using StackExchange.Redis;
 
@@ -16,11 +17,11 @@ public sealed class RedisTestFixture : HeadlessRedisFixture, ICollectionFixture<
 
     public HeadlessRedisScriptsLoader ScriptsLoader => _scriptLoader!;
 
-    public RedisDistributedLockStorage LockStorage { get; private set; } = null!;
+    internal RedisDistributedLockStorage LockStorage { get; private set; } = null!;
 
-    public RedisDistributedReadWriteLockStorage ReaderWriterLockStorage { get; private set; } = null!;
+    internal RedisDistributedReadWriteLockStorage ReaderWriterLockStorage { get; private set; } = null!;
 
-    public RedisDistributedSemaphoreStorage SemaphoreStorage { get; private set; } = null!;
+    internal RedisDistributedSemaphoreStorage SemaphoreStorage { get; private set; } = null!;
 
     protected override async ValueTask InitializeAsync()
     {

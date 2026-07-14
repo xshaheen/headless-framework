@@ -1,6 +1,6 @@
 using Demo.Controllers;
+using Headless.Messaging;
 using Headless.Messaging.Dashboard;
-using Headless.Messaging.Storage.SqlServer;
 using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -39,4 +39,4 @@ app.UseAuthorization();
 
 app.MapControllers();
 
-app.Run();
+await app.RunAsync();

@@ -11,6 +11,7 @@ namespace Headless.Couchbase.Clusters;
 /// <summary>
 /// Extension method for deploying or updating a Couchbase Eventing function on a cluster.
 /// </summary>
+[PublicAPI]
 public static class CouchbaseEventingFunctionsSeeder
 {
     /// <summary>
@@ -47,7 +48,7 @@ public static class CouchbaseEventingFunctionsSeeder
             MetadataBucket = metaDataKeyspace.Bucket,
             MetadataScope = metaDataKeyspace.Scope,
             MetadataCollection = metaDataKeyspace.Collection,
-            BucketBindings = aliases.Select(alias => _CreateBucketBinding(alias.Key, alias.Value)).ToList(),
+            BucketBindings = [.. aliases.Select(alias => _CreateBucketBinding(alias.Key, alias.Value))],
         };
 
         var function = new EventingFunction
@@ -117,4 +118,5 @@ public static class CouchbaseEventingFunctionsSeeder
 /// <summary>
 /// Identifies a Couchbase storage location by bucket, scope, and collection name.
 /// </summary>
+[PublicAPI]
 public readonly record struct CouchbaseKeyspace(string Bucket, string Scope, string Collection);

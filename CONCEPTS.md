@@ -22,8 +22,10 @@ identities, so a restarted node never inherits its dead predecessor's standing.
 ### Incarnation
 The monotonic generation number that qualifies a Node identity. Allocated by an atomic increment in
 the store at registration; a heartbeat or leave carrying a prior incarnation is rejected at the
-write so a stale run cannot resurrect or overwrite a newer one. *Avoid:* generation (use Incarnation
-for the per-node value; "generation table/counter" names the durable authority that issues it).
+write so a stale run cannot resurrect or overwrite a newer one. The current incarnation also becomes
+terminal once it is dead, gracefully left, or pruned; recovery requires registering a higher
+incarnation. *Avoid:* generation (use Incarnation for the per-node value; "generation table/counter"
+names the durable authority that issues it).
 
 ### Descriptor
 The cold, write-once record of a Node identity: host/ports, role, metadata. Established at
@@ -37,20 +39,24 @@ first heartbeat.
 
 ### Liveness state
 The store-evaluated condition of a Node identity, transitioning Alive → Suspected → Recovered (back
-to Alive) or → Dead/Left. Computed from how stale the Liveness row is against the store clock, using
+to Alive) or → Dead/Left. Dead and Left are terminal for that incarnation, as is removal of its retained
+liveness entry. Computed from how stale the Liveness row is against the store clock, using
 store-evaluated thresholds — never by an application node comparing wall clocks.
 
 ### Store as temporal authority
-The invariant that all liveness timestamps and all dead/suspected determinations come from the
-store's own server clock and predicates. No application node compares another node's wall clock to
-its own, and no failover decision is made from a stale (replica) read — only from the authoritative
-write/primary path.
+The rule that timestamps governing shared liveness or lease ownership, and the predicates that evaluate
+them, must use the durable store's server clock inside the authoritative atomic operation. Application
+nodes must not use their wall clocks to decide another node's expiry; in-memory implementations instead
+use their single injected clock because no independent shared-store clock exists. Failover decisions use
+the authoritative write/primary path rather than a stale replica read.
 
 ### Incarnation guard
 The write-time check that a heartbeat, leave, or registration write only takes effect when its
-incarnation is still the current generation for that node id, performed atomically with the write
-(pessimistic row lock on the relational stores, compare-in-Lua on Redis). The mechanism that makes
-the Store-as-temporal-authority invariant enforceable under concurrency.
+incarnation is still the current generation for that node id and has not become terminal, performed
+atomically with the write (pessimistic row lock on the relational stores, compare-in-Lua on Redis).
+Registration may create the liveness entry; periodic heartbeats may only refresh an existing live
+entry. The mechanism that makes the Store-as-temporal-authority invariant enforceable under
+concurrency.
 
 ### Authoritative provider
 A coordination provider that can offer a server clock plus a linearizable liveness-row read/write,

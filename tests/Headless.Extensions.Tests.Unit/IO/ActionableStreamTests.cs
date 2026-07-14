@@ -2,10 +2,11 @@
 
 using System.Reflection;
 using Headless.IO;
+using Headless.Testing.Tests;
 
 namespace Tests.IO;
 
-public sealed class ActionableStreamTests
+public sealed class ActionableStreamTests : TestBase
 {
     [Fact]
     public void should_throw_when_stream_null()
@@ -125,12 +126,12 @@ public sealed class ActionableStreamTests
     {
         // given
         byte[] data = [10, 20, 30, 40, 50];
-        using var inner = new MemoryStream(data);
-        using var sut = new ActionableStream(inner, () => { });
+        await using var inner = new MemoryStream(data);
+        await using var sut = new ActionableStream(inner, () => { });
         var buffer = new byte[3];
 
         // when
-        var bytesRead = await sut.ReadAsync(buffer.AsMemory(), TestContext.Current.CancellationToken);
+        var bytesRead = await sut.ReadAsync(buffer.AsMemory(), AbortToken);
 
         // then
         bytesRead.Should().Be(3);
@@ -156,12 +157,12 @@ public sealed class ActionableStreamTests
     public async Task should_delegate_WriteAsync_to_inner_stream()
     {
         // given
-        using var inner = new MemoryStream();
-        using var sut = new ActionableStream(inner, () => { });
+        await using var inner = new MemoryStream();
+        await using var sut = new ActionableStream(inner, () => { });
         byte[] data = [1, 2, 3];
 
         // when
-        await sut.WriteAsync(data.AsMemory(), TestContext.Current.CancellationToken);
+        await sut.WriteAsync(data.AsMemory(), AbortToken);
 
         // then
         inner.ToArray().Should().BeEquivalentTo(data);
@@ -377,7 +378,7 @@ public sealed class ActionableStreamTests
     {
         // given
         var inner = new MemoryStream();
-        var sut = new ActionableStream(inner, () => throw new InvalidOperationException("test"));
+        await using var sut = new ActionableStream(inner, () => throw new InvalidOperationException("test"));
 
         // when
         var act = async () => await sut.DisposeAsync();

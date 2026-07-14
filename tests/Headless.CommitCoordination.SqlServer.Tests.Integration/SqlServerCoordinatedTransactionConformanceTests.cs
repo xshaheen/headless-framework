@@ -34,7 +34,7 @@ public sealed class SqlServerCoordinatedTransactionConformanceTests
     public override async ValueTask InitializeAsync()
     {
         await base.InitializeAsync();
-        await _fixture.StartAsync(TestContext.Current.CancellationToken);
+        await _fixture.StartAsync(AbortToken);
     }
 
     protected override async ValueTask DisposeAsyncCore()
@@ -102,10 +102,7 @@ public sealed class SqlServerCoordinatedTransactionFixture(SqlServerCommitCoordi
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand("SELECT count(*) FROM probe_rows", connection);
 
-        return Convert.ToInt32(
-            await command.ExecuteScalarAsync(cancellationToken),
-            System.Globalization.CultureInfo.InvariantCulture
-        );
+        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
     }
 
     public async Task ResetAsync(CancellationToken cancellationToken)

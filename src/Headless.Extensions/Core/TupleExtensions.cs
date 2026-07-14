@@ -7,7 +7,7 @@ namespace System;
 
 /// <summary>Extension methods for <see cref="ITuple"/> values.</summary>
 [PublicAPI]
-public static class TupleExtensions
+public static class HeadlessTupleExtensions
 {
     /// <summary>Copies the elements of <paramref name="tuple"/>, in order, into a new object array.</summary>
     /// <typeparam name="T">The tuple type, which must implement <see cref="ITuple"/>.</typeparam>

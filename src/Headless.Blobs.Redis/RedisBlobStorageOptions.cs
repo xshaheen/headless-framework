@@ -15,6 +15,7 @@ namespace Headless.Blobs.Redis;
 /// memory limits; use <see cref="MaxBlobSizeBytes"/> to enforce an upper bound. For durable, large-file
 /// storage, prefer the AWS S3, Azure, or file-system providers instead.
 /// </remarks>
+[PublicAPI]
 public sealed class RedisBlobStorageOptions
 {
     /// <summary>The Redis connection multiplexer to use. Required.</summary>

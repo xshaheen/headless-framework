@@ -19,15 +19,14 @@ public sealed class SqlServerCommitCoordinationOptions
 {
     /// <summary>
     /// Gets or sets how the startup diagnostic self-probe reacts when it cannot verify that SqlClient emits the
-    /// required diagnostic payloads. Defaults to <see cref="SqlServerCommitDiagnosticProbeMode.Warn" />.
+    /// required diagnostic payloads. Defaults to <see cref="CommitProbeMode.Warn" />.
     /// </summary>
-    public SqlServerCommitDiagnosticProbeMode DiagnosticProbeMode { get; set; } =
-        SqlServerCommitDiagnosticProbeMode.Warn;
+    public CommitProbeMode DiagnosticProbeMode { get; set; } = CommitProbeMode.Warn;
 
     /// <summary>
     /// Gets or sets a factory that creates the <see cref="SqlConnection" /> used by the startup probe to run a
     /// live transaction commit and verify that SqlClient emits the required diagnostic payloads. When
-    /// <see langword="null" /> and the mode is <see cref="SqlServerCommitDiagnosticProbeMode.Warn" />, the
+    /// <see langword="null" /> and the mode is <see cref="CommitProbeMode.Warn" />, the
     /// live transaction check is skipped and the probe records a <see cref="SqlServerCommitDiagnosticProbeStatus.Skipped" /> result.
     /// </summary>
     public Func<CancellationToken, ValueTask<SqlConnection>>? DiagnosticProbeConnectionFactory { get; set; }

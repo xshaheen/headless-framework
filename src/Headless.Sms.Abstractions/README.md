@@ -8,11 +8,16 @@ Provides a provider-agnostic SMS sending API so application code stays decoupled
 
 ## Key Features
 
-- `ISmsSender` — single method `SendAsync(SendSingleSmsRequest, CancellationToken) : ValueTask<SendSingleSmsResponse>`.
-- `SendSingleSmsRequest` — message contract with `Destinations` (list of `SmsRequestDestination`), `Text`, optional `MessageId`, and optional `Properties`.
+- `ISmsSender` — single-recipient send: `SendAsync(SendSingleSmsRequest, CancellationToken) : ValueTask<SendSingleSmsResponse>`.
+- `IBulkSmsSender` — optional capability for multi-recipient sends: `SendBulkAsync(SendBulkSmsRequest, CancellationToken) : ValueTask<SendBulkSmsResponse>`. Implemented only by providers with native bulk support.
+- `ISmsSenderProvider` — resolves named senders by name: `GetSender(name)` (throws when unregistered) and `GetSenderOrNull(name)` (returns `null`), plus `RegisteredNames` (`IReadOnlySet<string>`) listing the registered named instances (the default is excluded) so an externally supplied name can be validated before resolving. Backed by the container's keyed `ISmsSender` registrations; the concrete implementation and the `AddHeadlessSms` registration entry point live in `Headless.Sms.Core`.
+- `SendSingleSmsRequest` — single-recipient contract with `Destination` (one `SmsRequestDestination`), `Text`, optional `MessageId`, and optional `Properties`.
+- `SendBulkSmsRequest` — bulk contract with `Destinations` (list), `Text`, optional `MessageId`/`Properties`.
 - `SmsRequestDestination(int Code, string Number)` — phone number with separate country calling code and subscriber number.
-- `SendSingleSmsResponse` — closed result type; `Success` (bool) and `FailureError` (string? non-null on failure).
-- Never throws for provider errors — only `OperationCanceledException` propagates.
+- `SendSingleSmsResponse` — closed result type; `Success` (bool), optional `ProviderMessageId`, `FailureError` (string? non-null on failure), and `FailureKind` (`SmsFailureKind`). Built via `Succeeded`, `Failed`, or `FromException(exception, kind)` — the failure kind is classified by `SmsFailureKinds.FromException` in `Headless.Sms.Core` (the single, Polly-aware classifier), not by this contract type.
+- `SendBulkSmsResponse` — per-recipient bulk result; `Results` (one `SmsRecipientResult` each), `AllSucceeded`/`AnySucceeded`, optional `ProviderBatchId`. Built via `FromResults` or `FromAggregate`.
+- Never throws for provider errors — only `OperationCanceledException` and argument-validation exceptions (malformed request) propagate. This is a deliberate contrast with the Captcha family, whose `ICaptchaVerifier.VerifyAsync` *throws* on the same class of transport failure: a rejected SMS send is ordinary data (branch on `FailureKind`), whereas an unverifiable captcha challenge is exceptional.
+- `SmsFailureKind` may gain members in minor versions. Always handle `SmsFailureKind.Unknown` / the `default` case in a `switch` so a newly added member degrades to "treat as unknown" rather than falling through unhandled.
 
 ## Installation
 
@@ -29,7 +34,7 @@ public sealed class OtpService(ISmsSender smsSender)
     {
         var request = new SendSingleSmsRequest
         {
-            Destinations = [new SmsRequestDestination(20, phoneNumber)], // 20 = Egypt calling code
+            Destination = new SmsRequestDestination(20, phoneNumber), // 20 = Egypt calling code
             Text = $"Your verification code is: {code}",
         };
 
@@ -49,8 +54,8 @@ No configuration required. This is an abstractions-only package.
 
 ## Dependencies
 
-None.
+- `Headless.Checks`
 
 ## Side Effects
 
-None.
+None. This is an abstractions package. Registration lives in `Headless.Sms.Core`.

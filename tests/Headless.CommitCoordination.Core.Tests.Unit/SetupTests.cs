@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Linq;
-using AwesomeAssertions;
 using Headless.CommitCoordination;
 using Microsoft.Extensions.DependencyInjection;
 

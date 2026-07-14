@@ -87,7 +87,7 @@ public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : T
             );
 
             identities.Select(x => x.NodeId.Value).Should().OnlyContain(x => x == "node-a");
-            identities.Select(x => x.Incarnation.Value).Should().OnlyHaveUniqueItems();
+            identities.Should().OnlyHaveUniqueItems(x => x.Incarnation.Value);
             identities.Select(x => x.Incarnation.Value).Should().BeEquivalentTo([1L, 2L, 3L, 4L, 5L, 6L]);
         }
         finally
@@ -142,6 +142,42 @@ public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : T
         impossibleAccepted.Should().BeFalse();
         currentAccepted.Should().BeTrue();
         live.Should().Equal([secondIdentity]);
+    }
+
+    public virtual async Task should_reject_heartbeat_for_dead_current_incarnation()
+    {
+        var cluster = _Cluster();
+        await using var node = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var identity = await node.Membership.RegisterAsync(AbortToken);
+        var store = node.Services.GetRequiredService<IMembershipStore>();
+
+        await TimeProvider.System.Delay(CoordinationFixtureExtensions.DeadButRetainedWait, AbortToken);
+
+        (await store.HeartbeatAsync(identity, AbortToken)).Should().BeFalse();
+    }
+
+    public virtual async Task should_reject_heartbeat_after_graceful_leave()
+    {
+        var cluster = _Cluster();
+        await using var node = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var identity = await node.Membership.RegisterAsync(AbortToken);
+        var store = node.Services.GetRequiredService<IMembershipStore>();
+        await store.LeaveAsync(identity, AbortToken);
+
+        (await store.HeartbeatAsync(identity, AbortToken)).Should().BeFalse();
+    }
+
+    public virtual async Task should_reject_heartbeat_after_current_incarnation_is_pruned()
+    {
+        var cluster = _Cluster();
+        await using var node = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var identity = await node.Membership.RegisterAsync(AbortToken);
+        var store = node.Services.GetRequiredService<IMembershipStore>();
+
+        await TimeProvider.System.Delay(CoordinationFixtureExtensions.AfterPruneWait, AbortToken);
+        (await node.Membership.GetLivenessSnapshotAsync(AbortToken)).Should().BeEmpty();
+
+        (await store.HeartbeatAsync(identity, AbortToken)).Should().BeFalse();
     }
 
     public virtual async Task should_reject_stale_heartbeat_after_retained_state_is_pruned()

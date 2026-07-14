@@ -19,6 +19,7 @@ using Microsoft.Extensions.Time.Testing;
 using HeadlessApiExceptionHandler = Headless.Api.Middlewares.HeadlessApiExceptionHandler;
 using JsonOptions = Microsoft.AspNetCore.Http.Json.JsonOptions;
 
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
 namespace Tests;
 
 public sealed class HeadlessApiExceptionHandlerTests : TestBase
@@ -36,7 +37,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         var result = await handler.TryHandleAsync(
             httpContext,
             new InvalidOperationException("not framework-known"),
-            TestContext.Current.CancellationToken
+            AbortToken
         );
 
         // then
@@ -54,11 +55,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         var httpContext = new DefaultHttpContext();
 
         // when
-        var result = await handler.TryHandleAsync(
-            httpContext,
-            new MissingTenantContextException(),
-            TestContext.Current.CancellationToken
-        );
+        var result = await handler.TryHandleAsync(httpContext, new MissingTenantContextException(), AbortToken);
 
         // then
         result.Should().BeTrue();
@@ -84,14 +81,10 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         problemDetailsService.TryWriteAsync(Arg.Any<ProblemDetailsContext>()).Returns(true);
         var handler = _CreateHandler(problemDetailsService, _CreateRealCreator());
         var httpContext = new DefaultHttpContext();
-        var errors = new[] { new ErrorDescriptor("conflict_code", @"conflict description") };
+        var errors = new[] { new ErrorDescriptor("conflict_code", "conflict description") };
 
         // when
-        var result = await handler.TryHandleAsync(
-            httpContext,
-            new ConflictException(errors),
-            TestContext.Current.CancellationToken
-        );
+        var result = await handler.TryHandleAsync(httpContext, new ConflictException(errors), AbortToken);
 
         // then
         result.Should().BeTrue();
@@ -119,7 +112,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         var result = await handler.TryHandleAsync(
             httpContext,
             new FluentValidation.ValidationException(failures),
-            TestContext.Current.CancellationToken
+            AbortToken
         );
 
         // then
@@ -144,11 +137,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         var httpContext = new DefaultHttpContext();
 
         // when
-        var result = await handler.TryHandleAsync(
-            httpContext,
-            new EntityNotFoundException("User", "123"),
-            TestContext.Current.CancellationToken
-        );
+        var result = await handler.TryHandleAsync(httpContext, new EntityNotFoundException("User", "123"), AbortToken);
 
         // then
         result.Should().BeTrue();
@@ -168,7 +157,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         var result = await handler.TryHandleAsync(
             httpContext,
             new DbUpdateConcurrencyException("Concurrency conflict"),
-            TestContext.Current.CancellationToken
+            AbortToken
         );
 
         // then
@@ -186,11 +175,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         var httpContext = new DefaultHttpContext();
 
         // when
-        var result = await handler.TryHandleAsync(
-            httpContext,
-            new TimeoutException("timed out"),
-            TestContext.Current.CancellationToken
-        );
+        var result = await handler.TryHandleAsync(httpContext, new TimeoutException("timed out"), AbortToken);
 
         // then
         result.Should().BeTrue();
@@ -207,11 +192,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         var httpContext = new DefaultHttpContext();
 
         // when
-        var result = await handler.TryHandleAsync(
-            httpContext,
-            new NotImplementedException(),
-            TestContext.Current.CancellationToken
-        );
+        var result = await handler.TryHandleAsync(httpContext, new NotImplementedException(), AbortToken);
 
         // then
         result.Should().BeTrue();
@@ -230,11 +211,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         httpContext.Response.Body = responseBody;
 
         // when
-        var result = await handler.TryHandleAsync(
-            httpContext,
-            new OperationCanceledException(),
-            TestContext.Current.CancellationToken
-        );
+        var result = await handler.TryHandleAsync(httpContext, new OperationCanceledException(), AbortToken);
 
         // then
         result.Should().BeTrue();
@@ -254,11 +231,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         var httpContext = new DefaultHttpContext();
 
         // when
-        var result = await handler.TryHandleAsync(
-            httpContext,
-            new OperationCanceledException(),
-            TestContext.Current.CancellationToken
-        );
+        var result = await handler.TryHandleAsync(httpContext, new OperationCanceledException(), AbortToken);
 
         // then
         result.Should().BeFalse();
@@ -277,7 +250,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         var outer = new InvalidOperationException("outer", inner);
 
         // when
-        var result = await handler.TryHandleAsync(httpContext, outer, TestContext.Current.CancellationToken);
+        var result = await handler.TryHandleAsync(httpContext, outer, AbortToken);
 
         // then
         result.Should().BeTrue();
@@ -300,7 +273,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         );
 
         // when
-        var result = await handler.TryHandleAsync(httpContext, aggregate, TestContext.Current.CancellationToken);
+        var result = await handler.TryHandleAsync(httpContext, aggregate, AbortToken);
 
         // then
         result.Should().BeTrue();
@@ -324,7 +297,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         );
 
         // when
-        var result = await handler.TryHandleAsync(httpContext, aggregate, TestContext.Current.CancellationToken);
+        var result = await handler.TryHandleAsync(httpContext, aggregate, AbortToken);
 
         // then
         result.Should().BeTrue();
@@ -348,11 +321,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         httpContext.Features.Set(activityFeature);
 
         // when
-        var result = await handler.TryHandleAsync(
-            httpContext,
-            new OperationCanceledException(),
-            TestContext.Current.CancellationToken
-        );
+        var result = await handler.TryHandleAsync(httpContext, new OperationCanceledException(), AbortToken);
 
         // then
         result.Should().BeTrue();
@@ -372,11 +341,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         httpContext.Features.Set<IHttpResponseFeature>(new StartedResponseFeature());
 
         // when
-        var result = await handler.TryHandleAsync(
-            httpContext,
-            new OperationCanceledException(),
-            TestContext.Current.CancellationToken
-        );
+        var result = await handler.TryHandleAsync(httpContext, new OperationCanceledException(), AbortToken);
 
         // then
         result.Should().BeFalse();
@@ -394,21 +359,14 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         httpContext.Response.Body = responseBody;
 
         // when
-        var result = await handler.TryHandleAsync(
-            httpContext,
-            new MissingTenantContextException(),
-            TestContext.Current.CancellationToken
-        );
+        var result = await handler.TryHandleAsync(httpContext, new MissingTenantContextException(), AbortToken);
 
         // then
         result.Should().BeTrue();
         httpContext.Response.ContentType.Should().Be("application/problem+json");
 
         responseBody.Position = 0;
-        using var doc = await JsonDocument.ParseAsync(
-            responseBody,
-            cancellationToken: TestContext.Current.CancellationToken
-        );
+        using var doc = await JsonDocument.ParseAsync(responseBody, cancellationToken: AbortToken);
         doc.RootElement.GetProperty("status").GetInt32().Should().Be(403);
         doc.RootElement.GetProperty("error")
             .GetProperty("code")
@@ -428,11 +386,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         httpContext.Features.Set<IHttpResponseFeature>(new StartedResponseFeature());
 
         // when
-        var result = await handler.TryHandleAsync(
-            httpContext,
-            new MissingTenantContextException(),
-            TestContext.Current.CancellationToken
-        );
+        var result = await handler.TryHandleAsync(httpContext, new MissingTenantContextException(), AbortToken);
 
         // then
         result.Should().BeFalse();
@@ -456,12 +410,12 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         httpContext.Response.Body = responseBody;
 
         // when
-        await handler.TryHandleAsync(httpContext, exception, TestContext.Current.CancellationToken);
+        await handler.TryHandleAsync(httpContext, exception, AbortToken);
 
         // then - response body must not contain any exception-internal content
         responseBody.Position = 0;
         using var reader = new StreamReader(responseBody);
-        var body = await reader.ReadToEndAsync(TestContext.Current.CancellationToken);
+        var body = await reader.ReadToEndAsync(AbortToken);
 
         body.Should().NotContain("INNER_SECRET_DETAIL");
         body.Should().NotContain("CUSTOM_OUTER_MESSAGE");
@@ -481,15 +435,34 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         httpContext.Request.Headers.Accept = "text/html"; // Explicit non-JSON accept
 
         // when
-        var result = await handler.TryHandleAsync(
-            httpContext,
-            new MissingTenantContextException(),
-            TestContext.Current.CancellationToken
-        );
+        var result = await handler.TryHandleAsync(httpContext, new MissingTenantContextException(), AbortToken);
 
         // then
         result.Should().BeFalse();
         // Body never written; status not mutated; primary writer not invoked.
+        await problemDetailsService.DidNotReceive().TryWriteAsync(Arg.Any<ProblemDetailsContext>());
+    }
+
+    [Theory]
+    [InlineData("application/json;q=0")]
+    [InlineData("application/problem+json;q=0")]
+    [InlineData("application/problem+json;q=0, */*;q=1")]
+    [InlineData("application/json;q=1, application/problem+json;q=0")]
+    [InlineData("application/json;q=0, application/problem+json;q=0, */*;q=1")]
+    [InlineData("*/*;q=0")]
+    public async Task should_return_false_when_accept_header_rejects_json_with_zero_quality(string acceptHeader)
+    {
+        // given
+        var problemDetailsService = Substitute.For<IProblemDetailsService>();
+        var handler = _CreateHandler(problemDetailsService, _CreateRealCreator());
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers.Accept = acceptHeader;
+
+        // when
+        var result = await handler.TryHandleAsync(httpContext, new MissingTenantContextException(), AbortToken);
+
+        // then
+        result.Should().BeFalse();
         await problemDetailsService.DidNotReceive().TryWriteAsync(Arg.Any<ProblemDetailsContext>());
     }
 
@@ -513,11 +486,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         httpContext.Response.Body = failingStream;
 
         // when
-        var result = await handler.TryHandleAsync(
-            httpContext,
-            new MissingTenantContextException(),
-            TestContext.Current.CancellationToken
-        );
+        var result = await handler.TryHandleAsync(httpContext, new MissingTenantContextException(), AbortToken);
 
         // then
         result.Should().BeFalse();
@@ -543,11 +512,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         httpContext.Response.Body = failingStream;
 
         // when
-        var result = await handler.TryHandleAsync(
-            httpContext,
-            new MissingTenantContextException(),
-            TestContext.Current.CancellationToken
-        );
+        var result = await handler.TryHandleAsync(httpContext, new MissingTenantContextException(), AbortToken);
 
         // then
         result.Should().BeFalse();
@@ -568,11 +533,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         var httpContext = new DefaultHttpContext();
 
         // when
-        var result = await handler.TryHandleAsync(
-            httpContext,
-            new MissingTenantContextException(),
-            TestContext.Current.CancellationToken
-        );
+        var result = await handler.TryHandleAsync(httpContext, new MissingTenantContextException(), AbortToken);
 
         // then
         result.Should().BeFalse();
@@ -598,11 +559,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         var httpContext = new DefaultHttpContext();
 
         // when
-        var result = await handler.TryHandleAsync(
-            httpContext,
-            new MissingTenantContextException(),
-            TestContext.Current.CancellationToken
-        );
+        var result = await handler.TryHandleAsync(httpContext, new MissingTenantContextException(), AbortToken);
 
         // then
         result.Should().BeFalse();
@@ -623,11 +580,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         var httpContext = new DefaultHttpContext();
 
         // when
-        await handler.TryHandleAsync(
-            httpContext,
-            new DbUpdateConcurrencyException("conflict"),
-            TestContext.Current.CancellationToken
-        );
+        await handler.TryHandleAsync(httpContext, new DbUpdateConcurrencyException("conflict"), AbortToken);
 
         // then
         logger.Entries.Should().Contain(e => e.EventId.Id == 5003 && e.Level == LogLevel.Warning);
@@ -644,11 +597,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         var httpContext = new DefaultHttpContext();
 
         // when
-        await handler.TryHandleAsync(
-            httpContext,
-            new TimeoutException("timed out"),
-            TestContext.Current.CancellationToken
-        );
+        await handler.TryHandleAsync(httpContext, new TimeoutException("timed out"), AbortToken);
 
         // then - Fix 11 raised the level from Debug to Warning so timeouts appear in default sinks.
         logger.Entries.Should().Contain(e => e.EventId.Id == 5004 && e.Level == LogLevel.Warning);
@@ -666,11 +615,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         httpContext.Features.Set<IHttpResponseFeature>(new StartedResponseFeature());
 
         // when
-        var result = await handler.TryHandleAsync(
-            httpContext,
-            new MissingTenantContextException(),
-            TestContext.Current.CancellationToken
-        );
+        var result = await handler.TryHandleAsync(httpContext, new MissingTenantContextException(), AbortToken);
 
         // then
         result.Should().BeFalse();
@@ -704,11 +649,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         httpContext.Features.Set<IHttpResponseFeature>(responseFeature);
 
         // when
-        var result = await handler.TryHandleAsync(
-            httpContext,
-            new MissingTenantContextException(),
-            TestContext.Current.CancellationToken
-        );
+        var result = await handler.TryHandleAsync(httpContext, new MissingTenantContextException(), AbortToken);
 
         // then
         result.Should().BeFalse();

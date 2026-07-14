@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Net;
 using Headless.Payments.Paymob.CashOut;
 using Headless.Payments.Paymob.CashOut.Internals;
 using Headless.Payments.Paymob.CashOut.Models;
@@ -16,96 +17,133 @@ namespace Headless.Payments.Paymob.Services.CashOut;
 /// mobile wallets (Vodafone, Etisalat, Orange), bank wallets, bank accounts, and Aman kiosks.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Each overload builds the appropriate <c>CashOutDisburseRequest</c>, calls the broker's
 /// <c>Disburse</c> method, and maps the raw response to a domain result. Transport errors are
 /// caught and returned as <c>CashOutResult.Failure</c> with a structured error descriptor rather
 /// than propagated as exceptions, so callers do not need try/catch for Paymob API failures.
-///
+/// </para>
+/// <para>
 /// Inspect <c>CashOutResult.Succeeded</c> to determine the outcome. When false, <c>Error</c>
 /// carries a localised, code-tagged descriptor. When true, <c>Data</c> contains the transaction
 /// ID and status.
+/// </para>
 /// </remarks>
+[PublicAPI]
 public interface ICashOutService
 {
     /// <summary>Disburses funds to a Vodafone Cash mobile wallet.</summary>
     /// <param name="request">Recipient phone number and amount.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
     /// <returns>A result wrapping the transaction ID and disbursement status, or an error descriptor on failure.</returns>
-    [Pure]
-    Task<CashOutResult<CashOutResponse>> DisburseAsync(VodafoneCashOutRequest request);
+    Task<CashOutResult<CashOutResponse>> DisburseAsync(
+        VodafoneCashOutRequest request,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>Disburses funds to an Etisalat Cash mobile wallet.</summary>
     /// <param name="request">Recipient phone number and amount.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
     /// <returns>A result wrapping the transaction ID and disbursement status, or an error descriptor on failure.</returns>
-    [Pure]
-    Task<CashOutResult<CashOutResponse>> DisburseAsync(EtisalatCashOutRequest request);
+    Task<CashOutResult<CashOutResponse>> DisburseAsync(
+        EtisalatCashOutRequest request,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>Disburses funds to an Orange Money mobile wallet.</summary>
     /// <param name="request">Recipient phone number, full name, and amount.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
     /// <returns>A result wrapping the transaction ID and disbursement status, or an error descriptor on failure.</returns>
-    [Pure]
-    Task<CashOutResult<CashOutResponse>> DisburseAsync(OrangeCashOutRequest request);
+    Task<CashOutResult<CashOutResponse>> DisburseAsync(
+        OrangeCashOutRequest request,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>Disburses funds to a bank-linked mobile wallet.</summary>
     /// <param name="request">Recipient phone number, full name, and amount.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
     /// <returns>A result wrapping the transaction ID and disbursement status, or an error descriptor on failure.</returns>
-    [Pure]
-    Task<CashOutResult<CashOutResponse>> DisburseAsync(BankWalletCashOutRequest request);
+    Task<CashOutResult<CashOutResponse>> DisburseAsync(
+        BankWalletCashOutRequest request,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>Disburses funds directly to a bank account or card.</summary>
     /// <param name="request">Recipient account number, bank code, transaction type, full name, and amount.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
     /// <returns>A result wrapping the transaction ID and disbursement status, or an error descriptor on failure.</returns>
-    [Pure]
-    Task<CashOutResult<CashOutResponse>> DisburseAsync(BankAccountCashOutRequest request);
+    Task<CashOutResult<CashOutResponse>> DisburseAsync(
+        BankAccountCashOutRequest request,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// Disburses funds via the Aman kiosk (Accept) channel. The recipient collects cash at any
     /// Aman outlet using the billing reference in the response.
     /// </summary>
     /// <param name="request">Recipient personal details (name, email, phone) and amount.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
     /// <returns>
     /// A result wrapping the transaction ID, disbursement status, and Aman billing reference,
     /// or an error descriptor on failure.
     /// </returns>
-    [Pure]
-    Task<CashOutResult<KioskCashOutResponse>> DisburseAsync(KioskCashOutRequest request);
+    Task<CashOutResult<KioskCashOutResponse>> DisburseAsync(
+        KioskCashOutRequest request,
+        CancellationToken cancellationToken = default
+    );
 }
 
-public sealed class PaymobCashOutService(IPaymobCashOutBroker broker, ILogger<PaymobCashOutService> logger)
+internal sealed class PaymobCashOutService(IPaymobCashOutBroker broker, ILogger<PaymobCashOutService> logger)
     : ICashOutService
 {
-    public async Task<CashOutResult<CashOutResponse>> DisburseAsync(VodafoneCashOutRequest request)
+    public async Task<CashOutResult<CashOutResponse>> DisburseAsync(
+        VodafoneCashOutRequest request,
+        CancellationToken cancellationToken = default
+    )
     {
         var disburseRequest = CashOutDisburseRequest.Vodafone(request.Amount, request.PhoneNumber);
-        var result = await _CoreDisburseAsync(disburseRequest).ConfigureAwait(false);
+        var result = await _CoreDisburseAsync(disburseRequest, cancellationToken).ConfigureAwait(false);
 
         return _ToCashOutCashOutResult(result);
     }
 
-    public async Task<CashOutResult<CashOutResponse>> DisburseAsync(EtisalatCashOutRequest request)
+    public async Task<CashOutResult<CashOutResponse>> DisburseAsync(
+        EtisalatCashOutRequest request,
+        CancellationToken cancellationToken = default
+    )
     {
         var disburseRequest = CashOutDisburseRequest.Etisalat(request.Amount, request.PhoneNumber);
-        var result = await _CoreDisburseAsync(disburseRequest).ConfigureAwait(false);
+        var result = await _CoreDisburseAsync(disburseRequest, cancellationToken).ConfigureAwait(false);
 
         return _ToCashOutCashOutResult(result);
     }
 
-    public async Task<CashOutResult<CashOutResponse>> DisburseAsync(OrangeCashOutRequest request)
+    public async Task<CashOutResult<CashOutResponse>> DisburseAsync(
+        OrangeCashOutRequest request,
+        CancellationToken cancellationToken = default
+    )
     {
         var disburseRequest = CashOutDisburseRequest.Orange(request.Amount, request.PhoneNumber, request.FullName);
-        var result = await _CoreDisburseAsync(disburseRequest).ConfigureAwait(false);
+        var result = await _CoreDisburseAsync(disburseRequest, cancellationToken).ConfigureAwait(false);
 
         return _ToCashOutCashOutResult(result);
     }
 
-    public async Task<CashOutResult<CashOutResponse>> DisburseAsync(BankWalletCashOutRequest request)
+    public async Task<CashOutResult<CashOutResponse>> DisburseAsync(
+        BankWalletCashOutRequest request,
+        CancellationToken cancellationToken = default
+    )
     {
         var disburseRequest = CashOutDisburseRequest.BankWallet(request.Amount, request.PhoneNumber, request.FullName);
-        var result = await _CoreDisburseAsync(disburseRequest).ConfigureAwait(false);
+        var result = await _CoreDisburseAsync(disburseRequest, cancellationToken).ConfigureAwait(false);
 
         return _ToCashOutCashOutResult(result);
     }
 
-    public async Task<CashOutResult<CashOutResponse>> DisburseAsync(BankAccountCashOutRequest request)
+    public async Task<CashOutResult<CashOutResponse>> DisburseAsync(
+        BankAccountCashOutRequest request,
+        CancellationToken cancellationToken = default
+    )
     {
         var transactionType = _ConvertToString(request.Type);
 
@@ -117,12 +155,15 @@ public sealed class PaymobCashOutService(IPaymobCashOutBroker broker, ILogger<Pa
             request.FullName
         );
 
-        var result = await _CoreDisburseAsync(disburseRequest).ConfigureAwait(false);
+        var result = await _CoreDisburseAsync(disburseRequest, cancellationToken).ConfigureAwait(false);
 
         return _ToCashOutCashOutResult(result);
     }
 
-    public async Task<CashOutResult<KioskCashOutResponse>> DisburseAsync(KioskCashOutRequest request)
+    public async Task<CashOutResult<KioskCashOutResponse>> DisburseAsync(
+        KioskCashOutRequest request,
+        CancellationToken cancellationToken = default
+    )
     {
         var disburseRequest = CashOutDisburseRequest.Accept(
             request.Amount,
@@ -132,7 +173,7 @@ public sealed class PaymobCashOutService(IPaymobCashOutBroker broker, ILogger<Pa
             request.Email
         );
 
-        var result = await _CoreDisburseAsync(disburseRequest).ConfigureAwait(false);
+        var result = await _CoreDisburseAsync(disburseRequest, cancellationToken).ConfigureAwait(false);
 
         if (!result.Succeeded)
         {
@@ -160,17 +201,20 @@ public sealed class PaymobCashOutService(IPaymobCashOutBroker broker, ILogger<Pa
 
     #region Helpers
 
-    private async Task<CashOutResult<CashOutTransaction>> _CoreDisburseAsync(CashOutDisburseRequest request)
+    private async Task<CashOutResult<CashOutTransaction>> _CoreDisburseAsync(
+        CashOutDisburseRequest request,
+        CancellationToken cancellationToken
+    )
     {
         CashOutTransaction result;
 
         try
         {
-            result = await broker.Disburse(request).ConfigureAwait(false);
+            result = await broker.Disburse(request, cancellationToken).ConfigureAwait(false);
         }
         catch (PaymobCashOutException e)
         {
-            logger.LogFailedToStartCashOut(e, e.Body);
+            logger.LogFailedToStartCashOut(e, e.StatusCode);
             return CashOutResult.Failure<CashOutTransaction>(
                 PaymobMessageDescriptor.CashOut.ProviderConnectionFailed(),
                 response: null
@@ -269,13 +313,19 @@ internal static partial class PaymobCashOutLoggerExtensions
     )]
     public static partial void LogUnexpectedAcceptCashOutResponse(this ILogger logger, CashOutTransaction? response);
 
+    // Logs the provider HTTP status (non-PII) instead of the raw response body, which may carry recipient
+    // PII / provider internal detail. The exception still carries the full message and stack.
     [LoggerMessage(
         EventId = 2,
         EventName = "FailedToStartCashOut",
         Level = LogLevel.Critical,
-        Message = "Failed to start cash out {Response}"
+        Message = "Failed to start cash out. Provider responded with status {StatusCode}"
     )]
-    public static partial void LogFailedToStartCashOut(this ILogger logger, Exception exception, string? response);
+    public static partial void LogFailedToStartCashOut(
+        this ILogger logger,
+        Exception exception,
+        HttpStatusCode statusCode
+    );
 
     [LoggerMessage(
         EventId = 3,

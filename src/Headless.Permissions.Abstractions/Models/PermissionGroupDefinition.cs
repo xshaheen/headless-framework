@@ -7,13 +7,15 @@ namespace Headless.Permissions.Models;
 
 /// <summary>
 /// A named container that groups related permissions for display and organization. Permissions are added with
-/// <see cref="AddChild"/> and may themselves nest further children to form a tree.
+/// <see cref="AddChild"/> and may themselves nest further children to form a tree. Instances are created through
+/// <see cref="IPermissionDefinitionContext.AddGroup"/> rather than constructed directly.
 /// </summary>
+[PublicAPI]
 public sealed class PermissionGroupDefinition : ICanAddChildPermission, IHasExtraProperties
 {
     private readonly List<PermissionDefinition> _permissions;
 
-    public PermissionGroupDefinition(string name, string? displayName = null)
+    internal PermissionGroupDefinition(string name, string? displayName = null)
     {
         Name = name;
         DisplayName = displayName ?? name;

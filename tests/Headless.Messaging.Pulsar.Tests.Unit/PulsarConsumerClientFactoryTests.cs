@@ -19,20 +19,22 @@ public sealed class PulsarConsumerClientFactoryTests : TestBase
 {
     private readonly IConnectionFactory _connectionFactory;
     private readonly ILoggerFactory _loggerFactory;
-    private readonly IOptions<MessagingPulsarOptions> _options;
+    private readonly IOptions<PulsarMessagingOptions> _options;
 
     public PulsarConsumerClientFactoryTests()
     {
         _connectionFactory = Substitute.For<IConnectionFactory>();
         _loggerFactory = NullLoggerFactory.Instance;
-        _options = Options.Create(new MessagingPulsarOptions { ServiceUrl = "pulsar://localhost:6650" });
+        _options = Options.Create(new PulsarMessagingOptions { ServiceUrl = "pulsar://localhost:6650" });
     }
 
     [Fact]
     public async Task should_throw_broker_connection_exception_on_connection_failure()
     {
         // given
-        _connectionFactory.RentClient().Throws(new InvalidOperationException("Connection failed"));
+        _connectionFactory
+            .RentClientAsync(Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("Connection failed"));
         var factory = new PulsarConsumerClientFactory(_connectionFactory, _loggerFactory, _options);
 
         // when
@@ -47,7 +49,7 @@ public sealed class PulsarConsumerClientFactoryTests : TestBase
     {
         // given
         var innerException = new InvalidOperationException("Connection failed");
-        _connectionFactory.RentClient().Throws(innerException);
+        _connectionFactory.RentClientAsync(Arg.Any<CancellationToken>()).ThrowsAsync(innerException);
         var factory = new PulsarConsumerClientFactory(_connectionFactory, _loggerFactory, _options);
 
         // when
@@ -63,7 +65,7 @@ public sealed class PulsarConsumerClientFactoryTests : TestBase
     {
         // given
         var options = Options.Create(
-            new MessagingPulsarOptions { ServiceUrl = "pulsar://localhost:6650", EnableClientLog = true }
+            new PulsarMessagingOptions { ServiceUrl = "pulsar://localhost:6650", EnableClientLog = true }
         );
         var loggerFactory = Substitute.For<ILoggerFactory>();
         loggerFactory.CreateLogger(Arg.Any<string>()).Returns(NullLogger.Instance);
@@ -80,7 +82,7 @@ public sealed class PulsarConsumerClientFactoryTests : TestBase
     {
         // given
         var options = Options.Create(
-            new MessagingPulsarOptions { ServiceUrl = "pulsar://localhost:6650", EnableClientLog = false }
+            new PulsarMessagingOptions { ServiceUrl = "pulsar://localhost:6650", EnableClientLog = false }
         );
         var loggerFactory = Substitute.For<ILoggerFactory>();
 
@@ -95,7 +97,9 @@ public sealed class PulsarConsumerClientFactoryTests : TestBase
     public async Task should_call_rent_client_when_creating_consumer()
     {
         // given - RentClient will throw since we can't mock PulsarClient
-        _connectionFactory.RentClient().Throws(new InvalidOperationException("Cannot mock PulsarClient"));
+        _connectionFactory
+            .RentClientAsync(Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("Cannot mock PulsarClient"));
         var factory = new PulsarConsumerClientFactory(_connectionFactory, _loggerFactory, _options);
 
         // when
@@ -109,6 +113,21 @@ public sealed class PulsarConsumerClientFactoryTests : TestBase
         }
 
         // then
-        _connectionFactory.Received(1).RentClient();
+        await _connectionFactory.Received(1).RentClientAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_propagate_exact_token_without_wrapping_cancellation()
+    {
+        var cancellationToken = new CancellationToken(canceled: true);
+        _connectionFactory
+            .RentClientAsync(cancellationToken)
+            .Returns(Task.FromCanceled<Pulsar.Client.Api.PulsarClient>(cancellationToken));
+        var factory = new PulsarConsumerClientFactory(_connectionFactory, _loggerFactory, _options);
+
+        var act = async () => await factory.CreateAsync("test-group", 1, cancellationToken);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        await _connectionFactory.Received(1).RentClientAsync(cancellationToken);
     }
 }

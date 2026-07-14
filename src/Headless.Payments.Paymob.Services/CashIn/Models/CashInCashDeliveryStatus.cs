@@ -23,13 +23,13 @@ public sealed class CashInCashDeliveryStatus
 public sealed class CashInCashDeliveryStatusObj
 {
     [JsonPropertyName("order_id")]
-    public int OrderId { get; init; }
+    public long OrderId { get; init; }
 
     [JsonPropertyName("order_delivery_status")]
     public required string OrderDeliveryStatus { get; init; }
 
     [JsonPropertyName("merchant_id")]
-    public int MerchantId { get; init; }
+    public long MerchantId { get; init; }
 
     [JsonPropertyName("merchant_name")]
     public string? MerchantName { get; init; }

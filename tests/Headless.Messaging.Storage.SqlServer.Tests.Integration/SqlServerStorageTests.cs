@@ -2,7 +2,11 @@
 
 using Dapper;
 using Headless.Abstractions;
+using Headless.Messaging;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Internal;
+using Headless.Messaging.Messages;
+using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Serialization;
 using Headless.Messaging.Storage.SqlServer;
@@ -24,6 +28,8 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
     private IStorageInitializer? _initializer;
     private IDataStorage? _storage;
     private ISerializer? _serializer;
+    private IOptions<SqlServerOptions>? _sqlServerOptions;
+    private IOptions<MessagingOptions>? _messagingOptions;
 
     /// <inheritdoc />
     protected override DataStorageCapabilities Capabilities =>
@@ -54,6 +60,51 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
     {
         _EnsureInitialized();
         return _serializer!;
+    }
+
+    /// <inheritdoc />
+    protected override IDataStorage CreateStorageWithTimeProvider(TimeProvider timeProvider)
+    {
+        _EnsureInitialized();
+        return _CreateStorage(timeProvider);
+    }
+
+    /// <inheritdoc />
+    protected override async Task<DateTime?> GetDatabaseUtcNowAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        return await connection.ExecuteScalarAsync<DateTime>("SELECT SYSUTCDATETIME()");
+    }
+
+    /// <inheritdoc />
+    protected override async Task<PersistedLeaseIdentity?> GetPersistedLeaseIdentityAsync(
+        bool published,
+        Guid storageId,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        var tableName = published ? "Published" : "Received";
+        return await connection.QuerySingleAsync<PersistedLeaseIdentity>(
+            $"SELECT LockedUntil, Owner FROM messaging.{tableName} WHERE Id = @Id",
+            new { Id = storageId }
+        );
+    }
+
+    private IDataStorage _CreateStorage(TimeProvider timeProvider)
+    {
+        return new SqlServerDataStorage(
+            _messagingOptions!,
+            _sqlServerOptions!,
+            _initializer!,
+            _serializer!,
+            new SequentialGuidGenerator(SequentialGuidType.SqlServer),
+            timeProvider,
+            NodeMembership,
+            NullLogger<SqlServerDataStorage>.Instance
+        );
     }
 
     /// <inheritdoc />
@@ -123,26 +174,17 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
 
         var provider = services.BuildServiceProvider();
 
-        var sqlServerOptions = provider.GetRequiredService<IOptions<SqlServerOptions>>();
-        var messagingOptions = provider.GetRequiredService<IOptions<MessagingOptions>>();
+        _sqlServerOptions = provider.GetRequiredService<IOptions<SqlServerOptions>>();
+        _messagingOptions = provider.GetRequiredService<IOptions<MessagingOptions>>();
         _serializer = provider.GetRequiredService<ISerializer>();
 
         _initializer = new SqlServerStorageInitializer(
             NullLogger<SqlServerStorageInitializer>.Instance,
-            sqlServerOptions,
-            messagingOptions
+            _sqlServerOptions,
+            _messagingOptions
         );
 
-        _storage = new SqlServerDataStorage(
-            messagingOptions,
-            sqlServerOptions,
-            _initializer,
-            provider.GetRequiredService<ISerializer>(),
-            new SequentialGuidGenerator(SequentialGuidType.SqlServer),
-            TimeProvider.System,
-            NodeMembership,
-            NullLogger<SqlServerDataStorage>.Instance
-        );
+        _storage = _CreateStorage(TimeProvider.System);
     }
 
     #region Data Storage Tests
@@ -176,6 +218,14 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
     public override Task should_change_publish_state_to_delayed() => base.should_change_publish_state_to_delayed();
 
     [Fact]
+    public override Task should_not_flip_terminal_published_row_back_to_delayed() =>
+        base.should_not_flip_terminal_published_row_back_to_delayed();
+
+    [Fact]
+    public override Task should_ignore_unknown_storage_ids_when_flushing_delayed_state() =>
+        base.should_ignore_unknown_storage_ids_when_flushing_delayed_state();
+
+    [Fact]
     public override Task should_get_published_messages_of_need_retry() =>
         base.should_get_published_messages_of_need_retry();
 
@@ -185,6 +235,10 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
 
     [Fact]
     public override Task should_delete_expired_messages() => base.should_delete_expired_messages();
+
+    [Fact]
+    public override Task should_not_delete_expired_failed_messages_with_pending_retry() =>
+        base.should_not_delete_expired_failed_messages_with_pending_retry();
 
     [Fact]
     public override Task should_delete_published_message() => base.should_delete_published_message();
@@ -236,8 +290,91 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
         base.should_not_return_leased_published_message_until_lease_expires();
 
     [Fact]
+    public override Task should_use_database_clock_when_reclaiming_published_retry_lease() =>
+        base.should_use_database_clock_when_reclaiming_published_retry_lease();
+
+    [Fact]
+    public override Task should_use_database_clock_when_reclaiming_received_retry_lease() =>
+        base.should_use_database_clock_when_reclaiming_received_retry_lease();
+
+    [Fact]
+    public override Task should_use_database_clock_when_fast_forwarding_dead_owner_lease() =>
+        base.should_use_database_clock_when_fast_forwarding_dead_owner_lease();
+
+    [Fact]
+    public override Task should_stamp_retry_lease_from_database_clock() =>
+        base.should_stamp_retry_lease_from_database_clock();
+
+    [Fact]
+    public override Task should_use_application_clock_when_scheduling_published_retry() =>
+        base.should_use_application_clock_when_scheduling_published_retry();
+
+    [Fact]
+    public override Task should_use_application_clock_when_scheduling_received_retry() =>
+        base.should_use_application_clock_when_scheduling_received_retry();
+
+    [Fact]
+    public async Task should_preserve_sub_second_retry_lease_precision()
+    {
+        _EnsureInitialized();
+        _messagingOptions!.Value.RetryPolicy.DispatchTimeout = TimeSpan.FromMilliseconds(500);
+        var storage = GetStorage();
+        var storedMessage = await storage.StoreMessageAsync(
+            "sub-second-retry-lease",
+            CreateMessage(),
+            cancellationToken: AbortToken
+        );
+        await storage.ChangePublishStateAsync(
+            storedMessage,
+            StatusName.Failed,
+            nextRetryAt: DateTime.UtcNow.AddMinutes(-1),
+            cancellationToken: AbortToken
+        );
+
+        var beforeClaim = DateTime.UtcNow;
+        var claimed = (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
+            .Should()
+            .ContainSingle(m => m.StorageId == storedMessage.StorageId)
+            .Subject;
+
+        claimed.LockedUntil.Should().BeAfter(beforeClaim.AddMilliseconds(100));
+    }
+
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    public override Task should_stamp_fresh_dispatch_lease_from_database_clock(bool publish, bool reserveAttempt) =>
+        base.should_stamp_fresh_dispatch_lease_from_database_clock(publish, reserveAttempt);
+
+    [Fact]
     public override Task should_reject_mismatched_original_retries() =>
         base.should_reject_mismatched_original_retries();
+
+    [Fact]
+    public override Task should_lease_and_reserve_publish_attempt_in_single_step() =>
+        base.should_lease_and_reserve_publish_attempt_in_single_step();
+
+    [Fact]
+    public override Task should_reject_lease_and_reserve_with_stale_inline_attempts_token() =>
+        base.should_reject_lease_and_reserve_with_stale_inline_attempts_token();
+
+    [Fact]
+    public override Task should_reject_stale_published_lease_generation_writes() =>
+        base.should_reject_stale_published_lease_generation_writes();
+
+    [Fact]
+    public override Task should_reject_stale_received_lease_generation_writes() =>
+        base.should_reject_stale_received_lease_generation_writes();
+
+    [Fact]
+    public override Task should_allow_published_fenced_writes_with_fast_application_clock() =>
+        base.should_allow_published_fenced_writes_with_fast_application_clock();
+
+    [Fact]
+    public override Task should_allow_received_fenced_writes_with_fast_application_clock() =>
+        base.should_allow_received_fenced_writes_with_fast_application_clock();
 
     [Fact]
     public override Task should_report_false_when_received_exception_message_is_already_terminal() =>
@@ -262,6 +399,10 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
     [Fact]
     public override Task should_not_return_leased_received_message_until_lease_expires() =>
         base.should_not_return_leased_received_message_until_lease_expires();
+
+    [Fact]
+    public override Task should_return_unstored_snapshot_when_redelivery_hits_active_receive_lease() =>
+        base.should_return_unstored_snapshot_when_redelivery_hits_active_receive_lease();
 
     [Fact]
     public override Task should_handle_concurrent_state_updates_to_same_row() =>
@@ -376,6 +517,274 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
         // then
         monitoringApi.Should().BeOfType<SqlServerMonitoringApi>();
         await Task.CompletedTask;
+    }
+
+    [Theory]
+    [InlineData("Published")]
+    [InlineData("Received")]
+    public async Task should_terminalize_poison_retry_row_when_content_cannot_deserialize(string tableName)
+    {
+        // given
+        var storage = GetStorage();
+        var id = Guid.NewGuid();
+        var now = TimeProvider.GetUtcNow().UtcDateTime;
+
+        await using (var connection = new SqlConnection(fixture.ConnectionString))
+        {
+            await connection.OpenAsync(AbortToken);
+            await _InsertPoisonRetryRowAsync(connection, tableName, id, now);
+        }
+
+        // when
+        var picked = string.Equals(tableName, "Published", StringComparison.Ordinal)
+            ? await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken)
+            : await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken);
+
+        // then
+        picked.Should().NotContain(message => message.StorageId == id);
+
+        await using var assertConnection = new SqlConnection(fixture.ConnectionString);
+        await assertConnection.OpenAsync(AbortToken);
+
+        var statusName = await assertConnection.ExecuteScalarAsync<string>(
+            $"SELECT StatusName FROM messaging.{tableName} WHERE Id = @Id",
+            new { Id = id }
+        );
+        var nextRetryAt = await assertConnection.ExecuteScalarAsync<DateTime?>(
+            $"SELECT NextRetryAt FROM messaging.{tableName} WHERE Id = @Id",
+            new { Id = id }
+        );
+        var lockedUntil = await assertConnection.ExecuteScalarAsync<DateTime?>(
+            $"SELECT LockedUntil FROM messaging.{tableName} WHERE Id = @Id",
+            new { Id = id }
+        );
+        var owner = await assertConnection.ExecuteScalarAsync<string?>(
+            $"SELECT Owner FROM messaging.{tableName} WHERE Id = @Id",
+            new { Id = id }
+        );
+
+        statusName.Should().Be(nameof(StatusName.Failed));
+        nextRetryAt.Should().BeNull();
+        lockedUntil.Should().BeNull();
+        owner.Should().BeNull();
+
+        if (string.Equals(tableName, "Received", StringComparison.Ordinal))
+        {
+            var exceptionInfo = await assertConnection.ExecuteScalarAsync<string?>(
+                "SELECT ExceptionInfo FROM messaging.Received WHERE Id = @Id",
+                new { Id = id }
+            );
+            exceptionInfo.Should().Contain("JsonException");
+        }
+    }
+
+    [Theory]
+    [InlineData("Published")]
+    [InlineData("Received")]
+    public async Task should_return_healthy_retry_row_when_same_claim_batch_contains_poison(string tableName)
+    {
+        var storage = GetStorage();
+        var serializer = GetSerializer();
+        var poisonId = Guid.NewGuid();
+        var healthyId = Guid.NewGuid();
+        var now = TimeProvider.GetUtcNow().UtcDateTime;
+
+        await using (var connection = new SqlConnection(fixture.ConnectionString))
+        {
+            await connection.OpenAsync(AbortToken);
+            await _InsertPoisonRetryRowAsync(connection, tableName, poisonId, now);
+            await _InsertHealthyRetryRowAsync(
+                connection,
+                tableName,
+                healthyId,
+                serializer.Serialize(CreateMessage("healthy-retry")),
+                now
+            );
+        }
+
+        var picked = string.Equals(tableName, "Published", StringComparison.Ordinal)
+            ? await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken)
+            : await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken);
+
+        picked.Select(message => message.StorageId).Should().Contain(healthyId).And.NotContain(poisonId);
+
+        await using var assertConnection = new SqlConnection(fixture.ConnectionString);
+        await assertConnection.OpenAsync(AbortToken);
+        var poisonNextRetryAt = await assertConnection.ExecuteScalarAsync<DateTime?>(
+            $"SELECT NextRetryAt FROM messaging.{tableName} WHERE Id = @Id",
+            new { Id = poisonId }
+        );
+        poisonNextRetryAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_apply_scheduler_batch_size_across_delayed_and_queued_branches()
+    {
+        // given
+        var storage = _CreateStorage(new MessagingOptions { Version = "v1", SchedulerBatchSize = 1 });
+        var serializer = GetSerializer();
+        var now = DateTime.UtcNow;
+        var delayedId = Guid.NewGuid();
+        var queuedId = Guid.NewGuid();
+
+        await using (var connection = new SqlConnection(fixture.ConnectionString))
+        {
+            await connection.OpenAsync(AbortToken);
+
+            await _InsertPublishedRowAsync(
+                connection,
+                delayedId,
+                serializer.Serialize(CreateMessage("sql-delayed")),
+                StatusName.Delayed,
+                expiresAt: now,
+                nextRetryAt: null
+            );
+            await _InsertPublishedRowAsync(
+                connection,
+                queuedId,
+                serializer.Serialize(CreateMessage("sql-queued")),
+                StatusName.Queued,
+                expiresAt: now.AddMinutes(-2),
+                nextRetryAt: null
+            );
+        }
+
+        var scheduled = new List<MediumMessage>();
+
+        // when
+        await storage.ScheduleMessagesOfDelayedAsync(
+            (_, messages) =>
+            {
+                scheduled.AddRange(messages);
+                return ValueTask.CompletedTask;
+            },
+            AbortToken
+        );
+
+        // then
+        scheduled.Should().ContainSingle();
+        new[] { delayedId, queuedId }.Should().Contain(scheduled[0].StorageId);
+    }
+
+    [Fact]
+    public async Task should_not_lock_scheduler_candidates_beyond_batch_size()
+    {
+        // given
+        var firstStorage = _CreateStorage(new MessagingOptions { Version = "v1", SchedulerBatchSize = 1 });
+        var secondStorage = _CreateStorage(new MessagingOptions { Version = "v1", SchedulerBatchSize = 1 });
+        var serializer = GetSerializer();
+        var now = DateTime.UtcNow;
+
+        await using (var connection = new SqlConnection(fixture.ConnectionString))
+        {
+            await connection.OpenAsync(AbortToken);
+
+            for (var index = 0; index < 3; index++)
+            {
+                await _InsertPublishedRowAsync(
+                    connection,
+                    Guid.NewGuid(),
+                    serializer.Serialize(CreateMessage($"sql-delayed-{index}")),
+                    StatusName.Delayed,
+                    expiresAt: now.AddMinutes(-10 + index),
+                    nextRetryAt: null
+                );
+                await _InsertPublishedRowAsync(
+                    connection,
+                    Guid.NewGuid(),
+                    serializer.Serialize(CreateMessage($"sql-queued-{index}")),
+                    StatusName.Queued,
+                    expiresAt: now.AddMinutes(-20 + index),
+                    nextRetryAt: null
+                );
+            }
+        }
+
+        var firstMessages = new List<MediumMessage>();
+        var secondMessages = new List<MediumMessage>();
+        var firstSchedulerEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirstScheduler = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // when
+        var firstSchedule = firstStorage
+            .ScheduleMessagesOfDelayedAsync(
+                async (_, messages) =>
+                {
+                    firstMessages.AddRange(messages);
+                    firstSchedulerEntered.SetResult();
+                    await releaseFirstScheduler.Task.WaitAsync(AbortToken);
+                },
+                AbortToken
+            )
+            .AsTask();
+
+        await firstSchedulerEntered.Task.WaitAsync(AbortToken);
+
+        await secondStorage.ScheduleMessagesOfDelayedAsync(
+            (_, messages) =>
+            {
+                secondMessages.AddRange(messages);
+                return ValueTask.CompletedTask;
+            },
+            AbortToken
+        );
+
+        releaseFirstScheduler.SetResult();
+        await firstSchedule.WaitAsync(AbortToken);
+
+        // then
+        firstMessages.Should().ContainSingle();
+        secondMessages.Should().ContainSingle();
+        secondMessages[0].StorageId.Should().NotBe(firstMessages[0].StorageId);
+    }
+
+    [Fact]
+    public async Task should_pick_oldest_retry_rows_with_configured_batch_size()
+    {
+        // given
+        var storage = _CreateStorage(new MessagingOptions { Version = "v1", RetryBatchSize = 2 });
+        var serializer = GetSerializer();
+        var now = DateTime.UtcNow;
+        var oldestId = Guid.NewGuid();
+        var middleId = Guid.NewGuid();
+        var newestId = Guid.NewGuid();
+
+        await using (var connection = new SqlConnection(fixture.ConnectionString))
+        {
+            await connection.OpenAsync(AbortToken);
+
+            await _InsertPublishedRowAsync(
+                connection,
+                oldestId,
+                serializer.Serialize(CreateMessage("sql-oldest")),
+                StatusName.Failed,
+                expiresAt: null,
+                nextRetryAt: now.AddMinutes(-3)
+            );
+            await _InsertPublishedRowAsync(
+                connection,
+                middleId,
+                serializer.Serialize(CreateMessage("sql-middle")),
+                StatusName.Failed,
+                expiresAt: null,
+                nextRetryAt: now.AddMinutes(-2)
+            );
+            await _InsertPublishedRowAsync(
+                connection,
+                newestId,
+                serializer.Serialize(CreateMessage("sql-newest")),
+                StatusName.Failed,
+                expiresAt: null,
+                nextRetryAt: now.AddMinutes(-1)
+            );
+        }
+
+        // when
+        var picked = (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken)).ToList();
+
+        // then
+        picked.Select(message => message.StorageId).Should().BeEquivalentTo([oldestId, middleId]);
+        picked.Should().NotContain(message => message.StorageId == newestId);
     }
 
     // -------------------------------------------------------------------------
@@ -495,6 +904,149 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
             .NotBeNull("the owner reclaim index must be filtered, not a full nonclustered index")
             .And.Contain("Owner", "the filter must reference Owner")
             .And.Contain("IS NOT NULL", "the filter must exclude rows without a Coordination owner");
+    }
+
+    private SqlServerDataStorage _CreateStorage(MessagingOptions messagingOptions)
+    {
+        messagingOptions.RetryPolicy.MaxPersistedRetries = 4;
+        messagingOptions.FailedMessageExpiredAfter = 3600;
+
+        var sqlServerOptions = Options.Create(
+            new SqlServerOptions { ConnectionString = fixture.ConnectionString, Schema = "messaging" }
+        );
+        var initializer = new SqlServerStorageInitializer(
+            NullLogger<SqlServerStorageInitializer>.Instance,
+            sqlServerOptions,
+            Options.Create(messagingOptions)
+        );
+
+        return new SqlServerDataStorage(
+            Options.Create(messagingOptions),
+            sqlServerOptions,
+            initializer,
+            GetSerializer(),
+            new SequentialGuidGenerator(SequentialGuidType.SqlServer),
+            TimeProvider.System,
+            NodeMembership,
+            NullLogger<SqlServerDataStorage>.Instance
+        );
+    }
+
+    private static async Task _InsertPoisonRetryRowAsync(
+        SqlConnection connection,
+        string tableName,
+        Guid id,
+        DateTime now
+    )
+    {
+        if (string.Equals(tableName, "Published", StringComparison.Ordinal))
+        {
+            await connection.ExecuteAsync(
+                """
+                INSERT INTO messaging.Published
+                    (Id, Version, Name, Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, LockedUntil, Owner, StatusName, MessageId)
+                VALUES
+                    (@Id, 'v1', 'poison-published', 'not-json', 0, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId);
+                """,
+                new
+                {
+                    Id = id,
+                    Now = now,
+                    NextRetryAt = now.AddMinutes(-1),
+                    MessageId = $"poison-{id:N}",
+                }
+            );
+            return;
+        }
+
+        await connection.ExecuteAsync(
+            """
+            INSERT INTO messaging.Received
+                (Id, Version, Name, [Group], Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, LockedUntil, Owner, StatusName, MessageId, ExceptionInfo)
+            VALUES
+                (@Id, 'v1', 'poison-received', 'poison-group', 'not-json', 0, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId, NULL);
+            """,
+            new
+            {
+                Id = id,
+                Now = now,
+                NextRetryAt = now.AddMinutes(-1),
+                MessageId = $"poison-{id:N}",
+            }
+        );
+    }
+
+    private static Task _InsertPublishedRowAsync(
+        SqlConnection connection,
+        Guid id,
+        string content,
+        StatusName statusName,
+        DateTime? expiresAt,
+        DateTime? nextRetryAt
+    ) =>
+        connection.ExecuteAsync(
+            """
+            INSERT INTO messaging.Published
+                (Id, Version, Name, Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, LockedUntil, Owner, StatusName, MessageId)
+            VALUES
+                (@Id, 'v1', 'sql-provider-test', @Content, 0, 0, @Now, @ExpiresAt, @NextRetryAt, NULL, NULL, @StatusName, @MessageId);
+            """,
+            new
+            {
+                Id = id,
+                Content = content,
+                Now = DateTime.UtcNow,
+                ExpiresAt = expiresAt,
+                NextRetryAt = nextRetryAt,
+                StatusName = statusName.ToString("G"),
+                MessageId = $"sql-{id:N}",
+            }
+        );
+
+    private static Task _InsertHealthyRetryRowAsync(
+        SqlConnection connection,
+        string tableName,
+        Guid id,
+        string content,
+        DateTime now
+    )
+    {
+        if (string.Equals(tableName, "Published", StringComparison.Ordinal))
+        {
+            return connection.ExecuteAsync(
+                """
+                INSERT INTO messaging.Published
+                    (Id, Version, Name, Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, LockedUntil, Owner, StatusName, MessageId)
+                VALUES
+                    (@Id, 'v1', 'healthy-published', @Content, 0, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId);
+                """,
+                new
+                {
+                    Id = id,
+                    Content = content,
+                    Now = now,
+                    NextRetryAt = now.AddMinutes(-1),
+                    MessageId = $"healthy-{id:N}",
+                }
+            );
+        }
+
+        return connection.ExecuteAsync(
+            """
+            INSERT INTO messaging.Received
+                (Id, Version, Name, [Group], Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, LockedUntil, Owner, StatusName, MessageId, ExceptionInfo)
+            VALUES
+                (@Id, 'v1', 'healthy-received', 'healthy-group', @Content, 0, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId, NULL);
+            """,
+            new
+            {
+                Id = id,
+                Content = content,
+                Now = now,
+                NextRetryAt = now.AddMinutes(-1),
+                MessageId = $"healthy-{id:N}",
+            }
+        );
     }
 
     #endregion

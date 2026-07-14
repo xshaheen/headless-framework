@@ -5,7 +5,7 @@ using Headless.Urls;
 
 namespace Headless.Payments.Paymob.CashIn;
 
-public partial class PaymobCashInBroker
+internal partial class PaymobCashInBroker
 {
     /// <summary>
     /// Get a payment key which is used to authenticate payment request and verifying transaction

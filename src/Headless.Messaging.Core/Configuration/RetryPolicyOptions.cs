@@ -3,6 +3,8 @@
 using FluentValidation;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Retry;
+using Polly;
+using Polly.Retry;
 
 namespace Headless.Messaging.Configuration;
 
@@ -10,21 +12,54 @@ namespace Headless.Messaging.Configuration;
 /// Configures message retry behavior across inline and persisted retry paths.
 /// </summary>
 /// <remarks>
-/// Total observable delivery attempts = <c>(MaxInlineRetries + 1) × (MaxPersistedRetries + 1)</c>.
+/// Total observable delivery attempts =
+/// <c>(RetryStrategy.MaxRetryAttempts + 1) × (MaxPersistedRetries + 1)</c>.
 /// Inline retries burst on each persisted pickup. To disable retry entirely set both
-/// <see cref="MaxInlineRetries"/> and <see cref="MaxPersistedRetries"/> to 0.
+/// <c>RetryStrategy.MaxRetryAttempts</c> and <see cref="MaxPersistedRetries"/> to 0.
 /// </remarks>
 [PublicAPI]
 public sealed class RetryPolicyOptions
 {
     /// <summary>
-    /// Gets or sets the maximum number of extra inline attempts performed on each delivery
-    /// (after the first attempt) before persisting the message for a later pickup. Default is 2.
+    /// Gets the default retry classification used by <see cref="RetryStrategy"/>: retry any
+    /// exception that is not a cancellation and not classified permanent by
+    /// <see cref="RetryExceptionClassifier"/>. Reuse (or compose) this predicate when supplying a
+    /// custom <see cref="RetryStrategy"/> value so replacing the strategy does not silently drop
+    /// the framework's failure classification.
+    /// </summary>
+    public static Func<RetryPredicateArguments<object>, ValueTask<bool>> DefaultShouldHandle { get; } =
+        static args =>
+            ValueTask.FromResult(
+                args.Outcome.Exception is { } exception
+                    && exception is not OperationCanceledException
+                    && !RetryExceptionClassifier.IsPermanent(exception)
+            );
+
+    /// <summary>
+    /// Gets or sets the Polly retry strategy used for bounded inline delivery attempts.
     /// </summary>
     /// <remarks>
-    /// With <c>MaxInlineRetries = 2</c> each pickup runs up to 3 attempts total before persisting.
+    /// <para>
+    /// <c>RetryStrategy.MaxRetryAttempts</c> excludes the original execution; its
+    /// default value here is 2, so each pickup reserves at most three observable attempts.
+    /// </para>
+    /// <para>
+    /// <c>RetryStrategy.ShouldHandle</c> is required and defaults to
+    /// <see cref="DefaultShouldHandle"/>, which excludes permanent Messaging failures and
+    /// cancellation. The pipeline is built once from this configuration and reused; mutating the
+    /// options after service-provider construction does not reconfigure a running pipeline.
+    /// </para>
     /// </remarks>
-    public int MaxInlineRetries { get; set; } = 2;
+    public RetryStrategyOptions RetryStrategy { get; set; } =
+        new()
+        {
+            MaxRetryAttempts = 2,
+            Delay = TimeSpan.FromSeconds(1),
+            BackoffType = DelayBackoffType.Exponential,
+            UseJitter = true,
+            MaxDelay = TimeSpan.FromMinutes(5),
+            ShouldHandle = DefaultShouldHandle,
+        };
 
     /// <summary>
     /// Gets or sets the maximum number of persisted-retry pickups the retry processor will
@@ -33,7 +68,7 @@ public sealed class RetryPolicyOptions
     /// <remarks>
     /// <para>
     /// Persisted pickups burst inline retries on each pickup. Total observable attempts =
-    /// <c>(MaxInlineRetries + 1) × (MaxPersistedRetries + 1)</c>; with defaults this is
+    /// <c>(RetryStrategy.MaxRetryAttempts + 1) × (MaxPersistedRetries + 1)</c>; with defaults this is
     /// <c>(2 + 1) × (15 + 1) = 48</c> attempts before <see cref="OnExhausted"/> fires.
     /// </para>
     /// <para>
@@ -77,12 +112,6 @@ public sealed class RetryPolicyOptions
     public TimeSpan DispatchTimeout { get; set; } = TimeSpan.FromMinutes(5);
 
     /// <summary>
-    /// Gets or sets the backoff strategy used to compute per-attempt delay.
-    /// Defaults to exponential backoff.
-    /// </summary>
-    public IRetryBackoffStrategy BackoffStrategy { get; set; } = new ExponentialBackoffStrategy();
-
-    /// <summary>
     /// Gets or sets the upper bound on how long the framework will await the
     /// <see cref="OnExhausted"/> callback before logging a timeout and continuing.
     /// Default is 30 seconds.
@@ -98,35 +127,34 @@ public sealed class RetryPolicyOptions
     /// <summary>
     /// Returns <see langword="true"/> when more inline retry attempts remain within the policy
     /// budget. Pass the count of inline retries already completed on this pickup; the helper is
-    /// the single source of truth so the call sites in the inline-retry loop and the retry helper
+    /// the single source of truth so the call sites in the Polly inline pipeline and the retry helper
     /// cannot drift.
     /// </summary>
     /// <remarks>
-    /// Semantics: <c>HasMoreInlineAttempts(0)</c> with <c>MaxInlineRetries=0</c> returns
+    /// Semantics: <c>HasMoreInlineAttempts(0)</c> with <c>RetryStrategy.MaxRetryAttempts=0</c> returns
     /// <see langword="false"/> (the initial attempt is the only attempt — no inline retries
-    /// configured); <c>HasMoreInlineAttempts(0)</c> with <c>MaxInlineRetries=3</c> returns
+    /// configured); <c>HasMoreInlineAttempts(0)</c> with <c>RetryStrategy.MaxRetryAttempts=3</c> returns
     /// <see langword="true"/> (three inline retries still available).
     /// </remarks>
-    public bool HasMoreInlineAttempts(int attemptsCompleted) => attemptsCompleted < MaxInlineRetries;
+    internal bool HasMoreInlineAttempts(int attemptsCompleted) => attemptsCompleted < RetryStrategy.MaxRetryAttempts;
 
     /// <summary>
     /// Copies all properties of this instance to <paramref name="target"/>.
     /// </summary>
     internal void CopyTo(RetryPolicyOptions target)
     {
-        target.MaxInlineRetries = MaxInlineRetries;
+        target.RetryStrategy = RetryStrategy;
         target.MaxPersistedRetries = MaxPersistedRetries;
         target.InitialDispatchGrace = InitialDispatchGrace;
         target.DispatchTimeout = DispatchTimeout;
-        target.BackoffStrategy = BackoffStrategy;
         target.OnExhausted = OnExhausted;
         target.OnExhaustedTimeout = OnExhaustedTimeout;
     }
 
     /// <summary>
     /// Gets or sets the callback invoked once retry attempts are exhausted
-    /// (the multiplicative budget <c>(MaxInlineRetries + 1) × (MaxPersistedRetries + 1)</c>
-    /// is consumed, or the configured <see cref="BackoffStrategy"/> signals no further delay).
+    /// (the multiplicative budget
+    /// <c>(RetryStrategy.MaxRetryAttempts + 1) × (MaxPersistedRetries + 1)</c> is consumed).
     /// Permanent failures (for example argument validation errors or subscriber-not-found) and
     /// cancellations short-circuit the retry budget entirely and do not invoke this callback.
     /// The callback runs inside the live dispatch scope carried by
@@ -136,7 +164,7 @@ public sealed class RetryPolicyOptions
     /// <para>
     /// Delivery is <b>at-least-once</b>: under broker redelivery, partial failures, or crash-recover
     /// this callback MAY fire more than once for the same message. The handler MUST be idempotent
-    /// — use <c>Message.GetId()</c> as the dedupe key. The framework makes best-effort to skip
+    /// — use <c>Message.Id</c> as the dedupe key. The framework makes best-effort to skip
     /// re-firing when storage proves the row is already in a terminal state, but does not
     /// guarantee single-fire under all broker semantics.
     /// </para>
@@ -175,10 +203,15 @@ internal sealed class RetryPolicyOptionsValidator : AbstractValidator<RetryPolic
     public RetryPolicyOptionsValidator()
     {
         // Caps intentionally well above any realistic production budget
-        RuleFor(x => x.MaxInlineRetries)
-            .GreaterThanOrEqualTo(0)
-            .LessThanOrEqualTo(100)
-            .WithMessage("MaxInlineRetries must be in the range [0, 100].");
+        RuleFor(x => x.RetryStrategy).NotNull().WithMessage("RetryStrategy must not be null.");
+        When(
+            x => x.RetryStrategy is not null,
+            () =>
+                RuleFor(x => x.RetryStrategy.MaxRetryAttempts)
+                    .GreaterThanOrEqualTo(0)
+                    .LessThanOrEqualTo(100)
+                    .WithMessage("RetryStrategy.MaxRetryAttempts must be in the range [0, 100].")
+        );
         RuleFor(x => x.MaxPersistedRetries)
             .GreaterThanOrEqualTo(0)
             .LessThanOrEqualTo(1_000)
@@ -198,6 +231,5 @@ internal sealed class RetryPolicyOptionsValidator : AbstractValidator<RetryPolic
             .WithMessage("OnExhaustedTimeout must be greater than zero.")
             .LessThanOrEqualTo(TimeSpan.FromHours(1))
             .WithMessage("OnExhaustedTimeout must not exceed 1 hour.");
-        RuleFor(x => x.BackoffStrategy).NotNull().WithMessage("BackoffStrategy must not be null.");
     }
 }

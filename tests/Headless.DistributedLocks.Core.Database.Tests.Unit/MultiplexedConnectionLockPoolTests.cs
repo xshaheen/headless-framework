@@ -108,7 +108,7 @@ public sealed class MultiplexedConnectionLockPoolTests : TestBase
         await handleB!.DisposeAsync();
 
         // then (the last release closes the connection so it can be reused/pruned, without disposing it yet)
-        connection.CloseCount.Should().BeGreaterThan(0);
+        connection.CloseCount.Should().BePositive();
         connection.IsOpen.Should().BeFalse();
     }
 
@@ -140,7 +140,7 @@ public sealed class MultiplexedConnectionLockPoolTests : TestBase
         // and (releasing the last held lock closes the connection normally, which releases resource-a server-side too)
         strategy.ThrowOnReleaseIdentity = null;
         await handleB!.DisposeAsync();
-        connection.CloseCount.Should().BeGreaterThan(0, "the last release closes the connection once nothing is held");
+        connection.CloseCount.Should().BePositive("the last release closes the connection once nothing is held");
         connection.IsOpen.Should().BeFalse();
     }
 
@@ -167,7 +167,7 @@ public sealed class MultiplexedConnectionLockPoolTests : TestBase
             _Timeout,
             strategy,
             keepaliveCadence: Timeout.InfiniteTimeSpan,
-            TestContext.Current.CancellationToken
+            AbortToken
         );
     }
 }

@@ -1,6 +1,8 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
+    <Description>Roslyn source generator for Headless primitive types and converters.</Description>
+    <PackageTags>headless;generator;primitives;source-generator;dotnet</PackageTags>
     <IncludeBuildOutput>false</IncludeBuildOutput>
   </PropertyGroup>
   <PropertyGroup>
@@ -29,8 +31,8 @@
     <CompilerVisibleProperty Include="PrimitiveDapperConverters" />
   </ItemGroup>
   <ItemGroup Label="This ensures the library will be packaged as a source generator when we use `dotnet pack`">
+    <!-- No separate .pdb is packed: symbols are embedded in the assembly (DebugType=embedded). -->
     <None Include="$(OutputPath)\$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
-    <None Include="$(OutputPath)\$(AssemblyName).pdb" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
     <None Include="buildTransitive\*.props" Pack="true" PackagePath="buildTransitive\" />
     <None Include="lib\netstandard2.0\_._" Pack="true" PackagePath="lib\netstandard2.0\" />
   </ItemGroup>

@@ -92,7 +92,7 @@ public static class FormattedStringValueExtractor
 
                     Debug.Assert(previousToken is not null, "previousToken can not be null since i > 0 here");
 
-                    result.Matches.Add(new NameValue { Name = previousToken.Text, Value = str[..matchIndex] });
+                    result.AddMatch(new NameValue { Name = previousToken.Text, Value = str[..matchIndex] });
                     str = str[(matchIndex + currentToken.Text.Length)..];
                 }
             }
@@ -103,7 +103,7 @@ public static class FormattedStringValueExtractor
         if (lastToken.Type is FormatStringTokenType.DynamicValue)
         {
             // The trailing dynamic value greedily captures whatever input remains.
-            result.Matches.Add(new NameValue { Name = lastToken.Text, Value = str });
+            result.AddMatch(new NameValue { Name = lastToken.Text, Value = str });
         }
         else if (str.Length > 0)
         {
@@ -138,7 +138,7 @@ public static class FormattedStringValueExtractor
             return false;
         }
 
-        values = result.Matches.Select(m => m.Value).ToArray();
+        values = [.. result.Matches.Select(m => m.Value)];
 
         return true;
     }
@@ -149,17 +149,20 @@ public static class FormattedStringValueExtractor
 [PublicAPI]
 public sealed class FormattedStringExtractionResult
 {
+    private readonly List<NameValue> _matches = [];
+
     internal FormattedStringExtractionResult(bool isMatch)
     {
         IsMatch = isMatch;
-        Matches = [];
     }
 
     /// <summary>Is fully matched.</summary>
     public bool IsMatch { get; internal set; }
 
     /// <summary>List of matched dynamic values.</summary>
-    public List<NameValue> Matches { get; }
+    public IReadOnlyList<NameValue> Matches => _matches;
+
+    internal void AddMatch(NameValue match) => _matches.Add(match);
 }
 
 #endregion

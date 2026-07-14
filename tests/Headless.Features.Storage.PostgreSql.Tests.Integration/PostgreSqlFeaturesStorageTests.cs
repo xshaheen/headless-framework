@@ -5,6 +5,7 @@ using Headless.Features.Entities;
 using Headless.Features.Repositories;
 using Headless.Features.Seeders;
 using Headless.Hosting.Initialization;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Npgsql;
@@ -12,7 +13,7 @@ using Npgsql;
 namespace Tests;
 
 [Collection<PostgreSqlFeaturesFixture>]
-public sealed class PostgreSqlFeaturesStorageTests(PostgreSqlFeaturesFixture fixture)
+public sealed class PostgreSqlFeaturesStorageTests(PostgreSqlFeaturesFixture fixture) : TestBase
 {
     private const string _Schema = "features_pg_raw";
 
@@ -24,7 +25,7 @@ public sealed class PostgreSqlFeaturesStorageTests(PostgreSqlFeaturesFixture fix
         using var host = _CreateHost();
 
         // when
-        await host.StartAsync(TestContext.Current.CancellationToken);
+        await host.StartAsync(AbortToken);
         var initializer = host
             .Services.GetRequiredService<IEnumerable<IInitializer>>()
             .Single(x => x is not FeaturesInitializationBackgroundService);
@@ -40,16 +41,11 @@ public sealed class PostgreSqlFeaturesStorageTests(PostgreSqlFeaturesFixture fix
             "Checkout enabled"
         );
 
-        await valueRepository.InsertAsync(record, TestContext.Current.CancellationToken);
-        await definitionRepository.SaveAsync([group], [], [], [feature], [], [], TestContext.Current.CancellationToken);
-        var stored = await valueRepository.FindAsync(
-            "Checkout.Enabled",
-            "Edition",
-            "pro",
-            TestContext.Current.CancellationToken
-        );
-        var storedGroups = await definitionRepository.GetGroupsListAsync(TestContext.Current.CancellationToken);
-        var storedFeatures = await definitionRepository.GetFeaturesListAsync(TestContext.Current.CancellationToken);
+        await valueRepository.InsertAsync(record, AbortToken);
+        await definitionRepository.SaveAsync([group], [], [], [feature], [], [], AbortToken);
+        var stored = await valueRepository.FindAsync("Checkout.Enabled", "Edition", "pro", AbortToken);
+        var storedGroups = await definitionRepository.GetGroupsListAsync(AbortToken);
+        var storedFeatures = await definitionRepository.GetFeaturesListAsync(AbortToken);
 
         // then
         initializer.IsInitialized.Should().BeTrue();
@@ -68,7 +64,7 @@ public sealed class PostgreSqlFeaturesStorageTests(PostgreSqlFeaturesFixture fix
         // given — chunk size is 500 rows; 550 forces two chunks
         await _DropSchemaAsync();
         using var host = _CreateHost();
-        await host.StartAsync(TestContext.Current.CancellationToken);
+        await host.StartAsync(AbortToken);
         var definitionRepository = host.Services.GetRequiredService<IFeatureDefinitionRecordRepository>();
 
         const int totalGroups = 550;
@@ -89,9 +85,9 @@ public sealed class PostgreSqlFeaturesStorageTests(PostgreSqlFeaturesFixture fix
             .ToList();
 
         // when
-        await definitionRepository.SaveAsync(groups, [], [], features, [], [], TestContext.Current.CancellationToken);
-        var storedGroups = await definitionRepository.GetGroupsListAsync(TestContext.Current.CancellationToken);
-        var storedFeatures = await definitionRepository.GetFeaturesListAsync(TestContext.Current.CancellationToken);
+        await definitionRepository.SaveAsync(groups, [], [], features, [], [], AbortToken);
+        var storedGroups = await definitionRepository.GetGroupsListAsync(AbortToken);
+        var storedFeatures = await definitionRepository.GetFeaturesListAsync(AbortToken);
 
         // then
         storedGroups.Should().HaveCount(totalGroups);
@@ -106,14 +102,14 @@ public sealed class PostgreSqlFeaturesStorageTests(PostgreSqlFeaturesFixture fix
         // given
         await _DropSchemaAsync();
         using var host = _CreateHost();
-        await host.StartAsync(TestContext.Current.CancellationToken);
+        await host.StartAsync(AbortToken);
         var valueRepository = host.Services.GetRequiredService<IFeatureValueRecordRepository>();
         var first = new FeatureValueRecord(Guid.NewGuid(), "Checkout.Enabled", "true", "DefaultValue", null);
         var duplicate = new FeatureValueRecord(Guid.NewGuid(), "Checkout.Enabled", "false", "DefaultValue", null);
-        await valueRepository.InsertAsync(first, TestContext.Current.CancellationToken);
+        await valueRepository.InsertAsync(first, AbortToken);
 
         // when
-        var action = async () => await valueRepository.InsertAsync(duplicate, TestContext.Current.CancellationToken);
+        var action = async () => await valueRepository.InsertAsync(duplicate, AbortToken);
 
         // then
         await action
@@ -131,7 +127,7 @@ public sealed class PostgreSqlFeaturesStorageTests(PostgreSqlFeaturesFixture fix
         using var host = _CreateHost();
 
         // when
-        await host.StartAsync(TestContext.Current.CancellationToken);
+        await host.StartAsync(AbortToken);
 
         // then
         (await _IndexExistsAsync("IX_FeatureGroupDefinitions_Name"))
@@ -161,15 +157,15 @@ public sealed class PostgreSqlFeaturesStorageTests(PostgreSqlFeaturesFixture fix
     private async Task _DropSchemaAsync()
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         await using var command = new NpgsqlCommand($"""DROP SCHEMA IF EXISTS "{_Schema}" CASCADE;""", connection);
-        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        await command.ExecuteNonQueryAsync(AbortToken);
     }
 
     private async Task<bool> _TableExistsAsync(string tableName)
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         await using var command = new NpgsqlCommand(
             """
             SELECT EXISTS (
@@ -183,13 +179,13 @@ public sealed class PostgreSqlFeaturesStorageTests(PostgreSqlFeaturesFixture fix
         command.Parameters.AddWithValue("schema", _Schema);
         command.Parameters.AddWithValue("table", tableName);
 
-        return (bool)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken))!;
+        return (bool)(await command.ExecuteScalarAsync(AbortToken))!;
     }
 
     private async Task<bool> _IndexExistsAsync(string indexName)
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         await using var command = new NpgsqlCommand(
             """
             SELECT EXISTS (
@@ -203,13 +199,13 @@ public sealed class PostgreSqlFeaturesStorageTests(PostgreSqlFeaturesFixture fix
         command.Parameters.AddWithValue("schema", _Schema);
         command.Parameters.AddWithValue("index", indexName);
 
-        return (bool)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken))!;
+        return (bool)(await command.ExecuteScalarAsync(AbortToken))!;
     }
 
     private async Task _CreateTablesWithoutIndexesAsync()
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         await using var command = new NpgsqlCommand(
             $"""
             CREATE SCHEMA IF NOT EXISTS "{_Schema}";
@@ -248,6 +244,6 @@ public sealed class PostgreSqlFeaturesStorageTests(PostgreSqlFeaturesFixture fix
             """,
             connection
         );
-        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        await command.ExecuteNonQueryAsync(AbortToken);
     }
 }

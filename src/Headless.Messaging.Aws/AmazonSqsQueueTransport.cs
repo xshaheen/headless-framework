@@ -10,7 +10,7 @@ namespace Headless.Messaging.Aws;
 
 internal sealed class AmazonSqsQueueTransport(
     ILogger<AmazonSqsQueueTransport> logger,
-    IOptions<AmazonSqsOptions> sqsOptionsAccessor
+    IOptions<AmazonSqsMessagingOptions> sqsOptionsAccessor
 ) : IQueueTransport
 {
     private const int _MaxMessageAttributes = 10;
@@ -24,7 +24,7 @@ internal sealed class AmazonSqsQueueTransport(
     {
         try
         {
-            var queueName = message.GetName().NormalizeForSqsQueueName();
+            var queueName = message.Name.NormalizeForSqsQueueName();
             var queueUrl = await _GetOrCreateQueueUrlAsync(queueName, cancellationToken).ConfigureAwait(false);
             var body = message.Body.Length > 0 ? Encoding.UTF8.GetString(message.Body.Span) : string.Empty;
             var attributes = new Dictionary<string, MessageAttributeValue>(

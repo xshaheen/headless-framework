@@ -1,18 +1,15 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Globalization;
-using Headless.CommitCoordination.EntityFramework;
 using Headless.Domain;
 using Headless.EntityFramework;
 using Headless.Messaging;
 using Headless.Messaging.Persistence;
-using Headless.Messaging.Storage.PostgreSql;
+using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
-using Xunit;
 
 namespace Tests;
 
@@ -22,16 +19,14 @@ namespace Tests;
 /// across the sync/async save paths, and each concrete event type is routed through its own publish overload.
 /// </summary>
 [Collection<OutboxBridgeTestFixture>]
-public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture) : IAsyncLifetime
+public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture) : TestBase
 {
-    public ValueTask InitializeAsync() => ValueTask.CompletedTask;
-
-    public async ValueTask DisposeAsync()
+    protected override async ValueTask DisposeAsyncCore()
     {
         try
         {
             await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-            await connection.OpenAsync(TestContext.Current.CancellationToken);
+            await connection.OpenAsync(AbortToken);
 
             await using var command = connection.CreateCommand();
             command.CommandText = """
@@ -39,12 +34,14 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
                 TRUNCATE TABLE messaging."received" CASCADE;
                 TRUNCATE TABLE "Orders" CASCADE;
                 """;
-            await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+            await command.ExecuteNonQueryAsync(AbortToken);
         }
         catch (PostgresException)
         {
             // Schema/table might not exist yet
         }
+
+        await base.DisposeAsyncCore();
     }
 
     [Fact]
@@ -56,11 +53,11 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<BridgeTestDbContext>();
         var order = new OrderEntity { Name = "ship" };
-        order.AddIntegrationEvent(new OrderShipped($"{marker}-1"));
+        order.EmitIntegrationEvent(new OrderShipped($"{marker}-1"));
         db.Orders.Add(order);
 
         // when — no ambient transaction: the pipeline opens one, writes business + outbox rows, commits.
-        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        await db.SaveChangesAsync(AbortToken);
 
         // then
         (await _CountPublishedContainingAsync(marker))
@@ -77,12 +74,12 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<BridgeTestDbContext>();
         var order = new OrderEntity { Name = "multi" };
-        order.AddIntegrationEvent(new OrderShipped($"{marker}-shipped"));
-        order.AddIntegrationEvent(new OrderInvoiced($"{marker}-invoiced"));
+        order.EmitIntegrationEvent(new OrderShipped($"{marker}-shipped"));
+        order.EmitIntegrationEvent(new OrderInvoiced($"{marker}-invoiced"));
         db.Orders.Add(order);
 
         // when
-        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        await db.SaveChangesAsync(AbortToken);
 
         // then — both concrete types persisted (compiled invoker resolved each closed generic correctly)
         (await _CountPublishedContainingAsync($"{marker}-shipped"))
@@ -100,7 +97,7 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
         using var scope = provider.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<BridgeTestDbContext>();
         var order = new OrderEntity { Name = "sync" };
-        order.AddIntegrationEvent(new OrderShipped($"{marker}-1"));
+        order.EmitIntegrationEvent(new OrderShipped($"{marker}-1"));
         db.Orders.Add(order);
 
         // when — sync save path drives the sync Dispatch (sync-over-async) bridge.
@@ -127,19 +124,19 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
         await using var provider = await _BuildProviderAsync();
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<BridgeTestDbContext>();
-        await using var transaction = await db.Database.BeginTransactionAsync(TestContext.Current.CancellationToken);
+        await using var transaction = await db.Database.BeginTransactionAsync(AbortToken);
         var order = new OrderEntity { Name = "consumer-plain" };
-        order.AddIntegrationEvent(new OrderShipped($"{marker}-1"));
+        order.EmitIntegrationEvent(new OrderShipped($"{marker}-1"));
         db.Orders.Add(order);
 
         // when — save under the un-enlisted consumer transaction.
-        var act = async () => await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var act = async () => await db.SaveChangesAsync(AbortToken);
 
         // then — fails loud with an actionable wiring error and writes no outbox row.
         (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage(
             "*not enlisted in commit coordination*"
         );
-        await transaction.RollbackAsync(TestContext.Current.CancellationToken);
+        await transaction.RollbackAsync(AbortToken);
         (await _CountPublishedContainingAsync(marker)).Should().Be(0);
     }
 
@@ -160,11 +157,11 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
             async (ctx, ct) =>
             {
                 var order = new OrderEntity { Name = "coordinated-nested" };
-                order.AddIntegrationEvent(new OrderShipped($"{marker}-1"));
+                order.EmitIntegrationEvent(new OrderShipped($"{marker}-1"));
                 ctx.Orders.Add(order);
                 await ctx.SaveChangesAsync(ct);
             },
-            cancellationToken: TestContext.Current.CancellationToken
+            cancellationToken: AbortToken
         );
 
         // then — the event dispatched atomically with the business row (guard did not mis-fire).
@@ -187,11 +184,11 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<BridgeTestDbContext>();
         var order = new OrderEntity { Name = "pipeline-atomic" };
-        order.AddIntegrationEvent(new OrderShipped($"{marker}-1"));
+        order.EmitIntegrationEvent(new OrderShipped($"{marker}-1"));
         db.Orders.Add(order);
 
         // when — pipeline opens the coordinated transaction, writes business + outbox rows, commits atomically.
-        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        await db.SaveChangesAsync(AbortToken);
 
         // then — the outbox row is durable post-commit, alongside the committed business row.
         (await _CountPublishedContainingAsync(marker))
@@ -214,17 +211,14 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
         var db = scope.ServiceProvider.GetRequiredService<BridgeTestDbContext>();
         var outboxBus = scope.ServiceProvider.GetRequiredService<IOutboxBus>();
 
-        await using var transaction = await db.Database.BeginTransactionAsync(TestContext.Current.CancellationToken);
+        await using var transaction = await db.Database.BeginTransactionAsync(AbortToken);
 
-        await using (db.Database.EnlistCommitCoordination(transaction, scope.ServiceProvider))
+        await using (db.Database.EnlistCommitCoordination(transaction, scope.ServiceProvider, AbortToken))
         {
             // when — publish enlists the row inside the transaction, then the consumer rolls back.
-            await outboxBus.PublishAsync(
-                new OrderShipped($"{marker}-1"),
-                cancellationToken: TestContext.Current.CancellationToken
-            );
+            await outboxBus.PublishAsync(new OrderShipped($"{marker}-1"), cancellationToken: AbortToken);
 
-            await transaction.RollbackAsync(TestContext.Current.CancellationToken);
+            await transaction.RollbackAsync(AbortToken);
         }
 
         // then — the enlisted row rolled back with the transaction.
@@ -244,17 +238,14 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
         var db = scope.ServiceProvider.GetRequiredService<BridgeTestDbContext>();
         var outboxBus = scope.ServiceProvider.GetRequiredService<IOutboxBus>();
 
-        await using var transaction = await db.Database.BeginTransactionAsync(TestContext.Current.CancellationToken);
+        await using var transaction = await db.Database.BeginTransactionAsync(AbortToken);
 
-        await using (db.Database.EnlistCommitCoordination(transaction, scope.ServiceProvider))
+        await using (db.Database.EnlistCommitCoordination(transaction, scope.ServiceProvider, AbortToken))
         {
-            await outboxBus.PublishAsync(
-                new OrderShipped($"{marker}-1"),
-                cancellationToken: TestContext.Current.CancellationToken
-            );
+            await outboxBus.PublishAsync(new OrderShipped($"{marker}-1"), cancellationToken: AbortToken);
 
             // when — commit the enlisting transaction.
-            await transaction.CommitAsync(TestContext.Current.CancellationToken);
+            await transaction.CommitAsync(AbortToken);
         }
 
         // then — the enlisted row committed atomically with the transaction.
@@ -286,7 +277,7 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
 
         // Initialize messaging outbox tables and EF business tables in the shared database. The messaging host
         // is intentionally not started, so the relay never drains rows — outbox-row assertions stay deterministic.
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(TestContext.Current.CancellationToken);
+        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
 
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<BridgeTestDbContext>();
@@ -296,9 +287,10 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
         var creator = db.GetService<IRelationalDatabaseCreator>();
         try
         {
-            await creator.CreateTablesAsync(TestContext.Current.CancellationToken);
+            await creator.CreateTablesAsync(AbortToken);
         }
-        catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.DuplicateTable)
+        catch (PostgresException e)
+            when (string.Equals(e.SqlState, PostgresErrorCodes.DuplicateTable, StringComparison.Ordinal))
         {
             // Orders table already created by an earlier test in this collection.
         }
@@ -309,7 +301,7 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
     private async Task<int> _CountPublishedContainingAsync(string marker)
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
 
         await using var command = connection.CreateCommand();
         command.CommandText = """SELECT COUNT(*) FROM messaging."published" WHERE "Content" LIKE @marker""";
@@ -318,19 +310,19 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
         parameter.Value = $"%{marker}%";
         command.Parameters.Add(parameter);
 
-        var result = await command.ExecuteScalarAsync(TestContext.Current.CancellationToken);
+        var result = await command.ExecuteScalarAsync(AbortToken);
         return Convert.ToInt32(result, CultureInfo.InvariantCulture);
     }
 
     private async Task<int> _CountOrdersAsync()
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
 
         await using var command = connection.CreateCommand();
         command.CommandText = """SELECT COUNT(*) FROM "Orders" """;
 
-        var result = await command.ExecuteScalarAsync(TestContext.Current.CancellationToken);
+        var result = await command.ExecuteScalarAsync(AbortToken);
         return Convert.ToInt32(result, CultureInfo.InvariantCulture);
     }
 
@@ -347,6 +339,9 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
         public Guid Id { get; private init; }
 
         public required string Name { get; init; }
+
+        // Domain behavior that raises events through the encapsulated (protected) aggregate mutator.
+        public void EmitIntegrationEvent(IIntegrationEvent integrationEvent) => AddIntegrationEvent(integrationEvent);
 
         public override IReadOnlyList<object> GetKeys() => [Id];
     }

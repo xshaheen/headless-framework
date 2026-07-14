@@ -47,7 +47,7 @@ public sealed class PermissionsRequirementHandler(IPermissionManager permissionM
         if (
             requirement.RequiresAll
                 ? multiplePermissionGrantResult.AllGranted
-                : multiplePermissionGrantResult.Any(x => x.Value)
+                : multiplePermissionGrantResult.Grants.Any(x => x.Value)
         )
         {
             context.Succeed(requirement);

@@ -1,12 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text.RegularExpressions;
+using System.Buffers;
+using System.Globalization;
+using System.Text;
+using Headless.Abstractions;
 using Headless.Blobs.Internals;
 using Headless.Checks;
-using Headless.Constants;
 using Headless.Primitives;
 using Headless.Serializer;
-using Headless.Urls;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -20,16 +21,25 @@ namespace Headless.Blobs.Redis;
 /// <see cref="IBlobStorage"/> implementation backed by Redis hashes.
 /// </summary>
 /// <remarks>
-/// Blobs and their metadata are stored in separate Redis hashes keyed by the container path. All mutating
-/// operations (upload, delete, rename, copy) use Lua scripts for atomicity. A Polly retry pipeline retries
-/// transient <see cref="StackExchange.Redis.RedisConnectionException"/> and timeout errors with exponential
-/// back-off and jitter.
+/// Each container maps to two Redis hashes: a content hash (<c>{container}/</c>) holding the raw blob bytes and an
+/// info hash (<c>blob-info/{container}/</c>) holding the serialized <see cref="BlobInfo"/> (created/modified/size and
+/// metadata) for the same field name. Every operation routes its <see cref="BlobLocation"/> / <see cref="BlobQuery"/>
+/// through <see cref="BlobLocationResolver"/> so the backend (container, key) is validated and normalized in one place.
+/// All mutating operations (upload, delete, move, copy) use Lua scripts so the two hashes stay consistent, and a Polly
+/// retry pipeline retries transient <see cref="RedisConnectionException"/>/timeout errors with exponential back-off and
+/// jitter.
+/// <para>
+/// Container/bucket lifecycle is not part of this data-plane contract — it lives on the separately-registered
+/// <see cref="IBlobContainerManager"/> capability (<see cref="RedisBlobContainerManager"/>). Redis has no real
+/// container: the backing hash is created lazily on the first write, so an upload never has to create a container and
+/// always succeeds.
+/// </para>
 /// <para>
 /// Redis blob storage is appropriate for small or ephemeral blobs. Uploads that exceed
 /// <see cref="RedisBlobStorageOptions.MaxBlobSizeBytes"/> throw <see cref="ArgumentException"/>.
 /// </para>
 /// </remarks>
-public sealed class RedisBlobStorage : IBlobStorage
+internal sealed class RedisBlobStorage : IBlobStorage
 {
     private readonly ILogger _logger;
     private readonly ISerializer _serializer;
@@ -38,14 +48,19 @@ public sealed class RedisBlobStorage : IBlobStorage
     private readonly ResiliencePipeline _retryPipeline;
     private readonly IBlobNamingNormalizer _normalizer;
 
-    // Lua script for atomic rename: copies blob+info then deletes source
+    // Server-page hint for the internal full-scan loops (delete-all). The public ListAsync uses BlobQuery.PageSize.
+    private const int _ScanBatchSize = 1000;
+
+    // Lua script for atomic move: rejects an occupied destination, else copies blob+info then deletes source.
     // KEYS[1] = source blob hash, KEYS[2] = source info hash
     // KEYS[3] = dest blob hash, KEYS[4] = dest info hash
-    // ARGV[1] = source blob name, ARGV[2] = dest blob name
-    private const string _RenameScript = """
+    // ARGV[1] = source field name, ARGV[2] = dest field name
+    // Returns 1 on success, 0 when the source does not exist, -1 when the destination is occupied (never overwrites).
+    private const string _MoveScript = """
         local blobData = redis.call('HGET', KEYS[1], ARGV[1])
         local infoData = redis.call('HGET', KEYS[2], ARGV[1])
         if not blobData then return 0 end
+        if redis.call('HEXISTS', KEYS[3], ARGV[2]) == 1 then return -1 end
         redis.call('HSET', KEYS[3], ARGV[2], blobData)
         redis.call('HSET', KEYS[4], ARGV[2], infoData)
         redis.call('HDEL', KEYS[1], ARGV[1])
@@ -53,10 +68,10 @@ public sealed class RedisBlobStorage : IBlobStorage
         return 1
         """;
 
-    // Lua script for atomic copy: copies blob+info without deleting source
+    // Lua script for atomic copy: copies blob+info without deleting source.
     // KEYS[1] = source blob hash, KEYS[2] = source info hash
     // KEYS[3] = dest blob hash, KEYS[4] = dest info hash
-    // ARGV[1] = source blob name, ARGV[2] = dest blob name
+    // ARGV[1] = source field name, ARGV[2] = dest field name
     private const string _CopyScript = """
         local blobData = redis.call('HGET', KEYS[1], ARGV[1])
         local infoData = redis.call('HGET', KEYS[2], ARGV[1])
@@ -66,19 +81,19 @@ public sealed class RedisBlobStorage : IBlobStorage
         return 1
         """;
 
-    // Lua script for atomic upload: writes blob data and metadata atomically
+    // Lua script for atomic upload: writes blob data and metadata atomically.
     // KEYS[1] = blob hash, KEYS[2] = info hash
-    // ARGV[1] = blob path, ARGV[2] = blob data, ARGV[3] = info data
+    // ARGV[1] = field name, ARGV[2] = blob data, ARGV[3] = info data
     private const string _UploadScript = """
         redis.call('HSET', KEYS[1], ARGV[1], ARGV[2])
         redis.call('HSET', KEYS[2], ARGV[1], ARGV[3])
         return 1
         """;
 
-    // Lua script for atomic delete: deletes blob data and metadata atomically
+    // Lua script for atomic delete: deletes blob data and metadata atomically.
     // KEYS[1] = blob hash, KEYS[2] = info hash
-    // ARGV[1] = blob path
-    // Returns 1 if either deleted (handles orphaned data cleanup), 0 if neither existed
+    // ARGV[1] = field name
+    // Returns 1 if either was deleted (handles orphaned data cleanup), 0 if neither existed.
     private const string _DeleteScript = """
         local blobDeleted = redis.call('HDEL', KEYS[1], ARGV[1])
         local infoDeleted = redis.call('HDEL', KEYS[2], ARGV[1])
@@ -86,8 +101,16 @@ public sealed class RedisBlobStorage : IBlobStorage
         return 0
         """;
 
+    // Lua HSCAN so the scan is routed by the hash key (cluster-safe) and we get explicit, single-page cursor control.
+    // KEYS[1] = info hash; ARGV[1] = cursor, ARGV[2] = MATCH pattern, ARGV[3] = COUNT hint.
+    private const string _HashScanScript =
+        "return redis.call('HSCAN', KEYS[1], ARGV[1], 'MATCH', ARGV[2], 'COUNT', ARGV[3])";
+
     /// <summary>The Redis database obtained from the configured <see cref="IConnectionMultiplexer"/>.</summary>
-    public IDatabase Database => _options.ConnectionMultiplexer.GetDatabase();
+    private IDatabase Database => _options.ConnectionMultiplexer.GetDatabase();
+
+    // Redis has no physical container: the backing hash is created lazily by the first write (see type remarks).
+    public bool RequiresContainerProvisioning => false;
 
     public RedisBlobStorage(
         IOptions<RedisBlobStorageOptions> optionsAccessor,
@@ -104,7 +127,7 @@ public sealed class RedisBlobStorage : IBlobStorage
 
         var pipelineLogger = _logger;
 
-        _retryPipeline = new ResiliencePipelineBuilder { TimeProvider = _timeProvider }
+        _retryPipeline = new ResiliencePipelineBuilder { TimeProvider = timeProvider ?? TimeProvider.System }
             .AddRetry(
                 new RetryStrategyOptions
                 {
@@ -128,91 +151,112 @@ public sealed class RedisBlobStorage : IBlobStorage
             .Build();
     }
 
-    #region Create Container
-
-    public ValueTask CreateContainerAsync(string[] container, CancellationToken cancellationToken = default)
-    {
-        Argument.IsNotNullOrEmpty(container);
-        cancellationToken.ThrowIfCancellationRequested();
-
-        return ValueTask.CompletedTask;
-    }
-
-    #endregion
-
     #region Upload
 
     public async ValueTask UploadAsync(
-        string[] container,
-        string blobName,
-        Stream stream,
-        Dictionary<string, string?>? metadata = null,
+        BlobLocation location,
+        Stream content,
+        IReadOnlyDictionary<string, string>? metadata = null,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNullOrEmpty(blobName);
-        Argument.IsNotNullOrEmpty(container);
+        Argument.IsNotNull(content);
 
-        var (blobsContainer, infoContainer) = _BuildContainerPath(container);
-        var blobPath = _BuildBlobPath(container, blobName);
+        var (blobsHash, infoHash, key) = _Resolve(location);
 
         try
         {
             var database = Database;
 
-            // Validate size limit for seekable streams
-            if (_options.MaxBlobSizeBytes > 0 && stream.CanSeek && stream.Length > _options.MaxBlobSizeBytes)
+            // Validate size limit for seekable streams up-front (cheap; non-seekable is enforced while copying).
+            if (_options.MaxBlobSizeBytes > 0 && content.CanSeek && content.Length > _options.MaxBlobSizeBytes)
             {
                 throw new ArgumentException(
-                    $"Blob exceeds maximum size of {_options.MaxBlobSizeBytes} bytes. Redis blob storage is intended for small/ephemeral blobs only.",
-                    nameof(stream)
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"Blob exceeds maximum size of {_options.MaxBlobSizeBytes} bytes. Redis blob storage is intended for small/ephemeral blobs only."
+                    ),
+                    nameof(content)
                 );
             }
 
-            // Reset stream position for seekable streams
-            if (stream.CanSeek && stream.Position != 0)
+            // Rewind seekable streams so the full payload is captured.
+            if (content.CanSeek && content.Position != 0)
             {
-                _logger.LogStreamPositionReset(stream.Position, blobName);
-                stream.Seek(0, SeekOrigin.Begin);
+                _logger.LogStreamPositionReset(content.Position, key);
+                content.Seek(0, SeekOrigin.Begin);
             }
 
-            await using var memory = new MemoryStream();
-            await _CopyWithSizeLimitAsync(stream, memory, cancellationToken).ConfigureAwait(false);
-            var fileSize = memory.Length;
+            byte[] blobData;
+            long fileSize;
 
-            // Zero-copy: TryGetBuffer avoids ToArray() allocation
-            if (!memory.TryGetBuffer(out var blobSegment))
+            if (content.CanSeek && content.Length <= int.MaxValue)
             {
-                throw new InvalidOperationException("Failed to get buffer from MemoryStream");
-            }
+                // Right-size from Length (already validated against the cap above): a single exact-size read
+                // instead of MemoryStream growth copies plus a final exact-size copy.
+                var length = (int)content.Length;
+                blobData = new byte[length];
 
-            var blobData = new byte[blobSegment.Count];
-            Buffer.BlockCopy(blobSegment.Array!, blobSegment.Offset, blobData, 0, blobSegment.Count);
+                var filled = 0;
+
+                while (filled < length)
+                {
+                    var read = await content
+                        .ReadAsync(blobData.AsMemory(filled), cancellationToken)
+                        .ConfigureAwait(false);
+
+                    if (read == 0)
+                    {
+                        break;
+                    }
+
+                    filled += read;
+                }
+
+                if (filled < length)
+                {
+                    // The stream ended before Length bytes: store what it actually yielded (the buffered
+                    // path below has the same tolerance for streams whose Length over-reports).
+                    Array.Resize(ref blobData, filled);
+                }
+
+                fileSize = filled;
+            }
+            else
+            {
+                await using var memory = new MemoryStream();
+                await _CopyWithSizeLimitAsync(content, memory, cancellationToken).ConfigureAwait(false);
+                fileSize = memory.Length;
+
+                if (!memory.TryGetBuffer(out var blobSegment))
+                {
+                    throw new InvalidOperationException("Failed to get buffer from MemoryStream");
+                }
+
+                blobData = new byte[blobSegment.Count];
+                Buffer.BlockCopy(blobSegment.Array!, blobSegment.Offset, blobData, 0, blobSegment.Count);
+            }
 
             var now = _timeProvider.GetUtcNow();
+
             var blobInfo = new BlobInfo
             {
-                BlobKey = blobPath,
+                BlobKey = key,
                 Created = now,
                 Modified = now,
                 Size = fileSize,
                 Metadata = metadata,
             };
 
-            // Serialize the small metadata payload straight to a right-sized array via the serializer's pooled
-            // buffer path — no MemoryStream reuse, TryGetBuffer, or BlockCopy dance.
+            // Serialize the small metadata payload through the buffer-first serializer's pooled-buffer path.
             var infoData = _serializer.SerializeToBytes(blobInfo)!;
 
-            // Atomic upload using Lua script to prevent orphaned data
+            // Atomic upload via Lua so content and info never diverge.
             await _retryPipeline
                 .ExecuteAsync(
-                    async ct =>
+                    async _ =>
                         await database
-                            .ScriptEvaluateAsync(
-                                _UploadScript,
-                                [blobsContainer, infoContainer],
-                                [blobPath, blobData, infoData]
-                            )
+                            .ScriptEvaluateAsync(_UploadScript, [blobsHash, infoHash], [key, blobData, infoData])
                             .ConfigureAwait(false),
                     cancellationToken
                 )
@@ -220,7 +264,7 @@ public sealed class RedisBlobStorage : IBlobStorage
         }
         catch (Exception e)
         {
-            _logger.LogErrorSavingBlob(e, blobPath, e.Message);
+            _logger.LogErrorSavingBlob(e, key, e.Message);
 
             throw;
         }
@@ -230,87 +274,57 @@ public sealed class RedisBlobStorage : IBlobStorage
 
     #region Bulk Upload
 
-    public async ValueTask<IReadOnlyList<Result<Exception>>> BulkUploadAsync(
-        string[] container,
+    public async ValueTask<IReadOnlyList<BlobBulkResult>> BulkUploadAsync(
+        string container,
         IReadOnlyCollection<BlobUploadRequest> blobs,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNullOrEmpty(blobs);
-        Argument.IsNotNullOrEmpty(container);
+        Argument.IsNotNullOrWhiteSpace(container);
+        Argument.IsNotNull(blobs);
 
-        // Index results by input position, not execution-start order: Parallel.ForEachAsync does not run bodies in
-        // enumeration order, so an Interlocked counter would misalign results with their inputs. Honors the
-        // "one Result per input blob, in original order" contract.
-        var items = blobs as IReadOnlyList<BlobUploadRequest> ?? blobs.ToList();
-        var results = new Result<Exception>[items.Count];
-
-        var options = new ParallelOptions
-        {
-            MaxDegreeOfParallelism = _options.MaxBulkParallelism,
-            CancellationToken = cancellationToken,
-        };
-
-        await Parallel
-            .ForAsync(
-                0,
-                items.Count,
-                options,
-                async (i, ct) =>
+        return await BlobStorageHelpers
+            .RunBulkAsync(
+                container,
+                blobs,
+                _options.MaxBulkParallelism,
+                static blob => blob.Path,
+                async (location, blob, ct) =>
                 {
-                    var blob = items[i];
-
-                    try
-                    {
-                        await UploadAsync(container, blob.FileName, blob.Stream, blob.Metadata, ct)
-                            .ConfigureAwait(false);
-                        results[i] = Result<Exception>.Ok();
-                    }
-                    catch (Exception e)
-                    {
-                        results[i] = Result<Exception>.Fail(e);
-                    }
-                }
+                    await UploadAsync(location, blob.Stream, blob.Metadata, ct).ConfigureAwait(false);
+                    return true;
+                },
+                cancellationToken
             )
             .ConfigureAwait(false);
-
-        return results;
     }
 
     #endregion
 
     #region Delete
 
-    public async ValueTask<bool> DeleteAsync(
-        string[] container,
-        string blobName,
-        CancellationToken cancellationToken = default
-    )
+    public async ValueTask<bool> DeleteAsync(BlobLocation location, CancellationToken cancellationToken = default)
     {
-        Argument.IsNotNullOrEmpty(blobName);
-        Argument.IsNotNullOrEmpty(container);
+        var (blobsHash, infoHash, key) = _Resolve(location);
 
-        var (blobsContainer, infoContainer) = _BuildContainerPath(container);
-        var blobPath = _BuildBlobPath(container, blobName);
-
-        return await _DeleteAsync(blobPath, infoContainer, blobsContainer, cancellationToken).ConfigureAwait(false);
+        return await _DeleteResolvedAsync(blobsHash, infoHash, key, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<bool> _DeleteAsync(
-        string blobPath,
-        string infoContainer,
-        string blobsContainer,
+    private async Task<bool> _DeleteResolvedAsync(
+        string blobsHash,
+        string infoHash,
+        string key,
         CancellationToken cancellationToken
     )
     {
-        _logger.LogDeletingPath(blobPath);
+        _logger.LogDeletingPath(key);
 
-        // Atomic delete using Lua script to ensure both blob and info are deleted together
+        // Atomic delete via Lua so both content and info are removed together.
         var result = await _retryPipeline
             .ExecuteAsync(
-                async ct =>
+                async _ =>
                     await Database
-                        .ScriptEvaluateAsync(_DeleteScript, [blobsContainer, infoContainer], [blobPath])
+                        .ScriptEvaluateAsync(_DeleteScript, [blobsHash, infoHash], [key])
                         .ConfigureAwait(false),
                 cancellationToken
             )
@@ -323,22 +337,79 @@ public sealed class RedisBlobStorage : IBlobStorage
 
     #region Bulk Delete
 
-    public async ValueTask<IReadOnlyList<Result<bool, Exception>>> BulkDeleteAsync(
-        string[] container,
-        IReadOnlyCollection<string> blobNames,
+    public async ValueTask<IReadOnlyList<BlobBulkResult>> BulkDeleteAsync(
+        string container,
+        IReadOnlyCollection<string> paths,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNullOrEmpty(container);
+        Argument.IsNotNullOrWhiteSpace(container);
+        Argument.IsNotNull(paths);
 
-        if (blobNames.Count == 0)
+        return await BlobStorageHelpers
+            .RunBulkAsync(
+                container,
+                paths,
+                _options.MaxBulkParallelism,
+                static path => path,
+                async (location, _, ct) =>
+                {
+                    // Resolve through the single seam so a bulk delete can never target a raw, un-validated key.
+                    var (blobsHash, infoHash, key) = _Resolve(location);
+
+                    return await _DeleteResolvedAsync(blobsHash, infoHash, key, ct).ConfigureAwait(false);
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    public async ValueTask<int> DeleteAllAsync(BlobQuery query, CancellationToken cancellationToken = default)
+    {
+        Argument.IsNotNull(query);
+
+        var (blobsHash, infoHash, prefix) = _ResolveQuery(query);
+        var match = _ToRedisGlobPrefixMatch(prefix);
+
+        // Walk the HSCAN cursor to completion to collect every field under the prefix, then delete each blob. The
+        // cursor is exhausted when it returns to "0"; COUNT is only a hint, so each batch is approximate.
+        var keys = new List<string>();
+        var cursor = "0";
+
+        do
         {
-            return [];
-        }
+            cancellationToken.ThrowIfCancellationRequested();
 
-        // Index results by input position (see BulkUploadAsync) so each entry matches its blob name in original order.
-        var names = blobNames as IReadOnlyList<string> ?? blobNames.ToList();
-        var results = new Result<bool, Exception>[names.Count];
+            var (nextCursor, entries) = await _HashScanAsync(infoHash, match, cursor, _ScanBatchSize, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (entries is not null)
+            {
+                for (var i = 0; i + 1 < entries.Length; i += 2)
+                {
+                    var field = (string?)entries[i];
+
+                    if (field is not null)
+                    {
+                        keys.Add(field);
+                    }
+                }
+            }
+
+            cursor = nextCursor;
+        } while (!string.Equals(cursor, "0", StringComparison.Ordinal));
+
+        // HSCAN may surface the same field twice across a rehash; de-dup so the work and the returned count are clean.
+        var distinctKeys = keys.Distinct(StringComparer.Ordinal).ToList();
+
+        _logger.LogDeletingFiles(distinctKeys.Count, prefix);
+
+        // Delete each resolved field directly (bypassing BlobLocation re-validation): the fields come from scanning
+        // this container's own info hash, so they are valid backend keys even when their shape (e.g. an out-of-band
+        // reserved suffix) would be rejected by new BlobLocation — re-wrapping could hard-fail and leave the container
+        // un-clearable. Results are written to disjoint indices so the parallel bodies need no synchronization.
+        var deleteOutcomes = new bool[distinctKeys.Count];
+        var deleteErrors = new Exception?[distinctKeys.Count];
 
         var options = new ParallelOptions
         {
@@ -349,111 +420,78 @@ public sealed class RedisBlobStorage : IBlobStorage
         await Parallel
             .ForAsync(
                 0,
-                names.Count,
+                distinctKeys.Count,
                 options,
                 async (i, ct) =>
                 {
                     try
                     {
-                        results[i] = await DeleteAsync(container, names[i], ct).ConfigureAwait(false);
-                    }
-                    catch (Exception e)
-                    {
-                        results[i] = Result<bool, Exception>.Fail(e);
-                    }
-                }
-            )
-            .ConfigureAwait(false);
-
-        return results;
-    }
-
-    public async ValueTask<int> DeleteAllAsync(
-        string[] container,
-        string? blobSearchPattern = null,
-        CancellationToken cancellationToken = default
-    )
-    {
-        var blobs = await _GetFileListAsync(container, blobSearchPattern, cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
-
-        _logger.LogDeletingFiles(blobs.Count, blobSearchPattern);
-
-        var (blobsContainer, infoContainer) = _BuildContainerPath(container);
-
-        var count = 0;
-
-        var options = new ParallelOptions
-        {
-            MaxDegreeOfParallelism = _options.MaxBulkParallelism,
-            CancellationToken = cancellationToken,
-        };
-
-        await Parallel
-            .ForEachAsync(
-                blobs,
-                options,
-                async (blob, ct) =>
-                {
-                    try
-                    {
-                        var deleted = await _DeleteAsync(blob.BlobKey, infoContainer, blobsContainer, ct)
+                        deleteOutcomes[i] = await _DeleteResolvedAsync(blobsHash, infoHash, distinctKeys[i], ct)
                             .ConfigureAwait(false);
-
-                        if (deleted)
-                        {
-                            Interlocked.Increment(ref count);
-                        }
                     }
-#pragma warning disable ERP022
-                    catch
+                    catch (Exception e) when (e is not OperationCanceledException)
                     {
-                        // Swallow exception, just don't increment count
+                        deleteErrors[i] = e;
                     }
-#pragma warning restore ERP022
                 }
             )
             .ConfigureAwait(false);
 
-        _logger.LogFinishedDeletingFiles(count, blobSearchPattern);
+        var failures = deleteErrors.Where(static e => e is not null).Select(static e => e!).ToList();
+
+        if (failures.Count > 0)
+        {
+            throw new AggregateException(
+                $"DeleteAllAsync({infoHash}, {prefix}) failed for {failures.Count} blob(s).",
+                failures
+            );
+        }
+
+        var count = deleteOutcomes.Count(static deleted => deleted);
+
+        _logger.LogFinishedDeletingFiles(count, prefix);
 
         return count;
     }
 
     #endregion
 
-    #region Rename
+    #region Move / Copy
 
-    public async ValueTask<bool> RenameAsync(
-        string[] blobContainer,
-        string blobName,
-        string[] newBlobContainer,
-        string newBlobName,
+    public async ValueTask<bool> MoveAsync(
+        BlobLocation source,
+        BlobLocation destination,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNullOrEmpty(blobName);
-        Argument.IsNotNullOrEmpty(blobContainer);
-        Argument.IsNotNullOrEmpty(newBlobName);
-        Argument.IsNotNullOrEmpty(newBlobContainer);
+        var (srcBlobsHash, srcInfoHash, srcKey) = _Resolve(source);
+        var (dstBlobsHash, dstInfoHash, dstKey) = _Resolve(destination);
 
-        var srcBlobPath = _BuildBlobPath(blobContainer, blobName);
-        var dstBlobPath = _BuildBlobPath(newBlobContainer, newBlobName);
-        _logger.LogRenamingPath(srcBlobPath, dstBlobPath);
+        if (
+            string.Equals(srcBlobsHash, dstBlobsHash, StringComparison.Ordinal)
+            && string.Equals(srcKey, dstKey, StringComparison.Ordinal)
+        )
+        {
+            // A resolved self-move is a no-op: the Lua HSET-then-HDEL on the same field would delete the blob.
+            return true;
+        }
 
-        var (srcBlobsContainer, srcInfoContainer) = _BuildContainerPath(blobContainer);
-        var (dstBlobsContainer, dstInfoContainer) = _BuildContainerPath(newBlobContainer);
+        _logger.LogMovingPath(srcKey, dstKey);
 
         try
         {
+            // Redis performs the copy-then-delete atomically inside one Lua script, which is strictly stronger than
+            // the contract's "non-atomic, best-effort rollback" promise. The script rejects an occupied destination
+            // (never overwrites): it returns 1 on success, 0 when the source is missing, -1 when the destination is
+            // occupied — both 0 and -1 surface as false.
             var result = await _retryPipeline
                 .ExecuteAsync(
-                    async ct =>
+                    async _ =>
                         await Database
                             .ScriptEvaluateAsync(
-                                _RenameScript,
-                                [srcBlobsContainer, srcInfoContainer, dstBlobsContainer, dstInfoContainer],
-                                [srcBlobPath, dstBlobPath]
+                                _MoveScript,
+                                [srcBlobsHash, srcInfoHash, dstBlobsHash, dstInfoHash],
+                                [srcKey, dstKey]
                             )
                             .ConfigureAwait(false),
                     cancellationToken
@@ -464,46 +502,42 @@ public sealed class RedisBlobStorage : IBlobStorage
         }
         catch (Exception e)
         {
-            _logger.LogErrorRenamingPath(e, srcBlobPath, dstBlobPath, e.Message);
+            _logger.LogErrorMovingPath(e, srcKey, dstKey, e.Message);
 
             throw;
         }
     }
 
-    #endregion
-
-    #region Copy
-
     public async ValueTask<bool> CopyAsync(
-        string[] blobContainer,
-        string blobName,
-        string[] newBlobContainer,
-        string newBlobName,
+        BlobLocation source,
+        BlobLocation destination,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNullOrEmpty(blobName);
-        Argument.IsNotNullOrEmpty(blobContainer);
-        Argument.IsNotNullOrEmpty(newBlobName);
-        Argument.IsNotNullOrEmpty(newBlobContainer);
+        var (srcBlobsHash, srcInfoHash, srcKey) = _Resolve(source);
+        var (dstBlobsHash, dstInfoHash, dstKey) = _Resolve(destination);
 
-        var srcBlobPath = _BuildBlobPath(blobContainer, blobName);
-        var dstBlobPath = _BuildBlobPath(newBlobContainer, newBlobName);
-        _logger.LogCopyingPath(srcBlobPath, dstBlobPath);
+        if (
+            string.Equals(srcBlobsHash, dstBlobsHash, StringComparison.Ordinal)
+            && string.Equals(srcKey, dstKey, StringComparison.Ordinal)
+        )
+        {
+            // A resolved self-copy is a no-op; copying a blob onto itself has nothing to do.
+            return true;
+        }
 
-        var (srcBlobsContainer, srcInfoContainer) = _BuildContainerPath(blobContainer);
-        var (dstBlobsContainer, dstInfoContainer) = _BuildContainerPath(newBlobContainer);
+        _logger.LogCopyingPath(srcKey, dstKey);
 
         try
         {
             var result = await _retryPipeline
                 .ExecuteAsync(
-                    async ct =>
+                    async _ =>
                         await Database
                             .ScriptEvaluateAsync(
                                 _CopyScript,
-                                [srcBlobsContainer, srcInfoContainer, dstBlobsContainer, dstInfoContainer],
-                                [srcBlobPath, dstBlobPath]
+                                [srcBlobsHash, srcInfoHash, dstBlobsHash, dstInfoHash],
+                                [srcKey, dstKey]
                             )
                             .ConfigureAwait(false),
                     cancellationToken
@@ -514,7 +548,7 @@ public sealed class RedisBlobStorage : IBlobStorage
         }
         catch (Exception e)
         {
-            _logger.LogErrorCopyingPath(e, srcBlobPath, dstBlobPath, e.Message);
+            _logger.LogErrorCopyingPath(e, srcKey, dstKey, e.Message);
 
             throw;
         }
@@ -524,23 +558,15 @@ public sealed class RedisBlobStorage : IBlobStorage
 
     #region Exists
 
-    public async ValueTask<bool> ExistsAsync(
-        string[] container,
-        string blobName,
-        CancellationToken cancellationToken = default
-    )
+    public async ValueTask<bool> ExistsAsync(BlobLocation location, CancellationToken cancellationToken = default)
     {
-        Argument.IsNotNullOrEmpty(blobName);
-        Argument.IsNotNullOrEmpty(container);
+        var (_, infoHash, key) = _Resolve(location);
 
-        var (_, infoContainer) = _BuildContainerPath(container);
-        var blobPath = _BuildBlobPath(container, blobName);
-
-        _logger.LogCheckingIfPathExists(blobPath);
+        _logger.LogCheckingIfPathExists(key);
 
         return await _retryPipeline
             .ExecuteAsync(
-                async ct => await Database.HashExistsAsync(infoContainer, blobPath).ConfigureAwait(false),
+                async _ => await Database.HashExistsAsync(infoHash, key).ConfigureAwait(false),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -548,67 +574,85 @@ public sealed class RedisBlobStorage : IBlobStorage
 
     #endregion
 
-    #region Download
+    #region Download / Info
 
     public async ValueTask<BlobDownloadResult?> OpenReadStreamAsync(
-        string[] container,
-        string blobName,
+        BlobLocation location,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNullOrEmpty(blobName);
-        Argument.IsNotNullOrEmpty(container);
+        var (blobsHash, infoHash, key) = _Resolve(location);
 
-        var (blobsContainer, _) = _BuildContainerPath(container);
-        var blobPath = _BuildBlobPath(container, blobName);
-
-        _logger.LogGettingFileStream(blobPath);
+        _logger.LogGettingFileStream(key);
 
         var fileContent = await _retryPipeline
             .ExecuteAsync(
-                async ct => await Database.HashGetAsync(blobsContainer, blobPath).ConfigureAwait(false),
+                async _ => await Database.HashGetAsync(blobsHash, key).ConfigureAwait(false),
                 cancellationToken
             )
             .ConfigureAwait(false);
 
         if (fileContent.IsNull)
         {
-            _logger.LogFileNotFound(blobPath);
+            _logger.LogFileNotFound(key);
 
             return null;
         }
 
+        // M4 fold: read the stored BlobInfo from the info hash and surface its metadata on the download result.
+        var blobInfo = await _GetBlobInfoResolvedAsync(infoHash, key, cancellationToken).ConfigureAwait(false);
+
         var stream = new MemoryStream(fileContent!);
 
-        return new BlobDownloadResult(stream, blobName);
+        return new BlobDownloadResult(stream, location.Path, BlobStorageHelpers.ToUserMetadata(blobInfo?.Metadata));
     }
 
     public async ValueTask<BlobInfo?> GetBlobInfoAsync(
-        string[] container,
-        string blobName,
+        BlobLocation location,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNullOrEmpty(container);
-        Argument.IsNotNullOrEmpty(blobName);
+        var (_, infoHash, key) = _Resolve(location);
 
-        var (_, infoContainer) = _BuildContainerPath(container);
-        var blobPath = _BuildBlobPath(container, blobName);
-        _logger.LogGettingFileInfo(blobPath);
+        _logger.LogGettingFileInfo(key);
 
+        var blobInfo = await _GetBlobInfoResolvedAsync(infoHash, key, cancellationToken).ConfigureAwait(false);
+
+        if (blobInfo is null)
+        {
+            _logger.LogFileNotFound(key);
+
+            return null;
+        }
+
+        // Normalize BlobKey to the resolved field so identity is stable even if a stored key is stale after a move.
+        return new BlobInfo
+        {
+            BlobKey = key,
+            Created = blobInfo.Created,
+            Modified = blobInfo.Modified,
+            Size = blobInfo.Size,
+            Metadata = BlobStorageHelpers.ToUserMetadata(blobInfo.Metadata),
+        };
+    }
+
+    private async Task<BlobInfo?> _GetBlobInfoResolvedAsync(
+        string infoHash,
+        string key,
+        CancellationToken cancellationToken
+    )
+    {
         var blobInfo = await _retryPipeline
             .ExecuteAsync(
                 static async (state, _) =>
-                    await state.Database.HashGetAsync(state.infoContainer, state.blobPath).ConfigureAwait(false),
-                (Database, infoContainer, blobPath),
+                    await state.Database.HashGetAsync(state.infoHash, state.key).ConfigureAwait(false),
+                (Database, infoHash, key),
                 cancellationToken
             )
             .ConfigureAwait(false);
 
         if (!blobInfo.HasValue)
         {
-            _logger.LogFileNotFound(blobPath);
-
             return null;
         }
 
@@ -619,271 +663,173 @@ public sealed class RedisBlobStorage : IBlobStorage
 
     #region List
 
-    public async IAsyncEnumerable<BlobInfo> GetBlobsAsync(
-        string[] container,
-        string? blobSearchPattern = null,
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default
-    )
+    public async ValueTask<BlobPage> ListAsync(BlobQuery query, CancellationToken cancellationToken = default)
     {
-        Argument.IsNotNullOrEmpty(container);
+        Argument.IsNotNull(query);
 
-        var (_, infoContainer) = _BuildContainerPath(container);
-        var criteria = _GetRequestCriteria(container.Skip(1), blobSearchPattern);
+        var (_, infoHash, prefix) = _ResolveQuery(query);
+        var match = _ToRedisGlobPrefixMatch(prefix);
 
-        await foreach (
-            var hashEntry in Database
-                .HashScanAsync(infoContainer, $"{criteria.Prefix}*")
-                .WithCancellation(cancellationToken)
+        // Unwrap the shared opaque envelope before handing the cursor to HSCAN, so a malformed/forged caller token
+        // fails as a clean ArgumentException instead of surfacing a raw Redis server error.
+        var decodedCursor = BlobStorageHelpers.DecodeContinuationToken(query.ContinuationToken);
+
+        // HSCAN cursors are unsigned integers, so a decoded-but-non-numeric token is provably foreign here; reject it
+        // with the same ArgumentException shape as a malformed envelope rather than letting the server error out.
+        if (
+            decodedCursor is not null
+            && !ulong.TryParse(decodedCursor, NumberStyles.None, CultureInfo.InvariantCulture, out _)
         )
         {
-            if (hashEntry.Value.IsNull)
-            {
-                continue;
-            }
-
-            var blobInfo = _serializer.Deserialize<BlobInfo>((byte[])hashEntry.Value!)!;
-
-            // Use hash field name as source of truth (BlobKey may be stale after rename)
-            var actualKey = hashEntry.Name.ToString();
-
-            if (criteria.Pattern?.IsMatch(actualKey) == false)
-            {
-                continue;
-            }
-
-            // Update BlobKey to match actual hash field (handles rename case)
-            yield return new BlobInfo
-            {
-                BlobKey = actualKey,
-                Created = blobInfo.Created,
-                Modified = blobInfo.Modified,
-                Size = blobInfo.Size,
-                Metadata = blobInfo.Metadata,
-            };
-        }
-    }
-
-    public async ValueTask<PagedFileListResult> GetPagedListAsync(
-        string[] container,
-        string? blobSearchPattern = null,
-        int pageSize = 100,
-        CancellationToken cancellationToken = default
-    )
-    {
-        Argument.IsNotNullOrEmpty(container);
-        Argument.IsPositive(pageSize);
-        Argument.IsLessThanOrEqualTo(pageSize, int.MaxValue - 1);
-
-        var (_, infoContainer) = _BuildContainerPath(container);
-        var criteria = _GetRequestCriteria(container.Skip(1), blobSearchPattern);
-
-        var result = new PagedFileListResult(
-            (_, token) => _GetFilesPageAsync(infoContainer, criteria, 1, pageSize, token)
-        );
-        await result.NextPageAsync(cancellationToken).ConfigureAwait(false);
-
-        return result;
-    }
-
-    private async ValueTask<INextPageResult> _GetFilesPageAsync(
-        string container,
-        SearchCriteria criteria,
-        int page,
-        int pageSize,
-        CancellationToken cancellationToken = default
-    )
-    {
-        var pagingLimit = pageSize;
-        var skip = (page - 1) * pagingLimit;
-
-        if (pagingLimit < int.MaxValue)
-        {
-            pagingLimit++;
-        }
-
-        if (_logger.IsEnabled(LogLevel.Trace))
-        {
-            _logger.LogTrace(
-                s => s.Property("Limit", pagingLimit).Property("Skip", skip),
-                "Getting files matching {Prefix} and {Pattern}...",
-                args: [criteria.Prefix, criteria.Pattern]
+            throw new ArgumentException(
+                "The continuation token is not a valid opaque token produced by this provider.",
+                nameof(query)
             );
         }
 
-        var list = await _ScanBlobInfoListAsync(container, criteria, skip, pagingLimit, cancellationToken)
+        var cursor = decodedCursor ?? "0";
+
+        // HSCAN is a cursor-based scan, NOT an ordered range query: it returns fields in an unspecified,
+        // non-lexicographic order and MAY yield the same field more than once if the hash is rehashed mid-scan.
+        // The opaque cursor round-trips as the page's ContinuationToken (a "0" cursor marks the end). COUNT is only a
+        // hint, so the page size is approximate; we return exactly one server batch and never cap it, because capping
+        // would silently drop fields the cursor has already advanced past. This is the weaker emulated tier (KTD3).
+        var (nextCursor, entries) = await _HashScanAsync(infoHash, match, cursor, query.PageSize, cancellationToken)
             .ConfigureAwait(false);
 
-        var hasMore = false;
+        var items = _ParseBlobInfos(entries, query.IncludeMetadata);
 
-        if (list.Count == pagingLimit)
-        {
-            hasMore = true;
-            list.RemoveAt(pagingLimit - 1);
-        }
+        var continuationToken = string.Equals(nextCursor, "0", StringComparison.Ordinal)
+            ? null
+            : BlobStorageHelpers.EncodeContinuationToken(nextCursor);
 
-        return new NextPageResult
-        {
-            Success = true,
-            HasMore = hasMore,
-            Blobs = list,
-            NextPageFunc = hasMore
-                ? (_, token) => _GetFilesPageAsync(container, criteria, page + 1, pageSize, token)
-                : null,
-        };
+        return new BlobPage(items, continuationToken);
     }
 
-    private async Task<List<BlobInfo>> _GetFileListAsync(
-        string[] container,
-        string? searchPattern = null,
-        int? limit = null,
-        int? skip = null,
-        CancellationToken cancellationToken = default
+    private async Task<(string NextCursor, RedisResult[]? Entries)> _HashScanAsync(
+        string infoHash,
+        string match,
+        string cursor,
+        int count,
+        CancellationToken cancellationToken
     )
     {
-        Argument.IsPositive(limit);
-        Argument.IsPositiveOrZero(skip);
-
-        var (_, infoContainer) = _BuildContainerPath(container);
-        var criteria = _GetRequestCriteria(container.Skip(1), searchPattern);
-
-        var pageSize = limit ?? int.MaxValue;
-
-        if (_logger.IsEnabled(LogLevel.Trace))
-        {
-            _logger.LogTrace(
-                s => s.Property("SearchPattern", searchPattern).Property("Limit", limit).Property("Skip", skip),
-                "Getting file list matching {Prefix} and {Pattern}...",
-                args: [criteria.Prefix, criteria.Pattern]
-            );
-        }
-
-        var blobs = await _ScanBlobInfoListAsync(infoContainer, criteria, skip ?? 0, pageSize, cancellationToken)
+        var raw = await _retryPipeline
+            .ExecuteAsync(
+                async _ =>
+                    await Database
+                        .ScriptEvaluateAsync(_HashScanScript, [infoHash], [cursor, match, count])
+                        .ConfigureAwait(false),
+                cancellationToken
+            )
             .ConfigureAwait(false);
 
-        return blobs;
+        var top = (RedisResult[]?)raw;
+
+        if (top is null || top.Length < 2)
+        {
+            return ("0", null);
+        }
+
+        // HSCAN replies are a two-element array: [next-cursor, [field1, value1, field2, value2, ...]].
+        var nextCursor = (string?)top[0] ?? "0";
+        var entries = (RedisResult[]?)top[1];
+
+        return (nextCursor, entries);
     }
 
-    private async Task<List<BlobInfo>> _ScanBlobInfoListAsync(
-        string container,
-        SearchCriteria criteria,
-        int skipCount = 0,
-        int? pagingLimit = null,
-        CancellationToken cancellationToken = default
-    )
+    private static string _ToRedisGlobPrefixMatch(string? prefix)
     {
-        List<BlobInfo> list = [];
+        return string.IsNullOrEmpty(prefix) ? "*" : _EscapeRedisGlob(prefix) + "*";
+    }
 
-        await foreach (
-            var hashEntry in Database
-                .HashScanAsync(container, $"{criteria.Prefix}*")
-                .WithCancellation(cancellationToken)
-        )
+    private static string _EscapeRedisGlob(string value)
+    {
+        var builder = new StringBuilder(value.Length);
+
+        foreach (var ch in value)
         {
-            if (hashEntry.Value.IsNull)
+            if (ch is '*' or '?' or '[' or ']' or '\\')
+            {
+                builder.Append('\\');
+            }
+
+            builder.Append(ch);
+        }
+
+        return builder.ToString();
+    }
+
+    private List<BlobInfo> _ParseBlobInfos(RedisResult[]? entries, bool includeMetadata)
+    {
+        if (entries is null || entries.Length == 0)
+        {
+            return [];
+        }
+
+        var items = new List<BlobInfo>(entries.Length / 2);
+
+        for (var i = 0; i + 1 < entries.Length; i += 2)
+        {
+            var field = (string?)entries[i];
+            var value = (byte[]?)entries[i + 1];
+
+            if (field is null || value is null)
             {
                 continue;
             }
 
-            var blobInfo = _serializer.Deserialize<BlobInfo>((byte[])hashEntry.Value!)!;
+            var info = _serializer.Deserialize<BlobInfo>(value);
 
-            // Use hash field name as source of truth (BlobKey may be stale after rename)
-            var actualKey = hashEntry.Name.ToString();
-
-            if (criteria.Pattern?.IsMatch(actualKey) == false)
+            if (info is null)
             {
                 continue;
             }
 
-            // Skip
-            if (skipCount > 0)
-            {
-                skipCount--;
-
-                continue;
-            }
-
-            // Take
-            if (pagingLimit.HasValue && list.Count == pagingLimit)
-            {
-                break;
-            }
-
-            // Update BlobKey to match actual hash field (handles rename case)
-            list.Add(
+            // The hash field name is the source of truth for the key (a stored BlobKey can be stale after a move).
+            // List omits per-object metadata by default; surface it only when the caller opts in via
+            // BlobQuery.IncludeMetadata so listings are uniform with the other providers.
+            items.Add(
                 new BlobInfo
                 {
-                    BlobKey = actualKey,
-                    Created = blobInfo.Created,
-                    Modified = blobInfo.Modified,
-                    Size = blobInfo.Size,
-                    Metadata = blobInfo.Metadata,
+                    BlobKey = field,
+                    Created = info.Created,
+                    Modified = info.Modified,
+                    Size = info.Size,
+                    Metadata = includeMetadata ? BlobStorageHelpers.ToUserMetadata(info.Metadata) : null,
                 }
             );
         }
 
-        return list;
+        return items;
     }
-
-    private SearchCriteria _GetRequestCriteria(IEnumerable<string> directories, string? searchPattern)
-    {
-        // Two-tier: directory segments use lenient path-segment normalization (matching stored keys); the search
-        // pattern itself is only slash-normalized so wildcards survive.
-        var normalizedDirectories = string.Join('/', directories.Select(_normalizer.NormalizeBlobName));
-        searchPattern = Url.Combine(normalizedDirectories, BlobStorageHelpers.NormalizePath(searchPattern));
-
-        if (string.IsNullOrEmpty(searchPattern))
-        {
-            return new SearchCriteria();
-        }
-
-        var hasWildcard = searchPattern.Contains('*', StringComparison.Ordinal);
-
-        var prefix = searchPattern;
-        Regex? patternRegex = null;
-
-        if (hasWildcard)
-        {
-            var searchRegexText = Regex.Escape(searchPattern).Replace("\\*", ".*?", StringComparison.Ordinal);
-            patternRegex = new Regex($"^{searchRegexText}$", RegexOptions.ExplicitCapture, RegexPatterns.MatchTimeout);
-            var slashPos = searchPattern.LastIndexOf('/');
-            prefix = slashPos >= 0 ? searchPattern[..slashPos] : string.Empty;
-        }
-
-        return new(prefix, patternRegex);
-    }
-
-    private sealed record SearchCriteria(string Prefix = "", Regex? Pattern = null);
 
     #endregion
 
-    #region Build Paths
+    #region Resolve
 
-    private (string BlobsContainer, string InfoContainer) _BuildContainerPath(string[] container)
+    private (string BlobsHash, string InfoHash, string Key) _Resolve(BlobLocation location)
     {
-        Argument.IsNotNullOrEmpty(container);
+        var (container, key) = BlobLocationResolver.Resolve(location, _normalizer);
+        var (blobsHash, infoHash) = _BuildHashKeys(container);
 
-        // Two-tier: the first segment is the top-level container (strict rules).
-        var path = _normalizer.NormalizeContainerName(container[0]);
-
-        return (path.EnsureEndsWith('/'), ("blob-info/" + path).EnsureEndsWith('/'));
+        return (blobsHash, infoHash, key);
     }
 
-    private string _BuildBlobPath(string[] container, string blobName)
+    private (string BlobsHash, string InfoHash, string? Prefix) _ResolveQuery(BlobQuery query)
     {
-        PathValidation.ValidatePathSegment(blobName);
-        PathValidation.ValidateContainer(container);
+        var (container, prefix) = BlobLocationResolver.ResolveQuery(query, _normalizer);
+        var (blobsHash, infoHash) = _BuildHashKeys(container);
 
-        var normalizedBlobName = _normalizer.NormalizeBlobName(blobName);
+        return (blobsHash, infoHash, prefix);
+    }
 
-        if (container.Length == 1)
-        {
-            return normalizedBlobName;
-        }
+    private static (string BlobsHash, string InfoHash) _BuildHashKeys(string normalizedContainer)
+    {
+        var blobsHash = normalizedContainer.EnsureEndsWith('/');
+        var infoHash = ("blob-info/" + normalizedContainer).EnsureEndsWith('/');
 
-        // Sub-path segments use lenient path-segment normalization (two-tier model); join with '/'.
-        var prefix = string.Join('/', container.Skip(1).Select(_normalizer.NormalizeBlobName));
-
-        return prefix.EnsureEndsWith('/') + normalizedBlobName;
+        return (blobsHash, infoHash);
     }
 
     #endregion
@@ -895,26 +841,39 @@ public sealed class RedisBlobStorage : IBlobStorage
         if (_options.MaxBlobSizeBytes <= 0)
         {
             await source.CopyToAsync(destination, 0x14000, ct).ConfigureAwait(false);
+
             return;
         }
 
-        var buffer = new byte[0x14000];
-        long totalBytes = 0;
-        int bytesRead;
+        var buffer = ArrayPool<byte>.Shared.Rent(0x14000);
 
-        while ((bytesRead = await source.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
+        try
         {
-            totalBytes += bytesRead;
+            long totalBytes = 0;
+            int bytesRead;
 
-            if (totalBytes > _options.MaxBlobSizeBytes)
+            while ((bytesRead = await source.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
             {
-                throw new ArgumentException(
-                    $"Blob exceeds maximum size of {_options.MaxBlobSizeBytes} bytes. Redis blob storage is intended for small/ephemeral blobs only.",
-                    nameof(source)
-                );
-            }
+                totalBytes += bytesRead;
 
-            await destination.WriteAsync(buffer.AsMemory(0, bytesRead), ct).ConfigureAwait(false);
+                if (totalBytes > _options.MaxBlobSizeBytes)
+                {
+                    throw new ArgumentException(
+                        string.Create(
+                            CultureInfo.InvariantCulture,
+                            $"Blob exceeds maximum size of {_options.MaxBlobSizeBytes} bytes. Redis blob storage is intended for small/ephemeral blobs only."
+                        ),
+                        nameof(source)
+                    );
+                }
+
+                await destination.WriteAsync(buffer.AsMemory(0, bytesRead), ct).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            // Blob content is user data; do not leak it into the shared pool.
+            ArrayPool<byte>.Shared.Return(buffer, clearArray: true);
         }
     }
 
@@ -933,9 +892,9 @@ internal static partial class RedisBlobStorageLog
         EventId = 1,
         EventName = "StreamPositionReset",
         Level = LogLevel.Warning,
-        Message = "Stream position was {Position}, resetting to 0 for blob {BlobName}"
+        Message = "Stream position was {Position}, resetting to 0 for blob {BlobKey}"
     )]
-    public static partial void LogStreamPositionReset(this ILogger logger, long position, string blobName);
+    public static partial void LogStreamPositionReset(this ILogger logger, long position, string blobKey);
 
     [LoggerMessage(
         EventId = 2,
@@ -957,33 +916,33 @@ internal static partial class RedisBlobStorageLog
         EventId = 4,
         EventName = "DeletingFiles",
         Level = LogLevel.Information,
-        Message = "Deleting {FileCount} files matching {SearchPattern}"
+        Message = "Deleting {FileCount} files under prefix {Prefix}"
     )]
-    public static partial void LogDeletingFiles(this ILogger logger, int fileCount, string? searchPattern);
+    public static partial void LogDeletingFiles(this ILogger logger, int fileCount, string? prefix);
 
     [LoggerMessage(
         EventId = 5,
         EventName = "FinishedDeletingFiles",
         Level = LogLevel.Trace,
-        Message = "Finished deleting {FileCount} files matching {SearchPattern}"
+        Message = "Finished deleting {FileCount} files under prefix {Prefix}"
     )]
-    public static partial void LogFinishedDeletingFiles(this ILogger logger, int fileCount, string? searchPattern);
+    public static partial void LogFinishedDeletingFiles(this ILogger logger, int fileCount, string? prefix);
 
     [LoggerMessage(
         EventId = 6,
-        EventName = "RenamingPath",
+        EventName = "MovingPath",
         Level = LogLevel.Information,
-        Message = "Renaming {Path} to {NewPath}"
+        Message = "Moving {Path} to {NewPath}"
     )]
-    public static partial void LogRenamingPath(this ILogger logger, string path, string newPath);
+    public static partial void LogMovingPath(this ILogger logger, string path, string newPath);
 
     [LoggerMessage(
         EventId = 7,
-        EventName = "ErrorRenamingPath",
+        EventName = "ErrorMovingPath",
         Level = LogLevel.Error,
-        Message = "Error renaming {Path} to {NewPath}: {Message}"
+        Message = "Error moving {Path} to {NewPath}: {Message}"
     )]
-    public static partial void LogErrorRenamingPath(
+    public static partial void LogErrorMovingPath(
         this ILogger logger,
         Exception exception,
         string path,

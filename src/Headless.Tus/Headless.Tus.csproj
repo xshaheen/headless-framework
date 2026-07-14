@@ -1,7 +1,17 @@
 ﻿<Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <Description>TUS resumable-upload support for Headless Framework applications.</Description>
+    <PackageTags>headless;tus;dotnet</PackageTags>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- TusCorsDefaults exposes CorsPolicyBuilder extensions; declare the framework reference
+         explicitly instead of relying on tusdotnet's transitive one. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Tus.Tests.Unit" />
+  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="tusdotnet" />
   </ItemGroup>

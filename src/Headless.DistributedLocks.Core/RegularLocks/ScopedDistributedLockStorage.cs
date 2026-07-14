@@ -16,7 +16,7 @@ namespace Headless.DistributedLocks;
 /// <see cref="GetAllWithExpirationByPrefixAsync"/>, <see cref="GetCountAsync"/>) automatically
 /// strip the scope prefix from returned keys so callers always see bare resource names.
 /// </remarks>
-public sealed class ScopedDistributedLockStorage : IDistributedLockStorage
+internal sealed class ScopedDistributedLockStorage : IDistributedLockStorage
 {
     private readonly IDistributedLockStorage _inner;
     private readonly string _scopedPrefix;

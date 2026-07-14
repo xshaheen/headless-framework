@@ -8,7 +8,7 @@ namespace Headless.Messaging.Redis;
 
 internal sealed class RedisPubSubBusTransport(
     IRedisPubSubConnectionProvider connectionProvider,
-    IOptions<RedisPubSubOptions> options,
+    IOptions<RedisPubSubMessagingOptions> options,
     ILogger<RedisPubSubBusTransport> logger
 ) : IBusTransport
 {
@@ -20,9 +20,9 @@ internal sealed class RedisPubSubBusTransport(
 
         try
         {
-            var connection = await connectionProvider.ConnectAsync().ConfigureAwait(false);
+            var connection = await connectionProvider.ConnectAsync(cancellationToken).ConfigureAwait(false);
             var subscriber = connection.GetSubscriber();
-            var messageName = message.GetName();
+            var messageName = message.Name;
             var receivers = await subscriber
                 .PublishAsync(RedisChannel.Literal(messageName), RedisPubSubEnvelope.Serialize(message))
                 .ConfigureAwait(false);

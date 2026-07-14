@@ -501,11 +501,11 @@ internal static partial class LoggerExtensions
 
     [LoggerMessage(
         EventId = 68,
-        EventName = "BackoffStrategyThrew",
+        EventName = "RetryStrategyThrew",
         Level = LogLevel.Error,
-        Message = "IRetryBackoffStrategy.Compute threw {ExceptionType} for message {StorageId}. Treating as Exhausted to avoid an infinite retry loop on a buggy strategy."
+        Message = "The Polly retry predicate or delay generator threw {ExceptionType} for message {StorageId}. Treating the retry budget as exhausted."
     )]
-    public static partial void BackoffStrategyThrew(
+    public static partial void RetryStrategyThrew(
         this ILogger logger,
         Exception ex,
         Guid storageId,
@@ -537,7 +537,7 @@ internal static partial class LoggerExtensions
     public static partial void SkippingSuccessfulAlreadyTerminal(this ILogger logger, Guid storageId);
 
     [LoggerMessage(
-        EventId = 72,
+        EventId = 95,
         EventName = "OnExhaustedCallbackCancelledAtShutdown",
         Level = LogLevel.Debug,
         Message = "RetryPolicy.OnExhausted callback for message {StorageId} was cancelled by host shutdown."
@@ -545,7 +545,7 @@ internal static partial class LoggerExtensions
     public static partial void OnExhaustedCallbackCancelledAtShutdown(this ILogger logger, Guid storageId);
 
     [LoggerMessage(
-        EventId = 73,
+        EventId = 96,
         EventName = "OnExhaustedCallbackOrphaned",
         Level = LogLevel.Warning,
         Message = "RetryPolicy.OnExhausted callback for message {StorageId} timed out and is orphaned. Scope-bound services (FailedInfo.ServiceProvider) may become invalid once the dispatch scope disposes; cooperative callbacks should honor the supplied CancellationToken."

@@ -2,6 +2,7 @@
 
 using Headless.AuditLog;
 using Headless.Hosting.Initialization;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Npgsql;
@@ -9,7 +10,7 @@ using Npgsql;
 namespace Tests;
 
 [Collection<PostgreSqlAuditLogFixture>]
-public sealed class PostgreSqlAuditLogStorageTests(PostgreSqlAuditLogFixture fixture)
+public sealed class PostgreSqlAuditLogStorageTests(PostgreSqlAuditLogFixture fixture) : TestBase
 {
     private const string _Schema = "audit_log_pg_raw";
 
@@ -21,7 +22,7 @@ public sealed class PostgreSqlAuditLogStorageTests(PostgreSqlAuditLogFixture fix
         using var host = _CreateHost();
 
         // when
-        await host.StartAsync(TestContext.Current.CancellationToken);
+        await host.StartAsync(AbortToken);
         var initializer = host.Services.GetRequiredService<IEnumerable<IInitializer>>().Single();
         await using var scope = host.Services.CreateAsyncScope();
         var store = scope.ServiceProvider.GetRequiredService<IAuditLogStore>();
@@ -44,12 +45,12 @@ public sealed class PostgreSqlAuditLogStorageTests(PostgreSqlAuditLogFixture fix
                 },
             ],
             savingContext: new object(),
-            TestContext.Current.CancellationToken
+            AbortToken
         );
         var entries = await reader.QueryAsync(
             action: "entity.created",
             tenantId: "tenant-1",
-            cancellationToken: TestContext.Current.CancellationToken
+            cancellationToken: AbortToken
         );
 
         // then
@@ -68,7 +69,7 @@ public sealed class PostgreSqlAuditLogStorageTests(PostgreSqlAuditLogFixture fix
         // given — chunk size is 500 rows; 550 forces two chunks
         await _DropSchemaAsync();
         using var host = _CreateHost();
-        await host.StartAsync(TestContext.Current.CancellationToken);
+        await host.StartAsync(AbortToken);
         await using var scope = host.Services.CreateAsyncScope();
         var store = scope.ServiceProvider.GetRequiredService<IAuditLogStore>();
         var reader = scope.ServiceProvider.GetRequiredService<IReadAuditLog<object>>();
@@ -90,12 +91,12 @@ public sealed class PostgreSqlAuditLogStorageTests(PostgreSqlAuditLogFixture fix
             .ToArray();
 
         // when
-        await store.SaveAsync(entries, savingContext: new object(), TestContext.Current.CancellationToken);
+        await store.SaveAsync(entries, savingContext: new object(), AbortToken);
         var roundTripped = await reader.QueryAsync(
             action: "batch.write",
             tenantId: "tenant-batch",
             limit: totalEntries + 10,
-            cancellationToken: TestContext.Current.CancellationToken
+            cancellationToken: AbortToken
         );
 
         // then
@@ -118,15 +119,15 @@ public sealed class PostgreSqlAuditLogStorageTests(PostgreSqlAuditLogFixture fix
     private async Task _DropSchemaAsync()
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         await using var command = new NpgsqlCommand($"""DROP SCHEMA IF EXISTS "{_Schema}" CASCADE;""", connection);
-        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        await command.ExecuteNonQueryAsync(AbortToken);
     }
 
     private async Task<bool> _TableExistsAsync(string tableName)
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         await using var command = new NpgsqlCommand(
             """
             SELECT EXISTS (
@@ -140,13 +141,13 @@ public sealed class PostgreSqlAuditLogStorageTests(PostgreSqlAuditLogFixture fix
         command.Parameters.AddWithValue("schema", _Schema);
         command.Parameters.AddWithValue("table", tableName);
 
-        return (bool)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken))!;
+        return (bool)(await command.ExecuteScalarAsync(AbortToken))!;
     }
 
     private async Task<string> _JsonColumnTypeAsync(string columnName)
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await connection.OpenAsync(AbortToken);
         await using var command = new NpgsqlCommand(
             """
             SELECT data_type
@@ -158,6 +159,6 @@ public sealed class PostgreSqlAuditLogStorageTests(PostgreSqlAuditLogFixture fix
         command.Parameters.AddWithValue("schema", _Schema);
         command.Parameters.AddWithValue("column", columnName);
 
-        return (string)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken))!;
+        return (string)(await command.ExecuteScalarAsync(AbortToken))!;
     }
 }

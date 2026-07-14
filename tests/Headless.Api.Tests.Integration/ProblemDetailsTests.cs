@@ -108,6 +108,37 @@ public sealed class ProblemDetailsTests : TestBase
         await _VerifyMalformedSyntax(response);
     }
 
+    [Theory]
+    [InlineData("/mvc/malformed-syntax")]
+    [InlineData("/minimal/malformed-syntax")]
+    public async Task direct_problem_details_should_apply_customize_problem_details_once(string path)
+    {
+        var customizeCount = 0;
+        await using var factory = new CustomWebApplicationFactory(
+            LoggerProvider,
+            configureServices: (_, services) =>
+                services.Configure<ProblemDetailsOptions>(options =>
+                    options.CustomizeProblemDetails = context =>
+                    {
+                        customizeCount++;
+                        context.ProblemDetails.Extensions["x-custom"] = "problem-marker";
+                        context.ProblemDetails.Extensions["x-customize-count"] = customizeCount;
+                    }
+                ),
+            environment: EnvironmentNames.Production
+        );
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync(path, AbortToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var json = await response.Content.ReadAsStringAsync(AbortToken);
+        using var doc = JsonDocument.Parse(json);
+        doc.RootElement.GetProperty("x-custom").GetString().Should().Be("problem-marker");
+        doc.RootElement.GetProperty("x-customize-count").GetInt32().Should().Be(1);
+        customizeCount.Should().Be(1);
+    }
+
     private static async Task _VerifyMalformedSyntax(HttpResponseMessage response)
     {
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);

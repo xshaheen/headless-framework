@@ -11,11 +11,14 @@ namespace Headless.Sms.Aws;
 
 internal sealed class AwsSnsSmsSender(
     IAmazonSimpleNotificationService client,
-    IOptions<AwsSnsSmsOptions> optionsAccessor,
+    IOptionsMonitor<AwsSnsSmsOptions> optionsMonitor,
+    string? optionsName,
     ILogger<AwsSnsSmsSender> logger
 ) : ISmsSender
 {
-    private readonly AwsSnsSmsOptions _options = optionsAccessor.Value;
+    // Snapshot for this instance's options name — never CurrentValue, which binds the default options and
+    // would bleed configuration across keyed instances.
+    private readonly AwsSnsSmsOptions _options = optionsMonitor.Get(optionsName);
 
     public async ValueTask<SendSingleSmsResponse> SendAsync(
         SendSingleSmsRequest request,
@@ -23,13 +26,8 @@ internal sealed class AwsSnsSmsSender(
     )
     {
         Argument.IsNotNull(request);
-        Argument.IsNotEmpty(request.Destinations);
+        Argument.IsNotNull(request.Destination);
         Argument.IsNotEmpty(request.Text);
-
-        if (request.Destinations.Count > 1)
-        {
-            return SendSingleSmsResponse.Failed("AWS SNS does not support sending SMS to multiple destinations");
-        }
 
         var attributes = new Dictionary<string, MessageAttributeValue>(StringComparer.Ordinal)
         {
@@ -57,7 +55,7 @@ internal sealed class AwsSnsSmsSender(
 
         var publishRequest = new PublishRequest
         {
-            PhoneNumber = request.Destinations[0].ToString(hasPlusPrefix: true),
+            PhoneNumber = request.Destination.ToString(hasPlusPrefix: true),
             Message = request.Text,
             MessageAttributes = attributes,
         };
@@ -71,10 +69,13 @@ internal sealed class AwsSnsSmsSender(
                 return SendSingleSmsResponse.Succeeded(publishResponse.MessageId);
             }
 
-            logger.LogSmsSendFailed(request.Destinations.Count, publishResponse.HttpStatusCode);
+            logger.LogSmsSendFailed(destinationCount: 1, publishResponse.HttpStatusCode);
 
+            // SNS signals errors as typed exceptions; a non-success status on a non-throwing response has no
+            // documented meaning, so it is not classified.
             return SendSingleSmsResponse.Failed(
-                $"Failed to send SMS using AWS with status code {publishResponse.HttpStatusCode}"
+                $"Failed to send SMS using AWS with status code {publishResponse.HttpStatusCode}",
+                SmsFailureKind.Unknown
             );
         }
         catch (OperationCanceledException)
@@ -83,9 +84,20 @@ internal sealed class AwsSnsSmsSender(
         }
         catch (Exception e)
         {
-            logger.LogSmsSendException(e, request.Destinations.Count);
+            logger.LogSmsSendException(e, destinationCount: 1);
 
-            return SendSingleSmsResponse.Failed(e.Message, SmsFailureKind.Transient);
+            // Classify from the SNS SDK's typed exception contract; anything unlisted falls back to the
+            // shared transport classifier.
+            var kind = e switch
+            {
+                AuthorizationErrorException or InvalidSecurityException => SmsFailureKind.AuthFailure,
+                ThrottledException => SmsFailureKind.RateLimited,
+                OptedOutException => SmsFailureKind.InvalidRecipient,
+                InternalErrorException => SmsFailureKind.Transient,
+                _ => SmsFailureKinds.FromException(e),
+            };
+
+            return SendSingleSmsResponse.FromException(e, kind);
         }
     }
 }

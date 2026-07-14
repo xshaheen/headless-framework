@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using FastExpressionCompiler;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Messages;
@@ -41,10 +42,23 @@ internal sealed class ConsumeMiddlewarePipeline(
     // resolution path avoids running MakeGenericType on every dispatch.
     private static readonly ConcurrentDictionary<Type, Type> _TypedMiddlewareServiceTypes = new();
 
+    // Cache the tracked-type HashSet per (registry, direction). The registry instance is stable for
+    // the application's lifetime, so we never recompute the set on the hot consume path.
+    private static readonly ConditionalWeakTable<
+        IMiddlewareDescriptorRegistry,
+        ConcurrentDictionary<MiddlewareDirection, HashSet<Type>>
+    > _TrackedTypesByRegistry = [];
+
     private readonly ConcurrentDictionary<
         Type,
         Func<object, MediumMessage, MessageHeader, string?, IntentType, object>
     > _compiledConsumeContextFactories = new();
+
+    // Registration existence is fixed once the container is built, so cache per closed context type whether any
+    // direct middleware is registered at all and skip the scoped GetServices + array build on the (common)
+    // zero-middleware consume path. A null probe (non-conforming container) always takes the slow path.
+    private readonly IServiceProviderIsService? _serviceProbe = serviceProvider.GetService<IServiceProviderIsService>();
+    private readonly ConcurrentDictionary<Type, bool> _hasDirectMiddleware = new();
 
     public async Task<ConsumerExecutedResult> ExecuteAsync(
         ConsumerContext context,
@@ -77,10 +91,7 @@ internal sealed class ConsumeMiddlewarePipeline(
 
         try
         {
-            if (consumeContextAccessor is not null)
-            {
-                consumeContextAccessor.Current = consumeContext;
-            }
+            consumeContextAccessor?.Current = consumeContext;
 
             await using var scope = serviceProvider.CreateAsyncScope();
             var provider = scope.ServiceProvider;
@@ -132,10 +143,7 @@ internal sealed class ConsumeMiddlewarePipeline(
         }
         finally
         {
-            if (consumeContextAccessor is not null)
-            {
-                consumeContextAccessor.Current = previousConsumeContext;
-            }
+            consumeContextAccessor?.Current = previousConsumeContext;
         }
 
         consumeHeaders.TryGetValue(Headers.CallbackName, out var callbackName);
@@ -143,7 +151,7 @@ internal sealed class ConsumeMiddlewarePipeline(
         return new ConsumerExecutedResult(
             consumeContext.Response,
             consumeContext.ResponseType,
-            context.MediumMessage.Origin.GetId(),
+            context.MediumMessage.Origin.Id,
             string.IsNullOrEmpty(callbackName) ? null : callbackName,
             callbackHeaders,
             consumeContext.ResponseCallbackName
@@ -187,8 +195,8 @@ internal sealed class ConsumeMiddlewarePipeline(
 
         var invoker = _TypedInvokers.GetOrAdd(
             new MiddlewareDispatchKey(middleware.GetType(), context.MessageType),
-            static (_, state) => _CompileTypedInvoker(state.middlewareType, state.contextType),
-            (middlewareType: middleware.GetType(), contextType: context.GetType())
+            static (_, contextType) => _CompileTypedInvoker(contextType),
+            context.GetType()
         );
 
         return invoker(middleware, context, next);
@@ -204,21 +212,37 @@ internal sealed class ConsumeMiddlewarePipeline(
             && descriptorRegistry.TryGetConsumeDescriptors(context.MessageType, groupName, out var descriptors)
         )
         {
-            return descriptors
-                .Select(descriptor => _ResolveDescriptor(provider, descriptor))
-                .Where(static middleware => middleware is not null)
-                .Cast<object>()
-                .Concat(_GetUntrackedDirectMiddleware(directMiddleware, MiddlewareDirection.Consume))
-                .ToArray();
+            return
+            [
+                .. descriptors
+                    .Select(descriptor => _ResolveDescriptor(provider, descriptor))
+                    .Where(static middleware => middleware is not null)
+                    .Cast<object>(),
+                .. _GetUntrackedDirectMiddleware(directMiddleware, MiddlewareDirection.Consume),
+            ];
         }
 
         return directMiddleware;
     }
 
-    private static object[] _ResolveDirectMiddleware(IServiceProvider provider, ConsumeContext context)
+    private object[] _ResolveDirectMiddleware(IServiceProvider provider, ConsumeContext context)
     {
+        var contextType = context.GetType();
+
+        if (
+            _serviceProbe is not null
+            && !_hasDirectMiddleware.GetOrAdd(
+                contextType,
+                static (type, self) => self._HasAnyDirectMiddleware(type),
+                this
+            )
+        )
+        {
+            return [];
+        }
+
         var typedServiceType = _TypedMiddlewareServiceTypes.GetOrAdd(
-            context.GetType(),
+            contextType,
             static contextType => typeof(IConsumeMiddleware<>).MakeGenericType(contextType)
         );
         var busMiddleware = provider.GetServices<IConsumeMiddleware<ConsumeContext>>().Cast<object>();
@@ -227,7 +251,18 @@ internal sealed class ConsumeMiddlewarePipeline(
             .Where(static middleware => middleware is not null)
             .Cast<object>();
 
-        return busMiddleware.Concat(typedMiddleware).ToArray();
+        return [.. busMiddleware, .. typedMiddleware];
+    }
+
+    private bool _HasAnyDirectMiddleware(Type contextType)
+    {
+        var typedServiceType = _TypedMiddlewareServiceTypes.GetOrAdd(
+            contextType,
+            static type => typeof(IConsumeMiddleware<>).MakeGenericType(type)
+        );
+
+        return _serviceProbe!.IsService(typeof(IConsumeMiddleware<ConsumeContext>))
+            || _serviceProbe.IsService(typedServiceType);
     }
 
     private IEnumerable<object> _GetUntrackedDirectMiddleware(
@@ -235,10 +270,17 @@ internal sealed class ConsumeMiddlewarePipeline(
         MiddlewareDirection direction
     )
     {
-        var trackedTypes = descriptorRegistry!
-            .Descriptors.Where(descriptor => descriptor.Direction == direction)
-            .Select(descriptor => descriptor.MiddlewareType)
-            .ToHashSet();
+        var perDirection = _TrackedTypesByRegistry.GetValue(descriptorRegistry!, static _ => new());
+        var trackedTypes = perDirection.GetOrAdd(
+            direction,
+            (dir, registry) =>
+                [
+                    .. registry
+                        .Descriptors.Where(descriptor => descriptor.Direction == dir)
+                        .Select(descriptor => descriptor.MiddlewareType),
+                ],
+            descriptorRegistry!
+        );
 
         return middleware.Where(current => !trackedTypes.Contains(current.GetType()));
     }
@@ -338,7 +380,7 @@ internal sealed class ConsumeMiddlewarePipeline(
             Expression.Call(
                 typeof(ConsumeMiddlewarePipeline),
                 nameof(_ResolveTimestamp),
-                null,
+                typeArguments: null,
                 headersProperty,
                 addedProperty
             )
@@ -375,13 +417,13 @@ internal sealed class ConsumeMiddlewarePipeline(
         return lambda.CompileFast();
     }
 
-    private static ConsumeMiddlewareInvoker _CompileTypedInvoker(Type middlewareType, Type contextType)
+    private static ConsumeMiddlewareInvoker _CompileTypedInvoker(Type contextType)
     {
         var middlewareParam = Expression.Parameter(typeof(object), "middleware");
         var contextParam = Expression.Parameter(typeof(ConsumeContext), "context");
         var nextParam = Expression.Parameter(typeof(Func<ValueTask>), "next");
         var serviceType = typeof(IConsumeMiddleware<>).MakeGenericType(contextType);
-        var invokeMethod = serviceType.GetMethod(nameof(IConsumeMiddleware<ConsumeContext>.InvokeAsync))!;
+        var invokeMethod = serviceType.GetMethod(nameof(IConsumeMiddleware<>.InvokeAsync))!;
 
         var body = Expression.Call(
             Expression.Convert(middlewareParam, serviceType),
@@ -437,7 +479,7 @@ internal sealed class ConsumeMiddlewarePipeline(
         var dispatchMethod = typeof(IMessageDispatcher)
             .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
             .Single(method =>
-                method.Name == nameof(IMessageDispatcher.DispatchInScopeAsync)
+                string.Equals(method.Name, nameof(IMessageDispatcher.DispatchInScopeAsync), StringComparison.Ordinal)
                 && method.GetParameters().Length == 4
                 && method.GetParameters()[1].ParameterType == typeof(ConsumerExecutorDescriptor)
             )

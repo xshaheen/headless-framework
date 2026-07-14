@@ -1,7 +1,13 @@
 ﻿<Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <Description>Kafka integration for Headless messaging.</Description>
+    <PackageTags>headless;messaging;kafka;dotnet</PackageTags>
   </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Messaging.Kafka.Tests.Unit" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
+  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Confluent.Kafka" />
   </ItemGroup>

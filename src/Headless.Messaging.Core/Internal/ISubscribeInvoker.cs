@@ -31,43 +31,39 @@ internal sealed class SubscribeInvoker(ISerializer serializer, IConsumeMiddlewar
         var mediumMessage = context.MediumMessage;
         var descriptor = context.ConsumerDescriptor;
 
-        // Extract message type from method parameter: IConsume<T>.Consume(ConsumeContext<T>, CancellationToken)
-        var consumeContextParam = descriptor.Parameters.FirstOrDefault(p =>
-            p.ParameterType.IsGenericType && p.ParameterType.GetGenericTypeDefinition() == typeof(ConsumeContext<>)
-        );
-
-        if (consumeContextParam == null)
-        {
-            throw new InvalidOperationException(
+        // Extract message type from method parameter: IConsume<T>.Consume(ConsumeContext<T>, CancellationToken).
+        // Cached on the descriptor - recomputing it per execute is pure reflection overhead.
+        var messageType =
+            descriptor.ConsumeContextValueType
+            ?? throw new InvalidOperationException(
                 $"Consumer method must have a ConsumeContext<T> parameter. Method: {descriptor.MethodInfo.Name}"
             );
-        }
-
-        var messageType = consumeContextParam.ParameterType.GetGenericArguments()[0];
 
         // Deserialize message
         object? messageInstance = null;
-        if (mediumMessage.Origin.Value != null)
+        var originValue = mediumMessage.Origin.Value;
+
+        if (originValue != null)
         {
-            if (serializer.IsJsonType(mediumMessage.Origin.Value))
+            if (serializer.IsJsonType(originValue))
             {
                 // Value is already a JsonElement
-                messageInstance = serializer.Deserialize(mediumMessage.Origin.Value, messageType);
+                messageInstance = serializer.Deserialize(originValue, messageType);
             }
-            else if (mediumMessage.Origin.Value is string jsonString)
+            else if (originValue is string jsonString)
             {
                 // Value is a JSON string - deserialize it
                 messageInstance = JsonSerializer.Deserialize(jsonString, messageType);
             }
-            else if (messageType.IsInstanceOfType(mediumMessage.Origin.Value))
+            else if (messageType.IsInstanceOfType(originValue))
             {
                 // Value is already the correct type
-                messageInstance = mediumMessage.Origin.Value;
+                messageInstance = originValue;
             }
             else
             {
                 throw new InvalidOperationException(
-                    $"Unsupported message value type: {mediumMessage.Origin.Value?.GetType().Name}. "
+                    $"Unsupported message value type: {originValue.GetType().Name}. "
                         + $"Expected JSON string, JsonElement, or {messageType.Name}"
                 );
             }

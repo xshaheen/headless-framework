@@ -58,6 +58,8 @@ env:
   CONFIGURATION: Release
   # Packages Directory
   PACKAGES_DIR: ./artifacts/packages-results
+  # Test Results Directory
+  TEST_RESULTS_DIR: ./artifacts/test-results
   # Set the NuGet packages restore cache directory.
   NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
   # Disable the Husky pre-commit hooks.
@@ -76,16 +78,17 @@ jobs:
         with:
           lfs: false
           fetch-depth: 0
+          persist-credentials: false
 
       - name: "Setup .NET SDK"
-        uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5.3.0
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           global-json-file: "./global.json"
 
       # Required: the dashboard SPAs are pre-built in the "Build dashboard SPAs"
-      # step below (before the NuGet token is written), so the token-bearing
+      # step below (before the NuGet token is present), so the token-bearing
       # solution build runs with BuildDashboardSpa=false and never executes npm
-      # lifecycle scripts while a credential is on disk.
+      # lifecycle scripts while the credential is available in the environment.
       - name: "Setup Node"
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
@@ -96,33 +99,105 @@ jobs:
             src/Headless.Messaging.Dashboard/wwwroot/package-lock.json
 
       - name: "Setup nuget cache"
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
           path: ${{ env.NUGET_PACKAGES }}
           key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/*.props', '**/*.targets', 'global.json', 'nuget.config') }}
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      # Build the dashboard SPAs BEFORE the NuGet token is written to disk, so a
-      # malicious dependency lifecycle script run by `npm ci` cannot read it. The
-      # solution build below then runs with BuildDashboardSpa=false and only
-      # embeds the already-built wwwroot/dist.
+      # Build the dashboard SPAs BEFORE the NuGet token is present, so a malicious
+      # dependency lifecycle script run by `npm ci` cannot read it. The token is
+      # injected only on the "Format, build, and pack" step below, which runs with
+      # BuildDashboardSpa=false and only embeds the already-built wwwroot/dist.
       - name: "Build dashboard SPAs"
         run: make dashboards
         shell: bash
 
-      - name: "Authenticate GitHub Packages"
-        env:
-          GH_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: dotnet nuget update source github.com --username xshaheen --password "$GH_PACKAGES_TOKEN" --store-password-in-clear-text --configfile nuget.config
-        shell: bash
+      - name: "Format check"
+        run: make format-check
 
-      - name: "Format, build, and pack"
-        # Dashboards are already built above (before the token landed on disk);
-        # skip the in-build npm step so no lifecycle scripts run with the token present.
+      - name: "Build"
+        # Dashboards are already built above (before the token is present), so the
+        # solution build runs with BuildDashboardSpa=false and no lifecycle scripts
+        # run while the credential is available. GITHUB_PACKAGES_TOKEN is scoped to
+        # this restore/build step only and is expanded from nuget.config's
+        # %GITHUB_PACKAGES_TOKEN% credential entry.
         env:
           BuildDashboardSpa: "false"
-        run: make ci-build
+          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: make rebuild
+
+      - name: "Unit tests with coverage"
+        run: make ci-test
+
+      # Re-run the unit suite under a non-UTC zone. GitHub runners are UTC, so a UTC-only pipeline
+      # structurally cannot catch a local-offset bug: code that trusts DateTime.Kind, calls
+      # ToUniversalTime() on an Unspecified value, or builds a DateTimeOffset from a bare DateTime
+      # behaves identically on a UTC box and silently shifts by the offset everywhere else. That is
+      # exactly how the AWS LastModified defect survived. Cairo (UTC+2/+3) is also DST-observing.
+      # Reuses the binaries built above.
+      - name: "Unit tests under a non-UTC timezone"
+        env:
+          TZ: Africa/Cairo
+        run: make ci-test
+
+      - name: "Generate coverage summary"
+        if: always()
+        run: |
+          set -euo pipefail
+
+          if [ -d "${TEST_RESULTS_DIR}" ] && find "${TEST_RESULTS_DIR}" -name '*.cobertura.xml' -print -quit | grep -q .; then
+            dotnet reportgenerator \
+              -reports:"${TEST_RESULTS_DIR}/**/*.cobertura.xml" \
+              -targetdir:"./artifacts/coverage/report" \
+              -reporttypes:"Html;JsonSummary"
+          else
+            echo "::warning::No Cobertura coverage files were found under ${TEST_RESULTS_DIR}."
+          fi
+        shell: bash
+
+      - name: "Pack"
+        run: make pack-built
+
+      - name: "Verify package artifacts"
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          # Symbols are embedded in the assemblies (DebugType=embedded); no .snupkg is produced.
+          packages=("${PACKAGES_DIR}"/*.nupkg)
+
+          if [ "${#packages[@]}" -eq 0 ]; then
+            echo "No .nupkg files were created in ${PACKAGES_DIR}."
+            exit 1
+          fi
+
+          echo "Created ${#packages[@]} package(s)."
+        shell: bash
+
+      - name: "Upload test results"
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-results
+          path: |
+            artifacts/test-results/**/*.trx
+            artifacts/test-results/**/*.dmp
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: "Upload coverage results"
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-results
+          path: |
+            artifacts/test-results/**/*.cobertura.xml
+            artifacts/test-results/**/*.coverage
+            artifacts/coverage/report/**
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: "Pack and validate headless-shop template"
         # `make ci-build` already restored + built the solution (template project
@@ -182,15 +257,6 @@ jobs:
               --api-key "$GITHUB_TOKEN" \
               --skip-duplicate
           done
-
-          symbols=(./*.snupkg)
-
-          for symbol in "${symbols[@]}"; do
-            dotnet nuget push "$symbol" \
-              --source "https://nuget.pkg.github.com/xshaheen/index.json" \
-              --api-key "$GITHUB_TOKEN" \
-              --skip-duplicate
-          done
         shell: bash
 
   push-nuget-packages:
@@ -201,6 +267,7 @@ jobs:
 
     permissions:
       contents: read
+      id-token: write # Request the GitHub OIDC token exchanged for a short-lived nuget.org key (Trusted Publishing).
 
     environment:
       name: "NuGet Release"
@@ -212,9 +279,19 @@ jobs:
         with:
           name: packages-results
 
+      # Exchange the workflow OIDC token for a temporary nuget.org API key (valid ~1h, one key per token).
+      # Requires a Trusted Publishing policy on nuget.org bound to this repo, the workflow file (ci.yml), and
+      # the "NuGet Release" environment, plus a NUGET_USER secret holding the nuget.org account (profile) name.
+      # No long-lived publishing secret is stored.
+      - name: "NuGet login (OIDC -> temporary API key)"
+        id: nuget-login
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1
+        with:
+          user: ${{ secrets.NUGET_USER }}
+
       - name: "Push Packages"
         env:
-          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+          NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
         run: |
           set -euo pipefail
           shopt -s nullglob
@@ -231,20 +308,5 @@ jobs:
               --source "https://api.nuget.org/v3/index.json" \
               --api-key "$NUGET_API_KEY" \
               --skip-duplicate
-          done
-
-          symbols=(./*.snupkg)
-
-          for symbol in "${symbols[@]}"; do
-            if ! unzip -Z1 "$symbol" | grep -Eiq '\.pdb$'; then
-              echo "Skipping $symbol because it does not contain any .pdb files."
-              continue
-            fi
-
-            dotnet nuget push "$symbol" \
-              --source "https://api.nuget.org/v3/index.json" \
-              --api-key "$NUGET_API_KEY" \
-              --skip-duplicate \
-              || echo "::warning::Skipping failed symbol package push for $symbol."
           done
         shell: bash

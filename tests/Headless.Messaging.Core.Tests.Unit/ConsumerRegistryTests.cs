@@ -4,7 +4,6 @@ using Headless.Testing.Tests;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class ConsumerRegistryTests : TestBase
 {
     [Fact]
@@ -27,7 +26,7 @@ public sealed class ConsumerRegistryTests : TestBase
 
         // then
         all.Should().ContainSingle();
-        all[0].Should().Be(metadata);
+        all.Should().HaveElementAt(0, metadata);
     }
 
     [Fact]
@@ -88,7 +87,7 @@ public sealed class ConsumerRegistryTests : TestBase
 
         // then
         all.Should().ContainSingle();
-        all[0].Should().Be(updated);
+        all.Should().HaveElementAt(0, updated);
         all[0].MessageName.Should().Be("updated");
         all[0].Group.Should().Be("group1");
         all[0].Concurrency.Should().Be(5);
@@ -118,7 +117,7 @@ public sealed class ConsumerRegistryTests : TestBase
 
         // then
         all.Should().ContainSingle();
-        all[0].Should().Be(original);
+        all.Should().HaveElementAt(0, original);
     }
 
     [Fact]
@@ -718,10 +717,10 @@ public sealed class ConsumerRegistryTests : TestBase
         registry.Register(metadata2);
 
         // when
-        var found = registry.FindByMessageType(typeof(OtherMessage)).ToList();
+        var found = registry.FindByMessageType<OtherMessage>().ToList();
 
         // then
-        found.Should().HaveCount(1);
+        found.Should().ContainSingle();
         found.Should().Contain(metadata2);
     }
 

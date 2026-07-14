@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-#pragma warning disable IDE0130 // Namespace does not match folder structure
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Domain;
 
 /// <summary>
@@ -12,6 +11,12 @@ namespace Headless.Domain;
 public interface IAggregateRoot : IEntity;
 
 /// <summary>Base class for aggregate roots that may emit domain (in-process) and integration (distributed) events.</summary>
+/// <remarks>
+/// The event mutators are <see langword="protected"/>: an aggregate raises its own events from its behavior
+/// methods, so callers cannot reach into another aggregate's event buffer. The read/clear members and the
+/// <see cref="IDomainEventEmitter"/> / <see cref="IIntegrationEventEmitter"/> contracts stay accessible to the
+/// infrastructure that collects, dispatches, and clears the buffers during a unit of work.
+/// </remarks>
 [PublicAPI]
 public abstract class AggregateRoot : Entity, IAggregateRoot, IIntegrationEventEmitter, IDomainEventEmitter
 {
@@ -19,8 +24,9 @@ public abstract class AggregateRoot : Entity, IAggregateRoot, IIntegrationEventE
     private List<IIntegrationEvent>? _integrationEvents;
 
     /// <summary>Appends an integration event to the pending outbox for this aggregate.</summary>
+    /// <remarks>Call from the aggregate's own behavior methods to raise integration events.</remarks>
     /// <param name="integrationEvent">The integration event to enqueue.</param>
-    public void AddIntegrationEvent(IIntegrationEvent integrationEvent) =>
+    protected void AddIntegrationEvent(IIntegrationEvent integrationEvent) =>
         (_integrationEvents ??= []).Add(integrationEvent);
 
     /// <summary>Discards all pending integration events without dispatching them.</summary>
@@ -31,8 +37,9 @@ public abstract class AggregateRoot : Entity, IAggregateRoot, IIntegrationEventE
     public IReadOnlyList<IIntegrationEvent> GetIntegrationEvents() => _integrationEvents ?? [];
 
     /// <summary>Appends a domain event to be dispatched within the current unit of work.</summary>
+    /// <remarks>Call from the aggregate's own behavior methods to raise domain events.</remarks>
     /// <param name="domainEvent">The domain event to enqueue.</param>
-    public void AddDomainEvent(IDomainEvent domainEvent) => (_domainEvents ??= []).Add(domainEvent);
+    protected void AddDomainEvent(IDomainEvent domainEvent) => (_domainEvents ??= []).Add(domainEvent);
 
     /// <summary>Returns the current list of pending domain events.</summary>
     /// <returns>A read-only snapshot of enqueued domain events; empty when none have been added.</returns>
@@ -40,4 +47,11 @@ public abstract class AggregateRoot : Entity, IAggregateRoot, IIntegrationEventE
 
     /// <summary>Discards all pending domain events without dispatching them.</summary>
     public void ClearDomainEvents() => _domainEvents?.Clear();
+
+    /// <inheritdoc/>
+    void IIntegrationEventEmitter.AddIntegrationEvent(IIntegrationEvent integrationEvent) =>
+        AddIntegrationEvent(integrationEvent);
+
+    /// <inheritdoc/>
+    void IDomainEventEmitter.AddDomainEvent(IDomainEvent domainEvent) => AddDomainEvent(domainEvent);
 }

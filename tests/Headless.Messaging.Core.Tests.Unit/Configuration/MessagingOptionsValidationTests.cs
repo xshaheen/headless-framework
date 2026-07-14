@@ -1,11 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Retry;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
+using Polly;
+using Polly.Retry;
+using Tests.Helpers;
 
 namespace Tests.Configuration;
 
@@ -119,13 +121,15 @@ public sealed class MessagingOptionsValidationTests : TestBase
         var options = new MessagingOptions();
 
         // then
-        options.RetryPolicy.MaxInlineRetries.Should().Be(2);
+        options.RetryPolicy.RetryStrategy.MaxRetryAttempts.Should().Be(2);
         options.RetryPolicy.MaxPersistedRetries.Should().Be(15);
         options.RetryPolicy.InitialDispatchGrace.Should().Be(TimeSpan.FromSeconds(30));
         options.RetryPolicy.DispatchTimeout.Should().Be(TimeSpan.FromMinutes(5));
         options.TransportPublishTimeout.Should().Be(TimeSpan.FromSeconds(10));
         options.CommandTimeout.Should().Be(TimeSpan.FromSeconds(30));
-        options.RetryPolicy.BackoffStrategy.Should().BeOfType<ExponentialBackoffStrategy>();
+        options.ShutdownTimeout.Should().Be(TimeSpan.FromSeconds(30));
+        options.RetryPolicy.RetryStrategy.BackoffType.Should().Be(DelayBackoffType.Exponential);
+        options.RetryPolicy.RetryStrategy.ShouldHandle.Should().NotBeNull();
     }
 
     [Fact]
@@ -171,7 +175,11 @@ public sealed class MessagingOptionsValidationTests : TestBase
     public void should_accept_retry_policy_with_zero_persisted_retries_and_zero_inline_retries()
     {
         // No retries at all (single attempt only) is a valid configuration.
-        var options = new RetryPolicyOptions { MaxPersistedRetries = 0, MaxInlineRetries = 0 };
+        var options = new RetryPolicyOptions
+        {
+            MaxPersistedRetries = 0,
+            RetryStrategy = TestRetryStrategies.ZeroDelay(0),
+        };
 
         // when
         var result = new RetryPolicyOptionsValidator().Validate(options);
@@ -184,14 +192,14 @@ public sealed class MessagingOptionsValidationTests : TestBase
     public void should_reject_retry_policy_with_negative_max_inline_retries()
     {
         // given
-        var options = new RetryPolicyOptions { MaxInlineRetries = -1 };
+        var options = new RetryPolicyOptions { RetryStrategy = TestRetryStrategies.ZeroDelay(-1) };
 
         // when
         var result = new RetryPolicyOptionsValidator().Validate(options);
 
         // then
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().Contain(x => x.PropertyName == nameof(RetryPolicyOptions.MaxInlineRetries));
+        result.Errors.Should().Contain(x => x.PropertyName == "RetryStrategy.MaxRetryAttempts");
     }
 
     [Fact]
@@ -200,12 +208,12 @@ public sealed class MessagingOptionsValidationTests : TestBase
         // Cap is intentionally well above realistic production budgets but tight enough
         // to bound DoS-by-config: a custom backoff strategy returning Continue(TimeSpan.Zero)
         // combined with very high inline budget could saturate the retry-pickup index.
-        var options = new RetryPolicyOptions { MaxInlineRetries = 101 };
+        var options = new RetryPolicyOptions { RetryStrategy = TestRetryStrategies.ZeroDelay(101) };
 
         var result = new RetryPolicyOptionsValidator().Validate(options);
 
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().Contain(x => x.PropertyName == nameof(RetryPolicyOptions.MaxInlineRetries));
+        result.Errors.Should().Contain(x => x.PropertyName == "RetryStrategy.MaxRetryAttempts");
     }
 
     [Fact]
@@ -222,7 +230,11 @@ public sealed class MessagingOptionsValidationTests : TestBase
     [Fact]
     public void should_accept_retry_policy_at_max_inline_and_persisted_caps()
     {
-        var options = new RetryPolicyOptions { MaxInlineRetries = 100, MaxPersistedRetries = 1_000 };
+        var options = new RetryPolicyOptions
+        {
+            RetryStrategy = TestRetryStrategies.ZeroDelay(100),
+            MaxPersistedRetries = 1_000,
+        };
 
         var result = new RetryPolicyOptionsValidator().Validate(options);
 
@@ -280,6 +292,16 @@ public sealed class MessagingOptionsValidationTests : TestBase
             .BeFalse();
 
         new MessagingOptionsValidator()
+            .Validate(new MessagingOptions { ShutdownTimeout = TimeSpan.Zero })
+            .IsValid.Should()
+            .BeFalse();
+
+        new MessagingOptionsValidator()
+            .Validate(new MessagingOptions { ShutdownTimeout = TimeSpan.FromMinutes(6) })
+            .IsValid.Should()
+            .BeFalse();
+
+        new MessagingOptionsValidator()
             .Validate(new MessagingOptions { CommandTimeout = TimeSpan.FromMinutes(6) })
             .IsValid.Should()
             .BeFalse();
@@ -298,6 +320,15 @@ public sealed class MessagingOptionsValidationTests : TestBase
             .Validate(new MessagingOptions { DeadNodeReconcileInterval = TimeSpan.FromSeconds(-1) })
             .IsValid.Should()
             .BeFalse();
+    }
+
+    [Fact]
+    public void should_reject_messaging_options_with_non_positive_scheduler_batch_size()
+    {
+        var result = new MessagingOptionsValidator().Validate(new MessagingOptions { SchedulerBatchSize = 0 });
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(x => x.PropertyName == nameof(MessagingOptions.SchedulerBatchSize));
     }
 
     [Fact]
@@ -329,17 +360,17 @@ public sealed class MessagingOptionsValidationTests : TestBase
     }
 
     [Fact]
-    public void should_reject_retry_policy_with_null_backoff_strategy()
+    public void should_reject_retry_policy_with_null_retry_strategy()
     {
         // given
-        var options = new RetryPolicyOptions { BackoffStrategy = null! };
+        var options = new RetryPolicyOptions { RetryStrategy = null! };
 
         // when
         var result = new RetryPolicyOptionsValidator().Validate(options);
 
         // then
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().Contain(x => x.PropertyName == nameof(RetryPolicyOptions.BackoffStrategy));
+        result.Errors.Should().Contain(x => x.PropertyName == nameof(RetryPolicyOptions.RetryStrategy));
     }
 
     [Fact]

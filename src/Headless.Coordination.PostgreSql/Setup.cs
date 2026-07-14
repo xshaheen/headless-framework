@@ -1,11 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Coordination.PostgreSql;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace Headless.Coordination.PostgreSql;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Coordination;
 
 /// <summary>
 /// Extension members on <see cref="HeadlessCoordinationSetupBuilder"/> for selecting PostgreSQL as the
@@ -26,10 +28,7 @@ public static class SetupPostgreSqlCoordination
         {
             Argument.IsNotNullOrWhiteSpace(connectionString);
 
-            return setup.UsePostgreSql(options =>
-            {
-                options.ConnectionString = connectionString;
-            });
+            return setup.UsePostgreSql(options => options.ConnectionString = connectionString);
         }
 
         /// <summary>

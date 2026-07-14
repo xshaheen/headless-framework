@@ -13,38 +13,23 @@ namespace Headless.CommitCoordination.SqlServer;
 /// <see cref="SqlServerCommitDiagnosticListenerObserver" /> to <see cref="DiagnosticListener.AllListeners" /> on
 /// start and disposes the subscription on stop.
 /// </summary>
-internal sealed partial class SqlServerCommitDiagnosticHostedService : IHostedService, IAsyncDisposable, IDisposable
+internal sealed partial class SqlServerCommitDiagnosticHostedService(
+    SqlServerCommitDiagnosticListenerObserver listenerObserver,
+    SqlServerCommitDiagnosticObserver observer,
+    ISqlServerCommitDiagnosticProbe probe,
+    SqlServerCommitDiagnosticProbeState probeState,
+    IOptions<SqlServerCommitCoordinationOptions> options,
+    ILogger<SqlServerCommitDiagnosticHostedService>? logger = null
+) : IHostedService, IAsyncDisposable, IDisposable
 {
-    private readonly SqlServerCommitDiagnosticListenerObserver _listenerObserver;
-    private readonly SqlServerCommitDiagnosticObserver _observer;
-    private readonly ISqlServerCommitDiagnosticProbe _probe;
-    private readonly SqlServerCommitDiagnosticProbeState _probeState;
-    private readonly IOptions<SqlServerCommitCoordinationOptions> _options;
-    private readonly ILogger _logger;
+    private readonly ILogger _logger = logger ?? NullLogger<SqlServerCommitDiagnosticHostedService>.Instance;
     private IDisposable? _subscription;
     private int _probeRan;
-
-    public SqlServerCommitDiagnosticHostedService(
-        SqlServerCommitDiagnosticListenerObserver listenerObserver,
-        SqlServerCommitDiagnosticObserver observer,
-        ISqlServerCommitDiagnosticProbe probe,
-        SqlServerCommitDiagnosticProbeState probeState,
-        IOptions<SqlServerCommitCoordinationOptions> options,
-        ILogger<SqlServerCommitDiagnosticHostedService>? logger = null
-    )
-    {
-        _listenerObserver = listenerObserver;
-        _observer = observer;
-        _probe = probe;
-        _probeState = probeState;
-        _options = options;
-        _logger = logger ?? NullLogger<SqlServerCommitDiagnosticHostedService>.Instance;
-    }
 
     /// <inheritdoc />
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        _subscription ??= DiagnosticListener.AllListeners.Subscribe(_listenerObserver);
+        _subscription ??= DiagnosticListener.AllListeners.Subscribe(listenerObserver);
 
         await _RunProbeAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -54,9 +39,9 @@ internal sealed partial class SqlServerCommitDiagnosticHostedService : IHostedSe
     {
         _subscription?.Dispose();
         _subscription = null;
-        _listenerObserver.Dispose();
+        listenerObserver.Dispose();
 
-        await _observer.WaitForDrainsAsync(cancellationToken).ConfigureAwait(false);
+        await observer.WaitForDrainsAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -64,12 +49,12 @@ internal sealed partial class SqlServerCommitDiagnosticHostedService : IHostedSe
     {
         _subscription?.Dispose();
         _subscription = null;
-        _listenerObserver.Dispose();
+        listenerObserver.Dispose();
 
         // Mirror StopAsync: DI / host teardown that disposes this service without first calling StopAsync
         // (the async-aware container prefers DisposeAsync) still flushes in-flight commit-signal drains
         // instead of abandoning them mid-flight. CancellationToken.None — graceful disposal waits fully.
-        await _observer.WaitForDrainsAsync(CancellationToken.None).ConfigureAwait(false);
+        await observer.WaitForDrainsAsync(CancellationToken.None).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -81,7 +66,7 @@ internal sealed partial class SqlServerCommitDiagnosticHostedService : IHostedSe
         // drain remains relay-recoverable (durable row + polling sweep).
         _subscription?.Dispose();
         _subscription = null;
-        _listenerObserver.Dispose();
+        listenerObserver.Dispose();
     }
 
     private async ValueTask _RunProbeAsync(CancellationToken cancellationToken)
@@ -91,33 +76,33 @@ internal sealed partial class SqlServerCommitDiagnosticHostedService : IHostedSe
             return;
         }
 
-        var mode = _options.Value.DiagnosticProbeMode;
+        var mode = options.Value.DiagnosticProbeMode;
 
-        if (mode == SqlServerCommitDiagnosticProbeMode.Disabled)
+        if (mode == CommitProbeMode.Disabled)
         {
-            _probeState.MarkSkipped("SQL Server commit diagnostic self-probe is disabled.");
+            probeState.MarkSkipped("SQL Server commit diagnostic self-probe is disabled.");
 
             return;
         }
 
-        var result = await _probe.ProbeAsync(cancellationToken).ConfigureAwait(false);
+        var result = await probe.ProbeAsync(cancellationToken).ConfigureAwait(false);
 
         if (result.Succeeded)
         {
-            _probeState.MarkSucceeded(result.Message);
+            probeState.MarkSucceeded(result.Message);
 
             return;
         }
 
-        if (mode == SqlServerCommitDiagnosticProbeMode.Strict)
+        if (mode == CommitProbeMode.Strict)
         {
-            _probeState.MarkFailed(result.Message, result.Exception);
+            probeState.MarkFailed(result.Message, result.Exception);
             LogDiagnosticProbeFailedStrict(_logger, result.Exception, result.Message);
 
             throw new InvalidOperationException(result.Message, result.Exception);
         }
 
-        _probeState.MarkDegraded(result.Message, result.Exception);
+        probeState.MarkDegraded(result.Message, result.Exception);
         LogDiagnosticProbeDegraded(_logger, result.Exception, result.Message);
     }
 
@@ -126,6 +111,7 @@ internal sealed partial class SqlServerCommitDiagnosticHostedService : IHostedSe
         Level = LogLevel.Warning,
         Message = "SQL Server commit coordination diagnostic self-probe is degraded: {Message}"
     )]
+    // ReSharper disable once InconsistentNaming
     private static partial void LogDiagnosticProbeDegraded(ILogger logger, Exception? exception, string message);
 
     [LoggerMessage(
@@ -133,5 +119,6 @@ internal sealed partial class SqlServerCommitDiagnosticHostedService : IHostedSe
         Level = LogLevel.Error,
         Message = "SQL Server commit coordination diagnostic self-probe failed in strict mode: {Message}"
     )]
+    // ReSharper disable once InconsistentNaming
     private static partial void LogDiagnosticProbeFailedStrict(ILogger logger, Exception? exception, string message);
 }

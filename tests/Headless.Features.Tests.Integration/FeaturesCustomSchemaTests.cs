@@ -32,6 +32,18 @@ public sealed class FeaturesCustomSchemaTests(FeaturesTestFixture fixture) : Fea
         options.FeatureGroupDefinitionsTableName = _GroupDefinitionsTableName;
     }
 
+    protected override void AddFeaturesDbContextFactory(IServiceCollection services)
+    {
+        services.AddDbContextFactory<CustomSchemaFeaturesDbContext>(options =>
+            options.UseNpgsql(Fixture.SqlConnectionString)
+        );
+    }
+
+    protected override void UseFeaturesEntityFramework(HeadlessFeaturesSetupBuilder setup)
+    {
+        setup.UseEntityFramework<CustomSchemaFeaturesDbContext>();
+    }
+
     [Fact]
     public async Task should_create_tables_in_custom_schema_with_custom_names()
     {
@@ -145,7 +157,7 @@ public sealed class FeaturesCustomSchemaTests(FeaturesTestFixture fixture) : Fea
     private async Task _RecreateCustomTablesAsync(IServiceProvider services)
     {
         await using var scope = services.CreateAsyncScope();
-        var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<FeaturesTestDbContext>>();
+        var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<CustomSchemaFeaturesDbContext>>();
         await using var db = await factory.CreateDbContextAsync(AbortToken);
 
         await db.Database.ExecuteSqlRawAsync($"""DROP SCHEMA IF EXISTS "{_Schema}" CASCADE""", AbortToken);
@@ -169,7 +181,7 @@ public sealed class FeaturesCustomSchemaTests(FeaturesTestFixture fixture) : Fea
             """,
             connection
         );
-        command.Parameters.AddWithValue("schema", schema);
+        command.Parameters.AddWithValue(nameof(schema), schema);
         command.Parameters.AddWithValue("table", tableName);
 
         return (bool)(await command.ExecuteScalarAsync(AbortToken))!;
@@ -212,6 +224,18 @@ public sealed class FeaturesCustomSchemaTests(FeaturesTestFixture fixture) : Fea
 
     private sealed class SharedFeaturesDbContext(
         DbContextOptions<SharedFeaturesDbContext> options,
+        IOptions<FeaturesStorageOptions> storageOptions
+    ) : DbContext(options)
+    {
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+            modelBuilder.AddHeadlessFeatures(storageOptions.Value);
+        }
+    }
+
+    private sealed class CustomSchemaFeaturesDbContext(
+        DbContextOptions<CustomSchemaFeaturesDbContext> options,
         IOptions<FeaturesStorageOptions> storageOptions
     ) : DbContext(options)
     {

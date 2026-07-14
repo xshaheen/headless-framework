@@ -4,20 +4,19 @@ Core abstractions and utilities for building applications with multi-tenancy, us
 
 ## Problem Solved
 
-Provides standardized interfaces for common cross-cutting concerns (clock, user, tenant, locale, timezone conversion) and utilities (compression, structured logging) enabling consistent patterns across all application layers.
+Provides standardized interfaces for common cross-cutting concerns (user, tenant, locale, timezone conversion) and utilities (compression, structured logging) enabling consistent patterns across all application layers. Time is not one of them — inject the BCL `TimeProvider` directly.
 
 ## Key Features
 
 - **Abstractions**:
-  - `IClock` - Testable time abstraction (wraps `TimeProvider`)
-  - `ICurrentUser` - Current authenticated user context with roles and claims
+  - `ICurrentUser` - Current authenticated user context; `UserId` and `Roles` are exposed only for authenticated principals
   - `ICurrentTenant` - Multi-tenancy support with scoped tenant switching
   - `ITenantWriteGuardBypass` - Explicit bypass scope for audited host/admin tenant writes
   - `CrossTenantWriteException` - Non-transient exception for blocked tenant-owned writes
   - `ICurrentLocale` - Localization context (language, locale, culture)
   - `ICurrentTimeZone` - Timezone handling
   - `ICurrentPrincipalAccessor` - Scoped `ClaimsPrincipal` access with temporary switching
-  - `IPasswordGenerator` - Configurable secure password generation
+  - `IPasswordGenerator` - Configurable secure password generation; remaining character pools are required only when filler or extra unique characters are needed
   - `ICancellationTokenProvider` - Cancellation token access with fallback logic
   - `ITimezoneProvider` - Windows/IANA timezone conversion and listing
   - `IApplicationInformationAccessor` / `IBuildInformationAccessor` - Application metadata and build info
@@ -37,7 +36,7 @@ dotnet add package Headless.Core
 ## Quick Start
 
 ```csharp
-public sealed class OrderService(IClock clock, ICurrentUser user, ICurrentTenant tenant)
+public sealed class OrderService(TimeProvider timeProvider, ICurrentUser user, ICurrentTenant tenant)
 {
     public Order CreateOrder(CreateOrderRequest request)
     {
@@ -46,12 +45,15 @@ public sealed class OrderService(IClock clock, ICurrentUser user, ICurrentTenant
             Id = Guid.NewGuid(),
             UserId = user.UserId!.Value,
             TenantId = tenant.Id,
-            CreatedAt = clock.UtcNow,
-            Total = new Currency(request.Amount, request.Currency),
+            // "When did this happen?" — an audit timestamp, so the injected app clock owns it.
+            CreatedAt = timeProvider.GetUtcNow(),
+            Total = new Money(request.Amount, request.Currency),
         };
     }
 }
 ```
+
+`TimeProvider` is registered as a singleton by the Headless setup extensions (`TryAddSingleton(TimeProvider.System)`). `DateTime.UtcNow` and friends are banned at compile time (`RS0030`); which clock is correct depends on the question the timestamp answers — audit/`CreatedAt` timestamps use the injected `TimeProvider`, but leases and locks must be timed by the store, and timeouts/backoff by a monotonic clock (`TimeProvider.GetTimestamp()`).
 
 ### Structured Logging
 

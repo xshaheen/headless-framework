@@ -65,10 +65,10 @@ public sealed partial class SanitizedHeaderEnricher(
         var sanitized = value.Replace("\r", "", StringComparison.Ordinal).Replace("\n", "", StringComparison.Ordinal);
 
         // Remove ANSI escape sequences (prevents terminal manipulation)
-        sanitized = _AnsiEscapeRegex().Replace(sanitized, "");
+        sanitized = AnsiEscapeRegex.Replace(sanitized, "");
 
         // Remove other control characters (ASCII 0-31 except tab)
-        sanitized = _ControlCharRegex().Replace(sanitized, "");
+        sanitized = ControlCharRegex.Replace(sanitized, "");
 
         // Truncate to max length
         if (sanitized.Length > maxLength)
@@ -87,9 +87,9 @@ public sealed partial class SanitizedHeaderEnricher(
 
     // Matches ANSI escape sequences: ESC[ followed by parameters and a letter
     [GeneratedRegex(@"\x1b\[[0-9;]*[a-zA-Z]|\x1b\].*?\x07", RegexOptions.Compiled, 100)]
-    private static partial Regex _AnsiEscapeRegex();
+    private static partial Regex AnsiEscapeRegex { get; }
 
     // Matches control characters (0x00-0x1F) except tab (0x09)
     [GeneratedRegex(@"[\x00-\x08\x0b\x0c\x0e-\x1f]", RegexOptions.Compiled, 100)]
-    private static partial Regex _ControlCharRegex();
+    private static partial Regex ControlCharRegex { get; }
 }

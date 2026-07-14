@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.PushNotifications.Abstractions;
 using Headless.PushNotifications.Firebase.Internals;
 
 namespace Headless.PushNotifications.Firebase;
@@ -19,32 +18,30 @@ internal sealed class FcmPushNotificationService(IFcmMessageSender sender) : IPu
 
     public async ValueTask<PushNotificationResponse> SendToDeviceAsync(
         string clientToken,
-        string title,
-        string body,
-        IReadOnlyDictionary<string, string>? data = null,
+        PushNotificationRequest request,
         CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNullOrWhiteSpace(clientToken);
-        _ValidateContent(title, body, data);
+        Argument.IsNotNull(request);
+        _ValidateContent(request);
 
-        var content = new FcmMessageContent(title, body, data);
+        var content = new FcmMessageContent(request.Title, request.Body, request.Data);
 
         return await sender.SendAsync(content, clientToken, cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask<BatchPushNotificationResponse> SendMulticastAsync(
         IReadOnlyList<string> clientTokens,
-        string title,
-        string body,
-        IReadOnlyDictionary<string, string>? data = null,
+        PushNotificationRequest request,
         CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNullOrEmpty(clientTokens);
-        _ValidateContent(title, body, data);
+        Argument.IsNotNull(request);
+        _ValidateContent(request);
 
-        var content = new FcmMessageContent(title, body, data);
+        var content = new FcmMessageContent(request.Title, request.Body, request.Data);
         var responses = new List<PushNotificationResponse>(clientTokens.Count);
         var successCount = 0;
         var failureCount = 0;
@@ -76,13 +73,13 @@ internal sealed class FcmPushNotificationService(IFcmMessageSender sender) : IPu
         };
     }
 
-    private static void _ValidateContent(string title, string body, IReadOnlyDictionary<string, string>? data)
+    private static void _ValidateContent(PushNotificationRequest request)
     {
-        Argument.IsNotNullOrWhiteSpace(title);
-        Argument.IsNotNullOrWhiteSpace(body);
-        Argument.IsLessThanOrEqualTo(title.Length, _MaxTitleLength);
-        Argument.IsLessThanOrEqualTo(body.Length, _MaxBodyLength);
-        _EnsureDataAllowed(data);
+        Argument.IsNotNullOrWhiteSpace(request.Title);
+        Argument.IsNotNullOrWhiteSpace(request.Body);
+        Argument.IsLessThanOrEqualTo(request.Title.Length, _MaxTitleLength);
+        Argument.IsLessThanOrEqualTo(request.Body.Length, _MaxBodyLength);
+        _EnsureDataAllowed(request.Data);
     }
 
     private static void _EnsureDataAllowed(IReadOnlyDictionary<string, string>? data)

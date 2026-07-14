@@ -47,3 +47,4 @@ BenchmarkDotNet writes Markdown and HTML artifacts under `artifacts/benchmark/ca
 - Distributed-only lane: Headless Redis, FusionCache Redis with memory skipped, Foundatio Redis, and Microsoft Redis `IDistributedCache`.
 - Factory lane: atomic `GetOrAdd` providers only.
 - Feature lane: providers with hybrid, fail-safe, or eager-refresh semantics only.
+- In-memory set paging lane: direct `InMemoryCache.GetSetAsync<string>` paging over 100 and 10,000 member sets.

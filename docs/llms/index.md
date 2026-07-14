@@ -61,7 +61,7 @@ This project uses the [Headless .NET Framework](https://github.com/xshaheen/head
 - Always pass `AbortToken` as the cancellation token argument for async calls inside test methods. `AbortToken` is the per-test `CancellationToken` exposed by `TestBase` (xUnit v3's `TestContext.Current.CancellationToken`) — it fires when the test framework cancels the test (timeout, abort, run cancellation), so propagating it makes the system-under-test cancel correctly with the test. Do not use `CancellationToken.None` or `default`.
 - The test stack is `xunit.v3` (Microsoft Testing Platform), `AwesomeAssertions` (fork of FluentAssertions), `NSubstitute`, and `Bogus`. Do not introduce Moq, the original FluentAssertions, NUnit, or MSTest.
 - For flaky tests (network/timing-dependent), use `[RetryFact(MaxRetries = N)]` / `[RetryTheory(MaxRetries = N)]` rather than retry loops inside the test body.
-- For time-dependent logic, inject `TestClock` (a `TimeProvider`) and call `clock.Advance(...)` to simulate elapsed time. Do not call `DateTime.UtcNow` directly from production code under test.
+- For time-dependent logic, inject a `FakeTimeProvider` (from `Microsoft.Extensions.TimeProvider.Testing`) as the `TimeProvider` and call `timeProvider.Advance(...)` / `SetUtcNow(...)` to simulate elapsed time. Production code under test must take an injected `TimeProvider`; `DateTime.UtcNow` and friends are banned at compile time (`RS0030`).
 - For tenant and user context in unit tests, use `TestCurrentTenant` and `TestCurrentUser` instead of mocking `IRequestContext`.
 - For async test setup/teardown, override `InitializeAsync()` and `DisposeAsyncCore()` on `TestBase` subclasses (call `base.InitializeAsync()` / `base.DisposeAsyncCore()`).
 
@@ -106,8 +106,10 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddHeadlessInfrastructure();
 
 // Pick exactly one provider per feature; code only against the abstractions.
-builder.Services.AddFileSystemBlobStorage(options =>
-    options.BaseDirectoryPath = Path.Combine(builder.Environment.ContentRootPath, "storage")
+builder.Services.AddHeadlessBlobs(blobs =>
+    blobs.UseFileSystem(options =>
+        options.BaseDirectoryPath = Path.Combine(builder.Environment.ContentRootPath, "storage")
+    )
 );
 builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
 builder.Services.AddHeadlessJobs(options =>
@@ -117,6 +119,10 @@ builder.Services.AddHeadlessJobs(options =>
 builder.Services.AddScoped<DocumentService>();
 
 var app = builder.Build();
+
+// Containers are never auto-created (UploadAsync treats a missing container as an error):
+// provision once at startup via the DI-resolved manager, or out-of-band (IaC/dashboard).
+await app.Services.GetRequiredService<IBlobContainerManager>().EnsureContainerAsync("documents");
 
 app.UseHeadlessDefaults(); // StatusCodePages before ExceptionHandler, then auth/tenant, then endpoints
 
@@ -169,10 +175,9 @@ public sealed class DocumentService(
 
         await using var stream = new MemoryStream(request.Content);
         await storage.UploadAsync(
-            container: ["documents"],
-            blobName: id,
-            stream: stream,
-            metadata: new Dictionary<string, string?> { ["file-name"] = request.FileName },
+            new BlobLocation("documents", id),
+            stream,
+            metadata: new Dictionary<string, string> { ["file-name"] = request.FileName },
             cancellationToken: ct
         );
 
@@ -233,7 +238,7 @@ Fetch only what's relevant to the task. Each file documents the domain's package
 - [api.md](api.md) — ASP.NET Core API infrastructure (JWT, middleware, Minimal API, MVC, FluentValidation, Data Protection).
 - [audit-log.md](audit-log.md) — Property-level audit logging for entity mutations and explicit business events with EF Core persistence.
 - [core.md](core.md) — DDD building blocks, guard clauses, cross-cutting abstractions, string encryption/hashing, domain events.
-- [extensions.md](extensions.md) — Base utility library: result pattern, domain primitives, value objects, collections, IO, threading, reflection helpers.
+- [extensions.md](extensions.md) — Base utility library (`Headless.Extensions`) plus the `Headless.Primitives` (result pattern, domain primitives, value objects, paging) and `Headless.Urls` (URL builder) packages it re-exports.
 - [multi-tenancy.md](multi-tenancy.md) — Tenant context across HTTP, EF Core filters, permission caching, background processing.
 - [blobs.md](blobs.md) — Unified blob storage (AWS S3, Azure, file system, Redis, SFTP).
 - [caching.md](caching.md) — Memory, Redis, and Hybrid (L1+L2) caching with fail-safe, refresh, tagging, and distributed factory locks.
@@ -272,14 +277,16 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Api.Core` — ASP.NET Core API primitives: problem details, response compression, antiforgery, JSON/time services, status-code rewriter, tenancy resolution.
 - `Headless.Api.ServiceDefaults` — one-line bootstrap (`AddHeadless()`/`UseHeadless()`/`MapHeadlessEndpoints()`) combining the Core primitives with Aspire-style host conventions (OpenTelemetry, OpenAPI, service discovery, HttpClient resilience).
 - `Headless.Api.DataProtection` — Persist ASP.NET Data Protection keys to any `IBlobStorage`.
-- `Headless.Api.FluentValidation` — Validators for `IFormFile` uploads (size, content type, magic bytes).
+- `Headless.Api.FluentValidation` — Validators for `IFormFile` uploads and API request contracts (`PhoneNumberRequest`, `GeoCoordinateRequest`, `PageMetadataRequest`).
 - `Headless.Api.Idempotency` — Stripe-style idempotency middleware: cache full HTTP responses on first execution and replay them on identical retries.
 - `Headless.Api.Logging.Serilog` — Serilog enrichers for per-request context.
 - `Headless.Api.MinimalApi` — Minimal API integration (JSON config, validation filters, exception handling).
 - `Headless.Api.Mvc` — MVC/Web API integration (controllers, filters, URL canonicalization).
 
 ### Core
-- `Headless.Extensions` — Foundational extension methods, primitives, helpers.
+- `Headless.Extensions` — Foundational extension methods, collections, IO, threading, and reflection helpers.
+- `Headless.Primitives` — Value objects, the result pattern, paging models, and domain primitives (re-exported by `Headless.Extensions`).
+- `Headless.Urls` — Fluent URL builder and parser, derived from Flurl (re-exported by `Headless.Extensions`).
 - `Headless.Core` — Multi-tenancy, user context, cross-cutting abstractions.
 - `Headless.Security.Abstractions` — String encryption and hashing contracts.
 - `Headless.Security` — String encryption and hashing services.
@@ -295,6 +302,7 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 
 ### Audit Log
 - `Headless.AuditLog.Abstractions` — Audit log contracts.
+- `Headless.AuditLog.Core` — Audit log DI setup, options validation, and provider setup pipeline.
 - `Headless.AuditLog.Storage.EntityFramework` — EF Core persistence for audit log.
 - `Headless.AuditLog.Storage.PostgreSql` — PostgreSQL raw audit log storage.
 - `Headless.AuditLog.Storage.SqlServer` — SQL Server raw audit log storage.
@@ -320,7 +328,8 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Caching.Hybrid` — L1 (memory) + L2 (distributed) cache.
 
 ### Captcha
-- `Headless.Captcha.Abstractions` — `ICaptchaVerifier`, request/result contracts, the `AddHeadlessCaptcha` builder, and `ICaptchaProvider`.
+- `Headless.Captcha.Abstractions` — `ICaptchaVerifier`, request/result contracts, and `ICaptchaProvider`.
+- `Headless.Captcha.Core` — `AddHeadlessCaptcha` setup builder, registration gates, and keyed `ICaptchaProvider` resolution.
 - `Headless.Captcha.ReCaptcha` — Google reCAPTCHA v2 (checkbox) and v3 (invisible score) verification with Razor tag helpers.
 - `Headless.Captcha.Turnstile` — Cloudflare Turnstile verification (pass/fail, `idempotency_key`, `cdata`) with Razor tag helpers.
 
@@ -413,9 +422,11 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Permissions.Storage.EntityFramework` — EF Core storage.
 - `Headless.Permissions.Storage.PostgreSql` — PostgreSQL raw storage.
 - `Headless.Permissions.Storage.SqlServer` — SQL Server raw storage.
+- `Headless.Permissions.Testing` — test-only always-allow authorization bypass (kept out of production `Core`).
 
 ### Push Notifications
-- `Headless.PushNotifications.Abstractions` — Push notification interface.
+- `Headless.PushNotifications.Abstractions` — Push notification interface and `IPushNotificationServiceProvider`.
+- `Headless.PushNotifications.Core` — `AddHeadlessPushNotifications` setup builder and named `IPushNotificationServiceProvider` resolution.
 - `Headless.PushNotifications.Firebase` — Firebase Cloud Messaging.
 - `Headless.PushNotifications.Dev` — Dev no-op (use in local/dev).
 
@@ -441,7 +452,8 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Settings.Storage.SqlServer` — SQL Server raw storage.
 
 ### SMS
-- `Headless.Sms.Abstractions` — SMS sending interface.
+- `Headless.Sms.Abstractions` — SMS sending interface and `ISmsSenderProvider`.
+- `Headless.Sms.Core` — `AddHeadlessSms` setup builder and named `ISmsSenderProvider` resolution.
 - `Headless.Sms.Aws` — AWS SNS.
 - `Headless.Sms.Cequens` — Cequens.
 - `Headless.Sms.Connekio` — Connekio.
@@ -453,6 +465,7 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 
 ### SQL
 - `Headless.Sql.Abstractions` — Connection factory interface.
+- `Headless.Sql.Core` — Default ambient current-connection implementation.
 - `Headless.Sql.PostgreSql` — PostgreSQL (Npgsql).
 - `Headless.Sql.SqlServer` — SQL Server (Microsoft.Data.SqlClient).
 - `Headless.Sql.Sqlite` — SQLite (Microsoft.Data.Sqlite).
@@ -469,6 +482,8 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Jobs.Dashboard` — Auth and web UI for job monitoring.
 - `Headless.Jobs.OpenTelemetry` — Tracing and metrics.
 - `Headless.Jobs.EntityFramework` — EF Core job state persistence; uses optional `Headless.Caching.ICache` for cron-expression caching.
+- `Headless.Jobs.EntityFramework.PostgreSql` — PostgreSQL atomic claims using `FOR UPDATE SKIP LOCKED`.
+- `Headless.Jobs.EntityFramework.SqlServer` — SQL Server atomic claims using `UPDLOCK`, `READPAST`, and `ROWLOCK`.
 
 ### Dashboards (shared)
 - `Headless.Dashboard.Authentication` — Shared authentication middleware (none / Basic / API key / host-app / custom) for the Jobs and Messaging dashboards.

@@ -1,11 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Globalization;
 using Headless.Coordination;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
-using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
+using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -196,10 +195,10 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
         );
 
         // Second host: shares the same store (same InMemory instance, or same SQL database via the connection string).
-        var second = await _BuildStackAsync(SharesStorageInstanceForConcurrency ? storage : null);
+        var (secondProvider, _) = await _BuildStackAsync(SharesStorageInstanceForConcurrency ? storage : null);
 
         await _StartBridgeAsync(_providers[0]);
-        await _StartBridgeAsync(second.Provider);
+        await _StartBridgeAsync(secondProvider);
 
         (await _BecomesRetriableAsync(storage, dead.Published, published: true)).Should().BeTrue();
         (await _BecomesRetriableAsync(storage, dead.Received, published: false)).Should().BeTrue();
@@ -260,7 +259,7 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
         IDataStorage storage,
         string nodeId,
         long incarnation,
-        DateTime lockedUntil
+        TimeSpan leaseDuration
     )
     {
         // The store stamps Owner from the membership identity at lease time, so set it to the owner-to-seed first.
@@ -277,7 +276,7 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
             nextRetryAt: _Now().AddSeconds(-1),
             cancellationToken: AbortToken
         );
-        (await storage.LeasePublishAsync(published, lockedUntil, AbortToken))
+        (await storage.LeasePublishAsync(published, leaseDuration, AbortToken))
             .Should()
             .BeTrue("the seeded published row must be actively leased before reclaim runs");
 
@@ -293,7 +292,7 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
             nextRetryAt: _Now().AddSeconds(-1),
             cancellationToken: AbortToken
         );
-        (await storage.LeaseReceiveAsync(received, lockedUntil, AbortToken))
+        (await storage.LeaseReceiveAsync(received, leaseDuration, AbortToken))
             .Should()
             .BeTrue("the seeded received row must be actively leased before reclaim runs");
 
@@ -330,9 +329,10 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
 
     private static DateTime _Now() => TimeProvider.System.GetUtcNow().UtcDateTime;
 
-    private static DateTime _FutureLease() => _Now().AddHours(1);
+    private static TimeSpan _FutureLease() => TimeSpan.FromHours(1);
 
-    private static DateTime _ExpiredLease() => _Now().AddSeconds(-1);
+    /// <summary>A negative lease: the DB stamps a deadline already in its own past, so the row seeds as expired.</summary>
+    private static TimeSpan _ExpiredLease() => TimeSpan.FromSeconds(-1);
 
     private static long _NextId() => Interlocked.Increment(ref _messageCounter);
 

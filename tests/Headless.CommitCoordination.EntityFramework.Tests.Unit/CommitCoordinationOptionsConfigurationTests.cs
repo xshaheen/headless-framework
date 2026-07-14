@@ -2,6 +2,7 @@
 
 using Headless.CommitCoordination;
 using Headless.CommitCoordination.EntityFramework;
+using Headless.Testing.Tests;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -17,7 +18,7 @@ namespace Tests;
 /// while EF Core builds the options. EF Core does NOT auto-discover <c>IInterceptor</c> registrations,
 /// so these tests pass only when the configuration wires the interceptor itself.
 /// </summary>
-public sealed class CommitCoordinationOptionsConfigurationTests
+public sealed class CommitCoordinationOptionsConfigurationTests : TestBase
 {
     [Fact]
     public async Task should_attach_commit_interceptor_to_plain_add_db_context_without_explicit_add_interceptors()
@@ -48,7 +49,7 @@ public sealed class CommitCoordinationOptionsConfigurationTests
                 return ctx.SaveChangesAsync(ct);
             },
             scope.ServiceProvider,
-            cancellationToken: TestContext.Current.CancellationToken
+            cancellationToken: AbortToken
         );
 
         drained
@@ -98,62 +99,80 @@ public sealed class CommitCoordinationOptionsConfigurationTests
         return coreExtension?.Interceptors?.ToArray() ?? [];
     }
 
-    private sealed class ConfigHarness(SqliteConnection connection, ServiceProvider root) : IAsyncDisposable
+    private sealed class ConfigHarness : IAsyncDisposable
     {
-        public ServiceProvider Root => root;
+        // Owned by the harness: the field initializer keeps creation ownership local (CA2000-clean),
+        // and DisposeAsync releases it. The in-memory DB lives only while this connection is open.
+        private readonly SqliteConnection _connection = new("DataSource=:memory:");
+        private ServiceProvider? _root;
+
+        public ServiceProvider Root => _root!;
 
         public static async Task<ConfigHarness> CreateAsync(
             bool consumerAlsoAddsInterceptor = false,
             bool registerUnrelatedInterceptor = false
         )
         {
-            // Shared in-memory SQLite lives only while a connection is open; the harness holds one.
-            var connection = new SqliteConnection("DataSource=:memory:");
-            await connection.OpenAsync();
+            var harness = new ConfigHarness();
 
-            var services = new ServiceCollection();
-            services.AddLogging();
-
-            services.AddEntityFrameworkCommitCoordination();
-
-            if (registerUnrelatedInterceptor)
+            try
             {
-                services.AddSingleton<IInterceptor, UnrelatedInterceptor>();
-            }
+                await harness._connection.OpenAsync();
 
-            // Deliberately PLAIN AddDbContext: no AddInterceptors unless the dedup scenario forces it.
-            // EF applies IDbContextOptionsConfiguration instances in registration order, so the consumer's
-            // optionsAction (itself wrapped as a configuration) is registered FIRST and our auto-attach
-            // configuration runs AFTER it — letting the dedup-by-reference observe the consumer's interceptor.
-            services.AddDbContext<ProbeContext>(
-                (sp, options) =>
+                var services = new ServiceCollection();
+                services.AddLogging();
+
+                services.AddEntityFrameworkCommitCoordination();
+
+                if (registerUnrelatedInterceptor)
                 {
-                    options.UseSqlite(connection);
-
-                    if (consumerAlsoAddsInterceptor)
-                    {
-                        options.AddInterceptors(sp.GetServices<IInterceptor>());
-                    }
+                    services.AddSingleton<IInterceptor, UnrelatedInterceptor>();
                 }
-            );
 
-            services.AddCommitCoordinationDbContextConfiguration(typeof(ProbeContext));
+                // Deliberately PLAIN AddDbContext: no AddInterceptors unless the dedup scenario forces it.
+                // EF applies IDbContextOptionsConfiguration instances in registration order, so the consumer's
+                // optionsAction (itself wrapped as a configuration) is registered FIRST and our auto-attach
+                // configuration runs AFTER it — letting the dedup-by-reference observe the consumer's interceptor.
+                services.AddDbContext<ProbeContext>(
+                    (sp, options) =>
+                    {
+                        options.UseSqlite(harness._connection);
 
-            var root = services.BuildServiceProvider();
+                        if (consumerAlsoAddsInterceptor)
+                        {
+                            options.AddInterceptors(sp.GetServices<IInterceptor>());
+                        }
+                    }
+                );
 
-            await using (var scope = root.CreateAsyncScope())
-            {
-                var db = scope.ServiceProvider.GetRequiredService<ProbeContext>();
-                await db.Database.EnsureCreatedAsync();
+                services.AddCommitCoordinationDbContextConfiguration(typeof(ProbeContext));
+
+                harness._root = services.BuildServiceProvider();
+
+                await using (var scope = harness._root.CreateAsyncScope())
+                {
+                    var db = scope.ServiceProvider.GetRequiredService<ProbeContext>();
+                    await db.Database.EnsureCreatedAsync();
+                }
+
+                return harness;
             }
-
-            return new ConfigHarness(connection, root);
+            catch
+            {
+                // Setup failed before the harness was handed back; release what it already owns.
+                await harness.DisposeAsync();
+                throw;
+            }
         }
 
         public async ValueTask DisposeAsync()
         {
-            await root.DisposeAsync();
-            await connection.DisposeAsync();
+            if (_root is not null)
+            {
+                await _root.DisposeAsync();
+            }
+
+            await _connection.DisposeAsync();
         }
     }
 

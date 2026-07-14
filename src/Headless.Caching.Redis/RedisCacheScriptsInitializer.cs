@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Caching.Scripts;
 using Headless.Hosting.Initialization;
 using Headless.Redis;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,6 +19,7 @@ internal sealed class RedisCacheScriptsInitializer(
         CacheTaggedSetScriptDefinition.Instance,
         SetIfHigherScriptDefinition.Instance,
         SetIfLowerScriptDefinition.Instance,
+        SlidingRearmScriptDefinition.Instance,
     ];
 
     public override async Task InitializeAsync(CancellationToken cancellationToken = default)

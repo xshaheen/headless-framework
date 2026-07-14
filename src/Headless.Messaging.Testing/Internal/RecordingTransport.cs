@@ -103,7 +103,11 @@ internal static class RecordingTransportRecorder
             {
                 try
                 {
-                    var deserialized = await serializer.DeserializeAsync(message, resolvedType).ConfigureAwait(false);
+                    // Recording is a must-complete side effect of a successful publish; it has no
+                    // caller token to observe, so deserialization runs uncancellable.
+                    var deserialized = await serializer
+                        .DeserializeAsync(message, resolvedType, CancellationToken.None)
+                        .ConfigureAwait(false);
 
                     if (deserialized.Value != null)
                     {
@@ -144,7 +148,10 @@ internal static class RecordingTransportRecorder
                     {
                         foreach (var candidate in assembly.GetExportedTypes())
                         {
-                            if (candidate.FullName == name || candidate.Name == name)
+                            if (
+                                string.Equals(candidate.FullName, name, StringComparison.Ordinal)
+                                || string.Equals(candidate.Name, name, StringComparison.Ordinal)
+                            )
                             {
                                 return candidate;
                             }

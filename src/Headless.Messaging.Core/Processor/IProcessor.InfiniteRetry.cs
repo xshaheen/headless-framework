@@ -7,7 +7,8 @@ namespace Headless.Messaging.Processor;
 public sealed class InfiniteRetryProcessor(IProcessor inner, ILoggerFactory loggerFactory) : IProcessor
 {
     // Exponential backoff for processor-level crashes (not message-level retries).
-    // Starts at 1 s, doubles on each consecutive failure, caps at 60 s.
+    // Starts at 1 s, doubles on each consecutive failure, caps at 60 s, and adds 0-25% jitter
+    // so replicas that failed together do not retry in lockstep against a recovering dependency.
     // Resets to the initial value after a successful iteration so a recovered processor
     // does not carry forward a large delay from a past outage.
     private static readonly TimeSpan _InitialBackoff = TimeSpan.FromSeconds(1);
@@ -35,7 +36,7 @@ public sealed class InfiniteRetryProcessor(IProcessor inner, ILoggerFactory logg
             catch (Exception ex)
             {
                 _logger.LogProcessorFailedRetrying(ex, inner.ToString(), (long)backoff.TotalSeconds);
-                await context.WaitAsync(backoff).ConfigureAwait(false);
+                await context.WaitAsync(_WithJitter(backoff)).ConfigureAwait(false);
 
                 // Double delay for next failure, capped at MaxBackoff.
                 var nextMs = Math.Min(backoff.TotalMilliseconds * 2, _MaxBackoff.TotalMilliseconds);
@@ -47,6 +48,14 @@ public sealed class InfiniteRetryProcessor(IProcessor inner, ILoggerFactory logg
     public override string? ToString()
     {
         return inner.ToString();
+    }
+
+    private static TimeSpan _WithJitter(TimeSpan delay)
+    {
+#pragma warning disable CA5394 // Non-security jitter for retry backoff; cryptographic RNG is unnecessary here.
+        var jitterMs = Random.Shared.Next(0, (int)Math.Max(1, delay.TotalMilliseconds / 4));
+#pragma warning restore CA5394
+        return delay + TimeSpan.FromMilliseconds(jitterMs);
     }
 }
 

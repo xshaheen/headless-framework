@@ -4,7 +4,6 @@ using FirebaseAdmin;
 using FirebaseAdmin.Messaging;
 using Google.Apis.Auth.OAuth2;
 using Headless.Checks;
-using Headless.PushNotifications.Abstractions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Polly;
@@ -17,6 +16,13 @@ namespace Headless.PushNotifications.Firebase.Internals;
 /// <see cref="FirebaseApp"/> lazily on first send (so registration has no side effects and several hosts can
 /// coexist in one process with different credentials), and disposes it with the container.
 /// </summary>
+/// <remarks>
+/// The <c>optionsName</c> constructor argument is the setup-builder instance name (<see langword="null"/> for
+/// the default unkeyed sender). Every factory reads the options snapshot for its own name
+/// (<c>IOptionsMonitor.Get(optionsName)</c>) and its own retry pipeline (keyed by the same name) so keyed
+/// settings never bleed across instances — a keyed sender must not read <c>CurrentValue</c>, which binds the
+/// default.
+/// </remarks>
 internal sealed class FcmMessageSender : IFcmMessageSender, IDisposable
 {
     private const int _ApnsBadge = 1;
@@ -27,17 +33,18 @@ internal sealed class FcmMessageSender : IFcmMessageSender, IDisposable
     private FirebaseApp? _app;
 
     public FcmMessageSender(
-        IOptions<FirebaseOptions> options,
+        IOptionsMonitor<FirebaseOptions> options,
         ResiliencePipelineProvider<string> pipelineProvider,
+        string? optionsName,
         ILogger<FcmMessageSender> logger
     )
     {
         Argument.IsNotNull(options);
         Argument.IsNotNull(pipelineProvider);
         _logger = Argument.IsNotNull(logger);
-        _retryPipeline = pipelineProvider.GetPipeline(FcmResilienceKeys.RetryPipeline);
+        _retryPipeline = pipelineProvider.GetPipeline(FcmResilienceKeys.GetRetryPipelineKey(optionsName));
 
-        var json = options.Value.Json;
+        var json = options.Get(optionsName).Json;
         var appName = "Headless.PushNotifications.Firebase." + Guid.NewGuid().ToString("N");
 
         _messaging = new Lazy<FirebaseMessaging>(() =>

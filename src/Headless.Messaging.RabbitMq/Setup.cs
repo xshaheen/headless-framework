@@ -1,12 +1,14 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.RabbitMq;
 using Headless.Messaging.Transport;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Microsoft.Extensions.DependencyInjection;
+namespace Headless.Messaging;
 
 /// <summary>
 /// Extension members that register RabbitMQ as the message transport.
@@ -33,36 +35,80 @@ public static class SetupRabbitMqMessaging
         /// <exception cref="ArgumentNullException"><paramref name="hostName"/> is <see langword="null"/>.</exception>
         public MessagingSetupBuilder UseRabbitMq(string hostName)
         {
-            return setup.UseRabbitMq(opt =>
-            {
-                opt.HostName = hostName;
-            });
+            return setup.UseRabbitMq(opt => opt.HostName = hostName);
+        }
+
+        /// <summary>
+        /// Registers RabbitMQ as the message transport, binding and validating
+        /// <see cref="RabbitMqMessagingOptions"/> from configuration.
+        /// </summary>
+        /// <param name="config">Configuration section containing <see cref="RabbitMqMessagingOptions"/> values.</param>
+        /// <returns>The same <paramref name="setup"/> builder for chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="config"/> is <see langword="null"/>.</exception>
+        public MessagingSetupBuilder UseRabbitMq(IConfiguration config)
+        {
+            Argument.IsNotNull(config);
+
+            return _RegisterRabbitMq(
+                setup,
+                services => services.Configure<RabbitMqMessagingOptions, RabbitMqMessagingOptionsValidator>(config)
+            );
         }
 
         /// <summary>
         /// Registers RabbitMQ as the message transport with full programmatic configuration.
         /// </summary>
-        /// <param name="configure">A delegate that configures <see cref="RabbitMqOptions"/>.</param>
+        /// <param name="configure">A delegate that configures <see cref="RabbitMqMessagingOptions"/>.</param>
         /// <returns>The same <paramref name="setup"/> builder for chaining.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
-        public MessagingSetupBuilder UseRabbitMq(Action<RabbitMqOptions> configure)
+        public MessagingSetupBuilder UseRabbitMq(Action<RabbitMqMessagingOptions> configure)
         {
             Argument.IsNotNull(configure);
 
-            setup.RegisterExtension(new RabbitMqMessagesOptionsExtension(configure));
+            return _RegisterRabbitMq(
+                setup,
+                services => services.Configure<RabbitMqMessagingOptions, RabbitMqMessagingOptionsValidator>(configure)
+            );
+        }
 
-            return setup;
+        /// <summary>
+        /// Registers RabbitMQ as the message transport, configuring <see cref="RabbitMqMessagingOptions"/>
+        /// with access to the resolved service provider.
+        /// </summary>
+        /// <param name="configure">
+        /// A delegate that configures <see cref="RabbitMqMessagingOptions"/> using the service provider
+        /// (for example to resolve credentials or secrets from DI).
+        /// </param>
+        /// <returns>The same <paramref name="setup"/> builder for chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
+        public MessagingSetupBuilder UseRabbitMq(Action<RabbitMqMessagingOptions, IServiceProvider> configure)
+        {
+            Argument.IsNotNull(configure);
+
+            return _RegisterRabbitMq(
+                setup,
+                services => services.Configure<RabbitMqMessagingOptions, RabbitMqMessagingOptionsValidator>(configure)
+            );
         }
     }
 
-    // ReSharper disable once InconsistentNaming
+    private static MessagingSetupBuilder _RegisterRabbitMq(
+        MessagingSetupBuilder setup,
+        Action<IServiceCollection> configureOptions
+    )
+    {
+        setup.RegisterExtension(new RabbitMqMessagingOptionsExtension(configureOptions));
 
-    private sealed class RabbitMqMessagesOptionsExtension(Action<RabbitMqOptions> configure) : IMessagesOptionsExtension
+        return setup;
+    }
+
+    private sealed class RabbitMqMessagingOptionsExtension(Action<IServiceCollection> configureOptions)
+        : IMessagesOptionsExtension
     {
         public void AddServices(IServiceCollection services)
         {
             services.AddSingleton(new MessageQueueMarkerService("RabbitMQ"));
-            services.Configure<RabbitMqOptions, RabbitMqOptionsValidator>(configure);
+            configureOptions(services);
             services.AddSingleton<RabbitMqTransport>();
             services.AddSingleton<IBusTransport>(sp => sp.GetRequiredService<RabbitMqTransport>());
             services.AddSingleton<IQueueTransport>(sp => sp.GetRequiredService<RabbitMqTransport>());

@@ -8,8 +8,13 @@ internal readonly record struct SqlServerCommitDiagnosticProbeResult(
     Exception? Exception = null
 )
 {
-    public static SqlServerCommitDiagnosticProbeResult Success(string message) => new(true, message);
+    public static SqlServerCommitDiagnosticProbeResult Success(string message)
+    {
+        return new(Succeeded: true, message);
+    }
 
-    public static SqlServerCommitDiagnosticProbeResult Failure(string message, Exception? exception = null) =>
-        new(false, message, exception);
+    public static SqlServerCommitDiagnosticProbeResult Failure(string message, Exception? exception = null)
+    {
+        return new(Succeeded: false, message, exception);
+    }
 }

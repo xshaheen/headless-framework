@@ -1,11 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Api.Abstractions;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Extensions;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Microsoft.AspNetCore.Builder;
+namespace Headless.Api;
 
 /// <summary>
 /// Extension methods on <see cref="WebApplication"/> for mapping host-based permanent redirect routes.
@@ -38,7 +39,12 @@ public static class EndpointsExtensions
         var mainHostBaseUri = new Uri(mainHost, UriKind.Absolute);
 
         app.MapGet(
+                // ASP0018: the catch-all token is required to match every path on the redirect hosts; the handler
+                // deliberately reads the full request path via HttpContext (with leading slash + query) rather than
+                // the route value, so the token itself is intentionally unbound.
+#pragma warning disable ASP0018
                 pattern: "{*path}",
+#pragma warning restore ASP0018
                 handler: (HttpContext context, IProblemDetailsCreator problemDetailsCreator) =>
                     BuildRedirectResultOrBadRequest(
                         context.Request.Path,

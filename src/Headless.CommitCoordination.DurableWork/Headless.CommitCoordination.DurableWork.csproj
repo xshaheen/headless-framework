@@ -1,6 +1,8 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <Description>Durable work integration for Headless commit coordination.</Description>
+    <PackageTags>headless;commit-coordination;durable-work;dotnet</PackageTags>
     <RootNamespace>Headless.CommitCoordination.DurableWork</RootNamespace>
   </PropertyGroup>
   <ItemGroup>

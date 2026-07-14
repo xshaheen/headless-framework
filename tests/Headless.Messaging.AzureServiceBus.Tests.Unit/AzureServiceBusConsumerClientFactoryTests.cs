@@ -3,7 +3,6 @@
 using Headless.Messaging;
 using Headless.Messaging.AzureServiceBus;
 using Headless.Messaging.Exceptions;
-using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -13,6 +12,29 @@ namespace Tests;
 public sealed class AzureServiceBusConsumerClientFactoryTests
 {
     [Fact]
+    public async Task should_preserve_factory_cancellation()
+    {
+        var loggerFactory = Substitute.For<ILoggerFactory>();
+        loggerFactory.CreateLogger(Arg.Any<string>()).Returns(Substitute.For<ILogger>());
+        var factory = new AzureServiceBusConsumerClientFactory(
+            loggerFactory,
+            Options.Create(
+                new AzureServiceBusMessagingOptions
+                {
+                    ConnectionString = "Endpoint=sb://localhost/;SharedAccessKeyName=name;SharedAccessKey=key",
+                }
+            ),
+            new ServiceCollection().BuildServiceProvider()
+        );
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        var act = async () => await factory.CreateAsync("test-group", 1, cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
     public async Task should_throw_broker_connection_exception_when_options_are_invalid()
     {
         // given
@@ -20,7 +42,7 @@ public sealed class AzureServiceBusConsumerClientFactoryTests
         loggerFactory.CreateLogger(Arg.Any<string>()).Returns(Substitute.For<ILogger>());
 
         var options = Options.Create(
-            new AzureServiceBusOptions
+            new AzureServiceBusMessagingOptions
             {
                 // Invalid/missing connection info will cause connection failure
                 ConnectionString = null!,
@@ -46,7 +68,7 @@ public sealed class AzureServiceBusConsumerClientFactoryTests
         loggerFactory.CreateLogger(Arg.Any<string>()).Returns(Substitute.For<ILogger>());
 
         var options = Options.Create(
-            new AzureServiceBusOptions
+            new AzureServiceBusMessagingOptions
             {
                 // Malformed connection string
                 ConnectionString = "InvalidConnectionString",
@@ -70,7 +92,9 @@ public sealed class AzureServiceBusConsumerClientFactoryTests
         var loggerFactory = Substitute.For<ILoggerFactory>();
         loggerFactory.CreateLogger(Arg.Any<string>()).Returns(Substitute.For<ILogger>());
 
-        var options = Options.Create(new AzureServiceBusOptions { ConnectionString = "InvalidConnectionString" });
+        var options = Options.Create(
+            new AzureServiceBusMessagingOptions { ConnectionString = "InvalidConnectionString" }
+        );
         var serviceProvider = new ServiceCollection().BuildServiceProvider();
         var factory = new AzureServiceBusConsumerClientFactory(loggerFactory, options, serviceProvider);
         var groupName = new string('a', 80);

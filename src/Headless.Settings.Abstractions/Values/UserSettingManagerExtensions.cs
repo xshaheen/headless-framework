@@ -78,21 +78,21 @@ public static class UserSettingManagerExtensions
                 .ConfigureAwait(false);
         }
 
-        /// <summary>Finds the setting value for the specified user and deserializes it to <typeparamref name="T"/>.</summary>
+        /// <summary>Gets the setting value for the specified user and deserializes it to <typeparamref name="T"/>.</summary>
         /// <typeparam name="T">The target type to deserialize the stored JSON value into.</typeparam>
         /// <param name="userId">The identifier of the user whose setting is queried.</param>
         /// <param name="name">The unique name of the setting.</param>
         /// <param name="fallback">When <see langword="true"/>, falls back to subsequent providers if no user value is found.</param>
         /// <param name="cancellationToken">The abort token.</param>
         /// <returns>The deserialized value, or <see langword="default"/> when no value is found for the user.</returns>
-        public Task<T?> FindForUserAsync<T>(
+        public Task<T?> GetForUserAsync<T>(
             string userId,
             string name,
             bool fallback = true,
             CancellationToken cancellationToken = default
         )
         {
-            return settingManager.FindAsync<T>(
+            return settingManager.GetAsync<T>(
                 name,
                 SettingValueProviderNames.User,
                 userId,
@@ -101,19 +101,19 @@ public static class UserSettingManagerExtensions
             );
         }
 
-        /// <summary>Finds the setting value for the ambient current user and deserializes it to <typeparamref name="T"/>.</summary>
+        /// <summary>Gets the setting value for the ambient current user and deserializes it to <typeparamref name="T"/>.</summary>
         /// <typeparam name="T">The target type to deserialize the stored JSON value into.</typeparam>
         /// <param name="name">The unique name of the setting.</param>
         /// <param name="fallback">When <see langword="true"/>, falls back to subsequent providers if no value is found for the current user.</param>
         /// <param name="cancellationToken">The abort token.</param>
         /// <returns>The deserialized value, or <see langword="default"/> when no value is found for the current user.</returns>
-        public Task<T?> FindForCurrentUserAsync<T>(
+        public Task<T?> GetForCurrentUserAsync<T>(
             string name,
             bool fallback = true,
             CancellationToken cancellationToken = default
         )
         {
-            return settingManager.FindAsync<T>(
+            return settingManager.GetAsync<T>(
                 name,
                 SettingValueProviderNames.User,
                 providerKey: null,
@@ -128,14 +128,18 @@ public static class UserSettingManagerExtensions
         /// <param name="fallback">When <see langword="true"/>, falls back to subsequent providers if no user value is found.</param>
         /// <param name="cancellationToken">The abort token.</param>
         /// <returns>The setting value string, or <see langword="null"/> if no value is set for the user.</returns>
-        public Task<string?> FindForUserAsync(
+        public async Task<string?> GetForUserAsync(
             string userId,
             string name,
             bool fallback = true,
             CancellationToken cancellationToken = default
         )
         {
-            return settingManager.FindAsync(name, SettingValueProviderNames.User, userId, fallback, cancellationToken);
+            var settingValue = await settingManager
+                .GetAsync(name, SettingValueProviderNames.User, userId, fallback, cancellationToken)
+                .ConfigureAwait(false);
+
+            return settingValue.Value;
         }
 
         /// <summary>Returns the raw string setting value for the ambient current user.</summary>
@@ -143,27 +147,25 @@ public static class UserSettingManagerExtensions
         /// <param name="fallback">When <see langword="true"/>, falls back to subsequent providers if no value is found for the current user.</param>
         /// <param name="cancellationToken">The abort token.</param>
         /// <returns>The setting value string, or <see langword="null"/> if no value is set for the current user.</returns>
-        public Task<string?> FindForCurrentUserAsync(
+        public async Task<string?> GetForCurrentUserAsync(
             string name,
             bool fallback = true,
             CancellationToken cancellationToken = default
         )
         {
-            return settingManager.FindAsync(
-                name,
-                SettingValueProviderNames.User,
-                providerKey: null,
-                fallback,
-                cancellationToken
-            );
+            var settingValue = await settingManager
+                .GetAsync(name, SettingValueProviderNames.User, providerKey: null, fallback, cancellationToken)
+                .ConfigureAwait(false);
+
+            return settingValue.Value;
         }
 
         /// <summary>Returns all setting values from the <see cref="SettingValueProviderNames.User"/> provider scoped to the specified user.</summary>
         /// <param name="userId">The identifier of the user whose settings are retrieved.</param>
         /// <param name="fallback">When <see langword="true"/>, falls back to subsequent providers for settings without a user value.</param>
         /// <param name="cancellationToken">The abort token.</param>
-        /// <returns>A list of <see cref="SettingValue"/> instances for the specified user.</returns>
-        public Task<List<SettingValue>> GetAllForUserAsync(
+        /// <returns>A read-only list of <see cref="SettingValue"/> instances for the specified user.</returns>
+        public Task<IReadOnlyList<SettingValue>> GetAllForUserAsync(
             string userId,
             bool fallback = true,
             CancellationToken cancellationToken = default
@@ -175,8 +177,8 @@ public static class UserSettingManagerExtensions
         /// <summary>Returns all setting values from the <see cref="SettingValueProviderNames.User"/> provider scoped to the ambient current user.</summary>
         /// <param name="fallback">When <see langword="true"/>, falls back to subsequent providers for settings without a value for the current user.</param>
         /// <param name="cancellationToken">The abort token.</param>
-        /// <returns>A list of <see cref="SettingValue"/> instances for the current user.</returns>
-        public Task<List<SettingValue>> GetAllForCurrentUserAsync(
+        /// <returns>A read-only list of <see cref="SettingValue"/> instances for the current user.</returns>
+        public Task<IReadOnlyList<SettingValue>> GetAllForCurrentUserAsync(
             bool fallback = true,
             CancellationToken cancellationToken = default
         )

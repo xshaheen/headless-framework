@@ -36,4 +36,43 @@ public sealed class MonthTests
         result.ErrorMessage.Should().Be("Month must be between 1 and 12");
         result.IsValid.Should().Be(false);
     }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(13)]
+    public void ctor_should_throw_invalid_primitive_value_exception_for_out_of_range_month(int invalidMonth)
+    {
+        // when
+        var act = () => new Month(invalidMonth);
+
+        // then
+        act.Should().Throw<InvalidPrimitiveValueException>();
+    }
+
+    [Fact]
+    public void json_round_trip_should_preserve_month_value()
+    {
+        // given
+        var month = new Month(5);
+
+        // when
+        var json = JsonSerializer.Serialize(month);
+        var deserialized = JsonSerializer.Deserialize<Month>(json);
+
+        // then
+        json.Should().Be("5");
+        deserialized.Should().Be(month);
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("13")]
+    public void json_deserialize_should_throw_json_exception_for_out_of_range_month(string json)
+    {
+        // when - untrusted input must surface a clean JsonException, not a leaked domain exception
+        var act = () => JsonSerializer.Deserialize<Month>(json);
+
+        // then
+        act.Should().Throw<JsonException>();
+    }
 }

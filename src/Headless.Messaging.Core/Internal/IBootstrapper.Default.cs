@@ -4,6 +4,7 @@ using Headless.Coordination;
 using Headless.DistributedLocks;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
+using Headless.Messaging.Runtime;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -217,7 +218,7 @@ internal sealed class Bootstrapper(
         lock (_bootstrapLock)
         {
             _isStopping = true;
-            Volatile.Write(ref _isStarted, false);
+            Volatile.Write(ref _isStarted, value: false);
             runtimeCts = _runtimeCts;
             _runtimeCts = null;
             stoppingRegistration = _stoppingRegistration;
@@ -317,26 +318,22 @@ internal sealed class Bootstrapper(
 
     private void _CheckRequirement()
     {
-        var marker = serviceProvider.GetService<MessagingMarkerService>();
-        if (marker == null)
-        {
-            throw new InvalidOperationException(
+        _ =
+            serviceProvider.GetService<MessagingMarkerService>()
+            ?? throw new InvalidOperationException(
                 "AddHeadlessMessaging() must be added on the service collection.   eg: services.AddHeadlessMessaging(...)"
             );
-        }
 
         _DrainPendingMessageRegistrations();
 
-        var messageQueueMarker = serviceProvider.GetService<MessageQueueMarkerService>();
-        if (messageQueueMarker == null)
-        {
-            throw new InvalidOperationException(
+        _ =
+            serviceProvider.GetService<MessageQueueMarkerService>()
+            ?? throw new InvalidOperationException(
                 "Messaging requires a transport provider. Register a native IBusTransport/IQueueTransport "
                     + "(e.g., UseRabbitMq, UseKafka, UseAzureServiceBus)."
                     + Environment.NewLine
                     + "Example: services.AddHeadlessMessaging(setup => { setup.UseRabbitMq(...); });"
             );
-        }
 
         var databaseMarkers = serviceProvider.GetServices<MessageStorageMarkerService>().ToArray();
 
@@ -449,7 +446,7 @@ internal sealed class Bootstrapper(
         };
 
         throw new InvalidOperationException(
-            $"{caller} was registered but no I{(intent == "bus" ? "Bus" : "Queue")}Transport is available. "
+            $"{caller} was registered but no I{(string.Equals(intent, "bus", StringComparison.Ordinal) ? "Bus" : "Queue")}Transport is available. "
                 + $"Register a {intent}-capable transport provider before messaging bootstrap starts."
         );
     }
@@ -488,7 +485,7 @@ internal sealed class Bootstrapper(
 
             _disposed = true;
             _isStopping = true;
-            Volatile.Write(ref _isStarted, false);
+            Volatile.Write(ref _isStarted, value: false);
             runtimeCts = _runtimeCts;
             _runtimeCts = null;
             stoppingRegistration = _stoppingRegistration;
@@ -520,7 +517,7 @@ internal sealed class Bootstrapper(
 
             _disposed = true;
             _isStopping = true;
-            Volatile.Write(ref _isStarted, false);
+            Volatile.Write(ref _isStarted, value: false);
             pendingBootstrap = _bootstrapTask;
             _bootstrapTask = null;
             runtimeCts = _runtimeCts;
@@ -601,7 +598,9 @@ internal sealed class Bootstrapper(
         {
             try
             {
+#pragma warning disable MA0045 // CancellationToken.Register callback must block until processor disposal finishes.
                 item.DisposeAsync().AsTask().GetAwaiter().GetResult();
+#pragma warning restore MA0045
             }
             catch (OperationCanceledException ex)
             {

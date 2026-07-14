@@ -18,7 +18,7 @@ public sealed class AmazonSqsConsumerClientHarnessTests(LocalStackTestFixture fi
                 $"consumer-tests-{Guid.NewGuid():N}",
                 1,
                 Options.Create(
-                    new AmazonSqsOptions
+                    new AmazonSqsMessagingOptions
                     {
                         Region = Amazon.RegionEndpoint.USEast1,
                         SnsServiceUrl = fixture.ConnectionString,
@@ -33,10 +33,10 @@ public sealed class AmazonSqsConsumerClientHarnessTests(LocalStackTestFixture fi
 
     protected override async ValueTask<IReadOnlyList<string>> ResolveSubscriptionTopicsAsync(
         IConsumerClient consumer,
-        IReadOnlyList<string> topics
+        IReadOnlyList<string> messageNames
     )
     {
-        var resolved = await consumer.FetchMessageNamesAsync(topics);
+        var resolved = await consumer.FetchMessageNamesAsync(messageNames);
         return resolved.ToList();
     }
 
@@ -47,10 +47,14 @@ public sealed class AmazonSqsConsumerClientHarnessTests(LocalStackTestFixture fi
     public override Task should_receive_messages_via_listen_callback() =>
         base.should_receive_messages_via_listen_callback();
 
+#pragma warning disable xUnit1004 // Test methods should not be skipped
     [Fact(Skip = "SQS commit requires a real receipt handle and initialized queue state.")]
+#pragma warning restore xUnit1004
     public override Task should_commit_message_successfully() => Task.CompletedTask;
 
+#pragma warning disable xUnit1004 // Test methods should not be skipped
     [Fact(Skip = "SQS reject requires a real receipt handle and initialized queue state.")]
+#pragma warning restore xUnit1004
     public override Task should_reject_message_successfully() => Task.CompletedTask;
 
     [Fact]

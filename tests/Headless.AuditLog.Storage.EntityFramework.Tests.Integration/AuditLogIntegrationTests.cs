@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Tests.Fixture;
 
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
 namespace Tests;
 
 public sealed class AuditLogIntegrationTests : TestBase
@@ -107,7 +108,7 @@ public sealed class AuditLogIntegrationTests : TestBase
         await db.SaveChangesAsync(acceptAllChangesOnSuccess: false, AbortToken);
 
         // then
-        order.Id.Should().BeGreaterThan(0);
+        order.Id.Should().BePositive();
         db.Entry(order).State.Should().Be(EntityState.Added);
         db.ChangeTracker.Entries<AuditLogEntry>().Should().BeEmpty();
 
@@ -148,6 +149,76 @@ public sealed class AuditLogIntegrationTests : TestBase
         entry.Action.Should().Be(AuditActionNames.Created);
         entry.EntityType.Should().Be(typeof(GeneratedOrder).FullName);
         entry.EntityId.Should().Be(order.Id.ToString(CultureInfo.InvariantCulture));
+    }
+
+    [Fact]
+    public async Task created_entity_with_store_generated_key_persists_real_key_in_new_values()
+    {
+        // Regression: NewValues used to persist the EF temporary key (e.g. -2147482647) because
+        // values were captured before SaveChanges and only EntityId was patched afterwards.
+
+        // given
+        var (sp, conn) = await AuditIntegrationFixture.CreateAsync();
+        await using var _ = conn;
+        await using var __ = sp;
+        await using var scope = sp.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<AuditTestDbContext>();
+
+        var order = new GeneratedOrder { CustomerName = "Generated" };
+        db.GeneratedOrders.Add(order);
+
+        // when
+        await db.SaveChangesAsync(AbortToken);
+        db.ChangeTracker.Clear();
+
+        // then
+        var entries = await db.Set<AuditLogEntry>().AsNoTracking().ToListAsync(AbortToken);
+        entries.Should().ContainSingle();
+
+        var entry = entries[0];
+        entry.EntityId.Should().Be(order.Id.ToString(CultureInfo.InvariantCulture));
+        entry.NewValues.Should().ContainKey("Id");
+        entry.NewValues!["Id"].Should().BeOfType<JsonElement>().Subject.GetInt32().Should().Be(order.Id);
+    }
+
+    [Fact]
+    public async Task created_child_with_fk_to_new_parent_persists_real_fk_in_new_values()
+    {
+        // A child's FK to a just-added parent also carries an EF temporary value at capture time
+        // and must resolve to the real parent key post-save.
+
+        // given
+        var (sp, conn) = await AuditIntegrationFixture.CreateAsync();
+        await using var _ = conn;
+        await using var __ = sp;
+        await using var scope = sp.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<AuditTestDbContext>();
+
+        var order = new GeneratedOrder { CustomerName = "Parent" };
+        var line = new GeneratedOrderLine { Order = order, Sku = "sku-1" };
+        db.GeneratedOrders.Add(order);
+        db.GeneratedOrderLines.Add(line);
+
+        // when
+        await db.SaveChangesAsync(AbortToken);
+        db.ChangeTracker.Clear();
+
+        // then
+        var entries = await db.Set<AuditLogEntry>().AsNoTracking().ToListAsync(AbortToken);
+        entries.Should().HaveCount(2);
+
+        var lineEntry = entries.Single(e =>
+            string.Equals(e.EntityType, typeof(GeneratedOrderLine).FullName, StringComparison.Ordinal)
+        );
+        lineEntry.EntityId.Should().Be(line.Id.ToString(CultureInfo.InvariantCulture));
+        lineEntry.NewValues.Should().ContainKey("GeneratedOrderId");
+        lineEntry
+            .NewValues!["GeneratedOrderId"]
+            .Should()
+            .BeOfType<JsonElement>()
+            .Subject.GetInt32()
+            .Should()
+            .Be(order.Id);
     }
 
     [Fact]
@@ -388,11 +459,18 @@ public sealed class AuditLogIntegrationTests : TestBase
 
         entries
             .Should()
-            .ContainSingle(e => e.Action == "pii.revealed" && e.EntityType == "User" && e.EntityId == "user-999");
+            .ContainSingle(e =>
+                string.Equals(e.Action, "pii.revealed", StringComparison.Ordinal)
+                && string.Equals(e.EntityType, "User", StringComparison.Ordinal)
+                && string.Equals(e.EntityId, "user-999", StringComparison.Ordinal)
+            );
 
         entries
             .Should()
-            .ContainSingle(e => e.Action == AuditActionNames.Created && e.EntityType == typeof(Order).FullName);
+            .ContainSingle(e =>
+                string.Equals(e.Action, AuditActionNames.Created, StringComparison.Ordinal)
+                && string.Equals(e.EntityType, typeof(Order).FullName, StringComparison.Ordinal)
+            );
     }
 
     [Fact]
@@ -449,13 +527,13 @@ public sealed class AuditLogIntegrationTests : TestBase
         order.Emit(new TestDistributedMessage(Guid.NewGuid().ToString("N")));
         db.EmittingOrders.Add(order);
 
-        // when / then
+        // when & then
         var act = async () => await db.SaveChangesAsync(AbortToken);
         (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage(
             ThrowingPublishAuditTestDbContext.PublishFailureMessage
         );
 
-        db.ChangeTracker.Entries<AuditLogEntry>().Where(e => e.State == EntityState.Added).Should().BeEmpty();
+        db.ChangeTracker.Entries<AuditLogEntry>().Should().NotContain(e => e.State == EntityState.Added);
     }
 
     [Fact]
@@ -485,11 +563,11 @@ public sealed class AuditLogIntegrationTests : TestBase
             }
         );
 
-        // when / then
+        // when & then
         var act = async () => await db.SaveChangesAsync(AbortToken);
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("Simulated audit save failure.");
 
-        db.ChangeTracker.Entries<AuditLogEntry>().Where(e => e.State == EntityState.Added).Should().BeEmpty();
+        db.ChangeTracker.Entries<AuditLogEntry>().Should().NotContain(e => e.State == EntityState.Added);
     }
 
     [Fact]
@@ -518,11 +596,11 @@ public sealed class AuditLogIntegrationTests : TestBase
             }
         );
 
-        // when / then
+        // when & then
         var act = () => db.SaveChanges();
         act.Should().Throw<InvalidOperationException>().WithMessage("Simulated audit save failure.");
 
-        db.ChangeTracker.Entries<AuditLogEntry>().Where(e => e.State == EntityState.Added).Should().BeEmpty();
+        db.ChangeTracker.Entries<AuditLogEntry>().Should().NotContain(e => e.State == EntityState.Added);
     }
 
     [Fact]
@@ -570,7 +648,7 @@ public sealed class AuditLogIntegrationTests : TestBase
         var saved = await db.SaveChangesAsync(AbortToken);
 
         // then
-        saved.Should().BeGreaterThan(0);
+        saved.Should().BePositive();
         var auditCount = await db.Set<AuditLogEntry>().AsNoTracking().CountAsync(AbortToken);
         auditCount.Should().Be(0);
     }
@@ -611,7 +689,7 @@ public sealed class AuditLogIntegrationTests : TestBase
             InterceptionResult<int> result
         )
         {
-            ThrowIfAuditSave(eventData.Context);
+            _ThrowIfAuditSave(eventData.Context);
             return base.SavingChanges(eventData, result);
         }
 
@@ -621,11 +699,11 @@ public sealed class AuditLogIntegrationTests : TestBase
             CancellationToken cancellationToken = default
         )
         {
-            ThrowIfAuditSave(eventData.Context);
+            _ThrowIfAuditSave(eventData.Context);
             return base.SavingChangesAsync(eventData, result, cancellationToken);
         }
 
-        private void ThrowIfAuditSave(DbContext? context)
+        private void _ThrowIfAuditSave(DbContext? context)
         {
             if (_hasThrown || context is null)
             {

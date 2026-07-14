@@ -1,7 +1,6 @@
 using Headless.Coordination;
-using Headless.Coordination.PostgreSql;
+using Headless.Jobs;
 using Headless.Jobs.DbContextFactory;
-using Headless.Jobs.DependencyInjection;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Interfaces.Managers;
 using Microsoft.EntityFrameworkCore;
@@ -20,7 +19,7 @@ builder.Services.AddHeadlessCoordination(setup => setup.UsePostgreSql(connection
 // Jobs setup with a PostgreSQL operational store.
 builder.Services.AddHeadlessJobs(options =>
 {
-    options.AddOperationalStore(efOptions =>
+    options.UseEntityFramework(efOptions =>
     {
         efOptions.UseJobsDbContext<JobsDbContext>(dbOptions =>
             dbOptions.UseNpgsql(connectionString, npgsql => npgsql.MigrationsAssembly("Headless.Jobs.Api.Demo"))

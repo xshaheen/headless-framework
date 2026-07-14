@@ -13,6 +13,7 @@ Enables enterprise messaging using Azure Service Bus with topics, subscriptions,
 - **Auto-Provisioning**: Automatic topic and subscription creation
 - **Advanced Routing**: Message routing rules and filters
 - **Enterprise Features**: Transactions, duplicate detection, dead-lettering
+- **Host-Cancellable Startup**: Client, topology, and processor setup honor host shutdown.
 
 ## Installation
 
@@ -54,7 +55,7 @@ options.ForMessage<OrderEvent>(message =>
 );
 ```
 
-`PartitionKey(...)` stamps `AzureServiceBusHeaders.PartitionKey` (`headless-asb-partition-key`) during publish and is limited to 128 characters. When sessions are enabled, Azure Service Bus requires `PartitionKey` to match `AzureServiceBusHeaders.SessionId`. If you omit `SessionId`, the provider now falls back to `PartitionKey` before the framework message id so partitioned session publishes do not fail by default. The selector output is broker-visible metadata, so do not put secrets or raw PII in it.
+`PartitionKey(...)` stamps `AzureServiceBusMessagingHeaders.PartitionKey` (`headless-asb-partition-key`) during publish and is limited to 128 characters. When sessions are enabled, Azure Service Bus requires `PartitionKey` to match `AzureServiceBusMessagingHeaders.SessionId`. If you omit `SessionId`, the provider now falls back to `PartitionKey` before the framework message id so partitioned session publishes do not fail by default. The selector output is broker-visible metadata, so do not put secrets or raw PII in it.
 
 ## Message Ordering
 
@@ -84,12 +85,12 @@ await publisher.PublishAsync(
     new PublishOptions
     {
         MessageName = "orders.events",
-        Headers = new Dictionary<string, string?> { [AzureServiceBusHeaders.SessionId] = order.CustomerId.ToString() },
+        Headers = new Dictionary<string, string?> { [AzureServiceBusMessagingHeaders.SessionId] = order.CustomerId.ToString() },
     }
 );
 ```
 
-When you also configure `PartitionKey(...)`, return the same value as `AzureServiceBusHeaders.SessionId` while sessions are enabled.
+When you also configure `PartitionKey(...)`, return the same value as `AzureServiceBusMessagingHeaders.SessionId` while sessions are enabled.
 
 ### Consumer Configuration
 
@@ -110,10 +111,13 @@ options.EnableSubscriberParallelExecute = false;
 - Delay stays in the core pipeline unless you add broker scheduling separately.
 - Commit completes the message.
 - Reject abandons the message. Redelivery and dead-lettering follow entity lock and delivery settings.
+- Headless disables Azure SDK auto-complete internally and settles messages explicitly after durable receive storage and handler outcome.
 - `AutoProvision` creates topics, subscriptions, and rules when enabled.
 - `SubscribeAsync(...)` keeps subscription rules aligned with topic names and SQL filters.
-- Use `AzureServiceBusHeaders.SessionId` for ordered delivery. `ConsumerThreadCount` only affects parallelism around those sessions.
+- Use `AzureServiceBusMessagingHeaders.SessionId` for ordered delivery. `ConsumerThreadCount` only affects parallelism around those sessions.
 - Entity names, property sizes, and payload limits follow Azure Service Bus limits.
+
+**Registration overloads:** `UseAzureServiceBus(...)` accepts the standard trio — an `IConfiguration` section, an `Action<AzureServiceBusMessagingOptions>` delegate, or an `Action<AzureServiceBusMessagingOptions, IServiceProvider>` delegate — plus the connection-string convenience form. Authentication is an either/or contract: set either `ConnectionString` or both `Namespace` and `TokenCredential` (both nullable `string?`; the validator enforces exactly one mode at start).
 
 ## Dependencies
 

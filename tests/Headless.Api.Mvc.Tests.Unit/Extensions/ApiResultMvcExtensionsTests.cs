@@ -18,7 +18,7 @@ public sealed class ApiResultMvcExtensionsTests : TestBase
         // given
         var controller = _CreateController();
         var creator = _CreateProblemDetailsCreator();
-        var expectedValue = "test-value";
+        const string expectedValue = "test-value";
         var result = ApiResult<string>.Ok(expectedValue);
 
         // when
@@ -245,7 +245,7 @@ public sealed class ApiResultMvcExtensionsTests : TestBase
             .Returns(new ProblemDetails { Status = StatusCodes.Status404NotFound, Title = "Entity Not Found" });
 
         creator
-            .UnprocessableEntity(Arg.Any<Dictionary<string, List<ErrorDescriptor>>>())
+            .UnprocessableEntity(Arg.Any<IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>>>())
             .Returns(ci => new ProblemDetails
             {
                 Status = StatusCodes.Status422UnprocessableEntity,

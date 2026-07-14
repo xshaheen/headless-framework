@@ -13,6 +13,7 @@ namespace Tests.RegularLocks;
 public sealed class LeaseMonitorRegistryTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
+    private readonly List<LeaseMonitor> _monitors = [];
 
     [Fact]
     public void should_retry_registration_when_existing_bucket_was_already_removed()
@@ -20,13 +21,13 @@ public sealed class LeaseMonitorRegistryTests : TestBase
         // given
         var sut = _CreateRegistry();
         var resource = Faker.Random.AlphaNumeric(10);
-        using var originalMonitor = _CreateMonitor(resource, "original");
-        using var replacementMonitor = _CreateMonitor(resource, "replacement");
-        sut.Register(resource, "original", originalMonitor.Target);
+        var originalMonitor = _CreateMonitor(resource, "original");
+        var replacementMonitor = _CreateMonitor(resource, "replacement");
+        sut.Register(resource, "original", originalMonitor);
         _MarkBucketRemoved(sut, resource);
 
         // when
-        sut.Register(resource, "replacement", replacementMonitor.Target);
+        sut.Register(resource, "replacement", replacementMonitor);
 
         // then
         sut.GetMonitorCount(resource).Should().Be(1);
@@ -63,7 +64,7 @@ public sealed class LeaseMonitorRegistryTests : TestBase
 
     private LeaseMonitorRegistry _CreateRegistry() => new(LoggerFactory.CreateLogger(nameof(LeaseMonitorRegistry)));
 
-    private LeaseMonitorScope _CreateMonitor(string resource, string leaseId)
+    private LeaseMonitor _CreateMonitor(string resource, string leaseId)
     {
         var monitor = new LeaseMonitor(
             new FakeLeaseHandle
@@ -77,7 +78,11 @@ public sealed class LeaseMonitorRegistryTests : TestBase
             LoggerFactory.CreateLogger(nameof(LeaseMonitor))
         );
 
-        return new LeaseMonitorScope(monitor);
+        // Owned by the test: tracked here so the monitor is disposed at teardown (and does not
+        // leak off the local — CA2000).
+        _monitors.Add(monitor);
+
+        return monitor;
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
@@ -89,6 +94,9 @@ public sealed class LeaseMonitorRegistryTests : TestBase
         string leaseId
     )
     {
+        // CA2000: intentionally not disposed — this test verifies the registry's WeakReference
+        // safety net removes the bucket when an abandoned (leaked, undisposed) monitor is GC'd.
+#pragma warning disable CA2000 // CA2000: intentional — this test verifies GC reclaims an abandoned (undisposed) monitor; disposing defeats it.
         var monitor = new LeaseMonitor(
             new FakeLeaseHandle
             {
@@ -100,6 +108,7 @@ public sealed class LeaseMonitorRegistryTests : TestBase
             timeProvider,
             logger
         );
+#pragma warning restore CA2000
 
         registry.Register(resource, leaseId, monitor);
     }
@@ -107,9 +116,11 @@ public sealed class LeaseMonitorRegistryTests : TestBase
     private static void _MarkBucketRemoved(LeaseMonitorRegistry registry, string resource)
     {
         var bucket = _GetBucket(registry, resource);
+#pragma warning disable REFL009 // REFL009: reflecting an internal member by name over an object-typed value; the member exists.
         var isRemovedField = bucket.GetType().GetField("_isRemoved", BindingFlags.Instance | BindingFlags.NonPublic);
+#pragma warning restore REFL009
         isRemovedField.Should().NotBeNull();
-        isRemovedField!.SetValue(bucket, true);
+        isRemovedField.SetValue(bucket, true);
     }
 
     private static object _GetBucket(LeaseMonitorRegistry registry, string resource)
@@ -132,7 +143,9 @@ public sealed class LeaseMonitorRegistryTests : TestBase
     private static int _GetRawBucketCount(LeaseMonitorRegistry registry)
     {
         var activeMonitors = _GetActiveMonitors(registry);
+#pragma warning disable REFL009 // REFL009: reflecting an internal member by name over an object-typed value; the member exists.
         var countProperty = activeMonitors.GetType().GetProperty("Count");
+#pragma warning restore REFL009
         countProperty.Should().NotBeNull();
 
         return (int)countProperty!.GetValue(activeMonitors)!;
@@ -149,13 +162,14 @@ public sealed class LeaseMonitorRegistryTests : TestBase
         return activeMonitorsField!.GetValue(registry)!;
     }
 
-    private readonly struct LeaseMonitorScope(LeaseMonitor target) : IDisposable
+    protected override async ValueTask DisposeAsyncCore()
     {
-        public LeaseMonitor Target { get; } = target;
-
-        public void Dispose()
+        foreach (var monitor in _monitors)
         {
-            Target.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            await monitor.DisposeAsync().ConfigureAwait(false);
         }
+
+        _monitors.Clear();
+        await base.DisposeAsyncCore().ConfigureAwait(false);
     }
 }

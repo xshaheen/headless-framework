@@ -4,9 +4,9 @@ namespace Headless.Serializer.Converters;
 
 /// <summary>
 /// Converts nullable <see cref="Guid"/> values from any of the standard string formats
-/// (<c>N</c>, <c>D</c>, <c>B</c>, <c>P</c>, <c>X</c>) and from JSON <c>null</c>.
+/// (<c>N</c>, <c>D</c>, <c>B</c>, <c>P</c>, <c>X</c>) and from JSON <see langword="null"/>.
 /// Serializes as the default <c>D</c> format (<c>xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx</c>)
-/// or as JSON <c>null</c> when the value is absent.
+/// or as JSON <see langword="null"/> when the value is absent.
 /// </summary>
 public sealed class NullableStringToGuidJsonConverter : JsonConverter<Guid?>
 {
@@ -14,15 +14,9 @@ public sealed class NullableStringToGuidJsonConverter : JsonConverter<Guid?>
     {
         if (reader.TokenType is JsonTokenType.String)
         {
-            var guidString = reader.GetString();
-            ReadOnlySpan<string> formats = ["N", "D", "B", "P", "X"];
-
-            foreach (var format in formats)
+            if (GuidFormats.TryParseAny(reader.GetString(), out var parsedGuid))
             {
-                if (Guid.TryParseExact(guidString, format, out var parsedGuid))
-                {
-                    return parsedGuid;
-                }
+                return parsedGuid;
             }
         }
 

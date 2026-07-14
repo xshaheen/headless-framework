@@ -84,6 +84,30 @@ public sealed class SshBlobsRegistrationTests
     }
 
     [Fact]
+    public async Task container_manager_resolves_for_default_and_named_stores()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessBlobs(blobs =>
+        {
+            blobs.UseSsh(options => options.ConnectionString = _DummyConnectionString);
+            blobs.AddNamed(
+                "primary",
+                instance => instance.UseSsh(options => options.ConnectionString = _DummyConnectionString)
+            );
+        });
+
+        // when
+        await using var serviceProvider = services.BuildServiceProvider();
+
+        // then — the container-management capability is a separately-resolved service (default + keyed), never a cast
+        // from IBlobStorage. Resolving it constructs the manager + its pool, but no SSH connection is opened.
+        serviceProvider.GetService<IBlobContainerManager>().Should().NotBeNull();
+        serviceProvider.GetRequiredKeyedService<IBlobContainerManager>("primary").Should().NotBeNull();
+    }
+
+    [Fact]
     public async Task named_stores_have_separate_pools_that_are_disposed_with_container()
     {
         // given

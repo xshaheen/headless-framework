@@ -22,7 +22,7 @@ public sealed class LeaseMonitorTests : TestBase
 
         // when
         sut.TriggerImmediateValidation();
-        await _DrainUntilAsync(() => sut.LostToken.IsCancellationRequested);
+        await _DrainUntilAsync(() => sut.LostToken.IsCancellationRequested, AbortToken);
 
         // then
         sut.LostToken.IsCancellationRequested.Should().BeTrue();
@@ -40,13 +40,13 @@ public sealed class LeaseMonitorTests : TestBase
 
         // when - Unknown then Renewed within budget — must NOT cancel.
         sut.TriggerImmediateValidation();
-        await _DrainUntilAsync(() => handle.InvocationCount == 1);
+        await _DrainUntilAsync(() => handle.InvocationCount == 1, AbortToken);
         _timeProvider.Advance(TimeSpan.FromSeconds(3));
         sut.TriggerImmediateValidation();
-        await _DrainUntilAsync(() => handle.InvocationCount == 2);
+        await _DrainUntilAsync(() => handle.InvocationCount == 2, AbortToken);
         _timeProvider.Advance(TimeSpan.FromSeconds(6));
         sut.TriggerImmediateValidation();
-        await _DrainUntilAsync(() => handle.InvocationCount == 3);
+        await _DrainUntilAsync(() => handle.InvocationCount == 3, AbortToken);
 
         // then - still alive after Unknown → Renewed.
         sut.LostToken.IsCancellationRequested.Should().BeFalse();
@@ -55,7 +55,7 @@ public sealed class LeaseMonitorTests : TestBase
         // confirm the monitor DOES react when storage subsequently confirms loss.
         handle.Enqueue(LeaseMonitor.LeaseState.Lost);
         sut.TriggerImmediateValidation();
-        await _DrainUntilAsync(() => sut.LostToken.IsCancellationRequested);
+        await _DrainUntilAsync(() => sut.LostToken.IsCancellationRequested, AbortToken);
         sut.LostToken.IsCancellationRequested.Should().BeTrue();
     }
 
@@ -69,10 +69,10 @@ public sealed class LeaseMonitorTests : TestBase
 
         // when
         sut.TriggerImmediateValidation();
-        await _DrainUntilAsync(() => handle.InvocationCount == 1);
+        await _DrainUntilAsync(() => handle.InvocationCount == 1, AbortToken);
         _timeProvider.Advance(handle.LeaseDuration);
         sut.TriggerImmediateValidation();
-        await _DrainUntilAsync(() => sut.LostToken.IsCancellationRequested);
+        await _DrainUntilAsync(() => sut.LostToken.IsCancellationRequested, AbortToken);
 
         // then
         sut.LostToken.IsCancellationRequested.Should().BeTrue();
@@ -131,12 +131,12 @@ public sealed class LeaseMonitorTests : TestBase
         for (var i = 0; i < 6; i++)
         {
             sut.TriggerImmediateValidation();
-            await _DrainUntilAsync(() => handle.InvocationCount >= i + 1);
+            await _DrainUntilAsync(() => handle.InvocationCount >= i + 1, AbortToken);
             _timeProvider.Advance(TimeSpan.FromSeconds(5));
         }
 
         sut.TriggerImmediateValidation();
-        await _DrainUntilAsync(() => handle.InvocationCount >= 7);
+        await _DrainUntilAsync(() => handle.InvocationCount >= 7, AbortToken);
 
         // then - storage repeatedly confirmed ownership; monitor must not declare Lost.
         sut.LostToken.IsCancellationRequested.Should().BeFalse();
@@ -144,7 +144,7 @@ public sealed class LeaseMonitorTests : TestBase
         // and - positive observation: when storage subsequently confirms loss, the monitor DOES react.
         handle.Enqueue(LeaseMonitor.LeaseState.Lost);
         sut.TriggerImmediateValidation();
-        await _DrainUntilAsync(() => sut.LostToken.IsCancellationRequested);
+        await _DrainUntilAsync(() => sut.LostToken.IsCancellationRequested, AbortToken);
         sut.LostToken.IsCancellationRequested.Should().BeTrue();
     }
 
@@ -174,7 +174,7 @@ public sealed class LeaseMonitorTests : TestBase
 
         // when
         sut.TriggerImmediateValidation();
-        await _DrainUntilAsync(() => sut.LostToken.IsCancellationRequested);
+        await _DrainUntilAsync(() => sut.LostToken.IsCancellationRequested, AbortToken);
 
         // then
         sut.LostToken.IsCancellationRequested.Should().BeTrue();
@@ -184,7 +184,7 @@ public sealed class LeaseMonitorTests : TestBase
     public async Task should_dispose_idempotently()
     {
         // given
-        var sut = _CreateMonitor(new FakeLeaseHandle());
+        await using var sut = _CreateMonitor(new FakeLeaseHandle());
 
         // when
         await sut.DisposeAsync();
@@ -225,10 +225,8 @@ public sealed class LeaseMonitorTests : TestBase
 
             // Yield real wall-clock time so the loop's continuation can resume on the thread pool
             // and re-check the WeakReference before the next attempt.
-            await Task.WhenAny(
-                monitoringTask,
-                Task.Delay(TimeSpan.FromMilliseconds(100), TestContext.Current.CancellationToken)
-            );
+            var completed = await Task.WhenAny(monitoringTask, Task.Delay(TimeSpan.FromMilliseconds(100), AbortToken));
+            await completed;
         }
 
         // then
@@ -239,7 +237,10 @@ public sealed class LeaseMonitorTests : TestBase
     {
         // Helper isolates the strong-reference scope so the JIT cannot keep the LeaseMonitor
         // alive in a local on the caller's stack frame across GC.Collect.
+        // CA2000: intentionally not disposed — this test verifies GC reclaims an abandoned monitor.
+#pragma warning disable CA2000 // CA2000: intentional — this test verifies GC reclaims an abandoned (undisposed) monitor; disposing defeats it.
         var monitor = new LeaseMonitor(handle, _timeProvider, LoggerFactory.CreateLogger(nameof(LeaseMonitor)));
+#pragma warning restore CA2000
         var task = monitor.MonitoringTask;
         monitor = null;
         _ = monitor; // suppress "unused" — intent is to overwrite the local.
@@ -254,11 +255,11 @@ public sealed class LeaseMonitorTests : TestBase
         // unblocks promptly.
         using var blockSignal = new CancellationTokenSource();
         var handle = new BlockingLeaseHandle(blockSignal.Token);
-        var sut = _CreateMonitor(handle);
+        await using var sut = _CreateMonitor(handle);
 
         // Trigger an iteration that will block inside RenewOrValidateLeaseAsync.
         sut.TriggerImmediateValidation();
-        await _DrainUntilAsync(() => handle.IsBlocking);
+        await _DrainUntilAsync(() => handle.IsBlocking, AbortToken);
 
         // when
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
@@ -320,7 +321,7 @@ public sealed class LeaseMonitorTests : TestBase
     private static async Task _RunIterationAndWait(LeaseMonitor sut, FakeLeaseHandle handle, int expectedCount)
     {
         sut.TriggerImmediateValidation();
-        await _DrainUntilAsync(() => handle.InvocationCount >= expectedCount);
+        await _DrainUntilAsync(() => handle.InvocationCount >= expectedCount, AbortToken);
     }
 
     private LeaseMonitor _CreateMonitor(FakeLeaseHandle handle)
@@ -333,20 +334,15 @@ public sealed class LeaseMonitorTests : TestBase
         return new LeaseMonitor(handle, _timeProvider, LoggerFactory.CreateLogger(nameof(LeaseMonitor)));
     }
 
-    private sealed class BlockingLeaseHandle : LeaseMonitor.ILeaseHandle
+    private sealed class BlockingLeaseHandle(CancellationToken externalAbort) : LeaseMonitor.ILeaseHandle
     {
-        private readonly CancellationToken _externalAbort;
+        private readonly CancellationToken _externalAbort = externalAbort;
         public string Resource => "blocking-resource";
         public string LeaseId => "blocking-lock";
         public TimeSpan LeaseDuration => TimeSpan.FromSeconds(10);
         public TimeSpan MonitoringCadence => TimeSpan.FromSeconds(5);
         public bool IsBlocking { get; private set; }
         public bool ExitedBeforeRelease { get; private set; }
-
-        public BlockingLeaseHandle(CancellationToken externalAbort)
-        {
-            _externalAbort = externalAbort;
-        }
 
         public async Task<LeaseMonitor.LeaseState> RenewOrValidateLeaseAsync(CancellationToken cancellationToken)
         {
@@ -374,14 +370,16 @@ public sealed class LeaseMonitorTests : TestBase
         // given
         var handle = new FakeLeaseHandle();
         handle.Enqueue(LeaseMonitor.LeaseState.Lost);
-        var sut = _CreateMonitor(handle);
+        await using var sut = _CreateMonitor(handle);
 
         var callbackInvoked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var callbackCompleted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         sut.LostToken.Register(() =>
         {
             callbackInvoked.TrySetResult();
+#pragma warning disable MA0045 // CancellationToken.Register callbacks are synchronous; sync dispose is the behavior under test.
             sut.DisposeAsync().AsTask().GetAwaiter().GetResult();
+#pragma warning restore MA0045
             callbackCompleted.TrySetResult();
         });
 
@@ -390,11 +388,11 @@ public sealed class LeaseMonitorTests : TestBase
 
         // Wait for the callback to be invoked. Generous timeout so a starved continuation under
         // heavy parallel load fails the assertion below rather than timing out spuriously here.
-        await callbackInvoked.Task.WaitAsync(TimeSpan.FromSeconds(30));
+        await callbackInvoked.Task.WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
 
         // then
         // Synchronous callback disposal should complete without hanging/deadlocking.
-        await callbackCompleted.Task.WaitAsync(TimeSpan.FromSeconds(30));
+        await callbackCompleted.Task.WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
         sut.MonitoringTask.IsCompleted.Should().BeTrue();
     }
 

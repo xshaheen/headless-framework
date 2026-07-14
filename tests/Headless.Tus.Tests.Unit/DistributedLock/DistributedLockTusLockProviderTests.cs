@@ -48,6 +48,27 @@ public sealed class DistributedLockTusLockProviderTests : TestBase
     }
 
     [Fact]
+    public async Task should_pass_custom_resource_prefix_to_created_locks()
+    {
+        // given
+        const string fileId = "unique-file-123";
+        var sut = new DistributedLockTusLockProvider(_distributedLockProvider, "tus-avatars");
+
+        // when
+        var fileLock = await sut.AquireLock(fileId);
+        await fileLock.Lock();
+
+        // then
+        await _distributedLockProvider
+            .Received(1)
+            .TryAcquireAsync(
+                $"tus-avatars-{fileId}",
+                Arg.Any<DistributedLockAcquireOptions?>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
     public async Task should_use_injected_provider()
     {
         // given
@@ -93,5 +114,31 @@ public sealed class TusDistributedLockSetupTests : TestBase
 
         provider.Should().NotBeNull();
         provider.Should().BeOfType<DistributedLockTusLockProvider>();
+    }
+
+    [Fact]
+    public async Task should_register_lock_provider_with_custom_prefix()
+    {
+        // given
+        var distributedLock = Substitute.For<IDistributedLock>();
+        var services = new ServiceCollection();
+        services.AddSingleton(distributedLock);
+
+        // when
+        services.AddDistributedLockTusLockProvider("tus-avatars");
+
+        // then - locks created by the registered provider carry the prefix
+        var serviceProvider = services.BuildServiceProvider();
+        var provider = serviceProvider.GetRequiredService<ITusFileLockProvider>();
+        var fileLock = await provider.AquireLock("file-1");
+        await fileLock.Lock();
+
+        await distributedLock
+            .Received(1)
+            .TryAcquireAsync(
+                "tus-avatars-file-1",
+                Arg.Any<DistributedLockAcquireOptions?>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 }

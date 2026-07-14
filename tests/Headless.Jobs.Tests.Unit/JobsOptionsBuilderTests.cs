@@ -4,7 +4,10 @@ using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
+using Microsoft.Extensions.DependencyInjection;
+using Polly.Retry;
 
+#pragma warning disable REFL017 // Don't use name of wrong member
 namespace Tests;
 
 public sealed class JobsOptionsBuilderTests
@@ -15,10 +18,38 @@ public sealed class JobsOptionsBuilderTests
 
     private sealed class FakeExceptionHandler : IJobExceptionHandler
     {
-        public Task HandleExceptionAsync(Exception exception, Guid jobId, JobType jobType) => Task.CompletedTask;
+        public Task HandleExceptionAsync(
+            Exception exception,
+            Guid jobId,
+            JobType jobType,
+            CancellationToken cancellationToken = default
+        ) => Task.CompletedTask;
 
-        public Task HandleCanceledExceptionAsync(Exception exception, Guid jobId, JobType jobType) =>
-            Task.CompletedTask;
+        public Task HandleCanceledExceptionAsync(
+            Exception exception,
+            Guid jobId,
+            JobType jobType,
+            CancellationToken cancellationToken = default
+        ) => Task.CompletedTask;
+    }
+
+    [Fact]
+    public void ConfigureRetries_exposes_direct_Polly_options()
+    {
+        var builder = new JobsOptionsBuilder<FakeTimeJob, FakeCronJob>(
+            new JobsExecutionContext(),
+            new SchedulerOptionsBuilder()
+        );
+        var strategy = new RetryStrategyOptions
+        {
+            MaxRetryAttempts = 7,
+            Delay = TimeSpan.FromSeconds(2),
+            ShouldHandle = static _ => ValueTask.FromResult(true),
+        };
+
+        builder.ConfigureRetries(options => options.RetryStrategy = strategy);
+
+        builder.RetryOptions.RetryStrategy.Should().BeSameAs(strategy);
     }
 
     [Fact]
@@ -117,12 +148,7 @@ public sealed class JobsOptionsBuilderTests
 
         var builder = new JobsOptionsBuilder<FakeTimeJob, FakeCronJob>(executionContext, schedulerOptions);
 
-        builder.UseJobsSeeder(
-            async (ITimeJobManager<FakeTimeJob> _) =>
-            {
-                await Task.CompletedTask;
-            }
-        );
+        builder.UseJobsSeeder(async (ITimeJobManager<FakeTimeJob> _) => await Task.CompletedTask);
 
         var seeder = typeof(JobsOptionsBuilder<FakeTimeJob, FakeCronJob>)
             .GetProperty(
@@ -192,6 +218,45 @@ public sealed class JobsOptionsBuilderTests
         var schedulerOptions = new SchedulerOptionsBuilder();
 
         schedulerOptions.LeaseDuration.Should().Be(TimeSpan.FromMinutes(5));
+    }
+
+    [Fact]
+    public void Default_PostCommitDrainTimeout_Is_30_Seconds()
+    {
+        var schedulerOptions = new SchedulerOptionsBuilder();
+
+        schedulerOptions.PostCommitDrainTimeout.Should().Be(TimeSpan.FromSeconds(30));
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(0)]
+    [InlineData(301)]
+    public void AddHeadlessJobs_Rejects_PostCommitDrainTimeout_Outside_Valid_Range(int timeoutSeconds)
+    {
+        var services = new ServiceCollection();
+
+        var act = () =>
+            services.AddHeadlessJobs(options =>
+                options.ConfigureScheduler(scheduler =>
+                    scheduler.PostCommitDrainTimeout = TimeSpan.FromSeconds(timeoutSeconds)
+                )
+            );
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void AddHeadlessJobs_Accepts_Maximum_PostCommitDrainTimeout()
+    {
+        var services = new ServiceCollection();
+
+        var act = () =>
+            services.AddHeadlessJobs(options =>
+                options.ConfigureScheduler(scheduler => scheduler.PostCommitDrainTimeout = TimeSpan.FromMinutes(5))
+            );
+
+        act.Should().NotThrow();
     }
 
     [Fact]

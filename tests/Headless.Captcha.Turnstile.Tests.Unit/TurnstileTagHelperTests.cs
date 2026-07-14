@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text.Encodings.Web;
 using Headless.Captcha;
 using Microsoft.AspNetCore.Razor.TagHelpers;
 using Microsoft.Extensions.Options;
@@ -47,7 +46,9 @@ public sealed class TurnstileTagHelperTests
         var helper = new TurnstileScriptTagHelper(_Options(new TurnstileOptions { SiteKey = "", SiteSecret = "s" }));
         var output = _NewOutput("turnstile-script");
 
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
         var act = () => helper.Process(_NewContext(), output);
+#pragma warning restore MA0045
 
         act.Should().Throw<InvalidOperationException>();
     }
@@ -55,7 +56,7 @@ public sealed class TurnstileTagHelperTests
     [Fact]
     public void widget_helper_emits_cf_turnstile_div_with_attributes()
     {
-        var languageProvider = Substitute.For<ITurnstileLanguageCodeProvider>();
+        var languageProvider = Substitute.For<ICaptchaLanguageCodeProvider>();
         languageProvider.GetLanguageCode().Returns("en-US");
 
         var helper = new TurnstileWidgetTagHelper(
@@ -94,13 +95,13 @@ public sealed class TurnstileTagHelperTests
         return snapshot;
     }
 
-    private static TagHelperContext _NewContext() =>
-        new(new TagHelperAttributeList(), new Dictionary<object, object>(), "test-id");
+    private static TagHelperContext _NewContext()
+    {
+        return new([], new Dictionary<object, object>(), "test-id");
+    }
 
-    private static TagHelperOutput _NewOutput(string tagName) =>
-        new(
-            tagName,
-            new TagHelperAttributeList(),
-            (_, _) => Task.FromResult<TagHelperContent>(new DefaultTagHelperContent())
-        );
+    private static TagHelperOutput _NewOutput(string tagName)
+    {
+        return new(tagName, [], (_, _) => Task.FromResult<TagHelperContent>(new DefaultTagHelperContent()));
+    }
 }

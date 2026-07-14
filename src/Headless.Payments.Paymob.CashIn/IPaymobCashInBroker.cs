@@ -14,11 +14,12 @@ namespace Headless.Payments.Paymob.CashIn;
 /// Low-level HTTP broker for the Paymob Accept (CashIn) API.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Covers the full payment-collection lifecycle: order creation, payment-key issuance, channel
 /// pay initiation (card iframe, wallet, kiosk, cash collection, saved token), transaction and
 /// order retrieval, refunds, voids, and HMAC-based callback validation.
-///
-/// The typical flow for legacy card/wallet/kiosk payments is:
+/// </para>
+/// <para>The typical flow for legacy card/wallet/kiosk payments is:</para>
 /// <list type="number">
 /// <item>Authenticate via <c>IPaymobCashInAuthenticator.GetAuthenticationTokenAsync</c> (handled internally by the implementation).</item>
 /// <item>Create an order with <c>CreateOrderAsync</c>.</item>
@@ -30,6 +31,7 @@ namespace Headless.Payments.Paymob.CashIn;
 /// The newer Intention API (<c>CreateIntentionAsync</c>) condenses steps 2-4 into a single call
 /// using a secret key rather than the API-key auth flow.
 /// </remarks>
+[PublicAPI]
 public interface IPaymobCashInBroker
 {
     /// <summary>

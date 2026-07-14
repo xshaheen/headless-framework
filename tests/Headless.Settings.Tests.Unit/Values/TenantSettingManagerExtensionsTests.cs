@@ -26,8 +26,8 @@ public sealed class TenantSettingManagerExtensionsTests : TestBase
         const string settingName = "TestSetting";
 
         _settingManager
-            .FindAsync(settingName, SettingValueProviderNames.Tenant, tenantId, true, AbortToken)
-            .Returns("true");
+            .GetAsync(settingName, SettingValueProviderNames.Tenant, tenantId, true, AbortToken)
+            .Returns(new SettingValue(settingName, "true"));
 
         // when
         var result = await _settingManager.IsTrueForTenantAsync(tenantId, settingName, cancellationToken: AbortToken);
@@ -36,7 +36,7 @@ public sealed class TenantSettingManagerExtensionsTests : TestBase
         result.Should().BeTrue();
         await _settingManager
             .Received(1)
-            .FindAsync(settingName, SettingValueProviderNames.Tenant, tenantId, true, AbortToken);
+            .GetAsync(settingName, SettingValueProviderNames.Tenant, tenantId, true, AbortToken);
     }
 
     [Fact]
@@ -47,8 +47,8 @@ public sealed class TenantSettingManagerExtensionsTests : TestBase
         const string settingName = "TestSetting";
 
         _settingManager
-            .FindAsync(settingName, SettingValueProviderNames.Tenant, tenantId, false, AbortToken)
-            .Returns("true");
+            .GetAsync(settingName, SettingValueProviderNames.Tenant, tenantId, false, AbortToken)
+            .Returns(new SettingValue(settingName, "true"));
 
         // when
         var result = await _settingManager.IsTrueForTenantAsync(
@@ -73,8 +73,8 @@ public sealed class TenantSettingManagerExtensionsTests : TestBase
         const string settingName = "TestSetting";
 
         _settingManager
-            .FindAsync(settingName, SettingValueProviderNames.Tenant, null, true, AbortToken)
-            .Returns("true");
+            .GetAsync(settingName, SettingValueProviderNames.Tenant, null, true, AbortToken)
+            .Returns(new SettingValue(settingName, "true"));
 
         // when
         var result = await _settingManager.IsTrueForCurrentTenantAsync(settingName, cancellationToken: AbortToken);
@@ -83,7 +83,7 @@ public sealed class TenantSettingManagerExtensionsTests : TestBase
         result.Should().BeTrue();
         await _settingManager
             .Received(1)
-            .FindAsync(settingName, SettingValueProviderNames.Tenant, null, true, AbortToken);
+            .GetAsync(settingName, SettingValueProviderNames.Tenant, null, true, AbortToken);
     }
 
     #endregion
@@ -98,8 +98,8 @@ public sealed class TenantSettingManagerExtensionsTests : TestBase
         const string settingName = "TestSetting";
 
         _settingManager
-            .FindAsync(settingName, SettingValueProviderNames.Tenant, tenantId, true, AbortToken)
-            .Returns("false");
+            .GetAsync(settingName, SettingValueProviderNames.Tenant, tenantId, true, AbortToken)
+            .Returns(new SettingValue(settingName, "false"));
 
         // when
         var result = await _settingManager.IsFalseForTenantAsync(tenantId, settingName, cancellationToken: AbortToken);
@@ -119,8 +119,8 @@ public sealed class TenantSettingManagerExtensionsTests : TestBase
         const string settingName = "TestSetting";
 
         _settingManager
-            .FindAsync(settingName, SettingValueProviderNames.Tenant, null, true, AbortToken)
-            .Returns("false");
+            .GetAsync(settingName, SettingValueProviderNames.Tenant, null, true, AbortToken)
+            .Returns(new SettingValue(settingName, "false"));
 
         // when
         var result = await _settingManager.IsFalseForCurrentTenantAsync(settingName, cancellationToken: AbortToken);
@@ -131,7 +131,7 @@ public sealed class TenantSettingManagerExtensionsTests : TestBase
 
     #endregion
 
-    #region FindForTenantAsync<T>
+    #region GetForTenantAsync<T>
 
     [Fact]
     public async Task should_find_typed_from_tenant_provider()
@@ -143,11 +143,11 @@ public sealed class TenantSettingManagerExtensionsTests : TestBase
         var json = JsonSerializer.Serialize(testObj, JsonConstants.DefaultInternalJsonOptions);
 
         _settingManager
-            .FindAsync(settingName, SettingValueProviderNames.Tenant, tenantId, true, AbortToken)
-            .Returns(json);
+            .GetAsync(settingName, SettingValueProviderNames.Tenant, tenantId, true, AbortToken)
+            .Returns(new SettingValue(settingName, json));
 
         // when
-        var result = await _settingManager.FindForTenantAsync<TestSettings>(
+        var result = await _settingManager.GetForTenantAsync<TestSettings>(
             tenantId,
             settingName,
             cancellationToken: AbortToken
@@ -160,7 +160,7 @@ public sealed class TenantSettingManagerExtensionsTests : TestBase
 
     #endregion
 
-    #region FindForCurrentTenantAsync<T>
+    #region GetForCurrentTenantAsync<T>
 
     [Fact]
     public async Task should_find_typed_from_current_tenant()
@@ -170,10 +170,12 @@ public sealed class TenantSettingManagerExtensionsTests : TestBase
         var testObj = new TestSettings { Value = "current-tenant-test" };
         var json = JsonSerializer.Serialize(testObj, JsonConstants.DefaultInternalJsonOptions);
 
-        _settingManager.FindAsync(settingName, SettingValueProviderNames.Tenant, null, true, AbortToken).Returns(json);
+        _settingManager
+            .GetAsync(settingName, SettingValueProviderNames.Tenant, null, true, AbortToken)
+            .Returns(new SettingValue(settingName, json));
 
         // when
-        var result = await _settingManager.FindForCurrentTenantAsync<TestSettings>(
+        var result = await _settingManager.GetForCurrentTenantAsync<TestSettings>(
             settingName,
             cancellationToken: AbortToken
         );
@@ -185,7 +187,7 @@ public sealed class TenantSettingManagerExtensionsTests : TestBase
 
     #endregion
 
-    #region FindForTenantAsync (string)
+    #region GetForTenantAsync (string)
 
     [Fact]
     public async Task should_find_string_from_tenant_provider()
@@ -196,11 +198,11 @@ public sealed class TenantSettingManagerExtensionsTests : TestBase
         const string expectedValue = "tenant-value";
 
         _settingManager
-            .FindAsync(settingName, SettingValueProviderNames.Tenant, tenantId, true, AbortToken)
-            .Returns(expectedValue);
+            .GetAsync(settingName, SettingValueProviderNames.Tenant, tenantId, true, AbortToken)
+            .Returns(new SettingValue(settingName, expectedValue));
 
         // when
-        var result = await _settingManager.FindForTenantAsync(tenantId, settingName, cancellationToken: AbortToken);
+        var result = await _settingManager.GetForTenantAsync(tenantId, settingName, cancellationToken: AbortToken);
 
         // then
         result.Should().Be(expectedValue);
@@ -208,7 +210,7 @@ public sealed class TenantSettingManagerExtensionsTests : TestBase
 
     #endregion
 
-    #region FindForCurrentTenantAsync (string)
+    #region GetForCurrentTenantAsync (string)
 
     [Fact]
     public async Task should_find_string_from_current_tenant()
@@ -218,11 +220,11 @@ public sealed class TenantSettingManagerExtensionsTests : TestBase
         const string expectedValue = "current-tenant-value";
 
         _settingManager
-            .FindAsync(settingName, SettingValueProviderNames.Tenant, null, true, AbortToken)
-            .Returns(expectedValue);
+            .GetAsync(settingName, SettingValueProviderNames.Tenant, null, true, AbortToken)
+            .Returns(new SettingValue(settingName, expectedValue));
 
         // when
-        var result = await _settingManager.FindForCurrentTenantAsync(settingName, cancellationToken: AbortToken);
+        var result = await _settingManager.GetForCurrentTenantAsync(settingName, cancellationToken: AbortToken);
 
         // then
         result.Should().Be(expectedValue);

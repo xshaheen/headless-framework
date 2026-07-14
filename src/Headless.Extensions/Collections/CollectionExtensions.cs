@@ -5,8 +5,9 @@ using Headless.Checks;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace System.Collections.Generic;
 
+/// <summary>Extension methods for adding to and removing from generic collections.</summary>
 [PublicAPI]
-public static class CollectionExtensions
+public static class HeadlessCollectionExtensions
 {
     // Above this list size, a per-item List<T>.Contains scan (O(n)) is worth replacing with a one-time
     // HashSet snapshot so membership checks become O(1). Below it the snapshot allocation is not worthwhile.
@@ -85,7 +86,20 @@ public static class CollectionExtensions
     {
         Argument.IsNotNull(source);
 
-        var addedItems = items.TryGetNonEnumeratedCount(out var count) ? new List<T>(count) : new List<T>();
+        var addedItems = items.TryGetNonEnumeratedCount(out var count) ? new List<T>(count) : [];
+
+        if (source is ISet<T> set)
+        {
+            foreach (var item in items)
+            {
+                if (set.Add(item))
+                {
+                    addedItems.Add(item);
+                }
+            }
+
+            return addedItems;
+        }
 
         // List<T>.Contains is O(n), making the naive loop O(n*m). For large lists, snapshot the existing
         // items into a HashSet (same default equality as List<T>.Contains) so membership checks are O(1).

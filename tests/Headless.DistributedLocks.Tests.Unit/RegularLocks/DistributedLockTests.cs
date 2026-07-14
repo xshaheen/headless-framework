@@ -11,7 +11,6 @@ using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.RegularLocks;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class DistributedLockTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
@@ -43,6 +42,14 @@ public sealed class DistributedLockTests : TestBase
             _timeProvider,
             logger ?? LoggerFactory.CreateLogger<DistributedLock>()
         );
+    }
+
+    [Fact]
+    public void should_expose_injected_time_provider()
+    {
+        var provider = _CreateProvider();
+
+        provider.TimeProvider.Should().BeSameAs(_timeProvider);
     }
 
     #region TryAcquireAsync Tests
@@ -156,7 +163,7 @@ public sealed class DistributedLockTests : TestBase
         // given
         var provider = _CreateProvider();
         var resource = Faker.Random.AlphaNumeric(10);
-        var guid = new Guid("00112233-4455-6677-8899-aabbccddeeff");
+        var guid = new Guid(0x00112233, 0x4455, 0x6677, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff);
         _guidGenerator.Create().Returns(guid);
 
         // when
@@ -480,7 +487,7 @@ public sealed class DistributedLockTests : TestBase
         var resource = Faker.Random.AlphaNumeric(10);
 
         // Pre-lock the resource
-        await _storage.InsertAsync(options.KeyPrefix + resource, "existing-lock", TimeSpan.FromMinutes(5));
+        await _storage.InsertAsync(options.KeyPrefix + resource, "existing-lock", TimeSpan.FromMinutes(5), AbortToken);
 
         // when - use zero timeout for immediate failure
         var result = await provider.TryAcquireAsync(
@@ -502,7 +509,7 @@ public sealed class DistributedLockTests : TestBase
         var resource = Faker.Random.AlphaNumeric(10);
 
         // Pre-lock the resource
-        await _storage.InsertAsync(options.KeyPrefix + resource, "existing-lock", TimeSpan.FromMinutes(5));
+        await _storage.InsertAsync(options.KeyPrefix + resource, "existing-lock", TimeSpan.FromMinutes(5), AbortToken);
 
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
@@ -587,7 +594,7 @@ public sealed class DistributedLockTests : TestBase
         var resource = Faker.Random.AlphaNumeric(10);
 
         // Pre-lock the resource
-        await _storage.InsertAsync(options.KeyPrefix + resource, "existing-lock", TimeSpan.FromMinutes(5));
+        await _storage.InsertAsync(options.KeyPrefix + resource, "existing-lock", TimeSpan.FromMinutes(5), AbortToken);
 
         var cts = new CancellationTokenSource();
         try
@@ -635,9 +642,9 @@ public sealed class DistributedLockTests : TestBase
         var provider = _CreateProvider(options);
 
         // Pre-lock different resources
-        await _storage.InsertAsync(options.KeyPrefix + "resource1", "lock1", TimeSpan.FromMinutes(5));
-        await _storage.InsertAsync(options.KeyPrefix + "resource2", "lock2", TimeSpan.FromMinutes(5));
-        await _storage.InsertAsync(options.KeyPrefix + "resource3", "lock3", TimeSpan.FromMinutes(5));
+        await _storage.InsertAsync(options.KeyPrefix + "resource1", "lock1", TimeSpan.FromMinutes(5), AbortToken);
+        await _storage.InsertAsync(options.KeyPrefix + "resource2", "lock2", TimeSpan.FromMinutes(5), AbortToken);
+        await _storage.InsertAsync(options.KeyPrefix + "resource3", "lock3", TimeSpan.FromMinutes(5), AbortToken);
 
         var cts = new CancellationTokenSource();
         try
@@ -689,7 +696,7 @@ public sealed class DistributedLockTests : TestBase
 
     private const int _SafetyDeadlineSeconds = DistributedLockTestSupport.NonBlockingAcquireDeadlineSeconds; // Mirrors _NonBlockingAcquireDeadline.
 
-    private static Func<NSubstitute.Core.CallInfo, ValueTask<DistributedLockAcquireResult>> _HangForeverInsert =>
+    private static Func<NSubstitute.Core.CallInfo, ValueTask<DistributedLockAcquireResult>> HangForeverInsert =>
         ci => new ValueTask<DistributedLockAcquireResult>(_HangUntilCancelledAsync(ci.ArgAt<CancellationToken>(3)));
 
     private static async Task<DistributedLockAcquireResult> _HangUntilCancelledAsync(CancellationToken ct)
@@ -715,7 +722,7 @@ public sealed class DistributedLockTests : TestBase
         var storage = Substitute.For<IDistributedLockStorage>();
         storage
             .InsertAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns(_HangForeverInsert);
+            .Returns(HangForeverInsert);
 
         var provider = _CreateProvider(storage: storage);
         var resource = Faker.Random.AlphaNumeric(10);
@@ -744,7 +751,7 @@ public sealed class DistributedLockTests : TestBase
         var storage = Substitute.For<IDistributedLockStorage>();
         storage
             .InsertAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns(_HangForeverInsert);
+            .Returns(HangForeverInsert);
 
         var provider = _CreateProvider(storage: storage);
         var resource = Faker.Random.AlphaNumeric(10);
@@ -779,7 +786,7 @@ public sealed class DistributedLockTests : TestBase
         var storage = Substitute.For<IDistributedLockStorage>();
         storage
             .InsertAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns(_HangForeverInsert);
+            .Returns(HangForeverInsert);
 
         var captured = new List<int>();
         var logger = new DistributedLockTestSupport.CapturingLogger<DistributedLock>(captured);
@@ -953,7 +960,7 @@ public sealed class DistributedLockTests : TestBase
         var storage = Substitute.For<IDistributedLockStorage>();
         storage
             .InsertAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns(_HangForeverInsert);
+            .Returns(HangForeverInsert);
 
         var provider = _CreateProvider(storage: storage);
         var resource = Faker.Random.AlphaNumeric(10);
@@ -1170,6 +1177,61 @@ public sealed class DistributedLockTests : TestBase
         (await provider.IsLockedAsync(resource, AbortToken))
             .Should()
             .BeFalse();
+    }
+
+    [Fact]
+    public async Task should_release_lock_even_when_outbox_publish_fails()
+    {
+        // given — healthy storage, but the outbox bus dies when publishing the release notification.
+        // The publish is a best-effort wake-up for waiters; its failure must not fail the release
+        // itself (waiters fall back to polling / TTL expiry).
+        var provider = _CreateProvider();
+        var resource = Faker.Random.AlphaNumeric(10);
+        _outboxBus
+            .PublishAsync(Arg.Any<DistributedLockReleased>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw new InvalidOperationException("outbox down"));
+
+        var acquiredLock = await provider.TryAcquireAsync(resource, cancellationToken: AbortToken);
+        acquiredLock.Should().NotBeNull();
+
+        // when
+        var act = async () => await provider.ReleaseAsync(resource, acquiredLock!.LeaseId, AbortToken);
+
+        // then — release completes and the lock is actually gone from storage.
+        await act.Should().NotThrowAsync();
+        (await provider.IsLockedAsync(resource, AbortToken)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_return_without_publishing_when_release_exceeds_dispose_timeout()
+    {
+        // given — storage hangs forever on remove. DisposeTimeout bounds the release so application
+        // shutdown is never blocked by sustained storage unavailability; on timeout the release
+        // returns without throwing, skips the outbox publish, and the record TTL is the fallback.
+        var storage = Substitute.For<IDistributedLockStorage>();
+        storage
+            .RemoveIfEqualAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => new ValueTask<bool>(new TaskCompletionSource<bool>().Task));
+
+        var options = new DistributedLockOptions { DisposeTimeout = TimeSpan.FromSeconds(5) };
+        var provider = _CreateProvider(options, storage: storage);
+
+        // when — run release and advance time past the dispose timeout
+        var releaseTask = provider.ReleaseAsync("resource", "lock-id", AbortToken);
+
+        for (var i = 0; i < 10; i++)
+        {
+            await Task.Yield();
+            _timeProvider.Advance(TimeSpan.FromSeconds(1));
+        }
+
+        var act = async () => await releaseTask;
+
+        // then — no throw and no publish (an unconfirmed release must not wake waiters early)
+        await act.Should().NotThrowAsync();
+        await _outboxBus
+            .DidNotReceive()
+            .PublishAsync(Arg.Any<DistributedLockReleased>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]

@@ -14,8 +14,13 @@ namespace Headless.Captcha;
 [PublicAPI]
 public static class CaptchaConstants
 {
+    /// <summary>Canonical keyed-DI key for the default Google reCAPTCHA v2 provider.</summary>
     public const string ReCaptchaV2Provider = "Headless.Captcha:ReCaptchaV2";
+
+    /// <summary>Canonical keyed-DI key for the default Google reCAPTCHA v3 provider.</summary>
     public const string ReCaptchaV3Provider = "Headless.Captcha:ReCaptchaV3";
+
+    /// <summary>Canonical keyed-DI key for the default Cloudflare Turnstile provider.</summary>
     public const string TurnstileProvider = "Headless.Captcha:Turnstile";
 
     /// <summary>

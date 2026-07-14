@@ -1,6 +1,8 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <Description>General-purpose primitives, collections, threading, IO, and value helpers for Headless Framework packages and consumers.</Description>
+    <PackageTags>headless;extensions;dotnet</PackageTags>
     <RootNamespace>Headless</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
@@ -23,6 +25,8 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+    <ProjectReference Include="..\Headless.Urls\Headless.Urls.csproj" />
+    <ProjectReference Include="..\Headless.Primitives\Headless.Primitives.csproj" />
     <ProjectReference Include="..\Headless.Generator.Primitives.Abstractions\Headless.Generator.Primitives.Abstractions.csproj" />
     <ProjectReference
       Include="..\Headless.Generator.Primitives\Headless.Generator.Primitives.csproj"

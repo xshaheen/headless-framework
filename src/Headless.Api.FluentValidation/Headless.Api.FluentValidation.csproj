@@ -1,6 +1,8 @@
 ﻿<Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <Description>FluentValidation integration for Headless API.</Description>
+    <PackageTags>headless;api;fluentvalidation;dotnet</PackageTags>
     <RootNamespace>FluentValidation</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
@@ -8,6 +10,7 @@
     <PackageReference Include="FileSignatures" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Headless.Api.Core\Headless.Api.Core.csproj" />
     <ProjectReference Include="..\Headless.FluentValidation\Headless.FluentValidation.csproj" />
   </ItemGroup>
   <ItemGroup Label="Resources">

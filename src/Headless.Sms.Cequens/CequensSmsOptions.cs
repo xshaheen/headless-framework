@@ -11,29 +11,30 @@ namespace Headless.Sms.Cequens;
 /// 401 response. Supply <see cref="Token"/> to bypass dynamic token acquisition and use a static token
 /// instead (useful for testing or environments where outbound auth calls are restricted).
 /// </remarks>
+[PublicAPI]
 public sealed class CequensSmsOptions
 {
     /// <summary>The Cequens REST endpoint for sending a single SMS. Defaults to the Cequens production URL.</summary>
-    public string SingleSmsEndpoint { get; init; } = "https://apis.cequens.com/sms/v1/messages";
+    public string SingleSmsEndpoint { get; set; } = "https://apis.cequens.com/sms/v1/messages";
 
     /// <summary>The Cequens authentication endpoint used to exchange credentials for a JWT. Defaults to the Cequens production URL.</summary>
-    public string TokenEndpoint { get; init; } = "https://apis.cequens.com/auth/v1/tokens";
+    public string TokenEndpoint { get; set; } = "https://apis.cequens.com/auth/v1/tokens";
 
     /// <summary>The Cequens API key used together with <see cref="UserName"/> to authenticate and obtain a JWT.</summary>
-    public required string ApiKey { get; init; }
+    public required string ApiKey { get; set; }
 
     /// <summary>The Cequens account username used together with <see cref="ApiKey"/> to authenticate and obtain a JWT.</summary>
-    public required string UserName { get; init; }
+    public required string UserName { get; set; }
 
     /// <summary>The registered sender name displayed to the SMS recipient.</summary>
-    public required string SenderName { get; init; }
+    public required string SenderName { get; set; }
 
     /// <summary>
     /// Optional static JWT to use instead of dynamically fetching one from <see cref="TokenEndpoint"/>.
     /// When set, the sender skips the sign-in call and uses this token directly. May be
     /// <see langword="null"/> to enable dynamic token management.
     /// </summary>
-    public string? Token { get; init; }
+    public string? Token { get; set; }
 }
 
 [UsedImplicitly]

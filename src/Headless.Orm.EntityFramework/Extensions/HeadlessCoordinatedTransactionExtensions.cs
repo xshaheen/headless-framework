@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
-using Headless.CommitCoordination.EntityFramework;
 using Headless.EntityFramework;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
@@ -21,10 +20,9 @@ namespace Microsoft.EntityFrameworkCore;
 /// scope, so those overloads require an explicit <c>IServiceProvider</c>.
 /// </para>
 /// <para>
-/// The whole block runs inside the context's execution strategy, so it is safe with retrying providers
-/// (e.g. SQL Server with <c>EnableRetryOnFailure</c>). The enlist lives <b>inside</b> the retried delegate:
-/// a transient-fault retry disposes the enlist scope un-signalled (discarding its buffer) and the next
-/// attempt opens a fresh transaction and coordinator — no double-dispatch, no stale buffer.
+/// The whole block runs inside the context's execution strategy. A failure before commit starts may retry with a
+/// fresh transaction and coordinator. Once commit starts, any exception is surfaced without replay because the
+/// database outcome may be unknown; use client-generated keys or another idempotency key to reconcile that outcome.
 /// </para>
 /// </remarks>
 [PublicAPI]
@@ -46,33 +44,13 @@ public static class HeadlessCoordinatedTransactionExtensions
         IsolationLevel isolation = IsolationLevel.ReadCommitted,
         CancellationToken cancellationToken = default
     )
-        where TContext : DbContext, IHeadlessDbContext
-    {
-        var services = (context).ServiceProvider;
-        var state = (Operation: operation, Isolation: isolation, Context: context, Services: services);
-
-        return context
-            .Database.CreateExecutionStrategy()
-            .ExecuteAsync(
-                state,
-                static async (state, ct) =>
-                {
-                    await using var transaction = await state
-                        .Context.Database.BeginTransactionAsync(state.Isolation, ct)
-                        .ConfigureAwait(false);
-
-                    // Enlist SYNCHRONOUSLY, in this frame, so the ambient coordinator flows to the operation's
-                    // publishes. An AsyncLocal push inside an async helper would not propagate to this delegate.
-                    await using var _ = state
-                        .Context.Database.EnlistCommitCoordination(transaction, state.Services, ct)
-                        .ConfigureAwait(false);
-
-                    await state.Operation(state.Context, ct).ConfigureAwait(false);
-                    await transaction.CommitAsync(ct).ConfigureAwait(false);
-                },
-                cancellationToken
-            );
-    }
+        where TContext : DbContext, IHeadlessDbContext =>
+        context.ExecuteCoordinatedTransactionAsync(
+            (dbContext, ct) => operation((TContext)dbContext, ct),
+            context.ServiceProvider,
+            isolation,
+            cancellationToken
+        );
 
     /// <inheritdoc cref="ExecuteCoordinatedTransactionAsync{TContext}(TContext, Func{TContext, CancellationToken, Task}, IsolationLevel, CancellationToken)"/>
     /// <typeparam name="TArg">Type of the argument passed to <paramref name="operation"/>.</typeparam>
@@ -84,31 +62,13 @@ public static class HeadlessCoordinatedTransactionExtensions
         IsolationLevel isolation = IsolationLevel.ReadCommitted,
         CancellationToken cancellationToken = default
     )
-        where TContext : DbContext, IHeadlessDbContext
-    {
-        var services = (context).ServiceProvider;
-        var state = (Operation: operation, Arg: arg, Isolation: isolation, Context: context, Services: services);
-
-        return context
-            .Database.CreateExecutionStrategy()
-            .ExecuteAsync(
-                state,
-                static async (state, ct) =>
-                {
-                    await using var transaction = await state
-                        .Context.Database.BeginTransactionAsync(state.Isolation, ct)
-                        .ConfigureAwait(false);
-
-                    await using var _ = state
-                        .Context.Database.EnlistCommitCoordination(transaction, state.Services, ct)
-                        .ConfigureAwait(false);
-
-                    await state.Operation(state.Arg, state.Context, ct).ConfigureAwait(false);
-                    await transaction.CommitAsync(ct).ConfigureAwait(false);
-                },
-                cancellationToken
-            );
-    }
+        where TContext : DbContext, IHeadlessDbContext =>
+        context.ExecuteCoordinatedTransactionAsync(
+            (dbContext, ct) => operation(arg, (TContext)dbContext, ct),
+            context.ServiceProvider,
+            isolation,
+            cancellationToken
+        );
 
     /// <summary>
     /// Executes <paramref name="operation"/> inside a resilient, commit-coordinated transaction and returns
@@ -127,33 +87,13 @@ public static class HeadlessCoordinatedTransactionExtensions
         IsolationLevel isolation = IsolationLevel.ReadCommitted,
         CancellationToken cancellationToken = default
     )
-        where TContext : DbContext, IHeadlessDbContext
-    {
-        var services = (context).ServiceProvider;
-        var state = (Operation: operation, Isolation: isolation, Context: context, Services: services);
-
-        return context
-            .Database.CreateExecutionStrategy()
-            .ExecuteAsync(
-                state,
-                static async (state, ct) =>
-                {
-                    await using var transaction = await state
-                        .Context.Database.BeginTransactionAsync(state.Isolation, ct)
-                        .ConfigureAwait(false);
-
-                    await using var _ = state
-                        .Context.Database.EnlistCommitCoordination(transaction, state.Services, ct)
-                        .ConfigureAwait(false);
-
-                    var result = await state.Operation(state.Context, ct).ConfigureAwait(false);
-                    await transaction.CommitAsync(ct).ConfigureAwait(false);
-
-                    return result;
-                },
-                cancellationToken
-            );
-    }
+        where TContext : DbContext, IHeadlessDbContext =>
+        context.ExecuteCoordinatedTransactionAsync(
+            (dbContext, ct) => operation((TContext)dbContext, ct),
+            context.ServiceProvider,
+            isolation,
+            cancellationToken
+        );
 
     /// <inheritdoc cref="ExecuteCoordinatedTransactionAsync{TContext, TResult}(TContext, Func{TContext, CancellationToken, Task{TResult}}, IsolationLevel, CancellationToken)"/>
     /// <typeparam name="TArg">Type of the argument passed to <paramref name="operation"/>.</typeparam>
@@ -165,31 +105,11 @@ public static class HeadlessCoordinatedTransactionExtensions
         IsolationLevel isolation = IsolationLevel.ReadCommitted,
         CancellationToken cancellationToken = default
     )
-        where TContext : DbContext, IHeadlessDbContext
-    {
-        var services = (context).ServiceProvider;
-        var state = (Operation: operation, Arg: arg, Isolation: isolation, Context: context, Services: services);
-
-        return context
-            .Database.CreateExecutionStrategy()
-            .ExecuteAsync(
-                state,
-                static async (state, ct) =>
-                {
-                    await using var transaction = await state
-                        .Context.Database.BeginTransactionAsync(state.Isolation, ct)
-                        .ConfigureAwait(false);
-
-                    await using var _ = state
-                        .Context.Database.EnlistCommitCoordination(transaction, state.Services, ct)
-                        .ConfigureAwait(false);
-
-                    var result = await state.Operation(state.Arg, state.Context, ct).ConfigureAwait(false);
-                    await transaction.CommitAsync(ct).ConfigureAwait(false);
-
-                    return result;
-                },
-                cancellationToken
-            );
-    }
+        where TContext : DbContext, IHeadlessDbContext =>
+        context.ExecuteCoordinatedTransactionAsync(
+            (dbContext, ct) => operation(arg, (TContext)dbContext, ct),
+            context.ServiceProvider,
+            isolation,
+            cancellationToken
+        );
 }

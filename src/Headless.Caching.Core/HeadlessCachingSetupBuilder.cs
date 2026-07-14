@@ -23,6 +23,8 @@ public sealed class HeadlessCachingSetupBuilder
 
     internal IServiceCollection Services { get; }
 
+    internal IReadOnlySet<string> InstanceNames => _instanceNames;
+
     internal List<(string RoleKey, Action<IServiceCollection> Action)> DefaultExtensions { get; } = [];
 
     internal List<(string RoleKey, Action<IServiceCollection> Action)> TierExtensions { get; } = [];
@@ -62,7 +64,7 @@ public sealed class HeadlessCachingSetupBuilder
                 + $"'{CacheConstants.HybridCacheProvider}')."
         );
 
-        if (TierExtensions.Any(tier => string.Equals(tier.RoleKey, roleKey, StringComparison.Ordinal)))
+        if (TierExtensions.Exists(tier => string.Equals(tier.RoleKey, roleKey, StringComparison.Ordinal)))
         {
             throw new InvalidOperationException($"A tier provider is already registered for the role key '{roleKey}'.");
         }
@@ -92,16 +94,14 @@ public sealed class HeadlessCachingSetupBuilder
         Argument.IsNotNullOrWhiteSpace(name);
         Argument.IsNotNull(configure);
 
-        if (CacheConstants.IsReservedProviderKey(name))
-        {
-            throw new ArgumentException(
-                $"The cache name '{name}' is reserved for the role-keyed registrations "
-                    + $"('{CacheConstants.MemoryCacheProvider}', '{CacheConstants.RemoteCacheProvider}', "
-                    + $"'{CacheConstants.HybridCacheProvider}', and the 'Headless.Caching:' "
-                    + "namespace). Pick a different instance name.",
-                nameof(name)
-            );
-        }
+        Argument.IsTrue(
+            !CacheConstants.IsReservedProviderKey(name),
+            $"The cache name '{name}' is reserved for the role-keyed registrations "
+                + $"('{CacheConstants.MemoryCacheProvider}', '{CacheConstants.RemoteCacheProvider}', "
+                + $"'{CacheConstants.HybridCacheProvider}', and the 'Headless.Caching:' "
+                + "namespace). Pick a different instance name.",
+            nameof(name)
+        );
 
         if (!_instanceNames.Add(name))
         {

@@ -87,7 +87,8 @@ public sealed class PasswordGenerator : IPasswordGenerator
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// The options are internally inconsistent: <see cref="GeneratePasswordOptions.Length"/> is less than the
-    /// number of enabled required-character sets; no character set is enabled for the remaining fill pool; or
+    /// number of enabled required-character sets; no character set is enabled when remaining characters or
+    /// additional unique characters must be drawn from the remaining fill pool; or
     /// <see cref="GeneratePasswordOptions.RequiredUniqueChars"/> exceeds the total number of distinct characters
     /// across all available sets.
     /// </exception>
@@ -115,20 +116,25 @@ public sealed class PasswordGenerator : IPasswordGenerator
         );
 
         Ensure.True(
-            options.UseDigitsInRemaining
-                || options.UseLowercaseInRemaining
-                || options.UseUppercaseInRemaining
-                || options.UseNonAlphanumericInRemaining,
-            "Invalid password configuration provided. At least one character set must be used in remaining characters."
-        );
-
-        Ensure.True(
             requiredUniqueChars
                 <= _NonAlphanumericChars.Length + _DigitsChars.Length + _LowercaseChars.Length + _UppercaseChars.Length,
             "Invalid password configuration provided. Required unique characters count is greater than the total available characters."
         );
 
         requiredUniqueChars = Math.Min(requiredUniqueChars, length);
+
+        var hasRemainingCharacterSet =
+            options.UseDigitsInRemaining
+            || options.UseLowercaseInRemaining
+            || options.UseUppercaseInRemaining
+            || options.UseNonAlphanumericInRemaining;
+
+        var needsRemainingCharacterSet = length > requiredCharsCount || requiredUniqueChars > requiredCharsCount;
+
+        Ensure.True(
+            !needsRemainingCharacterSet || hasRemainingCharacterSet,
+            "Invalid password configuration provided. At least one character set must be used in remaining characters."
+        );
 
         /* Generate password */
 

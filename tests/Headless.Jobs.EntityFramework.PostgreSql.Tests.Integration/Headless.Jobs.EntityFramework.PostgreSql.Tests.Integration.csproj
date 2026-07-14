@@ -16,6 +16,9 @@
     <ProjectReference Include="..\..\src\Headless.Coordination.PostgreSql\Headless.Coordination.PostgreSql.csproj" />
     <ProjectReference Include="..\..\src\Headless.Jobs.Core\Headless.Jobs.Core.csproj" />
     <ProjectReference Include="..\..\src\Headless.Jobs.EntityFramework\Headless.Jobs.EntityFramework.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Jobs.EntityFramework.PostgreSql\Headless.Jobs.EntityFramework.PostgreSql.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Messaging.Core\Headless.Messaging.Core.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Messaging.Storage.PostgreSql\Headless.Messaging.Storage.PostgreSql.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing.Testcontainers\Headless.Testing.Testcontainers.csproj" />
     <ProjectReference Include="..\Headless.Jobs.EntityFramework.Tests.Harness\Headless.Jobs.EntityFramework.Tests.Harness.csproj" />
   </ItemGroup>

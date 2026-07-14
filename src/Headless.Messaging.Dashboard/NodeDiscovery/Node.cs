@@ -6,6 +6,7 @@ namespace Headless.Messaging.Dashboard.NodeDiscovery;
 /// Represents a discovered messaging node in the dashboard federation.
 /// Each node exposes its own dashboard API and can be selected in the UI to proxy requests to its data.
 /// </summary>
+[PublicAPI]
 public class Node
 {
     /// <summary>Unique identifier assigned by the discovery backend (service ID in Consul, UID in Kubernetes).</summary>

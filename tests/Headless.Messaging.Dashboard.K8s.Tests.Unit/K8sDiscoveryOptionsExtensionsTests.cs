@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
-public sealed class K8SDiscoveryOptionsExtensionsTests : TestBase
+public sealed class K8sDiscoveryOptionsExtensionsTests : TestBase
 {
     [Fact]
     public void UseK8sDiscovery_should_return_same_setup_instance()
@@ -61,9 +61,10 @@ public sealed class K8SDiscoveryOptionsExtensionsTests : TestBase
 
         // then - verify extension was registered via internal property
         var extensionsProp = typeof(MessagingSetupBuilder).GetProperty(
-            "Extensions",
+            nameof(MessagingSetupBuilder.Extensions),
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         );
+
         var extensions = extensionsProp?.GetValue(setup) as IList<IMessagesOptionsExtension>;
 
         extensions.Should().NotBeNullOrEmpty();

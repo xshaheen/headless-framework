@@ -7,6 +7,7 @@ using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
+using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Serialization;
 using Headless.Messaging.Storage.PostgreSql;
@@ -198,7 +199,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
 
         // when
         var initializer = new PostgreSqlStorageInitializer(
-            Substitute.For<Microsoft.Extensions.Logging.ILogger<PostgreSqlStorageInitializer>>(),
+            NullLogger<PostgreSqlStorageInitializer>.Instance,
             Options.Create(new PostgreSqlOptions { ConnectionString = fixture.ConnectionString }),
             Options.Create(new MessagingOptions { Version = "v1" })
         );
@@ -224,7 +225,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
 
         // when
         var initializer = new PostgreSqlStorageInitializer(
-            Substitute.For<Microsoft.Extensions.Logging.ILogger<PostgreSqlStorageInitializer>>(),
+            NullLogger<PostgreSqlStorageInitializer>.Instance,
             Options.Create(new PostgreSqlOptions { ConnectionString = fixture.ConnectionString }),
             Options.Create(new MessagingOptions { Version = "v1" })
         );

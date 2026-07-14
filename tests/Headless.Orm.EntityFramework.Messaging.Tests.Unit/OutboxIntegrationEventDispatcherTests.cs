@@ -4,13 +4,12 @@ using Headless.CommitCoordination;
 using Headless.Domain;
 using Headless.EntityFramework;
 using Headless.Messaging;
-using Microsoft.EntityFrameworkCore.Storage;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
-using NSubstitute;
 
 namespace Tests;
 
-public sealed class OutboxIntegrationEventDispatcherTests
+public sealed class OutboxIntegrationEventDispatcherTests : TestBase
 {
     #region Test Infrastructure
 
@@ -19,7 +18,7 @@ public sealed class OutboxIntegrationEventDispatcherTests
     private sealed record PaymentCaptured(string UniqueId) : IIntegrationEvent;
 
     // An ambient coordinator (Current != null) models the save pipeline having opened a coordinated transaction.
-    private static ICurrentCommitCoordinator AmbientCoordinator()
+    private static ICurrentCommitCoordinator _AmbientCoordinator()
     {
         var current = Substitute.For<ICurrentCommitCoordinator>();
         current.Current.Returns(Substitute.For<ICommitCoordinator>());
@@ -68,7 +67,7 @@ public sealed class OutboxIntegrationEventDispatcherTests
 
         // when
         var invoke = cache.GetPublishInvoker(integrationEvent.GetType());
-        await invoke(bus, integrationEvent, TestContext.Current.CancellationToken);
+        await invoke(bus, integrationEvent, AbortToken);
 
         // then
         bus.Published.Should().ContainSingle();
@@ -100,8 +99,8 @@ public sealed class OutboxIntegrationEventDispatcherTests
         IIntegrationEvent second = new PaymentCaptured("payment");
 
         // when
-        await cache.GetPublishInvoker(first.GetType())(bus, first, TestContext.Current.CancellationToken);
-        await cache.GetPublishInvoker(second.GetType())(bus, second, TestContext.Current.CancellationToken);
+        await cache.GetPublishInvoker(first.GetType())(bus, first, AbortToken);
+        await cache.GetPublishInvoker(second.GetType())(bus, second, AbortToken);
 
         // then
         bus.Published.Select(x => x.GenericType).Should().Equal(typeof(OrderPlaced), typeof(PaymentCaptured));
@@ -118,11 +117,11 @@ public sealed class OutboxIntegrationEventDispatcherTests
         var bus = new RecordingOutboxBus();
         var dispatcher = new OutboxIntegrationEventDispatcher(
             bus,
-            AmbientCoordinator(),
+            _AmbientCoordinator(),
             new IntegrationEventPublishInvokerCache()
         );
         // when
-        await dispatcher.DispatchAsync([], TestContext.Current.CancellationToken);
+        await dispatcher.DispatchAsync([], AbortToken);
 
         // then
         bus.Published.Should().BeEmpty();
@@ -136,13 +135,13 @@ public sealed class OutboxIntegrationEventDispatcherTests
         var bus = new RecordingOutboxBus();
         var dispatcher = new OutboxIntegrationEventDispatcher(
             bus,
-            AmbientCoordinator(),
+            _AmbientCoordinator(),
             new IntegrationEventPublishInvokerCache()
         );
         IReadOnlyList<IIntegrationEvent> events = [new OrderPlaced("order-1"), new PaymentCaptured("payment-1")];
 
         // when
-        await dispatcher.DispatchAsync(events, TestContext.Current.CancellationToken);
+        await dispatcher.DispatchAsync(events, AbortToken);
 
         // then
         bus.Published.Should().HaveCount(2);
@@ -157,13 +156,13 @@ public sealed class OutboxIntegrationEventDispatcherTests
         var bus = new ThrowingOutboxBus();
         var dispatcher = new OutboxIntegrationEventDispatcher(
             bus,
-            AmbientCoordinator(),
+            _AmbientCoordinator(),
             new IntegrationEventPublishInvokerCache()
         );
         IReadOnlyList<IIntegrationEvent> events = [new OrderPlaced("order-1")];
 
         // when
-        var act = async () => await dispatcher.DispatchAsync(events, TestContext.Current.CancellationToken);
+        var act = async () => await dispatcher.DispatchAsync(events, AbortToken);
 
         // then
         (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("Publish failed");
@@ -177,7 +176,7 @@ public sealed class OutboxIntegrationEventDispatcherTests
         var bus = new RecordingOutboxBus();
         var dispatcher = new OutboxIntegrationEventDispatcher(
             bus,
-            AmbientCoordinator(),
+            _AmbientCoordinator(),
             new IntegrationEventPublishInvokerCache()
         );
         IReadOnlyList<IIntegrationEvent> events = [new OrderPlaced("order-1")];
@@ -199,7 +198,7 @@ public sealed class OutboxIntegrationEventDispatcherTests
         var bus = new RecordingOutboxBus();
         var dispatcher = new OutboxIntegrationEventDispatcher(
             bus,
-            AmbientCoordinator(),
+            _AmbientCoordinator(),
             new IntegrationEventPublishInvokerCache()
         );
         IReadOnlyList<IIntegrationEvent> events = [new OrderPlaced("order-1")];
@@ -229,7 +228,7 @@ public sealed class OutboxIntegrationEventDispatcherTests
         IReadOnlyList<IIntegrationEvent> events = [new OrderPlaced("order-1")];
 
         // when
-        var act = async () => await dispatcher.DispatchAsync(events, TestContext.Current.CancellationToken);
+        var act = async () => await dispatcher.DispatchAsync(events, AbortToken);
 
         // then — fails loud and publishes nothing
         (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage(

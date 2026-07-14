@@ -9,6 +9,7 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
 namespace Tests.ReaderWriterLocks;
 
 public sealed class DistributedReadWriteLockTests : TestBase
@@ -48,6 +49,37 @@ public sealed class DistributedReadWriteLockTests : TestBase
             _timeProvider,
             logger
         );
+    }
+
+    [Fact]
+    public async Task should_return_without_throwing_when_release_exceeds_dispose_timeout()
+    {
+        // given — write-release hangs forever in storage. DisposeTimeout bounds the release so
+        // shutdown is never blocked; on timeout the release returns without throwing and the
+        // record TTL is the eventual-consistency fallback.
+        var storage = Substitute.For<IDistributedReadWriteLockStorage>();
+        storage
+            .ReleaseWriteAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => new ValueTask(new TaskCompletionSource().Task));
+
+        var provider = _CreateProvider(
+            storage,
+            options: new DistributedLockOptions { DisposeTimeout = TimeSpan.FromSeconds(5) }
+        );
+
+        // when — run release and advance time past the dispose timeout
+        var releaseTask = provider.ReleaseAsync(ReaderWriterLockMode.Write, "resource", "lease-1", AbortToken);
+
+        for (var i = 0; i < 10; i++)
+        {
+            await Task.Yield();
+            _timeProvider.Advance(TimeSpan.FromSeconds(1));
+        }
+
+        var act = async () => await releaseTask;
+
+        // then
+        await act.Should().NotThrowAsync();
     }
 
     [Fact]
@@ -347,7 +379,7 @@ public sealed class DistributedReadWriteLockTests : TestBase
 
         // then
         result.Should().BeNull();
-        storage.WriteReleaseCount.Should().BeGreaterThan(0);
+        storage.WriteReleaseCount.Should().BePositive();
     }
 
     [Fact]

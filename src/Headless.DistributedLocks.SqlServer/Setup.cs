@@ -2,14 +2,15 @@
 
 using Headless.Abstractions;
 using Headless.Checks;
-using Headless.Core;
+using Headless.DistributedLocks.SqlServer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Headless.DistributedLocks.SqlServer;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.DistributedLocks;
 
 /// <summary>
 /// Extension members on <see cref="HeadlessDistributedLocksSetupBuilder"/> that wire the SQL Server
@@ -35,10 +36,7 @@ public static class SetupSqlServerDistributedLocks
         {
             Argument.IsNotNullOrWhiteSpace(connectionString);
 
-            return setup.UseSqlServer(options =>
-            {
-                options.ConnectionString = connectionString;
-            });
+            return setup.UseSqlServer(options => options.ConnectionString = connectionString);
         }
 
         /// <summary>

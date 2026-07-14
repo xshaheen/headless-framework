@@ -38,8 +38,11 @@ public static class SetupIdentityEntityFramework
         /// </param>
         /// <param name="contextLifetime">The DI lifetime for <typeparamref name="TDbContext"/> (default: Scoped).</param>
         /// <param name="optionsLifetime">The DI lifetime for the EF Core options object (default: Scoped).</param>
-        /// <returns>The same <see cref="IServiceCollection"/> instance so calls can be chained.</returns>
-        public IServiceCollection AddHeadlessDbContext<
+        /// <returns>
+        /// An <see cref="IHeadlessDbContextBuilder"/> so optional event tiers (domain events, integration
+        /// outbox) can be chained, matching the canonical <c>SetupEntityFramework.AddHeadlessDbContext</c>.
+        /// </returns>
+        public IHeadlessDbContextBuilder AddHeadlessDbContext<
             TDbContext,
             TUser,
             TRole,
@@ -113,8 +116,11 @@ public static class SetupIdentityEntityFramework
         /// </param>
         /// <param name="contextLifetime">The DI lifetime for <typeparamref name="TDbContext"/> (default: Scoped).</param>
         /// <param name="optionsLifetime">The DI lifetime for the EF Core options object (default: Scoped).</param>
-        /// <returns>The same <see cref="IServiceCollection"/> instance so calls can be chained.</returns>
-        public IServiceCollection AddHeadlessDbContext<
+        /// <returns>
+        /// An <see cref="IHeadlessDbContextBuilder"/> so optional event tiers (domain events, integration
+        /// outbox) can be chained, matching the canonical <c>SetupEntityFramework.AddHeadlessDbContext</c>.
+        /// </returns>
+        public IHeadlessDbContextBuilder AddHeadlessDbContext<
             TDbContext,
             TUser,
             TRole,
@@ -185,8 +191,11 @@ public static class SetupIdentityEntityFramework
         /// </param>
         /// <param name="contextLifetime">The DI lifetime for <typeparamref name="TDbContext"/> (default: Scoped).</param>
         /// <param name="optionsLifetime">The DI lifetime for the EF Core options object (default: Scoped).</param>
-        /// <returns>The same <see cref="IServiceCollection"/> instance so calls can be chained.</returns>
-        public IServiceCollection AddHeadlessDbContext<
+        /// <returns>
+        /// An <see cref="IHeadlessDbContextBuilder"/> so optional event tiers (domain events, integration
+        /// outbox) can be chained, matching the canonical <c>SetupEntityFramework.AddHeadlessDbContext</c>.
+        /// </returns>
+        public IHeadlessDbContextBuilder AddHeadlessDbContext<
             TDbContext,
             TUser,
             TRole,
@@ -264,8 +273,11 @@ public static class SetupIdentityEntityFramework
         /// </param>
         /// <param name="contextLifetime">The DI lifetime for <typeparamref name="TDbContext"/> (default: Scoped).</param>
         /// <param name="optionsLifetime">The DI lifetime for the EF Core options object (default: Scoped).</param>
-        /// <returns>The same <see cref="IServiceCollection"/> instance so calls can be chained.</returns>
-        public IServiceCollection AddHeadlessDbContext<
+        /// <returns>
+        /// An <see cref="IHeadlessDbContextBuilder"/> so optional event tiers (domain events, integration
+        /// outbox) can be chained, matching the canonical <c>SetupEntityFramework.AddHeadlessDbContext</c>.
+        /// </returns>
+        public IHeadlessDbContextBuilder AddHeadlessDbContext<
             TDbContext,
             TUser,
             TRole,
@@ -313,7 +325,7 @@ public static class SetupIdentityEntityFramework
             // tenancy guard options, clock, current tenant/user, correlation ID. The canonical
             // SetupEntityFramework helper centralizes this so Identity stays parity with plain
             // HeadlessDbContext registration.
-            services.AddHeadlessDbContextServices(configureHeadlessOptions);
+            var builder = services.AddHeadlessDbContextServices(configureHeadlessOptions);
 
             // Parity with AddHeadlessDbContext: attach DI-registered interceptors (e.g. commit coordination) via a
             // registered IDbContextOptionsConfiguration<TDbContext> so they also reach a consumer's own plain
@@ -335,7 +347,7 @@ public static class SetupIdentityEntityFramework
             // context without a separate AddDbContextFactory call.
             services.TryAddSingleton<IDbContextFactory<TDbContext>, HeadlessDbContextFactory<TDbContext>>();
 
-            return services;
+            return builder;
         }
     }
 
@@ -351,10 +363,7 @@ public static class SetupIdentityEntityFramework
         }
 
         services.TryAddSingleton<HeadlessIdentityDefaultsSentinel>();
-        services.Configure<IdentityOptions>(options =>
-        {
-            options.Stores.SchemaVersion = IdentitySchemaVersions.Version3;
-        });
+        services.Configure<IdentityOptions>(options => options.Stores.SchemaVersion = IdentitySchemaVersions.Version3);
     }
 }
 

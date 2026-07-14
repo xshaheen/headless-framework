@@ -2,7 +2,6 @@
 
 using Headless.Messaging;
 using Headless.Messaging.InMemory;
-using Headless.Messaging.Messages;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 
@@ -48,7 +47,7 @@ public sealed class MemoryQueueTests : TestBase
         var messageNames = new[] { "messageName-1", "messageName-2" };
 
         // when
-        await _consumerClient.SubscribeAsync(messageNames);
+        await _consumerClient.SubscribeAsync(messageNames, AbortToken);
 
         // then - subscribe should complete without exception
         // The subscription is verified by being able to send messages
@@ -60,7 +59,7 @@ public sealed class MemoryQueueTests : TestBase
     {
         // given
         var messageNames = new[] { "test-messageName" };
-        await _consumerClient.SubscribeAsync(messageNames);
+        await _consumerClient.SubscribeAsync(messageNames, AbortToken);
 
         TransportMessage? receivedMessage = null;
         var tcs = new TaskCompletionSource();
@@ -100,8 +99,8 @@ public sealed class MemoryQueueTests : TestBase
 
         // then
         receivedMessage.Should().NotBeNull();
-        receivedMessage!.Value.GetId().Should().Be("msg-1");
-        receivedMessage.Value.GetName().Should().Be("test-messageName");
+        receivedMessage!.Value.Id.Should().Be("msg-1");
+        receivedMessage.Value.Name.Should().Be("test-messageName");
     }
 
     [Fact]
@@ -110,7 +109,7 @@ public sealed class MemoryQueueTests : TestBase
         // given — no subscriber registered; SendBus matches real-broker no-op semantics (no throw)
         var message = _CreateTestMessage("msg-1", "unsubscribed-messageName");
 
-        // when / then — must not throw
+        // when & then — must not throw
         var action = () => _queue.SendBus(message);
         action.Should().NotThrow();
     }
@@ -120,7 +119,7 @@ public sealed class MemoryQueueTests : TestBase
     {
         // given
         var messageNames = new[] { "messageName-a", "messageName-b" };
-        await _consumerClient.SubscribeAsync(messageNames);
+        await _consumerClient.SubscribeAsync(messageNames, AbortToken);
 
         var receivedMessages = new List<TransportMessage>();
         var lockObj = new Lock();
@@ -169,7 +168,7 @@ public sealed class MemoryQueueTests : TestBase
 
         // then
         receivedMessages.Should().HaveCount(2);
-        receivedMessages.Select(m => m.GetId()).Should().BeEquivalentTo(["msg-a", "msg-b"]);
+        receivedMessages.Select(m => m.Id).Should().BeEquivalentTo(["msg-a", "msg-b"]);
     }
 
     [Fact]
@@ -177,7 +176,7 @@ public sealed class MemoryQueueTests : TestBase
     {
         // given
         var messageNames = new[] { "concurrent-messageName" };
-        await _consumerClient.SubscribeAsync(messageNames);
+        await _consumerClient.SubscribeAsync(messageNames, AbortToken);
 
         var receivedMessages = new List<TransportMessage>();
         var lockObj = new Lock();
@@ -243,8 +242,8 @@ public sealed class MemoryQueueTests : TestBase
         var client1 = new InMemoryConsumerClient(queue, "group-1", 1);
         var client2 = new InMemoryConsumerClient(queue, "group-2", 1);
 
-        await client1.SubscribeAsync(["shared-messageName"]);
-        await client2.SubscribeAsync(["shared-messageName"]);
+        await client1.SubscribeAsync(["shared-messageName"], AbortToken);
+        await client2.SubscribeAsync(["shared-messageName"], AbortToken);
 
         var messages1 = new List<TransportMessage>();
         var messages2 = new List<TransportMessage>();
@@ -300,8 +299,8 @@ public sealed class MemoryQueueTests : TestBase
         await cts.CancelAsync();
 
         // then - both groups should receive the message
-        messages1.Should().HaveCount(1);
-        messages2.Should().HaveCount(1);
+        messages1.Should().ContainSingle();
+        messages2.Should().ContainSingle();
 
         await client1.DisposeAsync();
         await client2.DisposeAsync();
@@ -311,7 +310,7 @@ public sealed class MemoryQueueTests : TestBase
     public async Task should_remove_consumer_on_unsubscribe()
     {
         // given
-        await _consumerClient.SubscribeAsync(["test-messageName"]);
+        await _consumerClient.SubscribeAsync(["test-messageName"], AbortToken);
 
         TransportMessage? receivedMessage = null;
         _consumerClient.OnMessageCallback = async (msg, sender) =>
@@ -352,10 +351,10 @@ public sealed class MemoryQueueTests : TestBase
     public async Task should_not_add_duplicate_group_to_topic()
     {
         // given
-        await _consumerClient.SubscribeAsync(["messageName-1"]);
+        await _consumerClient.SubscribeAsync(["messageName-1"], AbortToken);
 
         // when - subscribe same group to same messageName again
-        await _consumerClient.SubscribeAsync(["messageName-1"]);
+        await _consumerClient.SubscribeAsync(["messageName-1"], AbortToken);
 
         var receivedMessages = new List<TransportMessage>();
         var tcs = new TaskCompletionSource();
@@ -389,7 +388,7 @@ public sealed class MemoryQueueTests : TestBase
         await cts.CancelAsync();
 
         // then - should only receive one message, not duplicates
-        receivedMessages.Should().HaveCount(1);
+        receivedMessages.Should().ContainSingle();
     }
 
     // -------------------------------------------------------------------------
@@ -406,8 +405,8 @@ public sealed class MemoryQueueTests : TestBase
         var client1 = new InMemoryConsumerClient(queue, "drain-group-1", 1);
         var client2 = new InMemoryConsumerClient(queue, "drain-group-2", 1);
 
-        await client1.SubscribeAsync(["drain-messageName"]);
-        await client2.SubscribeAsync(["drain-messageName"]);
+        await client1.SubscribeAsync(["drain-messageName"], AbortToken);
+        await client2.SubscribeAsync(["drain-messageName"], AbortToken);
 
         // Enqueue messages (goes to both groups via Send)
         queue.SendBus(_CreateTestMessage("d1", "drain-messageName"));
@@ -472,7 +471,7 @@ public sealed class MemoryQueueTests : TestBase
         var logger = Substitute.For<ILogger<MemoryQueue>>();
         var queue = new MemoryQueue(logger);
 
-        // when / then
+        // when & then
         var act = () => queue.DrainAllPendingMessages();
         act.Should().NotThrow();
     }

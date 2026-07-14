@@ -12,10 +12,10 @@ internal sealed class CashInPaymentKeyInternalRequest(
     public string AuthToken { get; } = authToken;
 
     [JsonPropertyName("integration_id")]
-    public int IntegrationId { get; } = request.IntegrationId;
+    public long IntegrationId { get; } = request.IntegrationId;
 
     [JsonPropertyName("order_id")]
-    public int OrderId { get; } = request.OrderId;
+    public long OrderId { get; } = request.OrderId;
 
     [JsonPropertyName("amount_cents")]
     public string AmountCents { get; } = request.AmountCents.ToString(CultureInfo.InvariantCulture);

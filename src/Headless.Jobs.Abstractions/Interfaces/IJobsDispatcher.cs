@@ -7,7 +7,7 @@ namespace Headless.Jobs.Interfaces;
 /// <summary>
 /// Internal contract for submitting acquired job contexts to the Jobs thread pool for execution.
 /// </summary>
-public interface IJobsDispatcher
+internal interface IJobsDispatcher
 {
     /// <summary>
     /// <see langword="true"/> when background services are registered and the dispatcher is active.
@@ -21,5 +21,5 @@ public interface IJobsDispatcher
     /// </summary>
     /// <param name="contexts">The acquired job contexts to dispatch.</param>
     /// <param name="cancellationToken">Token that can abort dispatch.</param>
-    Task DispatchAsync(InternalFunctionContext[] contexts, CancellationToken cancellationToken = default);
+    Task DispatchAsync(JobExecutionState[] contexts, CancellationToken cancellationToken = default);
 }

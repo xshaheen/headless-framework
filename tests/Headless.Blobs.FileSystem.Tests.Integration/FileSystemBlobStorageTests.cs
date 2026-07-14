@@ -2,6 +2,7 @@
 
 using Headless.Blobs;
 using Headless.Blobs.FileSystem;
+using Headless.Serializer;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -11,15 +12,30 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
 {
     private readonly string _baseDirectoryPath = Directory.CreateTempSubdirectory().FullName;
 
+    private IOptions<FileSystemBlobStorageOptions> _Options =>
+        new OptionsWrapper<FileSystemBlobStorageOptions>(
+            new FileSystemBlobStorageOptions { BaseDirectoryPath = _baseDirectoryPath }
+        );
+
     protected override IBlobStorage GetStorage()
     {
-        var options = new FileSystemBlobStorageOptions { BaseDirectoryPath = _baseDirectoryPath };
-        var optionsWrapper = new OptionsWrapper<FileSystemBlobStorageOptions>(options);
-        var logger = NullLogger<FileSystemBlobStorage>.Instance;
-        var normalizer = new CrossOsNamingNormalizer();
-
-        return new FileSystemBlobStorage(optionsWrapper, normalizer, logger);
+        return new FileSystemBlobStorage(
+            _Options,
+            new SystemJsonSerializer(new DefaultJsonOptionsProvider()),
+            new CrossOsNamingNormalizer(),
+            TimeProvider.System,
+            NullLogger<FileSystemBlobStorage>.Instance
+        );
     }
+
+    // The file-system backend supports container lifecycle: a top-level container is a directory directly under the
+    // base path. The capability is resolved (constructed), never cast from IBlobStorage (KTD5).
+    protected override IBlobContainerManager GetContainerManager()
+    {
+        return new FileSystemBlobContainerManager(_Options, new CrossOsNamingNormalizer());
+    }
+
+    #region List / Round-trip
 
     [Fact]
     public override Task can_get_empty_file_list_on_missing_directory()
@@ -37,12 +53,6 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
     public override Task can_get_file_list_for_single_file()
     {
         return base.can_get_file_list_for_single_file();
-    }
-
-    [Fact]
-    public override Task can_get_paged_file_list_for_single_folder()
-    {
-        return base.can_get_paged_file_list_for_single_folder();
     }
 
     [Fact]
@@ -64,15 +74,59 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
     }
 
     [Fact]
-    public override Task can_rename_files()
+    public override Task can_move_files()
     {
-        return base.can_rename_files();
+        return base.can_move_files();
+    }
+
+    [Fact]
+    public override Task can_round_trip_seekable_stream()
+    {
+        return base.can_round_trip_seekable_stream();
+    }
+
+    [Fact]
+    public override Task will_reset_stream_position()
+    {
+        return base.will_reset_stream_position();
+    }
+
+    [Fact]
+    public override Task can_save_over_existing_stored_content()
+    {
+        return base.can_save_over_existing_stored_content();
     }
 
     [Fact]
     public override Task can_concurrently_manage_files()
     {
         return base.can_concurrently_manage_files();
+    }
+
+    #endregion
+
+    #region Token Paging
+
+    [Fact]
+    public override Task token_paging_round_trips_across_serialization()
+    {
+        return base.token_paging_round_trips_across_serialization();
+    }
+
+    [Fact]
+    public override Task list_rejects_malformed_continuation_token()
+    {
+        return base.list_rejects_malformed_continuation_token();
+    }
+
+    #endregion
+
+    #region Delete by prefix / glob
+
+    [Fact]
+    public override Task delete_by_prefix_removes_only_matching_blobs()
+    {
+        return base.delete_by_prefix_removes_only_matching_blobs();
     }
 
     [Fact]
@@ -87,7 +141,10 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
         return base.can_delete_entire_folder_with_wildcard();
     }
 
-    [Fact(Skip = "Directory.EnumerateFiles does not support nested folder wildcards")]
+    // Glob matching is now a client-side filter over a full recursive enumeration (ListAsync returns every blob and
+    // the shared matcher tests whole keys), so multi-folder wildcards work on the file system — unlike the old
+    // server-side Directory.EnumerateFiles model that could not span nested folders.
+    [Fact]
     public override Task can_delete_folder_with_multi_folder_wildcards()
     {
         return base.can_delete_folder_with_multi_folder_wildcards();
@@ -111,61 +168,153 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
         return base.can_delete_specific_files_in_nested_folder();
     }
 
+    #endregion
+
+    #region Metadata / Move with metadata
+
     [Fact]
-    public override Task can_round_trip_seekable_stream()
+    public override Task metadata_round_trips_and_sidecar_is_hidden()
     {
-        return base.can_round_trip_seekable_stream();
+        return base.metadata_round_trips_and_sidecar_is_hidden();
     }
 
     [Fact]
-    public override Task will_reset_stream_position()
+    public override Task list_metadata_is_opt_in()
     {
-        return base.will_reset_stream_position();
+        return base.list_metadata_is_opt_in();
     }
 
     [Fact]
-    public override Task can_save_over_existing_stored_content()
+    public override Task move_relocates_blob_and_metadata()
     {
-        return base.can_save_over_existing_stored_content();
+        return base.move_relocates_blob_and_metadata();
+    }
+
+    #endregion
+
+    #region Normalization round-trip
+
+    [Fact]
+    public override Task normalization_round_trips_through_bulk_and_info()
+    {
+        return base.normalization_round_trips_through_bulk_and_info();
+    }
+
+    #endregion
+
+    #region Bulk operations
+
+    [Fact]
+    public override Task bulk_upload_reports_per_blob_results()
+    {
+        return base.bulk_upload_reports_per_blob_results();
     }
 
     [Fact]
-    public async Task WillNotReturnDirectoryInGetPagedFileListAsync()
+    public override Task bulk_upload_failure_does_not_abort_batch()
     {
-        var container = Container;
-        var containerName = ContainerName;
-        await using var storage = (FileSystemBlobStorage)GetStorage();
+        return base.bulk_upload_failure_does_not_abort_batch();
+    }
+
+    [Fact]
+    public override Task bulk_delete_reports_per_entry_results()
+    {
+        return base.bulk_delete_reports_per_entry_results();
+    }
+
+    [Fact]
+    public override Task bulk_delete_reports_each_blob_by_identity()
+    {
+        return base.bulk_delete_reports_each_blob_by_identity();
+    }
+
+    #endregion
+
+    #region Container management capability
+
+    [Fact]
+    public override Task container_management_capability_matches_support_flag()
+    {
+        return base.container_management_capability_matches_support_flag();
+    }
+
+    [Fact]
+    public override Task container_manager_rejects_traversal_container()
+    {
+        return base.container_manager_rejects_traversal_container();
+    }
+
+    [Fact]
+    public override Task requires_container_provisioning_reflects_backend_reality()
+    {
+        return base.requires_container_provisioning_reflects_backend_reality();
+    }
+
+    [Fact]
+    public async Task upload_to_missing_container_throws_until_container_manager_ensures_it()
+    {
+        await using var storage = GetStorage();
+        var manager = GetContainerManager();
+        var container = "missing-" + Guid.NewGuid().ToString("N");
+        var location = new BlobLocation(container, "nested/file.txt");
+
+        var act = async () => await storage.UploadContentAsync(location, "payload", AbortToken);
+
+        await act.Should().ThrowAsync<DirectoryNotFoundException>();
+        (await manager.ContainerExistsAsync(container, AbortToken)).Should().BeFalse();
+
+        await manager.EnsureContainerAsync(container, AbortToken);
+        await storage.UploadContentAsync(location, "payload", AbortToken);
+
+        (await storage.GetBlobContentAsync(location, AbortToken)).Should().Be("payload");
+    }
+
+    [Fact]
+    public async Task copy_to_missing_container_throws_instead_of_provisioning_it()
+    {
+        await using var storage = GetStorage();
         await ResetAsync(storage);
 
-        var result = await storage.GetPagedListAsync(container, cancellationToken: AbortToken);
-        result.HasMore.Should().BeFalse();
-        result.Blobs.Should().BeEmpty();
-        (await result.NextPageAsync(AbortToken)).Should().BeFalse();
-        result.HasMore.Should().BeFalse();
-        result.Blobs.Should().BeEmpty();
+        var source = new BlobLocation(ContainerName, "copy-source.txt");
+        await storage.UploadContentAsync(source, "payload", AbortToken);
 
-        const string directory = "EmptyDirectory/";
-        Directory.CreateDirectory(Path.Combine(_baseDirectoryPath, containerName, directory));
+        var missingContainer = "missing-" + Guid.NewGuid().ToString("N");
+        var destination = new BlobLocation(missingContainer, "copy-target.txt");
 
-        result = await storage.GetPagedListAsync(container, cancellationToken: AbortToken);
-        result.HasMore.Should().BeFalse();
-        result.Blobs.Should().BeEmpty();
-        (await result.NextPageAsync(AbortToken)).Should().BeFalse();
-        result.HasMore.Should().BeFalse();
-        result.Blobs.Should().BeEmpty();
+        var act = async () => await storage.CopyAsync(source, destination, AbortToken);
 
-        // Ensure the directory will not be returned via get file info
-        var info = await storage.GetBlobInfoAsync(container, directory, AbortToken);
-        info.Should().BeNull();
+        // Copy is a data-plane operation: like UploadAsync it must refuse — not silently provision — a destination
+        // container that was never ensured through IBlobContainerManager.
+        await act.Should().ThrowAsync<DirectoryNotFoundException>();
+        Directory.Exists(Path.Combine(_baseDirectoryPath, missingContainer)).Should().BeFalse();
+    }
 
-        // Ensure delete files can remove all files including fake folders
-        await storage.DeleteAllAsync(container, "*", AbortToken);
+    [Fact]
+    public async Task container_manager_rejects_container_that_normalizes_to_storage_root()
+    {
+        var manager = GetContainerManager();
 
-        // then folder was removed by Delete Files
-        Directory.Exists(Path.Combine(_baseDirectoryPath, containerName, directory)).Should().BeFalse();
+        Directory.Exists(_baseDirectoryPath).Should().BeTrue();
 
-        info = await storage.GetBlobInfoAsync(container, directory, AbortToken);
-        info.Should().BeNull();
+        var ensure = () => manager.EnsureContainerAsync(":", AbortToken).AsTask();
+        var exists = () => manager.ContainerExistsAsync(":", AbortToken).AsTask();
+        var delete = () => manager.DeleteContainerAsync(":", AbortToken).AsTask();
+
+        await ensure.Should().ThrowAsync<ArgumentException>();
+        await exists.Should().ThrowAsync<ArgumentException>();
+        await delete.Should().ThrowAsync<ArgumentException>();
+
+        Directory.Exists(_baseDirectoryPath).Should().BeTrue();
+    }
+
+    #endregion
+
+    #region Empty / missing container (no throw)
+
+    [Fact]
+    public override Task can_call_delete_all_async_with_empty_container()
+    {
+        return base.can_call_delete_all_async_with_empty_container();
     }
 
     [Fact]
@@ -181,21 +330,15 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
     }
 
     [Fact]
-    public override Task can_call_delete_all_async_with_empty_container()
+    public override Task can_call_move_with_empty_container()
     {
-        return base.can_call_delete_all_async_with_empty_container();
+        return base.can_call_move_with_empty_container();
     }
 
     [Fact]
     public override Task can_call_copy_with_empty_container()
     {
         return base.can_call_copy_with_empty_container();
-    }
-
-    [Fact]
-    public override Task can_call_rename_with_empty_container()
-    {
-        return base.can_call_rename_with_empty_container();
     }
 
     [Fact]
@@ -217,209 +360,115 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
     }
 
     [Fact]
-    public override Task can_call_get_paged_list_with_empty_container()
+    public override Task can_call_list_with_empty_container()
     {
-        return base.can_call_get_paged_list_with_empty_container();
+        return base.can_call_list_with_empty_container();
     }
 
-    [Fact]
-    public override Task can_create_container_idempotently()
-    {
-        return base.can_create_container_idempotently();
-    }
+    #endregion
 
-    [Fact]
-    public override Task bulk_upload_reports_per_blob_results()
-    {
-        return base.bulk_upload_reports_per_blob_results();
-    }
-
-    [Fact]
-    public override Task bulk_delete_reports_per_entry_results()
-    {
-        return base.bulk_delete_reports_per_entry_results();
-    }
-
-    [Fact]
-    public async Task bulk_upload_reports_failure_for_invalid_blob_name()
-    {
-        var container = Container;
-        await using var storage = GetStorage();
-        await ResetAsync(storage);
-
-        await using var ok1 = new MemoryStream("a"u8.ToArray());
-        await using var bad = new MemoryStream("b"u8.ToArray());
-        await using var ok2 = new MemoryStream("c"u8.ToArray());
-
-        IReadOnlyCollection<BlobUploadRequest> blobs =
-        [
-            new BlobUploadRequest(ok1, "good-1.txt"),
-            new BlobUploadRequest(bad, "../escape.txt"),
-            new BlobUploadRequest(ok2, "good-2.txt"),
-        ];
-
-        var results = await storage.BulkUploadAsync(container, blobs, AbortToken);
-
-        results.Should().HaveCount(3);
-        results[0].IsSuccess.Should().BeTrue();
-        results[1].IsFailure.Should().BeTrue("a path-traversal blob name must fail without failing the batch");
-        results[2].IsSuccess.Should().BeTrue();
-        (await storage.GetBlobContentAsync(container, "good-1.txt")).Should().Be("a");
-        (await storage.GetBlobContentAsync(container, "good-2.txt")).Should().Be("c");
-    }
-
-    [Fact]
-    public async Task delete_all_preserves_container_directory()
-    {
-        var containerName = ContainerName;
-        var container = Container;
-        await using var storage = GetStorage();
-        await ResetAsync(storage);
-
-        await storage.UploadContentAsync([containerName, "sub"], "a.txt", "a");
-        var containerDirectory = Path.Combine(_baseDirectoryPath, containerName);
-        Directory.Exists(containerDirectory).Should().BeTrue();
-
-        await storage.DeleteAllAsync(container, cancellationToken: AbortToken);
-
-        // The container directory itself survives a delete-all (matching the SshNet provider); only its contents go.
-        Directory.Exists(containerDirectory).Should().BeTrue();
-        Directory.Exists(Path.Combine(containerDirectory, "sub")).Should().BeFalse();
-        (await storage.GetBlobsListAsync(container)).Should().BeEmpty();
-    }
-
-    [Theory]
-    [InlineData("../../../etc")]
-    [InlineData("..\\..\\secret")]
-    public async Task should_throw_when_delete_all_search_pattern_has_path_traversal(string pattern)
-    {
-        var container = Container;
-        await using var storage = GetStorage();
-        await ResetAsync(storage);
-
-        var act = FluentActions.Awaiting(() => storage.DeleteAllAsync(container, pattern, AbortToken).AsTask());
-
-        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("blobSearchPattern");
-    }
-
-    [Theory]
-    [InlineData("../../../etc")]
-    [InlineData("..\\..\\secret")]
-    public async Task should_throw_when_get_blobs_search_pattern_has_path_traversal(string pattern)
-    {
-        var container = Container;
-        await using var storage = GetStorage();
-        await ResetAsync(storage);
-
-        var act = FluentActions.Awaiting(async () =>
-        {
-            await foreach (var _ in storage.GetBlobsAsync(container, pattern, AbortToken))
-            {
-                // Enumeration validates the pattern before yielding; the loop body is never reached.
-            }
-        });
-
-        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("blobSearchPattern");
-    }
-
-    [Theory]
-    [InlineData("../../../etc")]
-    [InlineData("..\\..\\secret")]
-    public async Task should_throw_when_get_paged_list_search_pattern_has_path_traversal(string pattern)
-    {
-        var container = Container;
-        await using var storage = GetStorage();
-        await ResetAsync(storage);
-
-        var act = FluentActions.Awaiting(() =>
-            storage.GetPagedListAsync(container, pattern, cancellationToken: AbortToken).AsTask()
-        );
-
-        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("blobSearchPattern");
-    }
-
-    [Fact]
-    public override Task bulk_upload_aligns_results_to_input_order_under_failures()
-    {
-        return base.bulk_upload_aligns_results_to_input_order_under_failures();
-    }
-
-    [Fact]
-    public override Task bulk_delete_aligns_results_to_input_order()
-    {
-        return base.bulk_delete_aligns_results_to_input_order();
-    }
-
-    [Fact]
-    public override Task delete_all_with_empty_container_array_throws()
-    {
-        return base.delete_all_with_empty_container_array_throws();
-    }
-
-    #region Path Traversal Security Tests
+    #region Path Traversal & Construction Security Tests
 
     [Theory]
     [InlineData("../../../etc/passwd")]
     [InlineData("..\\..\\..\\etc\\passwd")]
     [InlineData("subdir/../../../etc/passwd")]
-    public override Task should_throw_when_blob_name_has_path_traversal(string blobName)
+    public override Task blob_location_with_traversal_path_throws(string path)
     {
-        return base.should_throw_when_blob_name_has_path_traversal(blobName);
+        return base.blob_location_with_traversal_path_throws(path);
     }
 
     [Fact]
-    public override Task should_throw_when_container_has_path_traversal()
+    public override Task blob_location_with_traversal_container_throws()
     {
-        return base.should_throw_when_container_has_path_traversal();
+        return base.blob_location_with_traversal_container_throws();
     }
 
     [Fact]
-    public override Task should_throw_when_upload_blob_has_path_traversal()
+    public override Task blob_location_with_control_characters_throws()
     {
-        return base.should_throw_when_upload_blob_has_path_traversal();
-    }
-
-    [Fact]
-    public override Task should_throw_when_download_blob_has_path_traversal()
-    {
-        return base.should_throw_when_download_blob_has_path_traversal();
-    }
-
-    [Fact]
-    public override Task should_throw_when_delete_blob_has_path_traversal()
-    {
-        return base.should_throw_when_delete_blob_has_path_traversal();
-    }
-
-    [Fact]
-    public override Task should_throw_when_get_blob_info_blob_has_path_traversal()
-    {
-        return base.should_throw_when_get_blob_info_blob_has_path_traversal();
-    }
-
-    [Fact]
-    public override Task should_throw_when_rename_source_blob_has_path_traversal()
-    {
-        return base.should_throw_when_rename_source_blob_has_path_traversal();
-    }
-
-    [Fact]
-    public override Task should_throw_when_copy_source_blob_has_path_traversal()
-    {
-        return base.should_throw_when_copy_source_blob_has_path_traversal();
-    }
-
-    [Fact]
-    public override Task should_throw_when_blob_name_has_control_characters()
-    {
-        return base.should_throw_when_blob_name_has_control_characters();
+        return base.blob_location_with_control_characters_throws();
     }
 
     [Theory]
     [InlineData("/etc/passwd")]
-    public override Task should_throw_when_blob_name_is_absolute_path(string blobName)
+    [InlineData("\\windows\\system32")]
+    public override Task blob_location_with_absolute_path_throws(string path)
     {
-        return base.should_throw_when_blob_name_is_absolute_path(blobName);
+        return base.blob_location_with_absolute_path_throws(path);
+    }
+
+    [Fact]
+    public override Task blob_location_with_reserved_sidecar_suffix_throws()
+    {
+        return base.blob_location_with_reserved_sidecar_suffix_throws();
+    }
+
+    [Theory]
+    [InlineData("../escape/")]
+    [InlineData("..\\escape")]
+    [InlineData("nested/../escape")]
+    public override Task blob_query_with_traversal_prefix_throws(string prefix)
+    {
+        return base.blob_query_with_traversal_prefix_throws(prefix);
+    }
+
+    [Fact]
+    public override Task blob_query_with_empty_container_throws()
+    {
+        return base.blob_query_with_empty_container_throws();
+    }
+
+    [Fact]
+    public override Task bulk_delete_with_traversal_path_reports_failure()
+    {
+        return base.bulk_delete_with_traversal_path_reports_failure();
+    }
+
+    #endregion
+
+    #region File-system specific behavior
+
+    [Fact]
+    public async Task directories_are_never_returned_in_listings_or_blob_info()
+    {
+        await using var storage = GetStorage();
+        await ResetAsync(storage);
+
+        // An empty directory under the container is a backing-store artifact, never a listable blob.
+        var emptyDirectory = Path.Combine(_baseDirectoryPath, ContainerName, "EmptyDirectory");
+        Directory.CreateDirectory(emptyDirectory);
+
+        (await storage.GetBlobsListAsync(Container, cancellationToken: AbortToken)).Should().BeEmpty();
+        (await storage.GetBlobInfoAsync(new BlobLocation(ContainerName, "EmptyDirectory"), AbortToken))
+            .Should()
+            .BeNull("a directory is not a blob");
+
+        // A nested file is listed by its key; the directory that holds it is not a separate entry.
+        await storage.UploadContentAsync(new BlobLocation(ContainerName, "folder", "file.txt"), "x", AbortToken);
+
+        var listed = await storage.GetBlobsListAsync(Container, cancellationToken: AbortToken);
+        listed.Should().ContainSingle();
+        listed[0].BlobKey.Should().Be("folder/file.txt");
+    }
+
+    [Fact]
+    public async Task delete_all_preserves_container_directory()
+    {
+        await using var storage = GetStorage();
+        await ResetAsync(storage);
+
+        await storage.UploadContentAsync(new BlobLocation(ContainerName, "sub", "a.txt"), "a", AbortToken);
+
+        var containerDirectory = Path.Combine(_baseDirectoryPath, ContainerName);
+        Directory.Exists(containerDirectory).Should().BeTrue();
+
+        await storage.DeleteAllAsync(Container, AbortToken);
+
+        // DeleteAll is a data-plane operation: it removes blobs (and their sidecars), not the container itself.
+        // Container lifecycle belongs to FileSystemBlobContainerManager, so the container root survives a delete-all.
+        Directory.Exists(containerDirectory).Should().BeTrue();
+        (await storage.GetBlobsListAsync(Container, cancellationToken: AbortToken)).Should().BeEmpty();
     }
 
     #endregion
