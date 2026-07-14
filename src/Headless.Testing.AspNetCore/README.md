@@ -17,8 +17,23 @@ this plumbing per project.
 - `DatabaseReset` - Respawner wrapper that always excludes `__EFMigrationsHistory` and resets all
   other tables; usable standalone.
 - `DatabaseResetOptions` - adapter, table exclusions, and connection provider for `DatabaseReset`.
+- Database reset APIs default to the active xUnit test's cancellation token. The server retries
+  database, I/O, socket, and broken-connection failures up to three times, replacing the reset
+  connection between attempts.
 - `TestHttpContextExtensions.SetHttpContext(...)` - wire a `ClaimsPrincipal` / remote IP / user agent
   onto `IHttpContextAccessor` from a scoped provider.
+
+## Design Notes
+
+Respawn 7 does not expose cancellation tokens for its internal database commands. Headless closes
+the active reset connection when cancellation is requested and keeps the reset gate held until
+Respawn unwinds, preventing abandoned commands from racing the next reset. A cancelled standalone
+reset therefore leaves its caller-owned connection closed. The server replaces closed connections
+and transiently failed connections through `ConnectionProvider` before the next attempt.
+
+The built-in retry set covers `DbException`, `IOException`, `SocketException`, and exceptions that
+wrap one of those types. Use `AdditionalTransientExceptionFilter` for a provider-specific transient
+shape such as a bare `InvalidOperationException`; deterministic exceptions fail immediately.
 
 ## Installation
 
@@ -77,9 +92,9 @@ await fixture.ResetDatabaseAsync(); // between tests
 ### Standalone database reset
 
 ```csharp
-await connection.OpenAsync(); // DatabaseReset requires an open connection
-var reset = await DatabaseReset.CreateAsync(connection); // after migrations have applied
-await reset.ResetAsync(connection);
+await connection.OpenAsync(TestContext.Current.CancellationToken); // requires an open connection
+var reset = await DatabaseReset.CreateAsync(connection); // after migrations; uses the xUnit token
+await reset.ResetAsync(connection); // uses the xUnit token when no token is supplied
 ```
 
 ## Configuration
@@ -89,6 +104,10 @@ await reset.ResetAsync(connection);
 - `WaitForReadiness(check, timeout)` - register post-startup readiness probes (default 30s each).
 - Constructor `initializerTimeout` - per-`IInitializer` wait budget (default 60s).
 - `DatabaseResetOptions.DbAdapter` defaults to Postgres; set it explicitly for SQL Server.
+- `DatabaseResetOptions.AdditionalTransientExceptionFilter` adds provider-specific transient
+  exception shapes to the built-in database and transport retry set.
+- `ResetDatabaseAsync`, `DatabaseReset.CreateAsync`, and `DatabaseReset.ResetAsync` accept an optional
+  cancellation token and otherwise use `TestContext.Current.CancellationToken`.
 
 ## Dependencies
 

@@ -70,8 +70,16 @@ public interface IDistributedLease : IAsyncDisposable
     /// Releases the lease. Releasing a lease that is no longer held (already expired or taken over) is a
     /// no-op rather than an error. To bound release with your own <see cref="CancellationToken"/>, acquire
     /// with <see cref="DistributedLockAcquireOptions.ReleaseOnDispose"/> set to <see langword="false"/> and
-    /// call the owning provider's release path directly.
+    /// call <c>IDistributedLock.ReleaseAsync(IDistributedLease, CancellationToken)</c>.
     /// </summary>
+    /// <remarks>
+    /// Do not release by passing <see cref="Resource"/> and <see cref="LeaseId"/> to the provider's
+    /// <c>ReleaseAsync(string, string, CancellationToken)</c> overload. A multi-resource lease returned by
+    /// composite acquisition carries a synthetic <see cref="LeaseId"/> and a joined diagnostic
+    /// <see cref="Resource"/> that exist in no backend, and an unmatched pair releases nothing — silently,
+    /// because an unheld release is a no-op rather than an error. The lease-typed overload recognizes a
+    /// composite and fans out over its real children.
+    /// </remarks>
     Task ReleaseAsync();
 
     /// <summary>Attempts to renew the lease, extending its expiration while it is still held.</summary>

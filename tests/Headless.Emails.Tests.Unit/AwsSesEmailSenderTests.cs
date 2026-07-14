@@ -127,12 +127,31 @@ public sealed class AwsSesEmailSenderTests : TestBase
     [Fact]
     public async Task operation_canceled_should_propagate()
     {
+        // Only the CALLER's own cancellation propagates. The sender rethrows under
+        // `when (cancellationToken.IsCancellationRequested)`, so the caller's token must actually be cancelled --
+        // asserting the throw while passing an uncancelled token tests the other branch by accident.
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
         _ses.SendEmailAsync(Arg.Any<SendEmailRequest>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromException<SendEmailResponse>(new OperationCanceledException()));
 
-        var act = async () => await _sender.SendAsync(_Request(), AbortToken);
+        var act = async () => await _sender.SendAsync(_Request(), cancellation.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task provider_side_cancellation_should_return_failed_when_the_caller_did_not_cancel()
+    {
+        // The other side of that guard, previously untested: an AWS SDK internal timeout surfaces as a
+        // TaskCanceledException while the caller's token is untouched. That is a delivery failure, not a
+        // cancellation, so it must become a failed response rather than propagate.
+        _ses.SendEmailAsync(Arg.Any<SendEmailRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<SendEmailResponse>(new TaskCanceledException("SDK timeout")));
+
+        var result = await _sender.SendAsync(_Request(), AbortToken);
+
+        result.Success.Should().BeFalse();
     }
 
     [Fact]

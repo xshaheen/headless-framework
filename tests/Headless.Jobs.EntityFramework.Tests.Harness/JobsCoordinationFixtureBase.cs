@@ -234,7 +234,18 @@ public static class JobsCoordinationFixtureExtensions
         this IJobsCoordinationFixture fixture,
         string nodeId,
         bool includeMessaging = false
+    ) => fixture.BuildCoordinatedEnqueueHost<JobsDbContext>(nodeId, includeMessaging: includeMessaging);
+
+    /// <summary>
+    /// Builds the coordinated-enqueue host with a custom Jobs context and optional options instrumentation.
+    /// </summary>
+    public static IHost BuildCoordinatedEnqueueHost<TDbContext>(
+        this IJobsCoordinationFixture fixture,
+        string nodeId,
+        Action<DbContextOptionsBuilder>? configureOptions = null,
+        bool includeMessaging = false
     )
+        where TDbContext : JobsDbContext<TimeJobEntity, CronJobEntity>
     {
         JobFunctionProvider.RegisterFunctions(
             new Dictionary<string, JobFunctionRegistration>(StringComparer.Ordinal)
@@ -270,7 +281,14 @@ public static class JobsCoordinationFixtureExtensions
         {
             options.DisableBackgroundServices();
             options.UseEntityFramework(ef =>
-                ef.UseJobsDbContext<JobsDbContext>(fixture.ConfigureStore, schema: "jobs")
+                ef.UseJobsDbContext<TDbContext>(
+                    db =>
+                    {
+                        fixture.ConfigureStore(db);
+                        configureOptions?.Invoke(db);
+                    },
+                    schema: "jobs"
+                )
             );
         });
 

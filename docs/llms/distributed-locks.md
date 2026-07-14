@@ -13,6 +13,7 @@ packages: DistributedLocks.Abstractions, DistributedLocks.Core, DistributedLocks
     - [Efficiency Locks](#efficiency-locks)
     - [Correctness Locks](#correctness-locks)
     - [Fencing Tokens](#fencing-tokens)
+    - [Composite Acquisition](#composite-acquisition)
     - [Lease Lifecycle Monitoring](#lease-lifecycle-monitoring)
     - [Connection-Scoped Locks (Database Engine)](#connection-scoped-locks-database-engine)
     - [Messaging Wake-ups](#messaging-wake-ups)
@@ -96,6 +97,8 @@ Use `IDistributedReadWriteLock` when concurrent readers are safe and writers nee
 - Code against `IDistributedLock` from `Headless.DistributedLocks.Abstractions`; do not inject Redis storage types into application services.
 - Use `Headless.DistributedLocks.InMemory` only for tests, local development, or deliberately single-instance apps. It is not a cross-process lock.
 - Use `TryAcquireAsync(...)` when timeout is an expected branch; use `AcquireAsync(...)` when timeout should fail the workflow.
+- Use `TryAcquireAllAsync(...)` or `AcquireAllAsync(...)` when one operation must hold several resources. Pass the complete set in one call so the framework can sort it ordinally, deduplicate it, enforce one timeout budget, and compensate partial acquisition in reverse order.
+- When implementing a custom `IDistributedLock`, preserve ordinal resource identity. If the backend aliases ordinal-distinct names, reject non-canonical names or require callers to canonicalize them before composite acquisition; normalizing only inside the provider is too late.
 - Per-call configuration is bundled into `DistributedLockAcquireOptions` (`TimeUntilExpires`, `AcquireTimeout`, `ReleaseOnDispose`, `Monitoring`). Omit the argument to use defaults; use `with` expressions to derive variants.
 - Always `await using` the returned lock when `ReleaseOnDispose` is `true` (the default); set `ReleaseOnDispose = false` only when ownership is deliberately transferred and the caller will release explicitly.
 - Set `Monitoring = LockMonitoringMode.Monitor` when work should observe lease loss through `IDistributedLease.LostToken`; set `Monitoring = LockMonitoringMode.AutoExtend` only when long work should renew its own lease in the background (it implies `Monitor`).
@@ -128,6 +131,20 @@ Correctness locks protect invariants where a stale owner could corrupt data. TTL
 `IDistributedLease.FencingToken` is a nullable per-resource monotonic grant counter. A protected resource can store the last accepted token and reject writes carrying an older token. `LeaseId` is separate: it remains the opaque ownership token used for renew and release equality.
 
 Redis mutex locks and Redis semaphores issue fencing tokens with an atomic Lua acquire path: the lock/slot grant and `INCR` of the per-resource fence key happen in the same script, and failed acquires do not advance the counter. Redis mutex storage maps logical lock names to internal hash-tagged keys so the lock key and fence counter share a Redis Cluster slot. Redis fencing is best-effort: the fence key intentionally has no TTL and monotonicity holds only while Redis retains the key. Avoid `allkeys-*` eviction policies for Redis deployments that rely on fencing. Postgres and SQL Server mutex locks issue durable sequence-backed fencing tokens.
+
+### Composite Acquisition
+
+`TryAcquireAllAsync(resources, options, cancellationToken)` and `AcquireAllAsync(resources, options, cancellationToken)` acquire a complete resource set in ordinal order after validating and deduplicating the input. Canonical ordering prevents two callers that request the same set in different orders from deadlocking each other. The acquire timeout is one budget for the whole set, not a fresh timeout per child; `TimeSpan.Zero` still gives every canonical child one non-blocking attempt.
+
+The ordering guarantee holds only between callers that acquire their whole set through these two methods. A call site that takes several locks by calling `AcquireAsync`/`TryAcquireAsync` in sequence picks its own order and stays outside the canonical discipline, so it can still deadlock against a composite caller. Route every multi-resource acquisition through the composite helpers and pass the complete set in one call; acquiring a composite while already holding an unrelated lock reintroduces the same circular-wait risk.
+
+This is compensating coordination, not a transactional multi-lock primitive. If a later child cannot be acquired, is lost, or faults, every child already held is released and disposed in reverse order. Cleanup is exhaustive and cleanup failures are surfaced rather than hidden. While a later child is pending, finite-TTL children are renewed at half their TTL, capped at one minute; `LockMonitoringMode.AutoExtend` already owns renewal, and infinite-TTL leases need none. The coordinator uses `IDistributedLock.TimeProvider` for deadlines and scheduled waits, so custom providers must expose the same clock used by their own acquisition logic. That clock schedules the check-in; it never arbitrates expiry — only the backend's own answer decides whether a lease still holds.
+
+Cleanup failures raise `LockCleanupFailedException`, which derives from `DistributedLockException` (so `catch (DistributedLockException)` sees them) and carries every underlying failure on `Failures`. A resource whose release failed may remain held until its TTL expires, so treat it as "ownership may still be held" rather than "released". The one exception is `DisposeAsync`, which never throws — it logs through `IDistributedLock.Logger` instead, because `await using` lowers to try/finally and an exception thrown from disposal would replace the one the caller's body was already throwing. Call `ReleaseAsync()` explicitly when the cleanup outcome must be observed.
+
+Renewing a composite throws `LockHandleLostException` naming the lost child rather than returning `false`. Renewals fan out concurrently, so a sibling of the lost child has already been extended and is still held; reporting `false` would mean "already lost — nothing to release" under the `IDistributedLease` contract, and a caller acting on that would orphan the survivors until their TTL expired. A composite still returns `false` when it was already released.
+
+When canonicalization leaves one resource, the method returns the provider's child lease unchanged, preserving its real `LeaseId` and `FencingToken`. A true multi-resource result has a synthetic composite `LeaseId`, a joined diagnostic `Resource`, and a `null` scalar `FencingToken` because independent per-resource fences cannot be represented safely as one number. Its loss token links the child loss tokens, renewal covers every child, and release/disposal run in reverse order. `ReleaseOnDispose = false` suppresses dispose-time release for the complete set but still permits explicit `ReleaseAsync()`.
 
 ### Lease Lifecycle Monitoring
 
@@ -261,7 +278,7 @@ Lets application and domain code depend on lock interfaces without referencing a
 
 ### Key Features
 
-- `IDistributedLock` with `TryAcquireAsync(...)` and `AcquireAsync(...)`.
+- `IDistributedLock` with single-resource `TryAcquireAsync(...)` / `AcquireAsync(...)` and multi-resource `TryAcquireAllAsync(...)` / `AcquireAllAsync(...)` extensions.
 - `IDistributedReadWriteLock` with `AcquireReadLockAsync(...)`, `TryAcquireReadLockAsync(...)`, `AcquireWriteLockAsync(...)`, and `TryAcquireWriteLockAsync(...)`.
 - `IDistributedSemaphoreProvider` and `IDistributedSemaphore` for creation-time `maxCount` concurrency control.
 - `IDistributedLease` handle with `LeaseId`, nullable `FencingToken`, `LostToken`, `CanObserveLoss`, `IsLost`, `ThrowIfLost()`, `RenewAsync(...)`, and `ReleaseAsync(...)`.
@@ -272,8 +289,12 @@ Lets application and domain code depend on lock interfaces without referencing a
 ### Design Notes
 
 - `AcquireAsync(...)` is a throwing convenience over `TryAcquireAsync(...)`. It does not provide stronger safety guarantees.
+- Multi-resource acquisition validates, deduplicates, and ordinal-sorts the complete input before the first provider call, then applies one acquire timeout across the canonical set. A zero timeout gives every canonical resource one non-blocking attempt. Partial acquisition is compensated by exhaustive reverse-order release and disposal; it is not transactional.
+- Composite resource identity is ordinal: two names are the same only when `StringComparer.Ordinal` considers them equal. Custom providers whose backend aliases ordinal-distinct names, for example through case folding, must reject non-canonical names or require callers to canonicalize them before invoking the composite helpers. Normalizing only inside the provider is too late and can make one composite contend with itself.
+- A canonical set of one returns the provider's original child lease, preserving its `LeaseId` and `FencingToken`. A true multi-resource lease has a synthetic `LeaseId`, a joined diagnostic `Resource`, and a `null` scalar `FencingToken`; its loss signal links the child signals, and renew/release operate on every child.
+- During composite formation, finite-TTL children are renewed at half the TTL, capped at one minute, unless `LockMonitoringMode.AutoExtend` already owns renewal. Composite deadlines and waits use `IDistributedLock.TimeProvider`; custom providers must expose the clock used by their own acquisition logic.
 - Per-call configuration (`TimeUntilExpires`, `AcquireTimeout`, `ReleaseOnDispose`, `Monitoring`) is bundled into `DistributedLockAcquireOptions`. Omit the argument to use defaults; use `with` expressions to derive variants.
-- `ReleaseOnDispose = false` prevents dispose-time release but does not disable explicit `ReleaseAsync(...)`.
+- `ReleaseOnDispose = false` prevents dispose-time release but does not disable explicit `ReleaseAsync(...)`, including for composite leases.
 - `LostToken` is an observability signal. Consumer code decides whether to stop, compensate, or throw `LockHandleLostException`; `ThrowIfLost()` implements the common fail-stop check.
 - `TimeUntilExpires = null` uses the provider default. Built-in providers use a finite 20-minute default, so `null` is valid with `LockMonitoringMode.AutoExtend`; `Timeout.InfiniteTimeSpan` is not.
 
@@ -285,13 +306,15 @@ dotnet add package Headless.DistributedLocks.Abstractions
 
 ### Quick Start
 
+The multi-resource extension signatures are `Task<IDistributedLease?> TryAcquireAllAsync(IEnumerable<string> resources, DistributedLockAcquireOptions? options = null, CancellationToken cancellationToken = default)` and `Task<IDistributedLease> AcquireAllAsync(IEnumerable<string> resources, DistributedLockAcquireOptions? options = null, CancellationToken cancellationToken = default)`.
+
 ```csharp
 public sealed class OrderWorker(IDistributedLock lockProvider)
 {
     public async Task ProcessAsync(Guid orderId, CancellationToken ct)
     {
-        await using var lease = await lockProvider.AcquireAsync(
-            $"order:{orderId}",
+        await using var lease = await lockProvider.AcquireAllAsync(
+            [$"order:{orderId}", $"customer:{orderId}"],
             new DistributedLockAcquireOptions
             {
                 TimeUntilExpires = TimeSpan.FromMinutes(5),
