@@ -71,10 +71,10 @@ public readonly partial struct DecimalPrimitive : global::System.IEquatable<Deci
         _isInitialized = true;
     }
 
-#pragma warning disable AL1003 // Should not have non obsolete empty constructors.
+#pragma warning disable HF1003 // Should not have non obsolete empty constructors.
     [Obsolete("Primitive cannot be created using empty Constructor", true)]
     public DecimalPrimitive() { }
-#pragma warning restore AL1003
+#pragma warning restore HF1003
 
     /// <summary>Tries to create an instance of AsciiString from the specified value.</summary>
     /// <param name="value">The value to create DecimalPrimitive from</param>

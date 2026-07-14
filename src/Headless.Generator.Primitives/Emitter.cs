@@ -221,7 +221,7 @@ internal static class Emitter
             builder.AppendNullableDisable();
         }
 
-        builder.AppendLine("#pragma warning disable AL1003 // Should not have non obsolete empty constructors.");
+        builder.AppendLine("#pragma warning disable HF1003 // Should not have non obsolete empty constructors.");
 
         builder
             .AppendLine("[Obsolete(\"Primitive cannot be created using empty Constructor\", true)]")
@@ -229,7 +229,7 @@ internal static class Emitter
             .Append(data.ClassName)
             .AppendLine("() { }");
 
-        builder.AppendLine("#pragma warning restore AL1003");
+        builder.AppendLine("#pragma warning restore HF1003");
 
         if (!primitiveTypeIsValueType)
         {
