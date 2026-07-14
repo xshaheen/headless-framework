@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Reflection;
 using Headless.Generator.Primitives;
 using Headless.Generator.Primitives.Models;
 using Microsoft.CodeAnalysis;
@@ -21,6 +22,51 @@ public sealed class PrimitiveGeneratorTests
         GenerateEntityFrameworkValueConverters = true, // generate 2 files
         GenerateDapperConverters = true, // generate 2 files
     };
+
+    [Fact]
+    public void should_use_unique_headless_framework_diagnostic_ids()
+    {
+        var diagnosticHelperType = typeof(PrimitiveGenerator).Assembly.GetType(
+            "Headless.Generator.Primitives.Helpers.DiagnosticHelper"
+        );
+
+        diagnosticHelperType.Should().NotBeNull();
+        var diagnostics = diagnosticHelperType!
+            .GetMethods(BindingFlags.NonPublic | BindingFlags.Static)
+            .Where(method => method.ReturnType == typeof(Diagnostic))
+            .Select(method =>
+            {
+                var arguments = method
+                    .GetParameters()
+                    .Select<ParameterInfo, object?>(parameter =>
+                        parameter.ParameterType == typeof(Exception)
+                            ? new InvalidOperationException("diagnostic contract test")
+                        : parameter.ParameterType == typeof(string) ? "Primitive"
+                        : null
+                    )
+                    .ToArray();
+
+                return (Diagnostic)method.Invoke(null, arguments)!;
+            })
+            .Select(diagnostic => diagnostic.Id)
+            .ToArray();
+
+        diagnostics.Should().OnlyHaveUniqueItems();
+        diagnostics
+            .Should()
+            .BeEquivalentTo(
+                "HF1000",
+                "HF1001",
+                "HF1002",
+                "HF1003",
+                "HF1011",
+                "HF1012",
+                "HF1013",
+                "HF1015",
+                "HF1016",
+                "HF1021"
+            );
+    }
 
     [Fact]
     public Task should_generate_all_converters_when_string_primitive()
@@ -694,7 +740,7 @@ public sealed class PrimitiveGeneratorTests
             }
             """;
 
-        return TestHelper.VerifyDiagnostic(source, "AL1002");
+        return TestHelper.VerifyDiagnostic(source, "HF1002");
     }
 
     [Fact]
