@@ -1,10 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Jobs.DbContextFactory;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Messaging;
 using Headless.Messaging.Persistence;
 using Headless.Testing.Tests;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -41,6 +44,106 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
     where TFixture : class, IJobsCoordinationFixture
 {
     private sealed record CapstoneMessage(Guid JobId);
+
+    public virtual async Task coordinated_save_hooks_isolate_tracked_entries_per_context()
+    {
+        var ct = AbortToken;
+        var observer = new SavePipelineObserver();
+
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildCoordinatedEnqueueHost<ObservableJobsDbContext>(
+            "node-a",
+            options => options.AddInterceptors(new SavePipelineInterceptor(observer))
+        );
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync<ObservableJobsDbContext>(host, ct);
+        await host.StartAsync(ct);
+        ObservableJobsDbContext.Observer = observer;
+
+        try
+        {
+            var manager = host.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
+            var probe = new SaveHookProbe { Id = Guid.NewGuid() };
+            var job = _TimeJob();
+
+            await fixture.RunCoordinatedTransactionAsync(
+                host.Services,
+                async (connection, transaction, innerCt) =>
+                {
+                    await using var scope = host.Services.CreateAsyncScope();
+                    var caller = scope.ServiceProvider.GetRequiredService<ObservableJobsDbContext>();
+                    caller.Database.SetDbConnection(connection, contextOwnsConnection: false);
+#pragma warning disable MA0045 // Enlisting the existing transaction is an in-memory operation.
+                    caller.Database.UseTransaction(transaction);
+#pragma warning restore MA0045
+
+                    observer.Reset();
+                    observer.RegisterCaller(caller.ContextId.InstanceId);
+                    caller.Add(probe);
+
+                    (await manager.AddAsync(job, innerCt)).Should().NotBeNull();
+                    await caller.SaveChangesAsync(innerCt);
+                },
+                ct
+            );
+
+            // EF hooks execute once per SaveChangesAsync call. The contract is tracker isolation between the
+            // caller and coordinated contexts, not one global hook invocation per ambient transaction.
+            var invocations = observer.Invocations;
+            invocations.Should().HaveCount(4);
+            invocations.Select(x => x.ContextId).Distinct().Should().HaveCount(2);
+
+            var expectedMarkers = new[]
+            {
+                new SavePipelineMarker(SaveHookKind.Override, SaveContextRole.Caller, nameof(SaveHookProbe), probe.Id),
+                new SavePipelineMarker(
+                    SaveHookKind.Interceptor,
+                    SaveContextRole.Caller,
+                    nameof(SaveHookProbe),
+                    probe.Id
+                ),
+                new SavePipelineMarker(
+                    SaveHookKind.Override,
+                    SaveContextRole.Coordinated,
+                    nameof(TimeJobEntity),
+                    job.Id
+                ),
+                new SavePipelineMarker(
+                    SaveHookKind.Interceptor,
+                    SaveContextRole.Coordinated,
+                    nameof(TimeJobEntity),
+                    job.Id
+                ),
+            };
+
+            var markers = invocations
+                .SelectMany(invocation =>
+                    invocation.Entries.Select(entry => new SavePipelineMarker(
+                        invocation.Hook,
+                        invocation.Role,
+                        entry.EntityType,
+                        entry.EntityId
+                    ))
+                )
+                .CountBy(marker => marker)
+                .ToDictionary();
+
+            markers.Should().HaveCount(expectedMarkers.Length);
+            foreach (var marker in expectedMarkers)
+            {
+                _AssertInvocation(invocations, marker);
+                markers.TryGetValue(marker, out var count).Should().BeTrue();
+                count.Should().Be(1);
+            }
+
+            (await fixture.CountProbeRowsAsync(ct)).Should().Be(1);
+            (await fixture.CountTimeJobsAsync(ct)).Should().Be(1);
+        }
+        finally
+        {
+            ObservableJobsDbContext.Observer = null;
+            await host.StopAsync(ct);
+        }
+    }
 
     public virtual async Task domain_message_and_job_commit_atomically()
     {
@@ -417,4 +520,156 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
             Expression = "0 0 0 * * *",
             Request = [],
         };
+
+    private static void _AssertInvocation(
+        IReadOnlyCollection<SavePipelineInvocation> invocations,
+        SavePipelineMarker marker
+    )
+    {
+        var invocation = invocations.Should().ContainSingle(x => x.Hook == marker.Hook && x.Role == marker.Role).Which;
+        invocation.Ordinal.Should().Be(1);
+        invocation
+            .Entries.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be(new TrackedEntry(marker.EntityType, marker.EntityId));
+    }
+
+    private sealed class ObservableJobsDbContext : JobsDbContext<TimeJobEntity, CronJobEntity>
+    {
+        public ObservableJobsDbContext(DbContextOptions<ObservableJobsDbContext> options)
+            : base(options) { }
+
+        public static SavePipelineObserver? Observer { get; set; }
+
+        public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        {
+            Observer?.Record(SaveHookKind.Override, this);
+            return base.SaveChangesAsync(cancellationToken);
+        }
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+            modelBuilder.Entity<SaveHookProbe>(builder =>
+            {
+                builder.ToTable("jobs_probe");
+                builder.HasKey(x => x.Id);
+            });
+        }
+    }
+
+    private sealed class SavePipelineInterceptor(SavePipelineObserver observer) : SaveChangesInterceptor
+    {
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default
+        )
+        {
+            if (eventData.Context is not null)
+            {
+                observer.Record(SaveHookKind.Interceptor, eventData.Context);
+            }
+
+            return ValueTask.FromResult(result);
+        }
+    }
+
+    private sealed class SavePipelineObserver
+    {
+        private readonly Lock _lock = new();
+        private readonly List<SavePipelineInvocation> _invocations = [];
+        private Guid? _callerContextId;
+
+        public IReadOnlyCollection<SavePipelineInvocation> Invocations
+        {
+            get
+            {
+                lock (_lock)
+                {
+                    return [.. _invocations];
+                }
+            }
+        }
+
+        public void Reset()
+        {
+            lock (_lock)
+            {
+                _callerContextId = null;
+                _invocations.Clear();
+            }
+        }
+
+        public void RegisterCaller(Guid contextId)
+        {
+            lock (_lock)
+            {
+                _callerContextId = contextId;
+            }
+        }
+
+        public void Record(SaveHookKind hook, DbContext context)
+        {
+            lock (_lock)
+            {
+                if (_callerContextId is null)
+                {
+                    return;
+                }
+            }
+
+            var contextId = context.ContextId.InstanceId;
+            var entries = context
+                .ChangeTracker.Entries()
+                .Where(x => x.State is EntityState.Added or EntityState.Modified)
+                .Select(x => new TrackedEntry(x.Metadata.ClrType.Name, (Guid)x.Property("Id").CurrentValue!))
+                .OrderBy(x => x.EntityType, StringComparer.Ordinal)
+                .ThenBy(x => x.EntityId)
+                .ToArray();
+
+            lock (_lock)
+            {
+                var callerContextId = _callerContextId;
+                if (callerContextId is null)
+                {
+                    return;
+                }
+
+                var role = contextId == callerContextId ? SaveContextRole.Caller : SaveContextRole.Coordinated;
+                var ordinal = _invocations.Count(x => x.Hook == hook && x.ContextId == contextId) + 1;
+                _invocations.Add(new SavePipelineInvocation(hook, role, contextId, ordinal, entries));
+            }
+        }
+    }
+
+    private sealed class SaveHookProbe
+    {
+        public Guid Id { get; set; }
+    }
+
+    private sealed record TrackedEntry(string EntityType, Guid EntityId);
+
+    private sealed record SavePipelineInvocation(
+        SaveHookKind Hook,
+        SaveContextRole Role,
+        Guid ContextId,
+        int Ordinal,
+        IReadOnlyCollection<TrackedEntry> Entries
+    );
+
+    private sealed record SavePipelineMarker(SaveHookKind Hook, SaveContextRole Role, string EntityType, Guid EntityId);
+
+    private enum SaveHookKind
+    {
+        Override,
+        Interceptor,
+    }
+
+    private enum SaveContextRole
+    {
+        Caller,
+        Coordinated,
+    }
 }
