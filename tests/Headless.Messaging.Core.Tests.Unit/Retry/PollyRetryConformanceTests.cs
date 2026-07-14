@@ -2,7 +2,6 @@
 
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
-using Headless.Messaging.Monitoring;
 using Headless.Messaging.Retry;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;

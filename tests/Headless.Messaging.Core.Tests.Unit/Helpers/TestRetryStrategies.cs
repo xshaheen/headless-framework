@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.Exceptions;
 using Headless.Messaging.Retry;
 using Polly;
 using Polly.Retry;

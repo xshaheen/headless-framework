@@ -15,12 +15,9 @@ namespace Tests;
 /// </summary>
 public sealed class PulsarConsumerClientTests : TestBase
 {
-    private readonly IOptions<PulsarMessagingOptions> _options;
-
-    public PulsarConsumerClientTests()
-    {
-        _options = Options.Create(new PulsarMessagingOptions { ServiceUrl = "pulsar://localhost:6650" });
-    }
+    private readonly IOptions<PulsarMessagingOptions> _options = Options.Create(
+        new PulsarMessagingOptions { ServiceUrl = "pulsar://localhost:6650" }
+    );
 
     [Fact]
     public void GetSubscriptionName_should_use_group_for_bus_intent()

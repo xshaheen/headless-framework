@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using JetBrains.Annotations;
-
 namespace Headless.Messaging.Monitoring;
 
 /// <summary>

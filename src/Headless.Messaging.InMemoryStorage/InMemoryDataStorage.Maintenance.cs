@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
-using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 
@@ -66,7 +65,7 @@ internal sealed partial class InMemoryDataStorage
             // counter CAS; no owner match is required because this path is TAKING the lease.
             var nowUtc = timeProvider.GetUtcNow();
             if (
-                (current.StatusName is StatusName.Succeeded or StatusName.Failed) && current.NextRetryAt is null
+                ((current.StatusName is StatusName.Succeeded or StatusName.Failed) && current.NextRetryAt is null)
                 || current.Retries != message.Retries
                 || current.InlineAttempts != originalInlineAttempts
                 || (current.LockedUntil is not null && current.LockedUntil > nowUtc)

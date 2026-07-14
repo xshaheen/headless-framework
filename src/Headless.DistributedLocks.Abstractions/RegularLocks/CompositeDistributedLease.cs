@@ -281,7 +281,8 @@ internal static class CompositeDistributedLeaseOperations
         }
 
         if (
-            cancellationToken.IsCancellationRequested && errors.All(static error => error is OperationCanceledException)
+            cancellationToken.IsCancellationRequested
+            && errors.TrueForAll(static error => error is OperationCanceledException)
         )
         {
             cancellationToken.ThrowIfCancellationRequested();

@@ -4,7 +4,6 @@ using System.Security.Claims;
 using Headless.Api.Security.Claims;
 using Headless.Api.Security.Jwt;
 using Headless.Constants;
-using Headless.Testing.Helpers;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Options;

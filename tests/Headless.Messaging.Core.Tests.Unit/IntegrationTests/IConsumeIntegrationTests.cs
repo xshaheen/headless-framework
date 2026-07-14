@@ -5,7 +5,6 @@ using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Runtime;
 using Microsoft.Extensions.DependencyInjection;
-using Tests.Helpers;
 
 namespace Tests.IntegrationTests;
 

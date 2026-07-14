@@ -2,7 +2,6 @@
 
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
-using Headless.Messaging.Monitoring;
 using Microsoft.Extensions.Logging;
 using Polly;
 using Polly.Retry;

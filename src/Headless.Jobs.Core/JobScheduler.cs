@@ -38,13 +38,25 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
         TArgs request,
         EnqueueOptions? options = null,
         CancellationToken cancellationToken = default
-    ) => _ScheduleTimeAsync(_GetDescriptor<TArgs>(), request, null, options, cancellationToken);
+    )
+    {
+        return _ScheduleTimeAsync(_GetDescriptor<TArgs>(), request, executionTime: null, options, cancellationToken);
+    }
 
     public Task<Guid> EnqueueAsync(
         JobFunctionDescriptor descriptor,
         EnqueueOptions? options = null,
         CancellationToken cancellationToken = default
-    ) => _ScheduleTimeAsync<object?>(_GetRequestlessDescriptor(descriptor), null, null, options, cancellationToken);
+    )
+    {
+        return _ScheduleTimeAsync<object?>(
+            _GetRequestlessDescriptor(descriptor),
+            request: null,
+            executionTime: null,
+            options,
+            cancellationToken
+        );
+    }
 
     public Task<Guid> ScheduleAsync<TArgs>(
         TArgs request,
@@ -61,7 +73,7 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
     ) =>
         _ScheduleTimeAsync<object?>(
             _GetRequestlessDescriptor(descriptor),
-            null,
+            request: null,
             executionTime,
             options,
             cancellationToken
@@ -89,7 +101,7 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
     ) =>
         _ScheduleRecurringAsync<object?>(
             _GetRequestlessDescriptor(descriptor),
-            null,
+            request: null,
             Argument.IsNotNullOrWhiteSpace(cronExpression),
             options,
             cancellationToken

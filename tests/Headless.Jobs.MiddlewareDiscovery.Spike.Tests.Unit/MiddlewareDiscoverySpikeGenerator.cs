@@ -1,12 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Immutable;
-using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Text;
 
+#pragma warning disable RS1007 // Provide localizable arguments to diagnostic descriptor constructor
 namespace Tests;
 
 internal sealed class MiddlewareDiscoverySpikeGenerator : IIncrementalGenerator
@@ -269,7 +268,7 @@ internal sealed class MiddlewareDiscoverySpikeGenerator : IIncrementalGenerator
             ? string.Empty
             : type.ContainingNamespace.ToDisplayString() + ".";
 
-        return namespaceName + string.Join("+", typeNames);
+        return namespaceName + string.Join('+', typeNames);
     }
 
     private static string _Generate(DiscoveryModel model)
@@ -381,7 +380,7 @@ internal sealed class MiddlewareDiscoverySpikeGenerator : IIncrementalGenerator
         public override string ToString() =>
             (TargetFunction is null ? "global" : "target:" + TargetFunction)
             + "|"
-            + Priority.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            + Priority.ToString(CultureInfo.InvariantCulture)
             + "|"
             + StableIdentity;
     }

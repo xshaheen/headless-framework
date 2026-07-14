@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.Dashboard;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Messaging.Dashboard.K8s;

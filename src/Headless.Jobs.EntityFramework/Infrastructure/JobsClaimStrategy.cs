@@ -47,9 +47,8 @@ internal sealed partial class CompatibleJobsClaimStrategy<TDbContext, TTimeJob, 
     where TCronJob : CronJobEntity, new()
 {
     private readonly Lock _compatibilityLock = new();
-    private readonly ILogger _logger = logger is null
-        ? NullLogger<CompatibleJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>>.Instance
-        : logger;
+    private readonly ILogger _logger =
+        logger ?? NullLogger<CompatibleJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>>.Instance;
     private IJobsClaimStrategy<TTimeJob, TCronJob>? _selectedStrategy;
 
     public async IAsyncEnumerable<TimeJobEntity> ClaimTimeJobsAsync(
@@ -164,7 +163,11 @@ internal static class NativeJobsClaimCompatibility
             var schema = entityType.GetSchema();
             var sharesTable = model
                 .GetEntityTypes()
-                .Any(other => other != entityType && other.GetTableName() == tableName && other.GetSchema() == schema);
+                .Any(other =>
+                    other != entityType
+                    && string.Equals(other.GetTableName(), tableName, StringComparison.Ordinal)
+                    && string.Equals(other.GetSchema(), schema, StringComparison.Ordinal)
+                );
             if (sharesTable)
             {
                 return $"entity {entityType.DisplayName()} shares table {schema ?? "<default>"}.{tableName}";

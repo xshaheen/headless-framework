@@ -17,16 +17,11 @@ namespace Tests;
 /// </summary>
 public sealed class PulsarConsumerClientFactoryTests : TestBase
 {
-    private readonly IConnectionFactory _connectionFactory;
-    private readonly ILoggerFactory _loggerFactory;
-    private readonly IOptions<PulsarMessagingOptions> _options;
-
-    public PulsarConsumerClientFactoryTests()
-    {
-        _connectionFactory = Substitute.For<IConnectionFactory>();
-        _loggerFactory = NullLoggerFactory.Instance;
-        _options = Options.Create(new PulsarMessagingOptions { ServiceUrl = "pulsar://localhost:6650" });
-    }
+    private readonly IConnectionFactory _connectionFactory = Substitute.For<IConnectionFactory>();
+    private readonly ILoggerFactory _loggerFactory = NullLoggerFactory.Instance;
+    private readonly IOptions<PulsarMessagingOptions> _options = Options.Create(
+        new PulsarMessagingOptions { ServiceUrl = "pulsar://localhost:6650" }
+    );
 
     [Fact]
     public async Task should_throw_broker_connection_exception_on_connection_failure()
@@ -105,7 +100,7 @@ public sealed class PulsarConsumerClientFactoryTests : TestBase
         // when
         try
         {
-            await factory.CreateAsync("test-group", 1);
+            await factory.CreateAsync("test-group", 1, AbortToken);
         }
         catch (BrokerConnectionException)
         {

@@ -1,14 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Globalization;
 using System.Runtime.CompilerServices;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage;
 using Npgsql;
 using NpgsqlTypes;
@@ -42,7 +39,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         var batch =
             timeJobs.Length <= JobsClaimStrategyDefaults.MaxCandidatePageSize
                 ? timeJobs
-                : timeJobs.Take(JobsClaimStrategyDefaults.MaxCandidatePageSize).ToArray();
+                : [.. timeJobs.Take(JobsClaimStrategyDefaults.MaxCandidatePageSize)];
         ClaimResult claim;
 
         await using (
@@ -63,16 +60,16 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                     owner,
                     _leaseDuration,
                     cancellationToken,
-                    batch
-                        .SelectMany(
+                    [
+                        .. batch.SelectMany(
                             (job, index) =>
                                 new NpgsqlParameter[]
                                 {
                                     new(_ParameterName("id", index), job.Id),
                                     new(_ParameterName("updatedAt", index), job.UpdatedAt),
                                 }
-                        )
-                        .ToArray()
+                        ),
+                    ]
                 )
                 .ConfigureAwait(false);
 
@@ -499,7 +496,8 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
     )
     {
         await using var command = _CreateCommand(dbContext, transaction);
-#pragma warning disable CA2100
+
+#pragma warning disable CA2100 // SQL structure contains only provider-delimited EF metadata identifiers and fixed clauses; every runtime value remains a command parameter.
         command.CommandText = $"""
             WITH claim_clock AS MATERIALIZED (
                 SELECT clock_timestamp() AS now
@@ -526,6 +524,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             RETURNING occurrence.{mapping.Id};
             """;
 #pragma warning restore CA2100
+
         command.Parameters.Add(new NpgsqlParameter("fallbackThreshold", now.AddSeconds(-1)));
         command.Parameters.Add(new NpgsqlParameter("idle", JobStatus.Idle.ToString()));
         command.Parameters.Add(new NpgsqlParameter("queued", JobStatus.Queued.ToString()));
@@ -540,7 +539,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             ids.Add(reader.GetGuid(0));
         }
 
-        return ids.ToArray();
+        return [.. ids];
     }
 
     private static string _BuildDirectCandidates(TimeJobEntity[] timeJobs, TimeJobRelationalMapping mapping)
@@ -605,7 +604,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             claimedAt ??= reader.GetDateTime(1);
         }
 
-        return new ClaimResult(ids.ToArray(), claimedAt ?? default);
+        return new ClaimResult([.. ids], claimedAt ?? default);
     }
 
     private static async Task _StampDescendantsAsync(

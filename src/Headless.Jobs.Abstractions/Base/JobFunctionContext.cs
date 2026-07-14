@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.ComponentModel;
-using System.Diagnostics.CodeAnalysis;
 using Headless.Jobs.Enums;
 using Microsoft.Extensions.DependencyInjection;
 

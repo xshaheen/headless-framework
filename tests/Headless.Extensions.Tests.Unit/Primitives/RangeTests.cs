@@ -2,6 +2,7 @@
 
 using Headless.Primitives;
 
+#pragma warning disable xUnit1044 // Avoid using TheoryData type arguments that are not serializable
 namespace Tests.Primitives;
 
 public sealed class RangeTests

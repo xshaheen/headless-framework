@@ -47,7 +47,7 @@ public sealed class JobFunctionProviderTests
                 .Build()
         );
 
-        registry.Descriptors["typed"].RequestType.Should().Be(typeof(FirstRequest));
+        registry.Descriptors["typed"].RequestType.Should().Be<FirstRequest>();
         registry.Descriptors["typed"].CronExpression.Should().Be("%Jobs:Typed:Cron");
         registry.Descriptors["requestless"].RequestType.Should().BeNull();
         registry.DescriptorsByRequestType[typeof(FirstRequest)].Should().BeSameAs(registry.Descriptors["typed"]);
@@ -120,7 +120,7 @@ public sealed class JobFunctionProviderTests
 
         var build = () => JobFunctionRegistryBuilder.Build([], [], descriptors);
 
-        build.Should().Throw<InvalidOperationException>().Which.Message.Should().Contain("'duplicate'");
+        build.Should().Throw<InvalidOperationException>().WithMessage("*'duplicate'*");
     }
 
     private static KeyValuePair<string, JobFunctionRegistration> _Function(string name, string cronExpression = "") =>
@@ -130,7 +130,7 @@ public sealed class JobFunctionProviderTests
             {
                 CronExpression = cronExpression,
                 Priority = JobPriority.Normal,
-                Delegate = new JobFunctionDelegate((_, _, _) => Task.CompletedTask),
+                Delegate = (_, _, _) => Task.CompletedTask,
                 MaxConcurrency = 0,
             }
         );

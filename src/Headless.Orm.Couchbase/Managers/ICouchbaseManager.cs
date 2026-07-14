@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
-using System.Collections.Frozen;
 using System.Diagnostics;
 using Couchbase;
 using Couchbase.Core.Exceptions;

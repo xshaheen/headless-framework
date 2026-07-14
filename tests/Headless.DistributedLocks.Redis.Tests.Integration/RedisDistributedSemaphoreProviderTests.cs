@@ -2,8 +2,6 @@
 
 using Headless.Abstractions;
 using Headless.DistributedLocks;
-using Headless.Redis;
-using Headless.Redis.Testing;
 using Microsoft.Extensions.Logging;
 
 namespace Tests;

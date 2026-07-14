@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging.Messages;
-using Headless.Messaging.Runtime;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 
@@ -13,7 +12,7 @@ public sealed class IDispatcherCompatibilityTests : TestBase
     public async Task DisposeAsync_with_timeout_should_delegate_to_legacy_dispose_implementation()
     {
         // given
-        var dispatcher = new LegacyDispatcher();
+        await using var dispatcher = new LegacyDispatcher();
 
         // when
         await ((IDispatcher)dispatcher).DisposeAsync(TimeSpan.FromSeconds(1), AbortToken);

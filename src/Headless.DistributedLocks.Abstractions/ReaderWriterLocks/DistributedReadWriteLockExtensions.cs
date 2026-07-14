@@ -384,7 +384,7 @@ public static class DistributedReadWriteLockExtensions
     private static string _GetCompositeResource(IReadOnlyList<DistributedReadWriteLockRequest> canonicalRequests)
     {
         return string.Join(
-            "+",
+            '+',
             canonicalRequests.Select(static request =>
                 (request.Mode is DistributedLockMode.Write ? "w:" : "r:") + request.Resource
             )

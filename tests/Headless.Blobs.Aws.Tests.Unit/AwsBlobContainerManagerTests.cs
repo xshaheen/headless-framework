@@ -6,7 +6,6 @@ using Amazon.S3.Model;
 using Headless.Blobs;
 using Headless.Blobs.Aws;
 using Headless.Testing.Tests;
-using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 
 namespace Tests;

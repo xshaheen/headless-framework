@@ -690,7 +690,12 @@ public abstract class DistributedReadWriteLockTestsBase : TestBase
         {
             await race;
         }
-        catch (Exception) { }
+#pragma warning disable ERP022
+        catch (Exception)
+        {
+            // ignored
+        }
+#pragma warning restore ERP022
     }
 #pragma warning restore CA1031, RCS1075
 }

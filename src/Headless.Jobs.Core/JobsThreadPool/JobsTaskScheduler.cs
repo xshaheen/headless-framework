@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
-using System.Globalization;
-using System.Text;
 using Headless.Checks;
 using Headless.Jobs.Enums;
 

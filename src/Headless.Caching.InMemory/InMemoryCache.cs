@@ -569,7 +569,7 @@ public sealed class InMemoryCache
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
     ) =>
-        _RunNumericOpAsync<double>(
+        _RunNumericOpAsync(
             key,
             amount,
             expiration,
@@ -587,7 +587,7 @@ public sealed class InMemoryCache
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
     ) =>
-        _RunNumericOpAsync<long>(
+        _RunNumericOpAsync(
             key,
             amount,
             expiration,
@@ -605,7 +605,7 @@ public sealed class InMemoryCache
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
     ) =>
-        _RunNumericOpAsync<double>(
+        _RunNumericOpAsync(
             key,
             value,
             expiration,
@@ -622,7 +622,7 @@ public sealed class InMemoryCache
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
     ) =>
-        _RunNumericOpAsync<long>(
+        _RunNumericOpAsync(
             key,
             value,
             expiration,
@@ -639,7 +639,7 @@ public sealed class InMemoryCache
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
     ) =>
-        _RunNumericOpAsync<double>(
+        _RunNumericOpAsync(
             key,
             value,
             expiration,
@@ -656,7 +656,7 @@ public sealed class InMemoryCache
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
     ) =>
-        _RunNumericOpAsync<long>(
+        _RunNumericOpAsync(
             key,
             value,
             expiration,

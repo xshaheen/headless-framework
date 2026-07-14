@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Globalization;
 using BenchmarkDotNet.Attributes;
 
 namespace Headless.Caching.Benchmarks.Scenarios;
@@ -43,7 +42,6 @@ public sealed class InMemorySetPagingBenchmarks : IDisposable
     {
         _cache?.Dispose();
         _cache = null;
-        GC.SuppressFinalize(this);
     }
 
     [Benchmark]

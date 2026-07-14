@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Security.Claims;
-using Headless.Abstractions;
 using Headless.Api.Security.Claims;
 using Headless.Checks;
 using Headless.Constants;

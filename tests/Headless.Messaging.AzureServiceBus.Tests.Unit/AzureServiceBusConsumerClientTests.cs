@@ -92,7 +92,7 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
     {
         // given
         await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
-        Action<Headless.Messaging.Transport.LogMessageEventArgs> callback = _ => { };
+        Action<LogMessageEventArgs> callback = _ => { };
 
         // when
         client.OnLogCallback = callback;

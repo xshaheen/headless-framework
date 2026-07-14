@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Globalization;
 using BenchmarkDotNet.Attributes;
 using Headless.Messaging.Benchmarks.Support;
 using Headless.Messaging.Internal;

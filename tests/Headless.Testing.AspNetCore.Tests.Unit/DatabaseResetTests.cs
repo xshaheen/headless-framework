@@ -54,7 +54,10 @@ public sealed class DatabaseResetTests : TestBase
     {
         var connection = Substitute.For<DbConnection>();
         var operation = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        // MA0045 is intentional: DatabaseResetOperation closes synchronously from CancellationToken.Register.
+#pragma warning disable MA0045
         connection.When(x => x.Close()).Do(_ => operation.TrySetException(Substitute.For<DbException>()));
+#pragma warning restore MA0045
         var cancellation = new CancellationTokenSource();
 
         var task = DatabaseResetOperation.RunAsync(connection, () => operation.Task, cancellation.Token);
@@ -66,7 +69,9 @@ public sealed class DatabaseResetTests : TestBase
         cancellation.Dispose();
         connection
             .ReceivedCalls()
-            .Count(call => call.GetMethodInfo().Name == nameof(DbConnection.Close))
+            .Count(call =>
+                string.Equals(call.GetMethodInfo().Name, nameof(DbConnection.Close), StringComparison.Ordinal)
+            )
             .Should()
             .Be(1);
     }
@@ -80,6 +85,11 @@ public sealed class DatabaseResetTests : TestBase
         await DatabaseResetOperation.RunAsync(connection, () => Task.CompletedTask, cancellation.Token);
         await cancellation.CancelAsync();
 
-        connection.ReceivedCalls().Should().NotContain(call => call.GetMethodInfo().Name == nameof(DbConnection.Close));
+        connection
+            .ReceivedCalls()
+            .Should()
+            .NotContain(call =>
+                string.Equals(call.GetMethodInfo().Name, nameof(DbConnection.Close), StringComparison.Ordinal)
+            );
     }
 }

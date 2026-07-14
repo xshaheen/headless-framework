@@ -226,9 +226,11 @@ public sealed class CompositeReadWriteLockAcquireTests : TestBase
             .TryAcquireWriteLockAsync("b", Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>());
         calls.Should().Equal("w:a", "r:b", "r:a");
 
-        releaseB.SetResult(new CompositeTestLease("b"));
+        await using var leaseB = new CompositeTestLease("b");
+        releaseB.SetResult(leaseB);
         (await firstTask).Should().NotBeNull();
-        releaseA.SetResult(new CompositeTestLease("a"));
+        await using var leaseA = new CompositeTestLease("a");
+        releaseA.SetResult(leaseA);
         (await secondTask).Should().NotBeNull();
     }
 
@@ -262,7 +264,7 @@ public sealed class CompositeReadWriteLockAcquireTests : TestBase
     public async Task should_return_original_child_for_single_canonical_request()
     {
         var provider = _CreateProvider(new FakeTimeProvider());
-        var child = new CompositeTestLease("a", fencingToken: 42);
+        await using var child = new CompositeTestLease("a", fencingToken: 42);
         provider
             .TryAcquireWriteLockAsync("a", Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IDistributedLease?>(child));
@@ -417,7 +419,7 @@ public sealed class CompositeReadWriteLockAcquireTests : TestBase
     {
         var provider = _CreateProvider(new FakeTimeProvider());
         var cleanupError = new InvalidOperationException("release failed");
-        var first = new CompositeTestLease("a", releaseException: cleanupError);
+        await using var first = new CompositeTestLease("a", releaseException: cleanupError);
         provider
             .TryAcquireReadLockAsync("a", Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IDistributedLease?>(first));
@@ -442,7 +444,8 @@ public sealed class CompositeReadWriteLockAcquireTests : TestBase
         var provider = _CreateProvider(new FakeTimeProvider());
         var primary = new InvalidOperationException("acquire failed");
         var cleanup = new IOException("release failed");
-        var first = new CompositeTestLease("a", releaseException: cleanup);
+        await using var first = new CompositeTestLease("a", releaseException: cleanup);
+
         provider
             .TryAcquireReadLockAsync("a", Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IDistributedLease?>(first));
@@ -465,7 +468,7 @@ public sealed class CompositeReadWriteLockAcquireTests : TestBase
     {
         var timeProvider = new FakeTimeProvider();
         var provider = _CreateProvider(timeProvider);
-        var first = new CompositeTestLease("a");
+        await using var first = new CompositeTestLease("a");
         var secondStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var secondResult = new TaskCompletionSource<IDistributedLease?>(
             TaskCreationOptions.RunContinuationsAsynchronously
@@ -509,7 +512,7 @@ public sealed class CompositeReadWriteLockAcquireTests : TestBase
         var timeProvider = new FakeTimeProvider();
         var provider = _CreateProvider(timeProvider);
         var renewedWith = new ConcurrentQueue<TimeSpan?>();
-        var first = new CompositeTestLease(
+        await using var first = new CompositeTestLease(
             "a",
             renewal: (timeUntilExpires, _) =>
             {
@@ -558,7 +561,7 @@ public sealed class CompositeReadWriteLockAcquireTests : TestBase
         var timeProvider = new FakeTimeProvider();
         var provider = _CreateProvider(timeProvider);
         var events = new List<string>();
-        var first = new CompositeTestLease("a", events, renewResult: false);
+        await using var first = new CompositeTestLease("a", events, renewResult: false);
         var secondStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         provider
@@ -634,8 +637,8 @@ public sealed class CompositeReadWriteLockAcquireTests : TestBase
         // D4 carries loss linking over from the mutex composite, but nothing exercised it across MIXED modes: a read
         // child and a write child must agree on loss-observability and fold into a single signal.
         var provider = _CreateProvider(new FakeTimeProvider());
-        var readChild = new CompositeTestLease("a", canObserveLoss: true);
-        var writeChild = new CompositeTestLease("b", canObserveLoss: true);
+        await using var readChild = new CompositeTestLease("a", canObserveLoss: true);
+        await using var writeChild = new CompositeTestLease("b", canObserveLoss: true);
 
         provider
             .TryAcquireReadLockAsync("a", Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>())
@@ -668,8 +671,8 @@ public sealed class CompositeReadWriteLockAcquireTests : TestBase
     public async Task should_reject_read_and_write_children_that_disagree_on_loss_observability()
     {
         var provider = _CreateProvider(new FakeTimeProvider());
-        var readChild = new CompositeTestLease("a");
-        var writeChild = new CompositeTestLease("b", canObserveLoss: true);
+        await using var readChild = new CompositeTestLease("a");
+        await using var writeChild = new CompositeTestLease("b", canObserveLoss: true);
 
         provider
             .TryAcquireReadLockAsync("a", Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>())

@@ -12,7 +12,6 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
-using Tests.Helpers;
 
 namespace Tests;
 
@@ -730,7 +729,7 @@ public sealed class DispatcherTests : TestBase
             .Returns(new ValueTask<bool>(true));
         _storage
             .ChangePublishStateToDelayedAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
-            .Returns<ValueTask>(_ => throw new InvalidOperationException("storage down"));
+            .Returns(_ => throw new InvalidOperationException("storage down"));
 
         await using var dispatcher = new Dispatcher(
             _logger,

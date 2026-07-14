@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Abstractions;
 using Headless.Blobs;
 using Headless.Blobs.Internals;
 using Headless.Blobs.Redis;

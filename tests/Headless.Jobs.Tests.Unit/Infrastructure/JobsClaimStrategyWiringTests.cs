@@ -215,8 +215,6 @@ public sealed class JobsClaimStrategyWiringTests : TestBase
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
         where TCronJob : CronJobEntity, new()
     {
-        public FakeJobsClaimStrategy() { }
-
         public IAsyncEnumerable<TimeJobEntity> ClaimTimeJobsAsync(
             TimeJobEntity[] timeJobs,
             CancellationToken cancellationToken
@@ -245,8 +243,5 @@ public sealed class JobsClaimStrategyWiringTests : TestBase
         : FakeJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         where TDbContext : DbContext
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
-        where TCronJob : CronJobEntity, new()
-    {
-        public SecondFakeJobsClaimStrategy() { }
-    }
+        where TCronJob : CronJobEntity, new();
 }

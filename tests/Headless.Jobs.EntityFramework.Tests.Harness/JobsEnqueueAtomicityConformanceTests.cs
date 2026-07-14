@@ -586,11 +586,9 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
             .Be(new TrackedEntry(marker.EntityType, marker.EntityId));
     }
 
-    private sealed class ObservableJobsDbContext : JobsDbContext<TimeJobEntity, CronJobEntity>
+    private sealed class ObservableJobsDbContext(DbContextOptions<ObservableJobsDbContext> options)
+        : JobsDbContext<TimeJobEntity, CronJobEntity>(options)
     {
-        public ObservableJobsDbContext(DbContextOptions<ObservableJobsDbContext> options)
-            : base(options) { }
-
         public static SavePipelineObserver? Observer { get; set; }
 
         public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)

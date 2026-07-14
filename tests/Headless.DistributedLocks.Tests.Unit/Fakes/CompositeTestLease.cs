@@ -9,50 +9,27 @@ namespace Tests.Fakes;
 /// ordering into a shared event list and can simulate renewal failure, cleanup faults, and lease loss — the
 /// behaviors the composite coordinator has to react to. Shared by the mutex, reader-writer, and semaphore suites.
 /// </summary>
-internal sealed class CompositeTestLease : IDistributedLease
+internal sealed class CompositeTestLease(
+    string resource,
+    List<string>? events = null,
+    long? fencingToken = null,
+    bool canObserveLoss = false,
+    bool renewResult = true,
+    Exception? renewalException = null,
+    Func<TimeSpan?, CancellationToken, Task<bool>>? renewal = null,
+    Exception? releaseException = null,
+    Exception? disposeException = null,
+    int? markLostOnTokenRead = null
+) : IDistributedLease
 {
-    private readonly List<string>? _events;
-    private readonly CancellationTokenSource? _lostSource;
-    private readonly bool _renewResult;
-    private readonly Exception? _renewalException;
-    private readonly Func<TimeSpan?, CancellationToken, Task<bool>>? _renewal;
-    private readonly Exception? _releaseException;
-    private readonly Exception? _disposeException;
-    private readonly int? _markLostOnTokenRead;
+    private readonly CancellationTokenSource? _lostSource = canObserveLoss ? new CancellationTokenSource() : null;
     private int _lostTokenReads;
 
-    public CompositeTestLease(
-        string resource,
-        List<string>? events = null,
-        long? fencingToken = null,
-        bool canObserveLoss = false,
-        bool renewResult = true,
-        Exception? renewalException = null,
-        Func<TimeSpan?, CancellationToken, Task<bool>>? renewal = null,
-        Exception? releaseException = null,
-        Exception? disposeException = null,
-        int? markLostOnTokenRead = null
-    )
-    {
-        Resource = resource;
-        LeaseId = $"lease-{resource}";
-        FencingToken = fencingToken;
-        _events = events;
-        CanObserveLoss = canObserveLoss;
-        _renewResult = renewResult;
-        _renewalException = renewalException;
-        _renewal = renewal;
-        _releaseException = releaseException;
-        _disposeException = disposeException;
-        _markLostOnTokenRead = markLostOnTokenRead;
-        _lostSource = canObserveLoss ? new CancellationTokenSource() : null;
-    }
+    public string LeaseId { get; } = $"lease-{resource}";
 
-    public string LeaseId { get; }
+    public long? FencingToken { get; } = fencingToken;
 
-    public long? FencingToken { get; }
-
-    public string Resource { get; }
+    public string Resource { get; } = resource;
 
     public int RenewalCount { get; private set; }
 
@@ -64,7 +41,7 @@ internal sealed class CompositeTestLease : IDistributedLease
     {
         get
         {
-            if (_markLostOnTokenRead == Interlocked.Increment(ref _lostTokenReads))
+            if (markLostOnTokenRead == Interlocked.Increment(ref _lostTokenReads))
             {
                 _lostSource!.Cancel();
             }
@@ -73,37 +50,37 @@ internal sealed class CompositeTestLease : IDistributedLease
         }
     }
 
-    public bool CanObserveLoss { get; }
+    public bool CanObserveLoss { get; } = canObserveLoss;
 
     public Task<bool> RenewAsync(TimeSpan? timeUntilExpires = null, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         RenewalCount++;
 
-        if (_renewal is not null)
+        if (renewal is not null)
         {
-            return _renewal(timeUntilExpires, cancellationToken);
+            return renewal(timeUntilExpires, cancellationToken);
         }
 
-        if (_renewalException is not null)
+        if (renewalException is not null)
         {
-            return Task.FromException<bool>(_renewalException);
+            return Task.FromException<bool>(renewalException);
         }
 
-        return Task.FromResult(_renewResult);
+        return Task.FromResult(renewResult);
     }
 
     public Task ReleaseAsync()
     {
-        _events?.Add($"release:{Resource}");
-        return _releaseException is null ? Task.CompletedTask : Task.FromException(_releaseException);
+        events?.Add($"release:{Resource}");
+        return releaseException is null ? Task.CompletedTask : Task.FromException(releaseException);
     }
 
     public ValueTask DisposeAsync()
     {
-        _events?.Add($"dispose:{Resource}");
+        events?.Add($"dispose:{Resource}");
         _lostSource?.Dispose();
-        return _disposeException is null ? ValueTask.CompletedTask : ValueTask.FromException(_disposeException);
+        return disposeException is null ? ValueTask.CompletedTask : ValueTask.FromException(disposeException);
     }
 
     public void MarkLost() => _lostSource!.Cancel();

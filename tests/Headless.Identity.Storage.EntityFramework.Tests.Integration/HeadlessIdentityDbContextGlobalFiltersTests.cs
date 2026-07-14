@@ -18,8 +18,6 @@ namespace Tests;
 public sealed class HeadlessIdentityDbContextGlobalFiltersTests(IdentityTestFixture fixture)
     : HeadlessDbContextGlobalFiltersTestBase<IdentityTestFixture, TestIdentityDbContext>(fixture)
 {
-    private readonly IdentityTestFixture _fixture = fixture;
-
     [Fact]
     public void add_headless_identity_db_context_should_default_identity_schema_to_version3()
     {
@@ -108,7 +106,7 @@ public sealed class HeadlessIdentityDbContextGlobalFiltersTests(IdentityTestFixt
     public async Task headless_identity_db_context_should_include_passkey_entity_by_default()
     {
         // given
-        await using var scope = _fixture.ServiceProvider.CreateAsyncScope();
+        await using var scope = fixture.ServiceProvider.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<TestIdentityDbContext>();
 
         // when

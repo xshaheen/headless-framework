@@ -9,12 +9,7 @@ namespace Tests.Values;
 
 public sealed class SettingManagerExtensionsTests : TestBase
 {
-    private readonly ISettingManager _settingManager;
-
-    public SettingManagerExtensionsTests()
-    {
-        _settingManager = Substitute.For<ISettingManager>();
-    }
+    private readonly ISettingManager _settingManager = Substitute.For<ISettingManager>();
 
     #region IsTrueAsync
 
@@ -176,7 +171,7 @@ public sealed class SettingManagerExtensionsTests : TestBase
         const string settingName = "TestSetting";
         _settingManager
             .GetAsync(settingName, null, null, true, AbortToken)
-            .Returns(new SettingValue(settingName, (string?)null));
+            .Returns(new SettingValue(settingName, null));
 
         // when
         var result = await _settingManager.GetAsync<TestSettings>(settingName, cancellationToken: AbortToken);

@@ -112,8 +112,15 @@ public sealed class RedisStreamsSetupTests : TestBase
 
         // then
         var intentAwareFactory = factory.Should().BeAssignableTo<IIntentAwareConsumerClientFactory>().Subject;
-        await using var queueClient = await intentAwareFactory.CreateAsync("queue-group", 1, IntentType.Queue);
-        await using var busClient = await intentAwareFactory.CreateAsync("bus-group", 1, IntentType.Bus);
+
+        await using var queueClient = await intentAwareFactory.CreateAsync(
+            "queue-group",
+            1,
+            IntentType.Queue,
+            AbortToken
+        );
+
+        await using var busClient = await intentAwareFactory.CreateAsync("bus-group", 1, IntentType.Bus, AbortToken);
 
         queueClient.Should().BeOfType<RedisConsumerClient>();
         busClient.Should().BeOfType<RedisPubSubConsumerClient>();

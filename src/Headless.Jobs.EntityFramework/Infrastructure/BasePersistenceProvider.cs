@@ -24,8 +24,6 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
-    private readonly IJobsClaimStrategy<TTimeJob, TCronJob> _claimStrategy = claimStrategy;
-
     protected IDbContextFactory<TDbContext> DbContextFactory { get; } = dbContextFactory;
 
     protected ILogger Logger { get; } = logger;
@@ -80,10 +78,10 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     public IAsyncEnumerable<TimeJobEntity> QueueTimeJobsAsync(
         TimeJobEntity[] timeJobs,
         CancellationToken cancellationToken
-    ) => _claimStrategy.ClaimTimeJobsAsync(timeJobs, cancellationToken);
+    ) => claimStrategy.ClaimTimeJobsAsync(timeJobs, cancellationToken);
 
     public IAsyncEnumerable<TimeJobEntity> QueueTimedOutTimeJobsAsync(CancellationToken cancellationToken) =>
-        _claimStrategy.ClaimTimedOutTimeJobsAsync(cancellationToken);
+        claimStrategy.ClaimTimedOutTimeJobsAsync(cancellationToken);
 
     public async Task ReleaseAcquiredTimeJobsAsync(Guid[] timeJobIds, CancellationToken cancellationToken)
     {
@@ -784,7 +782,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
     public IAsyncEnumerable<CronJobOccurrenceEntity<TCronJob>> QueueTimedOutCronJobOccurrencesAsync(
         CancellationToken cancellationToken = default
-    ) => _claimStrategy.ClaimTimedOutCronJobOccurrencesAsync(cancellationToken);
+    ) => claimStrategy.ClaimTimedOutCronJobOccurrencesAsync(cancellationToken);
 
     public async Task<int> ReleaseDeadNodeOccurrenceResourcesAsync(
         string instanceIdentifier,
@@ -1027,7 +1025,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     public IAsyncEnumerable<CronJobOccurrenceEntity<TCronJob>> QueueCronJobOccurrencesAsync(
         (DateTime Key, JobManagerDispatchContext[] Items) cronJobOccurrences,
         CancellationToken cancellationToken = default
-    ) => _claimStrategy.ClaimCronJobOccurrencesAsync(cronJobOccurrences, cancellationToken);
+    ) => claimStrategy.ClaimCronJobOccurrencesAsync(cronJobOccurrences, cancellationToken);
 
     public async Task<CronJobOccurrenceEntity<TCronJob>> GetEarliestAvailableCronOccurrenceAsync(
         Guid[] ids,

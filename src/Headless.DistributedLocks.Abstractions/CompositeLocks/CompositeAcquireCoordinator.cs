@@ -56,7 +56,7 @@ internal static class CompositeAcquireCoordinator
         Argument.IsNotNull(resourceOf);
         Argument.IsNotNull(tryAcquireChild);
         Argument.IsNotNull(compositeResourceOf);
-        Argument.IsNotEmpty(canonicalRequests, paramName: nameof(canonicalRequests));
+        Argument.IsNotEmpty(canonicalRequests);
 
         var compositeResource =
             canonicalRequests.Count == 1 ? resourceOf(canonicalRequests[0]) : compositeResourceOf(canonicalRequests);
@@ -285,11 +285,13 @@ internal static class CompositeAcquireCoordinator
         // infinite Task.Delay sentinels: there is no timer to schedule and nothing to cancel-and-drain, and the
         // signal cannot fault, so the wait arm never needs exception handling.
         var waitSignal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var operationRegistration = operationToken.Register(
+
+        await using var operationRegistration = operationToken.Register(
             static state => ((TaskCompletionSource)state!).TrySetResult(),
             waitSignal
         );
-        using var lossRegistration = formationLossToken.CanBeCanceled
+
+        await using var lossRegistration = formationLossToken.CanBeCanceled
             ? formationLossToken.Register(static state => ((TaskCompletionSource)state!).TrySetResult(), waitSignal)
             : default;
 

@@ -67,7 +67,7 @@ public sealed class CloudflareR2BlobStorageTests : BlobStorageTestsBase
             new R2BlobNamingNormalizer()
         );
 
-        var url = await ((IPresignedUrlBlobStorage)storage).GetPresignedDownloadUrlAsync(
+        var url = await storage.GetPresignedDownloadUrlAsync(
             new BlobLocation("bucket", "file.txt"),
             TimeSpan.FromMinutes(5),
             AbortToken

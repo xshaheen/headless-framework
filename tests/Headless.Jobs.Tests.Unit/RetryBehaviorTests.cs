@@ -463,11 +463,10 @@ public sealed class RetryBehaviorTests : TestBase
         internalManager
             .RenewLeaseAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
-            {
-                return Interlocked.Increment(ref renewalCalls) == 1
+                Interlocked.Increment(ref renewalCalls) == 1
                     ? Task.FromResult(1)
-                    : Task.FromException<int>(new TimeoutException("simulated DB outage"));
-            });
+                    : Task.FromException<int>(new TimeoutException("simulated DB outage"))
+            );
 
         var handler = new JobsExecutionTaskHandler(
             serviceProvider,
@@ -612,7 +611,7 @@ public sealed class RetryBehaviorTests : TestBase
         {
             while (!context.LeaseLost)
             {
-                await Task.Delay(5);
+                await Task.Delay(5, AbortToken);
             }
         };
 

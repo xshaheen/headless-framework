@@ -115,7 +115,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
 
         // when
-        await client.ConnectAsync();
+        await client.ConnectAsync(AbortToken);
 
         // then
         await _channel
@@ -147,7 +147,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, options, _serviceProvider);
 
         // when
-        await client.ConnectAsync();
+        await client.ConnectAsync(AbortToken);
 
         // then
         await _channel
@@ -255,8 +255,8 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         _channel.IsClosed.Returns(false);
 
         // when
-        await client.ConnectAsync();
-        await client.ConnectAsync();
+        await client.ConnectAsync(AbortToken);
+        await client.ConnectAsync(AbortToken);
 
         // then
         await _connection
@@ -481,7 +481,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     {
         // given
         var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
-        await client.ConnectAsync();
+        await client.ConnectAsync(AbortToken);
 
         // when
         await client.DisposeAsync();

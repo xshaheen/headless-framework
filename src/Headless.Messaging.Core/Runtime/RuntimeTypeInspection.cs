@@ -3,7 +3,6 @@
 using System.ComponentModel;
 using System.Reflection;
 using System.Runtime.CompilerServices;
-using JetBrains.Annotations;
 
 namespace Headless.Messaging.Runtime;
 

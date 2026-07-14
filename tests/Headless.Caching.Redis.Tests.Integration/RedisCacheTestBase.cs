@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Caching;
-using Headless.Redis;
 using Headless.Redis.Testing;
 using Headless.Serializer;
 using Headless.Testing.Tests;

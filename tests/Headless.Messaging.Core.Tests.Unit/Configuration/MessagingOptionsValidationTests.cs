@@ -2,12 +2,9 @@
 
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
-using Headless.Messaging.Retry;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Polly;
-using Polly.Retry;
-using Tests.Helpers;
 
 namespace Tests.Configuration;
 

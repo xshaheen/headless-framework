@@ -2,11 +2,10 @@
 
 using FluentValidation;
 using FluentValidation.Results;
+using Headless.Abstractions;
 using Headless.Api;
-using Headless.Api.Abstractions;
 using Headless.Primitives;
 using Headless.Testing.Tests;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;

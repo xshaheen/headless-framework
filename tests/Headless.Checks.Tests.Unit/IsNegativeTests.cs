@@ -90,7 +90,7 @@ public sealed class IsNegativeTests
         {
             NumericKind.Short => () =>
             {
-                const short value = (short)3;
+                const short value = 3;
                 Argument.IsNegative(value, message);
             },
             NumericKind.Int => () =>

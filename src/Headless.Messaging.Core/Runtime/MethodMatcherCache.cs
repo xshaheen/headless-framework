@@ -2,7 +2,6 @@
 
 using System.Collections.Concurrent;
 using Headless.Messaging.Messages;
-using JetBrains.Annotations;
 
 namespace Headless.Messaging.Runtime;
 
