@@ -91,6 +91,27 @@ internal static class DiagnosticDescriptors
         DiagnosticSeverity.Error
     );
 
+    public static readonly DiagnosticDescriptor DuplicateRequestType = _Create(
+        "TQ011",
+        "DuplicateRequestTypeTitle",
+        "DuplicateRequestTypeMessage",
+        DiagnosticSeverity.Error
+    );
+
+    public static readonly DiagnosticDescriptor InvalidJobPriority = _Create(
+        "TQ012",
+        "InvalidJobPriorityTitle",
+        "InvalidJobPriorityMessage",
+        DiagnosticSeverity.Error
+    );
+
+    public static readonly DiagnosticDescriptor InvalidMaxConcurrency = _Create(
+        "TQ013",
+        "InvalidMaxConcurrencyTitle",
+        "InvalidMaxConcurrencyMessage",
+        DiagnosticSeverity.Error
+    );
+
     private static DiagnosticDescriptor _Create(
         string id,
         string titleResourceName,

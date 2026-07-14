@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.Text;
 using Headless.Jobs.SourceGenerator.AttributeSyntaxes;
 using Headless.Jobs.SourceGenerator.Generators;
+using Headless.Jobs.SourceGenerator.Models;
 using Headless.Jobs.SourceGenerator.Utilities;
 using Headless.Jobs.SourceGenerator.Validation;
 using Microsoft.CodeAnalysis;
@@ -22,10 +23,10 @@ namespace Headless.Jobs.SourceGenerator;
 /// <c>JobFunctionProvider</c> at process startup.
 /// </summary>
 /// <remarks>
-/// The generated <c>Initialize()</c> method calls <c>JobFunctionProvider.RegisterFunctions</c>
-/// and <c>JobFunctionProvider.RegisterRequestType</c> once per assembly, keyed by the
-/// function name declared on <c>[JobFunction]</c>. A TQ010 diagnostic is emitted when a class
-/// carries more than one <c>[JobsConstructor]</c> attribute.
+/// The generated <c>Initialize()</c> method calls <c>JobFunctionProvider.RegisterFunctions</c>,
+/// <c>JobFunctionProvider.RegisterRequestType</c>, and <c>JobFunctionProvider.RegisterDescriptors</c>
+/// once per assembly, keyed by the function name declared on <c>[JobFunction]</c>. TQ010 is emitted
+/// for multiple <c>[JobsConstructor]</c> attributes, and TQ011 rejects duplicate request types.
 /// </remarks>
 [Generator]
 public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
@@ -57,6 +58,11 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
                     return;
                 }
 
+                if (!CompilationCollisionValidator.Validate(methodPairs, compilation, productionContext))
+                {
+                    return;
+                }
+
                 // Generate constructor calls (no need for class conflict detection since we always use full names)
                 var constructorCalls = _BuildConstructorMethodCalls(methodPairs, compilation, compilation.Assembly.Name)
                     .ToList();
@@ -70,7 +76,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
                     )
                     .ToList();
                 var typeNames = initialDelegatesWithMetadata
-                    .Select(d => d.Item2.GenericTypeName)
+                    .Select(info => info.RequestType.GenericTypeName)
                     .Where(t => !string.IsNullOrEmpty(t))
                     .ToList();
                 var typeNameConflicts = _DetectTypeNameConflicts(typeNames);
@@ -85,14 +91,15 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
                     )
                     .ToList();
 
-                // Extract data once to avoid multiple enumeration
-                var delegateCodes = delegatesWithMetadata.ConvertAll(x => x.DelegateCode);
-                var requestTypes = delegatesWithMetadata.ConvertAll(x => x.Item2);
+                var delegateCodes = delegatesWithMetadata.ConvertAll(info => info.DelegateCode);
+                var requestTypes = delegatesWithMetadata.ConvertAll(info => info.RequestType);
+                var descriptors = delegatesWithMetadata.ConvertAll(info => info.Descriptor);
 
                 var generatedCode = _GenerateSourceWithFullNamespaces(
                     delegateCodes,
                     constructorCalls,
                     requestTypes,
+                    descriptors,
                     compilation.Assembly.Name,
                     typeNameConflicts
                 );
@@ -159,10 +166,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
     /// <summary>
     /// Builds job function delegates for all discovered methods with JobFunction attributes.
     /// </summary>
-    private static IEnumerable<(
-        string DelegateCode,
-        (string GenericTypeName, string FunctionName)
-    )> _BuildJobFunctionDelegates(
+    private static IEnumerable<JobFunctionGenerationInfo> _BuildJobFunctionDelegates(
         ImmutableArray<(ClassDeclarationSyntax ClassDecl, MethodDeclarationSyntax MethodDecl)> methodPairs,
         Compilation compilation,
         SourceProductionContext context,
@@ -170,7 +174,6 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
         HashSet<string>? typeNameConflicts = null
     )
     {
-        var usedFunctionNames = new HashSet<string>(StringComparer.Ordinal);
         var validatedClasses = new HashSet<ClassDeclarationSyntax>();
 
         foreach (var (classDeclaration, methodDeclaration) in methodPairs)
@@ -214,7 +217,6 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
                 methodDeclaration,
                 classDeclaration.Identifier.Text,
                 attributeLocation,
-                usedFunctionNames,
                 context
             );
 
@@ -238,7 +240,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
     /// <summary>
     /// Builds a single delegate for a job function method.
     /// </summary>
-    private static (string DelegateCode, (string GenericTypeName, string FunctionName)) _BuildSingleDelegate(
+    private static JobFunctionGenerationInfo _BuildSingleDelegate(
         ClassDeclarationSyntax classDeclaration,
         MethodDeclarationSyntax methodDeclaration,
         SemanticModel semanticModel,
@@ -266,7 +268,21 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
             typeNameConflicts
         );
 
-        return (delegateCode, (methodInfo.GenericTypeName, functionName!));
+        var requestType = CompilationCollisionValidator.GetRequestType(
+            semanticModel.GetDeclaredSymbol(methodDeclaration)
+        );
+
+        return new(
+            delegateCode,
+            (methodInfo.GenericTypeName, functionName!),
+            new(
+                functionName!,
+                requestType?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                cronExpression ?? string.Empty,
+                functionPriority,
+                maxConcurrency
+            )
+        );
     }
 
     /// <summary>
@@ -277,6 +293,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
         IReadOnlyList<string> delegates,
         IReadOnlyList<string> ctorCalls,
         IReadOnlyList<(string GenericTypeName, string FunctionName)> requestTypes,
+        IReadOnlyList<JobFunctionDescriptorInfo> descriptors,
         string assemblyName,
         HashSet<string>? typeNameConflicts = null
     )
@@ -289,6 +306,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
         _GenerateFileHeaderWithJobsUsings(sb, includeBaseUtilities, assemblyName);
         _GenerateClassDeclarationWithFullNamespaces(sb, assemblyName);
         _GenerateInitializeMethodWithFullNamespaces(sb, delegates);
+        _GenerateDescriptorRegistrationWithFullNamespaces(sb, descriptors);
         _GenerateConstructorMethods(sb, ctorCalls); // Constructor methods already handle their own namespacing
 
         // Only generate helper method if it's needed
@@ -537,6 +555,37 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
         }
 
         sb.AppendLine("            RegisterRequestTypes();");
+        sb.AppendLine("            RegisterDescriptors();");
+        sb.AppendLine("        }");
+    }
+
+    private static void _GenerateDescriptorRegistrationWithFullNamespaces(
+        StringBuilder sb,
+        IReadOnlyList<JobFunctionDescriptorInfo> descriptors
+    )
+    {
+        sb.AppendLine("        private static void RegisterDescriptors()");
+        sb.AppendLine("        {");
+
+        if (descriptors.Count > 0)
+        {
+            sb.AppendLine(
+                $"            var descriptors = new Dictionary<string, JobFunctionDescriptor>({descriptors.Count});"
+            );
+
+            foreach (var descriptor in descriptors)
+            {
+                var functionName = SymbolDisplay.FormatLiteral(descriptor.FunctionName, quote: true);
+                var requestType = descriptor.RequestTypeName == null ? "null" : $"typeof({descriptor.RequestTypeName})";
+                var cronExpression = SymbolDisplay.FormatLiteral(descriptor.CronExpression, quote: true);
+                sb.AppendLine(
+                    $"            descriptors.Add({functionName}, new JobFunctionDescriptor({functionName}, {requestType}, {cronExpression}, (JobPriority){descriptor.Priority}, {descriptor.MaxConcurrency}));"
+                );
+            }
+
+            sb.AppendLine($"            JobFunctionProvider.RegisterDescriptors(descriptors, {descriptors.Count});");
+        }
+
         sb.AppendLine("        }");
     }
 
@@ -639,7 +688,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
                 var typeName = _GetTypeNameForGeneration(genericTypeName, typeNameConflicts);
 
                 sb.AppendLine(
-                    $"            requestTypes.TryAdd(\"{functionName}\", (typeof({typeName}).FullName, typeof({typeName})));"
+                    $"            requestTypes.Add(\"{functionName}\", (typeof({typeName}).FullName, typeof({typeName})));"
                 );
             }
 
@@ -672,7 +721,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
                 var typeName = _GetTypeNameForGeneration(genericTypeName, typeNameConflicts);
 
                 sb.AppendLine(
-                    $"      requestTypes.TryAdd(\"{functionName}\", (typeof({typeName}).FullName, typeof({typeName})));"
+                    $"      requestTypes.Add(\"{functionName}\", (typeof({typeName}).FullName, typeof({typeName})));"
                 );
             }
 

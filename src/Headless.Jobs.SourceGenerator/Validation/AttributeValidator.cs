@@ -18,7 +18,6 @@ internal static class AttributeValidator
         MethodDeclarationSyntax methodDeclaration,
         string className,
         Location attributeLocation,
-        HashSet<string> usedFunctionNames,
         SourceProductionContext context
     )
     {
@@ -34,21 +33,6 @@ internal static class AttributeValidator
                 )
             );
         }
-        else
-        {
-            // Check for duplicate function names
-            if (!usedFunctionNames.Add(attributeValues.functionName!))
-            {
-                context.ReportDiagnostic(
-                    Diagnostic.Create(
-                        DiagnosticDescriptors.DuplicateFunctionName,
-                        attributeLocation,
-                        attributeValues.functionName
-                    )
-                );
-            }
-        }
-
         // Validate cron expression
         JobFunctionValidator.ValidateCronExpression(
             attributeValues.cronExpression,
@@ -56,5 +40,27 @@ internal static class AttributeValidator
             attributeLocation,
             context
         );
+
+        if (attributeValues.taskPriority is < 0 or > 3)
+        {
+            context.ReportDiagnostic(
+                Diagnostic.Create(
+                    DiagnosticDescriptors.InvalidJobPriority,
+                    attributeLocation,
+                    attributeValues.taskPriority
+                )
+            );
+        }
+
+        if (attributeValues.maxConcurrency < 0)
+        {
+            context.ReportDiagnostic(
+                Diagnostic.Create(
+                    DiagnosticDescriptors.InvalidMaxConcurrency,
+                    attributeLocation,
+                    attributeValues.maxConcurrency
+                )
+            );
+        }
     }
 }
