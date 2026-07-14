@@ -4,7 +4,7 @@
       Message: Class must be partial to generate Empty constructor,
       Severity: Error,
       Descriptor: {
-        Id: AL1002,
+        Id: HF1002,
         Title: Class must be partial to generate Empty constructor,
         MessageFormat: Class must be partial to generate Empty constructor,
         Category: Headless.Generator.Primitives,

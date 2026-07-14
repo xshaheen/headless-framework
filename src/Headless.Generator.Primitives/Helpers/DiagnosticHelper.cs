@@ -18,7 +18,7 @@ internal static class DiagnosticHelper
     {
         return Diagnostic.Create(
             new DiagnosticDescriptor(
-                "AL1000",
+                "HF1000",
                 "An exception was thrown by the PrimitiveGenerator generator",
                 "An exception was thrown by the PrimitiveGenerator generator: `{0}`{1}{2}",
                 _Category,
@@ -39,7 +39,7 @@ internal static class DiagnosticHelper
     {
         return Diagnostic.Create(
             new DiagnosticDescriptor(
-                "AL1021",
+                "HF1021",
                 "InvalidPrimitiveValueException should be thrown in order to be converted to bad request and work Correctly",
                 "InvalidPrimitiveValueException should be thrown in order to be converted to bad request and work Correctly",
                 _Category,
@@ -57,7 +57,7 @@ internal static class DiagnosticHelper
     {
         return Diagnostic.Create(
             new DiagnosticDescriptor(
-                "AL1001",
+                "HF1001",
                 "Primitive type must be a Numeric type, Date type or string type to use PrimitivesGenerator",
                 "Primitive type must be a Numeric type, Date type or string type to use PrimitivesGenerator",
                 _Category,
@@ -76,7 +76,7 @@ internal static class DiagnosticHelper
     {
         return Diagnostic.Create(
             new DiagnosticDescriptor(
-                "AL1012",
+                "HF1012",
                 $"{AbstractionConstants.SerializationFormatAttribute} can only be used with  Date types",
                 "Type {0} cannot have SerializationFormatAttribute as it's not a date type",
                 _Category,
@@ -96,7 +96,7 @@ internal static class DiagnosticHelper
     {
         return Diagnostic.Create(
             new DiagnosticDescriptor(
-                "AL1012",
+                "HF1013",
                 $"{AbstractionConstants.SupportedOperationsAttribute} can only be used with Operational Numeric types",
                 "Type {0} cannot have SupportedOperationsAttribute as it's not an operational numeric type",
                 _Category,
@@ -115,7 +115,7 @@ internal static class DiagnosticHelper
     {
         return Diagnostic.Create(
             new DiagnosticDescriptor(
-                "AL1002",
+                "HF1002",
                 "Class must be partial to generate Empty constructor",
                 "Class must be partial to generate Empty constructor",
                 _Category,
@@ -135,7 +135,7 @@ internal static class DiagnosticHelper
     {
         return Diagnostic.Create(
             new DiagnosticDescriptor(
-                "AL1016",
+                "HF1016",
                 "Type should be a reference type",
                 "Type `{0}` should be a reference type as it's wrapping a reference type of `{1}`",
                 _Category,
@@ -157,7 +157,7 @@ internal static class DiagnosticHelper
     {
         return Diagnostic.Create(
             new DiagnosticDescriptor(
-                "AL1015",
+                "HF1015",
                 "Type should be a value type",
                 "Type `{0}` should be a value type as it's wrapping a value type of `{1}`",
                 _Category,
@@ -178,7 +178,7 @@ internal static class DiagnosticHelper
     {
         return Diagnostic.Create(
             new DiagnosticDescriptor(
-                "AL1011",
+                "HF1011",
                 "Primitives must not have a parameterized constructor to successfully generate members",
                 "Type `{0}` must not have a parameterized constructor to successfully generate members",
                 _Category,
@@ -198,7 +198,7 @@ internal static class DiagnosticHelper
     {
         return Diagnostic.Create(
             new DiagnosticDescriptor(
-                "AL1003",
+                "HF1003",
                 "Primitives Should not have non obsolete empty constructors, either delete or add an obsolete attribute with Error=true",
                 "Type `{0}` Should not have non obsolete empty constructors, either delete or add an obsolete attribute with Error=true",
                 _Category,
