@@ -1,5 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
@@ -8,8 +11,17 @@ namespace Headless.DistributedLocks;
 /// Every read and write acquire succeeds immediately and every renew returns true.
 /// </summary>
 [PublicAPI]
-public sealed class NullDistributedReadWriteLock(TimeProvider timeProvider) : IDistributedReadWriteLock
+public sealed class NullDistributedReadWriteLock(
+    TimeProvider timeProvider,
+    ILogger<NullDistributedReadWriteLock>? logger = null
+) : IDistributedReadWriteLock
 {
+    /// <inheritdoc />
+    public TimeProvider TimeProvider => timeProvider;
+
+    /// <inheritdoc />
+    public ILogger Logger { get; } = logger ?? NullLogger<NullDistributedReadWriteLock>.Instance;
+
     /// <inheritdoc />
     public TimeSpan DefaultTimeUntilExpires => TimeSpan.FromMinutes(20);
 

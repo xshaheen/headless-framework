@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
@@ -12,8 +14,17 @@ namespace Headless.DistributedLocks;
 /// that want a permissive semaphore) when this behavior is desired.
 /// </summary>
 [PublicAPI]
-public sealed class NullDistributedSemaphoreProvider(TimeProvider timeProvider) : IDistributedSemaphoreProvider
+public sealed class NullDistributedSemaphoreProvider(
+    TimeProvider timeProvider,
+    ILogger<NullDistributedSemaphoreProvider>? logger = null
+) : IDistributedSemaphoreProvider
 {
+    /// <inheritdoc />
+    public TimeProvider TimeProvider => timeProvider;
+
+    /// <inheritdoc />
+    public ILogger Logger { get; } = logger ?? NullLogger<NullDistributedSemaphoreProvider>.Instance;
+
     /// <inheritdoc />
     public TimeSpan DefaultTimeUntilExpires => TimeSpan.FromMinutes(20);
 

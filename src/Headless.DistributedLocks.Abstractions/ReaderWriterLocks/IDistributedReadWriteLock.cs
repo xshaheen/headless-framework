@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Microsoft.Extensions.Logging;
+
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
@@ -7,13 +9,44 @@ namespace Headless.DistributedLocks;
 /// Provides distributed reader-writer locks for resources where concurrent readers are safe and writers require exclusivity.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Implementations may enforce writer-preference. Redis-backed locks block new readers while a writer is queued so writers
 /// cannot be starved by a steady stream of readers. Returned handles use the standard <see cref="IDistributedLease"/> shape,
 /// including <see cref="IDistributedLease.LostToken"/> when lease monitoring is enabled.
+/// </para>
+/// <para>
+/// Composite acquisition defines resource identity with <see cref="StringComparer.Ordinal"/> before invoking the
+/// provider. Implementations whose backend aliases ordinal-distinct names must reject non-canonical names or require
+/// callers to canonicalize them before using composite acquisition. Normalizing only inside the acquire methods is too
+/// late and can make one composite contend with itself.
+/// </para>
 /// </remarks>
 [PublicAPI]
 public interface IDistributedReadWriteLock
 {
+    /// <summary>
+    /// Gets the clock used by this provider for deadlines, elapsed-time measurement, and scheduled waits.
+    /// Provider-agnostic coordinators must use this instance so their timing remains aligned with the
+    /// provider and deterministic under test.
+    /// </summary>
+    /// <remarks>
+    /// This schedules work; it does not arbitrate expiry. A lease is valid only while the backend says so — the
+    /// clock decides when to ask, never whether ownership still holds.
+    /// </remarks>
+    TimeProvider TimeProvider { get; }
+
+    /// <summary>
+    /// Gets the logger used by this provider. Provider-agnostic coordinators log through this instance so their
+    /// diagnostics land in the same sink as the provider's own.
+    /// </summary>
+    /// <remarks>
+    /// Required because disposal must never throw: a handle that fails to release during <c>DisposeAsync</c> has to
+    /// report that failure somewhere, and an exception would replace whatever the caller's <c>using</c> body was
+    /// already throwing. Return <see cref="Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance"/> when a
+    /// provider has no logger of its own.
+    /// </remarks>
+    ILogger Logger { get; }
+
     /// <summary>
     /// Default lease duration applied when <see cref="DistributedLockAcquireOptions.TimeUntilExpires"/>
     /// is not specified. Implementations refresh the lease in storage at this cadence when
