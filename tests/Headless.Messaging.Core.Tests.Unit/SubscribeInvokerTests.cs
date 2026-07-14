@@ -134,7 +134,7 @@ public sealed class SubscribeInvokerTests : TestBase
             ), // null value
             Content = string.Empty,
             IntentType = IntentType.Bus,
-            Added = DateTime.UtcNow,
+            Added = DateTimeOffset.UtcNow,
         };
 
         var descriptor = _CreateDescriptor<InvokerTestMessage>();
@@ -719,7 +719,7 @@ public sealed class SubscribeInvokerTests : TestBase
             Origin = new Message(headers, json),
             Content = json,
             IntentType = IntentType.Bus,
-            Added = DateTime.UtcNow,
+            Added = DateTimeOffset.UtcNow,
         };
     }
 

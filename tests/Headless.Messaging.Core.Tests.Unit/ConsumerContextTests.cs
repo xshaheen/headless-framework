@@ -115,7 +115,7 @@ public sealed class ConsumerContextTests : TestBase
             Origin = message,
             Content = "{}",
             IntentType = IntentType.Bus,
-            Added = DateTime.UtcNow,
+            Added = DateTimeOffset.UtcNow,
         };
     }
 }

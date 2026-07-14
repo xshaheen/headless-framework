@@ -369,7 +369,7 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
         {
             { Headless.Messaging.Headers.MessageId, id },
             { Headless.Messaging.Headers.MessageName, "TestMessage" },
-            { Headless.Messaging.Headers.SentTime, DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture) },
+            { Headless.Messaging.Headers.SentTime, DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture) },
         };
         return new Message(headers, new { Data = "test" });
     }

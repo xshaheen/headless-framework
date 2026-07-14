@@ -205,7 +205,7 @@ internal sealed class MessageSender : IMessageSender
     private async Task _MarkUnsupportedIntentFailedAsync(MediumMessage message, Exception ex)
     {
         var originalInlineAttempts = message.InlineAttempts;
-        message.ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddSeconds(_options.FailedMessageExpiredAfter);
+        message.ExpiresAt = _timeProvider.GetUtcNow().AddSeconds(_options.FailedMessageExpiredAfter);
         message.NextRetryAt = null;
 
         await _dataStorage
@@ -225,7 +225,7 @@ internal sealed class MessageSender : IMessageSender
 
     private async Task _SetSuccessfulState(MediumMessage message, CancellationToken cancellationToken)
     {
-        message.ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddSeconds(_options.SucceedMessageExpiredAfter);
+        message.ExpiresAt = _timeProvider.GetUtcNow().AddSeconds(_options.SucceedMessageExpiredAfter);
         var updated = await _dataStorage
             .ChangePublishRetryStateAsync(
                 message,

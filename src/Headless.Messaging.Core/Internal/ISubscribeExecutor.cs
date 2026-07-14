@@ -223,7 +223,7 @@ internal sealed class SubscribeExecutor(
         // R8 — the cancellation token parameter is unused since F30 switched the storage write
         // to CancellationToken.None below. The method is private; the parameter is removed
         // outright rather than discarded.
-        message.ExpiresAt = timeProvider.GetUtcNow().UtcDateTime.AddSeconds(_options.SucceedMessageExpiredAfter);
+        message.ExpiresAt = timeProvider.GetUtcNow().AddSeconds(_options.SucceedMessageExpiredAfter);
 
         // Mirror the failure path's SkippingOnExhaustedAlreadyTerminal log: when storage proves
         // the row is already terminal (typically Failed/NULL after a prior exhausted attempt),

@@ -423,8 +423,8 @@ public sealed class DiagnosticListenerTests : TestBase
         );
 
         // The async tail runs on a continuation; poll briefly for the captured log entry.
-        var deadline = DateTime.UtcNow.AddSeconds(2);
-        while (logger.Entries.Count == 0 && DateTime.UtcNow < deadline)
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(2);
+        while (logger.Entries.Count == 0 && DateTimeOffset.UtcNow < deadline)
         {
             await Task.Delay(10, AbortToken);
         }

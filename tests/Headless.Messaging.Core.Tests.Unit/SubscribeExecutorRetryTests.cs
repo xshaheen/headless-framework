@@ -37,7 +37,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             Origin = new Message(headers, "{}"),
             Content = "{}",
             IntentType = IntentType.Bus,
-            Added = DateTime.UtcNow,
+            Added = DateTimeOffset.UtcNow,
         };
     }
 
@@ -95,8 +95,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .ChangeReceiveRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<DateTime?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -131,8 +131,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .ChangeReceiveStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<DateTime?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             )
@@ -184,8 +184,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .ChangeReceiveStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<DateTime?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             )
@@ -241,8 +241,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .ChangeReceiveStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<DateTime?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             )
@@ -278,8 +278,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .ChangeReceiveRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 StatusName.Failed,
-                Arg.Is<DateTime?>(value => value.HasValue),
-                Arg.Any<DateTime?>(),
+                Arg.Is<DateTimeOffset?>(value => value.HasValue),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Is<int>(value => value == 0),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -303,8 +303,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .ChangeReceiveStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<DateTime?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             )
@@ -358,8 +358,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .ChangeReceiveStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<DateTime?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             )
@@ -393,8 +393,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .ChangeReceiveRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 StatusName.Failed,
-                Arg.Is<DateTime?>(v => v == null),
-                Arg.Any<DateTime?>(),
+                Arg.Is<DateTimeOffset?>(v => v == null),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -411,8 +411,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .ChangeReceiveStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<DateTime?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             )
@@ -445,8 +445,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .ChangeReceiveRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<DateTime?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -504,8 +504,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .ChangeReceiveStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<DateTime?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             );
@@ -533,8 +533,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .ChangeReceiveStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<DateTime?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             )
@@ -556,7 +556,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             });
 
         var executor = _CreateExecutor(invoker, storage, options);
-        var nowBefore = DateTime.UtcNow;
+        var nowBefore = DateTimeOffset.UtcNow;
         var message = _CreateMediumMessage();
 
         // when
@@ -570,8 +570,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .ChangeReceiveRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 StatusName.Scheduled,
-                Arg.Is<DateTime?>(v => v > nowBefore.Add(options.RetryPolicy.InitialDispatchGrace)),
-                Arg.Any<DateTime?>(),
+                Arg.Is<DateTimeOffset?>(v => v > nowBefore.Add(options.RetryPolicy.InitialDispatchGrace)),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -591,8 +591,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .ChangeReceiveStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<DateTime?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             )
@@ -636,8 +636,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .ChangeReceiveRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 StatusName.Failed,
-                Arg.Is<DateTime?>(v => v.HasValue),
-                Arg.Any<DateTime?>(),
+                Arg.Is<DateTimeOffset?>(v => v.HasValue),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Is<int>(v => v == startingRetries),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -656,8 +656,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .ChangeReceiveStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<DateTime?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             )
@@ -704,8 +704,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .ChangeReceiveRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 StatusName.Failed,
-                Arg.Is<DateTime?>(v => v == null),
-                Arg.Any<DateTime?>(),
+                Arg.Is<DateTimeOffset?>(v => v == null),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -720,8 +720,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .ChangeReceiveStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<DateTime?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             )
@@ -750,8 +750,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .ChangeReceiveRetryStateAsync(
                 Arg.Is<MediumMessage>(value => value.Retries == 1 && value.InlineAttempts == 0),
                 StatusName.Failed,
-                Arg.Is<DateTime?>(value => value.HasValue),
-                Arg.Is<DateTime?>(value => value == null),
+                Arg.Is<DateTimeOffset?>(value => value.HasValue),
+                Arg.Is<DateTimeOffset?>(value => value == null),
                 Arg.Is(0),
                 Arg.Is(3),
                 Arg.Any<CancellationToken>()
@@ -777,7 +777,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         var message = _CreateMediumMessage();
         // Storage already acquired this lease. Its absolute expiry is deliberately behind the
         // application clock: core must reserve under the returned identity without reacquiring.
-        message.LockedUntil = DateTime.UnixEpoch.AddMinutes(1);
+        message.LockedUntil = DateTimeOffset.UnixEpoch.AddMinutes(1);
         message.Owner = "store-owner";
 
         var result = await executor.ExecuteAsync(message, _EmptyScope, _CreateDescriptor(), CancellationToken.None);

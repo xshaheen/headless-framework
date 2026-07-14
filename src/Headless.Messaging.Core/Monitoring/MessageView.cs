@@ -30,10 +30,10 @@ public class MessageView
     public string? Content { get; set; }
 
     /// <summary>Gets or sets the UTC timestamp at which the row was inserted into storage.</summary>
-    public DateTime Added { get; set; }
+    public DateTimeOffset Added { get; set; }
 
     /// <summary>Gets or sets the UTC timestamp at which this row will be purged by the expiry cleaner, or <see langword="null"/> for non-expiring rows.</summary>
-    public DateTime? ExpiresAt { get; set; }
+    public DateTimeOffset? ExpiresAt { get; set; }
 
     /// <summary>Gets or sets the number of delivery attempts made for this message.</summary>
     public int Retries { get; set; }
@@ -42,8 +42,8 @@ public class MessageView
     public required StatusName StatusName { get; set; }
 
     /// <summary>UTC timestamp at which the retry processor should re-dispatch this message; <see langword="null"/> when the row is terminal or has no pending retry.</summary>
-    public DateTime? NextRetryAt { get; set; }
+    public DateTimeOffset? NextRetryAt { get; set; }
 
     /// <summary>UTC timestamp until which the row is leased by an active dispatch attempt; <see langword="null"/> when no lease is active.</summary>
-    public DateTime? LockedUntil { get; set; }
+    public DateTimeOffset? LockedUntil { get; set; }
 }

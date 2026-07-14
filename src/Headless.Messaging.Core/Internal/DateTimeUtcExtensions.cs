@@ -2,52 +2,25 @@
 
 namespace Headless.Messaging.Internal;
 
+/// <summary>
+/// Binds nullable instants to SQL parameters.
+/// </summary>
+/// <remarks>
+/// This used to carry per-<c>DateTimeKind</c> normalization rules, because a <c>DateTime</c> could arrive with
+/// any kind and each one had to be reinterpreted differently before it was safe to bind — including the subtle
+/// case where <c>Unspecified</c> had to be STAMPED as UTC rather than converted, since converting would shift it
+/// by the host's offset. <see cref="DateTimeOffset"/> carries its offset on the value itself, so a persisted
+/// instant can no longer be ambiguous and there is nothing left to normalize: only <see langword="null"/> needs
+/// handling.
+/// </remarks>
 internal static class DateTimeUtcExtensions
 {
     /// <summary>
-    /// Converts a nullable <see cref="DateTime"/> to a SQL parameter value suitable for UTC timestamp columns.
-    /// Returns <see cref="DBNull.Value"/> when <paramref name="value"/> is <see langword="null"/>.
-    /// Non-UTC values are normalized rather than throwing, matching the documented contract on
-    /// <see cref="Messages.MediumMessage.NextRetryAt"/>:
-    /// <list type="bullet">
-    ///   <item><see cref="DateTimeKind.Utc"/> — returned as-is.</item>
-    ///   <item><see cref="DateTimeKind.Local"/> — converted via <see cref="DateTime.ToUniversalTime"/>.</item>
-    ///   <item><see cref="DateTimeKind.Unspecified"/> — assumed already-UTC and tagged via
-    ///     <see cref="DateTime.SpecifyKind"/>. <see cref="DateTime.ToUniversalTime"/> would
-    ///     silently shift these by the local-clock offset, which is wrong for a value the
-    ///     contract documents as UTC. SpecifyKind preserves the wall-clock value.</item>
-    /// </list>
+    /// Converts a nullable instant to a SQL parameter value, mapping <see langword="null"/> to
+    /// <see cref="DBNull.Value"/>.
     /// </summary>
-    internal static object ToUtcParameterValue(this DateTime? value)
+    internal static object ToUtcParameterValue(this DateTimeOffset? value)
     {
-        if (!value.HasValue)
-        {
-            return DBNull.Value;
-        }
-
-        return _NormalizeToUtc(value.Value);
+        return value.HasValue ? value.Value.ToUniversalTime() : DBNull.Value;
     }
-
-    /// <summary>
-    /// Returns <see langword="null"/> when <paramref name="value"/> is <see langword="null"/>.
-    /// Non-UTC values are normalized rather than throwing — see
-    /// <see cref="ToUtcParameterValue"/> for the per-<see cref="DateTimeKind"/> rules.
-    /// </summary>
-    internal static DateTime? ToUtcOrSelf(this DateTime? value)
-    {
-        if (!value.HasValue)
-        {
-            return null;
-        }
-
-        return _NormalizeToUtc(value.Value);
-    }
-
-    private static DateTime _NormalizeToUtc(DateTime v) =>
-        v.Kind switch
-        {
-            DateTimeKind.Utc => v,
-            DateTimeKind.Local => v.ToUniversalTime(),
-            _ => DateTime.SpecifyKind(v, DateTimeKind.Utc),
-        };
 }

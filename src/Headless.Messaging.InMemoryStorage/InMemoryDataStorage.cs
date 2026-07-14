@@ -78,8 +78,8 @@ internal sealed partial class InMemoryDataStorage(
         MediumMessage message,
         StatusName state,
         object? dbTransaction = null,
-        DateTime? nextRetryAt = null,
-        DateTime? lockedUntil = null,
+        DateTimeOffset? nextRetryAt = null,
+        DateTimeOffset? lockedUntil = null,
         int? originalRetries = null,
         CancellationToken cancellationToken = default
     ) =>
@@ -96,8 +96,8 @@ internal sealed partial class InMemoryDataStorage(
     public ValueTask<bool> ChangePublishRetryStateAsync(
         MediumMessage message,
         StatusName state,
-        DateTime? nextRetryAt,
-        DateTime? lockedUntil,
+        DateTimeOffset? nextRetryAt,
+        DateTimeOffset? lockedUntil,
         int originalRetries,
         int originalInlineAttempts,
         CancellationToken cancellationToken = default
@@ -121,8 +121,8 @@ internal sealed partial class InMemoryDataStorage(
     private ValueTask<bool> _ChangePublishStateAsync(
         MediumMessage message,
         StatusName state,
-        DateTime? nextRetryAt,
-        DateTime? lockedUntil,
+        DateTimeOffset? nextRetryAt,
+        DateTimeOffset? lockedUntil,
         int? originalRetries,
         int? originalInlineAttempts,
         CancellationToken cancellationToken
@@ -162,15 +162,15 @@ internal sealed partial class InMemoryDataStorage(
                     current.LockedUntil != message.LockedUntil
                     || !string.Equals(current.Owner, message.Owner, StringComparison.Ordinal)
                     || current.LockedUntil is null
-                    || current.LockedUntil <= timeProvider.GetUtcNow().UtcDateTime
+                    || current.LockedUntil <= timeProvider.GetUtcNow()
                 )
             )
             {
                 return ValueTask.FromResult(false);
             }
 
-            var utcNextRetryAt = nextRetryAt.ToUtcOrSelf();
-            var utcLockedUntil = lockedUntil.ToUtcOrSelf();
+            var utcNextRetryAt = nextRetryAt;
+            var utcLockedUntil = lockedUntil;
             current.StatusName = state;
             current.ExpiresAt = message.ExpiresAt;
             current.NextRetryAt = utcNextRetryAt;
@@ -218,8 +218,8 @@ internal sealed partial class InMemoryDataStorage(
     public ValueTask<bool> ChangeReceiveStateAsync(
         MediumMessage message,
         StatusName state,
-        DateTime? nextRetryAt = null,
-        DateTime? lockedUntil = null,
+        DateTimeOffset? nextRetryAt = null,
+        DateTimeOffset? lockedUntil = null,
         int? originalRetries = null,
         CancellationToken cancellationToken = default
     ) =>
@@ -236,8 +236,8 @@ internal sealed partial class InMemoryDataStorage(
     public ValueTask<bool> ChangeReceiveRetryStateAsync(
         MediumMessage message,
         StatusName state,
-        DateTime? nextRetryAt,
-        DateTime? lockedUntil,
+        DateTimeOffset? nextRetryAt,
+        DateTimeOffset? lockedUntil,
         int originalRetries,
         int originalInlineAttempts,
         CancellationToken cancellationToken = default
@@ -261,8 +261,8 @@ internal sealed partial class InMemoryDataStorage(
     private ValueTask<bool> _ChangeReceiveStateAsync(
         MediumMessage message,
         StatusName state,
-        DateTime? nextRetryAt,
-        DateTime? lockedUntil,
+        DateTimeOffset? nextRetryAt,
+        DateTimeOffset? lockedUntil,
         int? originalRetries,
         int? originalInlineAttempts,
         CancellationToken cancellationToken
@@ -300,15 +300,15 @@ internal sealed partial class InMemoryDataStorage(
                     current.LockedUntil != message.LockedUntil
                     || !string.Equals(current.Owner, message.Owner, StringComparison.Ordinal)
                     || current.LockedUntil is null
-                    || current.LockedUntil <= timeProvider.GetUtcNow().UtcDateTime
+                    || current.LockedUntil <= timeProvider.GetUtcNow()
                 )
             )
             {
                 return ValueTask.FromResult(false);
             }
 
-            var utcNextRetryAt = nextRetryAt.ToUtcOrSelf();
-            var utcLockedUntil = lockedUntil.ToUtcOrSelf();
+            var utcNextRetryAt = nextRetryAt;
+            var utcLockedUntil = lockedUntil;
             current.StatusName = state;
             current.ExpiresAt = message.ExpiresAt;
             current.NextRetryAt = utcNextRetryAt;
@@ -363,7 +363,7 @@ internal sealed partial class InMemoryDataStorage(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var added = timeProvider.GetUtcNow().UtcDateTime;
+        var added = timeProvider.GetUtcNow();
         var stored = new MediumMessage
         {
             StorageId = guidGenerator.Create(),
@@ -459,7 +459,7 @@ internal sealed partial class InMemoryDataStorage(
         var content = string.IsNullOrEmpty(message.Content) ? serializer.Serialize(message.Origin) : message.Content;
         var messageId = message.Origin.Id;
         var version = messagingOptions.Value.Version;
-        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var now = timeProvider.GetUtcNow();
         var expiresAt = now.AddSeconds(messagingOptions.Value.FailedMessageExpiredAfter);
         var retries = messagingOptions.Value.RetryPolicy.MaxPersistedRetries;
         var indexKey = (version, messageId, (string?)group, message.IntentType);
@@ -551,7 +551,7 @@ internal sealed partial class InMemoryDataStorage(
     {
         cancellationToken.ThrowIfCancellationRequested();
         var version = messagingOptions.Value.Version;
-        var added = timeProvider.GetUtcNow().UtcDateTime;
+        var added = timeProvider.GetUtcNow();
         var initialNextRetryAt = added.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace);
         var origin = message.Origin;
         var serialized = serializer.Serialize(origin);
@@ -624,7 +624,7 @@ internal sealed partial class InMemoryDataStorage(
                 // not just LockedUntil. The post-fix-#7 Retries-CAS catches the Retries case, but
                 // StatusName/Content/ExceptionInfo writes are not CAS-guarded and would corrupt
                 // the row in subtle ways otherwise.
-                var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
+                var nowUtc = timeProvider.GetUtcNow();
                 var leaseActive = existing.LockedUntil is not null && existing.LockedUntil > nowUtc;
                 if (leaseActive)
                 {
@@ -661,8 +661,8 @@ internal sealed partial class InMemoryDataStorage(
     private MediumMessage _CreateUnstoredReceivedMessage(
         MediumMessage message,
         string serialized,
-        DateTime added,
-        DateTime initialNextRetryAt,
+        DateTimeOffset added,
+        DateTimeOffset initialNextRetryAt,
         Guid? storageId = null
     ) =>
         new()
@@ -704,8 +704,8 @@ internal sealed partial class InMemoryDataStorage(
         string group,
         MediumMessage message,
         string serialized,
-        DateTime added,
-        DateTime initialNextRetryAt,
+        DateTimeOffset added,
+        DateTimeOffset initialNextRetryAt,
         string version
     )
     {
@@ -735,7 +735,7 @@ internal sealed partial class InMemoryDataStorage(
 
     public ValueTask<int> DeleteExpiresAsync(
         string table,
-        DateTime timeout,
+        DateTimeOffset timeout,
         int batchCount = 1000,
         CancellationToken cancellationToken = default
     )
@@ -820,7 +820,7 @@ internal sealed partial class InMemoryDataStorage(
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var now = timeProvider.GetUtcNow();
         var newLease = now.Add(messagingOptions.Value.RetryPolicy.DispatchTimeout);
         var maxPersistedRetries = messagingOptions.Value.RetryPolicy.MaxPersistedRetries;
         var retryBatchSize = messagingOptions.Value.RetryBatchSize;
@@ -929,7 +929,7 @@ internal sealed partial class InMemoryDataStorage(
             // #15 — explicit lease-contention guard: refuse to acquire the lease when another writer
             // holds it (LockedUntil in the future). Mirrors the WHERE LockedUntil IS NULL OR <= @Now
             // predicate added to the SQL providers' _LeaseMessageAsync.
-            var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
+            var nowUtc = timeProvider.GetUtcNow();
             if (current.LockedUntil is not null && current.LockedUntil > nowUtc)
             {
                 return ValueTask.FromResult(false);
@@ -963,7 +963,7 @@ internal sealed partial class InMemoryDataStorage(
         // exact-string semantics. The previous `as ISet<string>` fast path was both dead (the sole
         // caller passes a string[]) and a latent trap (a non-Ordinal ISet would silently diverge).
         var deadOwnerSet = new HashSet<string>(deadOwners, StringComparer.Ordinal);
-        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var now = timeProvider.GetUtcNow();
         var reclaimed = 0;
 
         foreach (var message in messages.Values)

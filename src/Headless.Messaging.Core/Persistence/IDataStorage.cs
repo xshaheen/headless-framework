@@ -60,8 +60,8 @@ public interface IDataStorage
         MediumMessage message,
         StatusName state,
         object? transaction = null,
-        DateTime? nextRetryAt = null,
-        DateTime? lockedUntil = null,
+        DateTimeOffset? nextRetryAt = null,
+        DateTimeOffset? lockedUntil = null,
         int? originalRetries = null,
         CancellationToken cancellationToken = default
     );
@@ -70,8 +70,8 @@ public interface IDataStorage
     ValueTask<bool> ChangePublishRetryStateAsync(
         MediumMessage message,
         StatusName state,
-        DateTime? nextRetryAt,
-        DateTime? lockedUntil,
+        DateTimeOffset? nextRetryAt,
+        DateTimeOffset? lockedUntil,
         int originalRetries,
         int originalInlineAttempts,
         CancellationToken cancellationToken = default
@@ -168,8 +168,8 @@ public interface IDataStorage
     ValueTask<bool> ChangeReceiveStateAsync(
         MediumMessage message,
         StatusName state,
-        DateTime? nextRetryAt = null,
-        DateTime? lockedUntil = null,
+        DateTimeOffset? nextRetryAt = null,
+        DateTimeOffset? lockedUntil = null,
         int? originalRetries = null,
         CancellationToken cancellationToken = default
     );
@@ -178,8 +178,8 @@ public interface IDataStorage
     ValueTask<bool> ChangeReceiveRetryStateAsync(
         MediumMessage message,
         StatusName state,
-        DateTime? nextRetryAt,
-        DateTime? lockedUntil,
+        DateTimeOffset? nextRetryAt,
+        DateTimeOffset? lockedUntil,
         int originalRetries,
         int originalInlineAttempts,
         CancellationToken cancellationToken = default
@@ -367,7 +367,7 @@ public interface IDataStorage
     /// <returns>The number of rows deleted.</returns>
     ValueTask<int> DeleteExpiresAsync(
         string table,
-        DateTime timeout,
+        DateTimeOffset timeout,
         int batchCount = 1000,
         CancellationToken cancellationToken = default
     );

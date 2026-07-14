@@ -241,7 +241,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
         var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId };
         var message = new Message(header, new { Data = "test" });
         var stored = await _storage.StoreMessageAsync("test.topic", message, cancellationToken: AbortToken);
-        var expiresAt = DateTime.UtcNow.AddHours(1);
+        var expiresAt = DateTimeOffset.UtcNow.AddHours(1);
         stored.ExpiresAt = expiresAt;
 
         // when
@@ -250,11 +250,14 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
         // then
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
+        // Npgsql maps timestamptz to a UTC DateTime by default, so read it as one and compare instants.
         var dbExpiresAt = await connection.QueryFirstAsync<DateTime?>(
             "SELECT \"ExpiresAt\" FROM messaging.published WHERE \"Id\"=@Id",
             new { Id = stored.StorageId }
         );
-        dbExpiresAt.Should().BeCloseTo(expiresAt, TimeSpan.FromSeconds(1));
+        dbExpiresAt.Should().NotBeNull();
+        dbExpiresAt!.Value.Kind.Should().Be(DateTimeKind.Utc);
+        new DateTimeOffset(dbExpiresAt.Value).Should().BeCloseTo(expiresAt, TimeSpan.FromSeconds(1));
     }
 
     [Fact]

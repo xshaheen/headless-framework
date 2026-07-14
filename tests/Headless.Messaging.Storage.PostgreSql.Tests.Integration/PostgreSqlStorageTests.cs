@@ -468,7 +468,7 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
         await storage.ChangeReceiveStateAsync(
             stored,
             StatusName.Failed,
-            nextRetryAt: DateTime.UtcNow.AddMinutes(-1),
+            nextRetryAt: DateTimeOffset.UtcNow.AddMinutes(-1),
             cancellationToken: AbortToken
         );
 
@@ -682,7 +682,7 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
         // given
         var storage = GetStorage();
         var id = Guid.NewGuid();
-        var now = TimeProvider.GetUtcNow().UtcDateTime;
+        var now = TimeProvider.GetUtcNow();
 
         await using (var connection = new NpgsqlConnection(fixture.ConnectionString))
         {
@@ -705,11 +705,11 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
             $"""SELECT "StatusName" FROM messaging.{tableName} WHERE "Id" = @Id""",
             new { Id = id }
         );
-        var nextRetryAt = await assertConnection.ExecuteScalarAsync<DateTime?>(
+        var nextRetryAt = await assertConnection.ExecuteScalarAsync<DateTimeOffset?>(
             $"""SELECT "NextRetryAt" FROM messaging.{tableName} WHERE "Id" = @Id""",
             new { Id = id }
         );
-        var lockedUntil = await assertConnection.ExecuteScalarAsync<DateTime?>(
+        var lockedUntil = await assertConnection.ExecuteScalarAsync<DateTimeOffset?>(
             $"""SELECT "LockedUntil" FROM messaging.{tableName} WHERE "Id" = @Id""",
             new { Id = id }
         );
@@ -742,7 +742,7 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
         var serializer = GetSerializer();
         var poisonId = Guid.NewGuid();
         var healthyId = Guid.NewGuid();
-        var now = TimeProvider.GetUtcNow().UtcDateTime;
+        var now = TimeProvider.GetUtcNow();
 
         await using (var connection = new NpgsqlConnection(fixture.ConnectionString))
         {
@@ -765,7 +765,7 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
 
         await using var assertConnection = new NpgsqlConnection(fixture.ConnectionString);
         await assertConnection.OpenAsync(AbortToken);
-        var poisonNextRetryAt = await assertConnection.ExecuteScalarAsync<DateTime?>(
+        var poisonNextRetryAt = await assertConnection.ExecuteScalarAsync<DateTimeOffset?>(
             $"""SELECT "NextRetryAt" FROM messaging.{tableName} WHERE "Id" = @Id""",
             new { Id = poisonId }
         );
@@ -1040,7 +1040,7 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
         NpgsqlConnection connection,
         string tableName,
         Guid id,
-        DateTime now
+        DateTimeOffset now
     )
     {
         if (string.Equals(tableName, "published", StringComparison.Ordinal))
@@ -1085,7 +1085,7 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
         string tableName,
         Guid id,
         string content,
-        DateTime now
+        DateTimeOffset now
     )
     {
         if (string.Equals(tableName, "published", StringComparison.Ordinal))

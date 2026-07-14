@@ -183,11 +183,11 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
 
         // when
         stored.Retries = 3;
-        stored.ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddHours(1);
+        stored.ExpiresAt = _timeProvider.GetUtcNow().AddHours(1);
         await _storage.ChangePublishStateAsync(
             stored,
             StatusName.Failed,
-            nextRetryAt: _timeProvider.GetUtcNow().UtcDateTime.AddSeconds(-1),
+            nextRetryAt: _timeProvider.GetUtcNow().AddSeconds(-1),
             cancellationToken: AbortToken
         );
 
@@ -207,7 +207,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
         var stored = await _storage.StoreReceivedMessageAsync("test.name", "test.group", message, AbortToken);
 
         // when
-        stored.ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddHours(1);
+        stored.ExpiresAt = _timeProvider.GetUtcNow().AddHours(1);
         await _storage.ChangeReceiveStateAsync(stored, StatusName.Succeeded, cancellationToken: AbortToken);
 
         // then
@@ -257,11 +257,11 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
 
         // Store message and change to Failed state
         var stored = await _storage.StoreMessageAsync("test.name", message, null, AbortToken);
-        stored.ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddHours(1);
+        stored.ExpiresAt = _timeProvider.GetUtcNow().AddHours(1);
         await _storage.ChangePublishStateAsync(
             stored,
             StatusName.Failed,
-            nextRetryAt: _timeProvider.GetUtcNow().UtcDateTime.AddSeconds(-1),
+            nextRetryAt: _timeProvider.GetUtcNow().AddSeconds(-1),
             cancellationToken: AbortToken
         );
 
@@ -285,11 +285,11 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
         var message = new Message(header, null);
 
         var stored = await _storage.StoreReceivedMessageAsync("test.name", "test.group", message, AbortToken);
-        stored.ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddHours(1);
+        stored.ExpiresAt = _timeProvider.GetUtcNow().AddHours(1);
         await _storage.ChangeReceiveStateAsync(
             stored,
             StatusName.Failed,
-            nextRetryAt: _timeProvider.GetUtcNow().UtcDateTime.AddSeconds(-1),
+            nextRetryAt: _timeProvider.GetUtcNow().AddSeconds(-1),
             cancellationToken: AbortToken
         );
 
@@ -316,13 +316,13 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
         var message = new Message(header, null);
 
         var stored = await _storage.StoreMessageAsync("test.name", message, null, AbortToken);
-        stored.ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddSeconds(-10); // Already expired
+        stored.ExpiresAt = _timeProvider.GetUtcNow().AddSeconds(-10); // Already expired
         await _storage.ChangePublishStateAsync(stored, StatusName.Succeeded, cancellationToken: AbortToken);
 
         // when
         var deleted = await _storage.DeleteExpiresAsync(
             "messaging.published",
-            _timeProvider.GetUtcNow().UtcDateTime,
+            _timeProvider.GetUtcNow(),
             1000,
             AbortToken
         );

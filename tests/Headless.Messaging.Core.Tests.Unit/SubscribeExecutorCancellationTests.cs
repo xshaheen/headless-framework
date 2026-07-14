@@ -39,7 +39,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
             Origin = new Message(headers, "{}"),
             Content = "{}",
             IntentType = IntentType.Bus,
-            Added = DateTime.UtcNow,
+            Added = DateTimeOffset.UtcNow,
         };
     }
 
@@ -98,8 +98,8 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
             .ChangeReceiveRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<DateTime?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -145,8 +145,8 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
             .ChangeReceiveStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<DateTime?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             )
@@ -174,8 +174,8 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
             .ChangeReceiveRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 StatusName.Failed,
-                Arg.Any<DateTime?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -195,7 +195,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
             .ChangeReceiveStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult(true));
@@ -245,8 +245,8 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
             .ChangeReceiveStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<DateTime?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             );
@@ -263,7 +263,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
             .ChangeReceiveStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult(true));
@@ -295,8 +295,8 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
             .ChangeReceiveStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<DateTime?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             );

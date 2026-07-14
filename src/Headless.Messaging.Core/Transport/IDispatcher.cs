@@ -28,7 +28,7 @@ public interface IDispatcher : IProcessingServer
 
     Task EnqueueToScheduler(
         MediumMessage message,
-        DateTime publishTime,
+        DateTimeOffset publishTime,
         object? transaction = null,
         CancellationToken cancellationToken = default
     );

@@ -51,7 +51,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
                         Origin = ((MediumMessage)call[1]).Origin,
                         Content = "{}",
                         IntentType = IntentType.Bus,
-                        Added = DateTime.UtcNow,
+                        Added = DateTimeOffset.UtcNow,
                     };
                     stored = mediumMessage;
 
@@ -121,7 +121,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
                         Origin = ((MediumMessage)call[1]).Origin,
                         Content = "{}",
                         IntentType = IntentType.Bus,
-                        Added = DateTime.UtcNow,
+                        Added = DateTimeOffset.UtcNow,
                     };
                     stored = mediumMessage;
 
@@ -289,14 +289,14 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
     public async Task flush_should_parse_offsetless_delayed_sent_time_as_utc()
     {
         var coordinator = new CommitCoordinator();
-        var expectedPublishTime = new DateTime(2026, 7, 6, 9, 30, 0, DateTimeKind.Utc);
-        var capturedPublishTimes = new List<DateTime>();
+        var expectedPublishTime = new DateTimeOffset(2026, 7, 6, 9, 30, 0, TimeSpan.Zero);
+        var capturedPublishTimes = new List<DateTimeOffset>();
 
         var dispatcher = Substitute.For<IDispatcher>();
         dispatcher
             .EnqueueToScheduler(
                 Arg.Any<MediumMessage>(),
-                Arg.Do<DateTime>(publishTime => capturedPublishTimes.Add(publishTime)),
+                Arg.Do<DateTimeOffset>(publishTime => capturedPublishTimes.Add(publishTime)),
                 Arg.Any<object?>(),
                 Arg.Any<CancellationToken>()
             )
@@ -320,7 +320,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
 
         capturedPublishTimes.Should().ContainSingle();
         capturedPublishTimes[0].Should().Be(expectedPublishTime);
-        capturedPublishTimes[0].Kind.Should().Be(DateTimeKind.Utc);
+        capturedPublishTimes[0].Offset.Should().Be(TimeSpan.Zero);
     }
 
     private static MediumMessage _BuildMessage() =>
@@ -330,7 +330,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
             Origin = new Message(new Dictionary<string, string?>(StringComparer.Ordinal), value: null),
             Content = "{}",
             IntentType = IntentType.Bus,
-            Added = DateTime.UtcNow,
+            Added = DateTimeOffset.UtcNow,
         };
 
     private static MessagePublishRequestFactory _CreatePublishRequestFactory()

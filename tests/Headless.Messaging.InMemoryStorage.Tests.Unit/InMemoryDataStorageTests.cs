@@ -112,7 +112,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
         }
 
         // Seed the FakeTimeProvider at the real current UTC instant so legacy tests that mix
-        // `DateTime.UtcNow.AddHours(...)` literals with the storage's injected clock stay
+        // `DateTimeOffset.UtcNow.AddHours(...)` literals with the storage's injected clock stay
         // consistent. The clock-controlled grace test advances the clock explicitly via Advance().
         _fakeTimeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
 
@@ -255,7 +255,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
             cancellationToken: AbortToken
         );
 
-        var now = _fakeTimeProvider!.GetUtcNow().UtcDateTime;
+        var now = _fakeTimeProvider!.GetUtcNow();
         await storage.ChangePublishStateAsync(
             storedMessage,
             StatusName.Failed,
@@ -283,7 +283,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
     {
         _EnsureInitialized();
         var storage = GetStorage();
-        var now = _fakeTimeProvider!.GetUtcNow().UtcDateTime;
+        var now = _fakeTimeProvider!.GetUtcNow();
         var leaseDuration = TimeSpan.FromMinutes(7);
         var message = await storage.StoreMessageAsync(
             "clocked-publish",
@@ -301,7 +301,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
     {
         _EnsureInitialized();
         var storage = GetStorage();
-        var now = _fakeTimeProvider!.GetUtcNow().UtcDateTime;
+        var now = _fakeTimeProvider!.GetUtcNow();
         var leaseDuration = TimeSpan.FromMinutes(7);
         var message = await storage.StoreReceivedMessageAsync("clocked-receive", "group", CreateMessage(), AbortToken);
 
@@ -315,7 +315,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
     {
         _EnsureInitialized();
         var storage = GetStorage();
-        var now = _fakeTimeProvider!.GetUtcNow().UtcDateTime;
+        var now = _fakeTimeProvider!.GetUtcNow();
         var leaseDuration = TimeSpan.FromMinutes(7);
         var message = await storage.StoreMessageAsync(
             "clocked-combined-publish",
@@ -334,7 +334,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
     {
         _EnsureInitialized();
         var storage = GetStorage();
-        var now = _fakeTimeProvider!.GetUtcNow().UtcDateTime;
+        var now = _fakeTimeProvider!.GetUtcNow();
         var leaseDuration = TimeSpan.FromMinutes(7);
         var message = await storage.StoreReceivedMessageAsync(
             "clocked-combined-receive",
@@ -421,7 +421,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
         var updated = await storage.ChangePublishRetryStateAsync(
             message,
             StatusName.Failed,
-            nextRetryAt: DateTime.UtcNow,
+            nextRetryAt: DateTimeOffset.UtcNow,
             lockedUntil: null,
             originalRetries: 0,
             originalInlineAttempts: 0,
@@ -450,7 +450,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
         var updated = await storage.ChangeReceiveRetryStateAsync(
             message,
             StatusName.Failed,
-            nextRetryAt: DateTime.UtcNow,
+            nextRetryAt: DateTimeOffset.UtcNow,
             lockedUntil: null,
             originalRetries: 0,
             originalInlineAttempts: 0,
@@ -583,7 +583,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
             await storage.ChangeReceiveRetryStateAsync(
                 message,
                 StatusName.Failed,
-                _fakeTimeProvider!.GetUtcNow().UtcDateTime,
+                _fakeTimeProvider!.GetUtcNow(),
                 null,
                 originalRetries: 0,
                 originalInlineAttempts: 1,
@@ -637,7 +637,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
             AbortToken
         );
 
-        var now = _fakeTimeProvider!.GetUtcNow().UtcDateTime;
+        var now = _fakeTimeProvider!.GetUtcNow();
         await storage.ChangeReceiveStateAsync(
             storedMessage,
             StatusName.Failed,
@@ -708,7 +708,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
     {
         // given
         var storage = _CreateStorage(retryBatchSize: 3);
-        var now = _fakeTimeProvider!.GetUtcNow().UtcDateTime;
+        var now = _fakeTimeProvider!.GetUtcNow();
         var messages = new List<MediumMessage>();
 
         for (var i = 0; i < 5; i++)

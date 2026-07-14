@@ -52,10 +52,10 @@ internal sealed partial class MessageOutboxBuffer : InMemoryWorkBuffer<MediumMes
                         await _dispatcher
                             .EnqueueToScheduler(
                                 message,
-                                DateTime.Parse(
+                                DateTimeOffset.Parse(
                                     message.Origin.Headers[Headers.SentTime]!,
                                     CultureInfo.InvariantCulture,
-                                    DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal
+                                    DateTimeStyles.RoundtripKind
                                 ),
                                 transaction: null,
                                 timeoutCts.Token

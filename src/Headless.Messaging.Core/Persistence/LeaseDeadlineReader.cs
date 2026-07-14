@@ -11,7 +11,7 @@ namespace Headless.Messaging.Persistence;
 internal static class LeaseDeadlineReader
 {
     /// <summary>Reads the returned lease identity; <see langword="null"/> when no row matched.</summary>
-    public static async Task<(DateTime LockedUntil, string? Owner)?> ReadAsync(
+    public static async Task<(DateTimeOffset LockedUntil, string? Owner)?> ReadAsync(
         DbDataReader reader,
         CancellationToken cancellationToken
     )
@@ -26,7 +26,7 @@ internal static class LeaseDeadlineReader
             return null;
         }
 
-        var lockedUntil = DateTime.SpecifyKind(reader.GetDateTime(0), DateTimeKind.Utc);
+        var lockedUntil = await reader.GetFieldValueAsync<DateTimeOffset>(0, cancellationToken).ConfigureAwait(false);
         var owner = await reader.IsDBNullAsync(1, cancellationToken).ConfigureAwait(false) ? null : reader.GetString(1);
         return (lockedUntil, owner);
     }

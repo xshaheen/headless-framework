@@ -176,7 +176,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
 
-        var expiredTime = DateTime.UtcNow.AddDays(-1);
+        var expiredTime = DateTimeOffset.UtcNow.AddDays(-1);
         var id = Guid.NewGuid();
         var messageId = $"msg-{id}";
 
@@ -204,7 +204,11 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
             Options.Create(new MessagingOptions { Version = "v1" })
         );
         var tableName = initializer.GetPublishedTableName();
-        var deleted = await _storage.DeleteExpiresAsync(tableName, DateTime.UtcNow, cancellationToken: AbortToken);
+        var deleted = await _storage.DeleteExpiresAsync(
+            tableName,
+            DateTimeOffset.UtcNow,
+            cancellationToken: AbortToken
+        );
 
         // then
         deleted.Should().Be(1);
@@ -220,7 +224,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         var stored = await _storage.StoreMessageAsync("test.topic", message, cancellationToken: AbortToken);
 
         // Set message to succeeded with future expiry
-        stored.ExpiresAt = DateTime.UtcNow.AddDays(1);
+        stored.ExpiresAt = DateTimeOffset.UtcNow.AddDays(1);
         await _storage.ChangePublishStateAsync(stored, StatusName.Succeeded, cancellationToken: AbortToken);
 
         // when
@@ -230,7 +234,11 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
             Options.Create(new MessagingOptions { Version = "v1" })
         );
         var tableName = initializer.GetPublishedTableName();
-        var deleted = await _storage.DeleteExpiresAsync(tableName, DateTime.UtcNow, cancellationToken: AbortToken);
+        var deleted = await _storage.DeleteExpiresAsync(
+            tableName,
+            DateTimeOffset.UtcNow,
+            cancellationToken: AbortToken
+        );
 
         // then
         deleted.Should().Be(0);
@@ -243,7 +251,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
 
-        var addedTime = DateTime.UtcNow.AddMinutes(-5);
+        var addedTime = DateTimeOffset.UtcNow.AddMinutes(-5);
         var id = Guid.NewGuid();
         var messageId = $"msg-{id}";
         var content = "{\"Headers\":{\"headless-msg-id\":\"" + messageId + "\"},\"Value\":null}";
@@ -259,7 +267,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
                     Id = id,
                     Content = content,
                     Added = addedTime,
-                    NextRetryAt = DateTime.UtcNow.AddSeconds(-1),
+                    NextRetryAt = DateTimeOffset.UtcNow.AddSeconds(-1),
                     MessageId = messageId,
                 },
                 cancellationToken: AbortToken
@@ -281,7 +289,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
 
-        var addedTime = DateTime.UtcNow.AddMinutes(-5);
+        var addedTime = DateTimeOffset.UtcNow.AddMinutes(-5);
         var id = Guid.NewGuid();
         var msgId = Guid.NewGuid().ToString("D");
         var content = "{\"Headers\":{\"headless-msg-id\":\"" + msgId + "\"},\"Value\":null}";
@@ -296,7 +304,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
                     Id = id,
                     Content = content,
                     Added = addedTime,
-                    NextRetryAt = DateTime.UtcNow.AddSeconds(-1),
+                    NextRetryAt = DateTimeOffset.UtcNow.AddSeconds(-1),
                     MessageId = msgId,
                 },
                 cancellationToken: AbortToken
@@ -318,7 +326,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
 
-        var addedTime = DateTime.UtcNow.AddMinutes(-5);
+        var addedTime = DateTimeOffset.UtcNow.AddMinutes(-5);
         var id = Guid.NewGuid();
         var messageId = $"msg-{id}";
         var content = "{\"Headers\":{\"headless-msg-id\":\"" + messageId + "\"},\"Value\":null}";
@@ -332,7 +340,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
                 Id = id,
                 Content = content,
                 Added = addedTime,
-                NextRetryAt = DateTime.UtcNow.AddSeconds(-1),
+                NextRetryAt = DateTimeOffset.UtcNow.AddSeconds(-1),
                 MessageId = messageId,
             }
         );

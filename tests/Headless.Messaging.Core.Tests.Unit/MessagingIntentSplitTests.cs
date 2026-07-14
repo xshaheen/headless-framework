@@ -409,7 +409,7 @@ public sealed class MessagingIntentSplitTests : TestBase
         new()
         {
             MessageName = messageName,
-            PublishAt = DateTime.UtcNow,
+            PublishAt = DateTimeOffset.UtcNow,
             Message = new Message(
                 new Dictionary<string, string?>(StringComparer.Ordinal)
                 {

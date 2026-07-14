@@ -297,6 +297,7 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
 
     private ValueTask<Dictionary<DateTime, int>> _GetHourlyTimelineStats(MessageType type, string statusName)
     {
+        // Hourly buckets are label keys, not persisted instants.
         var endDate = timeProvider.GetUtcNow().UtcDateTime;
         var dates = new List<DateTime>();
         for (var i = 0; i < 24; i++)
