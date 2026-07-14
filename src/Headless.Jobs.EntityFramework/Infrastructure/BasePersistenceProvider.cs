@@ -54,6 +54,27 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     // stamp share one clock inside one statement, with no scalar clock round trip and no read-then-write gap.
     // Scheduling/observational time (ExecutedAt, candidate selection) stays on the injected TimeProvider so it
     // remains deterministic under FakeTimeProvider. See docs/solutions/design-patterns/temporal-authority-standard.md.
+    //
+    // WHY THE EF-TRANSLATED CLOCK IS SAFE HERE — AND THE INVARIANT THAT MAKES IT SO.
+    // EF translates the clock to `now()` on Npgsql and `GETUTCDATE()` on SQL Server. On PostgreSQL `now()` is
+    // TRANSACTION-START time, not statement time — the one function the temporal-authority standard otherwise tells
+    // you never to use. It is correct here only because of a property this class maintains BY CONSTRUCTION:
+    //
+    //     A lease DEADLINE is never written inside an explicit transaction.
+    //
+    // The three `LockedUntil = <clock> + LeaseDuration` stamps (claim, renew-time-job, renew-cron-occurrence) each
+    // run as a standalone autocommit statement, where `now()` == statement time == what we want. The multi-statement
+    // transactions in this file only ever READ the lease (`LockedUntil <= now()`), RELEASE it (`LockedUntil = null`),
+    // or stamp audit columns — none of which an instant frozen at transaction-open can corrupt: a lease that expires
+    // mid-transaction is merely missed on this tick and reclaimed on the next (every such sweep is idempotent), and
+    // audit stamps are off by the transaction's own duration (single-digit ms). SQL Server does not have this
+    // question at all: `GETUTCDATE()` is evaluated per statement, and its only cost is `datetime` precision
+    // (~3.33 ms), immaterial against minute-scale leases.
+    //
+    // KEEP IT THAT WAY. Wrapping a lease-deadline write in an explicit transaction would anchor that deadline to
+    // transaction-open and silently SHORTEN the lease by the transaction's duration. A short lease is the dangerous
+    // direction: it lets a second node reclaim the row while the owner still believes it holds it — the exact
+    // double-dispatch this design exists to prevent. No analyzer enforces this.
 
     #region Core_Time_Ticker_Methods
     public IAsyncEnumerable<TimeJobEntity> QueueTimeJobsAsync(
@@ -268,6 +289,14 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         // so they run under CancellationToken.None. The three statements are wrapped in one transaction
         // (finding 3.1) so a crash between them can't leave a half-reclaimed node — the idempotent reconcile
         // (U2) re-reclaims a partial node on the next tick, but the transaction removes the transient state.
+        //
+        // The explicit transaction freezes PostgreSQL's `now()` at transaction-open for all three statements. That is
+        // SAFE here, and deliberately so: these statements only READ the lease (LockedUntil <= now), RELEASE it
+        // (LockedUntil = null) and stamp audit columns — they never WRITE a lease deadline. A lease that expires
+        // while the transaction is open is simply missed on this tick and reclaimed on the next (this sweep is
+        // idempotent by design). Do not "fix" this by removing the transaction: that reintroduces the half-reclaimed
+        // node the transaction exists to prevent. Equally, do not add a lease-deadline write here — see the
+        // class-level note for why that would silently shorten the lease.
         await using var transaction = await dbContext
             .Database.BeginTransactionAsync(CancellationToken.None)
             .ConfigureAwait(false);
@@ -368,7 +397,10 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ConfigureAwait(false);
         var now = TimeProvider.GetUtcNow().UtcDateTime;
 
-        // Acquire and mark InProgress in a single update
+        // Acquire and mark InProgress in a single update.
+        // LEASE-DEADLINE WRITE — must stay AUTOCOMMIT. Do not wrap in an explicit transaction: on PostgreSQL the
+        // EF-translated clock is `now()` (transaction-start), so a surrounding transaction would anchor the deadline
+        // to transaction-open and shorten the lease by the transaction's duration. See the class-level note above.
         var affected = await dbContext
             .Set<TTimeJob>()
             .Where(x => ((IEnumerable<Guid>)ids).Contains(x.Id))
@@ -422,6 +454,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ConfigureAwait(false);
         // #316 clock-skew: stamp the slid lease from the DB clock, not the local TimeProvider, so the deadline a
         // remote sweep later compares against shares one authority with the value written here.
+        // LEASE-DEADLINE WRITE — must stay AUTOCOMMIT (see the class-level note). A surrounding explicit transaction
+        // would anchor `now()` to transaction-open and silently shorten every renewal.
 
         return await dbContext
             .Set<TTimeJob>()
@@ -859,6 +893,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
         // #316 clock-skew: stamp the slid lease from the DB clock (see RenewTimeJobLeaseAsync).
+        // LEASE-DEADLINE WRITE — must stay AUTOCOMMIT (see the class-level note). A surrounding explicit transaction
+        // would anchor `now()` to transaction-open and silently shorten every renewal.
 
         return await dbContext
             .Set<CronJobOccurrenceEntity<TCronJob>>()

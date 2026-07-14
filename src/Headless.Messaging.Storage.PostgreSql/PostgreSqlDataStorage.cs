@@ -288,7 +288,6 @@ internal sealed class PostgreSqlDataStorage(
             {
                 Value = message.Owner ?? (object)DBNull.Value,
             },
-            new NpgsqlParameter("@Now", timeProvider.GetUtcNow().UtcDateTime),
             new NpgsqlParameter("@StatusName", state.ToString("G")),
             new NpgsqlParameter("@ExceptionInfo", message.ExceptionInfo ?? (object)DBNull.Value),
         ];
@@ -517,9 +516,6 @@ internal sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@StatusName", nameof(StatusName.Failed)),
             new NpgsqlParameter("@MessageId", message.Origin.Id),
             new NpgsqlParameter("@ExceptionInfo", exceptionInfo ?? (object)DBNull.Value),
-            // #4 — active-lease guard uses the injected TimeProvider (not DB now()) so all lease math
-            // shares one clock domain; keeps the guard testable with a fake clock.
-            new NpgsqlParameter("@Now", timeProvider.GetUtcNow().UtcDateTime),
         ];
 
         var rowId = await _StoreReceivedMessage(sqlParams, cancellationToken).ConfigureAwait(false);
@@ -573,9 +569,6 @@ internal sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@StatusName", nameof(StatusName.Scheduled)),
             new NpgsqlParameter("@MessageId", message.Origin.Id),
             new NpgsqlParameter("@ExceptionInfo", DBNull.Value),
-            // #4 — active-lease guard uses the injected TimeProvider (not DB now()) so all lease math
-            // shares one clock domain; keeps the guard testable with a fake clock.
-            new NpgsqlParameter("@Now", timeProvider.GetUtcNow().UtcDateTime),
         ];
 
         // #5 — adopt the authoritative persisted row id. On a concurrent redelivery that takes the ON
@@ -905,7 +898,6 @@ internal sealed class PostgreSqlDataStorage(
             {
                 Value = message.Owner ?? (object)DBNull.Value,
             },
-            new NpgsqlParameter("@Now", timeProvider.GetUtcNow().UtcDateTime),
         ];
         await using var connection = postgreSqlOptions.Value.CreateConnection();
         var affected = await connection
@@ -960,7 +952,6 @@ internal sealed class PostgreSqlDataStorage(
             {
                 Value = message.Owner ?? (object)DBNull.Value,
             },
-            new NpgsqlParameter("@Now", timeProvider.GetUtcNow().UtcDateTime),
             new NpgsqlParameter("@StatusName", state.ToString("G")),
         ];
 
@@ -1049,6 +1040,9 @@ internal sealed class PostgreSqlDataStorage(
         // redelivered message that arrives while the row is being dispatched would otherwise
         // overwrite LockedUntil = NULL, releasing the active pickup lease mid-attempt and letting
         // the retry processor re-pick the row while the inline retry burst is still in flight.
+        // Ownership time is the DATABASE's: the guard compares against statement_timestamp(), the same
+        // clock that wrote "LockedUntil" in _LeaseAndReserveAttemptAsync. Sampling the app clock here
+        // instead would let a node running ahead of the server see a live lease as expired and CLEAR it.
         // The DO UPDATE SET list deliberately excludes "Retries" and "InlineAttempts" so a benign
         // redelivery collapse never resets the durable retry counters.
         // Mirrors the matching guard in SqlServerDataStorage._StoreReceivedMessage.
@@ -1066,7 +1060,7 @@ internal sealed class PostgreSqlDataStorage(
             WHERE NOT ({_receivedTable}."StatusName" IN ('{nameof(StatusName.Succeeded)}','{nameof(
                 StatusName.Failed
             )}') AND {_receivedTable}."NextRetryAt" IS NULL)
-              AND ({_receivedTable}."LockedUntil" IS NULL OR {_receivedTable}."LockedUntil" <= @Now)
+              AND ({_receivedTable}."LockedUntil" IS NULL OR {_receivedTable}."LockedUntil" <= statement_timestamp())
             RETURNING "Id"
             """;
 
@@ -1122,7 +1116,7 @@ internal sealed class PostgreSqlDataStorage(
         var persistedLockedUntil = await connection
             .ExecuteReaderAsync(
                 sql,
-                _ReadLeaseDeadlineAsync,
+                LeaseDeadlineReader.ReadAsync,
                 commandTimeout: messagingOptions.Value.CommandTimeout,
                 sqlParams: sqlParams,
                 cancellationToken: cancellationToken
@@ -1140,22 +1134,6 @@ internal sealed class PostgreSqlDataStorage(
         message.Owner = owner;
 
         return true;
-    }
-
-    /// <summary>Reads the <c>RETURNING "LockedUntil"</c> deadline; <see langword="null"/> when no row matched.</summary>
-    private static async Task<DateTime?> _ReadLeaseDeadlineAsync(
-        DbDataReader reader,
-        CancellationToken cancellationToken
-    )
-    {
-        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            return null;
-        }
-
-        return await reader.IsDBNullAsync(0, cancellationToken).ConfigureAwait(false)
-            ? null
-            : DateTime.SpecifyKind(reader.GetDateTime(0), DateTimeKind.Utc);
     }
 
     private async ValueTask<bool> _LeaseMessageAsync(
@@ -1186,7 +1164,7 @@ internal sealed class PostgreSqlDataStorage(
         var persistedLockedUntil = await connection
             .ExecuteReaderAsync(
                 sql,
-                _ReadLeaseDeadlineAsync,
+                LeaseDeadlineReader.ReadAsync,
                 commandTimeout: messagingOptions.Value.CommandTimeout,
                 sqlParams: sqlParams,
                 cancellationToken: cancellationToken

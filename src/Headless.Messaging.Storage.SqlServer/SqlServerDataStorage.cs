@@ -270,7 +270,6 @@ internal sealed class SqlServerDataStorage(
             {
                 Value = message.Owner ?? (object)DBNull.Value,
             },
-            new SqlParameter("@Now", SqlDbType.DateTime2) { Value = timeProvider.GetUtcNow().UtcDateTime },
             new SqlParameter("@StatusName", state.ToString("G")),
             new SqlParameter("@ExceptionInfo", message.ExceptionInfo ?? (object)DBNull.Value),
         ];
@@ -506,9 +505,6 @@ internal sealed class SqlServerDataStorage(
             new SqlParameter("@MessageId", message.Origin.Id),
             new SqlParameter("@Version", messagingOptions.Value.Version),
             new SqlParameter("@ExceptionInfo", exceptionInfo ?? (object)DBNull.Value),
-            // #4 — active-lease guard uses the injected TimeProvider (not GETUTCDATE()) so all lease
-            // math shares one clock domain; keeps the guard testable with a fake clock.
-            new SqlParameter("@Now", SqlDbType.DateTime2) { Value = timeProvider.GetUtcNow().UtcDateTime },
         ];
 
         var rowId = await _StoreReceivedMessage(sqlParams, cancellationToken).ConfigureAwait(false);
@@ -571,9 +567,6 @@ internal sealed class SqlServerDataStorage(
             new SqlParameter("@MessageId", message.Origin.Id),
             new SqlParameter("@Version", messagingOptions.Value.Version),
             new SqlParameter("@ExceptionInfo", DBNull.Value),
-            // #4 — active-lease guard uses the injected TimeProvider (not GETUTCDATE()) so all lease
-            // math shares one clock domain; keeps the guard testable with a fake clock.
-            new SqlParameter("@Now", SqlDbType.DateTime2) { Value = timeProvider.GetUtcNow().UtcDateTime },
         ];
 
         // #5 — adopt the authoritative persisted row id (see _StoreReceivedMessage); on the MERGE UPDATE
@@ -956,7 +949,6 @@ internal sealed class SqlServerDataStorage(
             {
                 Value = message.Owner ?? (object)DBNull.Value,
             },
-            new SqlParameter("@Now", SqlDbType.DateTime2) { Value = timeProvider.GetUtcNow().UtcDateTime },
         ];
         await using var connection = new SqlConnection(options.Value.ConnectionString);
         var affected = await connection
@@ -1011,7 +1003,6 @@ internal sealed class SqlServerDataStorage(
             {
                 Value = message.Owner ?? (object)DBNull.Value,
             },
-            new SqlParameter("@Now", SqlDbType.DateTime2) { Value = timeProvider.GetUtcNow().UtcDateTime },
             new SqlParameter("@StatusName", state.ToString("G")),
         ];
 
@@ -1167,7 +1158,7 @@ internal sealed class SqlServerDataStorage(
         var persistedLockedUntil = await connection
             .ExecuteReaderAsync(
                 sql,
-                _ReadLeaseDeadlineAsync,
+                LeaseDeadlineReader.ReadAsync,
                 commandTimeout: messagingOptions.Value.CommandTimeout,
                 sqlParams: sqlParams,
                 cancellationToken: cancellationToken
@@ -1197,22 +1188,6 @@ internal sealed class SqlServerDataStorage(
         var nanoseconds = checked((int)(leaseDuration.Ticks % TimeSpan.TicksPerSecond * 100));
 
         return (wholeSeconds, nanoseconds);
-    }
-
-    /// <summary>Reads the <c>OUTPUT inserted.LockedUntil</c> deadline; <see langword="null"/> when no row matched.</summary>
-    private static async Task<DateTime?> _ReadLeaseDeadlineAsync(
-        DbDataReader reader,
-        CancellationToken cancellationToken
-    )
-    {
-        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            return null;
-        }
-
-        return await reader.IsDBNullAsync(0, cancellationToken).ConfigureAwait(false)
-            ? null
-            : DateTime.SpecifyKind(reader.GetDateTime(0), DateTimeKind.Utc);
     }
 
     private async ValueTask<bool> _LeaseMessageAsync(
@@ -1257,7 +1232,7 @@ internal sealed class SqlServerDataStorage(
         var persistedLockedUntil = await connection
             .ExecuteReaderAsync(
                 sql,
-                _ReadLeaseDeadlineAsync,
+                LeaseDeadlineReader.ReadAsync,
                 commandTimeout: messagingOptions.Value.CommandTimeout,
                 sqlParams: sqlParams,
                 cancellationToken: cancellationToken

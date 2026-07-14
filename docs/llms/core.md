@@ -65,7 +65,7 @@ packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalEventBus, Security.A
 ## Quick Orientation
 
 - **`Headless.Extensions`** — the framework's base utility library (result pattern, domain primitives, value objects, collections, IO, threading, reflection helpers, constants, validators). Almost every other `Headless.*` package depends on it. Documented separately — see [extensions.md](extensions.md).
-- **`Headless.Core`** — cross-cutting abstractions: `IClock`, `ICurrentUser`, `ICurrentTenant`, `ICurrentLocale`, `ICurrentTimeZone`, `ITimezoneProvider`, `ICurrentPrincipalAccessor`, plus utilities (`SnappyCompressor`, `LogState` structured logging) and `AddHeadlessGuidGenerator()` for keyed GUID strategy registration.
+- **`Headless.Core`** — cross-cutting abstractions: `ICurrentUser`, `ICurrentTenant`, `ICurrentLocale`, `ICurrentTimeZone`, `ITimezoneProvider`, `ICurrentPrincipalAccessor`, plus utilities (`SnappyCompressor`, `LogState` structured logging) and `AddHeadlessGuidGenerator()` for keyed GUID strategy registration.
 - **`Headless.Security.Abstractions`** — security contracts and options: `IStringEncryptionService`, `IStringHashService`, `StringEncryptionOptions`, `StringHashOptions`, and their validators. `IStringHashService.Create(...)` supports an optional salt and can fall back to `StringHashOptions.DefaultSalt` or an empty salt when no default is configured.
 - **`Headless.Security`** — default implementations and DI helpers for string encryption and hashing. `AddStringEncryptionService(...)` and `AddStringHashService(...)` are idempotent: the first registration wins.
 - **`Headless.Checks`** — guard clause library with `Argument` (preconditions) and `Ensure` (runtime assertions).
@@ -76,7 +76,10 @@ packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalEventBus, Security.A
 
 - Use `Headless.Checks` (`Argument.IsNotNull`, `Argument.IsNotNullOrEmpty`, `Argument.IsPositive`, etc.) for argument validation instead of raw `ArgumentNullException` or `ArgumentOutOfRangeException`. Use `Ensure` for internal state assertions.
 - Use `Headless.Domain` base classes for DDD: inherit `Entity<T>` for entities, `AggregateRoot<T>` for aggregate roots, `ValueObject` for value objects. Emit in-process events via `AddDomainEvent()` and distributed events via `AddIntegrationEvent()` on aggregate roots.
-- Use `Headless.Core` for `ICurrentUser`, `ICurrentTenant`, and `IClock` — never use `DateTime.UtcNow` directly; inject `IClock` instead.
+- Use `Headless.Core` for `ICurrentUser` and `ICurrentTenant`. For time, use the BCL `TimeProvider` — the framework has no clock abstraction of its own. `DateTime.Now` / `DateTime.UtcNow` / `DateTimeOffset.Now` / `DateTimeOffset.UtcNow` are banned at compile time by the Headless SDK (`RS0030`).
+- Time semantics belong to whichever authority owns the decision, not to the ambient environment of the running process. Pick by the question the timestamp answers: **"who owns this, and until when?"** (leases, locks, liveness, visibility) → the **store's** clock, inlined into the atomic statement; **"how long has this taken?"** (timeouts, backoff, deadlines) → a **monotonic** clock, `TimeProvider.GetTimestamp()` / `GetElapsedTime()`; **"when should this fire in human terms?"** (cron, calendars) → the **tz database** via an explicit `TimeZoneInfo` (never `TimeZoneInfo.Local`); **"when did this happen?"** (audit, `CreatedAt`, logs) → the injected **`TimeProvider`** (`timeProvider.GetUtcNow()`). Full rationale: [temporal-authority-standard](../solutions/design-patterns/temporal-authority-standard.md).
+- Only that last row is an app-clock concern. Never sample the app clock to compute a lease deadline — pass a duration and let the store apply its own clock.
+- When a value arrives from an external SDK with an untrustworthy `DateTime.Kind` (AWS S3 returns `Unspecified`), normalize with `NormalizeToUtc()` from `Headless.Extensions` before converting to `DateTimeOffset` — `new DateTimeOffset(DateTime)` applies the *host's* offset to an `Unspecified` value.
 - Use `ApiResult<T>` / `ApiResult` from `Headless.Extensions` for service return types instead of throwing exceptions for expected failures. Use `Result<TValue, TError>` when you need custom error types.
 - For local (in-process) domain events, register `AddHeadlessLocalEventBus()` and implement `IDomainEventHandler<T>`. Use `DomainEventHandlerOrderAttribute` to control handler execution order. For integration (distributed) events, emit `IIntegrationEvent` via `AddIntegrationEvent()` on the aggregate; dispatch is handled by the ORM/messaging layer (see [orm.md](orm.md)), not by this package.
 - For strongly-typed IDs, use the primitives from `Headless.Extensions` (`UserId`, `AccountId`) — they have source-generated JSON and TypeConverter support.
@@ -97,12 +100,11 @@ Core abstractions for building applications with multi-tenancy, user context, an
 
 ### Problem Solved
 
-Provides standardized interfaces for common cross-cutting concerns (clock, user, tenant, locale, timezone conversion) and utilities (compression, structured logging) enabling consistent patterns across all application layers.
+Provides standardized interfaces for common cross-cutting concerns (user, tenant, locale, timezone conversion) and utilities (compression, structured logging) enabling consistent patterns across all application layers. Time is not one of them — inject the BCL `TimeProvider` directly.
 
 ### Key Features
 
 - **Abstractions**:
-    - `IClock` - Testable time abstraction (wraps `TimeProvider`)
     - `ICurrentUser` - Current authenticated user context; `UserId` and `Roles` are exposed only for authenticated principals
     - `ICurrentTenant` - Multi-tenancy support with scoped tenant switching
     - `ITenantWriteGuardBypass` - Explicit bypass scope for audited host/admin tenant writes
@@ -131,7 +133,7 @@ dotnet add package Headless.Core
 ### Quick Start
 
 ```csharp
-public sealed class OrderService(IClock clock, ICurrentUser user, ICurrentTenant tenant)
+public sealed class OrderService(TimeProvider timeProvider, ICurrentUser user, ICurrentTenant tenant)
 {
     public Order CreateOrder(CreateOrderRequest request)
     {
@@ -140,12 +142,15 @@ public sealed class OrderService(IClock clock, ICurrentUser user, ICurrentTenant
             Id = Guid.NewGuid(),
             UserId = user.UserId!.Value,
             TenantId = tenant.Id,
-            CreatedAt = clock.UtcNow,
+            // "When did this happen?" — an audit timestamp, so the injected app clock owns it.
+            CreatedAt = timeProvider.GetUtcNow(),
             Total = new Money(request.Amount, request.Currency),
         };
     }
 }
 ```
+
+`TimeProvider` is registered as a singleton by the Headless setup extensions (`TryAddSingleton(TimeProvider.System)`), so it is injectable without extra wiring. In tests, swap it for `FakeTimeProvider` — see [testing.md](testing.md).
 
 #### Structured Logging
 

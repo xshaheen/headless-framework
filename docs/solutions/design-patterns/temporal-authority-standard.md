@@ -274,18 +274,25 @@ which decision**. That rule is the table at the top of this document.
 
 ### Enforcement
 
-`DateTime.Now`, `DateTime.UtcNow`, `DateTimeOffset.Now` and `DateTimeOffset.UtcNow` are **banned at
-compile time** by the Headless MSBuild SDK (`BannedApiAnalyzers`, `RS0030`). The ban fires even inside a
-`<see cref="..."/>` doc comment — reference them as `<c>DateTime.UtcNow</c>` instead.
+`DateTime.Now` and `DateTimeOffset.Now` are **banned at compile time** by the Headless MSBuild SDK
+(`BannedApiAnalyzers`, `RS0030`, via `BannedSymbols.txt`). The ban fires even inside a `<see cref="..."/>`
+doc comment — reference it as `<c>DateTime.Now</c>` instead.
 
-The two deliberate exceptions, both of which the analyzer must be allowed to see:
+`DateTime.UtcNow` and `DateTimeOffset.UtcNow` are **not in `BannedSymbols.txt` and trigger no analyzer** —
+enforcement there is convention and code review only. They are not simply added to the same ban because,
+inside an EF `ExecuteUpdate`/`Where` expression tree, a bare `DateTime.UtcNow` is NOT evaluated in-process —
+the provider translates it to server time. This is the *correct* way to express the DB clock in LINQ
+(see §1), and a blanket ban on the symbol would flag the framework's own correct code — the majority of
+this repo's live `DateTime.UtcNow` uses sit inside exactly this pattern in `Headless.Jobs.EntityFramework`.
 
-1. **Inside an EF `ExecuteUpdate`/`Where` expression tree**, a bare `DateTime.UtcNow` is NOT evaluated
-   in-process — the provider translates it to server time. This is the *correct* way to express the DB
-   clock in LINQ, and it is the one place the symbol means the opposite of what it says.
-2. **`TimeProvider.System`**, registered in DI as the production clock.
+Closing this gap would require either (a) adding `UtcNow` to `BannedSymbols.txt` upstream in headless-sdk
+plus a documented suppression pattern for the EF expression-tree sites, or (b) a custom Roslyn analyzer
+that understands expression-tree context and exempts only those sites. Neither exists yet — this is a
+known gap, not a resolved one.
 
-Everything else must resolve time through an injected `TimeProvider`.
+Outside expression trees, everything must resolve time through an injected `TimeProvider`; the one
+sanctioned direct read of the system clock is `TimeProvider.System`, registered in DI as the production
+implementation.
 
 ## Related
 

@@ -50,7 +50,7 @@ packages: Testing, Testing.AspNetCore, Testing.Testcontainers, Messaging.Testing
 
 ## Quick Orientation
 
-- `Headless.Testing` -- base classes (`TestBase`), retry attributes, fake helpers (`TestClock`, `TestCurrentUser`, `TestCurrentTenant`), assertion extensions. Used for unit tests.
+- `Headless.Testing` -- base classes (`TestBase`), retry attributes, fake helpers (`TestCurrentUser`, `TestCurrentTenant`), the `AddTestTimeProvider()` DI extension, and assertion extensions. Used for unit tests.
 - `Headless.Testing.AspNetCore` -- `HeadlessTestServer<TProgram>`, a `WebApplicationFactory<TProgram>` wrapper with deterministic time, DI-scope helpers, readiness polling, and Respawner-based database reset. Used for ASP.NET Core integration tests.
 - `Headless.Testing.Testcontainers` -- pre-configured Docker container fixtures (e.g., `HeadlessRedisFixture`). Used for integration tests requiring real infrastructure.
 - `Headless.Messaging.Testing` -- `MessagingTestHarness` that records messages at the transport boundary (covers outboxed and direct-published) and exposes typed `WaitForPublished`/`Consumed`/`Faulted`/`Exhausted` APIs.
@@ -61,13 +61,14 @@ Typical unit test inherits from `TestBase`, which provides `Logger`, `Faker`, an
 
 - Use `Headless.Testing` for all unit tests. Inherit from `TestBase` to get `Logger` (ILogger), `Faker` (Bogus), and `AbortToken` (CancellationToken) for free.
 - Use `RetryFactAttribute` / `RetryTheoryAttribute` for flaky tests (e.g., network-dependent). Set `MaxRetries` explicitly.
-- Use `TestClock` to control time in tests -- it wraps a `FakeTimeProvider`; advance the underlying provider (`timeProvider.Advance(TimeSpan)` / `timeProvider.SetUtcNow(...)`) to simulate time passing. Inject the `TestClock` wherever `IClock`/`TimeProvider` is needed.
+- Use `FakeTimeProvider` (from `Microsoft.Extensions.TimeProvider.Testing`) to control time in tests: construct one, inject it wherever a `TimeProvider` is needed, and call `Advance(TimeSpan)` / `SetUtcNow(...)` to simulate time passing. The framework ships no clock wrapper of its own -- `TimeProvider` **is** the abstraction.
 - Use `TestCurrentUser` and `TestCurrentTenant` for faking auth/tenant context in unit tests.
 - For ASP.NET Core integration tests, use `HeadlessTestServer<TProgram>` from `Headless.Testing.AspNetCore` rather than wiring `WebApplicationFactory<TProgram>` by hand. Wrap it for project-shaped helpers; do not reimplement its time control, DB reset, or scope-execution surface.
 - Tag every integration test with `[Trait("Category", "Integration")]` so CI can filter it from the unit-test lane and run it on a Docker-capable runner.
 - Use an xUnit collection fixture (not a class fixture) to share the test server across an entire test collection. Reset per-test state (DB, messaging harness, ambient time) via a `Fixture.ResetStateAsync()`-style hook called from `IntegrationTestBase.InitializeAsync()` so tests have no ordering dependency.
-- Resolve test doubles for time through the abstract service types: `serviceProvider.GetRequiredService<TimeProvider>()` returns the `FakeTimeProvider`; `serviceProvider.GetRequiredService<IClock>()` returns the `TestClock`. The concrete types are not registered.
-- Advance time before seeding test data so timestamps have a known reference point. Prefer `App.AdvanceTime(...)` / `App.SetTime(...)` so `IClock` and `TimeProvider` move together.
+- Resolve the time double through the abstract service type: `serviceProvider.GetRequiredService<TimeProvider>()` returns the `FakeTimeProvider` registered by `AddTestTimeProvider()`. The concrete `FakeTimeProvider` type is not registered as itself, so cast the resolved `TimeProvider` (or keep the instance `AddTestTimeProvider()` returned).
+- Advance time before seeding test data so timestamps have a known reference point. Prefer `App.AdvanceTime(...)` / `App.SetTime(...)` over reaching into the provider directly.
+- A `FakeTimeProvider` only fakes the **app clock** -- the "when did this happen?" authority (audit fields, `CreatedAt`, logs). It cannot fake the store's clock, so lease/lock/TTL expiry driven by PostgreSQL, SQL Server, or Redis still needs a real wall-clock wait in an integration test. Anything that decides ownership deserves a clock-skew test: set the `FakeTimeProvider` far away from real time and assert the behavior is unchanged. See [temporal-authority-standard](../solutions/design-patterns/temporal-authority-standard.md).
 - Use `MessagingTestHarness` from `Headless.Messaging.Testing` to assert published, consumed, faulted, and exhausted messages. Do not query the outbox table directly -- direct-published messages bypass it.
 - When asserting EF-persisted timestamps, use `Should().BeCloseTo(expected, TimeSpan.FromMicroseconds(1))` rather than exact equality to absorb storage-precision truncation.
 - Remember what Respawner-based DB reset does **not** clear: distributed caches, in-process singletons, `MessagingTestHarness` observation buffers, ambient tenant/user scopes. Reset those explicitly per test.
@@ -92,7 +93,7 @@ Provides reusable test infrastructure including base classes, retry attributes, 
 - `AlfaTestsOrderer` - Alphabetical test ordering
 - `TestHelpers` - Logging factory and utility methods
 - `TestCurrentUser` / `TestCurrentTenant` - Fake context implementations
-- `TestClock` - Controllable time provider for tests
+- `AddTestTimeProvider()` - Replaces the container's `TimeProvider` with a `FakeTimeProvider` and returns it
 - Assertion extensions for async operations
 
 ### Installation
@@ -159,11 +160,22 @@ public sealed class MyTests : TestBase
 
 ```csharp
 var timeProvider = new FakeTimeProvider(new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero));
-var clock = new TestClock(timeProvider);
-var service = new ExpirationService(clock);
+var service = new ExpirationService(timeProvider); // takes a TimeProvider
 
-timeProvider.Advance(TimeSpan.FromDays(30)); // advance via the FakeTimeProvider
+timeProvider.Advance(TimeSpan.FromDays(30));
 var isExpired = service.IsExpired(); // true
+```
+
+To swap the double into a whole container, use `AddTestTimeProvider()` from `Headless.Testing.DependencyInjection`. It does `RemoveAll<TimeProvider>()` + `AddSingleton<TimeProvider>(fake)` -- so it overrides the `TryAddSingleton(TimeProvider.System)` that provider packages register defensively -- and returns the instance:
+
+```csharp
+var services = new ServiceCollection();
+services.AddMyFeature();
+
+var timeProvider = services.AddTestTimeProvider(); // returns the registered FakeTimeProvider
+
+var provider = services.BuildServiceProvider();
+timeProvider.SetUtcNow(new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero));
 ```
 
 ### Configuration
@@ -191,8 +203,8 @@ ASP.NET Core integration-test host wrapper with controllable time, DI-scope help
 ### Key Features
 
 - `HeadlessTestServer<TProgram>` -- owns the `WebApplicationFactory<TProgram>` and lifts its surface to a deterministic-by-default API.
-- Replaces `TimeProvider` and `IClock` with `FakeTimeProvider` + `TestClock` so tests control time end-to-end.
-- `AdvanceTime(TimeSpan)` and `SetTime(DateTimeOffset)` move both providers together.
+- Replaces the host's `TimeProvider` with a `FakeTimeProvider` so tests control the app clock end-to-end.
+- `AdvanceTime(TimeSpan)` and `SetTime(DateTimeOffset)` move it and return the resulting UTC time.
 - `ExecuteScopeAsync(...)` opens a DI scope (optionally with a `ClaimsPrincipal`) for scoped operations.
 - `WaitForReadiness(...)` polls a host-readiness predicate before tests run.
 - `ConfigureDatabaseReset(...)` + `ResetDatabaseAsync()` integrate Respawner with retry.
@@ -272,21 +284,21 @@ Most projects benefit from a thin app-specific wrapper that adds project-shaped 
 - **Add only** project-shaped helpers: typed scoped resolvers (e.g., `GetDbExecutor<T>()`), default-argument overloads (e.g., `AdvanceTime()` defaulting to one hour), or app-specific service factories.
 - **Do not** reimplement `ExecuteScopeAsync`, time advancement, or database reset. Duplicating the lifecycle is the most common source of drift between the wrapper and the framework type.
 
-#### Resolving `FakeTimeProvider` and `TestClock`
+#### Resolving `FakeTimeProvider`
 
-`AddTestTimeProvider()` (called internally during host setup) replaces `TimeProvider` and `IClock` registrations with `FakeTimeProvider` and `TestClock`. The registrations target the abstract service types only:
+`AddTestTimeProvider()` (called internally during host setup) replaces the `TimeProvider` registration with a `FakeTimeProvider`. It registers against the abstract service type only:
 
 ```csharp
 // Correct
 var fake = (FakeTimeProvider)serviceProvider.GetRequiredService<TimeProvider>();
-var clock = (TestClock)serviceProvider.GetRequiredService<IClock>();
 
-// Incorrect -- concrete types are not registered
+// Incorrect -- the concrete type is not registered
 var fake = serviceProvider.GetRequiredService<FakeTimeProvider>();
-var clock = serviceProvider.GetRequiredService<TestClock>();
 ```
 
-`TestClock.UtcNow` delegates to the underlying `FakeTimeProvider`, so a single `FakeTimeProvider.SetUtcNow()` or `FakeTimeProvider.Advance()` call moves both forward together. Prefer `App.AdvanceTime(...)` / `App.SetTime(...)` over reaching into either provider directly.
+Prefer `App.AdvanceTime(...)` / `App.SetTime(...)` over reaching into the provider directly; both return the resulting UTC time.
+
+This controls the **app clock** only -- the authority for "when did this happen?" timestamps (audit fields, `CreatedAt`, logs). Lease, lock, and TTL expiry are owned by the store's clock (PostgreSQL, SQL Server, Redis) and are unaffected by advancing the fake, so those still need a real wall-clock wait. That separation is deliberate: because ownership time never passes through the app clock, a test can hold the `FakeTimeProvider` far from real time and correct behavior must not change. See [temporal-authority-standard](../solutions/design-patterns/temporal-authority-standard.md).
 
 #### Auto-Applied EF Query Filters in Tests
 
@@ -327,7 +339,7 @@ using (tenant.Change(tenantId, "Test Tenant"))
 
 #### Time Advancement
 
-Advance time before seeding so timestamps have a known reference point. The framework helpers move `TimeProvider` and `IClock` together:
+Advance time before seeding so timestamps have a known reference point. The framework helpers move the host's `TimeProvider` and return the resulting UTC time (`App.AdvanceTime()` with no argument is a project-wrapper convenience overload, not part of `HeadlessTestServer`):
 
 ```csharp
 // Defaults to +1 hour and returns the new time
@@ -383,7 +395,7 @@ The same caveat applies to other databases with sub-tick storage precision (MySQ
 ### Side Effects
 
 - Starts the application host under test for the lifetime of the fixture.
-- Replaces `TimeProvider` and `IClock` in DI with deterministic test doubles.
+- Replaces `TimeProvider` in DI with a deterministic `FakeTimeProvider`.
 - (Optional) Truncates configured database tables between tests when `ConfigureDatabaseReset(...)` is wired.
 ---
 ## Headless.Testing.Testcontainers

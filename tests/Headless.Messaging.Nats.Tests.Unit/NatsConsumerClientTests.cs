@@ -178,73 +178,132 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     // NextBackoff tests
+    //
+    // NextBackoff subtracts up to 25% jitter from the doubled/capped value (never adds), so every assertion
+    // here checks a [0.75x, 1x] range against the ideal (unjittered) value rather than an exact TimeSpan —
+    // the prior exact-value assertions were flaky by construction since the function always applies jitter.
 
     [Fact]
-    public void NextBackoff_should_double_current_delay()
+    public void NextBackoff_should_double_current_delay_within_jitter_budget()
     {
         var result = NatsConsumerClient.NextBackoff(TimeSpan.FromSeconds(1));
-        result.Should().Be(TimeSpan.FromSeconds(2));
+        result.Should().BeLessThanOrEqualTo(TimeSpan.FromSeconds(2));
+        result.Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(1.5));
     }
 
     [Fact]
-    public void NextBackoff_should_cap_at_30_seconds()
+    public void NextBackoff_should_cap_at_30_seconds_within_jitter_budget()
     {
         var result = NatsConsumerClient.NextBackoff(TimeSpan.FromSeconds(20));
-        result.Should().Be(TimeSpan.FromSeconds(30));
+        result.Should().BeLessThanOrEqualTo(TimeSpan.FromSeconds(30));
+        result.Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(22.5));
     }
 
     [Fact]
     public void NextBackoff_should_not_exceed_ceiling_even_with_large_input()
     {
         var result = NatsConsumerClient.NextBackoff(TimeSpan.FromSeconds(60));
-        result.Should().Be(TimeSpan.FromSeconds(30));
+        result.Should().BeLessThanOrEqualTo(TimeSpan.FromSeconds(30));
+        result.Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(22.5));
     }
 
     [Fact]
-    public void NextBackoff_should_enforce_floor_when_next_is_below()
+    public void NextBackoff_should_shave_floor_by_at_most_25_percent_when_next_is_below()
     {
         var result = NatsConsumerClient.NextBackoff(TimeSpan.FromSeconds(1), floor: TimeSpan.FromSeconds(5));
-        result.Should().Be(TimeSpan.FromSeconds(5));
+        result.Should().BeLessThanOrEqualTo(TimeSpan.FromSeconds(5));
+        result.Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(3.75));
     }
 
     [Fact]
     public void NextBackoff_should_not_enforce_floor_when_next_is_above()
     {
         var result = NatsConsumerClient.NextBackoff(TimeSpan.FromSeconds(5), floor: TimeSpan.FromSeconds(5));
-        result.Should().Be(TimeSpan.FromSeconds(10));
+        result.Should().BeLessThanOrEqualTo(TimeSpan.FromSeconds(10));
+        result.Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(7.5));
     }
 
     [Fact]
-    public void NextBackoff_should_produce_correct_exponential_sequence()
+    public void NextBackoff_should_stay_within_jitter_budget_of_the_ideal_doubling_curve_at_every_rung()
     {
-        var delay = TimeSpan.FromSeconds(1);
-        delay = NatsConsumerClient.NextBackoff(delay); // 2s
-        delay.Should().Be(TimeSpan.FromSeconds(2));
-        delay = NatsConsumerClient.NextBackoff(delay); // 4s
-        delay.Should().Be(TimeSpan.FromSeconds(4));
-        delay = NatsConsumerClient.NextBackoff(delay); // 8s
-        delay.Should().Be(TimeSpan.FromSeconds(8));
-        delay = NatsConsumerClient.NextBackoff(delay); // 16s
-        delay.Should().Be(TimeSpan.FromSeconds(16));
-        delay = NatsConsumerClient.NextBackoff(delay); // 30s (capped)
-        delay.Should().Be(TimeSpan.FromSeconds(30));
-        delay = NatsConsumerClient.NextBackoff(delay); // 30s (stays capped)
-        delay.Should().Be(TimeSpan.FromSeconds(30));
+        // Feed the theoretical (unjittered) doubling curve as input at each rung instead of chaining the
+        // previous jittered output — chaining would compound each step's 25% uncertainty into an
+        // ever-widening range and make the per-rung assertions meaningless a few steps in.
+        (TimeSpan Current, TimeSpan ExpectedNext)[] rungs =
+        [
+            (TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2)),
+            (TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(4)),
+            (TimeSpan.FromSeconds(4), TimeSpan.FromSeconds(8)),
+            (TimeSpan.FromSeconds(8), TimeSpan.FromSeconds(16)),
+            (TimeSpan.FromSeconds(16), TimeSpan.FromSeconds(30)), // capped
+            (TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30)), // stays capped
+        ];
+
+        foreach (var (current, expectedNext) in rungs)
+        {
+            var result = NatsConsumerClient.NextBackoff(current);
+            result.Should().BeLessThanOrEqualTo(expectedNext);
+            result.Should().BeGreaterThanOrEqualTo(expectedNext * 0.75);
+        }
     }
 
     [Fact]
-    public void NextBackoff_with_floor_should_produce_correct_sequence()
+    public void NextBackoff_with_floor_should_stay_within_jitter_budget_at_every_rung()
     {
-        var delay = TimeSpan.FromSeconds(1);
         var floor = TimeSpan.FromSeconds(5);
-        delay = NatsConsumerClient.NextBackoff(delay, floor); // max(2, 5) = 5s
-        delay.Should().Be(TimeSpan.FromSeconds(5));
-        delay = NatsConsumerClient.NextBackoff(delay, floor); // max(10, 5) = 10s
-        delay.Should().Be(TimeSpan.FromSeconds(10));
-        delay = NatsConsumerClient.NextBackoff(delay, floor); // max(20, 5) = 20s
-        delay.Should().Be(TimeSpan.FromSeconds(20));
-        delay = NatsConsumerClient.NextBackoff(delay, floor); // max(30, 5) = 30s (capped)
-        delay.Should().Be(TimeSpan.FromSeconds(30));
+        (TimeSpan Current, TimeSpan ExpectedNext)[] rungs =
+        [
+            (TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(5)), // max(2, 5)
+            (TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10)), // max(10, 5)
+            (TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(20)), // max(20, 5)
+            (TimeSpan.FromSeconds(20), TimeSpan.FromSeconds(30)), // max(30, 5), capped
+        ];
+
+        foreach (var (current, expectedNext) in rungs)
+        {
+            var result = NatsConsumerClient.NextBackoff(current, floor);
+            result.Should().BeLessThanOrEqualTo(expectedNext);
+            result.Should().BeGreaterThanOrEqualTo(expectedNext * 0.75);
+        }
+    }
+
+    [Fact]
+    public void NextBackoff_should_never_exceed_the_30_second_ceiling_across_many_iterations_and_inputs()
+    {
+        TimeSpan[] inputs =
+        [
+            TimeSpan.FromSeconds(20),
+            TimeSpan.FromSeconds(30),
+            TimeSpan.FromSeconds(45),
+            TimeSpan.FromSeconds(60),
+            TimeSpan.FromMinutes(10),
+        ];
+        var ceiling = TimeSpan.FromSeconds(30);
+
+        foreach (var input in inputs)
+        {
+            for (var i = 0; i < 1000; i++)
+            {
+                NatsConsumerClient.NextBackoff(input).Should().BeLessThanOrEqualTo(ceiling);
+            }
+        }
+    }
+
+    [Fact]
+    public void NextBackoff_should_produce_a_spread_of_values_instead_of_collapsing_to_a_constant_at_the_ceiling()
+    {
+        var results = Enumerable
+            .Range(0, 200)
+            .Select(_ => NatsConsumerClient.NextBackoff(TimeSpan.FromSeconds(60)))
+            .ToHashSet();
+
+        results
+            .Should()
+            .HaveCountGreaterThan(
+                1,
+                "jitter must keep spreading retries across a fleet even once the backoff saturates at the ceiling"
+            );
+        results.Should().OnlyContain(r => r <= TimeSpan.FromSeconds(30) && r >= TimeSpan.FromSeconds(22.5));
     }
 
     [Fact]

@@ -598,12 +598,17 @@ internal sealed class NatsConsumerClient(
     }
 
     /// <summary>
-    /// Doubles the reconnect backoff up to a 30s ceiling and adds up to 25% jitter.
+    /// Doubles the reconnect backoff up to a 30s ceiling and shaves up to 25% jitter off the result.
     /// </summary>
     /// <remarks>
     /// Jitter is not cosmetic here: without it, a fleet of consumers that all lose the connection at the same
     /// instant (a broker restart) retries in lockstep at exactly 1s/2s/4s/8s/16s/30s and hammers the broker in
-    /// synchronized waves. The AWS SQS, Pulsar and Redis transports all jitter their equivalent loops.
+    /// synchronized waves. The AWS SQS, Pulsar and Redis transports all jitter their equivalent loops. Jitter is
+    /// subtracted from the capped value rather than added on top of it: adding would push the result past the
+    /// documented 30s ceiling, and clamping an additive result back down to the ceiling would collapse every
+    /// caller back to exactly 30s once the exponential curve saturates — defeating the anti-thundering-herd
+    /// spread at precisely the moment the herd is largest. Subtracting keeps the result within (0.75x, 1x] of
+    /// the capped value at every step, so the spread survives even at the ceiling.
     /// </remarks>
     internal static TimeSpan NextBackoff(TimeSpan current, TimeSpan floor = default)
     {
@@ -613,7 +618,7 @@ internal sealed class NatsConsumerClient(
 #pragma warning disable CA5394 // Non-security jitter for retry backoff; cryptographic RNG is unnecessary here.
         var jitterMs = Random.Shared.Next(0, (int)Math.Max(1, capped.TotalMilliseconds / 4));
 #pragma warning restore CA5394
-        return capped + TimeSpan.FromMilliseconds(jitterMs);
+        return capped - TimeSpan.FromMilliseconds(jitterMs);
     }
 
     private async Task _ProcessMessageAsync(INatsJSMsg<ReadOnlyMemory<byte>> msg)

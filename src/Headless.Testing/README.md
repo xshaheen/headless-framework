@@ -13,7 +13,7 @@ Provides reusable test infrastructure including base classes, retry attributes, 
 - `AlfaTestsOrderer` - Alphabetical test ordering
 - `TestHelpers` - Logging factory and utility methods
 - `TestCurrentUser` / `TestCurrentTenant` - Fake context implementations
-- `TestClock` - Controllable time provider for tests
+- `AddTestTimeProvider()` - Replaces the container's `TimeProvider` with a `FakeTimeProvider` and returns it
 - Assertion extensions for async operations
 
 ## Installation
@@ -76,14 +76,29 @@ public sealed class MyTests : TestBase
 
 ### Controllable Time
 
+Time is controlled through the BCL `TimeProvider` — the framework ships no clock wrapper of its own. Use `FakeTimeProvider` from `Microsoft.Extensions.TimeProvider.Testing`:
+
 ```csharp
 var timeProvider = new FakeTimeProvider(new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero));
-var clock = new TestClock(timeProvider);
-var service = new ExpirationService(clock);
+var service = new ExpirationService(timeProvider); // takes a TimeProvider
 
-timeProvider.Advance(TimeSpan.FromDays(30)); // advance via the FakeTimeProvider
+timeProvider.Advance(TimeSpan.FromDays(30));
 var isExpired = service.IsExpired(); // true
 ```
+
+To swap the double into a whole container, call `AddTestTimeProvider()` (from `Headless.Testing.DependencyInjection`). It uses `RemoveAll<TimeProvider>()` + `AddSingleton<TimeProvider>(fake)`, so it overrides the `TryAddSingleton(TimeProvider.System)` that provider packages register defensively, and returns the instance:
+
+```csharp
+var services = new ServiceCollection();
+services.AddMyFeature();
+
+var timeProvider = services.AddTestTimeProvider(); // returns the registered FakeTimeProvider
+
+var provider = services.BuildServiceProvider();
+timeProvider.SetUtcNow(new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero));
+```
+
+This fakes the **app clock** only — the authority for "when did this happen?" timestamps. Lease, lock, and TTL expiry are owned by the store's clock (PostgreSQL, SQL Server, Redis) and are unaffected by advancing the fake.
 
 ## Configuration
 
