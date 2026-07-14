@@ -143,14 +143,10 @@ internal sealed class SubscribeExecutor(
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        // R6 — skip the redundant lease call when the atomic-claim pickup has already leased the
-        // row. The pickup query (GetReceivedMessagesOfNeedRetryAsync) writes
-        // `LockedUntil = now + DispatchTimeout` in the same UPDATE that returns the row, so any
-        // message arriving here with a future LockedUntil was leased less than a few milliseconds
-        // ago and re-leasing only inflates the rolling-restart retry-gap upper bound by the queue
-        // delay. Fresh transport dispatches (LockedUntil null or expired) still take the lease.
-        var now = timeProvider.GetUtcNow().UtcDateTime;
-        var needsLease = message.LockedUntil is not { } lockedUntil || lockedUntil <= now;
+        // A storage-returned lease is already acquired under the provider's authoritative clock.
+        // Core must not reinterpret its expiry through the application clock; reservation and
+        // state-write predicates validate the stored lease identity and activity.
+        var needsLease = message.LockedUntil is null;
 
         inlineRetries = message.InlineAttempts;
         if (RetryHelper.DetectCrashRecoveredReservation(inlineRetries, _retryPolicy) is { } recoveryAttempt)

@@ -1090,16 +1090,21 @@ internal sealed class PostgreSqlDataStorage(
         // statement (one round trip instead of the _LeaseMessageAsync + _ReserveAttemptAsync pair).
         // Combines the lease-contention predicate (#15) with the durable-counter CAS from
         // _ReserveAttemptAsync; no owner match is required because this path is TAKING the lease.
-        //
-        // Ownership time is the DATABASE's: statement_timestamp() supplies BOTH the expiry comparison and
-        // the new deadline, so the lease a remote replica later evaluates was written by the same clock it
-        // compares against. statement_timestamp() (not clock_timestamp()) is stable for the whole statement,
-        // so the WHERE arm and the SET arm cannot land on different instants.
-        var sql =
-            $"UPDATE {tableName} SET \"LockedUntil\"=statement_timestamp() + (@LeaseSeconds * INTERVAL '1 second'),\"Owner\"=@Owner,\"InlineAttempts\"=@InlineAttempts WHERE \"Id\"=@Id "
-            + "AND (\"LockedUntil\" IS NULL OR \"LockedUntil\" <= statement_timestamp()) "
-            + $"AND {_TerminalRowGuardWithRetries} "
-            + "RETURNING \"LockedUntil\"";
+        // Ownership time is the database's: one statement-stable snapshot supplies both the expiry
+        // comparison and the new deadline. Returning the stored identity keeps the caller's fence
+        // byte-for-byte aligned with durable state.
+        var sql = $"""
+            WITH clock AS (SELECT statement_timestamp() AS now)
+            UPDATE {tableName} AS message
+            SET "LockedUntil"=clock.now + (@LeaseSeconds * INTERVAL '1 second'),
+                "Owner"=@Owner,
+                "InlineAttempts"=@InlineAttempts
+            FROM clock
+            WHERE message."Id"=@Id
+              AND (message."LockedUntil" IS NULL OR message."LockedUntil" <= clock.now)
+              AND {_TerminalRowGuardWithRetries}
+            RETURNING message."LockedUntil",message."Owner"
+            """;
 
         var owner = nodeMembership.GetOwnerTag();
         object[] sqlParams =
@@ -1113,7 +1118,7 @@ internal sealed class PostgreSqlDataStorage(
         ];
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
-        var persistedLockedUntil = await connection
+        var storedLease = await connection
             .ExecuteReaderAsync(
                 sql,
                 LeaseDeadlineReader.ReadAsync,
@@ -1123,17 +1128,7 @@ internal sealed class PostgreSqlDataStorage(
             )
             .ConfigureAwait(false);
 
-        if (persistedLockedUntil is null)
-        {
-            return false;
-        }
-
-        // Mirror the DURABLE deadline the server issued, not a locally recomputed one, so the in-memory
-        // model and the row agree on when this lease expires.
-        message.LockedUntil = persistedLockedUntil;
-        message.Owner = owner;
-
-        return true;
+        return _ApplyStoredLease(message, storedLease);
     }
 
     private async ValueTask<bool> _LeaseMessageAsync(
@@ -1145,12 +1140,18 @@ internal sealed class PostgreSqlDataStorage(
     {
         // #15 — explicit lease-contention predicate: only acquire the lease when the row is unleased
         // OR its existing lease has expired. Mirrors the matching guard in SqlServerDataStorage._LeaseMessageAsync.
-        // Ownership time is the DATABASE's — see _LeaseAndReserveAttemptAsync for why.
-        var sql =
-            $"UPDATE {tableName} SET \"LockedUntil\"=statement_timestamp() + (@LeaseSeconds * INTERVAL '1 second'),\"Owner\"=@Owner WHERE \"Id\"=@Id "
-            + "AND (\"LockedUntil\" IS NULL OR \"LockedUntil\" <= statement_timestamp()) "
-            + $"AND {_TerminalRowGuardSimple} "
-            + "RETURNING \"LockedUntil\"";
+        // Ownership time is the database's — see _LeaseAndReserveAttemptAsync.
+        var sql = $"""
+            WITH clock AS (SELECT statement_timestamp() AS now)
+            UPDATE {tableName} AS message
+            SET "LockedUntil"=clock.now + (@LeaseSeconds * INTERVAL '1 second'),
+                "Owner"=@Owner
+            FROM clock
+            WHERE message."Id"=@Id
+              AND (message."LockedUntil" IS NULL OR message."LockedUntil" <= clock.now)
+              AND {_TerminalRowGuardSimple}
+            RETURNING message."LockedUntil",message."Owner"
+            """;
 
         var owner = nodeMembership.GetOwnerTag();
         object[] sqlParams =
@@ -1161,7 +1162,7 @@ internal sealed class PostgreSqlDataStorage(
         ];
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
-        var persistedLockedUntil = await connection
+        var storedLease = await connection
             .ExecuteReaderAsync(
                 sql,
                 LeaseDeadlineReader.ReadAsync,
@@ -1171,14 +1172,18 @@ internal sealed class PostgreSqlDataStorage(
             )
             .ConfigureAwait(false);
 
-        if (persistedLockedUntil is null)
+        return _ApplyStoredLease(message, storedLease);
+    }
+
+    private static bool _ApplyStoredLease(MediumMessage message, (DateTime LockedUntil, string? Owner)? storedLease)
+    {
+        if (storedLease is not { } lease)
         {
             return false;
         }
 
-        message.LockedUntil = persistedLockedUntil;
-        message.Owner = owner;
-
+        message.LockedUntil = lease.LockedUntil;
+        message.Owner = lease.Owner;
         return true;
     }
 

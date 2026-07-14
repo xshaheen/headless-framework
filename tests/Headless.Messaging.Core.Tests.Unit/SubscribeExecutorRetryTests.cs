@@ -727,14 +727,16 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             )
             .Returns(ValueTask.FromResult(true));
         var invoker = Substitute.For<ISubscribeInvoker>();
-        var executor = _CreateExecutor(
-            invoker,
-            storage,
-            new MessagingOptions
+        var options = new MessagingOptions
+        {
+            RetryPolicy =
             {
-                RetryPolicy = { RetryStrategy = TestRetryStrategies.ZeroDelay(2), MaxPersistedRetries = 1 },
-            }
-        );
+                RetryStrategy = TestRetryStrategies.ZeroDelay(2),
+                MaxPersistedRetries = 1,
+                DispatchTimeout = TimeSpan.FromSeconds(17),
+            },
+        };
+        var executor = _CreateExecutor(invoker, storage, options);
         var message = _CreateMediumMessage();
         message.InlineAttempts = 3;
 
@@ -754,6 +756,13 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Is(3),
                 Arg.Any<CancellationToken>()
             );
+        await storage
+            .Received(1)
+            .LeaseReceiveAsync(message, options.RetryPolicy.DispatchTimeout, Arg.Any<CancellationToken>());
+        await storage
+            .DidNotReceiveWithAnyArgs()
+            .LeaseReceiveAndReserveAttemptAsync(default!, default, default, AbortToken);
+        await storage.DidNotReceiveWithAnyArgs().ReserveReceiveAttemptAsync(default!, default, AbortToken);
     }
 
     [Fact]
@@ -766,9 +775,10 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .ReserveReceiveAttemptAsync(Arg.Any<MediumMessage>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(false));
         var message = _CreateMediumMessage();
-        // Pre-leased row (as after an atomic pickup) so the standalone mid-burst reservation path
-        // is exercised rather than the fresh-dispatch combined lease+reserve write.
-        message.LockedUntil = DateTime.UtcNow.AddMinutes(5);
+        // Storage already acquired this lease. Its absolute expiry is deliberately behind the
+        // application clock: core must reserve under the returned identity without reacquiring.
+        message.LockedUntil = DateTime.UnixEpoch.AddMinutes(1);
+        message.Owner = "store-owner";
 
         var result = await executor.ExecuteAsync(message, _EmptyScope, _CreateDescriptor(), CancellationToken.None);
 
@@ -778,6 +788,10 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         await storage
             .DidNotReceiveWithAnyArgs()
             .ChangeReceiveRetryStateAsync(default!, default, default, default, default, default, AbortToken);
+        await storage.DidNotReceiveWithAnyArgs().LeaseReceiveAsync(default!, default, AbortToken);
+        await storage
+            .DidNotReceiveWithAnyArgs()
+            .LeaseReceiveAndReserveAttemptAsync(default!, default, default, AbortToken);
     }
 
     [Fact]
@@ -788,7 +802,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         invoker
             .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new ConsumerExecutedResult(null, null, Guid.NewGuid().ToString(), null, null)));
-        var executor = _CreateExecutor(invoker, storage, new MessagingOptions());
+        var options = new MessagingOptions { RetryPolicy = { DispatchTimeout = TimeSpan.FromSeconds(17) } };
+        var executor = _CreateExecutor(invoker, storage, options);
         var message = _CreateMediumMessage();
 
         var result = await executor.ExecuteAsync(message, _EmptyScope, _CreateDescriptor(), CancellationToken.None);
@@ -800,7 +815,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .Received(1)
             .LeaseReceiveAndReserveAttemptAsync(
                 Arg.Any<MediumMessage>(),
-                Arg.Any<TimeSpan>(),
+                options.RetryPolicy.DispatchTimeout,
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
             );

@@ -279,6 +279,77 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
     }
 
     [Fact]
+    public async Task should_stamp_publish_lease_from_injected_clock()
+    {
+        _EnsureInitialized();
+        var storage = GetStorage();
+        var now = _fakeTimeProvider!.GetUtcNow().UtcDateTime;
+        var leaseDuration = TimeSpan.FromMinutes(7);
+        var message = await storage.StoreMessageAsync(
+            "clocked-publish",
+            CreateMessage(),
+            cancellationToken: AbortToken
+        );
+
+        (await storage.LeasePublishAsync(message, leaseDuration, AbortToken)).Should().BeTrue();
+
+        message.LockedUntil.Should().Be(now.Add(leaseDuration));
+    }
+
+    [Fact]
+    public async Task should_stamp_receive_lease_from_injected_clock()
+    {
+        _EnsureInitialized();
+        var storage = GetStorage();
+        var now = _fakeTimeProvider!.GetUtcNow().UtcDateTime;
+        var leaseDuration = TimeSpan.FromMinutes(7);
+        var message = await storage.StoreReceivedMessageAsync("clocked-receive", "group", CreateMessage(), AbortToken);
+
+        (await storage.LeaseReceiveAsync(message, leaseDuration, AbortToken)).Should().BeTrue();
+
+        message.LockedUntil.Should().Be(now.Add(leaseDuration));
+    }
+
+    [Fact]
+    public async Task should_stamp_combined_publish_lease_from_injected_clock()
+    {
+        _EnsureInitialized();
+        var storage = GetStorage();
+        var now = _fakeTimeProvider!.GetUtcNow().UtcDateTime;
+        var leaseDuration = TimeSpan.FromMinutes(7);
+        var message = await storage.StoreMessageAsync(
+            "clocked-combined-publish",
+            CreateMessage(),
+            cancellationToken: AbortToken
+        );
+        message.InlineAttempts = 1;
+
+        (await storage.LeasePublishAndReserveAttemptAsync(message, leaseDuration, 0, AbortToken)).Should().BeTrue();
+
+        message.LockedUntil.Should().Be(now.Add(leaseDuration));
+    }
+
+    [Fact]
+    public async Task should_stamp_combined_receive_lease_from_injected_clock()
+    {
+        _EnsureInitialized();
+        var storage = GetStorage();
+        var now = _fakeTimeProvider!.GetUtcNow().UtcDateTime;
+        var leaseDuration = TimeSpan.FromMinutes(7);
+        var message = await storage.StoreReceivedMessageAsync(
+            "clocked-combined-receive",
+            "group",
+            CreateMessage(),
+            AbortToken
+        );
+        message.InlineAttempts = 1;
+
+        (await storage.LeaseReceiveAndReserveAttemptAsync(message, leaseDuration, 0, AbortToken)).Should().BeTrue();
+
+        message.LockedUntil.Should().Be(now.Add(leaseDuration));
+    }
+
+    [Fact]
     public override Task should_reject_mismatched_original_retries() =>
         base.should_reject_mismatched_original_retries();
 
@@ -289,6 +360,14 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
     [Fact]
     public override Task should_reject_lease_and_reserve_with_stale_inline_attempts_token() =>
         base.should_reject_lease_and_reserve_with_stale_inline_attempts_token();
+
+    [Fact]
+    public override Task should_reject_stale_published_lease_generation_writes() =>
+        base.should_reject_stale_published_lease_generation_writes();
+
+    [Fact]
+    public override Task should_reject_stale_received_lease_generation_writes() =>
+        base.should_reject_stale_received_lease_generation_writes();
 
     [Fact]
     public async Task should_reserve_publish_attempt_with_inline_attempt_compare_and_swap()

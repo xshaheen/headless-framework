@@ -5,22 +5,29 @@ using System.Data.Common;
 namespace Headless.Messaging.Persistence;
 
 /// <summary>
-/// Shared reader for the lease deadline a lease statement returns (PostgreSQL <c>RETURNING "LockedUntil"</c>,
-/// SQL Server <c>OUTPUT inserted.LockedUntil</c>). The deadline is written by the store's own clock, so the
-/// value read back is the durable one the in-memory model must mirror.
+/// Shared reader for the lease identity returned by a relational lease statement. The values are written by
+/// the store in the ownership transition, so the in-memory model must mirror this durable generation.
 /// </summary>
 internal static class LeaseDeadlineReader
 {
-    /// <summary>Reads the returned lease deadline; <see langword="null"/> when no row matched.</summary>
-    public static async Task<DateTime?> ReadAsync(DbDataReader reader, CancellationToken cancellationToken)
+    /// <summary>Reads the returned lease identity; <see langword="null"/> when no row matched.</summary>
+    public static async Task<(DateTime LockedUntil, string? Owner)?> ReadAsync(
+        DbDataReader reader,
+        CancellationToken cancellationToken
+    )
     {
         if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             return null;
         }
 
-        return await reader.IsDBNullAsync(0, cancellationToken).ConfigureAwait(false)
-            ? null
-            : DateTime.SpecifyKind(reader.GetDateTime(0), DateTimeKind.Utc);
+        if (await reader.IsDBNullAsync(0, cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        var lockedUntil = DateTime.SpecifyKind(reader.GetDateTime(0), DateTimeKind.Utc);
+        var owner = await reader.IsDBNullAsync(1, cancellationToken).ConfigureAwait(false) ? null : reader.GetString(1);
+        return (lockedUntil, owner);
     }
 }

@@ -69,6 +69,30 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
         return _CreateStorage(timeProvider);
     }
 
+    /// <inheritdoc />
+    protected override async Task<DateTime?> GetDatabaseUtcNowAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        return await connection.ExecuteScalarAsync<DateTime>("SELECT SYSUTCDATETIME()");
+    }
+
+    /// <inheritdoc />
+    protected override async Task<PersistedLeaseIdentity?> GetPersistedLeaseIdentityAsync(
+        bool published,
+        Guid storageId,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        var tableName = published ? "Published" : "Received";
+        return await connection.QuerySingleAsync<PersistedLeaseIdentity>(
+            $"SELECT LockedUntil, Owner FROM messaging.{tableName} WHERE Id = @Id",
+            new { Id = storageId }
+        );
+    }
+
     private IDataStorage _CreateStorage(TimeProvider timeProvider)
     {
         return new SqlServerDataStorage(
@@ -316,6 +340,14 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
         claimed.LockedUntil.Should().BeAfter(beforeClaim.AddMilliseconds(100));
     }
 
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    public override Task should_stamp_fresh_dispatch_lease_from_database_clock(bool publish, bool reserveAttempt) =>
+        base.should_stamp_fresh_dispatch_lease_from_database_clock(publish, reserveAttempt);
+
     [Fact]
     public override Task should_reject_mismatched_original_retries() =>
         base.should_reject_mismatched_original_retries();
@@ -327,6 +359,22 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
     [Fact]
     public override Task should_reject_lease_and_reserve_with_stale_inline_attempts_token() =>
         base.should_reject_lease_and_reserve_with_stale_inline_attempts_token();
+
+    [Fact]
+    public override Task should_reject_stale_published_lease_generation_writes() =>
+        base.should_reject_stale_published_lease_generation_writes();
+
+    [Fact]
+    public override Task should_reject_stale_received_lease_generation_writes() =>
+        base.should_reject_stale_received_lease_generation_writes();
+
+    [Fact]
+    public override Task should_allow_published_fenced_writes_with_fast_application_clock() =>
+        base.should_allow_published_fenced_writes_with_fast_application_clock();
+
+    [Fact]
+    public override Task should_allow_received_fenced_writes_with_fast_application_clock() =>
+        base.should_allow_received_fenced_writes_with_fast_application_clock();
 
     [Fact]
     public override Task should_report_false_when_received_exception_message_is_already_terminal() =>
