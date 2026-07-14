@@ -35,7 +35,7 @@ public sealed class MessageSenderTests : TestBase
             Origin = new Message(headers, "{}"),
             Content = "{}",
             IntentType = intentType,
-            Added = DateTime.UtcNow,
+            Added = DateTimeOffset.UtcNow,
         };
     }
 
@@ -77,8 +77,8 @@ public sealed class MessageSenderTests : TestBase
             .ChangePublishRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<DateTime?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -129,8 +129,8 @@ public sealed class MessageSenderTests : TestBase
             .ChangePublishRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<DateTime?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -168,8 +168,8 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
-                Arg.Any<DateTime?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             )
@@ -225,8 +225,8 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
-                Arg.Any<DateTime?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             )
@@ -290,8 +290,8 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
-                Arg.Any<DateTime?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             )
@@ -333,8 +333,8 @@ public sealed class MessageSenderTests : TestBase
             .ChangePublishRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 StatusName.Failed,
-                Arg.Is<DateTime?>(value => value.HasValue),
-                Arg.Any<DateTime?>(),
+                Arg.Is<DateTimeOffset?>(value => value.HasValue),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Is<int>(value => value == 0),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -354,8 +354,8 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
-                Arg.Any<DateTime?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             )
@@ -404,8 +404,8 @@ public sealed class MessageSenderTests : TestBase
             .ChangePublishRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 StatusName.Failed,
-                Arg.Is<DateTime?>(v => v == null),
-                Arg.Any<DateTime?>(),
+                Arg.Is<DateTimeOffset?>(v => v == null),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -425,8 +425,8 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
-                Arg.Any<DateTime?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             )
@@ -479,8 +479,8 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
-                Arg.Any<DateTime?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             );
@@ -500,8 +500,8 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
-                Arg.Any<DateTime?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             )
@@ -542,8 +542,8 @@ public sealed class MessageSenderTests : TestBase
             .ChangePublishRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<DateTime?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -561,8 +561,8 @@ public sealed class MessageSenderTests : TestBase
             .ChangePublishRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 StatusName.Failed,
-                Arg.Is<DateTime?>(v => v == null),
-                Arg.Any<DateTime?>(),
+                Arg.Is<DateTimeOffset?>(v => v == null),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -598,8 +598,8 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
-                Arg.Any<DateTime?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             )
@@ -699,8 +699,8 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
-                Arg.Any<DateTime?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             )
@@ -758,8 +758,8 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
-                Arg.Any<DateTime?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             )
@@ -817,8 +817,8 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
-                Arg.Any<DateTime?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             )
@@ -860,8 +860,8 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
-                Arg.Any<DateTime?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             )
@@ -918,8 +918,8 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
-                Arg.Any<DateTime?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             )
@@ -992,8 +992,8 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
-                Arg.Any<DateTime?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             )
@@ -1022,8 +1022,8 @@ public sealed class MessageSenderTests : TestBase
             .ChangePublishRetryStateAsync(
                 Arg.Is<MediumMessage>(value => value.Retries == 1 && value.InlineAttempts == 0),
                 StatusName.Failed,
-                Arg.Is<DateTime?>(value => value.HasValue),
-                Arg.Is<DateTime?>(value => value == null),
+                Arg.Is<DateTimeOffset?>(value => value.HasValue),
+                Arg.Is<DateTimeOffset?>(value => value == null),
                 Arg.Is(0),
                 Arg.Is(3),
                 Arg.Any<CancellationToken>()
@@ -1043,7 +1043,7 @@ public sealed class MessageSenderTests : TestBase
         var message = _CreateMediumMessage();
         // Pre-leased row (as after an atomic pickup) so the standalone mid-burst reservation path
         // is exercised rather than the fresh-dispatch combined lease+reserve write.
-        message.LockedUntil = DateTime.UtcNow.AddMinutes(5);
+        message.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(5);
 
         var result = await sender.SendAsync(message);
 

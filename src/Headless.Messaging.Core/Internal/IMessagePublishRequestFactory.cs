@@ -84,7 +84,7 @@ internal sealed class MessagePublishRequestFactory(
 
         _ApplyProviderHeaderContributions(headers, metadata, contentObj, metadataLookupType);
 
-        headers[Headers.SentTime] = publishAt.UtcDateTime.ToString(CultureInfo.InvariantCulture);
+        headers[Headers.SentTime] = publishAt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
         headers[Headers.Intent] = intentType.ToString();
 
         if (delayTime.HasValue)
@@ -97,7 +97,7 @@ internal sealed class MessagePublishRequestFactory(
         return new PreparedPublishMessage
         {
             MessageName = messageName,
-            PublishAt = publishAt.UtcDateTime,
+            PublishAt = publishAt,
             Message = new Message(headers, contentObj),
             IntentType = intentType,
         };
@@ -506,7 +506,7 @@ internal sealed class PreparedPublishMessage
 {
     public required string MessageName { get; init; }
 
-    public required DateTime PublishAt { get; init; }
+    public required DateTimeOffset PublishAt { get; init; }
 
     public required Message Message { get; init; }
 

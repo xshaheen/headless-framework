@@ -103,7 +103,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
                     Group = "workers",
                     IntentType = IntentType.Queue,
                     Content = "{\"received\":\"data\"}",
-                    Added = new DateTime(2026, 03, 24, 11, 00, 00, DateTimeKind.Utc),
+                    Added = new DateTimeOffset(2026, 03, 24, 11, 00, 00, TimeSpan.Zero),
                     Retries = 1,
                     StatusName = StatusName.Failed,
                 },

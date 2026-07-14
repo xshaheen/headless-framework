@@ -268,7 +268,7 @@ internal static class RetryHelper
         int inlineRetries,
         RetryPolicyOptions policy,
         TimeProvider timeProvider,
-        DateTime? currentNextRetryAt = null
+        DateTimeOffset? currentNextRetryAt = null
     )
     {
         // #1 — when Polly returns Delay >= DispatchTimeout, the inline retry burst ends early
@@ -292,7 +292,7 @@ internal static class RetryHelper
             return new RetryNextState(isInlineRetryInFlight, NextRetryAt: null, nextStatus);
         }
 
-        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var now = timeProvider.GetUtcNow();
         var inlineResumeAt = now.Add(decision.Delay);
 
         if (!isInlineRetryInFlight)
@@ -320,6 +320,6 @@ internal static class RetryHelper
 /// </summary>
 internal readonly record struct RetryNextState(
     bool IsInlineRetryInFlight,
-    DateTime? NextRetryAt,
+    DateTimeOffset? NextRetryAt,
     StatusName NextStatus
 );

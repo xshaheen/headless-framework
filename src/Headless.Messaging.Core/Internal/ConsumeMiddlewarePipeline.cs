@@ -437,7 +437,7 @@ internal sealed class ConsumeMiddlewarePipeline(
             .CompileFast();
     }
 
-    private static DateTimeOffset _ResolveTimestamp(IDictionary<string, string?> headers, DateTime added)
+    private static DateTimeOffset _ResolveTimestamp(IDictionary<string, string?> headers, DateTimeOffset added)
     {
         if (
             headers.TryGetValue(Headers.SentTime, out var sentTime)
@@ -453,7 +453,8 @@ internal sealed class ConsumeMiddlewarePipeline(
             return parsed;
         }
 
-        return new DateTimeOffset(DateTime.SpecifyKind(added, DateTimeKind.Utc), TimeSpan.Zero);
+        // MediumMessage.Added is already an instant -- there is no kind left to guess at.
+        return added;
     }
 
     private static Task _DispatchAsync(

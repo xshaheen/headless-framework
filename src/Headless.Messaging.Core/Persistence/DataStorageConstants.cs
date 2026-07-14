@@ -13,6 +13,6 @@ internal static class DataStorageConstants
 
     public static string? GetOwnerTag(this INodeMembership membership) => membership.Identity?.ToString();
 
-    public static object GetOwnerParameterValue(this INodeMembership membership, DateTime? lockedUntil) =>
+    public static object GetOwnerParameterValue(this INodeMembership membership, DateTimeOffset? lockedUntil) =>
         lockedUntil is null ? DBNull.Value : membership.GetOwnerTag() ?? (object)DBNull.Value;
 }

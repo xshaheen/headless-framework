@@ -57,7 +57,7 @@ public sealed class MediumMessageTests : TestBase
     public void should_set_added_datetime()
     {
         // given
-        var addedTime = new DateTime(2026, 1, 25, 12, 0, 0, DateTimeKind.Utc);
+        var addedTime = new DateTimeOffset(2026, 1, 25, 12, 0, 0, TimeSpan.Zero);
 
         // when
         var mediumMessage = new MediumMessage
@@ -126,7 +126,7 @@ public sealed class MediumMessageTests : TestBase
     public void should_set_expires_at()
     {
         // given
-        var expiresAt = new DateTime(2026, 1, 26, 12, 0, 0, DateTimeKind.Utc);
+        var expiresAt = new DateTimeOffset(2026, 1, 26, 12, 0, 0, TimeSpan.Zero);
 
         // when
         var mediumMessage = new MediumMessage
@@ -206,7 +206,7 @@ public sealed class MediumMessageTests : TestBase
             Content = "{}",
             IntentType = IntentType.Bus,
         };
-        var newAddedTime = DateTime.UtcNow;
+        var newAddedTime = DateTimeOffset.UtcNow;
 
         // when
         mediumMessage.Added = newAddedTime;
@@ -226,7 +226,7 @@ public sealed class MediumMessageTests : TestBase
             Content = "{}",
             IntentType = IntentType.Bus,
         };
-        var expiresAt = DateTime.UtcNow.AddHours(1);
+        var expiresAt = DateTimeOffset.UtcNow.AddHours(1);
 
         // when
         mediumMessage.ExpiresAt = expiresAt;

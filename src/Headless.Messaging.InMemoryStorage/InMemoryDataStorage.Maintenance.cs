@@ -32,7 +32,7 @@ internal sealed partial class InMemoryDataStorage
                 || current.LockedUntil != message.LockedUntil
                 || !string.Equals(current.Owner, message.Owner, StringComparison.Ordinal)
                 || current.LockedUntil is null
-                || current.LockedUntil <= timeProvider.GetUtcNow().UtcDateTime
+                || current.LockedUntil <= timeProvider.GetUtcNow()
             )
             {
                 return ValueTask.FromResult(false);
@@ -46,7 +46,7 @@ internal sealed partial class InMemoryDataStorage
     private static ValueTask<bool> _LeaseAndReserveAttemptAsync(
         ConcurrentDictionary<Guid, MemoryMessage> messages,
         MediumMessage message,
-        DateTime lockedUntil,
+        DateTimeOffset lockedUntil,
         int originalInlineAttempts,
         TimeProvider timeProvider,
         string? owner,
@@ -64,7 +64,7 @@ internal sealed partial class InMemoryDataStorage
             // Fresh-dispatch fast path: lease acquisition + attempt reservation in one atomic step.
             // Combines _LeaseAsync's lease-contention guard with _ReserveAttemptAsync's durable
             // counter CAS; no owner match is required because this path is TAKING the lease.
-            var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
+            var nowUtc = timeProvider.GetUtcNow();
             if (
                 (current.StatusName is StatusName.Succeeded or StatusName.Failed) && current.NextRetryAt is null
                 || current.Retries != message.Retries
@@ -75,7 +75,7 @@ internal sealed partial class InMemoryDataStorage
                 return ValueTask.FromResult(false);
             }
 
-            var utcLockedUntil = ((DateTime?)lockedUntil).ToUtcOrSelf();
+            var utcLockedUntil = lockedUntil;
             current.LockedUntil = utcLockedUntil;
             current.Owner = owner;
             current.InlineAttempts = message.InlineAttempts;
@@ -163,14 +163,8 @@ internal sealed partial class InMemoryDataStorage
             .Values.Where(x =>
                 string.Equals(x.Version, version, StringComparison.Ordinal)
                 && (
-                    (
-                        x.StatusName == StatusName.Delayed
-                        && x.ExpiresAt < timeProvider.GetUtcNow().UtcDateTime.AddMinutes(2)
-                    )
-                    || (
-                        x.StatusName == StatusName.Queued
-                        && x.ExpiresAt < timeProvider.GetUtcNow().UtcDateTime.AddMinutes(-1)
-                    )
+                    (x.StatusName == StatusName.Delayed && x.ExpiresAt < timeProvider.GetUtcNow().AddMinutes(2))
+                    || (x.StatusName == StatusName.Queued && x.ExpiresAt < timeProvider.GetUtcNow().AddMinutes(-1))
                 )
             )
             .Take(messagingOptions.Value.SchedulerBatchSize)

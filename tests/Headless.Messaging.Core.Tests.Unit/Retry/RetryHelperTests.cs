@@ -58,7 +58,7 @@ public sealed class RetryHelperTests : TestBase
 
         state.IsInlineRetryInFlight.Should().BeFalse();
         state.NextStatus.Should().Be(StatusName.Failed);
-        state.NextRetryAt.Should().Be(now.UtcDateTime.AddMinutes(5));
+        state.NextRetryAt.Should().Be(now.AddMinutes(5));
     }
 
     [Fact]
@@ -77,7 +77,7 @@ public sealed class RetryHelperTests : TestBase
 
         state.IsInlineRetryInFlight.Should().BeTrue();
         state.NextStatus.Should().Be(StatusName.Scheduled);
-        state.NextRetryAt.Should().Be(now.UtcDateTime.AddSeconds(2).AddSeconds(30));
+        state.NextRetryAt.Should().Be(now.AddSeconds(2).AddSeconds(30));
     }
 
     [Fact]
@@ -106,7 +106,7 @@ public sealed class RetryHelperTests : TestBase
                 "Delay >= DispatchTimeout traps the message in inline-in-flight without consuming the persisted budget"
             );
         state.NextStatus.Should().Be(StatusName.Failed);
-        state.NextRetryAt.Should().Be(now.UtcDateTime.Add(policy.DispatchTimeout));
+        state.NextRetryAt.Should().Be(now.Add(policy.DispatchTimeout));
     }
 
     [Fact]
@@ -119,7 +119,7 @@ public sealed class RetryHelperTests : TestBase
         var now = new DateTimeOffset(2026, 5, 16, 12, 0, 0, TimeSpan.Zero);
         var provider = new FixedTimeProvider(now);
         var decision = MessagingRetryDecision.Continue(TimeSpan.FromSeconds(2));
-        var existing = now.UtcDateTime.AddMinutes(10);
+        var existing = now.AddMinutes(10);
 
         var state = RetryHelper.ResolveNextState(
             decision,

@@ -231,17 +231,25 @@ internal sealed class PostgreSqlMonitoringApi(
                                     : reader.GetString(index - 1),
                                 IntentType = (IntentType)reader.GetInt16(index++),
                                 Retries = reader.GetInt32(index++),
-                                Added = reader.GetDateTime(index++),
+                                Added = await reader
+                                    .GetFieldValueAsync<DateTimeOffset>(index++, token)
+                                    .ConfigureAwait(false),
                                 ExpiresAt = await reader.IsDBNullAsync(index++, token).ConfigureAwait(false)
                                     ? null
-                                    : reader.GetDateTime(index - 1),
+                                    : await reader
+                                        .GetFieldValueAsync<DateTimeOffset>(index - 1, token)
+                                        .ConfigureAwait(false),
                                 StatusName = Enum.Parse<StatusName>(reader.GetString(index++)),
                                 NextRetryAt = await reader.IsDBNullAsync(index++, token).ConfigureAwait(false)
                                     ? null
-                                    : reader.GetDateTime(index - 1),
+                                    : await reader
+                                        .GetFieldValueAsync<DateTimeOffset>(index - 1, token)
+                                        .ConfigureAwait(false),
                                 LockedUntil = await reader.IsDBNullAsync(index++, token).ConfigureAwait(false)
                                     ? null
-                                    : reader.GetDateTime(index - 1),
+                                    : await reader
+                                        .GetFieldValueAsync<DateTimeOffset>(index - 1, token)
+                                        .ConfigureAwait(false),
                             }
                         );
                     }
@@ -337,11 +345,14 @@ internal sealed class PostgreSqlMonitoringApi(
         CancellationToken cancellationToken = default
     )
     {
-        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var now = timeProvider.GetUtcNow();
         var dates = new List<DateTime>();
+        // Hourly buckets are label keys, not persisted instants: keep them DateTime.
+        var nowUtc = now.UtcDateTime;
+
         for (var i = 0; i < 24; i++)
         {
-            dates.Add(now.AddHours(-i));
+            dates.Add(nowUtc.AddHours(-i));
         }
 
         var keyMaps = dates.ToDictionary(
@@ -350,7 +361,7 @@ internal sealed class PostgreSqlMonitoringApi(
             StringComparer.Ordinal
         );
 
-        return _GetTimelineStats(tableName, statusName, keyMaps, dates[^1], now, cancellationToken);
+        return _GetTimelineStats(tableName, statusName, keyMaps, dates[^1], nowUtc, cancellationToken);
     }
 
     private async Task<Dictionary<DateTime, int>> _GetTimelineStats(
@@ -508,12 +519,18 @@ internal sealed class PostgreSqlMonitoringApi(
             Origin = serializer.Deserialize(content)!,
             Content = content,
             IntentType = (IntentType)reader.GetInt16(2),
-            Added = reader.GetDateTime(3),
-            ExpiresAt = await reader.IsDBNullAsync(4, token).ConfigureAwait(false) ? null : reader.GetDateTime(4),
+            Added = await reader.GetFieldValueAsync<DateTimeOffset>(3, token).ConfigureAwait(false),
+            ExpiresAt = await reader.IsDBNullAsync(4, token).ConfigureAwait(false)
+                ? null
+                : await reader.GetFieldValueAsync<DateTimeOffset>(4, token).ConfigureAwait(false),
             Retries = reader.GetInt32(5),
             ExceptionInfo = await reader.IsDBNullAsync(6, token).ConfigureAwait(false) ? null : reader.GetString(6),
-            NextRetryAt = await reader.IsDBNullAsync(7, token).ConfigureAwait(false) ? null : reader.GetDateTime(7),
-            LockedUntil = await reader.IsDBNullAsync(8, token).ConfigureAwait(false) ? null : reader.GetDateTime(8),
+            NextRetryAt = await reader.IsDBNullAsync(7, token).ConfigureAwait(false)
+                ? null
+                : await reader.GetFieldValueAsync<DateTimeOffset>(7, token).ConfigureAwait(false),
+            LockedUntil = await reader.IsDBNullAsync(8, token).ConfigureAwait(false)
+                ? null
+                : await reader.GetFieldValueAsync<DateTimeOffset>(8, token).ConfigureAwait(false),
         };
     }
 

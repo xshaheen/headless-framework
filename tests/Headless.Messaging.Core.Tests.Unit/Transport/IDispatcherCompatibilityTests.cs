@@ -45,7 +45,7 @@ public sealed class IDispatcherCompatibilityTests : TestBase
 
         public Task EnqueueToScheduler(
             MediumMessage message,
-            DateTime publishTime,
+            DateTimeOffset publishTime,
             object? transaction = null,
             CancellationToken cancellationToken = default
         ) => Task.CompletedTask;

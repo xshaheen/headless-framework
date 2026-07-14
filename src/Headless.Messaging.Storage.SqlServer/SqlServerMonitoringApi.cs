@@ -212,17 +212,25 @@ internal sealed class SqlServerMonitoringApi(
                                     : reader.GetString(index - 1),
                                 IntentType = (IntentType)reader.GetInt16(index++),
                                 Retries = reader.GetInt32(index++),
-                                Added = reader.GetDateTime(index++),
+                                Added = await reader
+                                    .GetFieldValueAsync<DateTimeOffset>(index++, ct)
+                                    .ConfigureAwait(false),
                                 ExpiresAt = await reader.IsDBNullAsync(index++, ct).ConfigureAwait(false)
                                     ? null
-                                    : reader.GetDateTime(index - 1),
+                                    : await reader
+                                        .GetFieldValueAsync<DateTimeOffset>(index - 1, ct)
+                                        .ConfigureAwait(false),
                                 StatusName = Enum.Parse<StatusName>(reader.GetString(index++)),
                                 NextRetryAt = await reader.IsDBNullAsync(index++, ct).ConfigureAwait(false)
                                     ? null
-                                    : reader.GetDateTime(index - 1),
+                                    : await reader
+                                        .GetFieldValueAsync<DateTimeOffset>(index - 1, ct)
+                                        .ConfigureAwait(false),
                                 LockedUntil = await reader.IsDBNullAsync(index++, ct).ConfigureAwait(false)
                                     ? null
-                                    : reader.GetDateTime(index - 1),
+                                    : await reader
+                                        .GetFieldValueAsync<DateTimeOffset>(index - 1, ct)
+                                        .ConfigureAwait(false),
                             }
                         );
                     }
@@ -323,11 +331,14 @@ internal sealed class SqlServerMonitoringApi(
         CancellationToken cancellationToken = default
     )
     {
-        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var now = timeProvider.GetUtcNow();
         var dates = new List<DateTime>();
+        // Hourly buckets are label keys, not persisted instants: keep them DateTime.
+        var nowUtc = now.UtcDateTime;
+
         for (var i = 0; i < 24; i++)
         {
-            dates.Add(now.AddHours(-i));
+            dates.Add(nowUtc.AddHours(-i));
         }
 
         var keyMaps = dates.ToDictionary(
@@ -336,7 +347,7 @@ internal sealed class SqlServerMonitoringApi(
             StringComparer.Ordinal
         );
 
-        return _GetTimelineStats(tableName, statusName, keyMaps, dates[^1], now, cancellationToken);
+        return _GetTimelineStats(tableName, statusName, keyMaps, dates[^1], nowUtc, cancellationToken);
     }
 
     private async Task<Dictionary<DateTime, int>> _GetTimelineStats(
@@ -460,20 +471,20 @@ internal sealed class SqlServerMonitoringApi(
                                 Origin = serializer.Deserialize(reader.GetString(1))!,
                                 Content = reader.GetString(1),
                                 IntentType = (IntentType)reader.GetInt16(2),
-                                Added = reader.GetDateTime(3),
+                                Added = await reader.GetFieldValueAsync<DateTimeOffset>(3, ct).ConfigureAwait(false),
                                 ExpiresAt = await reader.IsDBNullAsync(4, ct).ConfigureAwait(false)
                                     ? null
-                                    : reader.GetDateTime(4),
+                                    : await reader.GetFieldValueAsync<DateTimeOffset>(4, ct).ConfigureAwait(false),
                                 Retries = reader.GetInt32(5),
                                 ExceptionInfo = await reader.IsDBNullAsync(6, ct).ConfigureAwait(false)
                                     ? null
                                     : reader.GetString(6),
                                 NextRetryAt = await reader.IsDBNullAsync(7, ct).ConfigureAwait(false)
                                     ? null
-                                    : reader.GetDateTime(7),
+                                    : await reader.GetFieldValueAsync<DateTimeOffset>(7, ct).ConfigureAwait(false),
                                 LockedUntil = await reader.IsDBNullAsync(8, ct).ConfigureAwait(false)
                                     ? null
-                                    : reader.GetDateTime(8),
+                                    : await reader.GetFieldValueAsync<DateTimeOffset>(8, ct).ConfigureAwait(false),
                             }
                         );
                     }
@@ -517,18 +528,20 @@ internal sealed class SqlServerMonitoringApi(
                             Origin = serializer.Deserialize(reader.GetString(1))!,
                             Content = reader.GetString(1),
                             IntentType = (IntentType)reader.GetInt16(2),
-                            Added = reader.GetDateTime(3),
-                            ExpiresAt = expiresAtIsNull ? null : reader.GetDateTime(4),
+                            Added = await reader.GetFieldValueAsync<DateTimeOffset>(3, ct).ConfigureAwait(false),
+                            ExpiresAt = expiresAtIsNull
+                                ? null
+                                : await reader.GetFieldValueAsync<DateTimeOffset>(4, ct).ConfigureAwait(false),
                             Retries = reader.GetInt32(5),
                             ExceptionInfo = await reader.IsDBNullAsync(6, ct).ConfigureAwait(false)
                                 ? null
                                 : reader.GetString(6),
                             NextRetryAt = await reader.IsDBNullAsync(7, ct).ConfigureAwait(false)
                                 ? null
-                                : reader.GetDateTime(7),
+                                : await reader.GetFieldValueAsync<DateTimeOffset>(7, ct).ConfigureAwait(false),
                             LockedUntil = await reader.IsDBNullAsync(8, ct).ConfigureAwait(false)
                                 ? null
-                                : reader.GetDateTime(8),
+                                : await reader.GetFieldValueAsync<DateTimeOffset>(8, ct).ConfigureAwait(false),
                         };
                     }
 

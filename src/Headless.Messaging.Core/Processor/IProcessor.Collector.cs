@@ -42,7 +42,7 @@ public sealed class CollectorProcessor : IProcessor
             _logger.CollectingExpiredData(table);
 
             int deletedCount;
-            var time = _timeProvider.GetUtcNow().UtcDateTime;
+            var time = _timeProvider.GetUtcNow();
             do
             {
                 try

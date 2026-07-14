@@ -154,7 +154,7 @@ public sealed class IsTransactionalPropagationTests : TestBase
                         Origin = content,
                         Content = "{}",
                         IntentType = IntentType.Bus,
-                        Added = DateTime.UtcNow,
+                        Added = DateTimeOffset.UtcNow,
                     }
                 );
             });
@@ -166,7 +166,7 @@ public sealed class IsTransactionalPropagationTests : TestBase
         dispatcher
             .EnqueueToScheduler(
                 Arg.Any<MediumMessage>(),
-                Arg.Any<DateTime>(),
+                Arg.Any<DateTimeOffset>(),
                 Arg.Any<object?>(),
                 Arg.Any<CancellationToken>()
             )

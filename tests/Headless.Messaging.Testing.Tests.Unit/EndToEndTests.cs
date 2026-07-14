@@ -640,9 +640,9 @@ file static class TestHelpers
 {
     public static async Task WaitForAsync(Func<bool> condition, TimeSpan timeout)
     {
-        var deadline = DateTime.UtcNow + timeout;
+        var deadline = DateTimeOffset.UtcNow + timeout;
 
-        while (DateTime.UtcNow < deadline)
+        while (DateTimeOffset.UtcNow < deadline)
         {
             if (condition())
             {

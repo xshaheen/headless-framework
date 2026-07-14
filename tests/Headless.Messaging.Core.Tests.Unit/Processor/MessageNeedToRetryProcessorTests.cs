@@ -564,12 +564,14 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         var dataStorage = Substitute.For<IDataStorage>();
         // First storage call signals when jitter completes.
-        var storageCalled = new TaskCompletionSource<DateTime>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var storageCalled = new TaskCompletionSource<DateTimeOffset>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
         dataStorage
             .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
-                storageCalled.TrySetResult(DateTime.UtcNow);
+                storageCalled.TrySetResult(DateTimeOffset.UtcNow);
                 return ValueTask.FromResult<IEnumerable<MediumMessage>>([]);
             });
         dataStorage

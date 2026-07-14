@@ -106,8 +106,8 @@ internal sealed class SqlServerDataStorage(
         MediumMessage message,
         StatusName state,
         object? transaction = null,
-        DateTime? nextRetryAt = null,
-        DateTime? lockedUntil = null,
+        DateTimeOffset? nextRetryAt = null,
+        DateTimeOffset? lockedUntil = null,
         int? originalRetries = null,
         CancellationToken cancellationToken = default
     )
@@ -128,8 +128,8 @@ internal sealed class SqlServerDataStorage(
     public ValueTask<bool> ChangePublishRetryStateAsync(
         MediumMessage message,
         StatusName state,
-        DateTime? nextRetryAt,
-        DateTime? lockedUntil,
+        DateTimeOffset? nextRetryAt,
+        DateTimeOffset? lockedUntil,
         int originalRetries,
         int originalInlineAttempts,
         CancellationToken cancellationToken = default
@@ -185,8 +185,8 @@ internal sealed class SqlServerDataStorage(
     public ValueTask<bool> ChangeReceiveStateAsync(
         MediumMessage message,
         StatusName state,
-        DateTime? nextRetryAt = null,
-        DateTime? lockedUntil = null,
+        DateTimeOffset? nextRetryAt = null,
+        DateTimeOffset? lockedUntil = null,
         int? originalRetries = null,
         CancellationToken cancellationToken = default
     ) =>
@@ -203,8 +203,8 @@ internal sealed class SqlServerDataStorage(
     public ValueTask<bool> ChangeReceiveRetryStateAsync(
         MediumMessage message,
         StatusName state,
-        DateTime? nextRetryAt,
-        DateTime? lockedUntil,
+        DateTimeOffset? nextRetryAt,
+        DateTimeOffset? lockedUntil,
         int originalRetries,
         int originalInlineAttempts,
         CancellationToken cancellationToken = default
@@ -228,8 +228,8 @@ internal sealed class SqlServerDataStorage(
     private async ValueTask<bool> _ChangeReceiveStateAsync(
         MediumMessage message,
         StatusName state,
-        DateTime? nextRetryAt,
-        DateTime? lockedUntil,
+        DateTimeOffset? nextRetryAt,
+        DateTimeOffset? lockedUntil,
         int? originalRetries,
         int? originalInlineAttempts,
         CancellationToken cancellationToken
@@ -250,19 +250,19 @@ internal sealed class SqlServerDataStorage(
             new SqlParameter("@Content", serializer.Serialize(message.Origin)),
             new SqlParameter("@Retries", message.Retries),
             new SqlParameter("@InlineAttempts", message.InlineAttempts),
-            new SqlParameter("@ExpiresAt", SqlDbType.DateTime2)
+            new SqlParameter("@ExpiresAt", SqlDbType.DateTimeOffset)
             {
                 Value = message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value,
             },
-            new SqlParameter("@NextRetryAt", SqlDbType.DateTime2) { Value = nextRetryAt.ToUtcParameterValue() },
-            new SqlParameter("@LockedUntil", SqlDbType.DateTime2) { Value = lockedUntil.ToUtcParameterValue() },
+            new SqlParameter("@NextRetryAt", SqlDbType.DateTimeOffset) { Value = nextRetryAt.ToUtcParameterValue() },
+            new SqlParameter("@LockedUntil", SqlDbType.DateTimeOffset) { Value = lockedUntil.ToUtcParameterValue() },
             _OwnerParameter("@Owner", lockedUntil),
             new SqlParameter("@OriginalRetries", SqlDbType.Int) { Value = originalRetries ?? (object)DBNull.Value },
             new SqlParameter("@OriginalInlineAttempts", SqlDbType.Int)
             {
                 Value = originalInlineAttempts ?? (object)DBNull.Value,
             },
-            new SqlParameter("@OriginalLockedUntil", SqlDbType.DateTime2)
+            new SqlParameter("@OriginalLockedUntil", SqlDbType.DateTimeOffset)
             {
                 Value = message.LockedUntil.ToUtcParameterValue(),
             },
@@ -270,7 +270,7 @@ internal sealed class SqlServerDataStorage(
             {
                 Value = message.Owner ?? (object)DBNull.Value,
             },
-            new SqlParameter("@Now", SqlDbType.DateTime2) { Value = timeProvider.GetUtcNow().UtcDateTime },
+            new SqlParameter("@Now", SqlDbType.DateTimeOffset) { Value = timeProvider.GetUtcNow() },
             new SqlParameter("@StatusName", state.ToString("G")),
             new SqlParameter("@ExceptionInfo", message.ExceptionInfo ?? (object)DBNull.Value),
         ];
@@ -328,7 +328,7 @@ internal sealed class SqlServerDataStorage(
             $"INSERT INTO {_publishedTable} ([Id],[Version],[Name],[Content],[IntentType],[Retries],[InlineAttempts],[Added],[ExpiresAt],[NextRetryAt],[LockedUntil],[Owner],[StatusName],[MessageId])"
             + $"VALUES(@Id,'{messagingOptions.Value.Version}',@Name,@Content,@IntentType,@Retries,@InlineAttempts,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@Owner,@StatusName,@MessageId);";
 
-        var added = timeProvider.GetUtcNow().UtcDateTime;
+        var added = timeProvider.GetUtcNow();
         var stored = new MediumMessage
         {
             StorageId = guidGenerator.Create(),
@@ -353,12 +353,18 @@ internal sealed class SqlServerDataStorage(
             new SqlParameter("@Retries", stored.Retries),
             new SqlParameter("@InlineAttempts", stored.InlineAttempts),
             new SqlParameter("@Added", stored.Added),
-            new SqlParameter("@ExpiresAt", SqlDbType.DateTime2)
+            new SqlParameter("@ExpiresAt", SqlDbType.DateTimeOffset)
             {
                 Value = stored.ExpiresAt.HasValue ? stored.ExpiresAt.Value : DBNull.Value,
             },
-            new SqlParameter("@NextRetryAt", SqlDbType.DateTime2) { Value = stored.NextRetryAt.ToUtcParameterValue() },
-            new SqlParameter("@LockedUntil", SqlDbType.DateTime2) { Value = stored.LockedUntil.ToUtcParameterValue() },
+            new SqlParameter("@NextRetryAt", SqlDbType.DateTimeOffset)
+            {
+                Value = stored.NextRetryAt.ToUtcParameterValue(),
+            },
+            new SqlParameter("@LockedUntil", SqlDbType.DateTimeOffset)
+            {
+                Value = stored.LockedUntil.ToUtcParameterValue(),
+            },
             _OwnerParameter("@Owner", stored.LockedUntil),
             new SqlParameter("@StatusName", nameof(StatusName.Scheduled)),
             new SqlParameter("@MessageId", message.Origin.Id),
@@ -492,15 +498,15 @@ internal sealed class SqlServerDataStorage(
             new SqlParameter("@IntentType", SqlDbType.SmallInt) { Value = (short)message.IntentType },
             new SqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxPersistedRetries),
             new SqlParameter("@InlineAttempts", message.InlineAttempts),
-            new SqlParameter("@Added", timeProvider.GetUtcNow().UtcDateTime),
-            new SqlParameter("@ExpiresAt", SqlDbType.DateTime2)
+            new SqlParameter("@Added", timeProvider.GetUtcNow()),
+            new SqlParameter("@ExpiresAt", SqlDbType.DateTimeOffset)
             {
                 Value = timeProvider
                     .GetUtcNow()
                     .UtcDateTime.AddSeconds(messagingOptions.Value.FailedMessageExpiredAfter),
             },
-            new SqlParameter("@NextRetryAt", SqlDbType.DateTime2) { Value = DBNull.Value },
-            new SqlParameter("@LockedUntil", SqlDbType.DateTime2) { Value = DBNull.Value },
+            new SqlParameter("@NextRetryAt", SqlDbType.DateTimeOffset) { Value = DBNull.Value },
+            new SqlParameter("@LockedUntil", SqlDbType.DateTimeOffset) { Value = DBNull.Value },
             _OwnerParameter("@Owner", lockedUntil: null),
             new SqlParameter("@StatusName", nameof(StatusName.Failed)),
             new SqlParameter("@MessageId", message.Origin.Id),
@@ -508,7 +514,7 @@ internal sealed class SqlServerDataStorage(
             new SqlParameter("@ExceptionInfo", exceptionInfo ?? (object)DBNull.Value),
             // #4 — active-lease guard uses the injected TimeProvider (not GETUTCDATE()) so all lease
             // math shares one clock domain; keeps the guard testable with a fake clock.
-            new SqlParameter("@Now", SqlDbType.DateTime2) { Value = timeProvider.GetUtcNow().UtcDateTime },
+            new SqlParameter("@Now", SqlDbType.DateTimeOffset) { Value = timeProvider.GetUtcNow() },
         ];
 
         var rowId = await _StoreReceivedMessage(sqlParams, cancellationToken).ConfigureAwait(false);
@@ -528,7 +534,7 @@ internal sealed class SqlServerDataStorage(
         CancellationToken cancellationToken = default
     )
     {
-        var added = timeProvider.GetUtcNow().UtcDateTime;
+        var added = timeProvider.GetUtcNow();
         var mediumMessage = new MediumMessage
         {
             StorageId = guidGenerator.Create(),
@@ -554,15 +560,15 @@ internal sealed class SqlServerDataStorage(
             new SqlParameter("@Retries", mediumMessage.Retries),
             new SqlParameter("@InlineAttempts", mediumMessage.InlineAttempts),
             new SqlParameter("@Added", mediumMessage.Added),
-            new SqlParameter("@ExpiresAt", SqlDbType.DateTime2)
+            new SqlParameter("@ExpiresAt", SqlDbType.DateTimeOffset)
             {
                 Value = mediumMessage.ExpiresAt.HasValue ? mediumMessage.ExpiresAt.Value : DBNull.Value,
             },
-            new SqlParameter("@NextRetryAt", SqlDbType.DateTime2)
+            new SqlParameter("@NextRetryAt", SqlDbType.DateTimeOffset)
             {
                 Value = mediumMessage.NextRetryAt.ToUtcParameterValue(),
             },
-            new SqlParameter("@LockedUntil", SqlDbType.DateTime2)
+            new SqlParameter("@LockedUntil", SqlDbType.DateTimeOffset)
             {
                 Value = mediumMessage.LockedUntil.ToUtcParameterValue(),
             },
@@ -573,7 +579,7 @@ internal sealed class SqlServerDataStorage(
             new SqlParameter("@ExceptionInfo", DBNull.Value),
             // #4 — active-lease guard uses the injected TimeProvider (not GETUTCDATE()) so all lease
             // math shares one clock domain; keeps the guard testable with a fake clock.
-            new SqlParameter("@Now", SqlDbType.DateTime2) { Value = timeProvider.GetUtcNow().UtcDateTime },
+            new SqlParameter("@Now", SqlDbType.DateTimeOffset) { Value = timeProvider.GetUtcNow() },
         ];
 
         // #5 — adopt the authoritative persisted row id (see _StoreReceivedMessage); on the MERGE UPDATE
@@ -620,7 +626,7 @@ internal sealed class SqlServerDataStorage(
     /// <returns>The number of rows deleted.</returns>
     public async ValueTask<int> DeleteExpiresAsync(
         string table,
-        DateTime timeout,
+        DateTimeOffset timeout,
         int batchCount = 1000,
         CancellationToken cancellationToken = default
     )
@@ -853,8 +859,8 @@ internal sealed class SqlServerDataStorage(
             new SqlParameter("@Version", messagingOptions.Value.Version),
             new SqlParameter("@DelayedStatusName", nameof(StatusName.Delayed)),
             new SqlParameter("@QueuedStatusName", nameof(StatusName.Queued)),
-            new SqlParameter("@TwoMinutesLater", timeProvider.GetUtcNow().UtcDateTime.Add(_DelayedMessageLookahead)),
-            new SqlParameter("@OneMinutesAgo", timeProvider.GetUtcNow().UtcDateTime.Subtract(_QueuedMessageLookback)),
+            new SqlParameter("@TwoMinutesLater", timeProvider.GetUtcNow().Add(_DelayedMessageLookahead)),
+            new SqlParameter("@OneMinutesAgo", timeProvider.GetUtcNow().Subtract(_QueuedMessageLookback)),
             new SqlParameter("@BatchSize", messagingOptions.Value.SchedulerBatchSize),
         ];
 
@@ -884,8 +890,10 @@ internal sealed class SqlServerDataStorage(
                                 IntentType = (IntentType)reader.GetInt16(2),
                                 Retries = reader.GetInt32(3),
                                 InlineAttempts = reader.GetInt32(4),
-                                Added = reader.GetDateTime(5),
-                                ExpiresAt = reader.GetDateTime(6),
+                                Added = await reader.GetFieldValueAsync<DateTimeOffset>(5, ct).ConfigureAwait(false),
+                                ExpiresAt = await reader
+                                    .GetFieldValueAsync<DateTimeOffset>(6, ct)
+                                    .ConfigureAwait(false),
                             };
                         }
 #pragma warning disable CA1031 // deliberately broad: one un-deserializable row must not abort the schedule batch (#3)
@@ -951,12 +959,15 @@ internal sealed class SqlServerDataStorage(
             new SqlParameter("@InlineAttempts", message.InlineAttempts),
             new SqlParameter("@OriginalRetries", message.Retries),
             new SqlParameter("@OriginalInlineAttempts", originalInlineAttempts),
-            new SqlParameter("@LockedUntil", SqlDbType.DateTime2) { Value = message.LockedUntil.ToUtcParameterValue() },
+            new SqlParameter("@LockedUntil", SqlDbType.DateTimeOffset)
+            {
+                Value = message.LockedUntil.ToUtcParameterValue(),
+            },
             new SqlParameter("@CurrentOwner", SqlDbType.NVarChar, options.Value.OwnerColumnMaxLength)
             {
                 Value = message.Owner ?? (object)DBNull.Value,
             },
-            new SqlParameter("@Now", SqlDbType.DateTime2) { Value = timeProvider.GetUtcNow().UtcDateTime },
+            new SqlParameter("@Now", SqlDbType.DateTimeOffset) { Value = timeProvider.GetUtcNow() },
         ];
         await using var connection = new SqlConnection(options.Value.ConnectionString);
         var affected = await connection
@@ -975,8 +986,8 @@ internal sealed class SqlServerDataStorage(
         MediumMessage message,
         StatusName state,
         object? transaction,
-        DateTime? nextRetryAt,
-        DateTime? lockedUntil,
+        DateTimeOffset? nextRetryAt,
+        DateTimeOffset? lockedUntil,
         int? originalRetries,
         int? originalInlineAttempts,
         CancellationToken cancellationToken
@@ -991,19 +1002,19 @@ internal sealed class SqlServerDataStorage(
             new SqlParameter("@Content", serializer.Serialize(message.Origin)),
             new SqlParameter("@Retries", message.Retries),
             new SqlParameter("@InlineAttempts", message.InlineAttempts),
-            new SqlParameter("@ExpiresAt", SqlDbType.DateTime2)
+            new SqlParameter("@ExpiresAt", SqlDbType.DateTimeOffset)
             {
                 Value = message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value,
             },
-            new SqlParameter("@NextRetryAt", SqlDbType.DateTime2) { Value = nextRetryAt.ToUtcParameterValue() },
-            new SqlParameter("@LockedUntil", SqlDbType.DateTime2) { Value = lockedUntil.ToUtcParameterValue() },
+            new SqlParameter("@NextRetryAt", SqlDbType.DateTimeOffset) { Value = nextRetryAt.ToUtcParameterValue() },
+            new SqlParameter("@LockedUntil", SqlDbType.DateTimeOffset) { Value = lockedUntil.ToUtcParameterValue() },
             _OwnerParameter("@Owner", lockedUntil),
             new SqlParameter("@OriginalRetries", SqlDbType.Int) { Value = originalRetries ?? (object)DBNull.Value },
             new SqlParameter("@OriginalInlineAttempts", SqlDbType.Int)
             {
                 Value = originalInlineAttempts ?? (object)DBNull.Value,
             },
-            new SqlParameter("@OriginalLockedUntil", SqlDbType.DateTime2)
+            new SqlParameter("@OriginalLockedUntil", SqlDbType.DateTimeOffset)
             {
                 Value = message.LockedUntil.ToUtcParameterValue(),
             },
@@ -1011,7 +1022,7 @@ internal sealed class SqlServerDataStorage(
             {
                 Value = message.Owner ?? (object)DBNull.Value,
             },
-            new SqlParameter("@Now", SqlDbType.DateTime2) { Value = timeProvider.GetUtcNow().UtcDateTime },
+            new SqlParameter("@Now", SqlDbType.DateTimeOffset) { Value = timeProvider.GetUtcNow() },
             new SqlParameter("@StatusName", state.ToString("G")),
         ];
 
@@ -1136,7 +1147,7 @@ internal sealed class SqlServerDataStorage(
         // same clock it compares against. OUTPUT returns the durable deadline so the in-memory model matches
         // the row without a second read.
         var sql = $"""
-            DECLARE @ClaimNow datetime2(7) = SYSUTCDATETIME();
+            DECLARE @ClaimNow datetimeoffset(7) = SYSUTCDATETIME();
             UPDATE {tableName}
             SET LockedUntil = DATEADD(nanosecond, @LeaseNanoseconds, DATEADD(second, @LeaseWholeSeconds, @ClaimNow)),
                 Owner = @Owner,
@@ -1200,7 +1211,7 @@ internal sealed class SqlServerDataStorage(
     }
 
     /// <summary>Reads the <c>OUTPUT inserted.LockedUntil</c> deadline; <see langword="null"/> when no row matched.</summary>
-    private static async Task<DateTime?> _ReadLeaseDeadlineAsync(
+    private static async Task<DateTimeOffset?> _ReadLeaseDeadlineAsync(
         DbDataReader reader,
         CancellationToken cancellationToken
     )
@@ -1212,7 +1223,7 @@ internal sealed class SqlServerDataStorage(
 
         return await reader.IsDBNullAsync(0, cancellationToken).ConfigureAwait(false)
             ? null
-            : DateTime.SpecifyKind(reader.GetDateTime(0), DateTimeKind.Utc);
+            : await reader.GetFieldValueAsync<DateTimeOffset>(0, cancellationToken).ConfigureAwait(false);
     }
 
     private async ValueTask<bool> _LeaseMessageAsync(
@@ -1230,7 +1241,7 @@ internal sealed class SqlServerDataStorage(
         // contention to the inline retry loop, which skips dispatch.
         // Ownership time is the DATABASE's — see _LeaseAndReserveAttemptAsync for why.
         var sql = $"""
-            DECLARE @ClaimNow datetime2(7) = SYSUTCDATETIME();
+            DECLARE @ClaimNow datetimeoffset(7) = SYSUTCDATETIME();
             UPDATE {tableName}
             SET LockedUntil = DATEADD(nanosecond, @LeaseNanoseconds, DATEADD(second, @LeaseWholeSeconds, @ClaimNow)),
                 Owner = @Owner
@@ -1297,7 +1308,7 @@ internal sealed class SqlServerDataStorage(
         // local database snapshot, keeping every replica on one ownership authority without a
         // clock query.
         var sql = $"""
-            DECLARE @ClaimNow datetime2(7) = SYSUTCDATETIME();
+            DECLARE @ClaimNow datetimeoffset(7) = SYSUTCDATETIME();
 
             WITH Candidates AS (
                 SELECT TOP (@BatchSize) Id
@@ -1325,7 +1336,7 @@ internal sealed class SqlServerDataStorage(
             new SqlParameter("@BatchSize", messagingOptions.Value.RetryBatchSize),
             new SqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxPersistedRetries),
             new SqlParameter("@Version", messagingOptions.Value.Version),
-            new SqlParameter("@Now", SqlDbType.DateTime2) { Value = timeProvider.GetUtcNow().UtcDateTime },
+            new SqlParameter("@Now", SqlDbType.DateTimeOffset) { Value = timeProvider.GetUtcNow() },
             new SqlParameter("@LeaseWholeSeconds", SqlDbType.Int) { Value = leaseWholeSeconds },
             new SqlParameter("@LeaseNanoseconds", SqlDbType.Int) { Value = leaseNanoseconds },
             _OwnerParameter("@Owner", hasLease: true),
@@ -1358,13 +1369,13 @@ internal sealed class SqlServerDataStorage(
                                 IntentType = (IntentType)reader.GetInt16(2),
                                 Retries = reader.GetInt32(3),
                                 InlineAttempts = reader.GetInt32(4),
-                                Added = reader.GetDateTime(5),
+                                Added = await reader.GetFieldValueAsync<DateTimeOffset>(5, ct).ConfigureAwait(false),
                                 NextRetryAt = await reader.IsDBNullAsync(6, ct).ConfigureAwait(false)
                                     ? null
-                                    : reader.GetDateTime(6),
+                                    : await reader.GetFieldValueAsync<DateTimeOffset>(6, ct).ConfigureAwait(false),
                                 LockedUntil = await reader.IsDBNullAsync(7, ct).ConfigureAwait(false)
                                     ? null
-                                    : reader.GetDateTime(7),
+                                    : await reader.GetFieldValueAsync<DateTimeOffset>(7, ct).ConfigureAwait(false),
                                 Owner = await reader.IsDBNullAsync(8, ct).ConfigureAwait(false)
                                     ? null
                                     : reader.GetString(8),
@@ -1433,7 +1444,7 @@ internal sealed class SqlServerDataStorage(
         object[] sqlParams =
         [
             new SqlParameter("@StatusName", nameof(StatusName.Failed)),
-            new SqlParameter("@ExpiresAt", SqlDbType.DateTime2) { Value = expiresAt },
+            new SqlParameter("@ExpiresAt", SqlDbType.DateTimeOffset) { Value = expiresAt },
             isReceivedTable
                 ? _BuildPoisonMessageListTvpParameter(poisonMessages)
                 : _BuildIdListTvpParameter(poisonMessages.Select(message => message.StorageId).ToArray()),
@@ -1518,7 +1529,7 @@ internal sealed class SqlServerDataStorage(
         }
 
         var sql = $"""
-            DECLARE @ReclaimNow datetime2(7) = SYSUTCDATETIME();
+            DECLARE @ReclaimNow datetimeoffset(7) = SYSUTCDATETIME();
 
             UPDATE target
             SET LockedUntil = @ReclaimNow
@@ -1568,7 +1579,7 @@ internal sealed class SqlServerDataStorage(
         };
     }
 
-    private SqlParameter _OwnerParameter(string name, DateTime? lockedUntil) =>
+    private SqlParameter _OwnerParameter(string name, DateTimeOffset? lockedUntil) =>
         _OwnerParameter(name, lockedUntil is not null);
 
     private SqlParameter _OwnerParameter(string name, bool hasLease) =>

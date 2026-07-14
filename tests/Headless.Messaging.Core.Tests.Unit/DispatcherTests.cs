@@ -137,14 +137,14 @@ public sealed class DispatcherTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(new ValueTask<bool>(true));
 
         // when
         await dispatcher.StartAsync(cts.Token);
-        var dateTime = DateTime.UtcNow.AddSeconds(1);
+        var dateTime = DateTimeOffset.UtcNow.AddSeconds(1);
 
         await Parallel.ForEachAsync(
             messages,
@@ -208,14 +208,14 @@ public sealed class DispatcherTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(new ValueTask<bool>(true));
 
         // when
         await dispatcher.StartAsync(cts.Token);
-        var dateTime = DateTime.UtcNow;
+        var dateTime = DateTimeOffset.UtcNow;
 
         await dispatcher.EnqueueToScheduler(messages[0], dateTime.AddSeconds(1), cancellationToken: AbortToken);
         await dispatcher.EnqueueToScheduler(messages[1], dateTime.AddMilliseconds(200), cancellationToken: AbortToken);
@@ -224,8 +224,8 @@ public sealed class DispatcherTests : TestBase
         // Poll until all three messages flow through, or the wall-clock budget elapses. 10 s is
         // ~8× the slowest scheduled publish (+1 s) and well beyond any plausible thread-pool
         // starvation in the test suite.
-        var deadline = DateTime.UtcNow.AddSeconds(10);
-        while (sender.ReceivedMessages.Count < 3 && DateTime.UtcNow < deadline)
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(10);
+        while (sender.ReceivedMessages.Count < 3 && DateTimeOffset.UtcNow < deadline)
         {
             await Task.Delay(20, AbortToken);
         }
@@ -271,14 +271,14 @@ public sealed class DispatcherTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(new ValueTask<bool>(true));
 
         // when
         await dispatcher.StartAsync(cts.Token);
-        var dateTime = DateTime.UtcNow.AddMilliseconds(50);
+        var dateTime = DateTimeOffset.UtcNow.AddMilliseconds(50);
 
         await Parallel.ForEachAsync(
             messages,
@@ -330,14 +330,14 @@ public sealed class DispatcherTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(new ValueTask<bool>(true));
 
         // when
         await dispatcher.StartAsync(cts.Token);
-        var dateTime = DateTime.UtcNow;
+        var dateTime = DateTimeOffset.UtcNow;
 
         await dispatcher.EnqueueToScheduler(messages[0], dateTime.AddSeconds(1), cancellationToken: AbortToken);
         await dispatcher.EnqueueToScheduler(messages[1], dateTime.AddMilliseconds(200), cancellationToken: AbortToken);
@@ -346,8 +346,8 @@ public sealed class DispatcherTests : TestBase
         // Poll for all three messages to land in the sender; the scheduler loop ticks every 50ms,
         // and a fixed wall-clock delay (e.g. 1200ms) was flaky under CI load when msg[0]'s +1s
         // schedule slipped past the deadline. We allow up to 5s, then assert the order.
-        var deadline = DateTime.UtcNow.AddSeconds(5);
-        while (sender.ReceivedMessages.Count < 3 && DateTime.UtcNow < deadline)
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(5);
+        while (sender.ReceivedMessages.Count < 3 && DateTimeOffset.UtcNow < deadline)
         {
             await Task.Delay(50, CancellationToken.None);
         }
@@ -371,7 +371,7 @@ public sealed class DispatcherTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(new ValueTask<bool>(false));
@@ -391,7 +391,7 @@ public sealed class DispatcherTests : TestBase
         await dispatcher.StartAsync(cts.Token);
         await dispatcher.EnqueueToScheduler(
             _CreateTestMessage(),
-            DateTime.UtcNow.AddMilliseconds(50),
+            DateTimeOffset.UtcNow.AddMilliseconds(50),
             cancellationToken: AbortToken
         );
         await Task.Delay(200, CancellationToken.None);
@@ -671,7 +671,7 @@ public sealed class DispatcherTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(new ValueTask<bool>(true));
@@ -692,7 +692,11 @@ public sealed class DispatcherTests : TestBase
         // Due in 50s → Queued status → enters the in-process scheduler queue and stays there
         // (the scheduler loop only dequeues items within 50ms of their due time).
         var message = _CreateTestMessage(_StorageGuid(1));
-        await dispatcher.EnqueueToScheduler(message, DateTime.UtcNow.AddSeconds(50), cancellationToken: AbortToken);
+        await dispatcher.EnqueueToScheduler(
+            message,
+            DateTimeOffset.UtcNow.AddSeconds(50),
+            cancellationToken: AbortToken
+        );
 
         // when
         await dispatcher.DisposeAsync();
@@ -720,7 +724,7 @@ public sealed class DispatcherTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(new ValueTask<bool>(true));
@@ -741,7 +745,11 @@ public sealed class DispatcherTests : TestBase
         using var cts = new CancellationTokenSource();
         await dispatcher.StartAsync(cts.Token);
         var message = _CreateTestMessage(_StorageGuid(1));
-        await dispatcher.EnqueueToScheduler(message, DateTime.UtcNow.AddSeconds(50), cancellationToken: AbortToken);
+        await dispatcher.EnqueueToScheduler(
+            message,
+            DateTimeOffset.UtcNow.AddSeconds(50),
+            cancellationToken: AbortToken
+        );
 
         // when
         var act = async () => await dispatcher.DisposeAsync();
@@ -761,7 +769,7 @@ public sealed class DispatcherTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(new ValueTask<bool>(true));
@@ -785,7 +793,7 @@ public sealed class DispatcherTests : TestBase
         await dispatcher.StartAsync(cts.Token);
         await dispatcher.EnqueueToScheduler(
             _CreateTestMessage(_StorageGuid(1)),
-            timeProvider.GetUtcNow().UtcDateTime.AddSeconds(50),
+            timeProvider.GetUtcNow().AddSeconds(50),
             cancellationToken: AbortToken
         );
 

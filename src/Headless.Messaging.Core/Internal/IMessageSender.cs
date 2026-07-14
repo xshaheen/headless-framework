@@ -105,7 +105,7 @@ internal sealed class MessageSender : IMessageSender
     {
         // Atomic pickup already wrote a live lease. Re-leasing would immediately fail against the
         // storage lease predicate and strand rows returned by GetPublishedMessagesOfNeedRetryAsync.
-        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var now = _timeProvider.GetUtcNow();
         var needsLease = message.LockedUntil is not { } lockedUntil || lockedUntil <= now;
 
         inlineRetries = message.InlineAttempts;
@@ -204,7 +204,7 @@ internal sealed class MessageSender : IMessageSender
 
     private async Task _MarkUnsupportedIntentFailedAsync(MediumMessage message, Exception ex)
     {
-        message.ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddSeconds(_options.FailedMessageExpiredAfter);
+        message.ExpiresAt = _timeProvider.GetUtcNow().AddSeconds(_options.FailedMessageExpiredAfter);
         message.NextRetryAt = null;
         message.LockedUntil = null;
 
@@ -224,7 +224,7 @@ internal sealed class MessageSender : IMessageSender
 
     private async Task _SetSuccessfulState(MediumMessage message, CancellationToken cancellationToken)
     {
-        message.ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddSeconds(_options.SucceedMessageExpiredAfter);
+        message.ExpiresAt = _timeProvider.GetUtcNow().AddSeconds(_options.SucceedMessageExpiredAfter);
         var updated = await _dataStorage
             .ChangePublishRetryStateAsync(
                 message,

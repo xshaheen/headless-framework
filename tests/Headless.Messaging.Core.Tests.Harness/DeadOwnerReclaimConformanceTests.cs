@@ -301,9 +301,9 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
 
     private async Task<bool> _BecomesRetriableAsync(IDataStorage storage, Guid storageId, bool published)
     {
-        var deadline = DateTime.UtcNow + _PositiveTimeout;
+        var deadline = DateTimeOffset.UtcNow + _PositiveTimeout;
 
-        while (DateTime.UtcNow < deadline)
+        while (DateTimeOffset.UtcNow < deadline)
         {
             if (await _IsRetriableAsync(storage, storageId, published))
             {
@@ -327,7 +327,7 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
         return retriable.Any(message => message.StorageId == storageId);
     }
 
-    private static DateTime _Now() => TimeProvider.System.GetUtcNow().UtcDateTime;
+    private static DateTimeOffset _Now() => TimeProvider.System.GetUtcNow();
 
     private static TimeSpan _FutureLease() => TimeSpan.FromHours(1);
 
@@ -344,7 +344,7 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
         {
             { MessagingHeaders.MessageId, id },
             { MessagingHeaders.MessageName, "TestMessage" },
-            { MessagingHeaders.SentTime, DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture) },
+            { MessagingHeaders.SentTime, DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture) },
         };
 
         return new Message(headers, new { Data = "test" });

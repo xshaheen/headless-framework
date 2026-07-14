@@ -20,8 +20,8 @@ public sealed class ScheduledMediumMessageQueueTests : TestBase
         var second = _CreateMediumMessage(2);
 
         // when
-        queue.Enqueue(first, timeProvider.GetUtcNow().UtcDateTime.Ticks);
-        queue.Enqueue(second, timeProvider.GetUtcNow().UtcDateTime.Ticks + TimeSpan.FromSeconds(1).Ticks);
+        queue.Enqueue(first, timeProvider.GetUtcNow().Ticks);
+        queue.Enqueue(second, timeProvider.GetUtcNow().Ticks + TimeSpan.FromSeconds(1).Ticks);
 
         // then
         queue.Count.Should().Be(2);
@@ -38,7 +38,7 @@ public sealed class ScheduledMediumMessageQueueTests : TestBase
         var first = _CreateMediumMessage(1);
         var second = _CreateMediumMessage(2);
         var third = _CreateMediumMessage(3);
-        var dueAt = timeProvider.GetUtcNow().UtcDateTime.Ticks;
+        var dueAt = timeProvider.GetUtcNow().Ticks;
 
         queue.Enqueue(second, dueAt);
         queue.Enqueue(first, dueAt);
@@ -72,7 +72,7 @@ public sealed class ScheduledMediumMessageQueueTests : TestBase
         var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 4, 1, 0, 0, 0, TimeSpan.Zero));
         using var queue = new ScheduledMediumMessageQueue(timeProvider);
         var message = _CreateMediumMessage(7);
-        queue.Enqueue(message, timeProvider.GetUtcNow().UtcDateTime.Ticks + TimeSpan.FromMilliseconds(200).Ticks);
+        queue.Enqueue(message, timeProvider.GetUtcNow().Ticks + TimeSpan.FromMilliseconds(200).Ticks);
 
         var enumerator = queue.GetConsumingEnumerable(AbortToken).GetAsyncEnumerator(AbortToken);
 
@@ -103,7 +103,7 @@ public sealed class ScheduledMediumMessageQueueTests : TestBase
         using var queue = new ScheduledMediumMessageQueue(timeProvider);
         var late = _CreateMediumMessage(8);
         var early = _CreateMediumMessage(9);
-        var now = timeProvider.GetUtcNow().UtcDateTime.Ticks;
+        var now = timeProvider.GetUtcNow().Ticks;
 
         queue.Enqueue(late, now + TimeSpan.FromSeconds(10).Ticks);
         var enumerator = queue.GetConsumingEnumerable(AbortToken).GetAsyncEnumerator(AbortToken);

@@ -303,11 +303,11 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
         await storage.ChangePublishStateAsync(
             storedMessage,
             StatusName.Failed,
-            nextRetryAt: DateTime.UtcNow.AddMinutes(-1),
+            nextRetryAt: DateTimeOffset.UtcNow.AddMinutes(-1),
             cancellationToken: AbortToken
         );
 
-        var beforeClaim = DateTime.UtcNow;
+        var beforeClaim = DateTimeOffset.UtcNow;
         var claimed = (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
             .Should()
             .ContainSingle(m => m.StorageId == storedMessage.StorageId)
@@ -479,7 +479,7 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
         // given
         var storage = GetStorage();
         var id = Guid.NewGuid();
-        var now = TimeProvider.GetUtcNow().UtcDateTime;
+        var now = TimeProvider.GetUtcNow();
 
         await using (var connection = new SqlConnection(fixture.ConnectionString))
         {
@@ -502,11 +502,11 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
             $"SELECT StatusName FROM messaging.{tableName} WHERE Id = @Id",
             new { Id = id }
         );
-        var nextRetryAt = await assertConnection.ExecuteScalarAsync<DateTime?>(
+        var nextRetryAt = await assertConnection.ExecuteScalarAsync<DateTimeOffset?>(
             $"SELECT NextRetryAt FROM messaging.{tableName} WHERE Id = @Id",
             new { Id = id }
         );
-        var lockedUntil = await assertConnection.ExecuteScalarAsync<DateTime?>(
+        var lockedUntil = await assertConnection.ExecuteScalarAsync<DateTimeOffset?>(
             $"SELECT LockedUntil FROM messaging.{tableName} WHERE Id = @Id",
             new { Id = id }
         );
@@ -539,7 +539,7 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
         var serializer = GetSerializer();
         var poisonId = Guid.NewGuid();
         var healthyId = Guid.NewGuid();
-        var now = TimeProvider.GetUtcNow().UtcDateTime;
+        var now = TimeProvider.GetUtcNow();
 
         await using (var connection = new SqlConnection(fixture.ConnectionString))
         {
@@ -562,7 +562,7 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
 
         await using var assertConnection = new SqlConnection(fixture.ConnectionString);
         await assertConnection.OpenAsync(AbortToken);
-        var poisonNextRetryAt = await assertConnection.ExecuteScalarAsync<DateTime?>(
+        var poisonNextRetryAt = await assertConnection.ExecuteScalarAsync<DateTimeOffset?>(
             $"SELECT NextRetryAt FROM messaging.{tableName} WHERE Id = @Id",
             new { Id = poisonId }
         );
@@ -575,7 +575,7 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
         // given
         var storage = _CreateStorage(new MessagingOptions { Version = "v1", SchedulerBatchSize = 1 });
         var serializer = GetSerializer();
-        var now = DateTime.UtcNow;
+        var now = DateTimeOffset.UtcNow;
         var delayedId = Guid.NewGuid();
         var queuedId = Guid.NewGuid();
 
@@ -625,7 +625,7 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
         var firstStorage = _CreateStorage(new MessagingOptions { Version = "v1", SchedulerBatchSize = 1 });
         var secondStorage = _CreateStorage(new MessagingOptions { Version = "v1", SchedulerBatchSize = 1 });
         var serializer = GetSerializer();
-        var now = DateTime.UtcNow;
+        var now = DateTimeOffset.UtcNow;
 
         await using (var connection = new SqlConnection(fixture.ConnectionString))
         {
@@ -696,7 +696,7 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
         // given
         var storage = _CreateStorage(new MessagingOptions { Version = "v1", RetryBatchSize = 2 });
         var serializer = GetSerializer();
-        var now = DateTime.UtcNow;
+        var now = DateTimeOffset.UtcNow;
         var oldestId = Guid.NewGuid();
         var middleId = Guid.NewGuid();
         var newestId = Guid.NewGuid();
@@ -888,7 +888,7 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
         SqlConnection connection,
         string tableName,
         Guid id,
-        DateTime now
+        DateTimeOffset now
     )
     {
         if (string.Equals(tableName, "Published", StringComparison.Ordinal))
@@ -933,8 +933,8 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
         Guid id,
         string content,
         StatusName statusName,
-        DateTime? expiresAt,
-        DateTime? nextRetryAt
+        DateTimeOffset? expiresAt,
+        DateTimeOffset? nextRetryAt
     ) =>
         connection.ExecuteAsync(
             """
@@ -947,7 +947,7 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
             {
                 Id = id,
                 Content = content,
-                Now = DateTime.UtcNow,
+                Now = DateTimeOffset.UtcNow,
                 ExpiresAt = expiresAt,
                 NextRetryAt = nextRetryAt,
                 StatusName = statusName.ToString("G"),
@@ -960,7 +960,7 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
         string tableName,
         Guid id,
         string content,
-        DateTime now
+        DateTimeOffset now
     )
     {
         if (string.Equals(tableName, "Published", StringComparison.Ordinal))

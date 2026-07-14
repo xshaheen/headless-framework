@@ -46,7 +46,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
             Origin = new Message(headers, "{}"),
             Content = "{}",
             IntentType = IntentType.Bus,
-            Added = DateTime.UtcNow,
+            Added = DateTimeOffset.UtcNow,
         };
     }
 
@@ -103,8 +103,8 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
             .ChangeReceiveRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<DateTime?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -154,8 +154,8 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
             .ChangeReceiveStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<DateTime?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             )
@@ -164,8 +164,8 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
             .ChangeReceiveRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<DateTime?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -265,8 +265,8 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
             .ChangeReceiveRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 StatusName.Failed,
-                Arg.Any<DateTime?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -308,8 +308,8 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
             .ChangeReceiveRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<DateTime?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -326,8 +326,8 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
             .ChangeReceiveRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<DateTime?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -364,8 +364,8 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
             .ChangeReceiveRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 StatusName.Succeeded,
-                Arg.Any<DateTime?>(),
-                Arg.Any<DateTime?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()

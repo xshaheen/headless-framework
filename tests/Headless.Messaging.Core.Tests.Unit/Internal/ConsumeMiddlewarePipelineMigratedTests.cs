@@ -338,7 +338,7 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
                 Origin = new Message(headers, new MigratedConsumeMessage("stored")),
                 Content = "{}",
                 IntentType = IntentType.Bus,
-                Added = DateTime.UtcNow,
+                Added = DateTimeOffset.UtcNow,
             }
         );
     }

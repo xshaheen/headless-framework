@@ -119,8 +119,8 @@ internal sealed class PostgreSqlDataStorage(
         MediumMessage message,
         StatusName state,
         object? transaction = null,
-        DateTime? nextRetryAt = null,
-        DateTime? lockedUntil = null,
+        DateTimeOffset? nextRetryAt = null,
+        DateTimeOffset? lockedUntil = null,
         int? originalRetries = null,
         CancellationToken cancellationToken = default
     )
@@ -141,8 +141,8 @@ internal sealed class PostgreSqlDataStorage(
     public ValueTask<bool> ChangePublishRetryStateAsync(
         MediumMessage message,
         StatusName state,
-        DateTime? nextRetryAt,
-        DateTime? lockedUntil,
+        DateTimeOffset? nextRetryAt,
+        DateTimeOffset? lockedUntil,
         int originalRetries,
         int originalInlineAttempts,
         CancellationToken cancellationToken = default
@@ -198,8 +198,8 @@ internal sealed class PostgreSqlDataStorage(
     public ValueTask<bool> ChangeReceiveStateAsync(
         MediumMessage message,
         StatusName state,
-        DateTime? nextRetryAt = null,
-        DateTime? lockedUntil = null,
+        DateTimeOffset? nextRetryAt = null,
+        DateTimeOffset? lockedUntil = null,
         int? originalRetries = null,
         CancellationToken cancellationToken = default
     ) =>
@@ -216,8 +216,8 @@ internal sealed class PostgreSqlDataStorage(
     public ValueTask<bool> ChangeReceiveRetryStateAsync(
         MediumMessage message,
         StatusName state,
-        DateTime? nextRetryAt,
-        DateTime? lockedUntil,
+        DateTimeOffset? nextRetryAt,
+        DateTimeOffset? lockedUntil,
         int originalRetries,
         int originalInlineAttempts,
         CancellationToken cancellationToken = default
@@ -241,8 +241,8 @@ internal sealed class PostgreSqlDataStorage(
     private async ValueTask<bool> _ChangeReceiveStateAsync(
         MediumMessage message,
         StatusName state,
-        DateTime? nextRetryAt,
-        DateTime? lockedUntil,
+        DateTimeOffset? nextRetryAt,
+        DateTimeOffset? lockedUntil,
         int? originalRetries,
         int? originalInlineAttempts,
         CancellationToken cancellationToken
@@ -288,7 +288,7 @@ internal sealed class PostgreSqlDataStorage(
             {
                 Value = message.Owner ?? (object)DBNull.Value,
             },
-            new NpgsqlParameter("@Now", timeProvider.GetUtcNow().UtcDateTime),
+            new NpgsqlParameter("@Now", timeProvider.GetUtcNow()),
             new NpgsqlParameter("@StatusName", state.ToString("G")),
             new NpgsqlParameter("@ExceptionInfo", message.ExceptionInfo ?? (object)DBNull.Value),
         ];
@@ -345,7 +345,7 @@ internal sealed class PostgreSqlDataStorage(
             $"INSERT INTO {_publishedTable} (\"Id\",\"Version\",\"Name\",\"Content\",\"IntentType\",\"Retries\",\"InlineAttempts\",\"Added\",\"ExpiresAt\",\"NextRetryAt\",\"LockedUntil\",\"Owner\",\"StatusName\",\"MessageId\")"
             + $"VALUES(@Id,'{messagingOptions.Value.Version}',@Name,@Content,@IntentType,@Retries,@InlineAttempts,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@Owner,@StatusName,@MessageId);";
 
-        var added = timeProvider.GetUtcNow().UtcDateTime;
+        var added = timeProvider.GetUtcNow();
         var stored = new MediumMessage
         {
             StorageId = guidGenerator.Create(),
@@ -506,10 +506,10 @@ internal sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@IntentType", (short)message.IntentType),
             new NpgsqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxPersistedRetries),
             new NpgsqlParameter("@InlineAttempts", message.InlineAttempts),
-            new NpgsqlParameter("@Added", timeProvider.GetUtcNow().UtcDateTime),
+            new NpgsqlParameter("@Added", timeProvider.GetUtcNow()),
             new NpgsqlParameter(
                 "@ExpiresAt",
-                timeProvider.GetUtcNow().UtcDateTime.AddSeconds(messagingOptions.Value.FailedMessageExpiredAfter)
+                timeProvider.GetUtcNow().AddSeconds(messagingOptions.Value.FailedMessageExpiredAfter)
             ),
             new NpgsqlParameter("@NextRetryAt", DBNull.Value),
             new NpgsqlParameter("@LockedUntil", DBNull.Value),
@@ -519,7 +519,7 @@ internal sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@ExceptionInfo", exceptionInfo ?? (object)DBNull.Value),
             // #4 — active-lease guard uses the injected TimeProvider (not DB now()) so all lease math
             // shares one clock domain; keeps the guard testable with a fake clock.
-            new NpgsqlParameter("@Now", timeProvider.GetUtcNow().UtcDateTime),
+            new NpgsqlParameter("@Now", timeProvider.GetUtcNow()),
         ];
 
         var rowId = await _StoreReceivedMessage(sqlParams, cancellationToken).ConfigureAwait(false);
@@ -540,7 +540,7 @@ internal sealed class PostgreSqlDataStorage(
         CancellationToken cancellationToken = default
     )
     {
-        var added = timeProvider.GetUtcNow().UtcDateTime;
+        var added = timeProvider.GetUtcNow();
         var mediumMessage = new MediumMessage
         {
             StorageId = guidGenerator.Create(),
@@ -575,7 +575,7 @@ internal sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@ExceptionInfo", DBNull.Value),
             // #4 — active-lease guard uses the injected TimeProvider (not DB now()) so all lease math
             // shares one clock domain; keeps the guard testable with a fake clock.
-            new NpgsqlParameter("@Now", timeProvider.GetUtcNow().UtcDateTime),
+            new NpgsqlParameter("@Now", timeProvider.GetUtcNow()),
         ];
 
         // #5 — adopt the authoritative persisted row id. On a concurrent redelivery that takes the ON
@@ -622,7 +622,7 @@ internal sealed class PostgreSqlDataStorage(
     /// <returns>The number of rows deleted.</returns>
     public async ValueTask<int> DeleteExpiresAsync(
         string table,
-        DateTime timeout,
+        DateTimeOffset timeout,
         int batchCount = 1000,
         CancellationToken cancellationToken = default
     )
@@ -804,11 +804,8 @@ internal sealed class PostgreSqlDataStorage(
         var sqlParams = new object[]
         {
             new NpgsqlParameter("@Version", messagingOptions.Value.Version),
-            new NpgsqlParameter("@TwoMinutesLater", timeProvider.GetUtcNow().UtcDateTime.Add(_DelayedMessageLookahead)),
-            new NpgsqlParameter(
-                "@OneMinutesAgo",
-                timeProvider.GetUtcNow().UtcDateTime.Subtract(_QueuedMessageLookback)
-            ),
+            new NpgsqlParameter("@TwoMinutesLater", timeProvider.GetUtcNow().Add(_DelayedMessageLookahead)),
+            new NpgsqlParameter("@OneMinutesAgo", timeProvider.GetUtcNow().Subtract(_QueuedMessageLookback)),
             new NpgsqlParameter("@BatchSize", messagingOptions.Value.SchedulerBatchSize),
         };
 
@@ -839,10 +836,10 @@ internal sealed class PostgreSqlDataStorage(
                                 IntentType = (IntentType)reader.GetInt16(2),
                                 Retries = reader.GetInt32(3),
                                 InlineAttempts = reader.GetInt32(4),
-                                Added = reader.GetDateTime(5),
+                                Added = await reader.GetFieldValueAsync<DateTimeOffset>(5, token).ConfigureAwait(false),
                                 ExpiresAt = await reader.IsDBNullAsync(6, token).ConfigureAwait(false)
                                     ? null
-                                    : reader.GetDateTime(6),
+                                    : await reader.GetFieldValueAsync<DateTimeOffset>(6, token).ConfigureAwait(false),
                             };
                         }
 #pragma warning disable CA1031 // deliberately broad: one un-deserializable row must not abort the schedule batch (#3)
@@ -905,7 +902,7 @@ internal sealed class PostgreSqlDataStorage(
             {
                 Value = message.Owner ?? (object)DBNull.Value,
             },
-            new NpgsqlParameter("@Now", timeProvider.GetUtcNow().UtcDateTime),
+            new NpgsqlParameter("@Now", timeProvider.GetUtcNow()),
         ];
         await using var connection = postgreSqlOptions.Value.CreateConnection();
         var affected = await connection
@@ -924,8 +921,8 @@ internal sealed class PostgreSqlDataStorage(
         MediumMessage message,
         StatusName state,
         object? transaction,
-        DateTime? nextRetryAt,
-        DateTime? lockedUntil,
+        DateTimeOffset? nextRetryAt,
+        DateTimeOffset? lockedUntil,
         int? originalRetries,
         int? originalInlineAttempts,
         CancellationToken cancellationToken
@@ -960,7 +957,7 @@ internal sealed class PostgreSqlDataStorage(
             {
                 Value = message.Owner ?? (object)DBNull.Value,
             },
-            new NpgsqlParameter("@Now", timeProvider.GetUtcNow().UtcDateTime),
+            new NpgsqlParameter("@Now", timeProvider.GetUtcNow()),
             new NpgsqlParameter("@StatusName", state.ToString("G")),
         ];
 
@@ -1143,7 +1140,7 @@ internal sealed class PostgreSqlDataStorage(
     }
 
     /// <summary>Reads the <c>RETURNING "LockedUntil"</c> deadline; <see langword="null"/> when no row matched.</summary>
-    private static async Task<DateTime?> _ReadLeaseDeadlineAsync(
+    private static async Task<DateTimeOffset?> _ReadLeaseDeadlineAsync(
         DbDataReader reader,
         CancellationToken cancellationToken
     )
@@ -1155,7 +1152,7 @@ internal sealed class PostgreSqlDataStorage(
 
         return await reader.IsDBNullAsync(0, cancellationToken).ConfigureAwait(false)
             ? null
-            : DateTime.SpecifyKind(reader.GetDateTime(0), DateTimeKind.Utc);
+            : await reader.GetFieldValueAsync<DateTimeOffset>(0, cancellationToken).ConfigureAwait(false);
     }
 
     private async ValueTask<bool> _LeaseMessageAsync(
@@ -1252,7 +1249,7 @@ internal sealed class PostgreSqlDataStorage(
         [
             new NpgsqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxPersistedRetries),
             new NpgsqlParameter("@Version", messagingOptions.Value.Version),
-            new NpgsqlParameter("@Now", timeProvider.GetUtcNow().UtcDateTime),
+            new NpgsqlParameter("@Now", timeProvider.GetUtcNow()),
             new NpgsqlParameter("@LeaseSeconds", messagingOptions.Value.RetryPolicy.DispatchTimeout.TotalSeconds),
             new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar)
             {
@@ -1287,13 +1284,13 @@ internal sealed class PostgreSqlDataStorage(
                                 IntentType = (IntentType)reader.GetInt16(2),
                                 Retries = reader.GetInt32(3),
                                 InlineAttempts = reader.GetInt32(4),
-                                Added = reader.GetDateTime(5),
+                                Added = await reader.GetFieldValueAsync<DateTimeOffset>(5, token).ConfigureAwait(false),
                                 NextRetryAt = await reader.IsDBNullAsync(6, token).ConfigureAwait(false)
                                     ? null
-                                    : reader.GetDateTime(6),
+                                    : await reader.GetFieldValueAsync<DateTimeOffset>(6, token).ConfigureAwait(false),
                                 LockedUntil = await reader.IsDBNullAsync(7, token).ConfigureAwait(false)
                                     ? null
-                                    : reader.GetDateTime(7),
+                                    : await reader.GetFieldValueAsync<DateTimeOffset>(7, token).ConfigureAwait(false),
                                 Owner = await reader.IsDBNullAsync(8, token).ConfigureAwait(false)
                                     ? null
                                     : reader.GetString(8),

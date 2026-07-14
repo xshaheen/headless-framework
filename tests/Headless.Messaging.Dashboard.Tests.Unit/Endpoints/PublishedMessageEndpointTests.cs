@@ -99,7 +99,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
                     Name = "orders.created",
                     IntentType = IntentType.Queue,
                     Content = "{\"key\":\"value\"}",
-                    Added = new DateTime(2026, 03, 24, 10, 00, 00, DateTimeKind.Utc),
+                    Added = new DateTimeOffset(2026, 03, 24, 10, 00, 00, TimeSpan.Zero),
                     Retries = 2,
                     StatusName = StatusName.Succeeded,
                 },

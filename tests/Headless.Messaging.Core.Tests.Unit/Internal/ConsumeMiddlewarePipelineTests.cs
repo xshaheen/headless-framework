@@ -172,7 +172,7 @@ public sealed class ConsumeMiddlewarePipelineTests : TestBase
                 Origin = origin,
                 Content = "{}",
                 IntentType = IntentType.Bus,
-                Added = DateTime.UtcNow,
+                Added = DateTimeOffset.UtcNow,
             }
         );
     }

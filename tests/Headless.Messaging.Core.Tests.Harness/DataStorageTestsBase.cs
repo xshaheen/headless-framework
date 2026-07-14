@@ -79,7 +79,7 @@ public abstract class DataStorageTestsBase : TestBase
         {
             { MessagingHeaders.MessageId, id },
             { MessagingHeaders.MessageName, messageName ?? "TestMessage" },
-            { MessagingHeaders.SentTime, DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture) },
+            { MessagingHeaders.SentTime, DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture) },
         };
 
         return new Message(headers, value ?? new { Data = "test" });
@@ -312,7 +312,7 @@ public abstract class DataStorageTestsBase : TestBase
         var message = CreateMessage();
         var storedMessage = await storage.StoreMessageAsync("state-test", message, cancellationToken: AbortToken);
 
-        var nextRetryAt = DateTime.UtcNow.AddMinutes(5);
+        var nextRetryAt = DateTimeOffset.UtcNow.AddMinutes(5);
 
         // when — transition to Failed with a future NextRetryAt so the row stays mutable and the
         // state transition can be read back through the monitoring API.
@@ -346,7 +346,7 @@ public abstract class DataStorageTestsBase : TestBase
         var message = CreateMessage();
         var storedMessage = await storage.StoreReceivedMessageAsync("state-test", "group", message, AbortToken);
 
-        var nextRetryAt = DateTime.UtcNow.AddMinutes(5);
+        var nextRetryAt = DateTimeOffset.UtcNow.AddMinutes(5);
 
         // when — transition to Failed with a future NextRetryAt so the row stays mutable and the
         // state transition can be read back through the monitoring API.
@@ -426,7 +426,7 @@ public abstract class DataStorageTestsBase : TestBase
         var lateChange = await storage.ChangePublishStateAsync(
             storedMessage,
             StatusName.Scheduled,
-            nextRetryAt: DateTime.UtcNow,
+            nextRetryAt: DateTimeOffset.UtcNow,
             cancellationToken: AbortToken
         );
         lateChange.Should().BeFalse("the terminal seal must survive a late scheduler flush");
@@ -493,7 +493,7 @@ public abstract class DataStorageTestsBase : TestBase
         var storage = GetStorage();
         var initializer = GetInitializer();
         var tableName = initializer.GetPublishedTableName();
-        var timeout = DateTime.UtcNow.AddMinutes(-10);
+        var timeout = DateTimeOffset.UtcNow.AddMinutes(-10);
 
         // when
         var deletedCount = await storage.DeleteExpiresAsync(tableName, timeout, 100, AbortToken);
@@ -513,9 +513,9 @@ public abstract class DataStorageTestsBase : TestBase
         // Expiration cleanup must only delete Failed/Succeeded rows once NextRetryAt is cleared.
         var storage = GetStorage();
         var initializer = GetInitializer();
-        var expiredAt = DateTime.UtcNow.AddMinutes(-10);
-        var cleanupCutoff = DateTime.UtcNow.AddMinutes(-1);
-        var nextRetryAt = DateTime.UtcNow.AddMinutes(10);
+        var expiredAt = DateTimeOffset.UtcNow.AddMinutes(-10);
+        var cleanupCutoff = DateTimeOffset.UtcNow.AddMinutes(-1);
+        var nextRetryAt = DateTimeOffset.UtcNow.AddMinutes(10);
 
         var published = await storage.StoreMessageAsync(
             "retry-expiration-published",
@@ -727,7 +727,7 @@ public abstract class DataStorageTestsBase : TestBase
         await storage.ChangePublishStateAsync(
             storedMessage,
             StatusName.Failed,
-            nextRetryAt: DateTime.UtcNow.AddSeconds(-1),
+            nextRetryAt: DateTimeOffset.UtcNow.AddSeconds(-1),
             cancellationToken: AbortToken
         );
 
@@ -794,7 +794,7 @@ public abstract class DataStorageTestsBase : TestBase
         var lateChange = await storage.ChangePublishStateAsync(
             storedMessage,
             StatusName.Scheduled,
-            nextRetryAt: DateTime.UtcNow,
+            nextRetryAt: DateTimeOffset.UtcNow,
             cancellationToken: AbortToken
         );
 
@@ -822,7 +822,7 @@ public abstract class DataStorageTestsBase : TestBase
         await storage.ChangePublishStateAsync(
             storedMessage,
             StatusName.Failed,
-            nextRetryAt: DateTime.UtcNow.AddHours(1),
+            nextRetryAt: DateTimeOffset.UtcNow.AddHours(1),
             cancellationToken: AbortToken
         );
 
@@ -875,7 +875,7 @@ public abstract class DataStorageTestsBase : TestBase
         await storage.ChangeReceiveStateAsync(
             storedMessage,
             StatusName.Failed,
-            nextRetryAt: DateTime.UtcNow.AddHours(1),
+            nextRetryAt: DateTimeOffset.UtcNow.AddHours(1),
             cancellationToken: AbortToken
         );
 
@@ -905,7 +905,7 @@ public abstract class DataStorageTestsBase : TestBase
         await storage.ChangePublishStateAsync(
             storedMessage,
             StatusName.Failed,
-            nextRetryAt: DateTime.UtcNow.AddSeconds(-1),
+            nextRetryAt: DateTimeOffset.UtcNow.AddSeconds(-1),
             cancellationToken: AbortToken
         );
 
@@ -939,7 +939,7 @@ public abstract class DataStorageTestsBase : TestBase
         await storage.ChangeReceiveStateAsync(
             storedMessage,
             StatusName.Failed,
-            nextRetryAt: DateTime.UtcNow.AddSeconds(-1),
+            nextRetryAt: DateTimeOffset.UtcNow.AddSeconds(-1),
             cancellationToken: AbortToken
         );
 
@@ -971,7 +971,7 @@ public abstract class DataStorageTestsBase : TestBase
         await storage.ChangePublishStateAsync(
             storedMessage,
             StatusName.Failed,
-            nextRetryAt: DateTime.UtcNow.AddMinutes(-1),
+            nextRetryAt: DateTimeOffset.UtcNow.AddMinutes(-1),
             cancellationToken: AbortToken
         );
         (await storage.LeasePublishAsync(storedMessage, TimeSpan.FromMinutes(30), AbortToken)).Should().BeTrue();
@@ -995,7 +995,7 @@ public abstract class DataStorageTestsBase : TestBase
         await storage.ChangeReceiveStateAsync(
             storedMessage,
             StatusName.Failed,
-            nextRetryAt: DateTime.UtcNow.AddMinutes(-1),
+            nextRetryAt: DateTimeOffset.UtcNow.AddMinutes(-1),
             cancellationToken: AbortToken
         );
         (await storage.LeaseReceiveAsync(storedMessage, TimeSpan.FromMinutes(30), AbortToken)).Should().BeTrue();
@@ -1019,7 +1019,7 @@ public abstract class DataStorageTestsBase : TestBase
         await storage.ChangePublishStateAsync(
             storedMessage,
             StatusName.Failed,
-            nextRetryAt: DateTime.UtcNow.AddMinutes(-1),
+            nextRetryAt: DateTimeOffset.UtcNow.AddMinutes(-1),
             cancellationToken: AbortToken
         );
         (await storage.LeasePublishAsync(storedMessage, TimeSpan.FromMinutes(30), AbortToken)).Should().BeTrue();
@@ -1042,7 +1042,7 @@ public abstract class DataStorageTestsBase : TestBase
         await storage.ChangePublishStateAsync(
             storedMessage,
             StatusName.Failed,
-            nextRetryAt: DateTime.UtcNow.AddMinutes(-1),
+            nextRetryAt: DateTimeOffset.UtcNow.AddMinutes(-1),
             cancellationToken: AbortToken
         );
 
@@ -1051,7 +1051,7 @@ public abstract class DataStorageTestsBase : TestBase
             .ContainSingle(m => m.StorageId == storedMessage.StorageId)
             .Subject;
 
-        claimed.LockedUntil.Should().BeAfter(DateTime.UtcNow).And.BeBefore(DateTime.UtcNow.AddMinutes(10));
+        claimed.LockedUntil.Should().BeAfter(DateTimeOffset.UtcNow).And.BeBefore(DateTimeOffset.UtcNow.AddMinutes(10));
     }
 
     public virtual async Task should_use_application_clock_when_scheduling_published_retry()
@@ -1065,7 +1065,7 @@ public abstract class DataStorageTestsBase : TestBase
         await storage.ChangePublishStateAsync(
             storedMessage,
             StatusName.Failed,
-            nextRetryAt: schedulingClock.GetUtcNow().UtcDateTime.AddMinutes(1),
+            nextRetryAt: schedulingClock.GetUtcNow().AddMinutes(1),
             cancellationToken: AbortToken
         );
 
@@ -1092,7 +1092,7 @@ public abstract class DataStorageTestsBase : TestBase
         await storage.ChangeReceiveStateAsync(
             storedMessage,
             StatusName.Failed,
-            nextRetryAt: schedulingClock.GetUtcNow().UtcDateTime.AddMinutes(1),
+            nextRetryAt: schedulingClock.GetUtcNow().AddMinutes(1),
             cancellationToken: AbortToken
         );
 
@@ -1432,7 +1432,7 @@ public abstract class DataStorageTestsBase : TestBase
         await storage.ChangeReceiveStateAsync(
             storedMessage,
             StatusName.Failed,
-            nextRetryAt: DateTime.UtcNow.AddMinutes(5),
+            nextRetryAt: DateTimeOffset.UtcNow.AddMinutes(5),
             cancellationToken: AbortToken
         );
 
@@ -1455,7 +1455,7 @@ public abstract class DataStorageTestsBase : TestBase
                         var ok = await storage.ChangeReceiveStateAsync(
                             localCopy,
                             StatusName.Failed,
-                            nextRetryAt: DateTime.UtcNow.AddMinutes(10),
+                            nextRetryAt: DateTimeOffset.UtcNow.AddMinutes(10),
                             originalRetries: 0,
                             cancellationToken: AbortToken
                         );
@@ -1482,7 +1482,7 @@ public abstract class DataStorageTestsBase : TestBase
         var first = await storage.ChangeReceiveStateAsync(
             storedMessage,
             StatusName.Failed,
-            nextRetryAt: DateTime.UtcNow.AddSeconds(-1),
+            nextRetryAt: DateTimeOffset.UtcNow.AddSeconds(-1),
             originalRetries: 0,
             cancellationToken: AbortToken
         );
@@ -1490,7 +1490,7 @@ public abstract class DataStorageTestsBase : TestBase
         var second = await storage.ChangeReceiveStateAsync(
             storedMessage,
             StatusName.Failed,
-            nextRetryAt: DateTime.UtcNow.AddSeconds(-1),
+            nextRetryAt: DateTimeOffset.UtcNow.AddSeconds(-1),
             originalRetries: 0,
             cancellationToken: AbortToken
         );
@@ -1916,7 +1916,7 @@ public abstract class DataStorageTestsBase : TestBase
         await storage.ChangePublishStateAsync(
             atLimit,
             StatusName.Failed,
-            nextRetryAt: DateTime.UtcNow.AddSeconds(-1),
+            nextRetryAt: DateTimeOffset.UtcNow.AddSeconds(-1),
             cancellationToken: AbortToken
         );
 
@@ -1930,7 +1930,7 @@ public abstract class DataStorageTestsBase : TestBase
         await storage.ChangePublishStateAsync(
             aboveLimit,
             StatusName.Failed,
-            nextRetryAt: DateTime.UtcNow.AddSeconds(-1),
+            nextRetryAt: DateTimeOffset.UtcNow.AddSeconds(-1),
             cancellationToken: AbortToken
         );
 
@@ -1954,7 +1954,7 @@ public abstract class DataStorageTestsBase : TestBase
         await storage.ChangeReceiveStateAsync(
             atLimitRecv,
             StatusName.Failed,
-            nextRetryAt: DateTime.UtcNow.AddSeconds(-1),
+            nextRetryAt: DateTimeOffset.UtcNow.AddSeconds(-1),
             cancellationToken: AbortToken
         );
 
@@ -1968,7 +1968,7 @@ public abstract class DataStorageTestsBase : TestBase
         await storage.ChangeReceiveStateAsync(
             aboveLimitRecv,
             StatusName.Failed,
-            nextRetryAt: DateTime.UtcNow.AddSeconds(-1),
+            nextRetryAt: DateTimeOffset.UtcNow.AddSeconds(-1),
             cancellationToken: AbortToken
         );
 
@@ -2007,9 +2007,9 @@ public abstract class DataStorageTestsBase : TestBase
         return stored;
     }
 
-    private DateTime _Now() => TimeProvider.GetUtcNow().UtcDateTime;
+    private DateTimeOffset _Now() => TimeProvider.GetUtcNow();
 
-    private DateTime _FutureLeaseUntil() => _Now().AddHours(1);
+    private DateTimeOffset _FutureLeaseUntil() => _Now().AddHours(1);
 
     /// <summary>Lease duration long enough that the lease stays live for the whole test.</summary>
     private static TimeSpan _FutureLease() => TimeSpan.FromHours(1);

@@ -52,7 +52,7 @@ public sealed class RecordingInfrastructureTests : TestBase
             StorageId = Guid.NewGuid(),
             Content = "{}",
             IntentType = IntentType.Bus,
-            Added = DateTime.UtcNow,
+            Added = DateTimeOffset.UtcNow,
             Origin = new Message(_BaseHeaders(id, name, correlationId), value: null),
         };
     }

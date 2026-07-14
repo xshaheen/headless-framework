@@ -153,7 +153,7 @@ internal sealed class Dispatcher : IDispatcher
 
     public async Task EnqueueToScheduler(
         MediumMessage message,
-        DateTime publishTime,
+        DateTimeOffset publishTime,
         object? transaction = null,
         CancellationToken cancellationToken = default
     )
@@ -162,7 +162,7 @@ internal sealed class Dispatcher : IDispatcher
 
         message.ExpiresAt = publishTime;
 
-        var timeSpan = publishTime - _timeProvider.GetUtcNow().UtcDateTime;
+        var timeSpan = publishTime - _timeProvider.GetUtcNow();
         var statusName = timeSpan <= TimeSpan.FromMinutes(1) ? StatusName.Queued : StatusName.Delayed;
 
         var changed = await _storage
