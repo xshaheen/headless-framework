@@ -4,24 +4,15 @@
 namespace Headless.DistributedLocks;
 
 /// <summary>Creates distributed semaphore instances with creation-time capacity binding.</summary>
+/// <remarks>
+/// Composite acquisition defines resource identity with <see cref="StringComparer.Ordinal"/> before invoking the
+/// provider. Implementations whose backend aliases ordinal-distinct names must reject non-canonical names or require
+/// callers to canonicalize them before using composite acquisition. Normalizing only inside
+/// <see cref="CreateSemaphore"/> is too late and can make one composite contend with itself.
+/// </remarks>
 [PublicAPI]
-public interface IDistributedSemaphoreProvider
+public interface IDistributedSemaphoreProvider : IDistributedLockEnvironment
 {
-    /// <summary>
-    /// Default lease duration applied when <see cref="DistributedLockAcquireOptions.TimeUntilExpires"/>
-    /// is not specified. Implementations refresh the lease in storage at this cadence when
-    /// <see cref="LockMonitoringMode.AutoExtend"/> is enabled.
-    /// </summary>
-    TimeSpan DefaultTimeUntilExpires { get; }
-
-    /// <summary>
-    /// Default upper bound applied to acquire attempts when
-    /// <see cref="DistributedLockAcquireOptions.AcquireTimeout"/> is not specified. After the timeout
-    /// elapses, the acquire returns <see langword="null"/> (try variants) or throws
-    /// <see cref="LockAcquisitionTimeoutException"/> (acquire variants).
-    /// </summary>
-    TimeSpan DefaultAcquireTimeout { get; }
-
     /// <summary>Creates a semaphore for <paramref name="resource"/> with a fixed maximum holder count.</summary>
     /// <param name="resource">The resource the semaphore guards. Must be non-null and non-whitespace.</param>
     /// <param name="maxCount">The maximum number of concurrent holders. Must be at least 1.</param>

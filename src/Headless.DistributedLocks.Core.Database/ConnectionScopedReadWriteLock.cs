@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.ComponentModel;
+using Microsoft.Extensions.Logging;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
@@ -16,6 +17,12 @@ namespace Headless.DistributedLocks;
 public sealed class ConnectionScopedReadWriteLock(ConnectionScopedDistributedLock mutexProvider)
     : IDistributedReadWriteLock
 {
+    /// <summary>Delegates to <see cref="ConnectionScopedDistributedLock.TimeProvider"/>.</summary>
+    public TimeProvider TimeProvider => mutexProvider.TimeProvider;
+
+    /// <summary>Delegates to <see cref="ConnectionScopedDistributedLock.Logger"/>.</summary>
+    public ILogger Logger => mutexProvider.Logger;
+
     /// <summary>
     /// Delegates to <see cref="ConnectionScopedDistributedLock.DefaultTimeUntilExpires"/>;
     /// connection-scoped locks have no TTL (<see cref="Timeout.InfiniteTimeSpan"/>).

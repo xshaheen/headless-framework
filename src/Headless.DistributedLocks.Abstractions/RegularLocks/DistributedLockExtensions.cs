@@ -68,7 +68,7 @@ public static class DistributedLockExtensions
         /// <exception cref="AggregateException">
         /// A child release or disposal failed during compensating rollback. The primary failure (cancellation, timeout,
         /// or the fault that triggered rollback) is first, followed by every cleanup failure. When rollback reports a
-        /// single failure and there is no primary, that exception is rethrown as-is instead.
+        /// failure and there is no primary, <see cref="LockCleanupFailedException"/> is thrown instead.
         /// </exception>
         public async Task<IDistributedLease?> TryAcquireAllAsync(
             IEnumerable<string> resources,
@@ -142,7 +142,7 @@ public static class DistributedLockExtensions
         /// <exception cref="AggregateException">
         /// A child release or disposal failed during compensating rollback. The primary failure (cancellation, timeout,
         /// or the fault that triggered rollback) is first, followed by every cleanup failure. When rollback reports a
-        /// single failure and there is no primary, that exception is rethrown as-is instead.
+        /// failure and there is no primary, <see cref="LockCleanupFailedException"/> is thrown instead.
         /// </exception>
         public async Task<IDistributedLease> AcquireAllAsync(
             IEnumerable<string> resources,
@@ -154,12 +154,7 @@ public static class DistributedLockExtensions
                 .TryAcquireAsync(provider, resources, options, cancellationToken)
                 .ConfigureAwait(false);
 
-            return result.Lease
-                ?? throw (
-                    result.TryOnce
-                        ? LockAcquisitionTimeoutException.ForTryOnceContention(result.Resource)
-                        : new LockAcquisitionTimeoutException(result.Resource)
-                );
+            return result.LeaseOrThrow();
         }
 
         /// <summary>Releases the resource lock held by <paramref name="distributedLock"/>.</summary>

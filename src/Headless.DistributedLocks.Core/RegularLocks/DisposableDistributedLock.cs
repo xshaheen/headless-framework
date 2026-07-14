@@ -67,7 +67,7 @@ internal sealed class DisposableDistributedLock : DistributedLockHandleBase
     /// </summary>
     /// <param name="timeUntilExpires">
     /// The new TTL from now. <see langword="null"/> applies the provider's
-    /// <see cref="IDistributedLock.DefaultTimeUntilExpires"/>.
+    /// <see cref="IDistributedLockEnvironment.DefaultTimeUntilExpires"/>.
     /// </param>
     /// <param name="cancellationToken">Token to cancel the renewal storage call.</param>
     /// <returns>

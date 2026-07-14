@@ -19,7 +19,9 @@ packages: DistributedLocks.Abstractions, DistributedLocks.Core, DistributedLocks
     - [Messaging Wake-ups](#messaging-wake-ups)
     - [Observability](#observability)
 - [Reader-Writer Locks](#reader-writer-locks)
+    - [Reader-Writer Composite Acquisition](#reader-writer-composite-acquisition)
 - [Semaphores](#semaphores)
+    - [Semaphore Composite Acquisition](#semaphore-composite-acquisition)
 - [Choosing a Provider](#choosing-a-provider)
 - [Headless.DistributedLocks.Abstractions](#headlessdistributedlocksabstractions)
     - [Problem Solved](#problem-solved)
@@ -97,8 +99,12 @@ Use `IDistributedReadWriteLock` when concurrent readers are safe and writers nee
 - Code against `IDistributedLock` from `Headless.DistributedLocks.Abstractions`; do not inject Redis storage types into application services.
 - Use `Headless.DistributedLocks.InMemory` only for tests, local development, or deliberately single-instance apps. It is not a cross-process lock.
 - Use `TryAcquireAsync(...)` when timeout is an expected branch; use `AcquireAsync(...)` when timeout should fail the workflow.
-- Use `TryAcquireAllAsync(...)` or `AcquireAllAsync(...)` when one operation must hold several resources. Pass the complete set in one call so the framework can sort it ordinally, deduplicate it, enforce one timeout budget, and compensate partial acquisition in reverse order.
-- When implementing a custom `IDistributedLock`, preserve ordinal resource identity. If the backend aliases ordinal-distinct names, reject non-canonical names or require callers to canonicalize them before composite acquisition; normalizing only inside the provider is too late.
+- Use `TryAcquireAllAsync(...)` or `AcquireAllAsync(...)` when one operation must hold several resources. All three primitives have them: `IDistributedLock` takes `IEnumerable<string>`, `IDistributedReadWriteLock` takes `IEnumerable<DistributedReadWriteLockRequest>`, `IDistributedSemaphoreProvider` takes `IEnumerable<DistributedSemaphoreRequest>`. Pass the complete set in one call so the framework can sort it ordinally, deduplicate it, enforce one timeout budget, and compensate partial acquisition in reverse order.
+- When a caller needs both read and write locks, pass one mixed `DistributedReadWriteLockRequest` set through a single `AcquireAllAsync(...)`. Never nest `AcquireAllReadAsync(...)` inside `AcquireAllWriteAsync(...)` (or vice versa): neither call sees the complete set, so neither can order it, and two such callers can deadlock. Use the read-only / write-only sugar overloads only when the whole set is genuinely one mode. The same rule bans nesting a composite inside another composite, or acquiring one while already holding an unrelated lock.
+- Never pass a composite lease's `Resource` or `LeaseId` to a by-resource API (`IsLockedAsync`, `GetLeaseIdAsync`, `GetLockInfoAsync`, `GetHolderCountAsync`, `RenewAsync(resource, leaseId, ...)`). The joined name and synthetic id exist in no backend, so those calls report a genuinely held set as unlocked instead of failing. Inspect the individual resource names, and renew or release the composite through its handle.
+- A `DistributedSemaphoreRequest`'s `MaxCount` is the semaphore's capacity, not a permit count: a composite takes exactly one slot of each named semaphore, and naming one resource twice with different `MaxCount` values throws before any provider call. There is no all-or-nothing way to take N permits of a *single* semaphore today — repeated `AcquireAsync(...)` calls can split permits between two contending callers, and a composite cannot fix it (see [Composite Acquisition](#composite-acquisition)).
+- Sizing a connection pool for PostgreSQL or SQL Server: a reader-writer composite over N resources pins N connections for the entire hold, because those backends are connection-scoped. Size for your largest composite.
+- When implementing a custom `IDistributedLock`, `IDistributedReadWriteLock`, or `IDistributedSemaphoreProvider`, satisfy `IDistributedLockEnvironment` — the base interface all three extend — by exposing `TimeProvider`, `Logger`, `DefaultTimeUntilExpires`, and `DefaultAcquireTimeout` (the composite coordinator reads all four off the provider), and preserve ordinal resource identity. If the backend aliases ordinal-distinct names, reject non-canonical names or require callers to canonicalize them before composite acquisition; normalizing only inside the provider is too late.
 - Per-call configuration is bundled into `DistributedLockAcquireOptions` (`TimeUntilExpires`, `AcquireTimeout`, `ReleaseOnDispose`, `Monitoring`). Omit the argument to use defaults; use `with` expressions to derive variants.
 - Always `await using` the returned lock when `ReleaseOnDispose` is `true` (the default); set `ReleaseOnDispose = false` only when ownership is deliberately transferred and the caller will release explicitly.
 - Set `Monitoring = LockMonitoringMode.Monitor` when work should observe lease loss through `IDistributedLease.LostToken`; set `Monitoring = LockMonitoringMode.AutoExtend` only when long work should renew its own lease in the background (it implies `Monitor`).
@@ -134,17 +140,44 @@ Redis mutex locks and Redis semaphores issue fencing tokens with an atomic Lua a
 
 ### Composite Acquisition
 
-`TryAcquireAllAsync(resources, options, cancellationToken)` and `AcquireAllAsync(resources, options, cancellationToken)` acquire a complete resource set in ordinal order after validating and deduplicating the input. Canonical ordering prevents two callers that request the same set in different orders from deadlocking each other. The acquire timeout is one budget for the whole set, not a fresh timeout per child; `TimeSpan.Zero` still gives every canonical child one non-blocking attempt.
+All three primitives expose all-or-nothing multi-resource acquisition through one shared coordinator. The entry points differ only in what a request carries:
 
-The ordering guarantee holds only between callers that acquire their whole set through these two methods. A call site that takes several locks by calling `AcquireAsync`/`TryAcquireAsync` in sequence picks its own order and stays outside the canonical discipline, so it can still deadlock against a composite caller. Route every multi-resource acquisition through the composite helpers and pass the complete set in one call; acquiring a composite while already holding an unrelated lock reintroduces the same circular-wait risk.
+| Primitive | Entry points | Request element | Composite `Resource` |
+| --- | --- | --- | --- |
+| Mutex (`IDistributedLock`) | `TryAcquireAllAsync(...)` / `AcquireAllAsync(...)` | `string` | `a+b` |
+| Reader-writer (`IDistributedReadWriteLock`) | `TryAcquireAllAsync(...)` / `AcquireAllAsync(...)`, plus the uniform-mode sugar `TryAcquireAllReadAsync(...)` / `AcquireAllReadAsync(...)` / `TryAcquireAllWriteAsync(...)` / `AcquireAllWriteAsync(...)` | `DistributedReadWriteLockRequest(string Resource, DistributedLockMode Mode)`; the sugar overloads take `string` | `r:a+w:b` (mode-encoded) |
+| Semaphore (`IDistributedSemaphoreProvider`) | `TryAcquireAllAsync(...)` / `AcquireAllAsync(...)` | `DistributedSemaphoreRequest(string Resource, int MaxCount)` | `a+b` |
 
-This is compensating coordination, not a transactional multi-lock primitive. If a later child cannot be acquired, is lost, or faults, every child already held is released and disposed in reverse order. Cleanup is exhaustive and cleanup failures are surfaced rather than hidden. While a later child is pending, finite-TTL children are renewed at half their TTL, capped at one minute; `LockMonitoringMode.AutoExtend` already owns renewal, and infinite-TTL leases need none. The coordinator uses `IDistributedLock.TimeProvider` for deadlines and scheduled waits, so custom providers must expose the same clock used by their own acquisition logic. That clock schedules the check-in; it never arbitrates expiry — only the backend's own answer decides whether a lease still holds.
+Each call validates and canonicalizes the complete input before the first provider call, then acquires the canonical set in ordinal order. Canonical ordering prevents two callers that request the same set in different orders from deadlocking each other. The acquire timeout is one budget for the whole set, not a fresh timeout per child; `TimeSpan.Zero` still gives every canonical child one non-blocking attempt.
 
-Cleanup failures raise `LockCleanupFailedException`, which derives from `DistributedLockException` (so `catch (DistributedLockException)` sees them) and carries every underlying failure on `Failures`. A resource whose release failed may remain held until its TTL expires, so treat it as "ownership may still be held" rather than "released". The one exception is `DisposeAsync`, which never throws — it logs through `IDistributedLock.Logger` instead, because `await using` lowers to try/finally and an exception thrown from disposal would replace the one the caller's body was already throwing. Call `ReleaseAsync()` explicitly when the cleanup outcome must be observed.
+**Canonical ordering is by resource, not by a composed key.** A reader-writer request carries a mode and a semaphore request carries a capacity, but neither participates in the sort — the set is ordered by `StringComparer.Ordinal` on the resource name alone. That is what lets a mutex composite, a reader-writer composite, and a semaphore composite over overlapping names order consistently *against each other*. Sorting a composed key such as `"a:write"` would place it after `"a:x:read"` for the resources `a` and `a:x`, silently breaking the single global resource order that prevents circular wait.
+
+The per-primitive canonicalization rules are what make resource-only ordering total:
+
+- **Mutex** — duplicates are deduplicated.
+- **Reader-writer** — a resource requested as both `Read` and `Write` collapses to a single `Write` child, because a write lock subsumes a read lock. Every resource therefore appears exactly once. `DistributedLockMode.None` (the `default`) is rejected.
+- **Semaphore** — `MaxCount` binds to the *semaphore*, not to the acquisition. Naming one resource twice with different `MaxCount` values describes two semaphores that cannot both exist, so it is rejected as a caller error (an `ArgumentException` naming the resource) before any `CreateSemaphore` call. Identical duplicates dedupe silently, and a composite takes exactly one slot of each named semaphore.
+
+**The ordering guarantee holds only when the caller passes the whole set through one call.** A call site that takes several locks by calling `AcquireAsync`/`TryAcquireAsync` in sequence picks its own order and stays outside the canonical discipline, so it can still deadlock against a composite caller. Acquiring a composite while already holding an unrelated lock — including nesting one composite inside another — reintroduces the same circular-wait risk, because neither call ever sees the complete set and so neither can order it. Route every multi-resource acquisition through the composite helpers and pass the complete set in one call.
+
+This is compensating coordination, not a transactional multi-lock primitive. If a later child cannot be acquired, is lost, or faults, every child already held is released and disposed in reverse order. Cleanup is exhaustive and cleanup failures are surfaced rather than hidden. While a later child is pending, finite-TTL children are renewed at half their TTL, capped at one minute; `LockMonitoringMode.AutoExtend` already owns renewal, and genuinely infinite-TTL leases need none. The cadence is derived from the TTL the *backend* applies, not the one the caller asked for, and those differ in one case: a reader-writer **read** child cannot hold an infinite lease — its reader entry must carry a finite expiry or a crashed reader strands the resource forever — so the provider clamps `Timeout.InfiniteTimeSpan` to `DefaultTimeUntilExpires`. A composite whose canonical set contains any `Read` entry therefore schedules formation renewal even when `TimeUntilExpires` is infinite; scheduling off the requested value would let the read child silently expire underneath a long formation. Mutex, semaphore, and reader-writer **write** children honour an infinite TTL and are not renewed during formation (a semaphore slot always has a finite TTL, so formation renewal always applies there). Renewal itself forwards the *requested* TTL, so each child re-applies its own backend's clamp and a mixed set's write child keeps the infinite lease that was asked for. The coordinator uses the provider's `TimeProvider` for deadlines and scheduled waits, so custom providers must expose the same clock used by their own acquisition logic. That clock schedules the check-in; it never arbitrates expiry — only the backend's own answer decides whether a lease still holds.
+
+Cleanup failures raise `LockCleanupFailedException`, which derives from `DistributedLockException` (so `catch (DistributedLockException)` sees them) and carries every underlying failure on `Failures`. A resource whose release failed may remain held until its TTL expires, so treat it as "ownership may still be held" rather than "released". The one exception is `DisposeAsync`, which never throws — it logs through the provider's `Logger` instead, because `await using` lowers to try/finally and an exception thrown from disposal would replace the one the caller's body was already throwing. Call `ReleaseAsync()` explicitly when the cleanup outcome must be observed.
 
 Renewing a composite throws `LockHandleLostException` naming the lost child rather than returning `false`. Renewals fan out concurrently, so a sibling of the lost child has already been extended and is still held; reporting `false` would mean "already lost — nothing to release" under the `IDistributedLease` contract, and a caller acting on that would orphan the survivors until their TTL expired. A composite still returns `false` when it was already released.
 
 When canonicalization leaves one resource, the method returns the provider's child lease unchanged, preserving its real `LeaseId` and `FencingToken`. A true multi-resource result has a synthetic composite `LeaseId`, a joined diagnostic `Resource`, and a `null` scalar `FencingToken` because independent per-resource fences cannot be represented safely as one number. Its loss token links the child loss tokens, renewal covers every child, and release/disposal run in reverse order. `ReleaseOnDispose = false` suppresses dispose-time release for the complete set but still permits explicit `ReleaseAsync()`.
+
+**A composite's identity is diagnostic only — it was never written to any backend.** This holds for all three primitives. The joined `Resource` (`a+b` for a mutex or semaphore composite, `r:a+w:b` for a reader-writer composite) and the synthetic `LeaseId` are generated locally and exist in no lock store. Never pass either to a by-resource provider API — `IsLockedAsync`, `GetLockInfoAsync`, `GetExpirationAsync`, `GetLeaseIdAsync`, `GetHolderCountAsync`, `RenewAsync(resource, leaseId, ...)`. They will not fail; they will report a genuinely held set as *not locked*. Inspect the individual resource names instead, and release or renew the composite through the handle itself. The same applies to `LockAcquisitionTimeoutException.Resource` on a composite timeout: it carries the joined set, not the single resource that blocked, and must not be split back into names.
+
+**What composite acquisition deliberately does not do.** Each of these is a real problem; each is out of scope for a reason, not by oversight.
+
+- **No cross-primitive composites** — a set mixing a mutex, a reader-writer lock, and a semaphore in one call. The three primitives are unrelated interfaces with no unified provider surface, and PostgreSQL and SQL Server ship no semaphore at all. A caller who instead nests a mutex composite inside a reader-writer composite reintroduces circular-wait risk, exactly as described above; there is no safe way to compose across primitives today.
+- **No upgradeable-read composites.** A composite must be able to roll back every child it already holds, and a one-way read-to-write upgrade cannot be rolled back. If upgradeable reader-writer locks are ever added to the framework, they stay outside composites.
+- **No scalar fencing token for a multi-resource result.** Independent per-resource fences cannot be represented safely as one number, so a composite's `FencingToken` is always `null` — even for semaphores, whose individual slots each carry one. Fence per resource, or take the single-resource passthrough, which keeps the child's real token.
+- **No N-permit acquisition of a single semaphore.** See below — this one is a genuine gap, not just a scope line.
+
+**The N-permit gap.** Taking N permits of *one* semaphore all-or-nothing is a real all-or-nothing problem, and composites do **not** solve it. Be precise about why, because the obvious justification is wrong: "just call `AcquireAsync` N times" is *not* a safe workaround. With a capacity-2 semaphore, two callers that each want 2 permits can each take 1 and stall, holding partial ownership with neither able to proceed. But a composite structurally cannot fix it either. Composites prevent deadlock by imposing a global order across *distinct* resources, and contention for N permits of a single semaphore has no ordering to impose — both callers hash to the same key and interleave on it, and no permutation of acquire calls avoids the split. `DistributedSemaphoreRequest` therefore carries no permit count: a permit-count field would advertise atomicity it could not deliver. The only correct fix is atomic multi-permit acquisition inside each storage backend (a Redis Lua script that checks `count + N <= maxCount` and adds N members or none, and an in-memory equivalent), which is a change to `IDistributedSemaphoreStorage` and every implementation of it. **Callers who need it have no safe primitive today.** Design around it: model each permit as its own named resource and compose over those distinct names, or use a mutex.
 
 ### Lease Lifecycle Monitoring
 
@@ -236,6 +269,47 @@ await using var write = await readerWriterLocks.AcquireWriteLockAsync(
 );
 ```
 
+### Reader-Writer Composite Acquisition
+
+`IDistributedReadWriteLock` composes over a **mixed** set of read and write requests:
+
+```csharp
+Task<IDistributedLease?> TryAcquireAllAsync(IEnumerable<DistributedReadWriteLockRequest> requests, DistributedLockAcquireOptions? options = null, CancellationToken cancellationToken = default)
+Task<IDistributedLease>  AcquireAllAsync(IEnumerable<DistributedReadWriteLockRequest> requests, DistributedLockAcquireOptions? options = null, CancellationToken cancellationToken = default)
+```
+
+with `record DistributedReadWriteLockRequest(string Resource, DistributedLockMode Mode)` and `enum DistributedLockMode { None = 0, Read = 1, Write = 2 }`. `None` is the `default`, and it is rejected — the sentinel exists so `default(DistributedLockMode)` is an *invalid* request rather than a silently-shared read lock.
+
+Four sugar overloads cover the uniform-mode cases and take plain names: `TryAcquireAllReadAsync(IEnumerable<string>, ...)`, `AcquireAllReadAsync(...)`, `TryAcquireAllWriteAsync(...)`, `AcquireAllWriteAsync(...)`.
+
+```csharp
+await using var lease = await readerWriterLocks.AcquireAllAsync(
+    [
+        new DistributedReadWriteLockRequest("catalog:prices", DistributedLockMode.Read),
+        new DistributedReadWriteLockRequest("catalog:inventory", DistributedLockMode.Write),
+    ],
+    new DistributedLockAcquireOptions
+    {
+        TimeUntilExpires = TimeSpan.FromMinutes(2),
+        AcquireTimeout = TimeSpan.FromSeconds(10),
+    },
+    ct
+);
+```
+
+**Why the set is mixed rather than a read set and a write set.** This is the load-bearing design decision, and separate read-set and write-set entry points would silently reintroduce the circular wait that composite acquisition exists to prevent. A caller needing a read lock on `a` and a write lock on `b` would have to nest two composites, and two such callers deadlock:
+
+- Caller X: `AcquireAllReadAsync(["a"])`, then `AcquireAllWriteAsync(["b"])` — holds read-`a`, waits on write-`b`.
+- Caller Y: `AcquireAllReadAsync(["b"])`, then `AcquireAllWriteAsync(["a"])` — holds read-`b`, waits on write-`a`.
+
+Ordinal sorting cannot fix that, because neither call ever sees the full set. A mixed set can: both callers canonicalize to `a` then `b`, so X takes read-`a` while Y blocks on write-`a`, and there is no cycle. Use the sugar overloads only when the whole set is genuinely one mode; the moment a caller needs both, pass one mixed set through one call.
+
+**Mode collapse.** A resource requested as both `Read` and `Write` in the same set collapses to a single `Write` child, because a write lock subsumes a read lock. Each resource therefore appears exactly once in the canonical set, which is what makes ordering by resource name alone total and well-defined.
+
+**Composite identity encodes the mode** (`r:a+w:b`) so a read set and a write set over the same names are distinguishable in diagnostics. Like every composite identity it exists in no backend — never pass a composite's `Resource` or `LeaseId` to `IsReadLockedAsync(resource)`, `IsWriteLockedAsync(resource)`, `GetReaderCountAsync(resource)`, or any other by-resource API; they will report a held set as unlocked rather than fail. Inspect the individual resource names, and renew or release the composite through its handle.
+
+**Connection-scoped cost.** On PostgreSQL and SQL Server a reader-writer composite over N resources **pins N database connections for the whole duration of the hold**, because those backends are connection-scoped (see [Connection-Scoped Locks](#connection-scoped-locks-database-engine)) — there is no TTL-backed lease to hold in the caller's absence. Size the connection pool for your largest composite. This is a real operational cost, not a defect. Redis and InMemory composites hold no connection per child.
+
 ## Semaphores
 
 Use `IDistributedSemaphoreProvider` when a resource may have N concurrent holders. `CreateSemaphore(resource, maxCount)` binds capacity to the returned semaphore instance, so its acquire calls cannot disagree about `maxCount`; all callers must use the same `maxCount` for a given distributed resource because mixed counts are undefined. Acquired slots return the same `IDistributedLease` handle used by mutex locks: `ReleaseAsync()`, `RenewAsync(...)`, `LostToken`, `LockMonitoringMode.Monitor`, `LockMonitoringMode.AutoExtend`, and `FencingToken` all flow through the same surface.
@@ -255,6 +329,39 @@ await using var slot = await semaphore.AcquireAsync(
 );
 ```
 
+### Semaphore Composite Acquisition
+
+Composite acquisition hangs off `IDistributedSemaphoreProvider`, not off `IDistributedSemaphore`:
+
+```csharp
+Task<IDistributedLease?> TryAcquireAllAsync(IEnumerable<DistributedSemaphoreRequest> requests, DistributedLockAcquireOptions? options = null, CancellationToken cancellationToken = default)
+Task<IDistributedLease>  AcquireAllAsync(IEnumerable<DistributedSemaphoreRequest> requests, DistributedLockAcquireOptions? options = null, CancellationToken cancellationToken = default)
+```
+
+with `record DistributedSemaphoreRequest(string Resource, int MaxCount)`. It has to hang off the provider because a semaphore binds its resource and capacity at construction and `IDistributedSemaphore.TryAcquireAsync(...)` takes no resource argument — a single semaphore instance cannot compose. `CreateSemaphore(resource, maxCount)` is the only way to materialize the children, which is why every request carries its own capacity. Each request naming its own `MaxCount` also means one composite can span differently-sized semaphores.
+
+```csharp
+await using var lease = await semaphoreProvider.AcquireAllAsync(
+    [
+        new DistributedSemaphoreRequest("downstream:billing-api", MaxCount: 5),
+        new DistributedSemaphoreRequest("downstream:ledger-api", MaxCount: 2),
+    ],
+    new DistributedLockAcquireOptions { TimeUntilExpires = TimeSpan.FromMinutes(2) },
+    ct
+);
+```
+
+**`MaxCount` binds to the semaphore, not to the acquisition.** Every caller naming a given distributed resource must agree on its capacity — mixed counts for one resource are undefined, exactly as they are for `CreateSemaphore`. So naming one resource twice in a set with *different* `MaxCount` values describes two semaphores that cannot both exist. That is a caller bug, and it is rejected with an `ArgumentException` naming the resource before any `CreateSemaphore` or acquire call runs. Identical duplicates dedupe silently.
+
+**A composite takes exactly one slot of each named semaphore.** Duplicate requests for one resource collapse to a single child; they do not take two permits. `DistributedSemaphoreRequest` deliberately has no permit-count field — see [the N-permit gap](#composite-acquisition) for why a composite structurally cannot deliver all-or-nothing acquisition of N permits of a *single* semaphore, and why repeated `AcquireAsync` calls are not a safe workaround.
+
+Two further consequences of the semaphore's lease shape:
+
+- **Formation renewal always applies.** A slot is stored with a finite expiry score, so `TimeUntilExpires = Timeout.InfiniteTimeSpan` is rejected regardless of `Monitoring`. Held slots are therefore always renewed at half their TTL (capped at one minute) while later slots are still pending, unless `LockMonitoringMode.AutoExtend` already owns renewal.
+- **The composite's `FencingToken` is `null`** even though each individual slot carries one — there is no single fence for a set. The joined `Resource` (`a+b`) and synthetic `LeaseId` exist in no backend; never pass them to `GetHolderCountAsync` or any other by-resource API. A set canonicalizing to one resource returns the semaphore's own slot lease unchanged, real `FencingToken` included.
+
+**Provider coverage.** Semaphore composites are available wherever semaphores are: Redis and InMemory. PostgreSQL and SQL Server ship no semaphore primitive at all, so semaphore composites do not apply to them — this is the same coverage as `CreateSemaphore`, not a composite-specific gap.
+
 ## Choosing a Provider
 
 Use InMemory when all contenders are inside one process. Use Redis when you operate Redis and need efficiency locks (mutex, reader-writer, or semaphore) with atomic Lua scripts. Use Postgres when the protected state already lives in PostgreSQL or when session/transaction-coupled advisory locks are the right primitive. Use SQL Server when the protected state already lives in SQL Server or when native `sp_getapplock` server-side blocking is the right primitive. Do not use distributed locks for correctness locks on protected state mutations without stale-write rejection through `FencingToken` or transaction-coupled locking.
@@ -262,9 +369,9 @@ Use InMemory when all contenders are inside one process. Use Redis when you oper
 | Provider | Use when | Avoid when | Trade-off |
 | --- | --- | --- | --- |
 | `Headless.DistributedLocks.InMemory` | Tests, local development, or single-instance apps need the real lock abstractions without Redis. | More than one process, node, container, or app instance can contend for the same resource. | No infrastructure; coordination and fencing state disappear with the process. |
-| `Headless.DistributedLocks.PostgreSql` | You want PostgreSQL advisory mutexes or reader-writer locks, durable sequence fencing, or transaction-coupled locks. | You need semaphores, PgBouncer transaction/statement pooling for session-scoped locks, or no PostgreSQL dependency. | No TTL; the lock lives as long as the holding connection, so the handle must be disposed to release it (no finalizer reclaim). Connection death is detected actively (see [Connection-Scoped Locks](#connection-scoped-locks-database-engine)). |
+| `Headless.DistributedLocks.PostgreSql` | You want PostgreSQL advisory mutexes or reader-writer locks, durable sequence fencing, or transaction-coupled locks. | You need semaphores (or semaphore composites), PgBouncer transaction/statement pooling for session-scoped locks, or no PostgreSQL dependency. | No TTL; the lock lives as long as the holding connection, so the handle must be disposed to release it (no finalizer reclaim), and a composite over N resources pins N connections for the hold. Connection death is detected actively (see [Connection-Scoped Locks](#connection-scoped-locks-database-engine)). |
 | `Headless.DistributedLocks.Redis` | You want direct Redis-backed efficiency locks, reader-writer locks, or N-holder semaphores. | You need durable transaction-coupled fencing. | Requires `IConnectionMultiplexer`; Redis fencing is best-effort unless the fence key is retained. |
-| `Headless.DistributedLocks.SqlServer` | You want SQL Server application locks, native server-side blocking, durable sequence fencing, or transaction-coupled locks. | You need semaphores, upgradeable reader-writer locks, or no SQL Server dependency. | No TTL; session-scoped locks live as long as the holding connection, and waiters block inside SQL Server. |
+| `Headless.DistributedLocks.SqlServer` | You want SQL Server application locks, native server-side blocking, durable sequence fencing, or transaction-coupled locks. | You need semaphores (or semaphore composites), upgradeable reader-writer locks, or no SQL Server dependency. | No TTL; session-scoped locks live as long as the holding connection, a composite over N resources pins N connections for the hold, and waiters block inside SQL Server. |
 
 ---
 
@@ -278,9 +385,11 @@ Lets application and domain code depend on lock interfaces without referencing a
 
 ### Key Features
 
-- `IDistributedLock` with single-resource `TryAcquireAsync(...)` / `AcquireAsync(...)` and multi-resource `TryAcquireAllAsync(...)` / `AcquireAllAsync(...)` extensions.
-- `IDistributedReadWriteLock` with `AcquireReadLockAsync(...)`, `TryAcquireReadLockAsync(...)`, `AcquireWriteLockAsync(...)`, and `TryAcquireWriteLockAsync(...)`.
-- `IDistributedSemaphoreProvider` and `IDistributedSemaphore` for creation-time `maxCount` concurrency control.
+- `IDistributedLock` with single-resource `TryAcquireAsync(...)` / `AcquireAsync(...)` and multi-resource `TryAcquireAllAsync(...)` / `AcquireAllAsync(...)` extensions over `IEnumerable<string>`.
+- `IDistributedReadWriteLock` with `AcquireReadLockAsync(...)`, `TryAcquireReadLockAsync(...)`, `AcquireWriteLockAsync(...)`, and `TryAcquireWriteLockAsync(...)`, plus composite `TryAcquireAllAsync(...)` / `AcquireAllAsync(...)` over a mixed `IEnumerable<DistributedReadWriteLockRequest>` set and the uniform-mode sugar `TryAcquireAllReadAsync(...)` / `AcquireAllReadAsync(...)` / `TryAcquireAllWriteAsync(...)` / `AcquireAllWriteAsync(...)`.
+- `DistributedReadWriteLockRequest(string Resource, DistributedLockMode Mode)` and `DistributedLockMode` (`None = 0`, `Read = 1`, `Write = 2`) describe one entry of a reader-writer composite.
+- `IDistributedSemaphoreProvider` and `IDistributedSemaphore` for creation-time `maxCount` concurrency control, with composite `TryAcquireAllAsync(...)` / `AcquireAllAsync(...)` over `IEnumerable<DistributedSemaphoreRequest>` on the provider.
+- `DistributedSemaphoreRequest(string Resource, int MaxCount)` names one semaphore in a composite and the capacity it is created with; it carries no permit count.
 - `IDistributedLease` handle with `LeaseId`, nullable `FencingToken`, `LostToken`, `CanObserveLoss`, `IsLost`, `ThrowIfLost()`, `RenewAsync(...)`, and `ReleaseAsync(...)`.
 - `TryUsingAsync(resource, work, ...)` convenience that acquires, executes work, and releases — prefer this over manual try/finally for simple guarded execution.
 - `LockAcquisitionTimeoutException`, `LockHandleLostException`, and `DistributedLockException` for lock-specific failures.
@@ -289,10 +398,13 @@ Lets application and domain code depend on lock interfaces without referencing a
 ### Design Notes
 
 - `AcquireAsync(...)` is a throwing convenience over `TryAcquireAsync(...)`. It does not provide stronger safety guarantees.
-- Multi-resource acquisition validates, deduplicates, and ordinal-sorts the complete input before the first provider call, then applies one acquire timeout across the canonical set. A zero timeout gives every canonical resource one non-blocking attempt. Partial acquisition is compensated by exhaustive reverse-order release and disposal; it is not transactional.
-- Composite resource identity is ordinal: two names are the same only when `StringComparer.Ordinal` considers them equal. Custom providers whose backend aliases ordinal-distinct names, for example through case folding, must reject non-canonical names or require callers to canonicalize them before invoking the composite helpers. Normalizing only inside the provider is too late and can make one composite contend with itself.
-- A canonical set of one returns the provider's original child lease, preserving its `LeaseId` and `FencingToken`. A true multi-resource lease has a synthetic `LeaseId`, a joined diagnostic `Resource`, and a `null` scalar `FencingToken`; its loss signal links the child signals, and renew/release operate on every child.
-- During composite formation, finite-TTL children are renewed at half the TTL, capped at one minute, unless `LockMonitoringMode.AutoExtend` already owns renewal. Composite deadlines and waits use `IDistributedLock.TimeProvider`; custom providers must expose the clock used by their own acquisition logic.
+- Multi-resource acquisition validates, deduplicates, and ordinal-sorts the complete input before the first provider call, then applies one acquire timeout across the canonical set. A zero timeout gives every canonical resource one non-blocking attempt. Partial acquisition is compensated by exhaustive reverse-order release and disposal; it is not transactional. The same coordinator backs all three primitives.
+- Composite resource identity is ordinal: two names are the same only when `StringComparer.Ordinal` considers them equal. The canonical set is ordered by *resource*, never by a composed key such as `"a:write"` — a composed sort would place that after `"a:x:read"` for the resources `a` and `a:x`, breaking the single global resource order that keeps a mutex composite and a reader-writer composite over overlapping names from deadlocking against each other. Custom providers whose backend aliases ordinal-distinct names, for example through case folding, must reject non-canonical names or require callers to canonicalize them before invoking the composite helpers. Normalizing only inside the provider is too late and can make one composite contend with itself.
+- A reader-writer set may mix `Read` and `Write` freely, and should: separate read-set and write-set calls cannot see the whole set, so two callers nesting them can still deadlock. A resource requested in both modes collapses to a single `Write` child (a write lock subsumes a read lock), which leaves every resource in the canonical set exactly once and makes resource-only ordering total.
+- A semaphore request's `MaxCount` is the semaphore's capacity, not a permit count. One resource named twice with conflicting capacities throws `ArgumentException` (naming the resource) before any `CreateSemaphore` call; identical duplicates dedupe. A composite takes exactly one slot per named semaphore, and there is deliberately no permit-count field — a composite cannot make N permits of a *single* semaphore atomic, because ordering cannot resolve same-resource contention.
+- A canonical set of one returns the provider's original child lease, preserving its `LeaseId` and `FencingToken`. A true multi-resource lease has a synthetic `LeaseId`, a joined diagnostic `Resource` (mode-encoded as `r:a+w:b` for reader-writer, a plain `a+b` join otherwise), and a `null` scalar `FencingToken`; its loss signal links the child signals, and renew/release operate on every child.
+- During composite formation, finite-TTL children are renewed at half the TTL, capped at one minute, unless `LockMonitoringMode.AutoExtend` already owns renewal. Composite deadlines and waits use the provider's `TimeProvider`; custom providers must expose the clock used by their own acquisition logic.
+- `IDistributedLock`, `IDistributedReadWriteLock`, and `IDistributedSemaphoreProvider` all extend `IDistributedLockEnvironment`, which names the four values a provider-agnostic coordinator needs and nothing else: `TimeProvider`, `Logger`, `DefaultTimeUntilExpires`, and `DefaultAcquireTimeout`. The composite coordinator needs a clock for the whole-set deadline and a logger for swallow-and-log disposal. **This is a breaking change for external implementors of the reader-writer and semaphore interfaces**: those two did not previously require `TimeProvider` and `Logger`, and a custom provider must now expose both. Implementing the four members is all that adoption requires; the base interface adds no work beyond them.
 - Per-call configuration (`TimeUntilExpires`, `AcquireTimeout`, `ReleaseOnDispose`, `Monitoring`) is bundled into `DistributedLockAcquireOptions`. Omit the argument to use defaults; use `with` expressions to derive variants.
 - `ReleaseOnDispose = false` prevents dispose-time release but does not disable explicit `ReleaseAsync(...)`, including for composite leases.
 - `LostToken` is an observability signal. Consumer code decides whether to stop, compensate, or throw `LockHandleLostException`; `ThrowIfLost()` implements the common fail-stop check.
@@ -332,6 +444,32 @@ public sealed class OrderWorker(IDistributedLock lockProvider)
         // process the order while the lease is held
     }
 }
+```
+
+`IDistributedReadWriteLock` composes over a mixed `(resource, mode)` set — `Task<IDistributedLease?> TryAcquireAllAsync(IEnumerable<DistributedReadWriteLockRequest> requests, DistributedLockAcquireOptions? options = null, CancellationToken cancellationToken = default)` and the throwing `AcquireAllAsync(...)`, plus the uniform-mode sugar `TryAcquireAllReadAsync(IEnumerable<string> resources, ...)` / `AcquireAllReadAsync(...)` / `TryAcquireAllWriteAsync(...)` / `AcquireAllWriteAsync(...)`. Pass reads and writes together in one call; taking them as two nested composites can deadlock.
+
+```csharp
+await using var lease = await readerWriterLocks.AcquireAllAsync(
+    [
+        new DistributedReadWriteLockRequest("catalog:prices", DistributedLockMode.Read),
+        new DistributedReadWriteLockRequest("catalog:inventory", DistributedLockMode.Write),
+    ],
+    new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromSeconds(10) },
+    ct
+);
+```
+
+`IDistributedSemaphoreProvider` composes over `(resource, maxCount)` descriptors — `Task<IDistributedLease?> TryAcquireAllAsync(IEnumerable<DistributedSemaphoreRequest> requests, DistributedLockAcquireOptions? options = null, CancellationToken cancellationToken = default)` and the throwing `AcquireAllAsync(...)`. One composite can span differently-sized semaphores, and takes exactly one slot of each.
+
+```csharp
+await using var slots = await semaphoreProvider.AcquireAllAsync(
+    [
+        new DistributedSemaphoreRequest("downstream:billing-api", MaxCount: 5),
+        new DistributedSemaphoreRequest("downstream:ledger-api", MaxCount: 2),
+    ],
+    new DistributedLockAcquireOptions { TimeUntilExpires = TimeSpan.FromMinutes(2) },
+    ct
+);
 ```
 
 ### Configuration
@@ -485,6 +623,7 @@ Lets database providers map session-scoped or transaction-scoped lock primitives
 - Handle loss is backed by an active `ConnectionMonitor`, not just the connection's `StateChange` event: monitored handles (`CanObserveLoss == true`) run a periodic bounded-timeout server-side probe so a silent half-open connection cancels `LostToken` instead of going unnoticed until the next query. `Monitoring = None` skips that active probe and leaves `LostToken` at `CancellationToken.None`.
 - The engine optimistically multiplexes uncontended locks on distinct keys onto a shared physical connection and transparently falls back to a dedicated connection on contention or advisory-key collision. This is a performance characteristic; lock semantics are unchanged.
 - Reader-writer locks do not issue fencing tokens; `FencingToken` is `null` for read and write handles.
+- A composite acquisition (`AcquireAllAsync(...)` / `TryAcquireAllAsync(...)`, mutex or reader-writer) over N resources **pins N database connections for the whole duration of the hold**. Connection-scoped locks live only while their session does, so there is no TTL-backed lease that could hold a resource without a live connection — every child of the composite keeps one. Multiplexing does not remove this: contended children fall back to dedicated connections by design. Size the connection pool for the largest composite the application forms, and prefer small sets. This is an operational cost of the connection-scoped model, not a defect.
 
 ### Installation
 
@@ -597,8 +736,9 @@ Coordinates work across nodes using PostgreSQL advisory locks, with no Redis dep
 - Session-scoped locks have no TTL and no finalizer reclaim. `RenewAsync(...)` returns `true`, `GetExpirationAsync(...)` returns `null`, and the lock is released only when the handle is disposed or `ReleaseAsync()` is called. Always `await using` the handle; an abandoned handle leaks its connection and advisory lock until the provider is disposed. See [Connection-Scoped Locks](#connection-scoped-locks-database-engine).
 - `Monitoring = LockMonitoringMode.None` leaves `LostToken` as `CancellationToken.None` and avoids the active connection probe. `Monitor` and `AutoExtend` both opt into connection-death observation; there is no TTL to extend.
 - Resource-targeted inspection (`IsLockedAsync(resource)`, `GetLockInfoAsync(resource)`) can see remote holders because the caller supplies the advisory key. Provider-wide enumeration (`ListActiveLocksAsync()`, `GetActiveLocksCountAsync()`) remains local-handle only because `pg_locks` does not expose reversible resource names for the provider namespace once advisory keys are hashed.
-- Postgres does not provide an N-holder advisory semaphore; use Redis semaphores or a separate slot-table design when N-holder concurrency is required.
-- The provider multiplexes uncontended advisory locks on distinct keys onto a shared physical connection and falls back to a dedicated connection on contention or advisory-key collision. This lowers connection usage in the common case without changing lock semantics.
+- Postgres does not provide an N-holder advisory semaphore; use Redis semaphores or a separate slot-table design when N-holder concurrency is required. Because there is no semaphore here, **semaphore composites do not apply to this provider**. Mutex and reader-writer composites do.
+- A composite acquisition over N resources **pins N connections for the whole duration of the hold**, because these locks are connection-scoped and there is no TTL-backed lease to hold a resource without a live session. Size the connection pool for the largest composite the application forms. See [Connection-Scoped Locks](#connection-scoped-locks-database-engine).
+- The provider multiplexes uncontended advisory locks on distinct keys onto a shared physical connection and falls back to a dedicated connection on contention or advisory-key collision. This lowers connection usage in the common case without changing lock semantics — but it does not reduce a composite's hold-time connection count, since contended children take dedicated connections by design.
 - Connection-death detection for an idle lock holder is active: monitored handles (`LostToken`) run a periodic bounded-timeout server-side probe whose command timeout catches silently-dropped half-open connections that Npgsql's `StateChange` event alone would miss until the next operation. TCP keepalive is complementary, not redundant: when the provider builds its own data source from `ConnectionString` it defaults `KeepAlive` (30s, see `PostgresDistributedLockOptions.KeepAlive`) unless the connection string already sets one, surfacing dead sockets faster at the transport layer. If you inject your own `DataSource`, set `Keepalive` on it yourself for the tightest detection window; the active monitor still operates regardless.
 
 ### Installation
@@ -761,7 +901,8 @@ Coordinates work across nodes using SQL Server application locks, with native se
 - `IsLockedAsync(...)`, `IsReadLockedAsync(...)`, `IsWriteLockedAsync(...)`, and reader counts inspect SQL Server lock state for a specific resource. `GetLockIdAsync(...)`, `GetLockInfoAsync(...)`, `ListActiveLocksAsync(...)`, and `GetActiveLocksCountAsync(...)` report only handles owned by the current provider instance because SQL Server application locks do not expose Headless lock ids for remote sessions.
 - Reader counts are presence-only for remote holders: `APPLOCK_TEST` reports the current lock mode but no holder count, so `GetReaderCountAsync(...)`/`GetLocksCountAsync(...)` count local holders exactly but collapse any number of remote shared readers to `1`. Treat the remote value as held / not-held. (The Postgres provider counts `pg_locks` rows and reports exact cross-process counts — a deliberate per-backend difference.)
 - Transaction-coupled locking is the safest primitive for SQL Server data mutations: commit or rollback releases the lock, and no explicit release is issued. The transaction API takes a `string` resource, whereas the Postgres advisory-lock API takes a typed `PostgresAdvisoryLockKey`; the asymmetry is primitive-driven (`sp_getapplock` is string-keyed, `pg_advisory_xact_lock` keys on a `bigint`). Both encode `KeyPrefix + resource` identically to the session provider, so the two APIs mutually exclude on the same logical resource.
-- SQL Server does not provide an N-holder semaphore here; use Redis semaphores or a future persistent slot-table design when N-holder concurrency is required.
+- SQL Server does not provide an N-holder semaphore here; use Redis semaphores or a future persistent slot-table design when N-holder concurrency is required. Because there is no semaphore here, **semaphore composites do not apply to this provider**. Mutex and reader-writer composites do.
+- A composite acquisition over N resources **pins N connections for the whole duration of the hold**, because session-scoped locks live only while their `SqlConnection` does and no TTL-backed lease can hold a resource without one. Size the connection pool for the largest composite the application forms. See [Connection-Scoped Locks](#connection-scoped-locks-database-engine).
 
 ### Installation
 

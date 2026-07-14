@@ -13,6 +13,24 @@ public sealed class NullDistributedReadWriteLockTests : TestBase
     private NullDistributedReadWriteLock _CreateProvider() => new(_timeProvider);
 
     [Fact]
+    public void should_expose_injected_time_provider()
+    {
+        var provider = _CreateProvider();
+
+        provider.TimeProvider.Should().BeSameAs(_timeProvider);
+    }
+
+    [Fact]
+    public void should_expose_null_logger_when_none_is_injected()
+    {
+        // given / when — composite coordination reads Logger off the provider, so it can never be null
+        var provider = _CreateProvider();
+
+        // then
+        provider.Logger.Should().NotBeNull();
+    }
+
+    [Fact]
     public async Task should_acquire_read_lock_immediately()
     {
         // given

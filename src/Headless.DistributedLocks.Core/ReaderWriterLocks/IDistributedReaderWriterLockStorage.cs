@@ -17,7 +17,7 @@ public interface IDistributedReadWriteLockStorage
     /// </summary>
     /// <remarks>
     /// Read leases always carry a finite TTL: the provider clamps <see langword="null"/> /
-    /// <see cref="Timeout.InfiniteTimeSpan"/> to <see cref="IDistributedReadWriteLock.DefaultTimeUntilExpires"/>
+    /// <see cref="Timeout.InfiniteTimeSpan"/> to <see cref="IDistributedLockEnvironment.DefaultTimeUntilExpires"/>
     /// before reaching this method, so a never-released reader cannot strand the resource
     /// indefinitely. Implementations may rely on a non-null <paramref name="ttl"/> in practice.
     /// </remarks>

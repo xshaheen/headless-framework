@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Microsoft.Extensions.Logging;
-
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
@@ -13,46 +11,8 @@ namespace Headless.DistributedLocks;
 /// <see cref="TryAcquireAsync"/> or <see cref="AcquireAsync"/> is too late and can make one composite contend with itself.
 /// </remarks>
 [PublicAPI]
-public interface IDistributedLock
+public interface IDistributedLock : IDistributedLockEnvironment
 {
-    /// <summary>
-    /// Gets the clock used by this provider for deadlines, elapsed-time measurement, and scheduled waits.
-    /// Provider-agnostic coordinators must use this instance so their timing remains aligned with the
-    /// provider and deterministic under test.
-    /// </summary>
-    /// <remarks>
-    /// This schedules work; it does not arbitrate expiry. A lease is valid only while the backend says so — the
-    /// clock decides when to ask, never whether ownership still holds.
-    /// </remarks>
-    TimeProvider TimeProvider { get; }
-
-    /// <summary>
-    /// Gets the logger used by this provider. Provider-agnostic coordinators log through this instance so their
-    /// diagnostics land in the same sink as the provider's own.
-    /// </summary>
-    /// <remarks>
-    /// Required because disposal must never throw: a handle that fails to release during <c>DisposeAsync</c> has to
-    /// report that failure somewhere, and an exception would replace whatever the caller's <c>using</c> body was
-    /// already throwing. Return <see cref="Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance"/> when a
-    /// provider has no logger of its own.
-    /// </remarks>
-    ILogger Logger { get; }
-
-    /// <summary>
-    /// Default lease duration applied when <see cref="DistributedLockAcquireOptions.TimeUntilExpires"/> is not
-    /// specified on an acquire call. Implementations refresh the lease in storage at this cadence when
-    /// <see cref="LockMonitoringMode.AutoExtend"/> is enabled.
-    /// </summary>
-    TimeSpan DefaultTimeUntilExpires { get; }
-
-    /// <summary>
-    /// Default upper bound applied to acquire attempts when
-    /// <see cref="DistributedLockAcquireOptions.AcquireTimeout"/> is not specified. After it elapses,
-    /// <see cref="AcquireAsync"/> throws <see cref="LockAcquisitionTimeoutException"/> and
-    /// <see cref="TryAcquireAsync"/> returns <see langword="null"/>.
-    /// </summary>
-    TimeSpan DefaultAcquireTimeout { get; }
-
     /// <summary>
     /// Acquires a resource lock for a specified resource and throws
     /// <see cref="LockAcquisitionTimeoutException"/> if the lock is not acquired before
@@ -148,7 +108,7 @@ public interface IDistributedLock
     /// <param name="resource">The locked resource to renew. Must be non-null and non-whitespace.</param>
     /// <param name="leaseId">The lease id the lock must currently be held by for the renewal to apply.</param>
     /// <param name="timeUntilExpires">
-    /// New lease duration from now. <see langword="null"/> applies <see cref="DefaultTimeUntilExpires"/>.
+    /// New lease duration from now. <see langword="null"/> applies <see cref="IDistributedLockEnvironment.DefaultTimeUntilExpires"/>.
     /// </param>
     /// <param name="cancellationToken">Cancels the renewal; surfaces as <see cref="OperationCanceledException"/>.</param>
     /// <returns>
