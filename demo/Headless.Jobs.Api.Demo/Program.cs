@@ -1,8 +1,9 @@
 using Headless.Coordination;
 using Headless.Jobs;
+using Headless.Jobs.Api.Demo;
 using Headless.Jobs.DbContextFactory;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Interfaces.Managers;
+using Headless.Jobs.Interfaces;
+using Headless.Jobs.Models;
 using Microsoft.EntityFrameworkCore;
 
 // Run a local Postgres first:
@@ -38,23 +39,20 @@ await using (var scope = app.Services.CreateAsyncScope())
     await db.Database.MigrateAsync();
 }
 
-// Minimal endpoint to schedule the sample job
+// Minimal endpoint to schedule the typed sample job through generated [JobFunction] metadata.
 app.MapPost(
     "/schedule-sample",
-    async (ITimeJobManager<TimeJobEntity> manager) =>
+    async (IJobScheduler scheduler, CancellationToken cancellationToken) =>
     {
         try
         {
-            var job = await manager.AddAsync(
-                new TimeJobEntity
-                {
-                    Function = "WebApiSample_HelloWorld",
-                    Description = "Sample API demo job",
-                    ExecutionTime = DateTime.UtcNow.AddSeconds(5),
-                }
+            var jobId = await scheduler.EnqueueAsync(
+                new WebApiHelloRequest("Hello from the API demo"),
+                new EnqueueOptions { Description = "Sample API demo job" },
+                cancellationToken
             );
 
-            return Results.Ok(new { job.Id, ScheduledFor = job.ExecutionTime });
+            return Results.Ok(new { Id = jobId });
         }
         catch (Exception e) when (e is not OperationCanceledException)
         {

@@ -1,6 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Jobs;
 using Headless.Jobs.Entities;
+using Headless.Jobs.Enums;
+using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Messaging;
 using Headless.Messaging.Persistence;
@@ -22,6 +25,7 @@ namespace Tests;
 /// <item>AE4 — no coordinator → <c>AddAsync</c> inserts directly.</item>
 /// <item>R5 — <c>AddBatchAsync</c> commits / rolls back atomically with the caller's transaction.</item>
 /// <item>R6 — cron <c>AddAsync</c> commits / rolls back atomically.</item>
+/// <item>R13 — <c>IJobScheduler</c> preserves enlisted writes and deferred scheduler wake-ups.</item>
 /// <item>Capstone — domain write + outbox publish + job enqueue commit or roll back as one unit.</item>
 /// </list>
 /// Each leaf derives a sealed class with <c>[Collection&lt;TFixture&gt;]</c> and re-declares the methods with
@@ -113,25 +117,54 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
     public virtual async Task domain_write_and_enqueue_commit_atomically()
     {
         var ct = AbortToken;
-        using var host = await _StartHostAsync(ct);
+        var sideEffectsProbe = new JobsSideEffectsProbe();
+        using var host = await _StartHostAsync(ct, sideEffectsProbe: sideEffectsProbe);
 
         try
         {
             var manager = host.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
+            var scheduler = host.Services.GetRequiredService<IJobScheduler>();
+            var request = new CoordinatedFacadeRequest(Guid.NewGuid(), "facade commit");
+            var options = new Headless.Jobs.Models.EnqueueOptions
+            {
+                Description = "facade coordinated enqueue",
+                Retries = 3,
+                RetryIntervals = [2, 5, 8],
+                OnNodeDeath = NodeDeathPolicy.MarkFailed,
+            };
+            var scheduledId = Guid.Empty;
 
             await fixture.RunCoordinatedTransactionAsync(
                 host.Services,
                 async (connection, transaction, innerCt) =>
                 {
                     await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, innerCt);
-                    var result = await manager.AddAsync(_TimeJob(), innerCt);
-                    result.Should().NotBeNull();
+                    (await manager.AddAsync(_TimeJob(), innerCt)).Should().NotBeNull();
+                    scheduledId = await scheduler.EnqueueAsync(request, options, innerCt);
+
+                    scheduledId.Should().NotBeEmpty();
+                    sideEffectsProbe.RestartCount.Should().Be(0, "scheduler wake-up must wait for commit");
+                    sideEffectsProbe.NotificationIds.Should().BeEmpty("notifications must wait for commit");
                 },
                 ct
             );
 
-            (await fixture.CountTimeJobsAsync(ct)).Should().Be(1);
+            (await fixture.CountTimeJobsAsync(ct)).Should().Be(2);
             (await fixture.CountProbeRowsAsync(ct)).Should().Be(1);
+            sideEffectsProbe.RestartCount.Should().Be(2);
+            sideEffectsProbe.NotificationIds.Should().HaveCount(2).And.Contain(scheduledId);
+
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            var persisted = await persistence.GetTimeJobByIdAsync(scheduledId, ct);
+
+            persisted.Should().NotBeNull();
+            persisted!.Function.Should().Be(JobsCoordinationFixtureExtensions.CoordinatedFacadeFunctionName);
+            persisted.Request.Should().NotBeNull();
+            JobsHelper.ReadJobRequest<CoordinatedFacadeRequest>(persisted.Request!).Should().Be(request);
+            persisted.Description.Should().Be(options.Description);
+            persisted.Retries.Should().Be(options.Retries);
+            persisted.RetryIntervals.Should().Equal(options.RetryIntervals!);
+            persisted.OnNodeDeath.Should().Be(options.OnNodeDeath);
         }
         finally
         {
@@ -142,11 +175,13 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
     public virtual async Task rollback_discards_enqueue_and_domain_write()
     {
         var ct = AbortToken;
-        using var host = await _StartHostAsync(ct);
+        var sideEffectsProbe = new JobsSideEffectsProbe();
+        using var host = await _StartHostAsync(ct, sideEffectsProbe: sideEffectsProbe);
 
         try
         {
             var manager = host.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
+            var scheduler = host.Services.GetRequiredService<IJobScheduler>();
             var sentinel = new InvalidOperationException("force rollback");
 
             var act = () =>
@@ -156,6 +191,16 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
                     {
                         await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, innerCt);
                         await manager.AddAsync(_TimeJob(), innerCt);
+                        (
+                            await scheduler.EnqueueAsync(
+                                new CoordinatedFacadeRequest(Guid.NewGuid(), "facade rollback"),
+                                cancellationToken: innerCt
+                            )
+                        )
+                            .Should()
+                            .NotBeEmpty();
+                        sideEffectsProbe.RestartCount.Should().Be(0, "scheduler wake-up must wait for commit");
+                        sideEffectsProbe.NotificationIds.Should().BeEmpty("notifications must wait for commit");
 
                         // Abandon the scope after the writes are buffered: the transaction never commits.
                         throw sentinel;
@@ -171,6 +216,8 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
                 .Should()
                 .Be(0);
             (await fixture.CountProbeRowsAsync(ct)).Should().Be(0);
+            sideEffectsProbe.RestartCount.Should().Be(0);
+            sideEffectsProbe.NotificationIds.Should().BeEmpty();
         }
         finally
         {
@@ -379,10 +426,14 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
         }
     }
 
-    private async Task<IHost> _StartHostAsync(CancellationToken cancellationToken, bool includeMessaging = false)
+    private async Task<IHost> _StartHostAsync(
+        CancellationToken cancellationToken,
+        bool includeMessaging = false,
+        JobsSideEffectsProbe? sideEffectsProbe = null
+    )
     {
         await fixture.ResetDatabaseAsync(cancellationToken);
-        var host = fixture.BuildCoordinatedEnqueueHost("node-a", includeMessaging);
+        var host = fixture.BuildCoordinatedEnqueueHost("node-a", includeMessaging, sideEffectsProbe);
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, cancellationToken);
         await fixture.CreateProbeTableAsync(cancellationToken);
 

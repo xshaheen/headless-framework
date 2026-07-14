@@ -138,12 +138,14 @@ Mark job methods with `[JobFunction("name")]` (or `[JobFunction("name", cronExpr
 - Running jobs slide their pickup lease forward on the `LeaseRenewalInterval` cadence (default ≈ `LeaseDuration / 3`), so `LeaseDuration` (default 5 min) no longer needs to exceed the longest job runtime. Keep `LeaseDuration` ≥ `FallbackIntervalChecker` to avoid spurious re-claims of rows that are claimed but not yet started.
 - Set `OnNodeDeath = NodeDeathPolicy.MarkFailed` or `Skip` on non-idempotent jobs — default `Retry` will re-run the job after a node crash.
 - Do NOT install a Jobs-specific cache package. Jobs cron-expression caching reuses the host's `ICache` (`Headless.Caching.InMemory`, `.Redis`, or `.Hybrid`). Without a registered `ICache`, cron expressions are read directly from the database.
-- Atomic enqueue: wrap `timeJobManager.AddAsync` / `cronJobManager.AddAsync` inside `db.ExecuteCoordinatedTransactionAsync(...)` to commit domain writes and the job row as one unit. Requires a `Headless.CommitCoordination` provider (`AddPostgreSqlCommitCoordination()` / `AddSqlServerCommitCoordination()`) — a different subsystem from `AddHeadlessCoordination`. The coordinated path throws on any failure; wrap in `try/catch`.
+- Atomic enqueue: call `IJobScheduler` or the low-level manager inside `db.ExecuteCoordinatedTransactionAsync(...)` to commit domain writes and the job row as one unit. The facade persists through the same managers and inherits their deferred post-commit side effects. Requires a `Headless.CommitCoordination` provider (`AddPostgreSqlCommitCoordination()` / `AddSqlServerCommitCoordination()`) — a different subsystem from `AddHeadlessCoordination`. The coordinated path throws on any failure; wrap in `try/catch`.
 - Establish commit coordination synchronously before entering asynchronous work. The provided `ExecuteCoordinatedTransactionAsync` helpers do this correctly; once established, the scope flows across awaits inside the operation, so domain writes and message publishes may be awaited before `AddAsync`.
 - Use `[JobsConstructor]` (`JobsConstructorAttribute`) on the constructor the source generator should use when a class has multiple constructors.
+- Use `IJobScheduler` for routine immediate, delayed, and recurring scheduling. Typed overloads resolve generated metadata from `typeof(TArgs)`; requestless overloads require a generated `JobFunctionDescriptor` from `JobFunctionProvider.JobFunctionDescriptors`.
+- `EnqueueOptions` / `RecurringJobOptions` support description, durable retry count/intervals, and node-death policy only. Execution time and cron expression are method arguments. Do not add priority to scheduling options; priority remains immutable `[JobFunction]` / descriptor metadata.
 - For testing, call `options.DisableBackgroundServices()` to suppress background scheduler execution.
 - To use `JobsStartMode.Manual`, set `scheduler.StartMode = JobsStartMode.Manual` inside `ConfigureScheduler`.
-- Inject `ITimeJobManager<TimeJobEntity>` to enqueue one-off time jobs and `ICronJobManager<CronJobEntity>` for cron job CRUD.
+- Managers remain supported: inject `ITimeJobManager<TTimeJob>` / `ICronJobManager<TCronJob>` for CRUD, batching, seeding, custom entities, chains, and advanced persistence workflows.
 
 ---
 
@@ -163,6 +165,7 @@ Both types share `BaseJobEntity` (`Id`, `Function`, `Description`, `CreatedAt`, 
 
 The source generator (`Headless.Jobs.SourceGenerator`) scans for `JobFunctionAttribute` (`[JobFunction]`) on methods and generates:
 - A module initializer that auto-registers job delegates with the Jobs runtime before `Main` runs.
+- A delegate-free `JobFunctionDescriptor` for every function, frozen by `JobFunctionProvider` into name and typed-request indexes.
 - Factory delegates for every job method.
 - Constructor injection code (using the `[JobsConstructor]` constructor if present, otherwise the first public constructor).
 
@@ -178,7 +181,9 @@ public static Task ExecuteAsync(IServiceProvider sp, CancellationToken ct) { ...
 public async Task ExecuteAsync(JobFunctionContext<OrderRequest> context, CancellationToken ct) { ... }
 ```
 
-The first positional argument is the `functionName` string that must match the `Function` property on `TimeJobEntity` or `CronJobEntity`. Priority (`JobPriority.Normal` / `High` / `Low` / `LongRunning`) and max-concurrency are optional parameters.
+The first positional argument is the durable function identity. `IJobScheduler` obtains it from the generated descriptor, while low-level manager callers set the entity `Function` directly. Priority (`JobPriority.Normal` / `High` / `Low` / `LongRunning`) and max-concurrency are optional attribute parameters.
+
+Typed functions are indexed by both function name and exact request `Type`; requestless descriptors have `RequestType = null` and do not appear in the inverse type index. TQ005 rejects duplicate function names and TQ011 rejects duplicate typed request mappings in one compilation. Cross-assembly collisions fail `JobFunctionProvider.Build()` with a deterministic ordinal-sorted report rather than choosing the first initializer.
 
 ### Lease Model and Sliding Renewal
 
@@ -258,10 +263,13 @@ Contracts, entity types, manager interfaces, and execution primitives for the Jo
 
 ### Problem Solved
 
-Provides the shared contracts — `ITimeJobManager<TTimeJob>`, `ICronJobManager<TCronJob>`, entity types, enums, exception types, and execution context — that decouple job enqueueing code from any specific Jobs persistence provider or scheduler implementation. All consumer code can target these abstractions without referencing `Jobs.Core` or `Jobs.EntityFramework`.
+Provides the shared contracts — `IJobScheduler`, `ITimeJobManager<TTimeJob>`, `ICronJobManager<TCronJob>`, descriptors, entity types, options, enums, exception types, and execution context — that decouple job enqueueing code from any specific Jobs persistence provider or scheduler implementation. Consumer contracts do not depend on `Jobs.EntityFramework`.
 
 ### Key Features
 
+- **Routine scheduling facade**: `IJobScheduler` resolves generated `[JobFunction]` metadata, serializes typed requests, and schedules immediate, delayed, and recurring jobs without copied function strings or entity construction.
+- **Generated descriptors**: immutable `JobFunctionDescriptor` values expose function identity, nullable request type, cron metadata, priority, and maximum concurrency without exposing execution delegates.
+- **Scheduling options**: `EnqueueOptions` and `RecurringJobOptions` map description, durable retry count/intervals, and node-death policy. Priority remains generated function metadata.
 - **Manager interfaces**: `ITimeJobManager<TTimeJob>` and `ICronJobManager<TCronJob>` with `AddAsync`, `AddBatchAsync`, `UpdateAsync`, `UpdateBatchAsync`, `DeleteAsync`, `DeleteBatchAsync`.
 - **Entity types**: `TimeJobEntity` / `TimeJobEntity<TTicker>` (parent–child chains), `CronJobEntity`, `CronJobOccurrenceEntity`, and `BaseJobEntity`.
 - **Execution context**: `JobFunctionContext` and `JobFunctionContext<TRequest>` — exposes `Id`, `Type`, `RetryCount`, `IsDue`, `ScheduledFor`, `FunctionName`, `CronOccurrenceOperations`, and `RequestCancellation()`.
@@ -285,35 +293,62 @@ Pulled in transitively by `Headless.Jobs.Core`. Install directly only when build
 
 ```csharp
 using Headless.Jobs.Base;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Interfaces.Managers;
+using Headless.Jobs.Interfaces;
+using Headless.Jobs.Models;
 
-// Inject manager and enqueue a time job
-public sealed class OrderService(ITimeJobManager<TimeJobEntity> jobs)
+public sealed record OrderReminderRequest(string OrderId);
+
+public sealed class OrderService(IJobScheduler jobs)
 {
     public async Task ScheduleReminderAsync(string orderId, CancellationToken ct)
     {
-        await jobs.AddAsync(new TimeJobEntity
-        {
-            Function = "SendOrderReminder",
-            Description = $"order-reminder-{orderId}",
-            ExecutionTime = DateTime.UtcNow.AddHours(24),
-            Request = JobsHelper.SerializeRequest(new { OrderId = orderId }),
-            Retries = 3,
-            RetryIntervals = [30, 60, 120],
-        }, ct);
+        var jobId = await jobs.EnqueueAsync(
+            new OrderReminderRequest(orderId),
+            new EnqueueOptions
+            {
+                Description = $"order-reminder-{orderId}",
+                Retries = 3,
+                RetryIntervals = [30, 60, 120],
+            },
+            ct
+        );
+
+        Console.WriteLine($"Scheduled {jobId}");
     }
 }
 
 // Mark a method for registration (requires Jobs.SourceGenerator)
 [JobFunction("SendOrderReminder")]
-public static async Task ExecuteAsync(
+public static Task ExecuteAsync(
     JobFunctionContext<OrderReminderRequest> context,
     CancellationToken ct)
 {
-    // context.Request.OrderId, context.RetryCount, context.ScheduledFor available
+    // context.Request.OrderId, context.RetryCount, and context.ScheduledFor are available.
+    return Task.CompletedTask;
 }
 ```
+
+Requestless scheduling resolves a generated descriptor and passes it to the matching overload:
+
+```csharp
+var descriptor = JobFunctionProvider.JobFunctionDescriptors["Cleanup"];
+var jobId = await scheduler.EnqueueAsync(descriptor, cancellationToken: ct);
+
+var delayedId = await scheduler.ScheduleAsync(
+    new OrderReminderRequest(orderId),
+    DateTime.UtcNow.AddHours(24),
+    cancellationToken: ct
+);
+
+var recurringId = await scheduler.ScheduleRecurringAsync(
+    new OrderReminderRequest(orderId),
+    "0 0 * * *",
+    new RecurringJobOptions { Description = "daily-reminder" },
+    ct
+);
+```
+
+All facade methods return the persisted entity `Guid`; recurring scheduling returns the persisted cron-definition ID. Unknown request types or descriptor names throw `JobFunctionNotFoundException` before persistence. Low-level managers remain supported for CRUD, batching, seeding, custom entity types, chains, and advanced scenarios.
 
 ### Configuration
 
@@ -341,6 +376,7 @@ Provides reliable background job scheduling with cron expressions, delayed execu
 ### Key Features
 
 - **`AddHeadlessJobs()`**: single DI entry point; registers managers, background services, and the in-memory persistence provider.
+- **`IJobScheduler` facade**: schedules typed or requestless `[JobFunction]` methods through generated descriptor indexes, maps supported options, and returns persisted entity IDs.
 - **Scheduler background service**: polls for due time jobs and cron occurrences on `FallbackIntervalChecker` cadence (default 30s); also driven by soft-notification signals for near-zero latency.
 - **Custom thread pool** (`JobsTaskScheduler`): bounds active async executions by `MaxConcurrency` (default `Environment.ProcessorCount`), honors `High` → `Normal` → `Low` dequeue order, and gives `LongRunning` work a dedicated thread.
 - **Sliding lease renewal** (#316): jobs verify ownership immediately before user code starts, then extend `LockedUntil` on `LeaseRenewalInterval` cadence; cancel-on-loss if renewal affects zero rows or errors.
@@ -375,7 +411,8 @@ dotnet add package Headless.Jobs.Core
 
 ```csharp
 using Headless.Jobs.Base;
-using Headless.Jobs.Entities;
+using Headless.Jobs.Interfaces;
+using Headless.Jobs.Models;
 
 // 1. Register Jobs
 builder.Services.AddHeadlessJobs(options =>
@@ -416,8 +453,21 @@ public sealed class OrderProcessor(IOrderService orders)
         => await orders.ProcessAsync(context.Request, ct);
 }
 
+// 4. Schedule through generated typed metadata.
+public sealed class OrderService(IJobScheduler scheduler)
+{
+    public Task<Guid> ScheduleAsync(OrderRequest request, CancellationToken ct) =>
+        scheduler.EnqueueAsync(request, new EnqueueOptions { Description = "process-order" }, ct);
+}
+
 // The scheduler starts via IHostedService — no app.UseJobs() call needed.
 ```
+
+Typed facade calls resolve `typeof(TArgs)`, serialize through the configured Jobs JSON/GZip pipeline, and persist through the configured manager. Requestless calls accept a descriptor from `JobFunctionProvider.JobFunctionDescriptors`. Immediate, delayed, and recurring methods return the persisted time-job or cron-definition ID. Unknown or stale identities fail before serialization or persistence.
+
+`EnqueueOptions` and `RecurringJobOptions` expose only description, durable retries/intervals, and node-death policy. Execution time and cron expression remain explicit method arguments; priority remains immutable `[JobFunction]` / descriptor metadata. Managers remain public and supported for CRUD, batching, seeding, custom entities, chains, and advanced persistence workflows.
+
+Facade calls use those managers internally, so they enlist in an established `Headless.CommitCoordination` scope and retain the same deferred post-commit dispatch/restart/notification behavior.
 
 ### Configuration
 
@@ -466,6 +516,7 @@ builder.Services.AddHeadlessJobs(options =>
 ### Side Effects
 
 - Registers `ITimeJobManager<TimeJobEntity>` and `ICronJobManager<CronJobEntity>` as singletons.
+- Registers one non-generic `IJobScheduler` facade bound to the same configured time/cron entity pair.
 - Registers background hosted services: `JobsInitializationHostedService` (always), `JobsSchedulerBackgroundService`, `JobsFallbackBackgroundService`, and `JobsExecutionTaskHandler` (unless `DisableBackgroundServices()` is called).
 - Registers `JobsTaskScheduler` (custom thread pool bounded by active async `MaxConcurrency`).
 - Sets global `CronScheduleCache.TimeZoneInfo` and `JobsHelper` JSON/compression settings.
@@ -567,10 +618,12 @@ Without the source generator, every job class or method must be manually registe
 
 - **Zero reflection**: all dispatch delegates are generated as strongly-typed lambdas.
 - **Auto-registration**: a `[ModuleInitializer]` in the generated file (`JobsInstanceFactory.g.cs`) registers job delegates before any host startup code runs.
+- **Descriptor indexes**: generates delegate-free descriptors for every typed and requestless function; the provider exposes frozen indexes by name and by typed request `Type`.
 - **Type safety**: compile-time validation of job method signatures and cron expression syntax.
 - **DI constructor injection**: generates constructor factory methods; uses `[JobsConstructor]` constructor when present, otherwise the first public constructor.
 - **Incremental**: only re-generates when marked methods change (fast on large solutions).
-- **Rich diagnostics**: compile-time errors for unknown function names, ambiguous constructors, invalid cron expressions, and mismatched context types.
+- **Collision safety**: TQ005 rejects duplicate function names and TQ011 rejects duplicate typed request mappings within a compilation. Provider construction reports cross-assembly conflicts deterministically.
+- **Rich diagnostics**: compile-time errors for unknown function names, ambiguous constructors, invalid cron expressions, mismatched context types, and ambiguous scheduling identities.
 
 ### Installation
 
@@ -621,6 +674,8 @@ public static Task ExecuteAsync(IServiceProvider sp, CancellationToken ct) => Ta
 
 No runtime configuration. Attributes are the sole interface. Generated output file: `JobsInstanceFactory.g.cs` (a `[ModuleInitializer]` in the consuming assembly).
 
+`[JobFunction]` remains the sole handler discovery model. Requestless descriptors use `RequestType = null`; typed functions are indexed by both durable function name and exact request `Type`. Attribute priority and maximum concurrency remain descriptor metadata, not per-schedule options.
+
 ### Dependencies
 
 - `Microsoft.CodeAnalysis.CSharp` (build-time Roslyn API; not a runtime dependency)
@@ -628,7 +683,7 @@ No runtime configuration. Attributes are the sole interface. Generated output fi
 ### Side Effects
 
 Emits `JobsInstanceFactory.g.cs` at compile time. The generated file:
-- Contains a `[ModuleInitializer]` that registers job delegates and request-type mappings with the Jobs runtime.
+- Contains a `[ModuleInitializer]` that registers job delegates, request-type mappings, and delegate-free descriptors with the Jobs runtime.
 - Contains constructor factory lambdas for each discovered job class.
 - Has no effect at runtime beyond the one-time module initializer invocation.
 

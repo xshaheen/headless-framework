@@ -51,8 +51,7 @@ public sealed class SqlServerJobsCoordinationFixture
         + "DROP TABLE IF EXISTS [coordination_descriptor];"
         + "DROP TABLE IF EXISTS [coordination_node_generation];";
 
-    public string CreateProbeTableSql =>
-        "IF OBJECT_ID(N'jobs_probe', N'U') IS NULL CREATE TABLE jobs_probe (id int); DELETE FROM jobs_probe;";
+    public string CreateProbeTableSql => "DROP TABLE IF EXISTS jobs_probe; CREATE TABLE jobs_probe (id int);";
 
     public void ConfigureCoordination(HeadlessCoordinationSetupBuilder setup) => setup.UseSqlServer(ConnectionString);
 

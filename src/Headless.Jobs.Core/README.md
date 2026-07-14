@@ -9,6 +9,7 @@ Provides reliable background job scheduling with cron expressions, delayed execu
 ## Key Features
 
 - **`AddHeadlessJobs()`**: single DI entry point; registers managers, background services, and the in-memory persistence provider.
+- **`IJobScheduler` facade**: schedules typed or requestless `[JobFunction]` methods through generated descriptor indexes, maps supported options, and returns persisted entity IDs.
 - **Scheduler background service**: polls for due time jobs and cron occurrences on `FallbackIntervalChecker` cadence (default 30s); also driven by soft-notification signals for near-zero latency.
 - **Custom thread pool** (`JobsTaskScheduler`): bounds active async executions by `MaxConcurrency` (default `Environment.ProcessorCount`), honors `High` → `Normal` → `Low` dequeue order, and gives `LongRunning` work a dedicated thread.
 - **Sliding lease renewal** (#316): jobs verify ownership immediately before user code starts, then extend `LockedUntil` on `LeaseRenewalInterval` cadence; cancel-on-loss if renewal affects zero rows or errors.
@@ -47,7 +48,8 @@ dotnet add package Headless.Jobs.Core
 
 ```csharp
 using Headless.Jobs.Base;
-using Headless.Jobs.Entities;
+using Headless.Jobs.Interfaces;
+using Headless.Jobs.Models;
 using Polly;
 using Polly.Retry;
 
@@ -87,8 +89,40 @@ public sealed class OrderProcessor(IOrderService orders)
         => await orders.ProcessAsync(context.Request, ct);
 }
 
+// 4. Schedule by typed request; no function string or entity construction is needed.
+public sealed class OrderService(IJobScheduler scheduler)
+{
+    public Task<Guid> ScheduleAsync(OrderRequest request, CancellationToken ct) =>
+        scheduler.EnqueueAsync(
+            request,
+            new EnqueueOptions
+            {
+                Description = "process-order",
+                Retries = 3,
+                RetryIntervals = [30, 60, 120],
+            },
+            ct
+        );
+}
+
 // The scheduler starts via IHostedService — no app.UseJobs() call needed.
 ```
+
+`IJobScheduler` is the safe routine path: typed calls resolve `typeof(TArgs)`, use the configured Jobs serializer and optional GZip compression, and persist through the configured managers. Requestless calls accept a generated `JobFunctionDescriptor` from `JobFunctionProvider.JobFunctionDescriptors`. Immediate, delayed, and recurring methods return the persisted time-job or cron-definition `Guid`. Unknown or stale identities fail before serialization or persistence.
+
+```csharp
+var delayedId = await scheduler.ScheduleAsync(request, DateTime.UtcNow.AddHours(1), cancellationToken: ct);
+var recurringId = await scheduler.ScheduleRecurringAsync(request, "0 0 * * *", cancellationToken: ct);
+
+var cleanup = JobFunctionProvider.JobFunctionDescriptors["Cleanup"];
+var cleanupId = await scheduler.EnqueueAsync(cleanup, cancellationToken: ct);
+```
+
+`EnqueueOptions` and `RecurringJobOptions` expose only description, durable retries/intervals, and node-death policy. Execution time and cron expression are explicit method arguments. Priority remains immutable `[JobFunction]` / descriptor metadata.
+
+Low-level managers are not deprecated. Continue using `ITimeJobManager<TTimeJob>` and `ICronJobManager<TCronJob>` for CRUD, batching, seeding, custom entities, chains, and advanced persistence workflows.
+
+Facade calls still flow through those managers, so scheduling inside an established `Headless.CommitCoordination` scope preserves the same atomic row write and deferred post-commit side effects.
 
 ## Configuration
 
@@ -137,6 +171,7 @@ builder.Services.AddHeadlessJobs(options =>
 ## Side Effects
 
 - Registers `ITimeJobManager<TimeJobEntity>` and `ICronJobManager<CronJobEntity>` as singletons.
+- Registers the non-generic `IJobScheduler` facade against the same configured time/cron entity pair as the managers.
 - Registers background hosted services: `JobsInitializationHostedService` (always), `JobsSchedulerBackgroundService`, `JobsFallbackBackgroundService`, and `JobsExecutionTaskHandler` (unless `DisableBackgroundServices()` is called).
 - Registers `JobsTaskScheduler` (custom thread pool bounded by active async `MaxConcurrency`).
 - Registers a scheduler-scoped cron schedule cache and sets `JobsHelper` JSON/compression settings.

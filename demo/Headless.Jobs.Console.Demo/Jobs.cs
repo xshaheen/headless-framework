@@ -1,6 +1,7 @@
+using Headless.Jobs;
 using Headless.Jobs.Base;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Interfaces.Managers;
+using Headless.Jobs.Interfaces;
+using Headless.Jobs.Models;
 using Microsoft.Extensions.Hosting;
 
 namespace Headless.Jobs.Console.Demo;
@@ -8,7 +9,9 @@ namespace Headless.Jobs.Console.Demo;
 // Simple sample job
 public static class ConsoleSampleJobs
 {
-    [JobFunction("ConsoleSample_HelloWorld")]
+    internal const string FunctionName = "ConsoleSample_HelloWorld";
+
+    [JobFunction(FunctionName)]
     public static Task HelloWorldAsync(JobFunctionContext context, CancellationToken cancellationToken)
     {
         _ = cancellationToken;
@@ -19,20 +22,17 @@ public static class ConsoleSampleJobs
 }
 
 // Hosted service that schedules a single job on startup
-public class SampleScheduler(ITimeJobManager<TimeJobEntity> timeJobManager) : IHostedService
+public class SampleScheduler(IJobScheduler scheduler) : IHostedService
 {
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        TimeJobEntity job;
+        Guid jobId;
         try
         {
-            job = await timeJobManager.AddAsync(
-                new TimeJobEntity
-                {
-                    Function = "ConsoleSample_HelloWorld",
-                    Description = "Sample console demo job",
-                    ExecutionTime = DateTime.UtcNow.AddSeconds(5),
-                },
+            var descriptor = JobFunctionProvider.JobFunctionDescriptors[ConsoleSampleJobs.FunctionName];
+            jobId = await scheduler.EnqueueAsync(
+                descriptor,
+                new EnqueueOptions { Description = "Sample console demo job" },
                 cancellationToken
             );
         }
@@ -43,10 +43,7 @@ public class SampleScheduler(ITimeJobManager<TimeJobEntity> timeJobManager) : IH
         }
 
         System.Console.WriteLine(
-            string.Create(
-                CultureInfo.InvariantCulture,
-                $"Scheduled console sample job with Id={job.Id}, ScheduledFor={job.ExecutionTime:O}"
-            )
+            string.Create(CultureInfo.InvariantCulture, $"Scheduled console sample job with Id={jobId}")
         );
     }
 
