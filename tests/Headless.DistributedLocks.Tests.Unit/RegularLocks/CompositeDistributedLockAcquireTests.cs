@@ -3,6 +3,7 @@
 using Headless.DistributedLocks;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Time.Testing;
+using Tests.Fakes;
 
 namespace Tests.RegularLocks;
 
@@ -104,7 +105,7 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
             {
                 var resource = call.ArgAt<string>(0);
                 calls.Add(resource);
-                return Task.FromResult<IDistributedLease?>(new TestLease(resource));
+                return Task.FromResult<IDistributedLease?>(new CompositeTestLease(resource));
             });
 
         var result = await provider.TryAcquireAllAsync(Resources(), cancellationToken: AbortToken);
@@ -119,7 +120,7 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
     public async Task should_return_original_child_for_single_canonical_resource()
     {
         var provider = _CreateProvider(new FakeTimeProvider());
-        var child = new TestLease("A", fencingToken: 42);
+        var child = new CompositeTestLease("A", fencingToken: 42);
         provider
             .TryAcquireAsync("A", Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IDistributedLease?>(child));
@@ -152,7 +153,7 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
                     timeProvider.Advance(TimeSpan.FromSeconds(3));
                 }
 
-                return Task.FromResult<IDistributedLease?>(new TestLease(resource));
+                return Task.FromResult<IDistributedLease?>(new CompositeTestLease(resource));
             });
 
         var result = await provider.TryAcquireAllAsync(
@@ -176,7 +177,7 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
             {
                 var resource = call.ArgAt<string>(0);
                 attempts.Add((resource, call.ArgAt<DistributedLockAcquireOptions>(1).AcquireTimeout));
-                return Task.FromResult<IDistributedLease?>(new TestLease(resource));
+                return Task.FromResult<IDistributedLease?>(new CompositeTestLease(resource));
             });
 
         var result = await provider.TryAcquireAllAsync(
@@ -209,7 +210,7 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
                     timeProvider.Advance(TimeSpan.FromSeconds(3));
                 }
 
-                return Task.FromResult<IDistributedLease?>(new TestLease(resource));
+                return Task.FromResult<IDistributedLease?>(new CompositeTestLease(resource));
             });
 
         var result = await provider.TryAcquireAllAsync(["A", "B"], cancellationToken: AbortToken);
@@ -223,7 +224,7 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
     {
         var provider = _CreateProvider(new FakeTimeProvider());
         var events = new List<string>();
-        var first = new TestLease("A", events);
+        var first = new CompositeTestLease("A", events);
         provider
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>())
             .Returns(call => Task.FromResult<IDistributedLease?>(call.ArgAt<string>(0) == "A" ? first : null));
@@ -239,8 +240,8 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
     {
         var timeProvider = new FakeTimeProvider();
         var provider = _CreateProvider(timeProvider);
-        var first = new TestLease("A");
-        var second = new TestLease("B");
+        var first = new CompositeTestLease("A");
+        var second = new CompositeTestLease("B");
         var secondStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var secondResult = new TaskCompletionSource<IDistributedLease?>(
             TaskCreationOptions.RunContinuationsAsynchronously
@@ -280,7 +281,7 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
     {
         var timeProvider = new FakeTimeProvider();
         var provider = _CreateProvider(timeProvider);
-        var leases = new Dictionary<string, TestLease>(StringComparer.Ordinal)
+        var leases = new Dictionary<string, CompositeTestLease>(StringComparer.Ordinal)
         {
             ["A"] = new("A"),
             ["B"] = new("B"),
@@ -346,7 +347,7 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
         var timeProvider = new FakeTimeProvider();
         var provider = _CreateProvider(timeProvider);
         var events = new List<string>();
-        var first = new TestLease("A", events);
+        var first = new CompositeTestLease("A", events);
         var secondStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         provider
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>())
@@ -378,7 +379,7 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
         var events = new List<string>();
         var renewalStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var renewalCancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var first = new TestLease(
+        var first = new CompositeTestLease(
             "A",
             events,
             renewal: (_, cancellationToken) =>
@@ -421,8 +422,8 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
     {
         var timeProvider = new FakeTimeProvider();
         var provider = _CreateProvider(timeProvider);
-        var first = new TestLease("A");
-        var second = new TestLease("B");
+        var first = new CompositeTestLease("A");
+        var second = new CompositeTestLease("B");
         var secondStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var secondResult = new TaskCompletionSource<IDistributedLease?>(
             TaskCreationOptions.RunContinuationsAsynchronously
@@ -460,8 +461,8 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
     {
         var timeProvider = new FakeTimeProvider();
         var provider = _CreateProvider(timeProvider);
-        var first = new TestLease("A");
-        var second = new TestLease("B");
+        var first = new CompositeTestLease("A");
+        var second = new CompositeTestLease("B");
         var secondStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var secondResult = new TaskCompletionSource<IDistributedLease?>(
             TaskCreationOptions.RunContinuationsAsynchronously
@@ -500,8 +501,8 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
     {
         var provider = _CreateProvider(new FakeTimeProvider());
         var events = new List<string>();
-        var first = new TestLease("A", events, canObserveLoss: true);
-        var second = new TestLease("B", events);
+        var first = new CompositeTestLease("A", events, canObserveLoss: true);
+        var second = new CompositeTestLease("B", events);
         var secondStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         provider
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>())
@@ -542,8 +543,8 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
     {
         var provider = _CreateProvider(new FakeTimeProvider());
         var events = new List<string>();
-        var first = new TestLease("A", events);
-        var second = new TestLease("B", events);
+        var first = new CompositeTestLease("A", events);
+        var second = new CompositeTestLease("B", events);
         var secondStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var callerSource = new CancellationTokenSource();
         provider
@@ -578,7 +579,7 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
     {
         var provider = _CreateProvider(new FakeTimeProvider());
         var events = new List<string>();
-        var first = new TestLease("A", events);
+        var first = new CompositeTestLease("A", events);
         var secondStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var providerError = new InvalidOperationException("acquire failed while draining");
         using var callerSource = new CancellationTokenSource();
@@ -618,7 +619,7 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
         var timeProvider = new FakeTimeProvider();
         var provider = _CreateProvider(timeProvider);
         var events = new List<string>();
-        var first = new TestLease("A", events, renewResult: false);
+        var first = new CompositeTestLease("A", events, renewResult: false);
         var secondStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         provider
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>())
@@ -659,12 +660,12 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
         var events = new List<string>();
         var renewalsStarted = 0;
         var allRenewalsStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var first = new TestLease(
+        var first = new CompositeTestLease(
             "A",
             events,
             renewal: (_, cancellationToken) => RenewAfterAllStartedAsync(true, cancellationToken)
         );
-        var second = new TestLease(
+        var second = new CompositeTestLease(
             "B",
             events,
             renewal: (_, cancellationToken) => RenewAfterAllStartedAsync(false, cancellationToken)
@@ -722,7 +723,7 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
         var provider = _CreateProvider(timeProvider);
         var events = new List<string>();
         var renewalError = new InvalidOperationException("renew failed");
-        var first = new TestLease("A", events, renewalException: renewalError);
+        var first = new CompositeTestLease("A", events, renewalException: renewalError);
         var secondStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         provider
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>())
@@ -755,7 +756,7 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
     {
         var provider = _CreateProvider(new FakeTimeProvider());
         var cleanupError = new InvalidOperationException("release failed");
-        var first = new TestLease("A", releaseException: cleanupError);
+        var first = new CompositeTestLease("A", releaseException: cleanupError);
         provider
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>())
             .Returns(call => Task.FromResult<IDistributedLease?>(call.ArgAt<string>(0) == "A" ? first : null));
@@ -777,7 +778,7 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
         var provider = _CreateProvider(new FakeTimeProvider());
         var primary = new InvalidOperationException("acquire failed");
         var cleanup = new IOException("release failed");
-        var first = new TestLease("A", releaseException: cleanup);
+        var first = new CompositeTestLease("A", releaseException: cleanup);
         provider
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>())
             .Returns(call =>
@@ -797,8 +798,8 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
     {
         var provider = _CreateProvider(new FakeTimeProvider());
         var events = new List<string>();
-        var first = new TestLease("A", events);
-        var second = new TestLease("B", events, canObserveLoss: true);
+        var first = new CompositeTestLease("A", events);
+        var second = new CompositeTestLease("B", events, canObserveLoss: true);
         provider
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>())
             .Returns(call => Task.FromResult<IDistributedLease?>(call.ArgAt<string>(0) == "A" ? first : second));
@@ -814,7 +815,7 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
     {
         var provider = _CreateProvider(new FakeTimeProvider());
         var events = new List<string>();
-        var first = new TestLease("A", events);
+        var first = new CompositeTestLease("A", events);
         provider
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>())
             .Returns(call => Task.FromResult<IDistributedLease?>(call.ArgAt<string>(0) == "A" ? first : null));
@@ -834,8 +835,8 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
     {
         var provider = _CreateProvider(new FakeTimeProvider());
         var events = new List<string>();
-        var first = new TestLease("A", events, canObserveLoss: true);
-        var second = new TestLease("B", events, canObserveLoss: true);
+        var first = new CompositeTestLease("A", events, canObserveLoss: true);
+        var second = new CompositeTestLease("B", events, canObserveLoss: true);
         second.MarkLost();
         provider
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>())
@@ -852,8 +853,8 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
     {
         var provider = _CreateProvider(new FakeTimeProvider());
         var events = new List<string>();
-        var first = new TestLease("A", events, canObserveLoss: true);
-        var second = new TestLease("B", events, canObserveLoss: true, markLostOnTokenRead: 3);
+        var first = new CompositeTestLease("A", events, canObserveLoss: true);
+        var second = new CompositeTestLease("B", events, canObserveLoss: true, markLostOnTokenRead: 3);
         provider
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>())
             .Returns(call => Task.FromResult<IDistributedLease?>(call.ArgAt<string>(0) == "A" ? first : second));
@@ -999,106 +1000,6 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
         }
 
         condition().Should().BeTrue();
-    }
-
-    private sealed class TestLease : IDistributedLease
-    {
-        private readonly List<string>? _events;
-        private readonly CancellationTokenSource? _lostSource;
-        private readonly bool _renewResult;
-        private readonly Exception? _renewalException;
-        private readonly Func<TimeSpan?, CancellationToken, Task<bool>>? _renewal;
-        private readonly Exception? _releaseException;
-        private readonly Exception? _disposeException;
-        private readonly int? _markLostOnTokenRead;
-        private int _lostTokenReads;
-
-        public TestLease(
-            string resource,
-            List<string>? events = null,
-            long? fencingToken = null,
-            bool canObserveLoss = false,
-            bool renewResult = true,
-            Exception? renewalException = null,
-            Func<TimeSpan?, CancellationToken, Task<bool>>? renewal = null,
-            Exception? releaseException = null,
-            Exception? disposeException = null,
-            int? markLostOnTokenRead = null
-        )
-        {
-            Resource = resource;
-            LeaseId = $"lease-{resource}";
-            FencingToken = fencingToken;
-            _events = events;
-            CanObserveLoss = canObserveLoss;
-            _renewResult = renewResult;
-            _renewalException = renewalException;
-            _renewal = renewal;
-            _releaseException = releaseException;
-            _disposeException = disposeException;
-            _markLostOnTokenRead = markLostOnTokenRead;
-            _lostSource = canObserveLoss ? new CancellationTokenSource() : null;
-        }
-
-        public string LeaseId { get; }
-
-        public long? FencingToken { get; }
-
-        public string Resource { get; }
-
-        public int RenewalCount { get; private set; }
-
-        public DateTimeOffset DateAcquired { get; } = DateTimeOffset.UnixEpoch;
-
-        public TimeSpan TimeWaitedForLock => TimeSpan.Zero;
-
-        public CancellationToken LostToken
-        {
-            get
-            {
-                if (_markLostOnTokenRead == Interlocked.Increment(ref _lostTokenReads))
-                {
-                    _lostSource!.Cancel();
-                }
-
-                return _lostSource?.Token ?? CancellationToken.None;
-            }
-        }
-
-        public bool CanObserveLoss { get; }
-
-        public Task<bool> RenewAsync(TimeSpan? timeUntilExpires = null, CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            RenewalCount++;
-
-            if (_renewal is not null)
-            {
-                return _renewal(timeUntilExpires, cancellationToken);
-            }
-
-            if (_renewalException is not null)
-            {
-                return Task.FromException<bool>(_renewalException);
-            }
-
-            return Task.FromResult(_renewResult);
-        }
-
-        public Task ReleaseAsync()
-        {
-            _events?.Add($"release:{Resource}");
-            return _releaseException is null ? Task.CompletedTask : Task.FromException(_releaseException);
-        }
-
-        public ValueTask DisposeAsync()
-        {
-            _events?.Add($"dispose:{Resource}");
-            _lostSource?.Dispose();
-            return _disposeException is null ? ValueTask.CompletedTask : ValueTask.FromException(_disposeException);
-        }
-
-        public void MarkLost() => _lostSource!.Cancel();
     }
 
     private static async Task<bool> _BlockRenewalUntilCancellationAsync(
