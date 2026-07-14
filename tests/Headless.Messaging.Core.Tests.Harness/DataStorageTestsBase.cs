@@ -62,7 +62,7 @@ public abstract class DataStorageTestsBase : TestBase
     ) => Task.FromResult<PersistedLeaseIdentity?>(null);
 
     /// <summary>Persisted ownership generation returned by provider-specific test queries.</summary>
-    protected readonly record struct PersistedLeaseIdentity(DateTime LockedUntil, string? Owner);
+    protected readonly record struct PersistedLeaseIdentity(DateTimeOffset LockedUntil, string? Owner);
 
     /// <summary>Controllable membership used by storage-provider conformance tests to stamp the owner identity.</summary>
     protected ControlledNodeMembership NodeMembership { get; } = new();
@@ -1040,10 +1040,7 @@ public abstract class DataStorageTestsBase : TestBase
         acquired.Should().BeTrue();
         databaseTimeAfter.Should().NotBeNull();
         persisted.Should().NotBeNull();
-        var persistedLockedUntil = new DateTimeOffset(
-            DateTime.SpecifyKind(persisted!.Value.LockedUntil, DateTimeKind.Utc),
-            TimeSpan.Zero
-        );
+        var persistedLockedUntil = persisted!.Value.LockedUntil;
         var databaseTimeBeforeUtc = new DateTimeOffset(
             DateTime.SpecifyKind(databaseTimeBefore.Value, DateTimeKind.Utc),
             TimeSpan.Zero
