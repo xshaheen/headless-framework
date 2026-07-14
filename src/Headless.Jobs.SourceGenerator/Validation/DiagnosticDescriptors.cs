@@ -22,91 +22,91 @@ internal static class DiagnosticDescriptors
     private static readonly string[] _CustomTags = [WellKnownDiagnosticTags.Telemetry];
 
     public static readonly DiagnosticDescriptor ClassAccessibility = _Create(
-        "TQ001",
+        "HF001",
         "ClassAccessibilityTitle",
         "ClassAccessibilityMessage",
         DiagnosticSeverity.Error
     );
 
     public static readonly DiagnosticDescriptor MethodAccessibility = _Create(
-        "TQ002",
+        "HF002",
         "MethodAccessibilityTitle",
         "MethodAccessibilityMessage",
         DiagnosticSeverity.Error
     );
 
     public static readonly DiagnosticDescriptor InvalidCronExpression = _Create(
-        "TQ003",
+        "HF003",
         "InvalidCronExpressionTitle",
         "InvalidCronExpressionMessage",
         DiagnosticSeverity.Error
     );
 
     public static readonly DiagnosticDescriptor MissingFunctionName = _Create(
-        "TQ004",
+        "HF004",
         "MissingFunctionNameTitle",
         "MissingFunctionNameMessage",
         DiagnosticSeverity.Error
     );
 
     public static readonly DiagnosticDescriptor DuplicateFunctionName = _Create(
-        "TQ005",
+        "HF005",
         "DuplicateFunctionNameTitle",
         "DuplicateFunctionNameMessage",
         DiagnosticSeverity.Error
     );
 
     public static readonly DiagnosticDescriptor MultipleConstructors = _Create(
-        "TQ006",
+        "HF006",
         "MultipleConstructorsTitle",
         "MultipleConstructorsMessage",
         DiagnosticSeverity.Warning
     );
 
     public static readonly DiagnosticDescriptor AbstractClass = _Create(
-        "TQ007",
+        "HF007",
         "AbstractClassTitle",
         "AbstractClassMessage",
         DiagnosticSeverity.Error
     );
 
     public static readonly DiagnosticDescriptor NestedClass = _Create(
-        "TQ008",
+        "HF008",
         "NestedClassTitle",
         "NestedClassMessage",
         DiagnosticSeverity.Error
     );
 
     public static readonly DiagnosticDescriptor InvalidMethodParameter = _Create(
-        "TQ009",
+        "HF009",
         "InvalidMethodParameterTitle",
         "InvalidMethodParameterMessage",
         DiagnosticSeverity.Error
     );
 
     public static readonly DiagnosticDescriptor MultipleJobsConstructorAttributes = _Create(
-        "TQ010",
+        "HF010",
         "MultipleJobsConstructorAttributesTitle",
         "MultipleJobsConstructorAttributesMessage",
         DiagnosticSeverity.Error
     );
 
     public static readonly DiagnosticDescriptor DuplicateRequestType = _Create(
-        "TQ011",
+        "HF011",
         "DuplicateRequestTypeTitle",
         "DuplicateRequestTypeMessage",
         DiagnosticSeverity.Error
     );
 
     public static readonly DiagnosticDescriptor InvalidJobPriority = _Create(
-        "TQ012",
+        "HF012",
         "InvalidJobPriorityTitle",
         "InvalidJobPriorityMessage",
         DiagnosticSeverity.Error
     );
 
     public static readonly DiagnosticDescriptor InvalidMaxConcurrency = _Create(
-        "TQ013",
+        "HF013",
         "InvalidMaxConcurrencyTitle",
         "InvalidMaxConcurrencyMessage",
         DiagnosticSeverity.Error

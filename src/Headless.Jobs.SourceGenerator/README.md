@@ -14,7 +14,7 @@ Without the source generator, every job class or method must be manually registe
 - **Type safety**: compile-time validation of job method signatures and cron expression syntax.
 - **DI constructor injection**: generates constructor factory methods; uses `[JobsConstructor]` constructor when present, otherwise the first public constructor.
 - **Incremental**: only re-generates when marked methods change (fast on large solutions).
-- **Collision safety**: TQ005 rejects duplicate function names and TQ011 rejects duplicate typed request mappings within a compilation. Runtime provider construction reports cross-assembly conflicts in deterministic ordinal order.
+- **Collision safety**: HF005 rejects duplicate function names and HF011 rejects duplicate typed request mappings within a compilation. Runtime provider construction reports cross-assembly conflicts in deterministic ordinal order.
 - **Rich diagnostics**: compile-time errors for unknown function names, ambiguous constructors, invalid cron expressions, mismatched context types, and ambiguous scheduling identities.
 
 ## Installation

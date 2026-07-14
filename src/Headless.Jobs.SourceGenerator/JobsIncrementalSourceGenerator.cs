@@ -25,8 +25,8 @@ namespace Headless.Jobs.SourceGenerator;
 /// <remarks>
 /// The generated <c>Initialize()</c> method calls <c>JobFunctionProvider.RegisterFunctions</c>,
 /// <c>JobFunctionProvider.RegisterRequestType</c>, and <c>JobFunctionProvider.RegisterDescriptors</c>
-/// once per assembly, keyed by the function name declared on <c>[JobFunction]</c>. TQ010 is emitted
-/// for multiple <c>[JobsConstructor]</c> attributes, and TQ011 rejects duplicate request types.
+/// once per assembly, keyed by the function name declared on <c>[JobFunction]</c>. HF010 is emitted
+/// for multiple <c>[JobsConstructor]</c> attributes, and HF011 rejects duplicate request types.
 /// </remarks>
 [Generator]
 public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator

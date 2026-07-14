@@ -183,7 +183,7 @@ public async Task ExecuteAsync(JobFunctionContext<OrderRequest> context, Cancell
 
 The first positional argument is the durable function identity. `IJobScheduler` obtains it from the generated descriptor, while low-level manager callers set the entity `Function` directly. Priority (`JobPriority.Normal` / `High` / `Low` / `LongRunning`) and max-concurrency are optional attribute parameters.
 
-Typed functions are indexed by both function name and exact request `Type`; requestless descriptors have `RequestType = null` and do not appear in the inverse type index. TQ005 rejects duplicate function names and TQ011 rejects duplicate typed request mappings in one compilation. Cross-assembly collisions fail `JobFunctionProvider.Build()` with a deterministic ordinal-sorted report rather than choosing the first initializer.
+Typed functions are indexed by both function name and exact request `Type`; requestless descriptors have `RequestType = null` and do not appear in the inverse type index. HF005 rejects duplicate function names and HF011 rejects duplicate typed request mappings in one compilation. Cross-assembly collisions fail `JobFunctionProvider.Build()` with a deterministic ordinal-sorted report rather than choosing the first initializer.
 
 ### Lease Model and Sliding Renewal
 
@@ -622,7 +622,7 @@ Without the source generator, every job class or method must be manually registe
 - **Type safety**: compile-time validation of job method signatures and cron expression syntax.
 - **DI constructor injection**: generates constructor factory methods; uses `[JobsConstructor]` constructor when present, otherwise the first public constructor.
 - **Incremental**: only re-generates when marked methods change (fast on large solutions).
-- **Collision safety**: TQ005 rejects duplicate function names and TQ011 rejects duplicate typed request mappings within a compilation. Provider construction reports cross-assembly conflicts deterministically.
+- **Collision safety**: HF005 rejects duplicate function names and HF011 rejects duplicate typed request mappings within a compilation. Provider construction reports cross-assembly conflicts deterministically.
 - **Rich diagnostics**: compile-time errors for unknown function names, ambiguous constructors, invalid cron expressions, mismatched context types, and ambiguous scheduling identities.
 
 ### Installation
