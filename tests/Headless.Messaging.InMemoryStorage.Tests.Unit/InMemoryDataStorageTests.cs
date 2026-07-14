@@ -283,7 +283,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
     {
         _EnsureInitialized();
         var storage = GetStorage();
-        var now = _fakeTimeProvider!.GetUtcNow().UtcDateTime;
+        var now = _fakeTimeProvider!.GetUtcNow();
         var leaseDuration = TimeSpan.FromMinutes(7);
         var message = await storage.StoreMessageAsync(
             "clocked-publish",
@@ -301,7 +301,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
     {
         _EnsureInitialized();
         var storage = GetStorage();
-        var now = _fakeTimeProvider!.GetUtcNow().UtcDateTime;
+        var now = _fakeTimeProvider!.GetUtcNow();
         var leaseDuration = TimeSpan.FromMinutes(7);
         var message = await storage.StoreReceivedMessageAsync("clocked-receive", "group", CreateMessage(), AbortToken);
 
@@ -315,7 +315,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
     {
         _EnsureInitialized();
         var storage = GetStorage();
-        var now = _fakeTimeProvider!.GetUtcNow().UtcDateTime;
+        var now = _fakeTimeProvider!.GetUtcNow();
         var leaseDuration = TimeSpan.FromMinutes(7);
         var message = await storage.StoreMessageAsync(
             "clocked-combined-publish",
@@ -334,7 +334,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
     {
         _EnsureInitialized();
         var storage = GetStorage();
-        var now = _fakeTimeProvider!.GetUtcNow().UtcDateTime;
+        var now = _fakeTimeProvider!.GetUtcNow();
         var leaseDuration = TimeSpan.FromMinutes(7);
         var message = await storage.StoreReceivedMessageAsync(
             "clocked-combined-receive",
