@@ -195,12 +195,7 @@ public static class DistributedSemaphoreProviderExtensions
         // Every request is validated here, so no provider call happens on an invalid set.
         var canonicalRequests = _MaterializeCanonicalRequests(requests);
 
-        var environment = new CompositeAcquireEnvironment(
-            provider.TimeProvider,
-            provider.Logger,
-            provider.DefaultAcquireTimeout,
-            provider.DefaultTimeUntilExpires
-        );
+        var environment = CompositeAcquireEnvironment.From(provider);
 
         return CompositeAcquireCoordinator.TryAcquireAsync(
             canonicalRequests,

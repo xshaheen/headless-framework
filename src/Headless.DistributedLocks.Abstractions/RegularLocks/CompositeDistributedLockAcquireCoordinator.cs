@@ -24,12 +24,7 @@ internal static class CompositeDistributedLockAcquireCoordinator
 
         var canonicalResources = _MaterializeCanonicalResources(resources);
 
-        var environment = new CompositeAcquireEnvironment(
-            provider.TimeProvider,
-            provider.Logger,
-            provider.DefaultAcquireTimeout,
-            provider.DefaultTimeUntilExpires
-        );
+        var environment = CompositeAcquireEnvironment.From(provider);
 
         return CompositeAcquireCoordinator.TryAcquireAsync(
             canonicalResources,

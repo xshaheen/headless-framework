@@ -26,7 +26,19 @@ internal readonly record struct CompositeAcquireEnvironment(
     ILogger Logger,
     TimeSpan DefaultAcquireTimeout,
     TimeSpan DefaultTimeUntilExpires
-);
+)
+{
+    /// <summary>Snapshots the four values off any lock provider, whatever primitive it serves.</summary>
+    internal static CompositeAcquireEnvironment From(IDistributedLockEnvironment provider)
+    {
+        return new CompositeAcquireEnvironment(
+            provider.TimeProvider,
+            provider.Logger,
+            provider.DefaultAcquireTimeout,
+            provider.DefaultTimeUntilExpires
+        );
+    }
+}
 
 /// <summary>The outcome of a composite acquisition.</summary>
 /// <param name="Lease">

@@ -307,12 +307,7 @@ public static class DistributedReadWriteLockExtensions
 
         var canonicalRequests = _MaterializeCanonicalRequests(requests);
 
-        var environment = new CompositeAcquireEnvironment(
-            provider.TimeProvider,
-            provider.Logger,
-            provider.DefaultAcquireTimeout,
-            provider.DefaultTimeUntilExpires
-        );
+        var environment = CompositeAcquireEnvironment.From(provider);
 
         return CompositeAcquireCoordinator.TryAcquireAsync(
             canonicalRequests,
