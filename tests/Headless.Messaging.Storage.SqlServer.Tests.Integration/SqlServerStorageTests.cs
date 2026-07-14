@@ -316,6 +316,70 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
         claimed.LockedUntil.Should().BeAfter(beforeClaim.AddMilliseconds(100));
     }
 
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    public async Task should_stamp_fresh_dispatch_lease_from_database_clock(bool publish, bool reserveAttempt)
+    {
+        _EnsureInitialized();
+        var originalOwner = NodeMembership.SetIdentity("sql-server-lease-owner");
+        var storage = GetStorage();
+        var message = publish
+            ? await storage.StoreMessageAsync("db-clock-dispatch-lease", CreateMessage(), cancellationToken: AbortToken)
+            : await storage.StoreReceivedMessageAsync(
+                "db-clock-dispatch-lease",
+                "db-clock-dispatch-group",
+                CreateMessage(),
+                AbortToken
+            );
+        var skewedStorage = _CreateStorage(
+            new Microsoft.Extensions.Time.Testing.FakeTimeProvider(DateTimeOffset.UtcNow.AddDays(1))
+        );
+        var leaseDuration = TimeSpan.FromMilliseconds(1500);
+
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        var databaseBefore = await connection.ExecuteScalarAsync<DateTime>("SELECT SYSUTCDATETIME()");
+
+        bool acquired;
+        if (reserveAttempt)
+        {
+            message.InlineAttempts = 1;
+            acquired = publish
+                ? await skewedStorage.LeasePublishAndReserveAttemptAsync(message, leaseDuration, 0, AbortToken)
+                : await skewedStorage.LeaseReceiveAndReserveAttemptAsync(message, leaseDuration, 0, AbortToken);
+        }
+        else
+        {
+            acquired = publish
+                ? await skewedStorage.LeasePublishAsync(message, leaseDuration, AbortToken)
+                : await skewedStorage.LeaseReceiveAsync(message, leaseDuration, AbortToken);
+        }
+
+        var databaseAfter = await connection.ExecuteScalarAsync<DateTime>("SELECT SYSUTCDATETIME()");
+        var tableName = publish ? "Published" : "Received";
+        var persisted = await connection.QuerySingleAsync<MediumMessage>(
+            $"SELECT LockedUntil, Owner FROM messaging.{tableName} WHERE Id = @Id",
+            new { Id = message.StorageId }
+        );
+
+        acquired.Should().BeTrue();
+        message.LockedUntil.Should().Be(persisted.LockedUntil);
+        message.Owner.Should().Be(persisted.Owner).And.Be(originalOwner.ToString());
+        message
+            .LockedUntil.Should()
+            .BeOnOrAfter(databaseBefore.Add(leaseDuration))
+            .And.BeOnOrBefore(databaseAfter.Add(leaseDuration));
+
+        NodeMembership.SetIdentity("sql-server-lease-contender");
+        var reacquired = publish
+            ? await skewedStorage.LeasePublishAsync(message, leaseDuration, AbortToken)
+            : await skewedStorage.LeaseReceiveAsync(message, leaseDuration, AbortToken);
+        reacquired.Should().BeFalse("the database-authored lease is still active");
+    }
+
     [Fact]
     public override Task should_reject_mismatched_original_retries() =>
         base.should_reject_mismatched_original_retries();
@@ -327,6 +391,22 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
     [Fact]
     public override Task should_reject_lease_and_reserve_with_stale_inline_attempts_token() =>
         base.should_reject_lease_and_reserve_with_stale_inline_attempts_token();
+
+    [Fact]
+    public override Task should_reject_stale_published_lease_generation_writes() =>
+        base.should_reject_stale_published_lease_generation_writes();
+
+    [Fact]
+    public override Task should_reject_stale_received_lease_generation_writes() =>
+        base.should_reject_stale_received_lease_generation_writes();
+
+    [Fact]
+    public override Task should_allow_published_fenced_writes_with_fast_application_clock() =>
+        base.should_allow_published_fenced_writes_with_fast_application_clock();
+
+    [Fact]
+    public override Task should_allow_received_fenced_writes_with_fast_application_clock() =>
+        base.should_allow_received_fenced_writes_with_fast_application_clock();
 
     [Fact]
     public override Task should_report_false_when_received_exception_message_is_already_terminal() =>

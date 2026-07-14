@@ -500,6 +500,8 @@ Registers messaging services, hosted processors, publishers, consumers, storage 
 
 `RetryStrategy.MaxRetryAttempts` excludes the original execution and controls inline retries through a reusable Polly `ResiliencePipeline`. Once the inline budget is exhausted, Messaging persists `NextRetryAt` and `MessageNeedToRetryProcessor` performs up to `MaxPersistedRetries` pickups. `InlineAttempts` is reserved atomically before each invocation, so process recovery cannot reset the current burst.
 
+`NextRetryAt` remains application-scheduled through the injected `TimeProvider`, while lease ownership is store-authoritative for fresh dispatch and retry pickup. The public `IDataStorage` SPI accepts a `DispatchTimeout` duration; PostgreSQL and SQL Server compare and stamp leases from one database-clock snapshot, and InMemoryStorage uses its injected `TimeProvider`. A successful call returns the persisted `(LockedUntil, Owner)` identity on the message for fenced attempt and state writes. This eliminates client-clock skew from relational ownership, not duplicate delivery: genuine `DispatchTimeout` expiry permits a successor, and a process paused beyond its lease can resume already-running work alongside it. Delivery remains at-least-once.
+
 ```csharp
 using Polly;
 using Polly.Retry;
@@ -1252,6 +1254,8 @@ Provides in-process messaging storage for local development and tests.
 - `setup.UseInMemoryStorage()`.
 - Stores published, received, failed, and monitoring state in memory.
 
+InMemoryStorage uses its injected `TimeProvider` for both application-scheduled `NextRetryAt` and authoritative lease ownership. It implements the same duration-based lease SPI and returns the persisted `(LockedUntil, Owner)` identity.
+
 ### Installation
 
 ```bash
@@ -1517,6 +1521,8 @@ Provides PostgreSQL durable storage for messaging publish/receive state, retries
 - EF/Core.Db integration and startup initialization.
 - **GUID Row IDs**: Message storage identifiers come from the `Version7` keyed `IGuidGenerator` and are persisted as PostgreSQL `UUID` columns.
 
+Fresh dispatch and retry pickup accept a lease duration, atomically compare and stamp ownership from one PostgreSQL clock snapshot, and return the persisted `(LockedUntil, Owner)` identity for fenced writes.
+
 ### Installation
 
 ```bash
@@ -1557,6 +1563,8 @@ Provides SQL Server durable storage for messaging publish/receive state, retries
 - SQL Server schema/table configuration.
 - EF/Core.Db integration and startup initialization.
 - **GUID Row IDs**: Message storage identifiers come from the `SqlServer` keyed `IGuidGenerator` and are persisted as SQL Server `uniqueidentifier` columns.
+
+Fresh dispatch and retry pickup accept a lease duration, atomically compare and stamp ownership from one SQL Server clock snapshot, and return the persisted `(LockedUntil, Owner)` identity for fenced writes.
 
 ### Installation
 

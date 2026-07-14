@@ -89,7 +89,7 @@ public interface IDataStorage
     /// the persisted retry processor excludes it while a dispatch attempt is active.
     /// </summary>
     /// <param name="message">The message to lease. On success the caller's <c>LockedUntil</c> is also updated.</param>
-    /// <param name="lockedUntil">UTC timestamp at which the lease expires.</param>
+    /// <param name="leaseDuration">Duration for which storage should lease the row, measured from its authoritative clock.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>
     /// <see langword="true"/> when the lease was written; <see langword="false"/> when the row was already in a terminal
@@ -98,7 +98,7 @@ public interface IDataStorage
     /// </returns>
     ValueTask<bool> LeasePublishAsync(
         MediumMessage message,
-        DateTime lockedUntil,
+        TimeSpan leaseDuration,
         CancellationToken cancellationToken = default
     );
 
@@ -115,7 +115,7 @@ public interface IDataStorage
     /// written on success) and rolls it back when this method returns <see langword="false"/>. On
     /// success the caller's <c>LockedUntil</c> and <c>Owner</c> are also updated.
     /// </param>
-    /// <param name="lockedUntil">UTC timestamp at which the lease expires.</param>
+    /// <param name="leaseDuration">Duration for which storage should lease the row, measured from its authoritative clock.</param>
     /// <param name="originalInlineAttempts">Optimistic-concurrency token for <c>InlineAttempts</c>.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>
@@ -125,7 +125,7 @@ public interface IDataStorage
     /// </returns>
     ValueTask<bool> LeasePublishAndReserveAttemptAsync(
         MediumMessage message,
-        DateTime lockedUntil,
+        TimeSpan leaseDuration,
         int originalInlineAttempts,
         CancellationToken cancellationToken = default
     );
@@ -188,7 +188,7 @@ public interface IDataStorage
     /// the persisted retry processor excludes it while a consume attempt is active.
     /// </summary>
     /// <param name="message">The message to lease. On success the caller's <c>LockedUntil</c> is also updated.</param>
-    /// <param name="lockedUntil">UTC timestamp at which the lease expires.</param>
+    /// <param name="leaseDuration">Duration for which storage should lease the row, measured from its authoritative clock.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>
     /// <see langword="true"/> when the lease was written; <see langword="false"/> when the row was already in a terminal
@@ -197,7 +197,7 @@ public interface IDataStorage
     /// </returns>
     ValueTask<bool> LeaseReceiveAsync(
         MediumMessage message,
-        DateTime lockedUntil,
+        TimeSpan leaseDuration,
         CancellationToken cancellationToken = default
     );
 
@@ -209,7 +209,7 @@ public interface IDataStorage
     /// </summary>
     ValueTask<bool> LeaseReceiveAndReserveAttemptAsync(
         MediumMessage message,
-        DateTime lockedUntil,
+        TimeSpan leaseDuration,
         int originalInlineAttempts,
         CancellationToken cancellationToken = default
     );

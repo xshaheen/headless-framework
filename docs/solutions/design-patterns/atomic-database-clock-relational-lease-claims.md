@@ -177,9 +177,19 @@ Dead-owner recovery uses the same provider snapshot when it shortens a live leas
 Otherwise an application-clock fast-forward followed immediately by a database-clock pickup can leave
 the row temporarily ineligible or skip the reclaim entirely under host skew.
 
-This specifically governs persisted retry pickup. Fresh-dispatch lease methods still accept an explicit
-deadline as part of the existing `IDataStorage` contract; changing that public contract is separate from
-the retry-reclaim clock-authority defect.
+The same rule now governs fresh dispatch as well as persisted retry pickup. The public `IDataStorage`
+lease methods accept a duration rather than an application-computed deadline. On success, storage copies
+the persisted `LockedUntil` and `Owner` values back to the supplied message so attempt reservation and
+terminal or retry transitions reuse the exact lease identity as their fence. PostgreSQL and SQL Server
+take one provider-clock snapshot per atomic lease command; InMemoryStorage uses its injected
+`TimeProvider` as the coherent single-process authority.
+
+This removes client-clock skew from relational lease acquisition and expiry decisions. It does not
+change the at-least-once boundary: a genuinely expired `DispatchTimeout` makes the row eligible for a
+successor, and a process paused beyond that lease can resume already-running transport or user code while
+the successor is in flight. Durable fencing can reject the stale process's later state write, but it
+cannot cancel work that has already left storage; exactly-once delivery and process-pause fencing are not
+promised.
 
 ## Examples
 

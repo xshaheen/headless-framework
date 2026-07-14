@@ -259,7 +259,7 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
         IDataStorage storage,
         string nodeId,
         long incarnation,
-        DateTime lockedUntil
+        TimeSpan leaseDuration
     )
     {
         // The store stamps Owner from the membership identity at lease time, so set it to the owner-to-seed first.
@@ -276,7 +276,7 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
             nextRetryAt: _Now().AddSeconds(-1),
             cancellationToken: AbortToken
         );
-        (await storage.LeasePublishAsync(published, lockedUntil, AbortToken))
+        (await storage.LeasePublishAsync(published, leaseDuration, AbortToken))
             .Should()
             .BeTrue("the seeded published row must be actively leased before reclaim runs");
 
@@ -292,7 +292,7 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
             nextRetryAt: _Now().AddSeconds(-1),
             cancellationToken: AbortToken
         );
-        (await storage.LeaseReceiveAsync(received, lockedUntil, AbortToken))
+        (await storage.LeaseReceiveAsync(received, leaseDuration, AbortToken))
             .Should()
             .BeTrue("the seeded received row must be actively leased before reclaim runs");
 
@@ -329,9 +329,9 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
 
     private static DateTime _Now() => TimeProvider.System.GetUtcNow().UtcDateTime;
 
-    private static DateTime _FutureLease() => _Now().AddHours(1);
+    private static TimeSpan _FutureLease() => TimeSpan.FromHours(1);
 
-    private static DateTime _ExpiredLease() => _Now().AddSeconds(-1);
+    private static TimeSpan _ExpiredLease() => TimeSpan.FromSeconds(-1);
 
     private static long _NextId() => Interlocked.Increment(ref _messageCounter);
 

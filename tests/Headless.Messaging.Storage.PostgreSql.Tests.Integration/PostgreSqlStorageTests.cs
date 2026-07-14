@@ -313,6 +313,22 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
         base.should_reject_lease_and_reserve_with_stale_inline_attempts_token();
 
     [Fact]
+    public override Task should_reject_stale_published_lease_generation_writes() =>
+        base.should_reject_stale_published_lease_generation_writes();
+
+    [Fact]
+    public override Task should_reject_stale_received_lease_generation_writes() =>
+        base.should_reject_stale_received_lease_generation_writes();
+
+    [Fact]
+    public override Task should_allow_published_fenced_writes_with_fast_application_clock() =>
+        base.should_allow_published_fenced_writes_with_fast_application_clock();
+
+    [Fact]
+    public override Task should_allow_received_fenced_writes_with_fast_application_clock() =>
+        base.should_allow_received_fenced_writes_with_fast_application_clock();
+
+    [Fact]
     public override Task should_report_false_when_received_exception_message_is_already_terminal() =>
         base.should_report_false_when_received_exception_message_is_already_terminal();
 
@@ -380,6 +396,124 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     #endregion
 
     #region PostgreSQL-Specific Tests
+
+    [Theory]
+    [InlineData("published", false)]
+    [InlineData("published", true)]
+    [InlineData("received", false)]
+    [InlineData("received", true)]
+    public async Task should_stamp_dispatch_lease_from_database_clock_and_return_persisted_identity(
+        string tableName,
+        bool reserveAttempt
+    )
+    {
+        var storage = GetStorage();
+        var message = string.Equals(tableName, "published", StringComparison.Ordinal)
+            ? await storage.StoreMessageAsync("database-clock-lease", CreateMessage(), cancellationToken: AbortToken)
+            : await storage.StoreReceivedMessageAsync(
+                "database-clock-lease",
+                "database-clock-group",
+                CreateMessage(),
+                AbortToken
+            );
+
+        NodeMembership.SetIdentity($"database-clock-{tableName}-{reserveAttempt}");
+        var fastApplicationClock = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(
+            DateTimeOffset.UtcNow.AddYears(10)
+        );
+        var skewedStorage = _CreateStorage(fastApplicationClock);
+        var leaseDuration = TimeSpan.FromMilliseconds(750);
+
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        var databaseTimeBefore = await connection.ExecuteScalarAsync<DateTime>("SELECT statement_timestamp()");
+
+        message.InlineAttempts = reserveAttempt ? 1 : 0;
+        var leased = (tableName, reserveAttempt) switch
+        {
+            ("published", false) => await skewedStorage.LeasePublishAsync(message, leaseDuration, AbortToken),
+            ("published", true) => await skewedStorage.LeasePublishAndReserveAttemptAsync(
+                message,
+                leaseDuration,
+                originalInlineAttempts: 0,
+                AbortToken
+            ),
+            ("received", false) => await skewedStorage.LeaseReceiveAsync(message, leaseDuration, AbortToken),
+            ("received", true) => await skewedStorage.LeaseReceiveAndReserveAttemptAsync(
+                message,
+                leaseDuration,
+                originalInlineAttempts: 0,
+                AbortToken
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(tableName), tableName, "Unknown message table."),
+        };
+
+        var persistedLease = await connection.QuerySingleAsync<PersistedLease>(
+            $"""SELECT statement_timestamp() AS "DatabaseTimeAfter", "LockedUntil", "Owner" FROM messaging.{tableName} WHERE "Id"=@Id""",
+            new { Id = message.StorageId }
+        );
+
+        leased.Should().BeTrue();
+        message.LockedUntil.Should().Be(persistedLease.LockedUntil);
+        message.Owner.Should().Be(persistedLease.Owner);
+        persistedLease.LockedUntil.Should().BeOnOrAfter(databaseTimeBefore.Add(leaseDuration));
+        persistedLease.LockedUntil.Should().BeOnOrBefore(persistedLease.DatabaseTimeAfter.Add(leaseDuration));
+        persistedLease
+            .LockedUntil.Should()
+            .BeBefore(fastApplicationClock.GetUtcNow().UtcDateTime, "application clock skew must not stamp the lease");
+
+        var immediatelyReacquired = string.Equals(tableName, "published", StringComparison.Ordinal)
+            ? await skewedStorage.LeasePublishAsync(message, leaseDuration, AbortToken)
+            : await skewedStorage.LeaseReceiveAsync(message, leaseDuration, AbortToken);
+        immediatelyReacquired.Should().BeFalse("the database-authored lease is still active");
+    }
+
+    [Fact]
+    public async Task should_preserve_active_receive_lease_when_fast_application_clock_redelivers()
+    {
+        var storage = GetStorage();
+        var origin = CreateMessage();
+        var stored = await storage.StoreReceivedMessageAsync(
+            "fast-clock-redelivery",
+            "fast-clock-group",
+            origin,
+            AbortToken
+        );
+        await storage.ChangeReceiveStateAsync(
+            stored,
+            StatusName.Failed,
+            nextRetryAt: DateTime.UtcNow.AddMinutes(-1),
+            cancellationToken: AbortToken
+        );
+
+        NodeMembership.SetIdentity("fast-clock-redelivery-owner");
+        (await storage.LeaseReceiveAsync(stored, TimeSpan.FromMinutes(5), AbortToken)).Should().BeTrue();
+
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        var before = await connection.QuerySingleAsync<PersistedLease>(
+            """SELECT statement_timestamp() AS "DatabaseTimeAfter", "LockedUntil", "Owner" FROM messaging.received WHERE "Id"=@Id""",
+            new { Id = stored.StorageId }
+        );
+
+        var fastClockStorage = _CreateStorage(
+            new Microsoft.Extensions.Time.Testing.FakeTimeProvider(DateTimeOffset.UtcNow.AddYears(10))
+        );
+        var redelivery = await fastClockStorage.StoreReceivedMessageAsync(
+            "fast-clock-redelivery",
+            "fast-clock-group",
+            origin,
+            AbortToken
+        );
+        var after = await connection.QuerySingleAsync<PersistedLease>(
+            """SELECT statement_timestamp() AS "DatabaseTimeAfter", "LockedUntil", "Owner" FROM messaging.received WHERE "Id"=@Id""",
+            new { Id = stored.StorageId }
+        );
+
+        redelivery.StorageId.Should().NotBe(stored.StorageId, "the active-lease guard must reject the upsert");
+        after.LockedUntil.Should().Be(before.LockedUntil);
+        after.Owner.Should().Be(before.Owner);
+    }
 
     [Fact]
     public async Task should_create_database_schema()
@@ -1024,6 +1158,15 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
                 _WalkPlanForProperty(child, propertyName, collector);
             }
         }
+    }
+
+    private sealed class PersistedLease
+    {
+        public required DateTime DatabaseTimeAfter { get; init; }
+
+        public required DateTime LockedUntil { get; init; }
+
+        public string? Owner { get; init; }
     }
 
     #endregion

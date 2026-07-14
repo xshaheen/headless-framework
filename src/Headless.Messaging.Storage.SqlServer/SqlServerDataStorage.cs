@@ -159,16 +159,23 @@ internal sealed class SqlServerDataStorage(
     /// <returns><see langword="true"/> if the lease was acquired; <see langword="false"/> if another node already holds it.</returns>
     public ValueTask<bool> LeasePublishAsync(
         MediumMessage message,
-        DateTime lockedUntil,
+        TimeSpan leaseDuration,
         CancellationToken cancellationToken = default
-    ) => _LeaseMessageAsync(_publishedTable, message, lockedUntil, cancellationToken);
+    ) => _LeaseMessageAsync(_publishedTable, message, leaseDuration, cancellationToken);
 
     public ValueTask<bool> LeasePublishAndReserveAttemptAsync(
         MediumMessage message,
-        DateTime lockedUntil,
+        TimeSpan leaseDuration,
         int originalInlineAttempts,
         CancellationToken cancellationToken = default
-    ) => _LeaseAndReserveAttemptAsync(_publishedTable, message, lockedUntil, originalInlineAttempts, cancellationToken);
+    ) =>
+        _LeaseAndReserveAttemptAsync(
+            _publishedTable,
+            message,
+            leaseDuration,
+            originalInlineAttempts,
+            cancellationToken
+        );
 
     /// <summary>
     /// Updates the status of a received message, including writing <c>ExceptionInfo</c> when the
@@ -235,7 +242,7 @@ internal sealed class SqlServerDataStorage(
             // X1 terminal-row guard: refuses updates to rows that are already terminal AND
             // have NextRetryAt cleared. Failed rows with non-null NextRetryAt stay mutable so
             // the retry processor can rewrite them — see the matching note in PostgreSqlDataStorage.
-            $"UPDATE {_receivedTable} SET Content=@Content, Retries=@Retries, InlineAttempts=@InlineAttempts, ExpiresAt=@ExpiresAt, NextRetryAt=@NextRetryAt, LockedUntil=@LockedUntil, Owner=@Owner, StatusName=@StatusName, ExceptionInfo=@ExceptionInfo WHERE Id=@Id AND {_TerminalRowGuardWithRetries} AND (@OriginalInlineAttempts IS NULL OR (((LockedUntil IS NULL AND @OriginalLockedUntil IS NULL) OR LockedUntil=@OriginalLockedUntil) AND ((Owner IS NULL AND @OriginalOwner IS NULL) OR Owner=@OriginalOwner) AND LockedUntil>@Now))";
+            $"DECLARE @LeaseNow datetime2(7) = SYSUTCDATETIME(); UPDATE {_receivedTable} SET Content=@Content, Retries=@Retries, InlineAttempts=@InlineAttempts, ExpiresAt=@ExpiresAt, NextRetryAt=@NextRetryAt, LockedUntil=@LockedUntil, Owner=@Owner, StatusName=@StatusName, ExceptionInfo=@ExceptionInfo WHERE Id=@Id AND {_TerminalRowGuardWithRetries} AND (@OriginalInlineAttempts IS NULL OR (((LockedUntil IS NULL AND @OriginalLockedUntil IS NULL) OR LockedUntil=@OriginalLockedUntil) AND ((Owner IS NULL AND @OriginalOwner IS NULL) OR Owner=@OriginalOwner) AND LockedUntil>@LeaseNow))";
 
         object[] sqlParams =
         [
@@ -263,7 +270,6 @@ internal sealed class SqlServerDataStorage(
             {
                 Value = message.Owner ?? (object)DBNull.Value,
             },
-            new SqlParameter("@Now", SqlDbType.DateTime2) { Value = timeProvider.GetUtcNow().UtcDateTime },
             new SqlParameter("@StatusName", state.ToString("G")),
             new SqlParameter("@ExceptionInfo", message.ExceptionInfo ?? (object)DBNull.Value),
         ];
@@ -289,16 +295,17 @@ internal sealed class SqlServerDataStorage(
     /// <returns><see langword="true"/> if the lease was acquired; <see langword="false"/> if another node already holds it.</returns>
     public ValueTask<bool> LeaseReceiveAsync(
         MediumMessage message,
-        DateTime lockedUntil,
+        TimeSpan leaseDuration,
         CancellationToken cancellationToken = default
-    ) => _LeaseMessageAsync(_receivedTable, message, lockedUntil, cancellationToken);
+    ) => _LeaseMessageAsync(_receivedTable, message, leaseDuration, cancellationToken);
 
     public ValueTask<bool> LeaseReceiveAndReserveAttemptAsync(
         MediumMessage message,
-        DateTime lockedUntil,
+        TimeSpan leaseDuration,
         int originalInlineAttempts,
         CancellationToken cancellationToken = default
-    ) => _LeaseAndReserveAttemptAsync(_receivedTable, message, lockedUntil, originalInlineAttempts, cancellationToken);
+    ) =>
+        _LeaseAndReserveAttemptAsync(_receivedTable, message, leaseDuration, originalInlineAttempts, cancellationToken);
 
     /// <summary>
     /// Persists a published outbox message to the <c>Published</c> table. When <paramref name="transaction"/>
@@ -498,9 +505,6 @@ internal sealed class SqlServerDataStorage(
             new SqlParameter("@MessageId", message.Origin.Id),
             new SqlParameter("@Version", messagingOptions.Value.Version),
             new SqlParameter("@ExceptionInfo", exceptionInfo ?? (object)DBNull.Value),
-            // #4 — active-lease guard uses the injected TimeProvider (not GETUTCDATE()) so all lease
-            // math shares one clock domain; keeps the guard testable with a fake clock.
-            new SqlParameter("@Now", SqlDbType.DateTime2) { Value = timeProvider.GetUtcNow().UtcDateTime },
         ];
 
         var rowId = await _StoreReceivedMessage(sqlParams, cancellationToken).ConfigureAwait(false);
@@ -563,9 +567,6 @@ internal sealed class SqlServerDataStorage(
             new SqlParameter("@MessageId", message.Origin.Id),
             new SqlParameter("@Version", messagingOptions.Value.Version),
             new SqlParameter("@ExceptionInfo", DBNull.Value),
-            // #4 — active-lease guard uses the injected TimeProvider (not GETUTCDATE()) so all lease
-            // math shares one clock domain; keeps the guard testable with a fake clock.
-            new SqlParameter("@Now", SqlDbType.DateTime2) { Value = timeProvider.GetUtcNow().UtcDateTime },
         ];
 
         // #5 — adopt the authoritative persisted row id (see _StoreReceivedMessage); on the MERGE UPDATE
@@ -936,7 +937,7 @@ internal sealed class SqlServerDataStorage(
     )
     {
         var sql =
-            $"UPDATE {tableName} SET InlineAttempts=@InlineAttempts WHERE Id=@Id AND {_TerminalRowGuardWithRetries} AND ((LockedUntil IS NULL AND @LockedUntil IS NULL) OR LockedUntil=@LockedUntil) AND ((Owner IS NULL AND @CurrentOwner IS NULL) OR Owner=@CurrentOwner) AND LockedUntil>@Now";
+            $"DECLARE @LeaseNow datetime2(7) = SYSUTCDATETIME(); UPDATE {tableName} SET InlineAttempts=@InlineAttempts WHERE Id=@Id AND {_TerminalRowGuardWithRetries} AND ((LockedUntil IS NULL AND @LockedUntil IS NULL) OR LockedUntil=@LockedUntil) AND ((Owner IS NULL AND @CurrentOwner IS NULL) OR Owner=@CurrentOwner) AND LockedUntil>@LeaseNow";
         object[] sqlParams =
         [
             new SqlParameter("@Id", message.StorageId),
@@ -948,7 +949,6 @@ internal sealed class SqlServerDataStorage(
             {
                 Value = message.Owner ?? (object)DBNull.Value,
             },
-            new SqlParameter("@Now", SqlDbType.DateTime2) { Value = timeProvider.GetUtcNow().UtcDateTime },
         ];
         await using var connection = new SqlConnection(options.Value.ConnectionString);
         var affected = await connection
@@ -975,7 +975,7 @@ internal sealed class SqlServerDataStorage(
     )
     {
         var sql =
-            $"UPDATE {tableName} SET Content=@Content, Retries=@Retries,InlineAttempts=@InlineAttempts,ExpiresAt=@ExpiresAt,NextRetryAt=@NextRetryAt,LockedUntil=@LockedUntil,Owner=@Owner,StatusName=@StatusName WHERE Id=@Id AND {_TerminalRowGuardWithRetries} AND (@OriginalInlineAttempts IS NULL OR (((LockedUntil IS NULL AND @OriginalLockedUntil IS NULL) OR LockedUntil=@OriginalLockedUntil) AND ((Owner IS NULL AND @OriginalOwner IS NULL) OR Owner=@OriginalOwner) AND LockedUntil>@Now))";
+            $"DECLARE @LeaseNow datetime2(7) = SYSUTCDATETIME(); UPDATE {tableName} SET Content=@Content, Retries=@Retries,InlineAttempts=@InlineAttempts,ExpiresAt=@ExpiresAt,NextRetryAt=@NextRetryAt,LockedUntil=@LockedUntil,Owner=@Owner,StatusName=@StatusName WHERE Id=@Id AND {_TerminalRowGuardWithRetries} AND (@OriginalInlineAttempts IS NULL OR (((LockedUntil IS NULL AND @OriginalLockedUntil IS NULL) OR LockedUntil=@OriginalLockedUntil) AND ((Owner IS NULL AND @OriginalOwner IS NULL) OR Owner=@OriginalOwner) AND LockedUntil>@LeaseNow))";
 
         object[] sqlParams =
         [
@@ -1003,7 +1003,6 @@ internal sealed class SqlServerDataStorage(
             {
                 Value = message.Owner ?? (object)DBNull.Value,
             },
-            new SqlParameter("@Now", SqlDbType.DateTime2) { Value = timeProvider.GetUtcNow().UtcDateTime },
             new SqlParameter("@StatusName", state.ToString("G")),
         ];
 
@@ -1081,6 +1080,8 @@ internal sealed class SqlServerDataStorage(
         // On the UPDATE branch the existing row keeps its original [Id], which differs from the freshly
         // generated @Id, so the caller adopts the returned value; a guard-blocked no-op returns no row.
         var sql = $"""
+            DECLARE @LeaseNow datetime2(7) = SYSUTCDATETIME();
+
             MERGE {_receivedTable} WITH (HOLDLOCK) AS target
             USING (SELECT @Version AS Version, @MessageId AS MessageId, @Group AS [Group], @IntentType AS IntentType) AS source
             ON target.Version = source.Version AND target.MessageId = source.MessageId AND (target.[Group] = source.[Group] OR (target.[Group] IS NULL AND source.[Group] IS NULL)) AND target.IntentType = source.IntentType
@@ -1088,7 +1089,7 @@ internal sealed class SqlServerDataStorage(
                 AND NOT (target.StatusName IN ('{nameof(StatusName.Succeeded)}','{nameof(
                     StatusName.Failed
                 )}') AND target.NextRetryAt IS NULL)
-                AND (target.LockedUntil IS NULL OR target.LockedUntil <= @Now)
+                AND (target.LockedUntil IS NULL OR target.LockedUntil <= @LeaseNow)
             THEN
                 UPDATE SET StatusName = @StatusName, ExpiresAt = @ExpiresAt, NextRetryAt = @NextRetryAt, LockedUntil = @LockedUntil, Owner = @Owner, Content = @Content, ExceptionInfo = @ExceptionInfo
             WHEN NOT MATCHED THEN
@@ -1114,7 +1115,7 @@ internal sealed class SqlServerDataStorage(
     private async ValueTask<bool> _LeaseAndReserveAttemptAsync(
         string tableName,
         MediumMessage message,
-        DateTime lockedUntil,
+        TimeSpan leaseDuration,
         int originalInlineAttempts,
         CancellationToken cancellationToken
     )
@@ -1123,19 +1124,26 @@ internal sealed class SqlServerDataStorage(
         // statement (one round trip instead of the _LeaseMessageAsync + _ReserveAttemptAsync pair).
         // Combines the lease-contention predicate (#15) with the durable-counter CAS from
         // _ReserveAttemptAsync; no owner match is required because this path is TAKING the lease.
-        var sql =
-            $"UPDATE {tableName} SET LockedUntil=@LockedUntil, Owner=@Owner, InlineAttempts=@InlineAttempts WHERE Id=@Id "
-            + "AND (LockedUntil IS NULL OR LockedUntil <= @Now) "
-            + $"AND {_TerminalRowGuardWithRetries}";
+        var sql = $"""
+            DECLARE @LeaseNow datetime2(7) = SYSUTCDATETIME();
+
+            UPDATE {tableName}
+            SET LockedUntil = DATEADD(nanosecond, @LeaseNanoseconds, DATEADD(second, @LeaseWholeSeconds, @LeaseNow)),
+                Owner = @Owner,
+                InlineAttempts = @InlineAttempts
+            OUTPUT inserted.LockedUntil, inserted.Owner
+            WHERE Id = @Id
+              AND (LockedUntil IS NULL OR LockedUntil <= @LeaseNow)
+              AND {_TerminalRowGuardWithRetries};
+            """;
 
         var owner = nodeMembership.GetOwnerTag();
+        var (leaseWholeSeconds, leaseNanoseconds) = _SplitLeaseDuration(leaseDuration);
         object[] sqlParams =
         [
             new SqlParameter("@Id", message.StorageId),
-            new SqlParameter("@LockedUntil", SqlDbType.DateTime2)
-            {
-                Value = ((DateTime?)lockedUntil).ToUtcParameterValue(),
-            },
+            new SqlParameter("@LeaseWholeSeconds", SqlDbType.Int) { Value = leaseWholeSeconds },
+            new SqlParameter("@LeaseNanoseconds", SqlDbType.Int) { Value = leaseNanoseconds },
             new SqlParameter("@Owner", SqlDbType.NVarChar, options.Value.OwnerColumnMaxLength)
             {
                 Value = owner ?? (object)DBNull.Value,
@@ -1143,32 +1151,26 @@ internal sealed class SqlServerDataStorage(
             new SqlParameter("@InlineAttempts", message.InlineAttempts),
             new SqlParameter("@OriginalRetries", message.Retries),
             new SqlParameter("@OriginalInlineAttempts", originalInlineAttempts),
-            new SqlParameter("@Now", SqlDbType.DateTime2) { Value = timeProvider.GetUtcNow().UtcDateTime },
         ];
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
-        var affectedRows = await connection
-            .ExecuteNonQueryAsync(
+        var result = await connection
+            .ExecuteReaderAsync(
                 sql,
+                _ReadStoredLeaseAsync,
                 commandTimeout: messagingOptions.Value.CommandTimeout,
                 sqlParams: sqlParams,
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
 
-        if (affectedRows > 0)
-        {
-            message.LockedUntil = ((DateTime?)lockedUntil).ToUtcOrSelf();
-            message.Owner = owner;
-        }
-
-        return affectedRows > 0;
+        return _ApplyStoredLease(message, result);
     }
 
     private async ValueTask<bool> _LeaseMessageAsync(
         string tableName,
         MediumMessage message,
-        DateTime lockedUntil,
+        TimeSpan leaseDuration,
         CancellationToken cancellationToken = default
     )
     {
@@ -1178,43 +1180,80 @@ internal sealed class SqlServerDataStorage(
         // and PostgreSql atomic-claim pickup paths already filter on LockedUntil, but the lease call
         // from the consume/publish path itself was unconditional). Returning false here surfaces the
         // contention to the inline retry loop, which skips dispatch.
-        var sql =
-            $"UPDATE {tableName} SET LockedUntil=@LockedUntil, Owner=@Owner WHERE Id=@Id "
-            + "AND (LockedUntil IS NULL OR LockedUntil <= @Now) "
-            + $"AND {_TerminalRowGuardSimple}";
+        var sql = $"""
+            DECLARE @LeaseNow datetime2(7) = SYSUTCDATETIME();
+
+            UPDATE {tableName}
+            SET LockedUntil = DATEADD(nanosecond, @LeaseNanoseconds, DATEADD(second, @LeaseWholeSeconds, @LeaseNow)),
+                Owner = @Owner
+            OUTPUT inserted.LockedUntil, inserted.Owner
+            WHERE Id = @Id
+              AND (LockedUntil IS NULL OR LockedUntil <= @LeaseNow)
+              AND {_TerminalRowGuardSimple};
+            """;
 
         var owner = nodeMembership.GetOwnerTag();
+        var (leaseWholeSeconds, leaseNanoseconds) = _SplitLeaseDuration(leaseDuration);
         object[] sqlParams =
         [
             new SqlParameter("@Id", message.StorageId),
-            new SqlParameter("@LockedUntil", SqlDbType.DateTime2)
-            {
-                Value = ((DateTime?)lockedUntil).ToUtcParameterValue(),
-            },
+            new SqlParameter("@LeaseWholeSeconds", SqlDbType.Int) { Value = leaseWholeSeconds },
+            new SqlParameter("@LeaseNanoseconds", SqlDbType.Int) { Value = leaseNanoseconds },
             new SqlParameter("@Owner", SqlDbType.NVarChar, options.Value.OwnerColumnMaxLength)
             {
                 Value = owner ?? (object)DBNull.Value,
             },
-            new SqlParameter("@Now", SqlDbType.DateTime2) { Value = timeProvider.GetUtcNow().UtcDateTime },
         ];
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
-        var affectedRows = await connection
-            .ExecuteNonQueryAsync(
+        var result = await connection
+            .ExecuteReaderAsync(
                 sql,
+                _ReadStoredLeaseAsync,
                 commandTimeout: messagingOptions.Value.CommandTimeout,
                 sqlParams: sqlParams,
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
 
-        if (affectedRows > 0)
+        return _ApplyStoredLease(message, result);
+    }
+
+    private static async Task<(bool Acquired, DateTime? LockedUntil, string? Owner)> _ReadStoredLeaseAsync(
+        DbDataReader reader,
+        CancellationToken cancellationToken
+    )
+    {
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            message.LockedUntil = ((DateTime?)lockedUntil).ToUtcOrSelf();
-            message.Owner = owner;
+            return (false, null, null);
         }
 
-        return affectedRows > 0;
+        var lockedUntil = ((DateTime?)reader.GetDateTime(0)).ToUtcOrSelf();
+        var owner = await reader.IsDBNullAsync(1, cancellationToken).ConfigureAwait(false) ? null : reader.GetString(1);
+        return (true, lockedUntil, owner);
+    }
+
+    private static bool _ApplyStoredLease(
+        MediumMessage message,
+        (bool Acquired, DateTime? LockedUntil, string? Owner) storedLease
+    )
+    {
+        if (!storedLease.Acquired)
+        {
+            return false;
+        }
+
+        message.LockedUntil = storedLease.LockedUntil;
+        message.Owner = storedLease.Owner;
+        return true;
+    }
+
+    private static (int WholeSeconds, int Nanoseconds) _SplitLeaseDuration(TimeSpan leaseDuration)
+    {
+        var wholeSeconds = checked((int)(leaseDuration.Ticks / TimeSpan.TicksPerSecond));
+        var nanoseconds = checked((int)(leaseDuration.Ticks % TimeSpan.TicksPerSecond * 100));
+        return (wholeSeconds, nanoseconds);
     }
 
     private async ValueTask<IEnumerable<MediumMessage>> _GetMessagesOfNeedRetryAsync(
@@ -1257,9 +1296,9 @@ internal sealed class SqlServerDataStorage(
             INNER JOIN Candidates ON target.Id = Candidates.Id;
             """;
 
-        var dispatchTimeout = messagingOptions.Value.RetryPolicy.DispatchTimeout;
-        var leaseWholeSeconds = checked((int)(dispatchTimeout.Ticks / TimeSpan.TicksPerSecond));
-        var leaseNanoseconds = checked((int)(dispatchTimeout.Ticks % TimeSpan.TicksPerSecond * 100));
+        var (leaseWholeSeconds, leaseNanoseconds) = _SplitLeaseDuration(
+            messagingOptions.Value.RetryPolicy.DispatchTimeout
+        );
 
         object[] sqlParams =
         [

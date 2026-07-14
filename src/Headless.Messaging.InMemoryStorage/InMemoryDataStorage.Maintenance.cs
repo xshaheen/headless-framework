@@ -46,7 +46,7 @@ internal sealed partial class InMemoryDataStorage
     private static ValueTask<bool> _LeaseAndReserveAttemptAsync(
         ConcurrentDictionary<Guid, MemoryMessage> messages,
         MediumMessage message,
-        DateTime lockedUntil,
+        TimeSpan leaseDuration,
         int originalInlineAttempts,
         TimeProvider timeProvider,
         string? owner,
@@ -75,11 +75,11 @@ internal sealed partial class InMemoryDataStorage
                 return ValueTask.FromResult(false);
             }
 
-            var utcLockedUntil = ((DateTime?)lockedUntil).ToUtcOrSelf();
-            current.LockedUntil = utcLockedUntil;
+            var lockedUntil = nowUtc.Add(leaseDuration);
+            current.LockedUntil = lockedUntil;
             current.Owner = owner;
             current.InlineAttempts = message.InlineAttempts;
-            message.LockedUntil = utcLockedUntil;
+            message.LockedUntil = lockedUntil;
             message.Owner = owner;
             return ValueTask.FromResult(true);
         }
