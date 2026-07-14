@@ -219,7 +219,7 @@ public static class DistributedSemaphoreProviderExtensions
             static request => request.Resource,
             (request, childOptions, childToken) =>
                 semaphores[request.Resource].TryAcquireAsync(childOptions, childToken),
-            _GetCompositeResource(canonicalRequests),
+            _GetCompositeResource,
             environment,
             options,
             cancellationToken

@@ -35,7 +35,7 @@ internal static class CompositeDistributedLockAcquireCoordinator
             canonicalResources,
             static resource => resource,
             (resource, childOptions, childToken) => provider.TryAcquireAsync(resource, childOptions, childToken),
-            _GetCompositeResource(canonicalResources),
+            _GetCompositeResource,
             environment,
             options,
             cancellationToken

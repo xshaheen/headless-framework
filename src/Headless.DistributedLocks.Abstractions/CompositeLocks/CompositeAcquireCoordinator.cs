@@ -31,9 +31,14 @@ internal static class CompositeAcquireCoordinator
 
     /// <summary>Acquires every request in <paramref name="canonicalRequests"/> under one shared acquire budget.</summary>
     /// <param name="canonicalRequests">The already-canonicalized request set, in acquisition order.</param>
-    /// <param name="resourceOf">Projects a request to its resource name, for the single-item passthrough identity.</param>
+    /// <param name="resourceOf">Projects a request to its resource name.</param>
     /// <param name="tryAcquireChild">Acquires one child; returns <see langword="null"/> on contention or timeout.</param>
-    /// <param name="compositeResource">The caller-built diagnostic identity for the whole set.</param>
+    /// <param name="compositeResourceOf">
+    /// Builds the joined diagnostic identity for a set of two or more. Only invoked in that case: a canonical set of
+    /// one is not a composite, so it identifies itself by its bare resource name on every path — success and failure
+    /// alike. Passing the joined form here instead would let a synthetic name (the reader-writer mode prefix in
+    /// particular) leak into the timeout exception of what the caller sees as a single-resource acquire.
+    /// </param>
     /// <param name="environment">The provider's clock, logger, and defaults.</param>
     /// <param name="options">Per-call configuration shared by every child acquisition.</param>
     /// <param name="cancellationToken">Cancels formation; pending child work is cancelled and drained first.</param>
@@ -41,7 +46,7 @@ internal static class CompositeAcquireCoordinator
         IReadOnlyList<TRequest> canonicalRequests,
         Func<TRequest, string> resourceOf,
         Func<TRequest, DistributedLockAcquireOptions, CancellationToken, Task<IDistributedLease?>> tryAcquireChild,
-        string compositeResource,
+        Func<IReadOnlyList<TRequest>, string> compositeResourceOf,
         CompositeAcquireEnvironment environment,
         DistributedLockAcquireOptions? options,
         CancellationToken cancellationToken
@@ -50,6 +55,12 @@ internal static class CompositeAcquireCoordinator
         Argument.IsNotNull(canonicalRequests);
         Argument.IsNotNull(resourceOf);
         Argument.IsNotNull(tryAcquireChild);
+        Argument.IsNotNull(compositeResourceOf);
+        Argument.IsNotEmpty(canonicalRequests, paramName: nameof(canonicalRequests));
+
+        var compositeResource =
+            canonicalRequests.Count == 1 ? resourceOf(canonicalRequests[0]) : compositeResourceOf(canonicalRequests);
+
         Argument.IsNotNullOrWhiteSpace(compositeResource);
 
         options ??= new DistributedLockAcquireOptions();
@@ -168,10 +179,11 @@ internal static class CompositeAcquireCoordinator
             }
 
             // CompositeDistributedLease requires two or more children. A canonical set of one is not a composite:
-            // return the provider's own lease so its real LeaseId and FencingToken survive.
+            // return the provider's own lease so its real LeaseId and FencingToken survive. compositeResource is
+            // already the bare resource name in that case, which is what keeps the failure paths consistent with this.
             if (acquired.Count == 1)
             {
-                return new CompositeAcquireResult(acquired[0], resourceOf(canonicalRequests[0]), tryOnce);
+                return new CompositeAcquireResult(acquired[0], compositeResource, tryOnce);
             }
 
 #pragma warning disable CA2000 // Ownership is transferred to the returned IDistributedLease.

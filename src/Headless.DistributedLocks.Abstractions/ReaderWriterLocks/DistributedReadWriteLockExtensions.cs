@@ -326,7 +326,7 @@ public static class DistributedReadWriteLockExtensions
                 request.Mode is DistributedLockMode.Write
                     ? provider.TryAcquireWriteLockAsync(request.Resource, childOptions, childToken)
                     : provider.TryAcquireReadLockAsync(request.Resource, childOptions, childToken),
-            _GetCompositeResource(canonicalRequests),
+            _GetCompositeResource,
             environment,
             options,
             cancellationToken

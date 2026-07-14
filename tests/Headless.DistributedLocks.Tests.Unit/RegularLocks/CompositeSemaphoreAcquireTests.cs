@@ -434,6 +434,56 @@ public sealed class CompositeSemaphoreAcquireTests : TestBase
         }
     }
 
+    [Fact]
+    public async Task should_link_slot_loss_tokens_into_one_composite_loss_signal()
+    {
+        // D4 carries loss linking over from the mutex composite; nothing exercised it for semaphore slots.
+        var provider = _CreateProvider(new FakeTimeProvider());
+        var firstSlot = new CompositeTestLease("a", canObserveLoss: true);
+        var secondSlot = new CompositeTestLease("b", canObserveLoss: true);
+
+        _StubSemaphore(provider, "a", 5, _ => Task.FromResult<IDistributedLease?>(firstSlot));
+        _StubSemaphore(provider, "b", 2, _ => Task.FromResult<IDistributedLease?>(secondSlot));
+
+        await using var handle = await provider.AcquireAllAsync(
+            [new("a", 5), new("b", 2)],
+            new DistributedLockAcquireOptions
+            {
+                Monitoring = LockMonitoringMode.Monitor,
+                TimeUntilExpires = TimeSpan.FromSeconds(30),
+            },
+            AbortToken
+        );
+
+        handle.CanObserveLoss.Should().BeTrue();
+        handle.IsLost.Should().BeFalse();
+
+        // Losing either slot loses the whole set — a partially-held set of slots is not a composite.
+        secondSlot.MarkLost();
+
+        handle.IsLost.Should().BeTrue();
+        handle.LostToken.IsCancellationRequested.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_reject_slots_that_disagree_on_loss_observability()
+    {
+        var provider = _CreateProvider(new FakeTimeProvider());
+
+        _StubSemaphore(provider, "a", 5, _ => Task.FromResult<IDistributedLease?>(new CompositeTestLease("a")));
+        _StubSemaphore(
+            provider,
+            "b",
+            2,
+            _ => Task.FromResult<IDistributedLease?>(new CompositeTestLease("b", canObserveLoss: true))
+        );
+
+        var act = async () =>
+            await provider.TryAcquireAllAsync([new("a", 5), new("b", 2)], cancellationToken: AbortToken);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
     private static IDistributedSemaphoreProvider _CreateProvider(FakeTimeProvider timeProvider)
     {
         var provider = Substitute.For<IDistributedSemaphoreProvider>();

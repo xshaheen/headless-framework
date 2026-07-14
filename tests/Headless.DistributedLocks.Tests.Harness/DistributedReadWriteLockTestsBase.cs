@@ -475,11 +475,13 @@ public abstract class DistributedReadWriteLockTestsBase : TestBase
             // serialized pair cannot form a circular wait, which would make this test pass with the ordinal sort
             // deleted. It has to genuinely interleave to have any teeth.
             using var startLine = new SemaphoreSlim(0, 2);
+            using var callerSource = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+            var callerToken = callerSource.Token;
 
             var callerX = Task.Run(
                 async () =>
                 {
-                    await startLine.WaitAsync(AbortToken);
+                    await startLine.WaitAsync(callerToken);
 
                     return await _AcquireThenReleaseAsync(
                         provider,
@@ -487,16 +489,17 @@ public abstract class DistributedReadWriteLockTestsBase : TestBase
                             new DistributedReadWriteLockRequest(first, DistributedLockMode.Read),
                             new DistributedReadWriteLockRequest(second, DistributedLockMode.Write),
                         ],
-                        options
+                        options,
+                        callerToken
                     );
                 },
-                AbortToken
+                callerToken
             );
 
             var callerY = Task.Run(
                 async () =>
                 {
-                    await startLine.WaitAsync(AbortToken);
+                    await startLine.WaitAsync(callerToken);
 
                     return await _AcquireThenReleaseAsync(
                         provider,
@@ -504,29 +507,44 @@ public abstract class DistributedReadWriteLockTestsBase : TestBase
                             new DistributedReadWriteLockRequest(second, DistributedLockMode.Read),
                             new DistributedReadWriteLockRequest(first, DistributedLockMode.Write),
                         ],
-                        options
+                        options,
+                        callerToken
                     );
                 },
-                AbortToken
+                callerToken
             );
 
             startLine.Release(2);
 
             var race = Task.WhenAll(callerX, callerY);
+            bool acquiredX;
+            bool acquiredY;
 
-            // The blocked caller re-probes on the provider's TimeProvider-driven backoff, so advance the clock (fake
-            // or wall) until both settle. The loop exits the moment the race completes, so a wall-clock leaf pays at
-            // most one real delay. The bounded WaitAsync below means a genuine deadlock FAILS rather than hangs.
-            for (var i = 0; i < 60 && !race.IsCompleted; i++)
+            try
             {
-                await AdvanceTimeAsync(TimeSpan.FromMilliseconds(200), AbortToken);
-                await Task.Yield();
+                // The blocked caller re-probes on the provider's TimeProvider-driven backoff, so advance the clock
+                // (fake or wall) until both settle. The loop exits the moment the race completes, so a wall-clock leaf
+                // pays at most one real delay. The bounded WaitAsync means a genuine deadlock FAILS rather than hangs.
+                for (var i = 0; i < 60 && !race.IsCompleted; i++)
+                {
+                    await AdvanceTimeAsync(TimeSpan.FromMilliseconds(200), AbortToken);
+                    await Task.Yield();
+                }
+
+                await race.WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
+
+                acquiredX = await callerX;
+                acquiredY = await callerY;
             }
-
-            await race.WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
-
-            var acquiredX = await callerX;
-            var acquiredY = await callerY;
+            finally
+            {
+                // On a genuine ordering regression the two callers deadlock and the WaitAsync above throws while they
+                // are still running against a real backend. Cancel and drain them: an abandoned caller would go on to
+                // acquire and hold real locks past the end of this test, turning one honest failure into a cascade of
+                // unrelated ones, and its fault would surface later as an unobserved task exception.
+                await callerSource.CancelAsync();
+                await _DrainCancelledRaceAsync(race);
+            }
 
             acquiredX.Should().BeTrue($"caller X must form its composite on iteration {iteration}");
             acquiredY.Should().BeTrue($"caller Y must form its composite on iteration {iteration}");
@@ -641,13 +659,14 @@ public abstract class DistributedReadWriteLockTestsBase : TestBase
     /// Acquires the whole set and releases it immediately, so a concurrently-racing caller can make progress. Returns
     /// whether the composite was formed.
     /// </summary>
-    private async Task<bool> _AcquireThenReleaseAsync(
+    private static async Task<bool> _AcquireThenReleaseAsync(
         IDistributedReadWriteLock provider,
         IReadOnlyList<DistributedReadWriteLockRequest> requests,
-        DistributedLockAcquireOptions options
+        DistributedLockAcquireOptions options,
+        CancellationToken cancellationToken
     )
     {
-        var handle = await provider.TryAcquireAllAsync(requests, options, AbortToken);
+        var handle = await provider.TryAcquireAllAsync(requests, options, cancellationToken);
 
         if (handle is null)
         {
@@ -658,6 +677,22 @@ public abstract class DistributedReadWriteLockTestsBase : TestBase
 
         return true;
     }
+
+    /// <summary>
+    /// Awaits the cancelled race so both callers are settled before the test leaves the iteration, swallowing the
+    /// cancellation and any acquire fault they report on the way down. Only reached when the race has already failed,
+    /// so there is no outcome left to assert — the point is to leave no caller running.
+    /// </summary>
+#pragma warning disable CA1031 // The race has already failed; draining it must not mask that failure with a new one.
+    private static async Task _DrainCancelledRaceAsync(Task race)
+    {
+        try
+        {
+            await race;
+        }
+        catch (Exception) { }
+    }
+#pragma warning restore CA1031
 
     private static (string First, string Second) _CreateCompositeResources()
     {

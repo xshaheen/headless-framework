@@ -574,6 +574,90 @@ public sealed class CompositeReadWriteLockAcquireTests : TestBase
     }
 
     [Fact]
+    public async Task should_link_read_and_write_child_loss_tokens_into_one_composite_loss_signal()
+    {
+        // D4 carries loss linking over from the mutex composite, but nothing exercised it across MIXED modes: a read
+        // child and a write child must agree on loss-observability and fold into a single signal.
+        var provider = _CreateProvider(new FakeTimeProvider());
+        var readChild = new CompositeTestLease("a", canObserveLoss: true);
+        var writeChild = new CompositeTestLease("b", canObserveLoss: true);
+
+        provider
+            .TryAcquireReadLockAsync("a", Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IDistributedLease?>(readChild));
+        provider
+            .TryAcquireWriteLockAsync("b", Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IDistributedLease?>(writeChild));
+
+        await using var handle = await provider.AcquireAllAsync(
+            [new("a", DistributedLockMode.Read), new("b", DistributedLockMode.Write)],
+            new DistributedLockAcquireOptions
+            {
+                Monitoring = LockMonitoringMode.Monitor,
+                TimeUntilExpires = TimeSpan.FromSeconds(30),
+            },
+            AbortToken
+        );
+
+        handle.CanObserveLoss.Should().BeTrue();
+        handle.IsLost.Should().BeFalse();
+
+        // Losing EITHER child loses the whole set — a half-held composite is not a composite.
+        writeChild.MarkLost();
+
+        handle.IsLost.Should().BeTrue();
+        handle.LostToken.IsCancellationRequested.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_reject_read_and_write_children_that_disagree_on_loss_observability()
+    {
+        var provider = _CreateProvider(new FakeTimeProvider());
+        var readChild = new CompositeTestLease("a");
+        var writeChild = new CompositeTestLease("b", canObserveLoss: true);
+
+        provider
+            .TryAcquireReadLockAsync("a", Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IDistributedLease?>(readChild));
+        provider
+            .TryAcquireWriteLockAsync("b", Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IDistributedLease?>(writeChild));
+
+        var act = async () =>
+            await provider.TryAcquireAllAsync(
+                [new("a", DistributedLockMode.Read), new("b", DistributedLockMode.Write)],
+                cancellationToken: AbortToken
+            );
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task should_report_the_bare_resource_when_a_single_resource_set_fails_to_acquire()
+    {
+        // A canonical set of one is not a composite: it is a passthrough, and it must identify itself by its bare
+        // resource name on EVERY path. Reporting the mode-encoded identity ("r:a") on the failure path while the
+        // success path returns "a" would leak a synthetic name -- one that exists in no backend -- into the timeout
+        // exception of what the caller issued as a single-resource acquire.
+        var provider = _CreateProvider(new FakeTimeProvider());
+
+        provider
+            .TryAcquireReadLockAsync("a", Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IDistributedLease?>(null));
+
+        var act = async () =>
+            await provider.AcquireAllAsync(
+                [new("a", DistributedLockMode.Read)],
+                new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero },
+                AbortToken
+            );
+
+        var exception = (await act.Should().ThrowAsync<LockAcquisitionTimeoutException>()).Which;
+
+        exception.Resource.Should().Be("a");
+    }
+
+    [Fact]
     public async Task read_sugar_should_produce_the_same_canonical_order_as_the_equivalent_mixed_set()
     {
         var provider = _CreateProvider(new FakeTimeProvider());
