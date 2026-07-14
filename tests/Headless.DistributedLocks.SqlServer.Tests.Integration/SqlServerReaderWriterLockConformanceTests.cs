@@ -87,4 +87,28 @@ public sealed class SqlServerReaderWriterLockConformanceTests : DistributedReadW
     //  - should_fire_handle_lost_token_when_read_lock_ttl_expires / should_fire_handle_lost_token_when_write_lock_ttl_expires:
     //    session-scoped locks have no lease, so expiration and TimeToLive are always null.
     //  - should_auto_extend_write_lock: there is no lease to auto-extend.
+
+    [Fact]
+    public override Task should_acquire_composite_read_write_set_in_canonical_order_and_collapse_modes() =>
+        base.should_acquire_composite_read_write_set_in_canonical_order_and_collapse_modes();
+
+    [Fact]
+    public override Task should_not_deadlock_when_two_callers_request_opposite_mixed_orders_concurrently() =>
+        base.should_not_deadlock_when_two_callers_request_opposite_mixed_orders_concurrently();
+
+    [Fact]
+    public override Task should_release_earlier_composite_children_when_later_resource_is_contended() =>
+        base.should_release_earlier_composite_children_when_later_resource_is_contended();
+
+    [Fact]
+    public override Task should_renew_and_release_composite_read_write_lease() =>
+        base.should_renew_and_release_composite_read_write_lease();
+
+    [Fact]
+    public override Task should_keep_composite_read_write_resources_when_disposed_without_release() =>
+        base.should_keep_composite_read_write_resources_when_disposed_without_release();
+
+    [Fact]
+    public override Task should_return_child_lease_for_single_canonical_read_write_resource() =>
+        base.should_return_child_lease_for_single_canonical_read_write_resource();
 }
